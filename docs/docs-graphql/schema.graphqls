@@ -830,63 +830,19 @@ type CurrentModule {
   """A unique identifier for this CurrentModule."""
   id: CurrentModuleID!
 
-  """TODO"""
-  service(
-    """Upstream host to forward traffic to."""
-    host: String = "localhost"
+  """The name of the module being executed in"""
+  name: String!
 
-    """
-    Ports to expose via the service, forwarding through the host network.
-    
-    If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-    
-    An empty set of ports is not valid; an error will be returned.
-    """
-    ports: [PortForward!]!
-  ): Service!
-
-  """TODO"""
+  """
+  The directory containing the module's source code loaded into the engine (plus
+  any generated code that may have been created).
+  """
   source: Directory!
 
-  """TODO"""
-  tunnel(
-    """
-    Map each service port to the same port on the host, as if the service were running natively.
-    
-    Note: enabling may result in port conflicts.
-    """
-    native: Boolean = false
-
-    """
-    Configure explicit port forwarding rules for the tunnel.
-    
-    If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-    
-    If no ports are given, all of the service's ports are forwarded. If native
-    is true, each port maps to the same port on the host. If native is false,
-    each port maps to a random port chosen by the host.
-    
-    If ports are given and native is true, the ports are additive.
-    """
-    ports: [PortForward!] = []
-
-    """Service to send traffic from the tunnel."""
-    service: ServiceID!
-  ): Service!
-
-  """Retrieves the module with the given description"""
-  withDescription(
-    """The description to set"""
-    description: String!
-  ): CurrentModule!
-
-  """This module plus the given Interface type and associated functions"""
-  withInterface(iface: TypeDefID!): CurrentModule!
-
-  """This module plus the given Object type and associated functions."""
-  withObject(object: TypeDefID!): CurrentModule!
-
-  """TODO"""
+  """
+  Load a directory from the module's scratch working directory, including any
+  changes that may have been made to it during module function execution.
+  """
   workdir(
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -902,7 +858,12 @@ type CurrentModule {
     path: String!
   ): Directory!
 
-  """TODO"""
+  """
+  Load a file from the module's scratch working directory, including any changes
+  that may have been made to it during module function execution.Load a file
+  from the module's scratch working directory, including any changes that may
+  have been made to it during module function execution.
+  """
   workdirFile(
     """Location of the file to retrieve (e.g., "README.md")."""
     path: String!
@@ -1560,7 +1521,7 @@ type Module {
   
   created after initial load.
   """
-  generatedSourceDirectory: Directory!
+  generatedSourceRootDirectory: Directory!
 
   """A unique identifier for this Module."""
   id: ModuleID!
@@ -1587,11 +1548,23 @@ type Module {
     dependencies: [ModuleDependencyID!]!
   ): Module!
 
+  """Retrieves the module with the given description"""
+  withDescription(
+    """The description to set"""
+    description: String!
+  ): Module!
+
+  """This module plus the given Interface type and associated functions"""
+  withInterface(iface: TypeDefID!): Module!
+
   """Update the module configuration to use the given name."""
   withName(
     """The name to use."""
     name: String!
   ): Module!
+
+  """This module plus the given Object type and associated functions."""
+  withObject(object: TypeDefID!): Module!
 
   """Update the module configuration to use the given sdk."""
   withSDK(
@@ -1640,9 +1613,11 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
-  """TODO"""
+  """
+  The directory containing the actual module's source code, as determined from the root directory and subpath.
+  """
   directory(
-    """TODO"""
+    """The path from the source directory to select."""
     path: String!
   ): Directory!
 
@@ -1967,12 +1942,17 @@ type Query {
   """Create a new module."""
   module: Module!
 
-  """TODO"""
+  """
+  Create a new module dependency configuration from a module source and name
+  """
   moduleDependency(
-    """TODO"""
+    """
+    If set, the name to use for the dependency. Otherwise, once installed to a
+    parent module, the name of the dependency module will be used by default.
+    """
     name: String = ""
 
-    """TODO"""
+    """The source of the dependency"""
     source: ModuleSourceID!
   ): ModuleDependency!
 

@@ -44,7 +44,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The directory containing the actual module's source code, as determined from the root directory and subpath.
      */
     public function directory(string $path): Directory
     {

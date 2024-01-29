@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/dagger/dagger/dagql"
@@ -321,18 +320,6 @@ func (sdk *goSDK) Runtime(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source subpath for go module sdk codegen: %w", err)
 	}
-
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	slog.Debug(
-		"GOSDK RUNTIME",
-		"sourceDirSubpath", sourceDirSubpath,
-	)
 
 	ctr, err := sdk.baseWithCodegen(ctx, mod, configDir, sourceDirSubpath)
 	if err != nil {

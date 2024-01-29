@@ -513,7 +513,7 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * TODO
+     * Create a new module dependency configuration from a module source and name
      */
     public function moduleDependency(ModuleSourceId|ModuleSource $source, ?string $name = ''): ModuleDependency
     {

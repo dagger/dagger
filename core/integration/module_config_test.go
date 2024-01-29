@@ -15,6 +15,7 @@ import (
 
 * dagger mod init --name=test when there's already a module named test at subdir ./test and in the current dir's dagger.json
 * variations of above when doing init when there's already a dagger.json w/ root-for settings
+* new -m behavior: refer by name, can init sdk-less module and install, use -m with it, etc.
 */
 func TestModuleSourceConfigs(t *testing.T) {
 	// test dagger.json source configs that aren't inherently covered in other tests
@@ -56,7 +57,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 		require.JSONEq(t, strings.TrimSpace(string(expectedConfBytes)), confContents)
 
 		// verify call works seamlessly even without explicit sync yet
-		out, err := baseWithOldConfig.With(daggerCall("container-echo", "--string-arg", "hey")).Stdout(ctx)
+		out, err := baseWithOldConfig.With(daggerCall("container-echo", "--string-arg", "hey", "stdout")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hey", strings.TrimSpace(out))
 	})

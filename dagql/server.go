@@ -603,20 +603,6 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 		return sel, nil
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	if s == nil {
-		panic("nil server")
-	}
-	if s.objects == nil {
-		panic("nil objects")
-	}
-	if val == nil {
-		panic("nil val")
-	}
-
 	class, ok := s.objects[val.Type().Name()]
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())

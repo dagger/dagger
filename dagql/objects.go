@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
-	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -865,13 +864,6 @@ func assign(field reflect.Value, val any) error {
 	} else if setter, ok := val.(Setter); ok {
 		return setter.SetField(field)
 	} else {
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		debug.PrintStack()
 		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
 	}
 }

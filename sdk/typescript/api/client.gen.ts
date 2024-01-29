@@ -420,42 +420,6 @@ export type ContainerWithoutExposedPortOpts = {
  */
 export type ContainerID = string & { __ContainerID: never }
 
-export type CurrentModuleServiceOpts = {
-  /**
-   * Upstream host to forward traffic to.
-   */
-  host?: string
-
-  /**
-   * Ports to expose via the service, forwarding through the host network.
-   *
-   * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-   *
-   * An empty set of ports is not valid; an error will be returned.
-   */
-  ports: PortForward[]
-}
-
-export type CurrentModuleTunnelOpts = {
-  /**
-   * Configure explicit port forwarding rules for the tunnel.
-   *
-   * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-   *
-   * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-   *
-   * If ports are given and native is true, the ports are additive.
-   */
-  ports?: PortForward[]
-
-  /**
-   * Map each service port to the same port on the host, as if the service were running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   */
-  native?: boolean
-}
-
 export type CurrentModuleWorkdirOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -882,7 +846,7 @@ export type ClientHttpOpts = {
 
 export type ClientModuleDependencyOpts = {
   /**
-   * TODO
+   * If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
    */
   name?: string
 }
@@ -2627,7 +2591,7 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * TODO
+   * The name of the module being executed in
    */
   name = async (): Promise<string> => {
     if (this._name) {
@@ -2648,29 +2612,7 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * TODO
-   * @param opts.host Upstream host to forward traffic to.
-   * @param opts.ports Ports to expose via the service, forwarding through the host network.
-   *
-   * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-   *
-   * An empty set of ports is not valid; an error will be returned.
-   */
-  service = (opts?: CurrentModuleServiceOpts): Service => {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "service",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * TODO
+   * The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
    */
   source = (): Directory => {
     return new Directory({
@@ -2685,34 +2627,7 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * TODO
-   * @param service Service to send traffic from the tunnel.
-   * @param opts.ports Configure explicit port forwarding rules for the tunnel.
-   *
-   * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-   *
-   * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-   *
-   * If ports are given and native is true, the ports are additive.
-   * @param opts.native Map each service port to the same port on the host, as if the service were running natively.
-   *
-   * Note: enabling may result in port conflicts.
-   */
-  tunnel = (service: Service, opts?: CurrentModuleTunnelOpts): Service => {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "tunnel",
-          args: { service, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * TODO
+   * Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
    * @param path Location of the directory to access (e.g., ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
@@ -2731,7 +2646,7 @@ export class CurrentModule extends BaseClient {
   }
 
   /**
-   * TODO
+   * Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
    * @param path Location of the file to retrieve (e.g., "README.md").
    */
   workdirFile = (path: string): File => {
@@ -5166,12 +5081,12 @@ export class Module_ extends BaseClient {
    *
    * created after initial load.
    */
-  generatedSourceDirectory = (): Directory => {
+  generatedSourceRootDirectory = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "generatedSourceDirectory",
+          operation: "generatedSourceRootDirectory",
         },
       ],
       ctx: this._ctx,
@@ -5637,8 +5552,8 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * TODO
-   * @param path TODO
+   * The directory containing the actual module's source code, as determined from the root directory and subpath.
+   * @param path The path from the source directory to select.
    */
   directory = (path: string): Directory => {
     return new Directory({
@@ -6879,9 +6794,9 @@ export class Client extends BaseClient {
   }
 
   /**
-   * TODO
-   * @param source TODO
-   * @param opts.name TODO
+   * Create a new module dependency configuration from a module source and name
+   * @param source The source of the dependency
+   * @param opts.name If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
    */
   moduleDependency = (
     source: ModuleSource,

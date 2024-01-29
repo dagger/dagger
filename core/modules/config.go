@@ -29,7 +29,8 @@ type ModuleConfig struct {
 	// The modules this module depends on.
 	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`
 
-	// TODO:
+	// Modules in subdirs that this config is the root for, which impacts those modules'
+	// root directory and possibly other global settings that propagate from the root.
 	RootFor []*ModuleConfigRootFor `json:"root-for,omitempty"`
 
 	// Deprecated: use Source instead, only used to identify legacy config files
@@ -64,12 +65,13 @@ func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependen
 }
 
 type ModuleConfigRootFor struct {
-	// TODO:
+	// The path to the module that this config is the root for, relative to the configuration file.
 	Source string `json:"source"`
 }
 
 type ModuleConfigDependency struct {
-	// TODO:
+	// The name to use for this dependency. By default, the same as the dependency module's name,
+	// but can also be overridden to use a different name.
 	Name string `json:"name"`
 
 	// The source ref of the module dependency.

@@ -571,7 +571,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "TODO\n\n## Required Arguments\n\n* `source` - TODO\n\n## Optional Arguments\n\n* `name` - TODO"
+    @doc "Create a new module dependency configuration from a module source and name\n\n## Required Arguments\n\n* `source` - The source of the dependency\n\n## Optional Arguments\n\n* `name` - If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default."
     @spec module_dependency(t(), Dagger.ModuleSource.t(), keyword()) ::
             Dagger.ModuleDependency.t()
     def module_dependency(%__MODULE__{} = query, source, optional_args \\ []) do

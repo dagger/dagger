@@ -38,9 +38,9 @@ class Module extends Client\AbstractObject implements Client\IdAble
      *
      * created after initial load.
      */
-    public function generatedSourceDirectory(): Directory
+    public function generatedSourceRootDirectory(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedSourceDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedSourceRootDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

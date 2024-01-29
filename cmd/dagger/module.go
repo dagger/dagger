@@ -167,7 +167,7 @@ var moduleInitCmd = &cobra.Command{
 			_, err = modConf.Mod.
 				WithName(moduleName).
 				WithSDK(sdk).
-				GeneratedSourceDirectory().
+				GeneratedSourceRootDirectory().
 				Export(ctx, modConf.LocalRootPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
@@ -233,7 +233,7 @@ var moduleInstallCmd = &cobra.Command{
 
 			_, err = modConf.Mod.
 				WithDependencies([]*dagger.ModuleDependency{dep}).
-				GeneratedSourceDirectory().
+				GeneratedSourceRootDirectory().
 				Export(ctx, modConf.LocalRootPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
@@ -259,7 +259,7 @@ var moduleSyncCmd = &cobra.Command{
 				return fmt.Errorf("module must be local")
 			}
 
-			_, err = modConf.Mod.GeneratedSourceDirectory().Export(ctx, modConf.LocalRootPath)
+			_, err = modConf.Mod.GeneratedSourceRootDirectory().Export(ctx, modConf.LocalRootPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
@@ -517,6 +517,7 @@ func getModuleConfigurationForSourceRef(
 		conf.Mod = src.AsModule()
 	} else {
 		conf.Mod = src.AsModule()
+		conf.ModuleRootConfigExists = true
 		conf.ModuleSourceConfigExists = true
 	}
 

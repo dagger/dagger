@@ -1772,7 +1772,7 @@ func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// TODO
+// The name of the module being executed in
 func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -1785,72 +1785,11 @@ func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// CurrentModuleServiceOpts contains options for CurrentModule.Service
-type CurrentModuleServiceOpts struct {
-	// Upstream host to forward traffic to.
-	Host string
-}
-
-// TODO
-func (r *CurrentModule) Service(ports []PortForward, opts ...CurrentModuleServiceOpts) *Service {
-	q := r.q.Select("service")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `host` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Host) {
-			q = q.Arg("host", opts[i].Host)
-		}
-	}
-	q = q.Arg("ports", ports)
-
-	return &Service{
-		q: q,
-		c: r.c,
-	}
-}
-
-// TODO
+// The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
 func (r *CurrentModule) Source() *Directory {
 	q := r.q.Select("source")
 
 	return &Directory{
-		q: q,
-		c: r.c,
-	}
-}
-
-// CurrentModuleTunnelOpts contains options for CurrentModule.Tunnel
-type CurrentModuleTunnelOpts struct {
-	// Configure explicit port forwarding rules for the tunnel.
-	//
-	// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-	//
-	// If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-	//
-	// If ports are given and native is true, the ports are additive.
-	Ports []PortForward
-	// Map each service port to the same port on the host, as if the service were running natively.
-	//
-	// Note: enabling may result in port conflicts.
-	Native bool
-}
-
-// TODO
-func (r *CurrentModule) Tunnel(service *Service, opts ...CurrentModuleTunnelOpts) *Service {
-	assertNotNil("service", service)
-	q := r.q.Select("tunnel")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `ports` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Ports) {
-			q = q.Arg("ports", opts[i].Ports)
-		}
-		// `native` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Native) {
-			q = q.Arg("native", opts[i].Native)
-		}
-	}
-	q = q.Arg("service", service)
-
-	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -1864,7 +1803,7 @@ type CurrentModuleWorkdirOpts struct {
 	Include []string
 }
 
-// TODO
+// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
 func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *Directory {
 	q := r.q.Select("workdir")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1885,7 +1824,7 @@ func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *
 	}
 }
 
-// TODO
+// Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
 func (r *CurrentModule) WorkdirFile(path string) *File {
 	q := r.q.Select("workdirFile")
 	q = q.Arg("path", path)
@@ -4116,8 +4055,8 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 // (possibly as a subdir). It includes any generated code or updated config files
 //
 // created after initial load.
-func (r *Module) GeneratedSourceDirectory() *Directory {
-	q := r.q.Select("generatedSourceDirectory")
+func (r *Module) GeneratedSourceRootDirectory() *Directory {
+	q := r.q.Select("generatedSourceRootDirectory")
 
 	return &Directory{
 		q: q,
@@ -4500,7 +4439,7 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO
+// The directory containing the actual module's source code, as determined from the root directory and subpath.
 func (r *ModuleSource) Directory(path string) *Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
@@ -5498,11 +5437,11 @@ func (r *Client) Module() *Module {
 
 // ModuleDependencyOpts contains options for Client.ModuleDependency
 type ModuleDependencyOpts struct {
-	// TODO
+	// If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.
 	Name string
 }
 
-// TODO
+// Create a new module dependency configuration from a module source and name
 func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependencyOpts) *ModuleDependency {
 	assertNotNil("source", source)
 	q := r.q.Select("moduleDependency")

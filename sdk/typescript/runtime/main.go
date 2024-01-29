@@ -50,6 +50,8 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		// Install dependencies
 		WithExec([]string{"npm", "install"}).
 		WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
+		// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
+		// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 		WithEntrypoint([]string{"tsx", "--tsconfig", tsConfigPath, entrypointPath}), nil
 }
 

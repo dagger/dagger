@@ -52,7 +52,7 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "TODO\n\n## Required Arguments\n\n* `path` - TODO"
+    @doc "The directory containing the actual module's source code, as determined from the root directory and subpath.\n\n## Required Arguments\n\n* `path` - The path from the source directory to select."
     @spec directory(t(), Dagger.String.t()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = module_source, path) do
       selection = select(module_source.selection, "directory")

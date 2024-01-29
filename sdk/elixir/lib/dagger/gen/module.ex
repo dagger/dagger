@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedSourceDirectory id initialize interfaces name objects sdk serve source withDependencies withDescription withInterface withName withObject withSDK withSource"
+          "dependencies dependencyConfig description generatedSourceRootDirectory id initialize interfaces name objects sdk serve source withDependencies withDescription withInterface withName withObject withSDK withSource"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -61,9 +61,9 @@ defmodule Dagger.Module do
 
   (
     @doc "The module's root directory containing the config file for it and its source\n\n(possibly as a subdir). It includes any generated code or updated config files\n\ncreated after initial load."
-    @spec generated_source_directory(t()) :: Dagger.Directory.t()
-    def generated_source_directory(%__MODULE__{} = module) do
-      selection = select(module.selection, "generatedSourceDirectory")
+    @spec generated_source_root_directory(t()) :: Dagger.Directory.t()
+    def generated_source_root_directory(%__MODULE__{} = module) do
+      selection = select(module.selection, "generatedSourceRootDirectory")
       %Dagger.Directory{selection: selection, client: module.client}
     end
   )

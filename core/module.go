@@ -25,7 +25,8 @@ type Module struct {
 	// The name of the module
 	NameField string `field:"true" name:"name" doc:"The name of the module"`
 
-	// TODO:
+	// The original name of the module set in its configuration file (or first configured via withName).
+	// Different than NameField when a different name was specified for the module via a dependency.
 	OriginalName string
 
 	// The doc string of the module, if any
@@ -35,8 +36,7 @@ type Module struct {
 	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 
 	// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load.
-	// TODO: rename to GeneratedSourceRootDirectory?
-	GeneratedSourceDirectory dagql.Instance[*Directory]
+	GeneratedSourceRootDirectory dagql.Instance[*Directory]
 
 	// The subpath of the GeneratedSourceDirectory that contains the actual source code of the module (which may be a subdir when dagger.json is a parent dir).
 	// This is not always equal to Source.SourceSubpath in the case where the Source is a directory containing
@@ -170,27 +170,7 @@ func (mod *Module) WithDependencies(
 		i, dep := i, dep
 
 		eg.Go(func() error {
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			depSourceRefStr, err := dep.Source.Self.RefString()
-			if err != nil {
-				return fmt.Errorf("failed to get source ref string for dependency: %w", err)
-			}
-			depSourceSubpath, err := dep.Source.Self.Subpath()
-			if err != nil {
-				return fmt.Errorf("failed to get source subpath for dependency: %w", err)
-			}
-			slog.Debug(
-				"WITH DEPENDENCY",
-				"refStr", depSourceRefStr,
-				"depSourceSubpath", depSourceSubpath,
-			)
-
-			err = srv.Select(ctx, mod.Source, &dependencies[i].Source,
+			err := srv.Select(ctx, mod.Source, &dependencies[i].Source,
 				dagql.Selector{
 					Field: "resolveDependency",
 					Args: []dagql.NamedInput{
@@ -201,16 +181,6 @@ func (mod *Module) WithDependencies(
 			if err != nil {
 				return fmt.Errorf("failed to resolve dependency module: %w", err)
 			}
-
-			depSourceSubpath, err = dep.Source.Self.Subpath()
-			if err != nil {
-				return fmt.Errorf("failed to get source subpath for dependency: %w", err)
-			}
-			slog.Debug(
-				"WITH DEPENDENCY2",
-				"refStr", depSourceRefStr,
-				"depSourceSubpath", depSourceSubpath,
-			)
 
 			return nil
 		})
@@ -254,24 +224,6 @@ func (mod *Module) WithDependencies(
 	sort.Slice(mod.DependencyConfig, func(i, j int) bool {
 		return refStrs[i] < refStrs[j]
 	})
-
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	for _, dep := range mod.DependencyConfig {
-		refStr, err := dep.Source.Self.RefString()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
-		}
-		slog.Debug("module dependency",
-			"dep", refStr,
-			"configName", dep.Name,
-		)
-	}
 
 	mod.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependencyConfig))
 	eg = errgroup.Group{}
@@ -826,8 +778,8 @@ var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if mod.GeneratedSourceDirectory.Self != nil {
-		dirDefs, err := mod.GeneratedSourceDirectory.Self.PBDefinitions(ctx)
+	if mod.GeneratedSourceRootDirectory.Self != nil {
+		dirDefs, err := mod.GeneratedSourceRootDirectory.Self.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -843,8 +795,8 @@ func (mod Module) Clone() *Module {
 		cp.Source.Self = mod.Source.Self.Clone()
 	}
 
-	if mod.GeneratedSourceDirectory.Self != nil {
-		cp.GeneratedSourceDirectory.Self = mod.GeneratedSourceDirectory.Self.Clone()
+	if mod.GeneratedSourceRootDirectory.Self != nil {
+		cp.GeneratedSourceRootDirectory.Self = mod.GeneratedSourceRootDirectory.Self.Clone()
 	}
 
 	cp.DependencyConfig = make([]*ModuleDependency, len(mod.DependencyConfig))

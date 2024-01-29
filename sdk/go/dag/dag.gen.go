@@ -326,7 +326,7 @@ func Module() *dagger.Module {
 	return client.Module()
 }
 
-// TODO
+// Create a new module dependency configuration from a module source and name
 func ModuleDependency(source *dagger.ModuleSource, opts ...dagger.ModuleDependencyOpts) *dagger.ModuleDependency {
 	client := initClient()
 	return client.ModuleDependency(source, opts...)

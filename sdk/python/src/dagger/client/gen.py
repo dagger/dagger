@@ -1881,7 +1881,7 @@ class CurrentModule(Type):
 
     @typecheck
     async def name(self) -> str:
-        """TODO
+        """The name of the module being executed in
 
         Returns
         -------
@@ -1902,74 +1902,13 @@ class CurrentModule(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def service(
-        self,
-        ports: Sequence[PortForward],
-        *,
-        host: str | None = "localhost",
-    ) -> "Service":
-        """TODO
-
-        Parameters
-        ----------
-        ports:
-            Ports to expose via the service, forwarding through the host
-            network.
-            If a port's frontend is unspecified or 0, it defaults to the same
-            as the backend port.
-            An empty set of ports is not valid; an error will be returned.
-        host:
-            Upstream host to forward traffic to.
-        """
-        _args = [
-            Arg("ports", ports),
-            Arg("host", host, "localhost"),
-        ]
-        _ctx = self._select("service", _args)
-        return Service(_ctx)
-
-    @typecheck
     def source(self) -> "Directory":
-        """TODO"""
+        """The directory containing the module's source code loaded into the
+        engine (plus any generated code that may have been created).
+        """
         _args: list[Arg] = []
         _ctx = self._select("source", _args)
         return Directory(_ctx)
-
-    @typecheck
-    def tunnel(
-        self,
-        service: "Service",
-        *,
-        ports: Sequence[PortForward] | None = [],
-        native: bool | None = False,
-    ) -> "Service":
-        """TODO
-
-        Parameters
-        ----------
-        service:
-            Service to send traffic from the tunnel.
-        ports:
-            Configure explicit port forwarding rules for the tunnel.
-            If a port's frontend is unspecified or 0, a random port will be
-            chosen by the host.
-            If no ports are given, all of the service's ports are forwarded.
-            If native is true, each port maps to the same port on the host. If
-            native is false, each port maps to a random port chosen by the
-            host.
-            If ports are given and native is true, the ports are additive.
-        native:
-            Map each service port to the same port on the host, as if the
-            service were running natively.
-            Note: enabling may result in port conflicts.
-        """
-        _args = [
-            Arg("service", service),
-            Arg("ports", ports, []),
-            Arg("native", native, False),
-        ]
-        _ctx = self._select("tunnel", _args)
-        return Service(_ctx)
 
     @typecheck
     def workdir(
@@ -1979,7 +1918,9 @@ class CurrentModule(Type):
         exclude: Sequence[str] | None = [],
         include: Sequence[str] | None = [],
     ) -> "Directory":
-        """TODO
+        """Load a directory from the module's scratch working directory,
+        including any changes that may have been made to it during module
+        function execution.
 
         Parameters
         ----------
@@ -2002,7 +1943,11 @@ class CurrentModule(Type):
 
     @typecheck
     def workdir_file(self, path: str) -> "File":
-        """TODO
+        """Load a file from the module's scratch working directory, including any
+        changes that may have been made to it during module function
+        execution.Load a file from the module's scratch working directory,
+        including any changes that may have been made to it during module
+        function execution.
 
         Parameters
         ----------
@@ -4183,7 +4128,7 @@ class Module(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def generated_source_directory(self) -> Directory:
+    def generated_source_root_directory(self) -> Directory:
         """The module's root directory containing the config file for it and its
         source
 
@@ -4193,7 +4138,7 @@ class Module(Type):
         created after initial load.
         """
         _args: list[Arg] = []
-        _ctx = self._select("generatedSourceDirectory", _args)
+        _ctx = self._select("generatedSourceRootDirectory", _args)
         return Directory(_ctx)
 
     @typecheck
@@ -4538,12 +4483,13 @@ class ModuleSource(Type):
 
     @typecheck
     def directory(self, path: str) -> Directory:
-        """TODO
+        """The directory containing the actual module's source code, as
+        determined from the root directory and subpath.
 
         Parameters
         ----------
         path:
-            TODO
+            The path from the source directory to select.
         """
         _args = [
             Arg("path", path),
@@ -5497,14 +5443,17 @@ class Client(Root):
         *,
         name: str | None = "",
     ) -> ModuleDependency:
-        """TODO
+        """Create a new module dependency configuration from a module source and
+        name
 
         Parameters
         ----------
         source:
-            TODO
+            The source of the dependency
         name:
-            TODO
+            If set, the name to use for the dependency. Otherwise, once
+            installed to a parent module, the name of the dependency module
+            will be used by default.
         """
         _args = [
             Arg("source", source),

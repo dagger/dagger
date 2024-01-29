@@ -15,7 +15,7 @@ defmodule Dagger.CurrentModule do
   )
 
   (
-    @doc "TODO"
+    @doc "The name of the module being executed in"
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = current_module) do
       selection = select(current_module.selection, "name")
@@ -24,25 +24,7 @@ defmodule Dagger.CurrentModule do
   )
 
   (
-    @doc "TODO\n\n## Required Arguments\n\n* `ports` - Ports to expose via the service, forwarding through the host network.\n\nIf a port's frontend is unspecified or 0, it defaults to the same as the backend port.\n\nAn empty set of ports is not valid; an error will be returned.\n\n## Optional Arguments\n\n* `host` - Upstream host to forward traffic to."
-    @spec service(t(), [Dagger.PortForward.t()], keyword()) :: Dagger.Service.t()
-    def service(%__MODULE__{} = current_module, ports, optional_args \\ []) do
-      selection = select(current_module.selection, "service")
-      selection = arg(selection, "ports", ports)
-
-      selection =
-        if is_nil(optional_args[:host]) do
-          selection
-        else
-          arg(selection, "host", optional_args[:host])
-        end
-
-      %Dagger.Service{selection: selection, client: current_module.client}
-    end
-  )
-
-  (
-    @doc "TODO"
+    @doc "The directory containing the module's source code loaded into the engine (plus any generated code that may have been created)."
     @spec source(t()) :: Dagger.Directory.t()
     def source(%__MODULE__{} = current_module) do
       selection = select(current_module.selection, "source")
@@ -51,36 +33,7 @@ defmodule Dagger.CurrentModule do
   )
 
   (
-    @doc "TODO\n\n## Required Arguments\n\n* `service` - Service to send traffic from the tunnel.\n\n## Optional Arguments\n\n* `ports` - Configure explicit port forwarding rules for the tunnel.\n\nIf a port's frontend is unspecified or 0, a random port will be chosen by the host.\n\nIf no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.\n\nIf ports are given and native is true, the ports are additive.\n* `native` - Map each service port to the same port on the host, as if the service were running natively.\n\nNote: enabling may result in port conflicts."
-    @spec tunnel(t(), Dagger.Service.t(), keyword()) :: Dagger.Service.t()
-    def tunnel(%__MODULE__{} = current_module, service, optional_args \\ []) do
-      selection = select(current_module.selection, "tunnel")
-
-      (
-        {:ok, id} = Dagger.Service.id(service)
-        selection = arg(selection, "service", id)
-      )
-
-      selection =
-        if is_nil(optional_args[:ports]) do
-          selection
-        else
-          arg(selection, "ports", optional_args[:ports])
-        end
-
-      selection =
-        if is_nil(optional_args[:native]) do
-          selection
-        else
-          arg(selection, "native", optional_args[:native])
-        end
-
-      %Dagger.Service{selection: selection, client: current_module.client}
-    end
-  )
-
-  (
-    @doc "TODO\n\n## Required Arguments\n\n* `path` - Location of the directory to access (e.g., \".\").\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
+    @doc "Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.\n\n## Required Arguments\n\n* `path` - Location of the directory to access (e.g., \".\").\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
     @spec workdir(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def workdir(%__MODULE__{} = current_module, path, optional_args \\ []) do
       selection = select(current_module.selection, "workdir")
@@ -105,7 +58,7 @@ defmodule Dagger.CurrentModule do
   )
 
   (
-    @doc "TODO\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\")."
+    @doc "Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\")."
     @spec workdir_file(t(), Dagger.String.t()) :: Dagger.File.t()
     def workdir_file(%__MODULE__{} = current_module, path) do
       selection = select(current_module.selection, "workdirFile")

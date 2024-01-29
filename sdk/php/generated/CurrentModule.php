@@ -23,7 +23,7 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * The name of the module being executed in
      */
     public function name(): string
     {
@@ -32,20 +32,7 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
-     */
-    public function service(?string $host = 'localhost', array $ports): Service
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('service');
-        if (null !== $host) {
-        $innerQueryBuilder->setArgument('host', $host);
-        }
-        $innerQueryBuilder->setArgument('ports', $ports);
-        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * TODO
+     * The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
      */
     public function source(): Directory
     {
@@ -54,23 +41,7 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
-     */
-    public function tunnel(ServiceId|Service $service, ?array $ports = null, ?bool $native = false): Service
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('tunnel');
-        $innerQueryBuilder->setArgument('service', $service);
-        if (null !== $ports) {
-        $innerQueryBuilder->setArgument('ports', $ports);
-        }
-        if (null !== $native) {
-        $innerQueryBuilder->setArgument('native', $native);
-        }
-        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * TODO
+     * Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
      */
     public function workdir(string $path, ?array $exclude = null, ?array $include = null): Directory
     {
@@ -86,7 +57,7 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * TODO
+     * Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
      */
     public function workdirFile(string $path): File
     {
