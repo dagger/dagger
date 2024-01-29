@@ -4794,6 +4794,203 @@ func (p *Playground) DoThing(ctx context.Context) error {
 	require.NoError(t, err)
 }
 
+func TestModuleCurrentModuleAPI(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	t.Run("name", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=WaCkY", "--sdk=go")).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type WaCkY struct {}
+
+			func (m *WaCkY) Fn(ctx context.Context) (string, error) { 
+				return dag.CurrentModule().Name(ctx)
+			}
+			`,
+			}).
+			With(daggerCall("fn")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "WaCkY", strings.TrimSpace(out))
+	})
+
+	t.Run("source", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("/work/subdir/coolfile.txt", dagger.ContainerWithNewFileOpts{
+				Contents: "nice",
+			}).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) *File { 
+				return dag.CurrentModule().Source().File("subdir/coolfile.txt")
+			}
+			`,
+			}).
+			With(daggerCall("fn", "contents")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "nice", strings.TrimSpace(out))
+	})
+
+	t.Run("workdir", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("dir", func(t *testing.T) {
+			t.Parallel()
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+				WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+			import (
+				"context"
+				"os"
+			)
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (*Directory, error) {
+				if err := os.MkdirAll("subdir/moresubdir", 0755); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile("subdir/moresubdir/coolfile.txt", []byte("nice"), 0644); err != nil {
+					return nil, err
+				}
+				return dag.CurrentModule().Workdir("subdir/moresubdir"), nil
+			}
+			`,
+				}).
+				With(daggerCall("fn", "file", "--path=coolfile.txt", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "nice", strings.TrimSpace(out))
+		})
+
+		t.Run("file", func(t *testing.T) {
+			t.Parallel()
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+				WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+			import (
+				"context"
+				"os"
+			)
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (*File, error) {
+				if err := os.MkdirAll("subdir/moresubdir", 0755); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile("subdir/moresubdir/coolfile.txt", []byte("nice"), 0644); err != nil {
+					return nil, err
+				}
+				return dag.CurrentModule().WorkdirFile("subdir/moresubdir/coolfile.txt"), nil
+			}
+			`,
+				}).
+				With(daggerCall("fn", "contents")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "nice", strings.TrimSpace(out))
+		})
+
+		t.Run("error on escape", func(t *testing.T) {
+			t.Parallel()
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+				WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+			import (
+				"context"
+				"os"
+			)
+
+			func New() (*Test, error) {
+				if err := os.WriteFile("/rootfile.txt", []byte("notnice"), 0644); err != nil {
+					return nil, err
+				}
+				if err := os.MkdirAll("/foo", 0755); err != nil {
+					return nil, err
+				}
+				if err := os.WriteFile("/foo/foofile.txt", []byte("notnice"), 0644); err != nil {
+					return nil, err
+				}
+
+				return &Test{}, nil
+			}
+
+			type Test struct {}
+
+			func (m *Test) EscapeFile(ctx context.Context) *File {
+				return dag.CurrentModule().WorkdirFile("../rootfile.txt")
+			}
+
+			func (m *Test) EscapeFileAbs(ctx context.Context) *File {
+				return dag.CurrentModule().WorkdirFile("/rootfile.txt")
+			}
+
+			func (m *Test) EscapeDir(ctx context.Context) *Directory {
+				return dag.CurrentModule().Workdir("../foo")
+			}
+
+			func (m *Test) EscapeDirAbs(ctx context.Context) *Directory {
+				return dag.CurrentModule().Workdir("/foo")
+			}
+			`,
+				})
+
+			_, err := ctr.
+				With(daggerCall("escape-file", "contents")).
+				Stdout(ctx)
+			require.ErrorContains(t, err, `workdir path "../rootfile.txt" escapes workdir`)
+
+			_, err = ctr.
+				With(daggerCall("escape-file-abs", "contents")).
+				Stdout(ctx)
+			require.ErrorContains(t, err, `workdir path "/rootfile.txt" escapes workdir`)
+
+			_, err = ctr.
+				With(daggerCall("escape-dir", "entries")).
+				Stdout(ctx)
+			require.ErrorContains(t, err, `workdir path "../foo" escapes workdir`)
+
+			_, err = ctr.
+				With(daggerCall("escape-dir-abs", "entries")).
+				Stdout(ctx)
+			require.ErrorContains(t, err, `workdir path "/foo" escapes workdir`)
+		})
+	})
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{

@@ -206,7 +206,7 @@ var moduleInstallCmd = &cobra.Command{
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
-				return fmt.Errorf("module must be fully initialized")
+				return fmt.Errorf("module must be fully initialized, root directory initialized: %t, source directory initialized: %t", modConf.ModuleRootConfigExists, modConf.ModuleSourceConfigExists)
 			}
 
 			depRefStr := extraArgs[0]
@@ -530,12 +530,6 @@ func loadLocalModuleSource(
 	sourceRootAbsPath string,
 	sourceSubdirAbsPath string,
 ) (*dagger.ModuleSource, bool, error) {
-	// reposition sourceSubdirAbsPath to be relative to configDirPath
-	sourceSubdirRelPath, err := filepath.Rel(sourceRootAbsPath, sourceSubdirAbsPath)
-	if err != nil {
-		return nil, false, err
-	}
-
 	var include []string
 	var exclude []string
 	var exists bool
@@ -551,19 +545,21 @@ func loadLocalModuleSource(
 			return nil, false, fmt.Errorf("error validating %s: %s", configPath, err)
 		}
 
-		// make sure this is the actual module's config and not an initialized config
-		// containing only root-for entries
-		if modCfg.Name != "" {
-			include = modCfg.Include
-			exclude = modCfg.Exclude
-			exists = true
-		}
+		include = modCfg.Include
+		exclude = modCfg.Exclude
+		exists = true
 
 	case os.IsNotExist(err):
 		// config doesn't exist yet, load with no include/exclude
 
 	default:
 		return nil, false, fmt.Errorf("error reading config %s: %s", configPath, err)
+	}
+
+	// reposition sourceSubdirAbsPath to be relative to configDirPath
+	sourceSubdirRelPath, err := filepath.Rel(sourceRootAbsPath, sourceSubdirAbsPath)
+	if err != nil {
+		return nil, false, err
 	}
 
 	return dag.ModuleSource(sourceSubdirRelPath, dagger.ModuleSourceOpts{

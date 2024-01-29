@@ -16,6 +16,7 @@ import (
 * dagger mod init --name=test when there's already a module named test at subdir ./test and in the current dir's dagger.json
 * variations of above when doing init when there's already a dagger.json w/ root-for settings
 * new -m behavior: refer by name, can init sdk-less module and install, use -m with it, etc.
+* aliased deps avoid name conflicts
 */
 func TestModuleSourceConfigs(t *testing.T) {
 	// test dagger.json source configs that aren't inherently covered in other tests
@@ -339,5 +340,137 @@ func TestModuleSourceConfigs(t *testing.T) {
 			_, err = base.With(daggerExec("mod", "install", "./dep")).Sync(ctx)
 			require.ErrorContains(t, err, `module dep source path ".." escapes root "/"`)
 		})
+	})
+}
+
+func TestModuleCustomDepNames(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) DepFn(ctx context.Context) string { 
+				return "hi from dep"
+			}
+
+			func (m *Dep) GetDepObj(ctx context.Context) *DepObj {
+				return &DepObj{Str: "yo from dep"}
+			}
+
+			type DepObj struct {
+				Str string
+			}
+
+			func (m *Dep) GetOtherObj(ctx context.Context) *OtherObj {
+				return &OtherObj{Str: "hey from dep"}
+			}
+
+			type OtherObj struct {
+				Str string
+			}
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			With(daggerExec("mod", "install", "--name", "foo", "./dep")).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) { 
+				return dag.Foo().DepFn(ctx)
+			}
+
+			func (m *Test) GetObj(ctx context.Context) (string, error) { 
+				var obj *FooObj
+				obj = dag.Foo().GetDepObj()
+				return obj.Str(ctx)
+			}
+
+			func (m *Test) GetOtherObj(ctx context.Context) (string, error) { 
+				var obj *FooOtherObj
+				obj = dag.Foo().GetOtherObj()
+				return obj.Str(ctx)
+			}
+
+			func (m *Test) GetConflictNameObj(ctx context.Context) *Dep {
+				return &Dep{Str: "it worked?"}
+			}
+
+			// should not be any name conflict with dep
+			type Dep struct {
+				Str string
+			}
+			`,
+			})
+
+		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from dep", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("get-obj")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo from dep", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("get-other-obj")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hey from dep", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCall("get-conflict-name-obj", "str")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "it worked?", strings.TrimSpace(out))
+	})
+
+	t.Run("same mod name as dep", func(t *testing.T) {
+		t.Parallel()
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) string { 
+				return "hi from dep"
+			}
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			With(daggerExec("mod", "install", "--name", "foo", "./dep")).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) { 
+				return dag.Foo().Fn(ctx)
+			}
+			`,
+			})
+
+		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from dep", strings.TrimSpace(out))
 	})
 }

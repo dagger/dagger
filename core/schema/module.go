@@ -537,7 +537,10 @@ func (s *moduleSchema) currentModuleWorkdir(
 		Path string
 		core.CopyFilter
 	},
-) (dagql.Instance[*core.Directory], error) {
+) (inst dagql.Instance[*core.Directory], err error) {
+	if !filepath.IsLocal(args.Path) {
+		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
+	}
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
 	host := &hostSchema{srv: s.dag}
 	return host.directory(ctx, &core.Host{Query: curMod.Module.Self.Query}, args)
@@ -549,7 +552,10 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 	args struct {
 		Path string
 	},
-) (dagql.Instance[*core.File], error) {
+) (inst dagql.Instance[*core.File], err error) {
+	if !filepath.IsLocal(args.Path) {
+		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
+	}
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
 	host := &hostSchema{srv: s.dag}
 	return host.file(ctx, &core.Host{Query: curMod.Module.Self.Query}, args)
@@ -869,7 +875,7 @@ func (s *moduleSchema) updateModuleConfig(ctx context.Context, mod *core.Module)
 		return modCfg.Dependencies[i].Source < modCfg.Dependencies[j].Source
 	})
 
-	if !hasSeparateRoot && modCfg.Name != "" && modCfg.SDK != "" {
+	if !hasSeparateRoot {
 		sourceRelSubpath := "."
 		var found bool
 		for _, rootFor := range modCfg.RootFor {
