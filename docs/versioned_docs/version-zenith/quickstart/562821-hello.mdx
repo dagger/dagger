@@ -1,0 +1,43 @@
+---
+slug: /quickstart/562821/hello
+hide_table_of_contents: true
+title: "Call your first Dagger function"
+---
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Call your first Dagger function
+
+Before you can start using Dagger, here are a few important concepts you need to know.
+
+- To use Dagger, you call functions. Dagger functions are regular code, written in any programming language, and run in containers. Dagger functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
+- The Dagger Engine provides some core functions, but you are encouraged to write your own and share them with others. Dagger also lets you import and reuse modules developed your team, your organization or the broader Dagger community. Functions are packaged, shared and reused using modules.
+- You can call functions from external modules in exactly the same way as you would call core functions. The simplest and most common way is to use the Dagger CLI, which you installed in the previous section. the Dagger CLI is a full-featured, easy to use tool that can be used interactively, from a shell script, or from a CI configuration. But Dagger functions can also be called from other Dagger functions.
+- Modules don't need to be installed locally. Dagger lets you consume modules from remote sources, such as GitHub repositories, as well.
+
+You're now ready to dive into Dagger and call your first function! Try the following command:
+
+```shell
+dagger call  -m github.com/vikram-dagger/daggerverse/hello-dagger hello-dagger
+```
+
+Here's what you should see:
+
+```shell
+dagger call hello-dagger [35.71s]
+┃      _
+┃   __| | __ _  __ _  __ _  ___ _ __
+┃  / _` |/ _` |/ _` |/ _` |/ _ \ '__|
+┃ | (_| | (_| | (_| | (_| |  __/ |
+┃  \__,_|\__,_|\__, |\__, |\___|_|
+┃              |___/ |___/
+```
+
+If you inspect the source code of the module, you'll see a `HelloFromDagger()` function, which starts with an `alpine:latest` container, installs and executes the `figlet` binary` and prints the word "dagger as a figlet.
+
+:::info
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why a function named `HelloFromDagger()` is invoked as `dagger call hello-dagger`.
+:::

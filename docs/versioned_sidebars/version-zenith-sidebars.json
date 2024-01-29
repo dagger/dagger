@@ -6,40 +6,24 @@
       "label": "Introduction"
     },
     {
+      "type": "doc",
+      "label": "Installation",
+      "id": "install"
+    },
+    {
       "type": "category",
-      "label": "Using Dagger",
-      "collapsible": true,
-      "collapsed": true,
+      "label": "Quickstart",
       "items": [
-        {
-          "type": "doc",
-          "label": "Installation",
-          "id": "user/install"
-        },
-        {
-          "type": "category",
-          "label": "Quickstart",
-          "items": [
-            "user/quickstart/index",
-            "user/quickstart/cli",
-            "user/quickstart/setup",
-            "user/quickstart/hello",
-            "user/quickstart/test",
-            "user/quickstart/build",
-            "user/quickstart/publish",
-            "user/quickstart/functions",
-            "user/quickstart/shell",
-            "user/quickstart/up",
-            "user/quickstart/daggerverse",
-            "user/quickstart/conclusion"
-          ]
-        }
-
+        "quickstart/index",
+        "quickstart/cli",
+        "quickstart/hello",
+        "quickstart/daggerverse",
+        "quickstart/conclusion"
       ]
     },
     {
       "type": "category",
-      "label": "Programming Dagger",
+      "label": "Developers",
       "collapsible": true,
       "collapsed": true,
       "items": [

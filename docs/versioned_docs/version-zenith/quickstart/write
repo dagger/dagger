@@ -1,0 +1,20 @@
+
+Modules can contain one or more functions. Module functions can accept and return both basic built-in types and more complex custom types.
+
+Modules can call each other. Dagger lets you add dependencies to your modules, so that you can build on modules created by others.
+
+This module defines a function named `HelloFromDagger()` which returns a string. This function performs the following operations:
+
+
+This first example is fairly simple: it creates a Dagger module that initializes a Node.js container, executes a command in that container, and prints the output.
+
+Begin by running `dagger mod init` in your application directory to bootstrap a new module using the Dagger Go SDK:
+
+```shell
+cd hello-dagger
+dagger mod init --name=my-module --sdk=go
+```
+
+This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
+
+Update the generated `main.go` file with the following code:

@@ -21,29 +21,17 @@ We're building the devops operating system, an integrated platform to orchestrat
 
 ### How do I install Dagger?
 
-Refer to the documentation for information on how to install the [Dagger CLI](./user/329058-install.mdx).
+Refer to the documentation for information on how to install the [Dagger CLI](./329058-install.mdx).
 
 ### How do I update Dagger?
 
-:::tip
-[Learn more about compatibility between the Dagger Engine, the Dagger CLI and Dagger SDKs](#what-compatibility-is-there-between-the-dagger-engine-dagger-sdks-and-dagger-cli-versions).
-:::
-
-#### CLI
-
-To install a Dagger CLI that matches your OS & architecture, run the following next to the `bin` directory where `dagger` is currently installed, e.g. `/usr/local`:
+To install a Dagger CLI that matches your OS & architecture, run the following:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | sh
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 ```
 
-The above will create `./bin/dagger`.
-
-If your user account doesn't have sufficient privileges to install in the specified location and `sudo` is available, use the following command instead:
-
-```shell
-curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
-```
+This installs `dagger` in `$HOME/.local/bin`:
 
 Homebrew users can alternatively use the following commands:
 
@@ -51,54 +39,6 @@ Homebrew users can alternatively use the following commands:
 brew update
 brew upgrade dagger
 ```
-
-#### SDKs
-
-To update a Dagger SDK, follow the same procedure that you would follow to update any other SDK package in your chosen development environment. For example:
-
-- Go SDK
-
-  ```shell
-  go get -u dagger.io/dagger
-  ```
-
-- Node.js SDK
-
-  <Tabs>
-  <TabItem value="npm">
-
-  ```shell
-  npm install @dagger.io/dagger@latest --save-dev
-  ```
-
-  </TabItem>
-  <TabItem value="yarn">
-
-  ```shell
-  yarn upgrade --latest @dagger.io/dagger --dev
-  ```
-
-  </TabItem>
-  </Tabs>
-
-- Python SDK
-
-  <Tabs>
-  <TabItem value="PyPI">
-
-  ```shell
-  pip install -U dagger-io
-  ```
-
-  </TabItem>
-  <TabItem value="Conda">
-
-  ```shell
-  conda update dagger-io
-  ```
-
-  </TabItem>
-  </Tabs>
 
 ### What compatibility is there between the Dagger Engine, Dagger SDKs and Dagger CLI versions?
 
@@ -251,4 +191,4 @@ No. You only need to know one of Dagger's supported SDKs languages to use Dagger
 
 ### There's no SDK for &lt;language&gt; yet. Can I still use Dagger?
 
-Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/)  or from the [Dagger CLI](./user/329058-install.mdx).
+Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/)  or from the [Dagger CLI](./329058-install.mdx).
