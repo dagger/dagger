@@ -352,7 +352,7 @@ func (t Engine) test(ctx context.Context, race bool, testRegex string) error {
 		"--jsonfile=./tests.log",
 		"--",
 		// go test flags
-		"-parallel=16",
+		"-parallel=64",
 		"-count=1",
 		"-timeout=15m",
 	}
