@@ -75,7 +75,7 @@ func CurrentFunctionCall() *dagger.FunctionCall {
 }
 
 // The module currently being served in the session, if any.
-func CurrentModule() *dagger.Module {
+func CurrentModule() *dagger.CurrentModule {
 	client := initClient()
 	return client.CurrentModule()
 }
@@ -144,6 +144,12 @@ func LoadCacheVolumeFromID(id dagger.CacheVolumeID) *dagger.CacheVolume {
 func LoadContainerFromID(id dagger.ContainerID) *dagger.Container {
 	client := initClient()
 	return client.LoadContainerFromID(id)
+}
+
+// Load a CurrentModule from its ID.
+func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
+	client := initClient()
+	return client.LoadCurrentModuleFromID(id)
 }
 
 // Load a Directory from its ID.

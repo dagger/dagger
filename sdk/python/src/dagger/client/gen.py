@@ -19,6 +19,11 @@ class ContainerID(Scalar):
     object of type Container."""
 
 
+class CurrentModuleID(Scalar):
+    """The `CurrentModuleID` scalar type represents an identifier for an
+    object of type CurrentModule."""
+
+
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
     object of type Directory."""
@@ -1844,6 +1849,171 @@ class Container(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+class CurrentModule(Type):
+    """Reflective module API provided to functions at runtime."""
+
+    @typecheck
+    async def id(self) -> CurrentModuleID:
+        """A unique identifier for this CurrentModule.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        CurrentModuleID
+            The `CurrentModuleID` scalar type represents an identifier for an
+            object of type CurrentModule.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(CurrentModuleID)
+
+    @typecheck
+    async def name(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def service(
+        self,
+        ports: Sequence[PortForward],
+        *,
+        host: str | None = "localhost",
+    ) -> "Service":
+        """TODO
+
+        Parameters
+        ----------
+        ports:
+            Ports to expose via the service, forwarding through the host
+            network.
+            If a port's frontend is unspecified or 0, it defaults to the same
+            as the backend port.
+            An empty set of ports is not valid; an error will be returned.
+        host:
+            Upstream host to forward traffic to.
+        """
+        _args = [
+            Arg("ports", ports),
+            Arg("host", host, "localhost"),
+        ]
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
+
+    @typecheck
+    def source(self) -> "Directory":
+        """TODO"""
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def tunnel(
+        self,
+        service: "Service",
+        *,
+        ports: Sequence[PortForward] | None = [],
+        native: bool | None = False,
+    ) -> "Service":
+        """TODO
+
+        Parameters
+        ----------
+        service:
+            Service to send traffic from the tunnel.
+        ports:
+            Configure explicit port forwarding rules for the tunnel.
+            If a port's frontend is unspecified or 0, a random port will be
+            chosen by the host.
+            If no ports are given, all of the service's ports are forwarded.
+            If native is true, each port maps to the same port on the host. If
+            native is false, each port maps to a random port chosen by the
+            host.
+            If ports are given and native is true, the ports are additive.
+        native:
+            Map each service port to the same port on the host, as if the
+            service were running natively.
+            Note: enabling may result in port conflicts.
+        """
+        _args = [
+            Arg("service", service),
+            Arg("ports", ports, []),
+            Arg("native", native, False),
+        ]
+        _ctx = self._select("tunnel", _args)
+        return Service(_ctx)
+
+    @typecheck
+    def workdir(
+        self,
+        path: str,
+        *,
+        exclude: Sequence[str] | None = [],
+        include: Sequence[str] | None = [],
+    ) -> "Directory":
+        """TODO
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to access (e.g., ".").
+        exclude:
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
+        include:
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
+        """
+        _args = [
+            Arg("path", path),
+            Arg("exclude", exclude, []),
+            Arg("include", include, []),
+        ]
+        _ctx = self._select("workdir", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def workdir_file(self, path: str) -> "File":
+        """TODO
+
+        Parameters
+        ----------
+        path:
+            Location of the file to retrieve (e.g., "README.md").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("workdirFile", _args)
+        return File(_ctx)
 
 
 class Directory(Type):
@@ -3985,6 +4155,9 @@ class Module(Type):
     async def dependency_config(self) -> list["ModuleDependency"]:
         _args: list[Arg] = []
         _ctx = self._select("dependencyConfig", _args)
+        _ctx = ModuleDependency(_ctx)._select_multiple(
+            _name="name",
+        )
         return await _ctx.execute(list[ModuleDependency])
 
     @typecheck
@@ -4154,14 +4327,14 @@ class Module(Type):
     @typecheck
     def with_dependencies(
         self,
-        dependencies: Sequence["ModuleSource"],
+        dependencies: Sequence["ModuleDependency"],
     ) -> "Module":
         """Update the module configuration to use the given dependencies.
 
         Parameters
         ----------
         dependencies:
-            The module sources of dependencies to use.
+            The dependency modules to install.
         """
         _args = [
             Arg("dependencies", dependencies),
@@ -4258,6 +4431,10 @@ class Module(Type):
 class ModuleDependency(Type):
     """The configuration of dependency of a module."""
 
+    __slots__ = ("_name",)
+
+    _name: str | None
+
     @typecheck
     async def id(self) -> ModuleDependencyID:
         """A unique identifier for this ModuleDependency.
@@ -4282,6 +4459,28 @@ class ModuleDependency(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleDependencyID)
+
+    @typecheck
+    async def name(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
     @typecheck
     def source(self) -> "ModuleSource":
@@ -4338,7 +4537,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def directory(self, *, path: str | None = "/") -> Directory:
+    def directory(self, path: str) -> Directory:
         """TODO
 
         Parameters
@@ -4347,7 +4546,7 @@ class ModuleSource(Type):
             TODO
         """
         _args = [
-            Arg("path", path, "/"),
+            Arg("path", path),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -4396,12 +4595,12 @@ class ModuleSource(Type):
         return await _ctx.execute(ModuleSourceKind)
 
     @typecheck
-    async def module_name(self) -> str | None:
+    async def module_name(self) -> str:
         """If set, the name of the module this source references
 
         Returns
         -------
-        str | None
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -4415,7 +4614,7 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("moduleName", _args)
-        return await _ctx.execute(str | None)
+        return await _ctx.execute(str)
 
     @typecheck
     def resolve_dependency(self, dep: "ModuleSource") -> "ModuleSource":
@@ -4827,11 +5026,11 @@ class Client(Root):
         return FunctionCall(_ctx)
 
     @typecheck
-    def current_module(self) -> Module:
+    def current_module(self) -> CurrentModule:
         """The module currently being served in the session, if any."""
         _args: list[Arg] = []
         _ctx = self._select("currentModule", _args)
-        return Module(_ctx)
+        return CurrentModule(_ctx)
 
     @typecheck
     async def current_type_defs(self) -> list["TypeDef"]:
@@ -5014,6 +5213,15 @@ class Client(Root):
         ]
         _ctx = self._select("loadContainerFromID", _args)
         return Container(_ctx)
+
+    @typecheck
+    def load_current_module_from_id(self, id: CurrentModuleID) -> CurrentModule:
+        """Load a CurrentModule from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCurrentModuleFromID", _args)
+        return CurrentModule(_ctx)
 
     @typecheck
     def load_directory_from_id(self, id: DirectoryID) -> Directory:
@@ -5281,6 +5489,29 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("module", _args)
         return Module(_ctx)
+
+    @typecheck
+    def module_dependency(
+        self,
+        source: ModuleSource,
+        *,
+        name: str | None = "",
+    ) -> ModuleDependency:
+        """TODO
+
+        Parameters
+        ----------
+        source:
+            TODO
+        name:
+            TODO
+        """
+        _args = [
+            Arg("source", source),
+            Arg("name", name, ""),
+        ]
+        _ctx = self._select("moduleDependency", _args)
+        return ModuleDependency(_ctx)
 
     @typecheck
     def module_source(
@@ -5949,6 +6180,8 @@ __all__ = [
     "Client",
     "Container",
     "ContainerID",
+    "CurrentModule",
+    "CurrentModuleID",
     "Directory",
     "DirectoryID",
     "EnvVariable",

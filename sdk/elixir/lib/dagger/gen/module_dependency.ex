@@ -16,6 +16,15 @@ defmodule Dagger.ModuleDependency do
 
   (
     @doc ""
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def name(%__MODULE__{} = module_dependency) do
+      selection = select(module_dependency.selection, "name")
+      execute(selection, module_dependency.client)
+    end
+  )
+
+  (
+    @doc ""
     @spec source(t()) :: Dagger.ModuleSource.t()
     def source(%__MODULE__{} = module_dependency) do
       selection = select(module_dependency.selection, "source")

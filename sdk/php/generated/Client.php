@@ -77,10 +77,10 @@ class Client extends Client\AbstractClient
     /**
      * The module currently being served in the session, if any.
      */
-    public function currentModule(): Module
+    public function currentModule(): CurrentModule
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('currentModule');
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -209,6 +209,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadContainerFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a CurrentModule from its ID.
+     */
+    public function loadCurrentModuleFromID(CurrentModuleId|CurrentModule $id): CurrentModule
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadCurrentModuleFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\CurrentModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -500,6 +510,19 @@ class Client extends Client\AbstractClient
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('module');
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * TODO
+     */
+    public function moduleDependency(ModuleSourceId|ModuleSource $source, ?string $name = ''): ModuleDependency
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleDependency');
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $name) {
+        $innerQueryBuilder->setArgument('name', $name);
+        }
+        return new \Dagger\ModuleDependency($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

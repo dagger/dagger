@@ -23,8 +23,8 @@ export async function register(
   files: string[],
   scanResult: ScanResult
 ): Promise<ModuleID> {
-  // Get the current module
-  let mod = dag.currentModule()
+  // Get a new module that we will fill in with all the types
+  let mod = dag.module_()
 
   // For each class scanned, register its type, method and properties in the module.
   Object.values(scanResult.classes).map((modClass) => {

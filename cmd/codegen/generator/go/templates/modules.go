@@ -73,7 +73,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 	objFunctionCases := map[string][]Code{}
 
-	createMod := Qual("dag", "CurrentModule").Call()
+	createMod := Qual("dag", "Module").Call()
 
 	objs := []types.Object{}
 	for _, name := range pkgScope.Names() {

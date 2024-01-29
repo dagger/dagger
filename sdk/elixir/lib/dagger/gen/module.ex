@@ -35,7 +35,7 @@ defmodule Dagger.Module do
     @spec dependency_config(t()) :: {:ok, [Dagger.ModuleDependency.t()]} | {:error, term()}
     def dependency_config(%__MODULE__{} = module) do
       selection = select(module.selection, "dependencyConfig")
-      selection = select(selection, "id source")
+      selection = select(selection, "id name source")
 
       with {:ok, data} <- execute(selection, module.client) do
         {:ok,
@@ -173,8 +173,8 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "Update the module configuration to use the given dependencies.\n\n## Required Arguments\n\n* `dependencies` - The module sources of dependencies to use."
-    @spec with_dependencies(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.Module.t()
+    @doc "Update the module configuration to use the given dependencies.\n\n## Required Arguments\n\n* `dependencies` - The dependency modules to install."
+    @spec with_dependencies(t(), [Dagger.ModuleDependencyID.t()]) :: Dagger.Module.t()
     def with_dependencies(%__MODULE__{} = module, dependencies) do
       selection = select(module.selection, "withDependencies")
       selection = arg(selection, "dependencies", dependencies)

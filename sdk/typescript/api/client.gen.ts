@@ -420,6 +420,59 @@ export type ContainerWithoutExposedPortOpts = {
  */
 export type ContainerID = string & { __ContainerID: never }
 
+export type CurrentModuleServiceOpts = {
+  /**
+   * Upstream host to forward traffic to.
+   */
+  host?: string
+
+  /**
+   * Ports to expose via the service, forwarding through the host network.
+   *
+   * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
+   *
+   * An empty set of ports is not valid; an error will be returned.
+   */
+  ports: PortForward[]
+}
+
+export type CurrentModuleTunnelOpts = {
+  /**
+   * Configure explicit port forwarding rules for the tunnel.
+   *
+   * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
+   *
+   * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
+   *
+   * If ports are given and native is true, the ports are additive.
+   */
+  ports?: PortForward[]
+
+  /**
+   * Map each service port to the same port on the host, as if the service were running natively.
+   *
+   * Note: enabling may result in port conflicts.
+   */
+  native?: boolean
+}
+
+export type CurrentModuleWorkdirOpts = {
+  /**
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   */
+  exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  include?: string[]
+}
+
+/**
+ * The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
+ */
+export type CurrentModuleID = string & { __CurrentModuleID: never }
+
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's source code.
@@ -714,13 +767,6 @@ export type ModuleDependencyID = string & { __ModuleDependencyID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
-export type ModuleSourceDirectoryOpts = {
-  /**
-   * TODO
-   */
-  path?: string
-}
-
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -832,6 +878,13 @@ export type ClientHttpOpts = {
    * A service which must be started before the URL is fetched.
    */
   experimentalServiceHost?: Service
+}
+
+export type ClientModuleDependencyOpts = {
+  /**
+   * TODO
+   */
+  name?: string
 }
 
 export type ClientModuleSourceOpts = {
@@ -2528,6 +2581,170 @@ export class Container extends BaseClient {
    */
   with = (arg: (param: Container) => Container) => {
     return arg(this)
+  }
+}
+
+/**
+ * Reflective module API provided to functions at runtime.
+ */
+export class CurrentModule extends BaseClient {
+  private readonly _id?: CurrentModuleID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: CurrentModuleID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this CurrentModule.
+   */
+  id = async (): Promise<CurrentModuleID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<CurrentModuleID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   * @param opts.host Upstream host to forward traffic to.
+   * @param opts.ports Ports to expose via the service, forwarding through the host network.
+   *
+   * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
+   *
+   * An empty set of ports is not valid; an error will be returned.
+   */
+  service = (opts?: CurrentModuleServiceOpts): Service => {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "service",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  source = (): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "source",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * TODO
+   * @param service Service to send traffic from the tunnel.
+   * @param opts.ports Configure explicit port forwarding rules for the tunnel.
+   *
+   * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
+   *
+   * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
+   *
+   * If ports are given and native is true, the ports are additive.
+   * @param opts.native Map each service port to the same port on the host, as if the service were running natively.
+   *
+   * Note: enabling may result in port conflicts.
+   */
+  tunnel = (service: Service, opts?: CurrentModuleTunnelOpts): Service => {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "tunnel",
+          args: { service, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * TODO
+   * @param path Location of the directory to access (e.g., ".").
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
+  workdir = (path: string, opts?: CurrentModuleWorkdirOpts): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "workdir",
+          args: { path, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * TODO
+   * @param path Location of the file to retrieve (e.g., "README.md").
+   */
+  workdirFile = (path: string): File => {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "workdirFile",
+          args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 }
 
@@ -5114,9 +5331,9 @@ export class Module_ extends BaseClient {
 
   /**
    * Update the module configuration to use the given dependencies.
-   * @param dependencies The module sources of dependencies to use.
+   * @param dependencies The dependency modules to install.
    */
-  withDependencies = (dependencies: ModuleSource[]): Module_ => {
+  withDependencies = (dependencies: ModuleDependency[]): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
@@ -5244,17 +5461,20 @@ export class Module_ extends BaseClient {
  */
 export class ModuleDependency extends BaseClient {
   private readonly _id?: ModuleDependencyID = undefined
+  private readonly _name?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: ModuleDependencyID
+    _id?: ModuleDependencyID,
+    _name?: string
   ) {
     super(parent)
 
     this._id = _id
+    this._name = _name
   }
 
   /**
@@ -5270,6 +5490,23 @@ export class ModuleDependency extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
         },
       ],
       await this._ctx.connection()
@@ -5401,15 +5638,15 @@ export class ModuleSource extends BaseClient {
 
   /**
    * TODO
-   * @param opts.path TODO
+   * @param path TODO
    */
-  directory = (opts?: ModuleSourceDirectoryOpts): Directory => {
+  directory = (path: string): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { ...opts },
+          args: { path },
         },
       ],
       ctx: this._ctx,
@@ -5934,8 +6171,8 @@ export class Client extends BaseClient {
   /**
    * The module currently being served in the session, if any.
    */
-  currentModule = (): Module_ => {
-    return new Module_({
+  currentModule = (): CurrentModule => {
+    return new CurrentModule({
       queryTree: [
         ...this._queryTree,
         {
@@ -6151,6 +6388,22 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadContainerFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a CurrentModule from its ID.
+   */
+  loadCurrentModuleFromID = (id: CurrentModuleID): CurrentModule => {
+    return new CurrentModule({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadCurrentModuleFromID",
           args: { id },
         },
       ],
@@ -6619,6 +6872,27 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "module",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * TODO
+   * @param source TODO
+   * @param opts.name TODO
+   */
+  moduleDependency = (
+    source: ModuleSource,
+    opts?: ClientModuleDependencyOpts
+  ): ModuleDependency => {
+    return new ModuleDependency({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "moduleDependency",
+          args: { source, ...opts },
         },
       ],
       ctx: this._ctx,

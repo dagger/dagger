@@ -22,6 +22,12 @@ class ModuleDependency extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\ModuleDependencyId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
     public function source(): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('source');

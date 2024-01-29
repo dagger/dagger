@@ -341,8 +341,23 @@ func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Modul
 	if !ok {
 		return nil, fmt.Errorf("expected Module result, got %T", result)
 	}
-	newMod := inst.Self.Clone()
+
+	newMod := mod.Clone()
+	newMod.Description = inst.Self.Description
+	for _, obj := range inst.Self.ObjectDefs {
+		newMod, err = newMod.WithObject(ctx, obj)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add object to module %q: %w", mod.Name(), err)
+		}
+	}
+	for _, iface := range inst.Self.InterfaceDefs {
+		newMod, err = newMod.WithInterface(ctx, iface)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add interface to module %q: %w", mod.Name(), err)
+		}
+	}
 	newMod.InstanceID = newID
+
 	return newMod, nil
 }
 
@@ -838,13 +853,22 @@ func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error
 	if !def.AsObject.Valid {
 		return nil, fmt.Errorf("expected object type def, got %s: %+v", def.Kind, def)
 	}
-	if err := mod.validateTypeDef(ctx, def); err != nil {
-		return nil, fmt.Errorf("failed to validate type def: %w", err)
+
+	// skip validation+namespacing for module objects being constructed by SDK with* calls
+	// they will be validated when merged into the real final module
+
+	if mod.Deps != nil {
+		if err := mod.validateTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to validate type def: %w", err)
+		}
 	}
-	def = def.Clone()
-	if err := mod.namespaceTypeDef(ctx, def); err != nil {
-		return nil, fmt.Errorf("failed to namespace type def: %w", err)
+	if mod.NameField != "" {
+		def = def.Clone()
+		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to namespace type def: %w", err)
+		}
 	}
+
 	mod.ObjectDefs = append(mod.ObjectDefs, def)
 	return mod, nil
 }
@@ -854,13 +878,43 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 	if !def.AsInterface.Valid {
 		return nil, fmt.Errorf("expected interface type def, got %s: %+v", def.Kind, def)
 	}
-	if err := mod.validateTypeDef(ctx, def); err != nil {
-		return nil, fmt.Errorf("failed to validate type def: %w", err)
+
+	// skip validation+namespacing for module objects being constructed by SDK with* calls
+	// they will be validated when merged into the real final module
+
+	if mod.Deps != nil {
+		if err := mod.validateTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to validate type def: %w", err)
+		}
 	}
-	def = def.Clone()
-	if err := mod.namespaceTypeDef(ctx, def); err != nil {
-		return nil, fmt.Errorf("failed to namespace type def: %w", err)
+	if mod.NameField != "" {
+		def = def.Clone()
+		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to namespace type def: %w", err)
+		}
 	}
+
 	mod.InterfaceDefs = append(mod.InterfaceDefs, def)
 	return mod, nil
+}
+
+type CurrentModule struct {
+	Module dagql.Instance[*Module]
+}
+
+func (*CurrentModule) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "CurrentModule",
+		NonNull:   true,
+	}
+}
+
+func (*CurrentModule) TypeDescription() string {
+	return "Reflective module API provided to functions at runtime."
+}
+
+func (mod CurrentModule) Clone() *CurrentModule {
+	cp := mod
+	cp.Module.Self = mod.Module.Self.Clone()
+	return &cp
 }

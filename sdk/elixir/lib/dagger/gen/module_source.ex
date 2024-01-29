@@ -52,18 +52,11 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "TODO\n\n\n\n## Optional Arguments\n\n* `path` - TODO"
-    @spec directory(t(), keyword()) :: Dagger.Directory.t()
-    def directory(%__MODULE__{} = module_source, optional_args \\ []) do
+    @doc "TODO\n\n## Required Arguments\n\n* `path` - TODO"
+    @spec directory(t(), Dagger.String.t()) :: Dagger.Directory.t()
+    def directory(%__MODULE__{} = module_source, path) do
       selection = select(module_source.selection, "directory")
-
-      selection =
-        if is_nil(optional_args[:path]) do
-          selection
-        else
-          arg(selection, "path", optional_args[:path])
-        end
-
+      selection = arg(selection, "path", path)
       %Dagger.Directory{selection: selection, client: module_source.client}
     end
   )
@@ -88,7 +81,7 @@ defmodule Dagger.ModuleSource do
 
   (
     @doc "If set, the name of the module this source references"
-    @spec module_name(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
+    @spec module_name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def module_name(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "moduleName")
       execute(selection, module_source.client)

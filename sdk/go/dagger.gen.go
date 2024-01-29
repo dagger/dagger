@@ -174,6 +174,9 @@ type CacheVolumeID string
 // The `ContainerID` scalar type represents an identifier for an object of type Container.
 type ContainerID string
 
+// The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
+type CurrentModuleID string
+
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
 
@@ -1718,6 +1721,179 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Reflective module API provided to functions at runtime.
+type CurrentModule struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id   *CurrentModuleID
+	name *string
+}
+
+// A unique identifier for this CurrentModule.
+func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response CurrentModuleID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *CurrentModule) XXX_GraphQLType() string {
+	return "CurrentModule"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CurrentModule) XXX_GraphQLIDType() string {
+	return "CurrentModuleID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *CurrentModule) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *CurrentModule) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// TODO
+func (r *CurrentModule) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// CurrentModuleServiceOpts contains options for CurrentModule.Service
+type CurrentModuleServiceOpts struct {
+	// Upstream host to forward traffic to.
+	Host string
+}
+
+// TODO
+func (r *CurrentModule) Service(ports []PortForward, opts ...CurrentModuleServiceOpts) *Service {
+	q := r.q.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `host` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Host) {
+			q = q.Arg("host", opts[i].Host)
+		}
+	}
+	q = q.Arg("ports", ports)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *CurrentModule) Source() *Directory {
+	q := r.q.Select("source")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// CurrentModuleTunnelOpts contains options for CurrentModule.Tunnel
+type CurrentModuleTunnelOpts struct {
+	// Configure explicit port forwarding rules for the tunnel.
+	//
+	// If a port's frontend is unspecified or 0, a random port will be chosen by the host.
+	//
+	// If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
+	//
+	// If ports are given and native is true, the ports are additive.
+	Ports []PortForward
+	// Map each service port to the same port on the host, as if the service were running natively.
+	//
+	// Note: enabling may result in port conflicts.
+	Native bool
+}
+
+// TODO
+func (r *CurrentModule) Tunnel(service *Service, opts ...CurrentModuleTunnelOpts) *Service {
+	assertNotNil("service", service)
+	q := r.q.Select("tunnel")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
+		}
+		// `native` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Native) {
+			q = q.Arg("native", opts[i].Native)
+		}
+	}
+	q = q.Arg("service", service)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
+// CurrentModuleWorkdirOpts contains options for CurrentModule.Workdir
+type CurrentModuleWorkdirOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+	Exclude []string
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+	Include []string
+}
+
+// TODO
+func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *Directory {
+	q := r.q.Select("workdir")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *CurrentModule) WorkdirFile(path string) *File {
+	q := r.q.Select("workdirFile")
+	q = q.Arg("path", path)
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A directory.
@@ -4324,21 +4500,10 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// ModuleSourceDirectoryOpts contains options for ModuleSource.Directory
-type ModuleSourceDirectoryOpts struct {
-	// TODO
-	Path string
-}
-
 // TODO
-func (r *ModuleSource) Directory(opts ...ModuleSourceDirectoryOpts) *Directory {
+func (r *ModuleSource) Directory(path string) *Directory {
 	q := r.q.Select("directory")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `path` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Path) {
-			q = q.Arg("path", opts[i].Path)
-		}
-	}
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -4795,10 +4960,10 @@ func (r *Client) CurrentFunctionCall() *FunctionCall {
 }
 
 // The module currently being served in the session, if any.
-func (r *Client) CurrentModule() *Module {
+func (r *Client) CurrentModule() *CurrentModule {
 	q := r.q.Select("currentModule")
 
-	return &Module{
+	return &CurrentModule{
 		q: q,
 		c: r.c,
 	}
@@ -4997,6 +5162,17 @@ func (r *Client) LoadContainerFromID(id ContainerID) *Container {
 	q = q.Arg("id", id)
 
 	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Load a CurrentModule from its ID.
+func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
+	q := r.q.Select("loadCurrentModuleFromID")
+	q = q.Arg("id", id)
+
+	return &CurrentModule{
 		q: q,
 		c: r.c,
 	}

@@ -126,6 +126,14 @@ func (s *moduleSchema) Install() {
 		dagql.NodeFunc("initialize", s.moduleInitialize).
 			Doc(`Retrieves the module with the objects loaded via its SDK.`),
 
+		dagql.Func("withName", s.moduleWithName).
+			Doc(`Update the module configuration to use the given name.`).
+			ArgDoc("name", `The name to use.`),
+
+		dagql.Func("withSDK", s.moduleWithSDK).
+			Doc(`Update the module configuration to use the given sdk.`).
+			ArgDoc("sdk", `The sdk to use.`),
+
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
 			ArgDoc("description", `The description to set`),
@@ -135,14 +143,6 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
-
-		dagql.Func("withName", s.moduleWithName).
-			Doc(`Update the module configuration to use the given name.`).
-			ArgDoc("name", `The name to use.`),
-
-		dagql.Func("withSDK", s.moduleWithSDK).
-			Doc(`Update the module configuration to use the given sdk.`).
-			ArgDoc("sdk", `The sdk to use.`),
 
 		dagql.Func("withDependencies", s.moduleWithDependencies).
 			Doc(`Update the module configuration to use the given dependencies.`).
@@ -159,6 +159,52 @@ func (s *moduleSchema) Install() {
 			Impure(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
 				`Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.`),
+	}.Install(s.dag)
+
+	dagql.Fields[*core.CurrentModule]{
+		dagql.Func("name", s.currentModuleName).
+			Doc(`TODO`),
+
+		dagql.Func("source", s.currentModuleSource).
+			Doc(`TODO`),
+
+		dagql.Func("workdir", s.currentModuleWorkdir).
+			Impure(`TODO`).
+			Doc(`TODO`).
+			ArgDoc("path", `Location of the directory to access (e.g., ".").`).
+			ArgDoc("exclude", `Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`).
+			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+
+		dagql.Func("workdirFile", s.currentModuleWorkdirFile).
+			Impure(`TODO`).
+			Doc(`TODO`).
+			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
+
+		dagql.Func("tunnel", s.currentModuleTunnel).
+			Impure(`TODO`).
+			Doc(`TODO`).
+			ArgDoc("service", `Service to send traffic from the tunnel.`).
+			ArgDoc("native",
+				`Map each service port to the same port on the host, as if the service were running natively.`,
+				`Note: enabling may result in port conflicts.`).
+			ArgDoc("ports",
+				`Configure explicit port forwarding rules for the tunnel.`,
+				`If a port's frontend is unspecified or 0, a random port will be chosen
+				by the host.`,
+				`If no ports are given, all of the service's ports are forwarded. If
+				native is true, each port maps to the same port on the host. If native
+				is false, each port maps to a random port chosen by the host.`,
+				`If ports are given and native is true, the ports are additive.`),
+
+		dagql.Func("service", s.currentModuleService).
+			Impure(`TODO`).
+			Doc(`TODO`).
+			ArgDoc("ports",
+				`Ports to expose via the service, forwarding through the host network.`,
+				`If a port's frontend is unspecified or 0, it defaults to the same as
+				the backend port.`,
+				`An empty set of ports is not valid; an error will be returned.`).
+			ArgDoc("host", `Upstream host to forward traffic to.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.Function]{
@@ -438,17 +484,21 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, sourceDir dagql.In
 	return inst.Self, nil
 }
 
-func (s *moduleSchema) currentModule(ctx context.Context, self *core.Query, _ struct{}) (inst dagql.Instance[*core.Module], err error) {
+func (s *moduleSchema) currentModule(
+	ctx context.Context,
+	self *core.Query,
+	_ struct{},
+) (*core.CurrentModule, error) {
 	id, err := self.CurrentModule(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get current module: %w", err)
+		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
 	mod, err := id.Load(ctx, s.dag)
 	if err != nil {
-		return inst, fmt.Errorf("failed to load current module: %w", err)
+		return nil, fmt.Errorf("failed to load current module: %w", err)
 	}
 
-	return mod, nil
+	return &core.CurrentModule{Module: mod}, nil
 }
 
 func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query, _ struct{}) (*core.FunctionCall, error) {
@@ -474,30 +524,115 @@ func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core
 	return dagql.Null[core.Void](), fnCall.ReturnValue(ctx, args.Value)
 }
 
-func (s *moduleSchema) moduleWithDescription(ctx context.Context, modMeta *core.Module, args struct {
+func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Module, args struct {
 	Description string
 }) (*core.Module, error) {
-	return modMeta.WithDescription(args.Description), nil
+	return mod.WithDescription(args.Description), nil
 }
 
-func (s *moduleSchema) moduleWithObject(ctx context.Context, modMeta *core.Module, args struct {
+func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, args struct {
 	Object core.TypeDefID
 }) (_ *core.Module, rerr error) {
 	def, err := args.Object.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
 	}
-	return modMeta.WithObject(ctx, def.Self)
+	return mod.WithObject(ctx, def.Self)
 }
 
-func (s *moduleSchema) moduleWithInterface(ctx context.Context, modMeta *core.Module, args struct {
+func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
 	Iface core.TypeDefID
 }) (_ *core.Module, rerr error) {
 	def, err := args.Iface.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
 	}
-	return modMeta.WithInterface(ctx, def.Self)
+	return mod.WithInterface(ctx, def.Self)
+}
+
+func (s *moduleSchema) currentModuleName(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (string, error) {
+	return curMod.Module.Self.Name(), nil
+}
+
+func (s *moduleSchema) currentModuleSource(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct{},
+) (*core.Directory, error) {
+	rootDir := curMod.Module.Self.Source.Self.RootDirectory
+	subdir, err := curMod.Module.Self.Source.Self.Subpath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module source subpath: %w", err)
+	}
+	if subdir == "/" {
+		return rootDir.Self.Clone(), nil
+	}
+	err = s.dag.Select(ctx, rootDir, &rootDir,
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(subdir)},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module source subdirectory: %w", err)
+	}
+	return rootDir.Self, nil
+}
+
+func (s *moduleSchema) currentModuleWorkdir(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct {
+		Path string
+		core.CopyFilter
+	},
+) (dagql.Instance[*core.Directory], error) {
+	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
+	host := &hostSchema{srv: s.dag}
+	return host.directory(ctx, &core.Host{curMod.Module.Self.Query}, args)
+}
+
+func (s *moduleSchema) currentModuleWorkdirFile(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct {
+		Path string
+	},
+) (dagql.Instance[*core.File], error) {
+	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
+	host := &hostSchema{srv: s.dag}
+	return host.file(ctx, &core.Host{curMod.Module.Self.Query}, args)
+}
+
+func (s *moduleSchema) currentModuleTunnel(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct {
+		Service core.ServiceID
+		Ports   []dagql.InputObject[core.PortForward] `default:"[]"`
+		Native  bool                                  `default:"false"`
+	},
+) (*core.Service, error) {
+	host := &hostSchema{srv: s.dag}
+	return host.tunnel(ctx, &core.Host{curMod.Module.Self.Query}, args)
+}
+
+func (s *moduleSchema) currentModuleService(
+	ctx context.Context,
+	curMod *core.CurrentModule,
+	args struct {
+		Host  string `default:"localhost"`
+		Ports []dagql.InputObject[core.PortForward]
+	},
+) (*core.Service, error) {
+	host := &hostSchema{srv: s.dag}
+	return host.service(ctx, &core.Host{curMod.Module.Self.Query}, args)
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {

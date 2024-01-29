@@ -76,10 +76,10 @@ defmodule Dagger.Client do
 
   (
     @doc "The module currently being served in the session, if any."
-    @spec current_module(t()) :: Dagger.Module.t()
+    @spec current_module(t()) :: Dagger.CurrentModule.t()
     def current_module(%__MODULE__{} = query) do
       selection = select(query.selection, "currentModule")
-      %Dagger.Module{selection: selection, client: query.client}
+      %Dagger.CurrentModule{selection: selection, client: query.client}
     end
   )
 
@@ -263,6 +263,16 @@ defmodule Dagger.Client do
       selection = select(query.selection, "loadContainerFromID")
       selection = arg(selection, "id", container)
       %Dagger.Container{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a CurrentModule from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_current_module_from_id(t(), Dagger.CurrentModule.t()) :: Dagger.CurrentModule.t()
+    def load_current_module_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadCurrentModuleFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.CurrentModule{selection: selection, client: query.client}
     end
   )
 
@@ -557,6 +567,25 @@ defmodule Dagger.Client do
     def module(%__MODULE__{} = query) do
       selection = select(query.selection, "module")
       %Dagger.Module{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "TODO\n\n## Required Arguments\n\n* `source` - TODO\n\n## Optional Arguments\n\n* `name` - TODO"
+    @spec module_dependency(t(), Dagger.ModuleSource.t(), keyword()) ::
+            Dagger.ModuleDependency.t()
+    def module_dependency(%__MODULE__{} = query, source, optional_args \\ []) do
+      selection = select(query.selection, "moduleDependency")
+      selection = arg(selection, "source", source)
+
+      selection =
+        if is_nil(optional_args[:name]) do
+          selection
+        else
+          arg(selection, "name", optional_args[:name])
+        end
+
+      %Dagger.ModuleDependency{selection: selection, client: query.client}
     end
   )
 
