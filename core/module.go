@@ -170,7 +170,7 @@ func (mod *Module) WithDependencies(
 		i, dep := i, dep
 
 		eg.Go(func() error {
-			err := srv.Select(ctx, mod.Source, &dependencies[i].Source,
+			err := srv.Select(ctx, mod.Source, &clonedDependencies[i].Source,
 				dagql.Selector{
 					Field: "resolveDependency",
 					Args: []dagql.NamedInput{
@@ -200,7 +200,7 @@ func (mod *Module) WithDependencies(
 		}
 		depSet[symbolic] = dep
 	}
-	for _, newDep := range dependencies {
+	for _, newDep := range clonedDependencies {
 		symbolic, err := newDep.Source.Self.Symbolic()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get symbolic source ref: %w", err)

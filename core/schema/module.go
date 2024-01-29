@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
-	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -42,7 +40,6 @@ func (s *moduleSchema) Install() {
 			ArgDoc("stable", `If true, enforce that the source is a stable version for source kinds that support versioning.`),
 
 		dagql.Func("moduleDependency", s.moduleDependency).
-			Impure(`TODO - needed for it to work consistently, unknown yet why`).
 			Doc(`Create a new module dependency configuration from a module source and name`).
 			ArgDoc("source", `The source of the dependency`).
 			ArgDoc("name", `If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default.`),
@@ -638,49 +635,10 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 				return fmt.Errorf("failed to create module source from dependency: %w", err)
 			}
 
-			// TODO: leaving while debugging need for impure on moduleDependency
-			randID := identity.NewID()
-			depSrcSubpath, err := depSrc.Self.Subpath()
-			if err != nil {
-				return fmt.Errorf("failed to get module source subpath: %w", err)
+			deps[i] = &core.ModuleDependency{
+				Source: depSrc,
+				Name:   depCfg.Name,
 			}
-			slog.Debug(
-				"WITH SOURCE DEP",
-				"depCfgSrc", depCfg.Source,
-				"depSrcSubpath", depSrcSubpath,
-				"depSrcDirSet", depSrc.Self.RootDirectory.Self != nil,
-				"id", randID,
-			)
-			// TODO: can undo this and just make object direct now, no longer needed
-			// to go through select, but also want to understand why it's not working
-			// unless impure is set...
-			var dep dagql.Instance[*core.ModuleDependency]
-			err = s.dag.Select(ctx, s.dag.Root(), &dep,
-				dagql.Selector{
-					Field: "moduleDependency",
-					Args: []dagql.NamedInput{
-						{Name: "source", Value: dagql.NewID[*core.ModuleSource](depSrc.ID())},
-						{Name: "name", Value: dagql.String(depCfg.Name)},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to create module dependency: %w", err)
-			}
-			// TODO:
-			depSrcSubpath, err = dep.Self.Source.Self.Subpath()
-			if err != nil {
-				return fmt.Errorf("failed to get module source subpath: %w", err)
-			}
-			slog.Debug(
-				"WITH SOURCE DEP2",
-				"depCfgSrc", depCfg.Source,
-				"depSrcSubpath", depSrcSubpath,
-				"depSrcDirSet", dep.Self.Source.Self.RootDirectory.Self != nil,
-				"id", randID,
-			)
-
-			deps[i] = dep.Self
 			return nil
 		})
 	}
