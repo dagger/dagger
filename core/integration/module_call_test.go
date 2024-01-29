@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -327,6 +328,43 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
 			require.ErrorContains(t, err, `unsupported secret arg source: "wtf"`)
 		})
+	})
+
+	t.Run("cache volume args", func(t *testing.T) {
+		t.Parallel()
+
+		volName := identity.NewID()
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (string, error) {
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithMountedCache("/cache", cache).
+		WithExec([]string{"sh", "-c", "echo $0 >> /cache/vals", val}).
+		WithExec([]string{"cat", "/cache/vals"}).
+		Stdout(ctx)
+}
+`,
+			})
+
+		out, err := modGen.With(daggerCall("cacher", "--cache", volName, "--val", "foo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\n\n", out) // TODO: extra linebreak from 'dagger call'
+		out, err = modGen.With(daggerCall("cacher", "--cache", volName, "--val", "bar")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\nbar\n\n", out) // TODO: extra linebreak from 'dagger call'
 	})
 }
 
