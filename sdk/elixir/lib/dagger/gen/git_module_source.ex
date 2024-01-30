@@ -6,7 +6,7 @@ defmodule Dagger.GitModuleSource do
   defstruct [:selection, :client]
 
   (
-    @doc "The URL from which the source's git repo can be cloned from"
+    @doc "The URL from which the source's git repo can be cloned."
     @spec clone_url(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def clone_url(%__MODULE__{} = git_module_source) do
       selection = select(git_module_source.selection, "cloneURL")

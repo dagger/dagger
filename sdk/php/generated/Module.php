@@ -32,13 +32,7 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The module's root directory containing the config file for it and its source
-     *
-     * (possibly as a subdir). It includes any generated code or updated config files
-     *
-     * created after initial load, but not any files/directories that were unchanged
-     *
-     * after sdk codegen was run.
+     * The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
      */
     public function generatedSourceRootDirectory(): Directory
     {
@@ -156,7 +150,7 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Update the module configuration to use the given sdk.
+     * Update the module configuration to use the given SDK.
      */
     public function withSDK(string $sdk): Module
     {

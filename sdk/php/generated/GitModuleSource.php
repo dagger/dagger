@@ -14,7 +14,7 @@ namespace Dagger;
 class GitModuleSource extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The URL from which the source's git repo can be cloned from
+     * The URL from which the source's git repo can be cloned.
      */
     public function cloneURL(): string
     {

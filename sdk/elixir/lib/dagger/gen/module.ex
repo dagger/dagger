@@ -60,7 +60,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "The module's root directory containing the config file for it and its source\n\n(possibly as a subdir). It includes any generated code or updated config files\n\ncreated after initial load, but not any files/directories that were unchanged\n\nafter sdk codegen was run."
+    @doc "The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run."
     @spec generated_source_root_directory(t()) :: Dagger.Directory.t()
     def generated_source_root_directory(%__MODULE__{} = module) do
       selection = select(module.selection, "generatedSourceRootDirectory")
@@ -233,7 +233,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "Update the module configuration to use the given sdk.\n\n## Required Arguments\n\n* `sdk` - The sdk to use."
+    @doc "Update the module configuration to use the given SDK.\n\n## Required Arguments\n\n* `sdk` - The SDK to use."
     @spec with_sdk(t(), Dagger.String.t()) :: Dagger.Module.t()
     def with_sdk(%__MODULE__{} = module, sdk) do
       selection = select(module.selection, "withSDK")

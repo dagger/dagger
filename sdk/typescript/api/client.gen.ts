@@ -4117,7 +4117,7 @@ export class GitModuleSource extends BaseClient {
   }
 
   /**
-   * The URL from which the source's git repo can be cloned from
+   * The URL from which the source's git repo can be cloned.
    */
   cloneURL = async (): Promise<string> => {
     if (this._cloneURL) {
@@ -5104,13 +5104,7 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The module's root directory containing the config file for it and its source
-   *
-   * (possibly as a subdir). It includes any generated code or updated config files
-   *
-   * created after initial load, but not any files/directories that were unchanged
-   *
-   * after sdk codegen was run.
+   * The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
    */
   generatedSourceRootDirectory = (): Directory => {
     return new Directory({
@@ -5359,8 +5353,8 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * Update the module configuration to use the given sdk.
-   * @param sdk The sdk to use.
+   * Update the module configuration to use the given SDK.
+   * @param sdk The SDK to use.
    */
   withSDK = (sdk: string): Module_ => {
     return new Module_({

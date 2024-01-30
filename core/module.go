@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -270,19 +271,25 @@ func (mod *Module) WithDependencies(
 	// impact the final module will still result in us considering the two modules different.
 	// E.g. if you initialize a module from a source directory that had a no-op file change
 	// made to it, the ID used here will still change.
-	selfID := mod.Source.ID().String()
-	memo := make(map[string]struct{}) // set of id strings
+	selfDgst, err := mod.Source.ID().Digest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get digest of module source: %w", err)
+	}
+	memo := make(map[digest.Digest]struct{}) // set of id digests
 	var visit func(dagql.Instance[*Module]) error
 	visit = func(inst dagql.Instance[*Module]) error {
-		instID := inst.Self.Source.ID().String()
-		if instID == selfID {
+		instDgst, err := inst.Self.Source.ID().Digest()
+		if err != nil {
+			return fmt.Errorf("failed to get digest of module source: %w", err)
+		}
+		if instDgst == selfDgst {
 			return fmt.Errorf("module %s has a circular dependency", mod.NameField)
 		}
 
-		if _, ok := memo[instID]; ok {
+		if _, ok := memo[instDgst]; ok {
 			return nil
 		}
-		memo[instID] = struct{}{}
+		memo[instDgst] = struct{}{}
 
 		for _, dep := range inst.Self.DependenciesField {
 			if err := visit(dep); err != nil {

@@ -3320,7 +3320,7 @@ class GitModuleSource(Type):
 
     @typecheck
     async def clone_url(self) -> str:
-        """The URL from which the source's git repo can be cloned from
+        """The URL from which the source's git repo can be cloned.
 
         Returns
         -------
@@ -4159,15 +4159,9 @@ class Module(Type):
     @typecheck
     def generated_source_root_directory(self) -> Directory:
         """The module's root directory containing the config file for it and its
-        source
-
-        (possibly as a subdir). It includes any generated code or updated
-        config files
-
-        created after initial load, but not any files/directories that were
-        unchanged
-
-        after sdk codegen was run.
+        source (possibly as a subdir). It includes any generated code or
+        updated config files created after initial load, but not any
+        files/directories that were unchanged after sdk codegen was run.
         """
         _args: list[Arg] = []
         _ctx = self._select("generatedSourceRootDirectory", _args)
@@ -4369,12 +4363,12 @@ class Module(Type):
 
     @typecheck
     def with_sdk(self, sdk: str) -> "Module":
-        """Update the module configuration to use the given sdk.
+        """Update the module configuration to use the given SDK.
 
         Parameters
         ----------
         sdk:
-            The sdk to use.
+            The SDK to use.
         """
         _args = [
             Arg("sdk", sdk),

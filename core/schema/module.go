@@ -109,7 +109,7 @@ func (s *moduleSchema) Install() {
 
 	dagql.Fields[*core.GitModuleSource]{
 		dagql.Func("cloneURL", s.gitModuleSourceCloneURL).
-			Doc(`The URL from which the source's git repo can be cloned from`),
+			Doc(`The URL from which the source's git repo can be cloned.`),
 
 		dagql.Func("htmlURL", s.gitModuleSourceHTMLURL).
 			Doc(`The URL to the source's git repo in a web browser`),
@@ -130,8 +130,8 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `The name to use.`),
 
 		dagql.Func("withSDK", s.moduleWithSDK).
-			Doc(`Update the module configuration to use the given sdk.`).
-			ArgDoc("sdk", `The sdk to use.`),
+			Doc(`Update the module configuration to use the given SDK.`).
+			ArgDoc("sdk", `The SDK to use.`),
 
 		dagql.Func("withDescription", s.moduleWithDescription).
 			Doc(`Retrieves the module with the given description`).
@@ -149,10 +149,10 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("generatedSourceRootDirectory", s.moduleGeneratedSourceRootDirectory).
 			Doc(
-				`The module's root directory containing the config file for it and its source`,
-				`(possibly as a subdir). It includes any generated code or updated config files`,
-				`created after initial load, but not any files/directories that were unchanged`,
-				`after sdk codegen was run.`,
+				`The module's root directory containing the config file for it and its source
+				(possibly as a subdir). It includes any generated code or updated config files
+				created after initial load, but not any files/directories that were unchanged
+				after sdk codegen was run.`,
 			),
 
 		dagql.NodeFunc("serve", s.moduleServe).
@@ -392,7 +392,6 @@ func (s *moduleSchema) moduleDependency(
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode dependency source: %w", err)
 	}
-	src.Self = src.Self.Clone()
 
 	return &core.ModuleDependency{
 		Source: src,
@@ -551,8 +550,21 @@ func (s *moduleSchema) currentModuleWorkdir(
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
-	host := &hostSchema{srv: s.dag}
-	return host.directory(ctx, &core.Host{Query: curMod.Module.Self.Query}, args)
+
+	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "directory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(args.Path)},
+				{Name: "exclude", Value: asArrayInput(args.Exclude, dagql.NewString)},
+				{Name: "include", Value: asArrayInput(args.Include, dagql.NewString)},
+			},
+		},
+	)
+	return inst, err
 }
 
 func (s *moduleSchema) currentModuleWorkdirFile(
@@ -566,8 +578,19 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 		return inst, fmt.Errorf("workdir path %q escapes workdir", args.Path)
 	}
 	args.Path = filepath.Join(runtimeWorkdirPath, args.Path)
-	host := &hostSchema{srv: s.dag}
-	return host.file(ctx, &core.Host{Query: curMod.Module.Self.Query}, args)
+
+	err = s.dag.Select(ctx, s.dag.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(args.Path)},
+			},
+		},
+	)
+	return inst, err
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {

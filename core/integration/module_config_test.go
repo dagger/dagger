@@ -465,4 +465,66 @@ func TestModuleCustomDepNames(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hi from dep", strings.TrimSpace(out))
 	})
+
+	t.Run("two deps with same name", func(t *testing.T) {
+		t.Parallel()
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep1").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep1/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) Fn(ctx context.Context) string { 
+				return "hi from dep1"
+			}
+			`,
+			}).
+			WithWorkdir("/work/dep2").
+			With(daggerExec("mod", "init", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep2/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) Fn(ctx context.Context) string { 
+				return "hi from dep2"
+			}
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			With(daggerExec("mod", "install", "--name", "foo", "./dep1")).
+			With(daggerExec("mod", "install", "--name", "bar", "./dep2")).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) { 
+				dep1, err := dag.Foo().Fn(ctx)
+				if err != nil {
+					return "", err
+				}
+				dep2, err := dag.Bar().Fn(ctx)
+				if err != nil {
+					return "", err
+				}
+				return dep1 + " " + dep2, nil
+			}
+			`,
+			})
+
+		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from dep1 hi from dep2", strings.TrimSpace(out))
+	})
 }

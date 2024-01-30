@@ -3116,7 +3116,7 @@ type GitModuleSource struct {
 	version       *string
 }
 
-// The URL from which the source's git repo can be cloned from
+// The URL from which the source's git repo can be cloned.
 func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
 	if r.cloneURL != nil {
 		return *r.cloneURL, nil
@@ -4070,13 +4070,7 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The module's root directory containing the config file for it and its source
-//
-// (possibly as a subdir). It includes any generated code or updated config files
-//
-// created after initial load, but not any files/directories that were unchanged
-//
-// after sdk codegen was run.
+// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
 func (r *Module) GeneratedSourceRootDirectory() *Directory {
 	q := r.q.Select("generatedSourceRootDirectory")
 
@@ -4307,7 +4301,7 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
-// Update the module configuration to use the given sdk.
+// Update the module configuration to use the given SDK.
 func (r *Module) WithSDK(sdk string) *Module {
 	q := r.q.Select("withSDK")
 	q = q.Arg("sdk", sdk)

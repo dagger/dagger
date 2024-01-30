@@ -3386,7 +3386,7 @@ pub struct GitModuleSource {
     pub graphql_client: DynGraphQLClient,
 }
 impl GitModuleSource {
-    /// The URL from which the source's git repo can be cloned from
+    /// The URL from which the source's git repo can be cloned.
     pub async fn clone_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneURL");
         query.execute(self.graphql_client.clone()).await
@@ -3887,10 +3887,7 @@ impl Module {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The module's root directory containing the config file for it and its source
-    /// (possibly as a subdir). It includes any generated code or updated config files
-    /// created after initial load, but not any files/directories that were unchanged
-    /// after sdk codegen was run.
+    /// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
     pub fn generated_source_root_directory(&self) -> Directory {
         let query = self.selection.select("generatedSourceRootDirectory");
         return Directory {
@@ -4025,11 +4022,11 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Update the module configuration to use the given sdk.
+    /// Update the module configuration to use the given SDK.
     ///
     /// # Arguments
     ///
-    /// * `sdk` - The sdk to use.
+    /// * `sdk` - The SDK to use.
     pub fn with_sdk(&self, sdk: impl Into<String>) -> Module {
         let mut query = self.selection.select("withSDK");
         query = query.arg("sdk", sdk.into());
