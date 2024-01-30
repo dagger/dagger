@@ -296,7 +296,6 @@ func TestModuleSourceConfigs(t *testing.T) {
 			ents := strings.Fields(strings.TrimSpace(out))
 			require.Equal(t, []string{
 				".gitattributes",
-				".gitignore",
 				"LICENSE",
 				"dagger.gen.go",
 				"dagger.json",

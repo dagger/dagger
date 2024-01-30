@@ -288,21 +288,8 @@ func (sdk *goSDK) Codegen(
 		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
 	}
 
-	var generated dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, configDir, &generated, dagql.Selector{
-		Field: "diff",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "other",
-				Value: dagql.NewID[*core.Directory](modifiedSrcDir.ID()),
-			},
-		},
-	}); err != nil {
-		return nil, fmt.Errorf("failed to get generated source directory for go module sdk codegen: %w", err)
-	}
-
 	return &core.GeneratedCode{
-		Code: generated,
+		Code: modifiedSrcDir,
 		VCSGeneratedPaths: []string{
 			"dagger.gen.go",
 			"querybuilder/**",

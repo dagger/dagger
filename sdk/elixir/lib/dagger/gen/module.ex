@@ -60,7 +60,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "The module's root directory containing the config file for it and its source\n\n(possibly as a subdir). It includes any generated code or updated config files\n\ncreated after initial load."
+    @doc "The module's root directory containing the config file for it and its source\n\n(possibly as a subdir). It includes any generated code or updated config files\n\ncreated after initial load, but not any files/directories that were unchanged\n\nafter sdk codegen was run."
     @spec generated_source_root_directory(t()) :: Dagger.Directory.t()
     def generated_source_root_directory(%__MODULE__{} = module) do
       selection = select(module.selection, "generatedSourceRootDirectory")

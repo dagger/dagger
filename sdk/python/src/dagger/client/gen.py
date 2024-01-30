@@ -4164,7 +4164,10 @@ class Module(Type):
         (possibly as a subdir). It includes any generated code or updated
         config files
 
-        created after initial load.
+        created after initial load, but not any files/directories that were
+        unchanged
+
+        after sdk codegen was run.
         """
         _args: list[Arg] = []
         _ctx = self._select("generatedSourceRootDirectory", _args)

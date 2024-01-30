@@ -4074,7 +4074,9 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 //
 // (possibly as a subdir). It includes any generated code or updated config files
 //
-// created after initial load.
+// created after initial load, but not any files/directories that were unchanged
+//
+// after sdk codegen was run.
 func (r *Module) GeneratedSourceRootDirectory() *Directory {
 	q := r.q.Select("generatedSourceRootDirectory")
 

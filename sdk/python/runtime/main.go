@@ -66,10 +66,7 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 		},
 	})
 
-	modified := ctr.Directory(ModSourceDirPath)
-	diff := modSource.RootDirectory().Diff(modified)
-
-	return dag.GeneratedCode(diff).
+	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths(
 			[]string{genDir + "/**"},
 		).

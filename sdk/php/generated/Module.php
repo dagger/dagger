@@ -36,7 +36,9 @@ class Module extends Client\AbstractObject implements Client\IdAble
      *
      * (possibly as a subdir). It includes any generated code or updated config files
      *
-     * created after initial load.
+     * created after initial load, but not any files/directories that were unchanged
+     *
+     * after sdk codegen was run.
      */
     public function generatedSourceRootDirectory(): Directory
     {

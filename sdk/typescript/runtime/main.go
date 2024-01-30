@@ -63,12 +63,7 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 		return nil, err
 	}
 
-	// Compare difference to improve performances
-	modified := ctr.Directory(ModSourceDirPath)
-	diff := modSource.RootDirectory().Diff(modified)
-
-	// Return the difference and fill .gitignore
-	return dag.GeneratedCode(diff).
+	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths([]string{
 			genDir + "/**",
 		}).
