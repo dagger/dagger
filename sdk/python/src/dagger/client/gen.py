@@ -3268,12 +3268,41 @@ class GeneratedCode(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
+    async def vcs_ignored_paths(self) -> list[str]:
+        """Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("vcsIgnoredPaths", _args)
+        return await _ctx.execute(list[str])
+
+    @typecheck
     def with_vcs_generated_paths(self, paths: Sequence[str]) -> "GeneratedCode":
         """Set the list of paths to mark generated in version control."""
         _args = [
             Arg("paths", paths),
         ]
         _ctx = self._select("withVCSGeneratedPaths", _args)
+        return GeneratedCode(_ctx)
+
+    @typecheck
+    def with_vcs_ignored_paths(self, paths: Sequence[str]) -> "GeneratedCode":
+        """Set the list of paths to ignore in version control."""
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withVCSIgnoredPaths", _args)
         return GeneratedCode(_ctx)
 
     def with_(

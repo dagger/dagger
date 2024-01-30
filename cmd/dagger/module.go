@@ -53,6 +53,7 @@ func init() {
 	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.PersistentFlags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.PersistentFlags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
+	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
 
 	modulePublishCmd.PersistentFlags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean.")
 
@@ -134,13 +135,10 @@ var moduleCmd = &cobra.Command{
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:    "init",
+	Use:    "init [--sdk string --name string]",
 	Short:  "Initialize a new dagger module in a local directory.",
 	Hidden: false,
 	RunE: func(cmd *cobra.Command, _ []string) (rerr error) {
-		if xor(sdk == "", moduleName == "") {
-			return fmt.Errorf("must specify both --sdk and --name or neither")
-		}
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -182,20 +180,14 @@ var moduleInitCmd = &cobra.Command{
 	},
 }
 
-func xor(a, b bool) bool {
-	return (a || b) && !(a && b)
-}
-
 var moduleInstallCmd = &cobra.Command{
-	Use:     "install",
+	Use:     "install MODULE",
 	Aliases: []string{"use"},
 	Short:   "Add a new dependency to a dagger module",
 	Hidden:  false,
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		if len(extraArgs) != 1 {
-			return fmt.Errorf("expected exactly one argument for the dependency to install")
-		}
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, "")

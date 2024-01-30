@@ -71,6 +71,9 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 	return dag.GeneratedCode(diff).
 		WithVCSGeneratedPaths([]string{
 			genDir + "/**",
+		}).
+		WithVCSIgnoredPaths([]string{
+			genDir,
 		}), nil
 }
 

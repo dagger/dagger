@@ -10,14 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-/*
-	TODO: more tests:
-
-* dagger mod init --name=test when there's already a module named test at subdir ./test and in the current dir's dagger.json
-* variations of above when doing init when there's already a dagger.json w/ root-for settings
-* new -m behavior: refer by name, can init sdk-less module and install, use -m with it, etc.
-* aliased deps avoid name conflicts
-*/
 func TestModuleSourceConfigs(t *testing.T) {
 	// test dagger.json source configs that aren't inherently covered in other tests
 
@@ -304,6 +296,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 			ents := strings.Fields(strings.TrimSpace(out))
 			require.Equal(t, []string{
 				".gitattributes",
+				".gitignore",
 				"LICENSE",
 				"dagger.gen.go",
 				"dagger.json",

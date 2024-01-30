@@ -3072,9 +3072,29 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 	return response, q.Execute(ctx, r.c)
 }
 
+func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
+	q := r.q.Select("vcsIgnoredPaths")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Set the list of paths to mark generated in version control.
 func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
 	q := r.q.Select("withVCSGeneratedPaths")
+	q = q.Arg("paths", paths)
+
+	return &GeneratedCode{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Set the list of paths to ignore in version control.
+func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
+	q := r.q.Select("withVCSIgnoredPaths")
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{

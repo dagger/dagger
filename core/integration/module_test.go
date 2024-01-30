@@ -497,6 +497,7 @@ func TestModuleGit(t *testing.T) {
 	type testCase struct {
 		sdk               string
 		gitGeneratedFiles []string
+		gitIgnoredFiles   []string
 	}
 	for _, tc := range []testCase{
 		{
@@ -511,11 +512,17 @@ func TestModuleGit(t *testing.T) {
 			gitGeneratedFiles: []string{
 				"/sdk/**",
 			},
+			gitIgnoredFiles: []string{
+				"/sdk",
+			},
 		},
 		{
 			sdk: "typescript",
 			gitGeneratedFiles: []string{
 				"/sdk/**",
+			},
+			gitIgnoredFiles: []string{
+				"/sdk",
 			},
 		},
 	} {
@@ -545,6 +552,15 @@ func TestModuleGit(t *testing.T) {
 					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated=true\n", fileName))
 				}
 			})
+			if len(tc.gitIgnoredFiles) > 0 {
+				t.Run("configures .gitignore", func(t *testing.T) {
+					ignore, err := modGen.File(".gitignore").Contents(ctx)
+					require.NoError(t, err)
+					for _, fileName := range tc.gitIgnoredFiles {
+						require.Contains(t, ignore, fileName)
+					}
+				})
+			}
 		})
 	}
 }

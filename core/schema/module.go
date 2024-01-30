@@ -238,6 +238,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
 			Doc(`Set the list of paths to mark generated in version control.`),
+		dagql.Func("withVCSIgnoredPaths", s.generatedCodeWithVCSIgnoredPaths).
+			Doc(`Set the list of paths to ignore in version control.`),
 	}.Install(s.dag)
 }
 
@@ -335,6 +337,12 @@ func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, c
 	Paths []string
 }) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
+}
+
+func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
+	Paths []string
+}) (*core.GeneratedCode, error) {
+	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
 func (s *moduleSchema) module(ctx context.Context, query *core.Query, _ struct{}) (*core.Module, error) {
@@ -995,6 +1003,28 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 			[]byte(fmt.Sprintf("/%s linguist-generated=true\n", fileName))...,
 		)
 	}
+	// update .gitignore
+	gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
+	var gitIgnoreContents []byte
+	gitIgnoreFile, err := mod.GeneratedSourceRootDirectory.Self.File(ctx, gitIgnorePath)
+	if err == nil {
+		gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get git attributes file contents: %w", err)
+		}
+		if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
+			gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
+		}
+	}
+	for _, fileName := range generatedCode.VCSIgnoredPaths {
+		if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
+			// already has some config for the file
+			continue
+		}
+		gitIgnoreContents = append(gitIgnoreContents,
+			[]byte(fmt.Sprintf("/%s\n", fileName))...,
+		)
+	}
 
 	err = s.dag.Select(ctx, mod.GeneratedSourceRootDirectory, &mod.GeneratedSourceRootDirectory,
 		dagql.Selector{
@@ -1005,9 +1035,17 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 				{Name: "permissions", Value: dagql.Int(0600)},
 			},
 		},
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(gitIgnorePath)},
+				{Name: "contents", Value: dagql.String(gitIgnoreContents)},
+				{Name: "permissions", Value: dagql.Int(0600)},
+			},
+		},
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to add git attributes file: %w", err)
+		return nil, fmt.Errorf("failed to add vcs generated file: %w", err)
 	}
 
 	return mod, nil

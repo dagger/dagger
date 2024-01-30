@@ -70,9 +70,12 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 	diff := modSource.RootDirectory().Diff(modified)
 
 	return dag.GeneratedCode(diff).
-		WithVCSGeneratedPaths([]string{
-			genDir + "/**",
-		}), nil
+		WithVCSGeneratedPaths(
+			[]string{genDir + "/**"},
+		).
+		WithVCSIgnoredPaths(
+			[]string{genDir},
+		), nil
 }
 
 func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
@@ -82,7 +85,7 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 	}
 
 	return m.Base("").
-		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
+		WithMountedDirectory(sdkSrc, m.SDKSourceDir.WithoutDirectory("runtime")).
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory("./template")).
 		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc}).
 		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).

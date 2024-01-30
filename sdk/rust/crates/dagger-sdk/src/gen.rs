@@ -3348,9 +3348,26 @@ impl GeneratedCode {
         let query = self.selection.select("vcsGeneratedPaths");
         query.execute(self.graphql_client.clone()).await
     }
+    pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("vcsIgnoredPaths");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Set the list of paths to mark generated in version control.
     pub fn with_vcs_generated_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
         let mut query = self.selection.select("withVCSGeneratedPaths");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        return GeneratedCode {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Set the list of paths to ignore in version control.
+    pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
+        let mut query = self.selection.select("withVCSIgnoredPaths");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),

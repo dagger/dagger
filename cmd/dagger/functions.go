@@ -380,6 +380,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 		}
 	}()
 
+	load := vtx.Task("loading module")
 	modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
@@ -387,7 +388,6 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	if !modConf.FullyInitialized() {
 		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalSourcePath)
 	}
-	load := vtx.Task("loading module")
 	mod := modConf.Mod.Initialize()
 	_, err = mod.Serve(ctx)
 	load.Done(err)

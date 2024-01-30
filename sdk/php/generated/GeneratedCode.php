@@ -34,12 +34,28 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble
         return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
     }
 
+    public function vcsIgnoredPaths(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsIgnoredPaths');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'vcsIgnoredPaths');
+    }
+
     /**
      * Set the list of paths to mark generated in version control.
      */
     public function withVCSGeneratedPaths(array $paths): GeneratedCode
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVCSGeneratedPaths');
+        $innerQueryBuilder->setArgument('paths', $paths);
+        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Set the list of paths to ignore in version control.
+     */
+    public function withVCSIgnoredPaths(array $paths): GeneratedCode
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVCSIgnoredPaths');
         $innerQueryBuilder->setArgument('paths', $paths);
         return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
