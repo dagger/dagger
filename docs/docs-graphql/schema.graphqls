@@ -1882,7 +1882,7 @@ type Service {
   """Stop the service."""
   stop(
     """Immediately kill the service without waiting for a graceful exit"""
-    kill: Boolean
+    kill: Boolean = false
   ): ServiceID!
 
   """

@@ -5295,7 +5295,7 @@ class Service(Type):
         return Service(_ctx)
 
     @typecheck
-    async def stop(self, *, kill: bool | None = None) -> "Service":
+    async def stop(self, *, kill: bool | None = False) -> "Service":
         """Stop the service.
 
         Parameters
@@ -5311,7 +5311,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("kill", kill, None),
+            Arg("kill", kill, False),
         ]
         _ctx = self._select("stop", _args)
         _id = await _ctx.execute(ServiceID)

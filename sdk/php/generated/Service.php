@@ -73,7 +73,7 @@ class Service extends Client\AbstractObject implements Client\IdAble
     /**
      * Stop the service.
      */
-    public function stop(?bool $kill = null): ServiceId
+    public function stop(?bool $kill = false): ServiceId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
         if (null !== $kill) {

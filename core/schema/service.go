@@ -103,11 +103,11 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.Instance[*core.S
 }
 
 type serviceStopArgs struct {
-	Kill dagql.Optional[dagql.Boolean]
+	Kill bool `default:"false"`
 }
 
 func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Service], args serviceStopArgs) (core.ServiceID, error) {
-	if err := parent.Self.Stop(ctx, parent.ID(), bool(args.Kill.GetOr(false))); err != nil {
+	if err := parent.Self.Stop(ctx, parent.ID(), args.Kill); err != nil {
 		return core.ServiceID{}, err
 	}
 	return dagql.NewID[*core.Service](parent.ID()), nil
