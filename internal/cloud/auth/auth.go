@@ -73,7 +73,7 @@ func Login(ctx context.Context) error {
 		requestCh <- r
 	})
 
-	srv := &http.Server{ // nolint: gosec
+	srv := &http.Server{ //nolint: gosec
 		Addr:    fmt.Sprintf("localhost:%d", callbackPort),
 		Handler: m,
 	}

@@ -112,8 +112,6 @@ func (s *moduleSchema) newModuleSDK(
 }
 
 // Codegen calls the Codegen function on the SDK Module
-//
-//nolint:dupl
 func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
 	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {
@@ -141,8 +139,6 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, source dagq
 }
 
 // Runtime calls the Runtime function on the SDK Module
-//
-//nolint:dupl
 func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
 	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
 	if err != nil {

@@ -164,6 +164,5 @@ func TestSecretBigScrubbed(t *testing.T) {
 	require.Equal(t, "***", stdout)
 }
 
-//nolint:typecheck
 //go:embed testdata/secretkey.txt
 var secretKeyBytes []byte

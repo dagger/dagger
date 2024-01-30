@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 )
