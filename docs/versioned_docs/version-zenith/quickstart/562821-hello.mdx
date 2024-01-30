@@ -36,7 +36,7 @@ dagger call hello-dagger [35.71s]
 ┃              |___/ |___/
 ```
 
-As you can see, Dagger ran this module directly from its GitHub repository. And, if you inspect the source code of the module, you'll see a `HelloDagger()` function which starts with an `alpine:latest` container, installs and executes the `figlet` binary` and prints the word "dagger" as a figlet.
+As you can see, Dagger ran this module directly from its GitHub repository. And, if you [inspect the source code of the module](https://github.com/vikram-dagger/daggerverse/blob/main/hello-dagger/main.go), you'll see a `HelloDagger()` function which starts with an `alpine:latest` container, installs and executes the `figlet` binary` and prints the word "dagger" as a figlet.
 
 :::info
 When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `HelloDagger()` is invoked as `dagger call hello-dagger`.
