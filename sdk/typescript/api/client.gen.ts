@@ -27,7 +27,6 @@ interface ClientConfig {
   ctx?: Context
 }
 
-
 class BaseClient {
   protected _queryTree: QueryTree[]
   protected _ctx: Context
@@ -64,7 +63,6 @@ export type BuildArg = {
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
-
   /**
    * Shares the cache volume amongst many build pipelines, but will serialize the writes
    */
@@ -83,26 +81,26 @@ export enum CacheSharingMode {
 /**
  * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
  */
-export type CacheVolumeID = string & {__CacheVolumeID: never}
+export type CacheVolumeID = string & { __CacheVolumeID: never }
 
 export type ContainerAsTarballOpts = {
   /**
    * Identifiers for other platform specific containers.
-   * 
+   *
    * Used for multi-platform images.
    */
   platformVariants?: Container[]
 
   /**
    * Force each layer of the image to use the specified compression algorithm.
-   * 
+   *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    */
   forcedCompression?: ImageLayerCompression
 
   /**
    * Use the specified media types for the image's layers.
-   * 
+   *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
@@ -126,9 +124,9 @@ export type ContainerBuildOpts = {
 
   /**
    * Secrets to pass to the build.
-   * 
+   *
    * They will be mounted at /run/secrets/[secret-name] in the build container
-   * 
+   *
    * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl http://example.com?token=$(cat /run/secrets/my-secret)
    */
   secrets?: Secret[]
@@ -137,21 +135,21 @@ export type ContainerBuildOpts = {
 export type ContainerExportOpts = {
   /**
    * Identifiers for other platform specific containers.
-   * 
+   *
    * Used for multi-platform image.
    */
   platformVariants?: Container[]
 
   /**
    * Force each layer of the exported image to use the specified compression algorithm.
-   * 
+   *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    */
   forcedCompression?: ImageLayerCompression
 
   /**
    * Use the specified media types for the exported image's layers.
-   * 
+   *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
@@ -179,21 +177,21 @@ export type ContainerPipelineOpts = {
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
-   * 
+   *
    * Used for multi-platform image.
    */
   platformVariants?: Container[]
 
   /**
    * Force each layer of the published image to use the specified compression algorithm.
-   * 
+   *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    */
   forcedCompression?: ImageLayerCompression
 
   /**
    * Use the specified media types for the published image's layers.
-   * 
+   *
    * Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
    */
   mediaTypes?: ImageMediaTypes
@@ -219,9 +217,9 @@ export type ContainerWithDirectoryOpts = {
 
   /**
    * A user:group to set for the directory and its contents.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -264,7 +262,7 @@ export type ContainerWithExecOpts = {
 
   /**
    * Provides dagger access to the executed command.
-   * 
+   *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
@@ -300,9 +298,9 @@ export type ContainerWithFileOpts = {
 
   /**
    * A user:group to set for the file.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -321,11 +319,11 @@ export type ContainerWithMountedCacheOpts = {
 
   /**
    * A user:group to set for the mounted cache directory.
-   * 
+   *
    * Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -334,9 +332,9 @@ export type ContainerWithMountedCacheOpts = {
 export type ContainerWithMountedDirectoryOpts = {
   /**
    * A user:group to set for the mounted directory and its contents.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -345,9 +343,9 @@ export type ContainerWithMountedDirectoryOpts = {
 export type ContainerWithMountedFileOpts = {
   /**
    * A user or user:group to set for the mounted file.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -356,16 +354,16 @@ export type ContainerWithMountedFileOpts = {
 export type ContainerWithMountedSecretOpts = {
   /**
    * A user:group to set for the mounted secret.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
 
   /**
    * Permission given to the mounted secret (e.g., 0600).
-   * 
+   *
    * This option requires an owner to be set to be active.
    */
   mode?: number
@@ -384,9 +382,9 @@ export type ContainerWithNewFileOpts = {
 
   /**
    * A user:group to set for the file.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -395,9 +393,9 @@ export type ContainerWithNewFileOpts = {
 export type ContainerWithUnixSocketOpts = {
   /**
    * A user:group to set for the mounted socket.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
@@ -420,7 +418,7 @@ export type ContainerWithoutExposedPortOpts = {
 /**
  * The `ContainerID` scalar type represents an identifier for an object of type Container.
  */
-export type ContainerID = string & {__ContainerID: never}
+export type ContainerID = string & { __ContainerID: never }
 
 export type CurrentModuleWorkdirOpts = {
   /**
@@ -444,7 +442,7 @@ export type DirectoryAsModuleOpts = {
    * An optional subpath of the directory which contains the module's configuration file.
    *
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-   * 
+   *
    * If not set, the module source code is loaded from the root of the directory.
    */
   sourceRootPath?: string
@@ -473,7 +471,7 @@ export type DirectoryDockerBuildOpts = {
 
   /**
    * Secrets to pass to the build.
-   * 
+   *
    * They will be mounted at /run/secrets/[secret-name].
    */
   secrets?: Secret[]
@@ -534,17 +532,17 @@ export type DirectoryWithNewFileOpts = {
 /**
  * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
  */
-export type DirectoryID = string & {__DirectoryID: never}
+export type DirectoryID = string & { __DirectoryID: never }
 
 /**
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
  */
-export type EnvVariableID = string & {__EnvVariableID: never}
+export type EnvVariableID = string & { __EnvVariableID: never }
 
 /**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
-export type FieldTypeDefID = string & {__FieldTypeDefID: never}
+export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 
 export type FileExportOpts = {
   /**
@@ -556,7 +554,7 @@ export type FileExportOpts = {
 /**
  * The `FileID` scalar type represents an identifier for an object of type File.
  */
-export type FileID = string & {__FileID: never}
+export type FileID = string & { __FileID: never }
 
 export type FunctionWithArgOpts = {
   /**
@@ -573,27 +571,29 @@ export type FunctionWithArgOpts = {
 /**
  * The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
  */
-export type FunctionArgID = string & {__FunctionArgID: never}
+export type FunctionArgID = string & { __FunctionArgID: never }
 
 /**
  * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
  */
-export type FunctionCallArgValueID = string & {__FunctionCallArgValueID: never}
+export type FunctionCallArgValueID = string & {
+  __FunctionCallArgValueID: never
+}
 
 /**
  * The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
  */
-export type FunctionCallID = string & {__FunctionCallID: never}
+export type FunctionCallID = string & { __FunctionCallID: never }
 
 /**
  * The `FunctionID` scalar type represents an identifier for an object of type Function.
  */
-export type FunctionID = string & {__FunctionID: never}
+export type FunctionID = string & { __FunctionID: never }
 
 /**
  * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
  */
-export type GeneratedCodeID = string & {__GeneratedCodeID: never}
+export type GeneratedCodeID = string & { __GeneratedCodeID: never }
 
 /**
  * The `GitModuleSourceID` scalar type represents an identifier for an object of type GitModuleSource.
@@ -615,12 +615,12 @@ export type GitRefTreeOpts = {
 /**
  * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
  */
-export type GitRefID = string & {__GitRefID: never}
+export type GitRefID = string & { __GitRefID: never }
 
 /**
  * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
  */
-export type GitRepositoryID = string & {__GitRepositoryID: never}
+export type GitRepositoryID = string & { __GitRepositoryID: never }
 
 export type HostDirectoryOpts = {
   /**
@@ -642,9 +642,9 @@ export type HostServiceOpts = {
 
   /**
    * Ports to expose via the service, forwarding through the host network.
-   * 
+   *
    * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-   * 
+   *
    * An empty set of ports is not valid; an error will be returned.
    */
   ports: PortForward[]
@@ -653,18 +653,18 @@ export type HostServiceOpts = {
 export type HostTunnelOpts = {
   /**
    * Configure explicit port forwarding rules for the tunnel.
-   * 
+   *
    * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-   * 
+   *
    * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-   * 
+   *
    * If ports are given and native is true, the ports are additive.
    */
   ports?: PortForward[]
 
   /**
    * Map each service port to the same port on the host, as if the service were running natively.
-   * 
+   *
    * Note: enabling may result in port conflicts.
    */
   native?: boolean
@@ -673,7 +673,7 @@ export type HostTunnelOpts = {
 /**
  * The `HostID` scalar type represents an identifier for an object of type Host.
  */
-export type HostID = string & {__HostID: never}
+export type HostID = string & { __HostID: never }
 
 /**
  * Compression algorithm to use for image layers.
@@ -694,27 +694,27 @@ export enum ImageMediaTypes {
 /**
  * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
  */
-export type InputTypeDefID = string & {__InputTypeDefID: never}
+export type InputTypeDefID = string & { __InputTypeDefID: never }
 
 /**
  * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
  */
-export type InterfaceTypeDefID = string & {__InterfaceTypeDefID: never}
+export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
 
 /**
  * An arbitrary JSON-encoded value.
  */
-export type JSON = string & {__JSON: never}
+export type JSON = string & { __JSON: never }
 
 /**
  * The `LabelID` scalar type represents an identifier for an object of type Label.
  */
-export type LabelID = string & {__LabelID: never}
+export type LabelID = string & { __LabelID: never }
 
 /**
  * The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
  */
-export type ListTypeDefID = string & {__ListTypeDefID: never}
+export type ListTypeDefID = string & { __ListTypeDefID: never }
 
 /**
  * The `LocalModuleSourceID` scalar type represents an identifier for an object of type LocalModuleSource.
@@ -729,7 +729,7 @@ export type ModuleDependencyID = string & { __ModuleDependencyID: never }
 /**
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
-export type ModuleID = string & {__ModuleID: never}
+export type ModuleID = string & { __ModuleID: never }
 
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
@@ -753,7 +753,7 @@ export enum NetworkProtocol {
 /**
  * The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
  */
-export type ObjectTypeDefID = string & {__ObjectTypeDefID: never}
+export type ObjectTypeDefID = string & { __ObjectTypeDefID: never }
 
 export type PipelineLabel = {
   /**
@@ -769,10 +769,10 @@ export type PipelineLabel = {
 
 /**
  * The platform config OS and architecture in a Container.
- * 
+ *
  * The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
  */
-export type Platform = string & {__Platform: never}
+export type Platform = string & { __Platform: never }
 
 export type PortForward = {
   /**
@@ -794,7 +794,7 @@ export type PortForward = {
 /**
  * The `PortID` scalar type represents an identifier for an object of type Port.
  */
-export type PortID = string & {__PortID: never}
+export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
   /**
@@ -873,7 +873,7 @@ export type ClientPipelineOpts = {
 /**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
-export type SecretID = string & {__SecretID: never}
+export type SecretID = string & { __SecretID: never }
 
 export type ServiceEndpointOpts = {
   /**
@@ -911,17 +911,17 @@ export type ServiceUpOpts = {
 /**
  * The `ServiceID` scalar type represents an identifier for an object of type Service.
  */
-export type ServiceID = string & {__ServiceID: never}
+export type ServiceID = string & { __ServiceID: never }
 
 /**
  * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
-export type SocketID = string & {__SocketID: never}
+export type SocketID = string & { __SocketID: never }
 
 /**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
  */
-export type TerminalID = string & {__TerminalID: never}
+export type TerminalID = string & { __TerminalID: never }
 
 export type TypeDefWithFieldOpts = {
   /**
@@ -941,13 +941,12 @@ export type TypeDefWithObjectOpts = {
 /**
  * The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
  */
-export type TypeDefID = string & {__TypeDefID: never}
+export type TypeDefID = string & { __TypeDefID: never }
 
 /**
  * Distinguishes the different kinds of TypeDefs.
  */
 export enum TypeDefKind {
-
   /**
    * A boolean value.
    */
@@ -965,21 +964,21 @@ export enum TypeDefKind {
 
   /**
    * A named type of functions that can be matched+implemented by other objects+interfaces.
-   * 
+   *
    * Always paired with an InterfaceTypeDef.
    */
   InterfaceKind = "INTERFACE_KIND",
 
   /**
    * A list of values all having the same type.
-   * 
+   *
    * Always paired with a ListTypeDef.
    */
   ListKind = "LIST_KIND",
 
   /**
    * A named type defined in the GraphQL schema, with fields and functions.
-   * 
+   *
    * Always paired with an ObjectTypeDef.
    */
   ObjectKind = "OBJECT_KIND",
@@ -991,17 +990,17 @@ export enum TypeDefKind {
 
   /**
    * A special kind used to signify that no value is returned.
-   * 
+   *
    * This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
    */
   VoidKind = "VOID_KIND",
 }
 /**
  * The absence of a value.
- * 
+ *
  * A Null Void is used as a placeholder for resolvers that do not return anything.
  */
-export type Void = string & {__Void: never}
+export type Void = string & { __Void: never }
 
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
@@ -1010,13 +1009,6 @@ export type __TypeEnumValuesOpts = {
 export type __TypeFieldsOpts = {
   includeDeprecated?: boolean
 }
-
-
-
-
-
-
-
 
 /**
  * A directory whose contents persist across runs.
@@ -1027,14 +1019,14 @@ export class CacheVolume extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: CacheVolumeID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: CacheVolumeID
+  ) {
+    super(parent)
 
-     this._id = _id
-   }
+    this._id = _id
+  }
 
   /**
    * A unique identifier for this CacheVolume.
@@ -1054,12 +1046,9 @@ export class CacheVolume extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
 
 /**
  * An OCI-compatible container, also known as a Docker container.
@@ -1081,36 +1070,36 @@ export class Container extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: ContainerID,
-     _envVariable?: string,
-     _export?: boolean,
-     _imageRef?: string,
-     _label?: string,
-     _platform?: Platform,
-     _publish?: string,
-     _stderr?: string,
-     _stdout?: string,
-     _sync?: ContainerID,
-     _user?: string,
-     _workdir?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ContainerID,
+    _envVariable?: string,
+    _export?: boolean,
+    _imageRef?: string,
+    _label?: string,
+    _platform?: Platform,
+    _publish?: string,
+    _stderr?: string,
+    _stdout?: string,
+    _sync?: ContainerID,
+    _user?: string,
+    _workdir?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._envVariable = _envVariable
-     this._export = _export
-     this._imageRef = _imageRef
-     this._label = _label
-     this._platform = _platform
-     this._publish = _publish
-     this._stderr = _stderr
-     this._stdout = _stdout
-     this._sync = _sync
-     this._user = _user
-     this._workdir = _workdir
-   }
+    this._id = _id
+    this._envVariable = _envVariable
+    this._export = _export
+    this._imageRef = _imageRef
+    this._label = _label
+    this._platform = _platform
+    this._publish = _publish
+    this._stderr = _stderr
+    this._stdout = _stdout
+    this._sync = _sync
+    this._user = _user
+    this._workdir = _workdir
+  }
 
   /**
    * A unique identifier for this Container.
@@ -1130,13 +1119,12 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Turn the container into a Service.
-   * 
+   *
    * Be sure to set any exposed ports before this conversion.
    */
   asService = (): Service => {
@@ -1154,20 +1142,20 @@ export class Container extends BaseClient {
   /**
    * Returns a File representing the container serialized to a tarball.
    * @param opts.platformVariants Identifiers for other platform specific containers.
-   * 
+   *
    * Used for multi-platform images.
    * @param opts.forcedCompression Force each layer of the image to use the specified compression algorithm.
-   * 
+   *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    * @param opts.mediaTypes Use the specified media types for the image's layers.
-   * 
+   *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
   asTarball = (opts?: ContainerAsTarballOpts): File => {
-	const metadata: Metadata = {
-	    forcedCompression: { is_enum: true },
-	    mediaTypes: { is_enum: true },
-	}
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
 
     return new File({
       queryTree: [
@@ -1188,9 +1176,9 @@ export class Container extends BaseClient {
    * @param opts.target Target build stage to build.
    * @param opts.buildArgs Additional build arguments.
    * @param opts.secrets Secrets to pass to the build.
-   * 
+   *
    * They will be mounted at /run/secrets/[secret-name] in the build container
-   * 
+   *
    * They can be accessed in the Dockerfile using the "secret" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl http://example.com?token=$(cat /run/secrets/my-secret)
    */
   build = (context: Directory, opts?: ContainerBuildOpts): Container => {
@@ -1220,13 +1208,12 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Retrieves a directory at the given path.
-   * 
+   *
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
    */
@@ -1257,7 +1244,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1281,7 +1267,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1300,34 +1285,34 @@ export class Container extends BaseClient {
           operation: "envVariables",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new EnvVariable(
-      {
-        queryTree: [
+      (r) =>
+        new EnvVariable(
           {
-            operation: "loadEnvVariableFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadEnvVariableFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
   /**
    * EXPERIMENTAL API! Subject to change/removal at any time.
-   * 
+   *
    * Configures all available GPUs on the host to be accessible to this container.
-   * 
+   *
    * This currently works for Nvidia devices only.
    */
   experimentalWithAllGPUs = (): Container => {
@@ -1344,9 +1329,9 @@ export class Container extends BaseClient {
 
   /**
    * EXPERIMENTAL API! Subject to change/removal at any time.
-   * 
+   *
    * Configures the provided list of devices to be accesible to this container.
-   * 
+   *
    * This currently works for Nvidia devices only.
    * @param devices List of devices to be accessible to this container.
    */
@@ -1365,32 +1350,35 @@ export class Container extends BaseClient {
 
   /**
    * Writes the container as an OCI tarball to the destination file path on the host.
-   * 
+   *
    * Return true on success.
-   * 
+   *
    * It can also export platform variants.
    * @param path Host's destination path (e.g., "./tarball").
-   * 
+   *
    * Path can be relative to the engine's workdir or absolute.
    * @param opts.platformVariants Identifiers for other platform specific containers.
-   * 
+   *
    * Used for multi-platform image.
    * @param opts.forcedCompression Force each layer of the exported image to use the specified compression algorithm.
-   * 
+   *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    * @param opts.mediaTypes Use the specified media types for the exported image's layers.
-   * 
+   *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
-  export = async (path: string, opts?: ContainerExportOpts): Promise<boolean> => {
+  export = async (
+    path: string,
+    opts?: ContainerExportOpts
+  ): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
 
-	const metadata: Metadata = {
-	    forcedCompression: { is_enum: true },
-	    mediaTypes: { is_enum: true },
-	}
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
 
     const response: Awaited<boolean> = await computeQuery(
       [
@@ -1403,13 +1391,12 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Retrieves the list of exposed ports.
-   * 
+   *
    * This includes ports already exposed by the image, even if not explicitly added with dagger.
    */
   exposedPorts = async (): Promise<Port[]> => {
@@ -1424,32 +1411,32 @@ export class Container extends BaseClient {
           operation: "exposedPorts",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new Port(
-      {
-        queryTree: [
+      (r) =>
+        new Port(
           {
-            operation: "loadPortFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadPortFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
   /**
    * Retrieves a file at the given path.
-   * 
+   *
    * Mounts are included.
    * @param path The path of the file to retrieve (e.g., "./README.md").
    */
@@ -1469,7 +1456,7 @@ export class Container extends BaseClient {
   /**
    * Initializes this container from a pulled base image.
    * @param address Image's address from its registry.
-   * 
+   *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
    */
   from = (address: string): Container => {
@@ -1503,7 +1490,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1545,7 +1531,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1564,26 +1549,26 @@ export class Container extends BaseClient {
           operation: "labels",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new Label(
-      {
-        queryTree: [
+      (r) =>
+        new Label(
           {
-            operation: "loadLabelFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadLabelFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -1601,7 +1586,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1642,38 +1626,40 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Publishes this container as a new image to the specified address.
-   * 
+   *
    * Publish returns a fully qualified ref.
-   * 
+   *
    * It can also publish platform variants.
    * @param address Registry's address to publish the image to.
-   * 
+   *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
    * @param opts.platformVariants Identifiers for other platform specific containers.
-   * 
+   *
    * Used for multi-platform image.
    * @param opts.forcedCompression Force each layer of the published image to use the specified compression algorithm.
-   * 
+   *
    * If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
    * @param opts.mediaTypes Use the specified media types for the published image's layers.
-   * 
+   *
    * Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
    */
-  publish = async (address: string, opts?: ContainerPublishOpts): Promise<string> => {
+  publish = async (
+    address: string,
+    opts?: ContainerPublishOpts
+  ): Promise<string> => {
     if (this._publish) {
       return this._publish
     }
 
-	const metadata: Metadata = {
-	    forcedCompression: { is_enum: true },
-	    mediaTypes: { is_enum: true },
-	}
+    const metadata: Metadata = {
+      forcedCompression: { is_enum: true },
+      mediaTypes: { is_enum: true },
+    }
 
     const response: Awaited<string> = await computeQuery(
       [
@@ -1686,7 +1672,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1707,7 +1692,7 @@ export class Container extends BaseClient {
 
   /**
    * The error stream of the last executed command.
-   * 
+   *
    * Will execute default command if none is set, or error if there's no default.
    */
   stderr = async (): Promise<string> => {
@@ -1725,13 +1710,12 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * The output stream of the last executed command.
-   * 
+   *
    * Will execute default command if none is set, or error if there's no default.
    */
   stdout = async (): Promise<string> => {
@@ -1749,13 +1733,12 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Forces evaluation of the pipeline in the engine.
-   * 
+   *
    * It doesn't run the default command if no exec has been set.
    */
   sync = async (): Promise<Container> => {
@@ -1807,7 +1790,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -1852,12 +1834,16 @@ export class Container extends BaseClient {
    * @param opts.exclude Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
    * @param opts.include Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
    * @param opts.owner A user:group to set for the directory and its contents.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withDirectory = (path: string, directory: Directory, opts?: ContainerWithDirectoryOpts): Container => {
+  withDirectory = (
+    path: string,
+    directory: Directory,
+    opts?: ContainerWithDirectoryOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1875,7 +1861,10 @@ export class Container extends BaseClient {
    * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
    * @param opts.keepDefaultArgs Don't remove the default arguments when setting the entrypoint.
    */
-  withEntrypoint = (args: string[], opts?: ContainerWithEntrypointOpts): Container => {
+  withEntrypoint = (
+    args: string[],
+    opts?: ContainerWithEntrypointOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1894,7 +1883,11 @@ export class Container extends BaseClient {
    * @param value The value of the environment variable. (e.g., "localhost").
    * @param opts.expand Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
    */
-  withEnvVariable = (name: string, value: string, opts?: ContainerWithEnvVariableOpts): Container => {
+  withEnvVariable = (
+    name: string,
+    value: string,
+    opts?: ContainerWithEnvVariableOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1910,14 +1903,14 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container after executing the specified command inside it.
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-   * 
+   *
    * If empty, the container's default command is used.
    * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
    * @param opts.experimentalPrivilegedNesting Provides dagger access to the executed command.
-   * 
+   *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
@@ -1936,21 +1929,24 @@ export class Container extends BaseClient {
 
   /**
    * Expose a network port.
-   * 
+   *
    * Exposed ports serve two purposes:
-   * 
+   *
    * - For health checks and introspection, when running services
-   * 
+   *
    * - For setting the EXPOSE OCI field when publishing the container
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
    * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
    */
-  withExposedPort = (port: number, opts?: ContainerWithExposedPortOpts): Container => {
-	const metadata: Metadata = {
-	    protocol: { is_enum: true },
-	}
+  withExposedPort = (
+    port: number,
+    opts?: ContainerWithExposedPortOpts
+  ): Container => {
+    const metadata: Metadata = {
+      protocol: { is_enum: true },
+    }
 
     return new Container({
       queryTree: [
@@ -1970,12 +1966,16 @@ export class Container extends BaseClient {
    * @param source Identifier of the file to copy.
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
    * @param opts.owner A user:group to set for the file.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withFile = (path: string, source: File, opts?: ContainerWithFileOpts): Container => {
+  withFile = (
+    path: string,
+    source: File,
+    opts?: ContainerWithFileOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2028,17 +2028,21 @@ export class Container extends BaseClient {
    * @param opts.source Identifier of the directory to use as the cache volume's root.
    * @param opts.sharing Sharing mode of the cache volume.
    * @param opts.owner A user:group to set for the mounted cache directory.
-   * 
+   *
    * Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withMountedCache = (path: string, cache: CacheVolume, opts?: ContainerWithMountedCacheOpts): Container => {
-	const metadata: Metadata = {
-	    sharing: { is_enum: true },
-	}
+  withMountedCache = (
+    path: string,
+    cache: CacheVolume,
+    opts?: ContainerWithMountedCacheOpts
+  ): Container => {
+    const metadata: Metadata = {
+      sharing: { is_enum: true },
+    }
 
     return new Container({
       queryTree: [
@@ -2057,12 +2061,16 @@ export class Container extends BaseClient {
    * @param path Location of the mounted directory (e.g., "/mnt/directory").
    * @param source Identifier of the mounted directory.
    * @param opts.owner A user:group to set for the mounted directory and its contents.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withMountedDirectory = (path: string, source: Directory, opts?: ContainerWithMountedDirectoryOpts): Container => {
+  withMountedDirectory = (
+    path: string,
+    source: Directory,
+    opts?: ContainerWithMountedDirectoryOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2080,12 +2088,16 @@ export class Container extends BaseClient {
    * @param path Location of the mounted file (e.g., "/tmp/file.txt").
    * @param source Identifier of the mounted file.
    * @param opts.owner A user or user:group to set for the mounted file.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withMountedFile = (path: string, source: File, opts?: ContainerWithMountedFileOpts): Container => {
+  withMountedFile = (
+    path: string,
+    source: File,
+    opts?: ContainerWithMountedFileOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2103,15 +2115,19 @@ export class Container extends BaseClient {
    * @param path Location of the secret file (e.g., "/tmp/secret.txt").
    * @param source Identifier of the secret to mount.
    * @param opts.owner A user:group to set for the mounted secret.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    * @param opts.mode Permission given to the mounted secret (e.g., 0600).
-   * 
+   *
    * This option requires an owner to be set to be active.
    */
-  withMountedSecret = (path: string, source: Secret, opts?: ContainerWithMountedSecretOpts): Container => {
+  withMountedSecret = (
+    path: string,
+    source: Secret,
+    opts?: ContainerWithMountedSecretOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2147,9 +2163,9 @@ export class Container extends BaseClient {
    * @param opts.contents Content of the file to write (e.g., "Hello world!").
    * @param opts.permissions Permission given to the written file (e.g., 0600).
    * @param opts.owner A user:group to set for the file.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
   withNewFile = (path: string, opts?: ContainerWithNewFileOpts): Container => {
@@ -2168,12 +2184,16 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container with a registry authentication for a given address.
    * @param address Registry's address to bind the authentication to.
-   * 
+   *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
    * @param username The username of the registry's account (e.g., "Dagger").
    * @param secret The API key, password or token to authenticate to this registry.
    */
-  withRegistryAuth = (address: string, username: string, secret: Secret): Container => {
+  withRegistryAuth = (
+    address: string,
+    username: string,
+    secret: Secret
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2223,11 +2243,11 @@ export class Container extends BaseClient {
 
   /**
    * Establish a runtime dependency on a service.
-   * 
+   *
    * The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
-   * 
+   *
    * The service will be reachable from the container via the provided hostname alias.
-   * 
+   *
    * The service dependency will also convey to any files or directories produced by the container.
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
@@ -2250,12 +2270,16 @@ export class Container extends BaseClient {
    * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
    * @param source Identifier of the socket to forward.
    * @param opts.owner A user:group to set for the mounted socket.
-   * 
+   *
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
-   * 
+   *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withUnixSocket = (path: string, source: Socket, opts?: ContainerWithUnixSocketOpts): Container => {
+  withUnixSocket = (
+    path: string,
+    source: Socket,
+    opts?: ContainerWithUnixSocketOpts
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2356,10 +2380,13 @@ export class Container extends BaseClient {
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
-  withoutExposedPort = (port: number, opts?: ContainerWithoutExposedPortOpts): Container => {
-	const metadata: Metadata = {
-	    protocol: { is_enum: true },
-	}
+  withoutExposedPort = (
+    port: number,
+    opts?: ContainerWithoutExposedPortOpts
+  ): Container => {
+    const metadata: Metadata = {
+      protocol: { is_enum: true },
+    }
 
     return new Container({
       queryTree: [
@@ -2375,7 +2402,7 @@ export class Container extends BaseClient {
 
   /**
    * Indicate that subsequent operations should not be featured more prominently in the UI.
-   * 
+   *
    * This is the initial state of all containers.
    */
   withoutFocus = (): Container => {
@@ -2427,7 +2454,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container without the registry authentication of a given address.
    * @param address Registry's address to remove the authentication from.
-   * 
+   *
    * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
    */
   withoutRegistryAuth = (address: string): Container => {
@@ -2462,7 +2489,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves this container with an unset command user.
-   * 
+   *
    * Should default to root.
    */
   withoutUser = (): Container => {
@@ -2479,7 +2506,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves this container with an unset working directory.
-   * 
+   *
    * Should default to "/".
    */
   withoutWorkdir = (): Container => {
@@ -2512,7 +2539,6 @@ export class Container extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -2525,8 +2551,6 @@ export class Container extends BaseClient {
     return arg(this)
   }
 }
-
-
 
 /**
  * Reflective module API provided to functions at runtime.
@@ -2654,18 +2678,18 @@ export class Directory extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: DirectoryID,
-     _export?: boolean,
-     _sync?: DirectoryID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DirectoryID,
+    _export?: boolean,
+    _sync?: DirectoryID
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._export = _export
-     this._sync = _sync
-   }
+    this._id = _id
+    this._export = _export
+    this._sync = _sync
+  }
 
   /**
    * A unique identifier for this Directory.
@@ -2685,7 +2709,6 @@ export class Directory extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -2694,7 +2717,7 @@ export class Directory extends BaseClient {
    * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
    *
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
-   * 
+   *
    * If not set, the module source code is loaded from the root of the directory.
    */
   asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
@@ -2751,7 +2774,7 @@ export class Directory extends BaseClient {
    * @param opts.target Target build stage to build.
    * @param opts.buildArgs Build arguments to use in the build.
    * @param opts.secrets Secrets to pass to the build.
-   * 
+   *
    * They will be mounted at /run/secrets/[secret-name].
    */
   dockerBuild = (opts?: DirectoryDockerBuildOpts): Container => {
@@ -2783,7 +2806,6 @@ export class Directory extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -2807,7 +2829,6 @@ export class Directory extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -2844,7 +2865,6 @@ export class Directory extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -2891,7 +2911,11 @@ export class Directory extends BaseClient {
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
-  withDirectory = (path: string, directory: Directory, opts?: DirectoryWithDirectoryOpts): Directory => {
+  withDirectory = (
+    path: string,
+    directory: Directory,
+    opts?: DirectoryWithDirectoryOpts
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2910,7 +2934,11 @@ export class Directory extends BaseClient {
    * @param source Identifier of the file to copy.
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
    */
-  withFile = (path: string, source: File, opts?: DirectoryWithFileOpts): Directory => {
+  withFile = (
+    path: string,
+    source: File,
+    opts?: DirectoryWithFileOpts
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2928,7 +2956,10 @@ export class Directory extends BaseClient {
    * @param path Location of the directory created (e.g., "/logs").
    * @param opts.permissions Permission granted to the created directory (e.g., 0777).
    */
-  withNewDirectory = (path: string, opts?: DirectoryWithNewDirectoryOpts): Directory => {
+  withNewDirectory = (
+    path: string,
+    opts?: DirectoryWithNewDirectoryOpts
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2947,7 +2978,11 @@ export class Directory extends BaseClient {
    * @param contents Content of the written file (e.g., "Hello world!").
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
    */
-  withNewFile = (path: string, contents: string, opts?: DirectoryWithNewFileOpts): Directory => {
+  withNewFile = (
+    path: string,
+    contents: string,
+    opts?: DirectoryWithNewFileOpts
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -2963,7 +2998,7 @@ export class Directory extends BaseClient {
   /**
    * Retrieves this directory with all file/dir timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
-   * 
+   *
    * Formatted in seconds following Unix epoch (e.g., 1672531199).
    */
   withTimestamps = (timestamp: number): Directory => {
@@ -3023,8 +3058,6 @@ export class Directory extends BaseClient {
   }
 }
 
-
-
 /**
  * An environment variable name and value.
  */
@@ -3036,18 +3069,18 @@ export class EnvVariable extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: EnvVariableID,
-     _name?: string,
-     _value?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EnvVariableID,
+    _name?: string,
+    _value?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._name = _name
-     this._value = _value
-   }
+    this._id = _id
+    this._name = _name
+    this._value = _value
+  }
 
   /**
    * A unique identifier for this EnvVariable.
@@ -3067,7 +3100,6 @@ export class EnvVariable extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3089,7 +3121,6 @@ export class EnvVariable extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3111,16 +3142,13 @@ export class EnvVariable extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
 
-
-
 /**
  * A definition of a field on a custom object defined in a Module.
- * 
+ *
  * A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
  */
 export class FieldTypeDef extends BaseClient {
@@ -3131,18 +3159,18 @@ export class FieldTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: FieldTypeDefID,
-     _description?: string,
-     _name?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: FieldTypeDefID,
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._description = _description
-     this._name = _name
-   }
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
 
   /**
    * A unique identifier for this FieldTypeDef.
@@ -3162,7 +3190,6 @@ export class FieldTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3184,7 +3211,6 @@ export class FieldTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3206,7 +3232,6 @@ export class FieldTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3226,8 +3251,6 @@ export class FieldTypeDef extends BaseClient {
   }
 }
 
-
-
 /**
  * A file.
  */
@@ -3242,24 +3265,24 @@ export class File extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: FileID,
-     _contents?: string,
-     _export?: boolean,
-     _name?: string,
-     _size?: number,
-     _sync?: FileID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: FileID,
+    _contents?: string,
+    _export?: boolean,
+    _name?: string,
+    _size?: number,
+    _sync?: FileID
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._contents = _contents
-     this._export = _export
-     this._name = _name
-     this._size = _size
-     this._sync = _sync
-   }
+    this._id = _id
+    this._contents = _contents
+    this._export = _export
+    this._name = _name
+    this._size = _size
+    this._sync = _sync
+  }
 
   /**
    * A unique identifier for this File.
@@ -3279,7 +3302,6 @@ export class File extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3301,7 +3323,6 @@ export class File extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3326,7 +3347,6 @@ export class File extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3348,7 +3368,6 @@ export class File extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3370,7 +3389,6 @@ export class File extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3394,7 +3412,7 @@ export class File extends BaseClient {
   /**
    * Retrieves this file with its created/modified timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
-   * 
+   *
    * Formatted in seconds following Unix epoch (e.g., 1672531199).
    */
   withTimestamps = (timestamp: number): File => {
@@ -3420,13 +3438,9 @@ export class File extends BaseClient {
   }
 }
 
-
-
-
-
 /**
  * Function represents a resolver provided by a Module.
- * 
+ *
  * A function always evaluates against a parent object and is given a set of named arguments.
  */
 export class Function_ extends BaseClient {
@@ -3437,18 +3451,18 @@ export class Function_ extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: FunctionID,
-     _description?: string,
-     _name?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: FunctionID,
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._description = _description
-     this._name = _name
-   }
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
 
   /**
    * A unique identifier for this Function.
@@ -3468,7 +3482,6 @@ export class Function_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3487,26 +3500,26 @@ export class Function_ extends BaseClient {
           operation: "args",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new FunctionArg(
-      {
-        queryTree: [
+      (r) =>
+        new FunctionArg(
           {
-            operation: "loadFunctionArgFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadFunctionArgFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -3528,7 +3541,6 @@ export class Function_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3550,7 +3562,6 @@ export class Function_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3576,7 +3587,11 @@ export class Function_ extends BaseClient {
    * @param opts.description A doc string for the argument, if any
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
    */
-  withArg = (name: string, typeDef: TypeDef, opts?: FunctionWithArgOpts): Function_ => {
+  withArg = (
+    name: string,
+    typeDef: TypeDef,
+    opts?: FunctionWithArgOpts
+  ): Function_ => {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -3618,7 +3633,7 @@ export class Function_ extends BaseClient {
 
 /**
  * An argument accepted by a function.
- * 
+ *
  * This is a specification for an argument at function definition time, not an argument passed at function call time.
  */
 export class FunctionArg extends BaseClient {
@@ -3630,20 +3645,20 @@ export class FunctionArg extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: FunctionArgID,
-     _defaultValue?: JSON,
-     _description?: string,
-     _name?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: FunctionArgID,
+    _defaultValue?: JSON,
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._defaultValue = _defaultValue
-     this._description = _description
-     this._name = _name
-   }
+    this._id = _id
+    this._defaultValue = _defaultValue
+    this._description = _description
+    this._name = _name
+  }
 
   /**
    * A unique identifier for this FunctionArg.
@@ -3663,7 +3678,6 @@ export class FunctionArg extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3685,7 +3699,6 @@ export class FunctionArg extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3707,7 +3720,6 @@ export class FunctionArg extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3729,7 +3741,6 @@ export class FunctionArg extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3749,8 +3760,6 @@ export class FunctionArg extends BaseClient {
   }
 }
 
-
-
 /**
  * An active function call.
  */
@@ -3764,22 +3773,22 @@ export class FunctionCall extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: FunctionCallID,
-     _name?: string,
-     _parent?: JSON,
-     _parentName?: string,
-     _returnValue?: Void,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: FunctionCallID,
+    _name?: string,
+    _parent?: JSON,
+    _parentName?: string,
+    _returnValue?: Void
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._name = _name
-     this._parent = _parent
-     this._parentName = _parentName
-     this._returnValue = _returnValue
-   }
+    this._id = _id
+    this._name = _name
+    this._parent = _parent
+    this._parentName = _parentName
+    this._returnValue = _returnValue
+  }
 
   /**
    * A unique identifier for this FunctionCall.
@@ -3799,7 +3808,6 @@ export class FunctionCall extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3818,26 +3826,26 @@ export class FunctionCall extends BaseClient {
           operation: "inputArgs",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new FunctionCallArgValue(
-      {
-        queryTree: [
+      (r) =>
+        new FunctionCallArgValue(
           {
-            operation: "loadFunctionCallArgValueFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadFunctionCallArgValueFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -3859,7 +3867,6 @@ export class FunctionCall extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3881,7 +3888,6 @@ export class FunctionCall extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3903,7 +3909,6 @@ export class FunctionCall extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3927,7 +3932,6 @@ export class FunctionCall extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
@@ -3943,18 +3947,18 @@ export class FunctionCallArgValue extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: FunctionCallArgValueID,
-     _name?: string,
-     _value?: JSON,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: FunctionCallArgValueID,
+    _name?: string,
+    _value?: JSON
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._name = _name
-     this._value = _value
-   }
+    this._id = _id
+    this._name = _name
+    this._value = _value
+  }
 
   /**
    * A unique identifier for this FunctionCallArgValue.
@@ -3974,7 +3978,6 @@ export class FunctionCallArgValue extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -3996,7 +3999,6 @@ export class FunctionCallArgValue extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4018,16 +4020,9 @@ export class FunctionCallArgValue extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
-
-
-
-
 
 /**
  * The result of running an SDK's codegen.
@@ -4038,14 +4033,14 @@ export class GeneratedCode extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: GeneratedCodeID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GeneratedCodeID
+  ) {
+    super(parent)
 
-     this._id = _id
-   }
+    this._id = _id
+  }
 
   /**
    * A unique identifier for this GeneratedCode.
@@ -4065,7 +4060,6 @@ export class GeneratedCode extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4098,7 +4092,6 @@ export class GeneratedCode extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4116,7 +4109,6 @@ export class GeneratedCode extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4161,8 +4153,6 @@ export class GeneratedCode extends BaseClient {
     return arg(this)
   }
 }
-
-
 
 /**
  * Module source originating from a git repo.
@@ -4349,16 +4339,16 @@ export class GitRef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: GitRefID,
-     _commit?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GitRefID,
+    _commit?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._commit = _commit
-   }
+    this._id = _id
+    this._commit = _commit
+  }
 
   /**
    * A unique identifier for this GitRef.
@@ -4378,7 +4368,6 @@ export class GitRef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4400,7 +4389,6 @@ export class GitRef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4423,8 +4411,6 @@ export class GitRef extends BaseClient {
   }
 }
 
-
-
 /**
  * A git repository.
  */
@@ -4434,14 +4420,14 @@ export class GitRepository extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: GitRepositoryID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GitRepositoryID
+  ) {
+    super(parent)
 
-     this._id = _id
-   }
+    this._id = _id
+  }
 
   /**
    * A unique identifier for this GitRepository.
@@ -4461,7 +4447,6 @@ export class GitRepository extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4534,8 +4519,6 @@ export class GitRepository extends BaseClient {
   }
 }
 
-
-
 /**
  * Information about the host environment.
  */
@@ -4545,14 +4528,14 @@ export class Host extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: HostID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: HostID
+  ) {
+    super(parent)
 
-     this._id = _id
-   }
+    this._id = _id
+  }
 
   /**
    * A unique identifier for this Host.
@@ -4572,7 +4555,6 @@ export class Host extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4616,9 +4598,9 @@ export class Host extends BaseClient {
    * Creates a service that forwards traffic to a specified address via the host.
    * @param opts.host Upstream host to forward traffic to.
    * @param opts.ports Ports to expose via the service, forwarding through the host network.
-   * 
+   *
    * If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
-   * 
+   *
    * An empty set of ports is not valid; an error will be returned.
    */
   service = (opts?: HostServiceOpts): Service => {
@@ -4636,7 +4618,7 @@ export class Host extends BaseClient {
 
   /**
    * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
-   * 
+   *
    * The file is limited to a size of 512000 bytes.
    * @param name The user defined name for this secret.
    * @param path Location of the file to set as a secret.
@@ -4658,14 +4640,14 @@ export class Host extends BaseClient {
    * Creates a tunnel that forwards traffic from the host to a service.
    * @param service Service to send traffic from the tunnel.
    * @param opts.ports Configure explicit port forwarding rules for the tunnel.
-   * 
+   *
    * If a port's frontend is unspecified or 0, a random port will be chosen by the host.
-   * 
+   *
    * If no ports are given, all of the service's ports are forwarded. If native is true, each port maps to the same port on the host. If native is false, each port maps to a random port chosen by the host.
-   * 
+   *
    * If ports are given and native is true, the ports are additive.
    * @param opts.native Map each service port to the same port on the host, as if the service were running natively.
-   * 
+   *
    * Note: enabling may result in port conflicts.
    */
   tunnel = (service: Service, opts?: HostTunnelOpts): Service => {
@@ -4699,12 +4681,6 @@ export class Host extends BaseClient {
   }
 }
 
-
-
-
-
-
-
 /**
  * A graphql input type, which is essentially just a group of named args.
  * This is currently only used to represent pre-existing usage of graphql input types
@@ -4718,16 +4694,16 @@ export class InputTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: InputTypeDefID,
-     _name?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: InputTypeDefID,
+    _name?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._name = _name
-   }
+    this._id = _id
+    this._name = _name
+  }
 
   /**
    * A unique identifier for this InputTypeDef.
@@ -4747,7 +4723,6 @@ export class InputTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4766,26 +4741,26 @@ export class InputTypeDef extends BaseClient {
           operation: "fields",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new FieldTypeDef(
-      {
-        queryTree: [
+      (r) =>
+        new FieldTypeDef(
           {
-            operation: "loadFieldTypeDefFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadFieldTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -4807,14 +4782,9 @@ export class InputTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
-
-
 
 /**
  * A definition of a custom interface defined in a Module.
@@ -4828,20 +4798,20 @@ export class InterfaceTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: InterfaceTypeDefID,
-     _description?: string,
-     _name?: string,
-     _sourceModuleName?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: InterfaceTypeDefID,
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._description = _description
-     this._name = _name
-     this._sourceModuleName = _sourceModuleName
-   }
+    this._id = _id
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
 
   /**
    * A unique identifier for this InterfaceTypeDef.
@@ -4861,7 +4831,6 @@ export class InterfaceTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4883,7 +4852,6 @@ export class InterfaceTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4902,26 +4870,26 @@ export class InterfaceTypeDef extends BaseClient {
           operation: "functions",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new Function_(
-      {
-        queryTree: [
+      (r) =>
+        new Function_(
           {
-            operation: "loadFunction_FromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadFunction_FromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -4943,7 +4911,6 @@ export class InterfaceTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -4965,14 +4932,9 @@ export class InterfaceTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
-
-
 
 /**
  * A simple key value object that represents a label.
@@ -4985,18 +4947,18 @@ export class Label extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: LabelID,
-     _name?: string,
-     _value?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: LabelID,
+    _name?: string,
+    _value?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._name = _name
-     this._value = _value
-   }
+    this._id = _id
+    this._name = _name
+    this._value = _value
+  }
 
   /**
    * A unique identifier for this Label.
@@ -5016,7 +4978,6 @@ export class Label extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5038,7 +4999,6 @@ export class Label extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5060,12 +5020,9 @@ export class Label extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
 
 /**
  * A definition of a list type in a Module.
@@ -5076,14 +5033,14 @@ export class ListTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: ListTypeDefID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ListTypeDefID
+  ) {
+    super(parent)
 
-     this._id = _id
-   }
+    this._id = _id
+  }
 
   /**
    * A unique identifier for this ListTypeDef.
@@ -5103,7 +5060,6 @@ export class ListTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5122,8 +5078,6 @@ export class ListTypeDef extends BaseClient {
     })
   }
 }
-
-
 
 /**
  * Module source that that originates from a path locally relative to an arbitrary directory.
@@ -5252,7 +5206,6 @@ export class Module_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5271,26 +5224,26 @@ export class Module_ extends BaseClient {
           operation: "dependencies",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new Module_(
-      {
-        queryTree: [
+      (r) =>
+        new Module_(
           {
-            operation: "loadModule_FromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadModule_FromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -5350,7 +5303,6 @@ export class Module_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5414,26 +5366,26 @@ export class Module_ extends BaseClient {
           operation: "interfaces",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new TypeDef(
-      {
-        queryTree: [
+      (r) =>
+        new TypeDef(
           {
-            operation: "loadTypeDefFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -5455,7 +5407,6 @@ export class Module_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5474,26 +5425,26 @@ export class Module_ extends BaseClient {
           operation: "objects",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new TypeDef(
-      {
-        queryTree: [
+      (r) =>
+        new TypeDef(
           {
-            operation: "loadTypeDefFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -5530,13 +5481,12 @@ export class Module_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Serve a module's API in the current session.
-   * 
+   *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    */
   serve = async (): Promise<Void> => {
@@ -5554,7 +5504,6 @@ export class Module_ extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5688,7 +5637,6 @@ export class ModuleDependency extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5710,7 +5658,6 @@ export class ModuleDependency extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5790,7 +5737,6 @@ export class ModuleSource extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -5857,7 +5803,6 @@ export class ModuleSource extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6205,12 +6150,6 @@ export class ModuleSource extends BaseClient {
   }
 }
 
-
-
-
-
-
-
 /**
  * A definition of a custom object defined in a Module.
  */
@@ -6223,20 +6162,20 @@ export class ObjectTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: ObjectTypeDefID,
-     _description?: string,
-     _name?: string,
-     _sourceModuleName?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ObjectTypeDefID,
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._description = _description
-     this._name = _name
-     this._sourceModuleName = _sourceModuleName
-   }
+    this._id = _id
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
 
   /**
    * A unique identifier for this ObjectTypeDef.
@@ -6256,7 +6195,6 @@ export class ObjectTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6293,7 +6231,6 @@ export class ObjectTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6312,26 +6249,26 @@ export class ObjectTypeDef extends BaseClient {
           operation: "fields",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new FieldTypeDef(
-      {
-        queryTree: [
+      (r) =>
+        new FieldTypeDef(
           {
-            operation: "loadFieldTypeDefFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadFieldTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -6350,26 +6287,26 @@ export class ObjectTypeDef extends BaseClient {
           operation: "functions",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new Function_(
-      {
-        queryTree: [
+      (r) =>
+        new Function_(
           {
-            operation: "loadFunction_FromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadFunction_FromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -6391,7 +6328,6 @@ export class ObjectTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6413,16 +6349,9 @@ export class ObjectTypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
-
-
-
-
 
 /**
  * A port exposed by a container.
@@ -6437,22 +6366,22 @@ export class Port extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: PortID,
-     _description?: string,
-     _experimentalSkipHealthcheck?: boolean,
-     _port?: number,
-     _protocol?: NetworkProtocol,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: PortID,
+    _description?: string,
+    _experimentalSkipHealthcheck?: boolean,
+    _port?: number,
+    _protocol?: NetworkProtocol
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._description = _description
-     this._experimentalSkipHealthcheck = _experimentalSkipHealthcheck
-     this._port = _port
-     this._protocol = _protocol
-   }
+    this._id = _id
+    this._description = _description
+    this._experimentalSkipHealthcheck = _experimentalSkipHealthcheck
+    this._port = _port
+    this._protocol = _protocol
+  }
 
   /**
    * A unique identifier for this Port.
@@ -6472,7 +6401,6 @@ export class Port extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6494,7 +6422,6 @@ export class Port extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6516,7 +6443,6 @@ export class Port extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6538,7 +6464,6 @@ export class Port extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6560,14 +6485,9 @@ export class Port extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
-
-
 
 /**
  * The root of the DAG.
@@ -6579,16 +6499,16 @@ export class Client extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _checkVersionCompatibility?: boolean,
-     _defaultPlatform?: Platform,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _checkVersionCompatibility?: boolean,
+    _defaultPlatform?: Platform
+  ) {
+    super(parent)
 
-     this._checkVersionCompatibility = _checkVersionCompatibility
-     this._defaultPlatform = _defaultPlatform
-   }
+    this._checkVersionCompatibility = _checkVersionCompatibility
+    this._defaultPlatform = _defaultPlatform
+  }
 
   /**
    * Retrieves a content-addressed blob.
@@ -6597,7 +6517,12 @@ export class Client extends BaseClient {
    * @param mediaType Media type of the blob
    * @param uncompressed Digest of the uncompressed blob
    */
-  blob = (digest: string, size: number, mediaType: string, uncompressed: string): Directory => {
+  blob = (
+    digest: string,
+    size: number,
+    mediaType: string,
+    uncompressed: string
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -6643,13 +6568,12 @@ export class Client extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Creates a scratch container.
-   * 
+   *
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
    * @param opts.id DEPRECATED: Use `loadContainerFromID` instead.
    * @param opts.platform Platform to initialize the container with.
@@ -6669,7 +6593,7 @@ export class Client extends BaseClient {
 
   /**
    * The FunctionCall context that the SDK caller is currently executing in.
-   * 
+   *
    * If the caller is not currently executing in a function, this will return an error.
    */
   currentFunctionCall = (): FunctionCall => {
@@ -6714,26 +6638,26 @@ export class Client extends BaseClient {
           operation: "currentTypeDefs",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new TypeDef(
-      {
-        queryTree: [
+      (r) =>
+        new TypeDef(
           {
-            operation: "loadTypeDefFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
@@ -6751,7 +6675,6 @@ export class Client extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -6825,9 +6748,9 @@ export class Client extends BaseClient {
   /**
    * Queries a Git repository.
    * @param url URL of the git repository.
-   * 
+   *
    * Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
-   * 
+   *
    * Suffix ".git" is optional.
    * @param opts.keepGitDir Set to true to keep .git directory.
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
@@ -7011,7 +6934,9 @@ export class Client extends BaseClient {
   /**
    * Load a FunctionCallArgValue from its ID.
    */
-  loadFunctionCallArgValueFromID = (id: FunctionCallArgValueID): FunctionCallArgValue => {
+  loadFunctionCallArgValueFromID = (
+    id: FunctionCallArgValueID
+  ): FunctionCallArgValue => {
     return new FunctionCallArgValue({
       queryTree: [
         ...this._queryTree,
@@ -7472,7 +7397,7 @@ export class Client extends BaseClient {
 
   /**
    * Sets a secret given a user defined name to its plaintext and returns the secret.
-   * 
+   *
    * The plaintext value is limited to a size of 128000 bytes.
    * @param name The user defined name for this secret
    * @param plaintext The plaintext of the secret
@@ -7542,16 +7467,16 @@ export class Secret extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: SecretID,
-     _plaintext?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: SecretID,
+    _plaintext?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._plaintext = _plaintext
-   }
+    this._id = _id
+    this._plaintext = _plaintext
+  }
 
   /**
    * A unique identifier for this Secret.
@@ -7571,7 +7496,6 @@ export class Secret extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -7593,12 +7517,9 @@ export class Secret extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
 
 /**
  * A content-addressed service providing TCP connectivity.
@@ -7614,24 +7535,24 @@ export class Service extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: ServiceID,
-     _endpoint?: string,
-     _hostname?: string,
-     _start?: ServiceID,
-     _stop?: ServiceID,
-     _up?: Void,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ServiceID,
+    _endpoint?: string,
+    _hostname?: string,
+    _start?: ServiceID,
+    _stop?: ServiceID,
+    _up?: Void
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._endpoint = _endpoint
-     this._hostname = _hostname
-     this._start = _start
-     this._stop = _stop
-     this._up = _up
-   }
+    this._id = _id
+    this._endpoint = _endpoint
+    this._hostname = _hostname
+    this._start = _start
+    this._stop = _stop
+    this._up = _up
+  }
 
   /**
    * A unique identifier for this Service.
@@ -7651,15 +7572,14 @@ export class Service extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
   /**
    * Retrieves an endpoint that clients can use to reach this container.
-   * 
+   *
    * If no port is specified, the first exposed port is used. If none exist an error is returned.
-   * 
+   *
    * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
    * @param opts.port The exposed port number for the endpoint
    * @param opts.scheme Return a URL with the given scheme, eg. http for http://
@@ -7680,7 +7600,6 @@ export class Service extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -7702,7 +7621,6 @@ export class Service extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -7721,32 +7639,32 @@ export class Service extends BaseClient {
           operation: "ports",
         },
         {
-          operation: "id"
+          operation: "id",
         },
       ],
       await this._ctx.connection()
     )
 
-    
     return response.map(
-      (r) => new Port(
-      {
-        queryTree: [
+      (r) =>
+        new Port(
           {
-            operation: "loadPortFromID",
-            args: { id: r.id }
-          }
-        ],
-        ctx: this._ctx
-      },
-        r.id,
-      )
+            queryTree: [
+              {
+                operation: "loadPortFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
     )
   }
 
   /**
    * Start the service and wait for its health checks to succeed.
-   * 
+   *
    * Services bound to a Container do not need to be manually started.
    */
   start = async (): Promise<Service> => {
@@ -7805,12 +7723,9 @@ export class Service extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
 
 /**
  * A Unix or TCP/IP socket that can be mounted into a container.
@@ -7821,14 +7736,14 @@ export class Socket extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: SocketID,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: SocketID
+  ) {
+    super(parent)
 
-     this._id = _id
-   }
+    this._id = _id
+  }
 
   /**
    * A unique identifier for this Socket.
@@ -7848,14 +7763,9 @@ export class Socket extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
-
-
 
 /**
  * An interactive terminal that clients can connect to.
@@ -7867,16 +7777,16 @@ export class Terminal extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: TerminalID,
-     _websocketEndpoint?: string,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: TerminalID,
+    _websocketEndpoint?: string
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._websocketEndpoint = _websocketEndpoint
-   }
+    this._id = _id
+    this._websocketEndpoint = _websocketEndpoint
+  }
 
   /**
    * A unique identifier for this Terminal.
@@ -7896,7 +7806,6 @@ export class Terminal extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -7918,12 +7827,9 @@ export class Terminal extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 }
-
-
 
 /**
  * A definition of a parameter or return type in a Module.
@@ -7936,18 +7842,18 @@ export class TypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-   constructor(
-    parent?: { queryTree?: QueryTree[], ctx: Context },
-     _id?: TypeDefID,
-     _kind?: TypeDefKind,
-     _optional?: boolean,
-   ) {
-     super(parent)
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: TypeDefID,
+    _kind?: TypeDefKind,
+    _optional?: boolean
+  ) {
+    super(parent)
 
-     this._id = _id
-     this._kind = _kind
-     this._optional = _optional
-   }
+    this._id = _id
+    this._kind = _kind
+    this._optional = _optional
+  }
 
   /**
    * A unique identifier for this TypeDef.
@@ -7967,7 +7873,6 @@ export class TypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -8049,7 +7954,6 @@ export class TypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -8071,7 +7975,6 @@ export class TypeDef extends BaseClient {
       await this._ctx.connection()
     )
 
-    
     return response
   }
 
@@ -8084,8 +7987,9 @@ export class TypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "withConstructor",
-          args: { 
-	        function:function_ },
+          args: {
+            function: function_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -8098,7 +8002,11 @@ export class TypeDef extends BaseClient {
    * @param typeDef The type of the field
    * @param opts.description A doc string for the field, if any
    */
-  withField = (name: string, typeDef: TypeDef, opts?: TypeDefWithFieldOpts): TypeDef => {
+  withField = (
+    name: string,
+    typeDef: TypeDef,
+    opts?: TypeDefWithFieldOpts
+  ): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
@@ -8120,8 +8028,9 @@ export class TypeDef extends BaseClient {
         ...this._queryTree,
         {
           operation: "withFunction",
-          args: { 
-	        function:function_ },
+          args: {
+            function: function_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -8148,9 +8057,9 @@ export class TypeDef extends BaseClient {
    * Sets the kind of the type.
    */
   withKind = (kind: TypeDefKind): TypeDef => {
-	const metadata: Metadata = {
-	    kind: { is_enum: true },
-	}
+    const metadata: Metadata = {
+      kind: { is_enum: true },
+    }
 
     return new TypeDef({
       queryTree: [
@@ -8182,7 +8091,7 @@ export class TypeDef extends BaseClient {
 
   /**
    * Returns a TypeDef of kind Object with the provided name.
-   * 
+   *
    * Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
    */
   withObject = (name: string, opts?: TypeDefWithObjectOpts): TypeDef => {
@@ -8224,12 +8133,4 @@ export class TypeDef extends BaseClient {
   }
 }
 
-
-
-
-
-
-
-
 export const dag = new Client({ ctx: defaultContext })
-
