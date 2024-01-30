@@ -40,6 +40,9 @@ var (
 
 	installName string
 
+	updateName string
+	updateSDK  string
+
 	force bool
 )
 
@@ -62,13 +65,17 @@ func init() {
 	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
+	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
-	moduleCmd.AddCommand(moduleInitCmd)
-	moduleCmd.AddCommand(moduleInstallCmd)
-	moduleCmd.AddCommand(moduleSyncCmd)
-	moduleCmd.AddCommand(modulePublishCmd)
+	moduleSyncCmd.PersistentFlags().AddFlagSet(moduleFlags)
+
+	moduleUpdateCmd.PersistentFlags().StringVarP(&updateName, "name", "n", "", "New name for the module")
+	moduleUpdateCmd.PersistentFlags().StringVarP(&updateSDK, "sdk", "s", "", "New SDK for the module")
+	moduleUpdateCmd.MarkFlagsOneRequired("name", "sdk")
+	moduleUpdateCmd.PersistentFlags().AddFlagSet(moduleFlags)
 }
 
 var moduleCmd = &cobra.Command{
@@ -334,6 +341,45 @@ and the current state of the module's source code.
 			}
 
 			_, err = modConf.Mod.GeneratedSourceRootDirectory().Export(ctx, modConf.LocalRootPath)
+			if err != nil {
+				return fmt.Errorf("failed to generate code: %w", err)
+			}
+
+			return nil
+		})
+	},
+}
+
+var moduleUpdateCmd = &cobra.Command{
+	Use: "update",
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	Short: "TODO",
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
+			if err != nil {
+				return fmt.Errorf("failed to get configured module: %w", err)
+			}
+			if modConf.SourceKind != dagger.LocalSource {
+				return fmt.Errorf("module must be local")
+			}
+
+			mod := modConf.Mod
+			if updateName != "" {
+				mod = mod.WithName(updateName)
+			}
+			if updateSDK != "" {
+				mod = mod.WithSDK(updateSDK)
+			}
+
+			_, err = mod.GeneratedSourceRootDirectory().Export(ctx, modConf.LocalRootPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
