@@ -14,10 +14,9 @@ func TestModuleSourceConfigs(t *testing.T) {
 	// test dagger.json source configs that aren't inherently covered in other tests
 
 	t.Parallel()
-	c, ctx := connect(t)
-
 	t.Run("upgrade from old config", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		baseWithOldConfig := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -57,6 +56,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 
 	t.Run("old config with root fails", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -74,6 +74,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 	t.Run("dep has separate config", func(t *testing.T) {
 		// Verify that if a local dep has its own dagger.json, that's used to load it correctly.
 		t.Parallel()
+		c, ctx := connect(t)
 
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -143,6 +144,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 
 	t.Run("install dep from weird places", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -221,6 +223,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 
 	t.Run("install out of tree dep fails", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -260,6 +263,7 @@ func TestModuleSourceConfigs(t *testing.T) {
 	t.Run("malicious config", func(t *testing.T) {
 		// verify a maliciously/incorrectly constructed dagger.json is still handled correctly
 		t.Parallel()
+		c, ctx := connect(t)
 
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -337,10 +341,10 @@ func TestModuleSourceConfigs(t *testing.T) {
 
 func TestModuleCustomDepNames(t *testing.T) {
 	t.Parallel()
-	c, ctx := connect(t)
 
 	t.Run("basic", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
@@ -429,6 +433,7 @@ func TestModuleCustomDepNames(t *testing.T) {
 
 	t.Run("same mod name as dep", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
@@ -468,6 +473,7 @@ func TestModuleCustomDepNames(t *testing.T) {
 
 	t.Run("two deps with same name", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep1").
