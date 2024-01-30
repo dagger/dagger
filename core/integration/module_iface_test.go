@@ -33,7 +33,7 @@ func TestModuleIfaceGoSadPaths(t *testing.T) {
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 type Test struct {}
@@ -62,7 +62,7 @@ func TestModuleIfaceGoDanglingInterface(t *testing.T) {
 	modGen, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 type Test struct {}
@@ -100,7 +100,7 @@ func TestModuleIfaceDaggerCall(t *testing.T) {
 	out, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/mallard").
-		With(daggerExec("mod", "init", "--name=mallard", "--sdk=go")).
+		With(daggerExec("init", "--name=mallard", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 type Mallard struct {}
@@ -111,7 +111,7 @@ func (m *Mallard) Quack() string {
 	`,
 		}).
 		WithWorkdir("/work").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
@@ -131,7 +131,7 @@ func (m *Test) GetDuck() Duck {
 }
 	`,
 		}).
-		With(daggerExec("mod", "install", "./mallard")).
+		With(daggerExec("install", "./mallard")).
 		With(daggerCall("get-duck", "quack")).
 		Stdout(ctx)
 

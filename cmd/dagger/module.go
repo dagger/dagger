@@ -63,6 +63,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
+	moduleInitCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
@@ -70,10 +71,10 @@ func init() {
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
-	moduleSyncCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
-	moduleUpdateCmd.PersistentFlags().StringVarP(&updateName, "name", "n", "", "New name for the module")
-	moduleUpdateCmd.PersistentFlags().StringVarP(&updateSDK, "sdk", "s", "", "New SDK for the module")
+	moduleUpdateCmd.PersistentFlags().StringVar(&updateName, "name", "", "New name for the module")
+	moduleUpdateCmd.PersistentFlags().StringVar(&updateSDK, "sdk", "", "New SDK for the module")
 	moduleUpdateCmd.MarkFlagsOneRequired("name", "sdk")
 	moduleUpdateCmd.PersistentFlags().AddFlagSet(moduleFlags)
 }
@@ -316,10 +317,10 @@ var moduleInstallCmd = &cobra.Command{
 	},
 }
 
-var moduleSyncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Synchronize a Dagger module",
-	Long: `Synchronize a Dagger module with the latest version of its extensions.
+var moduleDevelopCmd = &cobra.Command{
+	Use:   "develop",
+	Short: "Setup or update all the resources needed to develop on a module locally",
+	Long: `Setup or update all the resources needed to develop on a module locally.
 
 :::note
 This is only required for IDE auto-completion/LSP purposes.
@@ -351,14 +352,9 @@ and the current state of the module's source code.
 }
 
 var moduleUpdateCmd = &cobra.Command{
-	Use: "update",
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	Short: "TODO",
+	Use:   "update [--name string] [--sdk string]",
+	Short: "Update the configuration of a dagger module",
+	Long:  `Update the configuration of a dagger module. Currently, this can only be used to update the name or sdk of a module that does not already have one of those fields set.`,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -637,7 +633,7 @@ func getModuleConfigurationForSourceRef(
 			// finish up the case above where we default old dagger.jsons that didn't
 			// have root-for to using the source dir. We know now that the source config
 			// file actually existed, so the root exists too. It will be updated in the engine
-			// when calling functions (and exported back to the client if they sync/install)
+			// when calling functions (and exported back to the client if they develop/install)
 			conf.ModuleRootConfigExists = true
 		}
 

@@ -40,7 +40,7 @@ type Test struct {
 `), 0644)
 	require.NoError(t, err)
 
-	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "mod", "init", "--name=test", "--sdk=go")
+	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--name=test", "--sdk=go")
 	require.NoError(t, err)
 
 	// cache the module load itself so there's less to wait for below
