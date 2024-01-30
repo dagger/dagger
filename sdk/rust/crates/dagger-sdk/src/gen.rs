@@ -4921,6 +4921,12 @@ pub struct ServiceEndpointOpts<'a> {
     pub scheme: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ServiceStopOpts {
+    /// Immediately kill the service without waiting for a graceful exit
+    #[builder(setter(into, strip_option), default)]
+    pub kill: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
     #[builder(setter(into, strip_option), default)]
     pub native: Option<bool>,
@@ -4985,8 +4991,24 @@ impl Service {
         query.execute(self.graphql_client.clone()).await
     }
     /// Stop the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn stop(&self) -> Result<ServiceId, DaggerError> {
         let query = self.selection.select("stop");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Stop the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn stop_opts(&self, opts: ServiceStopOpts) -> Result<ServiceId, DaggerError> {
+        let mut query = self.selection.select("stop");
+        if let Some(kill) = opts.kill {
+            query = query.arg("kill", kill);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Creates a tunnel that forwards traffic from the caller's network to this service.

@@ -5257,9 +5257,21 @@ func (r *Service) Start(ctx context.Context) (*Service, error) {
 	return r, q.Execute(ctx, r.c)
 }
 
+// ServiceStopOpts contains options for Service.Stop
+type ServiceStopOpts struct {
+	// Immediately kill the service without waiting for a graceful exit
+	Kill bool
+}
+
 // Stop the service.
-func (r *Service) Stop(ctx context.Context) (*Service, error) {
+func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, error) {
 	q := r.q.Select("stop")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `kill` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Kill) {
+			q = q.Arg("kill", opts[i].Kill)
+		}
+	}
 
 	return r, q.Execute(ctx, r.c)
 }

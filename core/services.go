@@ -14,14 +14,21 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
-// DetachGracePeriod is an arbitrary amount of time between when a service is
-// no longer actively used and before it is detached. This is to avoid repeated
-// stopping and re-starting of the same service in rapid succession.
-const DetachGracePeriod = 10 * time.Second
+const (
+	// DetachGracePeriod is an arbitrary amount of time between when a service is
+	// no longer actively used and before it is detached. This is to avoid repeated
+	// stopping and re-starting of the same service in rapid succession.
+	DetachGracePeriod = 10 * time.Second
+
+	// TerminateGracePeriod is an arbitrary amount of time between when a service is
+	// sent a graceful stop (SIGTERM) and when it is sent an immediate stop (SIGKILL).
+	TerminateGracePeriod = 10 * time.Second
+)
 
 // Services manages the lifecycle of services, ensuring the same service only
 // runs once per client.
@@ -57,10 +64,10 @@ type RunningService struct {
 
 	// Stop forcibly stops the service. It is normally called after all clients
 	// have detached, but may also be called manually by the user.
-	Stop func(context.Context) error
+	Stop func(ctx context.Context, force bool) error
 
 	// Block until the service has exited or the provided context is canceled.
-	Wait func(context.Context) error
+	Wait func(ctx context.Context) error
 }
 
 // ServiceKey is a unique identifier for a service.
@@ -205,13 +212,16 @@ dance:
 // function that will detach from all of them after 10 seconds.
 func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
 	running := []*RunningService{}
+	detachOnce := sync.Once{}
 	detach := func() {
-		go func() {
-			<-time.After(DetachGracePeriod)
-			for _, svc := range running {
-				ss.Detach(ctx, svc)
-			}
-		}()
+		detachOnce.Do(func() {
+			go func() {
+				<-time.After(DetachGracePeriod)
+				for _, svc := range running {
+					ss.Detach(ctx, svc)
+				}
+			}()
+		})
 	}
 
 	defer func() {
@@ -252,7 +262,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, id *idproto.ID) error {
+func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
@@ -269,24 +279,25 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID) error {
 	}
 
 	ss.l.Lock()
-	defer ss.l.Unlock()
-
 	starting, isStarting := ss.starting[key]
 	running, isRunning := ss.running[key]
+	ss.l.Unlock()
+
 	switch {
 	case isRunning:
 		// running; stop it
-		return ss.stop(ctx, running)
+		return ss.stop(ctx, running, kill)
 	case isStarting:
 		// starting; wait for the attempt to finish and then stop it
-		ss.l.Unlock()
 		starting.Wait()
-		ss.l.Lock()
 
-		running, didStart := ss.running[key]
-		if didStart {
+		ss.l.Lock()
+		running, isRunning := ss.running[key]
+		ss.l.Unlock()
+
+		if isRunning {
 			// starting succeeded as normal; now stop it
-			return ss.stop(ctx, running)
+			return ss.stop(ctx, running, kill)
 		}
 
 		// starting didn't work; nothing to do
@@ -301,18 +312,22 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID) error {
 // It is called when a client is closing.
 func (ss *Services) StopClientServices(ctx context.Context, client *engine.ClientMetadata) error {
 	ss.l.Lock()
-	defer ss.l.Unlock()
+	var svcs []*RunningService
+	for _, svc := range ss.running {
+		if svc.Key.ServerID == client.ServerID {
+			svcs = append(svcs, svc)
+		}
+	}
+	ss.l.Unlock()
 
 	eg := new(errgroup.Group)
-	for _, svc := range ss.running {
-		if svc.Key.ServerID != client.ServerID {
-			continue
-		}
-
+	for _, svc := range svcs {
 		svc := svc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
-			if err := svc.Stop(ctx); err != nil {
+			// force kill the service, users should manually shutdown services if they're
+			// concerned about graceful termination
+			if err := ss.stop(ctx, svc, true); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil
@@ -325,33 +340,60 @@ func (ss *Services) StopClientServices(ctx context.Context, client *engine.Clien
 // Detach detaches from the given service. If the service is not running, it is
 // a no-op. If the service is running, it is stopped if there are no other
 // clients using it.
-func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
+func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
-	defer ss.l.Unlock()
 
 	running, found := ss.running[svc.Key]
 	if !found {
+		ss.l.Unlock()
 		// not even running; ignore
-		return nil
+		return
 	}
 
 	ss.bindings[svc.Key]--
 
 	if ss.bindings[svc.Key] > 0 {
+		ss.l.Unlock()
 		// detached, but other instances still active
-		return nil
+		return
 	}
 
-	return ss.stop(ctx, running)
+	ss.l.Unlock()
+
+	// we should avoid blocking, and return immediately
+	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
 }
 
-func (ss *Services) stop(ctx context.Context, running *RunningService) error {
-	if err := running.Stop(ctx); err != nil {
+func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
+	err := running.Stop(ctx, force)
+	if err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}
 
+	ss.l.Lock()
 	delete(ss.bindings, running.Key)
 	delete(ss.running, running.Key)
+	ss.l.Unlock()
 
+	return nil
+}
+
+func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, timeout time.Duration) error {
+	// attempt to gentle stop within a timeout
+	cause := errors.New("service did not terminate")
+	ctx2, _ := context.WithTimeoutCause(ctx, timeout, cause)
+	err := running.Stop(ctx2, false)
+	if context.Cause(ctx2) == cause {
+		// service didn't terminate within timeout, so force it to stop
+		err = running.Stop(ctx, true)
+	}
+	if err != nil {
+		return err
+	}
+
+	ss.l.Lock()
+	delete(ss.bindings, running.Key)
+	delete(ss.running, running.Key)
+	ss.l.Unlock()
 	return nil
 }
