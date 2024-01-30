@@ -18,7 +18,7 @@
         "quickstart/cli",
         "quickstart/hello",
         "quickstart/functions",
-        "quickstart/chains",
+        "quickstart/chaining",
         "quickstart/containers",
         "quickstart/daggerverse",
         "quickstart/conclusion"
