@@ -93,11 +93,7 @@ If you want to install a specific version of `dagger`, pass in a version number 
 
 ```Powershell
 $script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
-<<<<<<< HEAD
-$params = "-DaggerVersion 0.9.5"
-=======
 $params = "-DaggerVersion 0.9.7"
->>>>>>> main
 "$script $params" | Invoke-Expression
 ```
 

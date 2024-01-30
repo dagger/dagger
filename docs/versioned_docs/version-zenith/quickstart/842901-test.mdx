@@ -16,9 +16,6 @@ The function in the previous example was illustrative - you wouldn't ever use it
 
 Add a new `Test()` function to `main.go`, which runs the application's unit test suite:
 
-```go file=snippets/test/main.go
-```
-
 This function does the following:
 
 - It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is again `node:18-slim`. This method returns a `Container` initialized from that base image.

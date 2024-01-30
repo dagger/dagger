@@ -1,0 +1,48 @@
+---
+slug: /quickstart/853930/directories
+hide_table_of_contents: true
+title: "Chain Dagger functions together"
+---
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Chain Dagger functions together
+
+Returning a directory, by itself, isn't very useful. Typically, you will want something from the directory - in the previous case, the binary file produced at the end of the build process.
+
+One of Dagger's key features is that the custom objects returned by module functions can, in turn, define new functions. This allows function calls to be "chained" together to achieve a specific result.
+
+The `Directory` returned by the previous `Build()` function is a core type, which comes with a number of functions of its own - most notably, an `Export()` function, which exports the directory's contents to a specified path on the host.
+
+To see this in action, try the previous command again, this time chaining an additional function call to `Export()` on the `Directory` returned by the first function call:
+
+```shell
+dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger export --path ./my-dagger-build
+```
+
+This revised command builds the Go binary and exports the build output directory to the Dagger host. Once the command completes execution, a new `my-dagger-build` directory is created in the current working directory on the Dagger host. This directory contains the built Go binary.
+
+Validate the binary file by executing the following commands on the Dagger host:
+
+```shell
+cd my-dagger build
+./dagger version
+```
+
+You should see output similar to the following, which confirms that you've just remotely built a development version of Dagger:
+
+```shell
+dagger devel (f11d17fb2) (registry.dagger.io/engine) linux/amd64
+```
+
+
+:::tip
+As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
+
+```shell
+dagger functions -m github.com/kpenfound/dagger-modules/golang
+dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger container --help
+```

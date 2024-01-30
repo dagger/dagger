@@ -17,6 +17,9 @@
         "quickstart/index",
         "quickstart/cli",
         "quickstart/hello",
+        "quickstart/functions",
+        "quickstart/chains",
+        "quickstart/containers",
         "quickstart/daggerverse",
         "quickstart/conclusion"
       ]

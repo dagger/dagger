@@ -1,0 +1,66 @@
+---
+slug: /quickstart/883939/containers
+hide_table_of_contents: true
+title: "Use Dagger functions with containers"
+---
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Use functions with containers
+
+Just as functions can return strings and directories, so too can they return containers. To see this in action, try the following command:
+
+```shell
+dagger shell -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container
+```
+
+This Wolfi container builder module exposes a number of functions:
+- A `Base()` function that creates a base container image using the `cgr.dev/chainguard/wolfi-base` container image;
+- A `WithPackage()` function that installs additional packages in the base image - here, the `cowsay` package;
+- A `Container()` function that returns the container.
+
+The example above chains these various functions together and returns a special Dagger `Container` type representing the base image plus additional packages. The interesting thing here is that the `Container` type is a core type, which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
+
+:::tip
+This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
+:::
+
+To see this in action, try the previous command again, this time chaining an additional function call to `Shell()` on the `Container` returned by the previous function call:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container shell
+```
+
+This revised command builds the container image and then drops you into an interactive shell, allowing you to directly execute commands in the running container.
+
+Verify this by executing the following command:
+
+```shell
+cowsay "hello"
+```
+
+You should see output similar to the following, which confirms that you're executing commands in the just-built Wolfi container image:
+
+```shell
+ _______
+< hello >
+ -------
+        \   ^__^
+         \  (oo)\_______
+            (__)\       )\/\
+                ||----w |
+                ||     ||
+```
+
+:::caution
+While most terminal programs such as `htop` or `vim` work with `dagger shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
+:::
+
+The `Container` type also has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same output as before by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container with-exec --args "cowsay" --args "dagger"
+```

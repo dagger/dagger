@@ -15,9 +15,6 @@ The `dagger up` command allows a service returned by a function to be executed a
 
 In order for this to work, the function must return a `Service` object and the associated `Container` object must have the `Container.withExposedPort` field defining one or more exposed ports. The second condition is already implemented in the `Package()` function shown earlier. So, all that's needed is to update the module and add a new `PackageService()` function returning a service, as shown below:
 
-```go file=snippets/up/main.go
-```
-
 This function calls the `Container.AsService()` method on the `Container` object returned by the previous `Package()` function and returns the corresponding `Service` object.
 
 Try it with the command below:
