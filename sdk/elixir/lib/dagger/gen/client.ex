@@ -76,10 +76,10 @@ defmodule Dagger.Client do
 
   (
     @doc "The module currently being served in the session, if any."
-    @spec current_module(t()) :: Dagger.Module.t()
+    @spec current_module(t()) :: Dagger.CurrentModule.t()
     def current_module(%__MODULE__{} = query) do
       selection = select(query.selection, "currentModule")
-      %Dagger.Module{selection: selection, client: query.client}
+      %Dagger.CurrentModule{selection: selection, client: query.client}
     end
   )
 
@@ -267,6 +267,16 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a CurrentModule from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_current_module_from_id(t(), Dagger.CurrentModule.t()) :: Dagger.CurrentModule.t()
+    def load_current_module_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadCurrentModuleFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.CurrentModule{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a Directory from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_directory_from_id(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
     def load_directory_from_id(%__MODULE__{} = query, directory) do
@@ -358,6 +368,17 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a GitModuleSource from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_git_module_source_from_id(t(), Dagger.GitModuleSource.t()) ::
+            Dagger.GitModuleSource.t()
+    def load_git_module_source_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadGitModuleSourceFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.GitModuleSource{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a GitRef from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_git_ref_from_id(t(), Dagger.GitRef.t()) :: Dagger.GitRef.t()
     def load_git_ref_from_id(%__MODULE__{} = query, git_ref) do
@@ -429,12 +450,24 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load a ModuleConfig from its ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec load_module_config_from_id(t(), Dagger.ModuleConfig.t()) :: Dagger.ModuleConfig.t()
-    def load_module_config_from_id(%__MODULE__{} = query, module_config) do
-      selection = select(query.selection, "loadModuleConfigFromID")
-      selection = arg(selection, "id", module_config)
-      %Dagger.ModuleConfig{selection: selection, client: query.client}
+    @doc "Load a LocalModuleSource from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_local_module_source_from_id(t(), Dagger.LocalModuleSource.t()) ::
+            Dagger.LocalModuleSource.t()
+    def load_local_module_source_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadLocalModuleSourceFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.LocalModuleSource{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a ModuleDependency from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_module_dependency_from_id(t(), Dagger.ModuleDependency.t()) ::
+            Dagger.ModuleDependency.t()
+    def load_module_dependency_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadModuleDependencyFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.ModuleDependency{selection: selection, client: query.client}
     end
   )
 
@@ -445,6 +478,16 @@ defmodule Dagger.Client do
       selection = select(query.selection, "loadModuleFromID")
       selection = arg(selection, "id", module)
       %Dagger.Module{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a ModuleSource from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_module_source_from_id(t(), Dagger.ModuleSource.t()) :: Dagger.ModuleSource.t()
+    def load_module_source_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadModuleSourceFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.ModuleSource{selection: selection, client: query.client}
     end
   )
 
@@ -528,24 +571,47 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Load the static configuration for a module from the given source directory and optional subpath.\n\n## Required Arguments\n\n* `source_directory` - \n\n## Optional Arguments\n\n* `subpath` -"
-    @spec module_config(t(), Dagger.Directory.t(), keyword()) :: Dagger.ModuleConfig.t()
-    def module_config(%__MODULE__{} = query, source_directory, optional_args \\ []) do
-      selection = select(query.selection, "moduleConfig")
-
-      (
-        {:ok, id} = Dagger.Directory.id(source_directory)
-        selection = arg(selection, "sourceDirectory", id)
-      )
+    @doc "Create a new module dependency configuration from a module source and name\n\n## Required Arguments\n\n* `source` - The source of the dependency\n\n## Optional Arguments\n\n* `name` - If set, the name to use for the dependency. Otherwise, once installed to a parent module, the name of the dependency module will be used by default."
+    @spec module_dependency(t(), Dagger.ModuleSource.t(), keyword()) ::
+            Dagger.ModuleDependency.t()
+    def module_dependency(%__MODULE__{} = query, source, optional_args \\ []) do
+      selection = select(query.selection, "moduleDependency")
+      selection = arg(selection, "source", source)
 
       selection =
-        if is_nil(optional_args[:subpath]) do
+        if is_nil(optional_args[:name]) do
           selection
         else
-          arg(selection, "subpath", optional_args[:subpath])
+          arg(selection, "name", optional_args[:name])
         end
 
-      execute(selection, query.client)
+      %Dagger.ModuleDependency{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Create a new module source instance from a source ref string.\n\n## Required Arguments\n\n* `ref_string` - The string ref representation of the module source\n\n## Optional Arguments\n\n* `root_directory` - An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.\n* `stable` - If true, enforce that the source is a stable version for source kinds that support versioning."
+    @spec module_source(t(), Dagger.String.t(), keyword()) :: Dagger.ModuleSource.t()
+    def module_source(%__MODULE__{} = query, ref_string, optional_args \\ []) do
+      selection = select(query.selection, "moduleSource")
+      selection = arg(selection, "refString", ref_string)
+
+      selection =
+        if is_nil(optional_args[:root_directory]) do
+          selection
+        else
+          {:ok, id} = Dagger.Directory.id(optional_args[:root_directory])
+          arg(selection, "rootDirectory", id)
+        end
+
+      selection =
+        if is_nil(optional_args[:stable]) do
+          selection
+        else
+          arg(selection, "stable", optional_args[:stable])
+        end
+
+      %Dagger.ModuleSource{selection: selection, client: query.client}
     end
   )
 

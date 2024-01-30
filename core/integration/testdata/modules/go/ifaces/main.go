@@ -13,6 +13,11 @@ func (m *Caller) Test(
 	// +optional
 	run string,
 ) error {
+	_, err := dag.CurrentModule().Source().Export(ctx, ".")
+	if err != nil {
+		return err
+	}
+
 	args := []string{"test", "-v", "-count=1", "."}
 	if run != "" {
 		args = append(args, "-run", run)

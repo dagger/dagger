@@ -25,7 +25,7 @@ const (
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
-	return funcs.module != nil
+	return funcs.moduleName != ""
 }
 
 /*
@@ -66,14 +66,14 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
 		methods:    make(map[string][]method),
-		moduleName: funcs.module.Name,
+		moduleName: funcs.moduleName,
 	}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
 
 	objFunctionCases := map[string][]Code{}
 
-	createMod := Qual("dag", "CurrentModule").Call()
+	createMod := Qual("dag", "Module").Call()
 
 	objs := []types.Object{}
 	for _, name := range pkgScope.Names() {

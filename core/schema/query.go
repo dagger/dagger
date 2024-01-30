@@ -32,6 +32,7 @@ func (s *querySchema) Install() {
 	core.ImageMediaTypesEnum.Install(s.srv)
 	core.CacheSharingModes.Install(s.srv)
 	core.TypeDefKinds.Install(s.srv)
+	core.ModuleSourceKindEnum.Install(s.srv)
 
 	dagql.MustInputSpec(pipeline.Label{}).Install(s.srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(s.srv)

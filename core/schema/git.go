@@ -1,7 +1,12 @@
 package schema
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"fmt"
+	"os/exec"
+	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -162,4 +167,27 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent *core.GitRef, _ stru
 		return "", err
 	}
 	return dagql.NewString(str), nil
+}
+
+// TODO: make this part of the actual git api, just using as util for moduleRef right now
+func defaultBranch(ctx context.Context, repoURL string) (string, error) {
+	stdoutBytes, err := exec.CommandContext(ctx, "git", "ls-remote", "--symref", repoURL, "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to run git: %w", err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(stdoutBytes))
+
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 {
+			continue
+		}
+
+		if fields[0] == "ref:" && fields[2] == "HEAD" {
+			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
+		}
+	}
+
+	return "", fmt.Errorf("could not deduce default branch from output:\n%s", string(stdoutBytes))
 }
