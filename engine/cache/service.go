@@ -82,9 +82,15 @@ func (r GetConfigRequest) String() string {
 }
 
 type Config struct {
-	ImportPeriod  time.Duration
-	ExportPeriod  time.Duration
+	// ImportPeriod is the frequency to attempt imports from the cache service.
+	ImportPeriod time.Duration
+	// ExportPeriod is the frequency to attempt exporting cache to the cache service.
+	ExportPeriod time.Duration
+
+	// ExportTimeout is the maximum duration to allow exports to last (after
+	// this, they are cancelled)
 	ExportTimeout time.Duration
+
 	// TODO: reload config period
 }
 
@@ -96,6 +102,12 @@ func (c Config) String() string {
 	return string(b)
 }
 
+// UpdateCacheRecordsRequest is essentially similar to the internal
+// representation for a cachechains response. A few key differences:
+//   - No reliance on array-indexed values. Instead we use CacheKeyID pairs in
+//     Links to join them together.
+//   - No normalization. The links are just the links between records, there
+//     may be loops, duplicates, etc.
 type UpdateCacheRecordsRequest struct {
 	CacheKeys []CacheKey
 	Links     []Link
@@ -109,28 +121,56 @@ func (r UpdateCacheRecordsRequest) String() string {
 	return string(b)
 }
 
-//nolint:revive
+// CacheKeyID is the ID of a cache record.
+//
+// We use these to connect records together, instead of using the array-indexed
+// records format that buildkit uses.
+type CacheKeyID string
+
+// CacheKey is the part of a CacheRecord that contains the results.
+//
+// TODO: rename this at some point - a cache key should just be the
+// ID/digest/etc, and shouldn't have associated results.
 type CacheKey struct {
-	ID      string
+	// ID is the unique identifier for a record.
+	ID CacheKeyID
+	// Results are all the results that are connected to this record.
 	Results []Result
 }
 
+// Link is connects two CacheKeys together.
+//
+// It's similar to upstream's CacheInfoLink. And CacheChain's link struct.
 type Link struct {
-	ID       string
-	LinkedID string
-	Input    int
-	Digest   digest.Digest
+	// ID is the unique identifier for a record.
+	ID CacheKeyID
+	// LinkedID is the unique identifier for a parent dependency record.
+	LinkedID CacheKeyID
+
+	// Digest is the actual cachekey - this *roughly* corresponds to a cache
+	// result for the input edge. This is what buildkit computes and matches
+	// against to determine a cache match.
+	Digest digest.Digest
+
+	// Input is the input-index for the vertex pointed at by this record.
+	Input int
+	// Selector is the selector for this link (it helps nake this link unique).
 	Selector digest.Digest
 }
 
+// CacheResultID is the worker ID of a cache result.
+type CacheResultID string
+
 type Result struct {
-	ID          string
+	// ID is the cache result ID
+	ID CacheResultID
+
 	CreatedAt   time.Time
 	Description string
 }
 
 type UpdateCacheRecordsResponse struct {
-	// cache records that the engine should prepare layers for and push
+	// ExportRecords are records that the engine should prepare layers for and push
 	ExportRecords []ExportRecord
 }
 
@@ -143,8 +183,11 @@ func (r UpdateCacheRecordsResponse) String() string {
 }
 
 type ExportRecord struct {
-	Digest     digest.Digest // record digest
-	CacheRefID string        // worker cache id
+	// Digest is the target digest to associate a layer with
+	Digest digest.Digest
+
+	// CacheRefID corresponds to Result.ID
+	CacheRefID CacheResultID
 }
 
 type UpdateCacheLayersRequest struct {
@@ -160,8 +203,10 @@ func (r UpdateCacheLayersRequest) String() string {
 }
 
 type RecordLayers struct {
+	// RecordDigest corresponds to ExportRecord.Digest
 	RecordDigest digest.Digest
-	Layers       []ocispecs.Descriptor
+	// Layers are the layers that are part of this record's result
+	Layers []ocispecs.Descriptor
 }
 
 type GetLayerDownloadURLRequest struct {

@@ -163,12 +163,12 @@ func (m *manager) Export(ctx context.Context) error {
 	bklog.G(ctx).Debug("starting cache export key store walk")
 	keyStoreWalkStart := time.Now()
 	err := m.KeyStore.Walk(func(id string) error {
-		cacheKey := CacheKey{ID: id}
+		cacheKey := CacheKey{ID: CacheKeyID(id)}
 
 		err := m.KeyStore.WalkBacklinks(id, func(linkedID string, linkInfo solver.CacheInfoLink) error {
 			link := Link{
-				ID:       id,
-				LinkedID: linkedID,
+				ID:       CacheKeyID(id),
+				LinkedID: CacheKeyID(linkedID),
 				Input:    int(linkInfo.Input),
 				Digest:   linkInfo.Digest,
 				Selector: linkInfo.Selector,
@@ -214,7 +214,7 @@ func (m *manager) Export(ctx context.Context) error {
 				return nil
 			}
 			cacheKey.Results = append(cacheKey.Results, Result{
-				ID:          cacheRef.ID(),
+				ID:          CacheResultID(cacheRef.ID()),
 				CreatedAt:   cacheResult.CreatedAt,
 				Description: cacheRef.GetDescription(),
 			})
@@ -262,7 +262,7 @@ func (m *manager) Export(ctx context.Context) error {
 				bklog.G(ctx).Debugf("finished exporting cache ref %s in %s", record.CacheRefID, time.Since(exportCacheRefStart))
 			}()
 
-			cacheRef, err := m.Worker.CacheManager().Get(ctx, record.CacheRefID, nil, cache.NoUpdateLastUsed)
+			cacheRef, err := m.Worker.CacheManager().Get(ctx, string(record.CacheRefID), nil, cache.NoUpdateLastUsed)
 			if err != nil {
 				// the ref may be lazy or pruned, just skip it
 				bklog.G(ctx).Debugf("skipping cache ref for export %s: %v", record.CacheRefID, err)
