@@ -11,7 +11,7 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 ## Chain Dagger functions together
 
-Returning a directory, by itself, isn't very useful. Typically, you will want something from the directory - in the previous case, the binary file produced at the end of the build process.
+Typically, you will want something from the directory returned by a function. In the previous case, this would be the binary file produced at the end of the build process.
 
 One of Dagger's key features is that the custom objects returned by module functions can, in turn, define new functions. This allows function calls to be "chained" together to achieve a specific result.
 
