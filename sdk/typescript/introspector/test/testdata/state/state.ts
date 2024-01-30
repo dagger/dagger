@@ -1,3 +1,8 @@
+/**
+ * An Alpine Module for testing purpose only.
+ * 
+ * Warning: Do not reproduce in production.
+ */
 import { func, object, field } from '../../../decorators/decorators.js'
 import { dag, Container } from '../../../../api/client.gen.js'
 

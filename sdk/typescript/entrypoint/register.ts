@@ -26,6 +26,11 @@ export async function register(
   // Get the current module
   let mod = dag.currentModule()
 
+  // Add module description if any.
+  if (scanResult.module.description) {
+    mod = mod.withDescription(scanResult.module.description)
+  }
+
   // For each class scanned, register its type, method and properties in the module.
   Object.values(scanResult.classes).map((modClass) => {
     // Register the class Typedef object in Dagger
