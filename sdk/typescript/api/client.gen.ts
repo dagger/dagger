@@ -849,6 +849,13 @@ export type ServiceEndpointOpts = {
   scheme?: string
 }
 
+export type ServiceStopOpts = {
+  /**
+   * Immediately kill the service without waiting for a graceful exit
+   */
+  kill?: boolean
+}
+
 export type ServiceUpOpts = {
   ports?: PortForward[]
   native?: boolean
@@ -6515,13 +6522,15 @@ export class Service extends BaseClient {
 
   /**
    * Stop the service.
+   * @param opts.kill Immediately kill the service without waiting for a graceful exit
    */
-  stop = async (): Promise<Service> => {
+  stop = async (opts?: ServiceStopOpts): Promise<Service> => {
     await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "stop",
+          args: { ...opts },
         },
       ],
       await this._ctx.connection()

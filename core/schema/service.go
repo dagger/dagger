@@ -53,7 +53,8 @@ func (s *serviceSchema) Install() {
 
 		dagql.NodeFunc("stop", s.stop).
 			Impure("Imperatively mutates runtime state.").
-			Doc(`Stop the service.`),
+			Doc(`Stop the service.`).
+			ArgDoc("kill", `Immediately kill the service without waiting for a graceful exit`),
 	}.Install(s.srv)
 }
 
@@ -101,16 +102,14 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.Instance[*core.S
 	return dagql.NewID[*core.Service](parent.ID()), nil
 }
 
-func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (core.ServiceID, error) {
-	if err := parent.Self.Stop(ctx, parent.ID()); err != nil {
+type serviceStopArgs struct {
+	Kill bool `default:"false"`
+}
+
+func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Service], args serviceStopArgs) (core.ServiceID, error) {
+	if err := parent.Self.Stop(ctx, parent.ID(), args.Kill); err != nil {
 		return core.ServiceID{}, err
 	}
-
-	err := parent.Self.Stop(ctx, parent.ID())
-	if err != nil {
-		return core.ServiceID{}, err
-	}
-
 	return dagql.NewID[*core.Service](parent.ID()), nil
 }
 

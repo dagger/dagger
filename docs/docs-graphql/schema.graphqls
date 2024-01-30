@@ -1880,7 +1880,10 @@ type Service {
   start: ServiceID!
 
   """Stop the service."""
-  stop: ServiceID!
+  stop(
+    """Immediately kill the service without waiting for a graceful exit"""
+    kill: Boolean = false
+  ): ServiceID!
 
   """
   Creates a tunnel that forwards traffic from the caller's network to this service.

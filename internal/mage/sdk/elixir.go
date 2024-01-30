@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger"
@@ -157,8 +158,9 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	var (
 		version = strings.TrimPrefix(tag, "sdk/elixir/v")
 		mixFile = "sdk/elixir/mix.exs"
-		dryRun  = os.Getenv("HEX_DRY_RUN")
 	)
+
+	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
 
 	mixExs, err := os.ReadFile(mixFile)
 	if err != nil {
@@ -170,18 +172,19 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 		return err
 	}
 
-	args := []string{"mix", "hex.publish", "--yes"}
-	if dryRun != "" {
-		args = append(args, "--dry-run")
-	}
-
 	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
 
-	_, err = elixirBase(c, elixirVersions[1]).
-		With(util.HostSecretVar(c, "HEX_API_KEY")).
-		WithExec(args).
-		Sync(ctx)
-
+	result := elixirBase(c, elixirVersions[1])
+	args := []string{"mix", "hex.publish", "--yes"}
+	if dryRun {
+		args = append(args, "--dry-run")
+		result = result.WithExec(args)
+	} else {
+		result = result.
+			With(util.HostSecretVar(c, "HEX_API_KEY")).
+			WithExec(args)
+	}
+	_, err = result.Sync(ctx)
 	return err
 }
 

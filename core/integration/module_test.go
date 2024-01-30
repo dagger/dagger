@@ -26,6 +26,8 @@ import (
 )
 
 func TestModuleGoInit(t *testing.T) {
+	t.Parallel()
+
 	t.Run("from scratch", func(t *testing.T) {
 		t.Parallel()
 
@@ -684,35 +686,30 @@ func TestModuleGoSignatures(t *testing.T) {
 	logGen(ctx, t, modGen.Directory("."))
 
 	t.Run("func Hello() string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
 	t.Run("func Echo(string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoPointer(*string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoPointer(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoPointer":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoPointerPointer(**string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoPointerPointer(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoPointerPointer":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoOptional(string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptional":"hello...hello...hello..."}}`, out)
@@ -722,7 +719,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptionalPointer(string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalPointer(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"hello...hello...hello..."}}`, out)
@@ -732,7 +728,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptionalSlice([]string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"hello+there...hello+there...hello+there..."}}`, out)
@@ -742,57 +737,48 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func Echoes([]string) []string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
 	t.Run("func EchoesVariadic(...string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func HelloContext(context.Context) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloContext":"hello context"}}`, out)
 	})
 
 	t.Run("func EchoContext(context.Context, string) string", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoContext(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoContext":"ctx.hello...ctx.hello...ctx.hello..."}}`, out)
 	})
 
 	t.Run("func HelloStringError() (string, error)", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloStringError}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloStringError":"hello i worked"}}`, out)
 	})
 
 	t.Run("func HelloVoid()", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
 	t.Run("func HelloVoidError() error", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoidError}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoidError":null}}`, out)
 	})
 
 	t.Run("func EchoOpts(string, string, int) error", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
@@ -803,8 +789,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInline(struct{string, string, int}) error", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi"}}`, out)
@@ -815,8 +799,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInlinePointer(*struct{string, string, int}) error", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlinePointer(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlinePointer":"hi"}}`, out)
@@ -827,8 +809,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInlineCtx(ctx, struct{string, string, int}) error", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineCtx(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineCtx":"hi"}}`, out)
@@ -839,8 +819,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInlineTags(struct{string, string, int}) error", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineTags(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi"}}`, out)
@@ -851,8 +829,6 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsPragmas(string, string, int) error", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsPragmas(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsPragmas":"hi...hi...hi..."}}`, out)
@@ -876,8 +852,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		})
 
 	t.Run("hello(): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -885,8 +859,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoes(msgs: string[]): string[]", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -894,8 +866,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoOptional(msg = 'default'): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -908,8 +878,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoesVariadic(...msgs: string[]): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -917,8 +885,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echo(msg: string): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -926,8 +892,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoOptionalSlice(msg = ['foobar']): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -940,8 +904,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("helloVoid(): void", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -949,8 +911,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoOpts(msg: string, suffix: string = '', times: number = 1): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
@@ -967,8 +927,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
@@ -1033,35 +991,30 @@ func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (st
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("func Read(ctx, Directory) (string, error)", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
 	})
 
 	t.Run("func ReadPointer(ctx, *Directory) (string, error)", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readPointer":"bar"}}`, out)
 	})
 
 	t.Run("func ReadSlice(ctx, []Directory) (string, error)", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
 	})
 
 	t.Run("func ReadVariadic(ctx, ...Directory) (string, error)", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
 	})
 
 	t.Run("func ReadOptional(ctx, Optional[Directory]) (string, error)", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
@@ -1687,8 +1640,6 @@ func (m *Minimal) IsEmpty() bool {
 func TestModuleDescription(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	for _, tc := range []struct {
 		sdk    string
 		source string
@@ -1714,6 +1665,7 @@ class Minimal:
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1742,8 +1694,6 @@ class Minimal:
 
 func TestModulePrivateField(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	for _, tc := range []struct {
 		sdk    string
@@ -1826,6 +1776,7 @@ class Minimal {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1890,8 +1841,6 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 
 func TestModuleCustomTypes(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -1980,6 +1929,7 @@ class Test {
 
 		t.Run(fmt.Sprintf("custom %s types", tc.sdk), func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2000,8 +1950,6 @@ class Test {
 
 func TestModuleReturnTypeDetection(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2066,6 +2014,7 @@ class Foo {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2086,8 +2035,6 @@ class Foo {
 
 func TestModuleReturnObject(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2172,6 +2119,7 @@ class Foo {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2192,8 +2140,6 @@ class Foo {
 
 func TestModuleReturnNestedObject(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2278,6 +2224,7 @@ class Playground {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2298,8 +2245,6 @@ class Playground {
 
 func TestModuleReturnCompositeCore(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2391,6 +2336,7 @@ class Playground {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2415,8 +2361,6 @@ class Playground {
 
 func TestModuleReturnComplexThing(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2535,6 +2479,7 @@ class Playground {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2585,8 +2530,6 @@ class Foo:
 
 func TestModuleGlobalVarDAG(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2643,6 +2586,7 @@ class Foo {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2663,8 +2607,6 @@ class Foo {
 
 func TestModuleIDableType(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2737,6 +2679,7 @@ class Foo {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -2775,8 +2718,6 @@ func TestModuleArgOwnType(t *testing.T) {
 	// the raw JSON, since the module doesn't understand it's own types as IDs
 
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -2880,6 +2821,7 @@ class Foo {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -3105,10 +3047,7 @@ func (m *Dep) Fn() Obj {
 		With(daggerExec("mod", "install", "../dep"))
 
 	t.Run("return as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3130,7 +3069,6 @@ func (m *Test) Fn() (*DepObj, error) {
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3153,10 +3091,7 @@ func (m *Test) Fn() ([]*DepObj, error) {
 	})
 
 	t.Run("arg as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -3177,7 +3112,6 @@ func (m *Test) Fn(obj *DepObj) error {
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -3199,10 +3133,7 @@ func (m *Test) Fn(obj []*DepObj) error {
 	})
 
 	t.Run("field as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3228,7 +3159,6 @@ func (m *Test) Fn() (*Obj, error) {
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3287,10 +3217,7 @@ class Dep:
 		With(daggerExec("mod", "install", "../dep"))
 
 	t.Run("return as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 					Contents: `import dagger
@@ -3312,7 +3239,6 @@ class Test:
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 					Contents: `import dagger
@@ -3335,10 +3261,7 @@ class Test:
 	})
 
 	t.Run("arg as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 				Contents: `import dagger
 
@@ -3359,7 +3282,6 @@ class Test:
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 				Contents: `import dagger
 
@@ -3381,10 +3303,7 @@ class Test:
 	})
 
 	t.Run("field as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 					Contents: `import dagger
@@ -3410,7 +3329,6 @@ class Test:
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
 			_, err := ctr.
 				WithNewFile("src/main.py", dagger.ContainerWithNewFileOpts{
 					Contents: `import dagger
@@ -3479,8 +3397,6 @@ class Use {
 func TestModuleUseLocal(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	type testCase struct {
 		sdk    string
 		source string
@@ -3504,6 +3420,7 @@ func TestModuleUseLocal(t *testing.T) {
 
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -3533,8 +3450,6 @@ func TestModuleUseLocal(t *testing.T) {
 
 func TestModuleCodegenOnDepChange(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk      string
@@ -3567,6 +3482,7 @@ func TestModuleCodegenOnDepChange(t *testing.T) {
 
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -3611,8 +3527,6 @@ func TestModuleSyncDeps(t *testing.T) {
 	// verify that changes to deps result in a sync to the depender module
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	type testCase struct {
 		sdk    string
 		source string
@@ -3636,6 +3550,7 @@ func TestModuleSyncDeps(t *testing.T) {
 
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -3676,8 +3591,6 @@ func TestModuleSyncDeps(t *testing.T) {
 
 func TestModuleUseLocalMulti(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -3738,6 +3651,7 @@ class Use {
 
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -3782,8 +3696,6 @@ class Use {
 func TestModuleConstructor(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	type testCase struct {
 		sdk    string
 		source string
@@ -3791,7 +3703,6 @@ func TestModuleConstructor(t *testing.T) {
 
 	t.Run("basic", func(t *testing.T) {
 		t.Parallel()
-
 		for _, tc := range []testCase{
 			{
 				sdk: "go",
@@ -3927,6 +3838,7 @@ class Test {
 
 			t.Run(tc.sdk, func(t *testing.T) {
 				t.Parallel()
+				c, ctx := connect(t)
 
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4045,6 +3957,7 @@ class Test {
 
 			t.Run(tc.sdk, func(t *testing.T) {
 				t.Parallel()
+				c, ctx := connect(t)
 
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4136,6 +4049,7 @@ class Test {
 
 	t.Run("python: with default factory", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		content := identity.NewID()
 
@@ -4171,6 +4085,7 @@ class Test:
 
 	t.Run("typescript: with default factory", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
 
 		content := identity.NewID()
 
@@ -4214,8 +4129,6 @@ class Test {
 
 func TestModuleWrapping(t *testing.T) {
 	t.Parallel()
-
-	c, ctx := connect(t)
 
 	type testCase struct {
 		sdk    string
@@ -4303,6 +4216,7 @@ class Wrapper {
 
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4785,8 +4699,6 @@ func TestModuleRoots(t *testing.T) {
 	for _, entry := range entries {
 		entry := entry
 		t.Run(entry.Name(), func(t *testing.T) {
-			t.Parallel()
-
 			ctr := ctr.WithWorkdir("/work/" + entry.Name())
 
 			out, err := ctr.
@@ -4854,8 +4766,6 @@ func TestModuleReservedWords(t *testing.T) {
 
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	type testCase struct {
 		sdk    string
 		source string
@@ -4885,6 +4795,7 @@ func TestModuleReservedWords(t *testing.T) {
 
 				t.Run(tc.sdk, func(t *testing.T) {
 					t.Parallel()
+					c, ctx := connect(t)
 
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4916,6 +4827,7 @@ func TestModuleReservedWords(t *testing.T) {
 
 				t.Run(tc.sdk, func(t *testing.T) {
 					t.Parallel()
+					c, ctx := connect(t)
 
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4951,6 +4863,7 @@ func TestModuleReservedWords(t *testing.T) {
 
 				t.Run(tc.sdk, func(t *testing.T) {
 					t.Parallel()
+					c, ctx := connect(t)
 
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
