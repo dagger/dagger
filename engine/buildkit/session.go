@@ -36,7 +36,7 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	}))
 
 	clientConn, serverConn := net.Pipe()
-	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) { // nolint: unparam
+	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) { //nolint: unparam
 		go func() {
 			defer serverConn.Close()
 			err := c.SessionManager.HandleConn(ctx, serverConn, meta)

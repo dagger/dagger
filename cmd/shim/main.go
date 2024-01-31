@@ -497,52 +497,31 @@ func setupBundle() int {
 		return errorExitCode
 	}
 
-	// Run the actual runc binary as a child process with the (possibly updated) config
-	// Run it in a separate goroutine locked to the OS thread to ensure that Pdeathsig
-	// is never sent incorrectly: https://github.com/golang/go/issues/27505
-	exitCodeCh := make(chan int)
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		defer close(exitCodeCh)
-		// #nosec G204
-		cmd := exec.Command(runcPath, os.Args[1:]...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Pdeathsig: syscall.SIGKILL,
-		}
+	// Run the actual runc binary as a child process with the (possibly updated) config.
+	cmd := exec.Command(runcPath, os.Args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGKILL,
+	}
 
-		sigCh := make(chan os.Signal, 32)
-		signal.Notify(sigCh)
-		if err := cmd.Start(); err != nil {
-			fmt.Printf("Error starting runc: %v", err)
-			exitCodeCh <- errorExitCode
-			return
-		}
-		go func() {
-			for sig := range sigCh {
-				cmd.Process.Signal(sig)
-			}
-		}()
-		if err := cmd.Wait(); err != nil {
-			if exiterr, ok := err.(*exec.ExitError); ok {
-				if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-					exitcode := waitStatus.ExitStatus()
-					if exitcode < 0 {
-						exitcode = errorExitCode
-					}
-					exitCodeCh <- exitcode
-					return
+	exitCode := 0
+	if err := execProcess(cmd, false); err != nil {
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				exitCode = waitStatus.ExitStatus()
+				if exitCode < 0 {
+					exitCode = errorExitCode
 				}
+			} else {
+				exitCode = errorExitCode
 			}
-			fmt.Printf("Error waiting for runc: %v", err)
-			exitCodeCh <- errorExitCode
-			return
+		} else {
+			exitCode = errorExitCode
 		}
-	}()
-	return <-exitCodeCh
+	}
+	return exitCode
 }
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
@@ -589,7 +568,7 @@ func appendHostAlias(hostsFilePath string, env string, searchDomains []string) e
 	return hostsFile.Close()
 }
 
-// nolint: unparam
+//nolint:unparam
 func execRunc() int {
 	args := []string{runcPath}
 	args = append(args, os.Args[1:]...)
@@ -614,17 +593,7 @@ func internalEnv(name string) (string, bool) {
 func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); !found {
 		// no nesting; run as normal
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-
-		// Wait for stdout and stderr copy goroutines to finish:
-		pipeWg.Wait()
-
-		if err := cmd.Wait(); err != nil {
-			return err
-		}
-		return nil
+		return execProcess(cmd, true)
 	}
 
 	// setup a session and associated env vars for the container
@@ -674,16 +643,42 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	// pass dagger session along to any SDKs that run in the container
 	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(sessionPort))
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
-	err = cmd.Start()
-	if err != nil {
-		return err
-	}
-	pipeWg.Wait()
-	err = cmd.Wait()
-	if err != nil {
-		return err
-	}
-	return nil
+	return execProcess(cmd, true)
+}
+
+// execProcess runs the command as a child process.
+//
+// It forwards all signals from the parent process into the child (e.g. so that
+// the child can receive SIGTERM, etc). Additionally, it spawns a separate
+// goroutine locked to the OS thread to ensure that Pdeathsig is never sent
+// incorrectly: https://github.com/golang/go/issues/27505
+func execProcess(cmd *exec.Cmd, waitForStreams bool) error {
+	errCh := make(chan error)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		defer close(errCh)
+
+		sigCh := make(chan os.Signal, 32)
+		signal.Notify(sigCh)
+		if err := cmd.Start(); err != nil {
+			errCh <- err
+			return
+		}
+		go func() {
+			for sig := range sigCh {
+				cmd.Process.Signal(sig)
+			}
+		}()
+		if waitForStreams {
+			pipeWg.Wait()
+		}
+		if err := cmd.Wait(); err != nil {
+			errCh <- err
+			return
+		}
+	}()
+	return <-errCh
 }
 
 func replaceSearch(dst io.Writer, resolv string, searchDomains []string) error {

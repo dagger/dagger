@@ -87,19 +87,19 @@ dagger call test --node-version 18
 Modules don't need to be installed locally. Dagger lets you consume modules from remote sources as well. For example, you can `dagger call` a function from a module using its GitHub URL:
 
 ```shell
-dagger call test -m "github.com/sipsma/daggerverse@main"
+dagger call -m "github.com/sipsma/daggerverse@main" test
 ```
 
 Or, if the target module is in a subdirectory of the repository:
 
 ```shell
-dagger call test -m "github.com/sipsma/daggerverse/example@main"
+dagger call -m "github.com/sipsma/daggerverse/example@main" test
 ```
 
 You can also use modules from the local filesystem, without needing to push them to GitHub. For example:
 
 ```shell
-dagger call test -m "./path/to/module"
+dagger call -m "./path/to/module" test
 ```
 
 :::tip

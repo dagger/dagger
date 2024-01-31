@@ -18,8 +18,7 @@ on:
         required: false
 
 jobs:
-  # Use a free GitHub Actions runner when
-  # NOT running in the dagger/dagger repo
+  # Use a free GitHub Actions runner when NOT running in the dagger/dagger repo
   github-free-runner:
     if: ${{ github.repository != 'dagger/dagger' }}
     runs-on: ubuntu-latest
@@ -29,15 +28,22 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
-      - name: ${{ inputs.mage-targets }}
+      - name: Waiting for Dagger Engine to be ready...
         run: |
           if [ "${{ inputs.dev-engine }}" == "true" ]
           then
             ./hack/dev
+
             export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
-            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+            echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
+
+            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
           fi
+          ./hack/make engine:connect
+      - name: ${{ inputs.mage-targets }}
+        run: |
           ./hack/make ${{ inputs.mage-targets }}
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
@@ -53,18 +59,29 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
-      - name: ${{ inputs.mage-targets }}
+      - name: Waiting for Dagger Engine to be ready...
         run: |
           if [ "${{ inputs.dev-engine }}" == "true" ]
           then
             ./hack/dev
+
             export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+            echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
+
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
           fi
-          ./hack/make ${{ inputs.mage-targets }}
+
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
+
+          ./hack/make engine:connect
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          ./hack/make ${{ inputs.mage-targets }}
+        env:
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()

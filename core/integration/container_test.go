@@ -609,6 +609,23 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "2:11", res.Container.From.WithUser.User)
 		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
+
+	t.Run("stdin", func(t *testing.T) {
+		err := testutil.Query(
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withUser(name: "daemon") {
+						withExec(args: ["sh"], stdin: "whoami") {
+							stdout
+						}
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.WithExec.Stdout)
+	})
 }
 
 func TestContainerExecWithoutUser(t *testing.T) {
@@ -635,35 +652,30 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	withEntry := base.WithEntrypoint([]string{"sh"})
 
 	t.Run("before", func(t *testing.T) {
-		t.Parallel()
 		before, err := base.Entrypoint(ctx)
 		require.NoError(t, err)
 		require.Empty(t, before)
 	})
 
 	t.Run("after", func(t *testing.T) {
-		t.Parallel()
 		after, err := withEntry.Entrypoint(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sh"}, after)
 	})
 
 	t.Run("used", func(t *testing.T) {
-		t.Parallel()
 		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/root\n", used)
 	})
 
 	t.Run("prepended to exec", func(t *testing.T) {
-		t.Parallel()
 		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "can't open 'sh'")
 	})
 
 	t.Run("skipped", func(t *testing.T) {
-		t.Parallel()
 		skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
 			SkipEntrypoint: true,
 		}).Stdout(ctx)
@@ -672,7 +684,6 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	})
 
 	t.Run("unset default args", func(t *testing.T) {
-		t.Parallel()
 		removed, err := base.
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}).
@@ -682,7 +693,6 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	})
 
 	t.Run("kept default args", func(t *testing.T) {
-		t.Parallel()
 		kept, err := base.
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}, dagger.ContainerWithEntrypointOpts{
@@ -694,7 +704,6 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	})
 
 	t.Run("cleared", func(t *testing.T) {
-		t.Parallel()
 		withoutEntry := withEntry.WithEntrypoint(nil)
 		removed, err := withoutEntry.Entrypoint(ctx)
 		require.NoError(t, err)
@@ -3761,8 +3770,6 @@ func TestContainerMediaTypes(t *testing.T) {
 			for _, useAsTarball := range []bool{true, false} {
 				useAsTarball := useAsTarball
 				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
-					t.Parallel()
-
 					tarPath := filepath.Join(t.TempDir(), "export.tar")
 					if useAsTarball {
 						_, err := c.Container().

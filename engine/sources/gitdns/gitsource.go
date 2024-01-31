@@ -451,7 +451,7 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 	return cacheKey, sha, nil, true, nil
 }
 
-func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out cache.ImmutableRef, retErr error) { // nolint: gocyclo
+func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out cache.ImmutableRef, retErr error) { //nolint: gocyclo
 	cacheKey := gs.cacheKey
 	if cacheKey == "" {
 		var err error

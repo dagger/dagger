@@ -178,8 +178,8 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *idproto.ID) error {
 	return err
 }
 
-func (svc *Service) Stop(ctx context.Context, id *idproto.ID) error {
-	return svc.Query.Services.Stop(ctx, id)
+func (svc *Service) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
+	return svc.Query.Services.Stop(ctx, id, kill)
 }
 
 func (svc *Service) Start(
@@ -202,7 +202,7 @@ func (svc *Service) Start(
 	}
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
 	id *idproto.ID,
@@ -396,7 +396,8 @@ func (svc *Service) startContainer(
 		forwardStderr(stderrClient)
 	}
 
-	exited := make(chan error, 1)
+	var exitErr error
+	exited := make(chan struct{})
 	go func() {
 		defer func() {
 			if stdinClient != nil {
@@ -411,31 +412,44 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		exited <- svcProc.Wait()
+		exitErr = svcProc.Wait()
 
 		// detach dependent services when process exits
 		detachDeps()
-	}()
 
-	stopSvc := func(ctx context.Context) (stopErr error) {
-		defer func() {
-			vtx.Done(stopErr)
-		}()
-
-		// TODO(vito): graceful shutdown?
-		if err := svcProc.Signal(ctx, syscall.SIGKILL); err != nil {
-			return fmt.Errorf("signal: %w", err)
-		}
-
-		if err := gc.Release(ctx); err != nil {
-			// TODO(vito): returns context.Canceled, which is a bit strange, because
-			// that's the goal
+		// release container
+		if err := gc.Release(ctx); exitErr == nil && err != nil {
 			if !errors.Is(err, context.Canceled) {
-				return fmt.Errorf("release: %w", err)
+				exitErr = fmt.Errorf("release: %w", err)
 			}
 		}
 
-		return nil
+		vtx.Done(err)
+	}()
+
+	stopSvc := func(ctx context.Context, force bool) error {
+		sig := syscall.SIGTERM
+		if force {
+			sig = syscall.SIGKILL
+		}
+		if err := svcProc.Signal(ctx, sig); err != nil {
+			return fmt.Errorf("signal: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-exited:
+			return nil
+		}
+	}
+
+	waitSvc := func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-exited:
+			return exitErr
+		}
 	}
 
 	select {
@@ -453,20 +467,12 @@ func (svc *Service) startContainer(
 				ServerID: clientMetadata.ServerID,
 			},
 			Stop: stopSvc,
-			Wait: func(ctx context.Context) error {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case err := <-exited:
-					return err
-				}
-			},
+			Wait: waitSvc,
 		}, nil
-	case err := <-exited:
-		if err != nil {
-			return nil, fmt.Errorf("exited: %w\noutput: %s", err, outBuf.String())
+	case <-exited:
+		if exitErr != nil {
+			return nil, fmt.Errorf("exited: %w\noutput: %s", exitErr, outBuf.String())
 		}
-
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
 }
@@ -494,12 +500,16 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 	return out
 }
 
-func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, err error) {
+func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, rerr error) {
 	svcCtx, stop := context.WithCancel(context.Background())
+	defer func() {
+		if rerr != nil {
+			stop()
+		}
+	}()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		stop()
 		return nil, err
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
@@ -511,7 +521,6 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 
 	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self)
 	if err != nil {
-		stop()
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
 
@@ -536,19 +545,16 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 			fmt.Sprintf("%s:%d", upstream.Host, forward.Backend),
 		)
 		if err != nil {
-			stop()
 			return nil, fmt.Errorf("host to container: %w", err)
 		}
 
 		_, portStr, err := net.SplitHostPort(res.GetAddr())
 		if err != nil {
-			stop()
 			return nil, fmt.Errorf("split host port: %w", err)
 		}
 
 		frontend, err = strconv.Atoi(portStr)
 		if err != nil {
-			stop()
 			return nil, fmt.Errorf("parse port: %w", err)
 		}
 
@@ -565,7 +571,6 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 
 	dig, err := id.Digest()
 	if err != nil {
-		stop()
 		return nil, err
 	}
 
@@ -577,10 +582,9 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 		},
 		Host:  dialHost,
 		Ports: ports,
-		Stop: func(context.Context) error {
+		Stop: func(_ context.Context, _ bool) error {
 			stop()
-			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
-			go svcs.Detach(svcCtx, upstream)
+			svcs.Detach(svcCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
@@ -660,7 +664,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *idproto.ID) (run
 			},
 			Host:  fullHost,
 			Ports: checkPorts,
-			Stop: func(context.Context) error {
+			Stop: func(context.Context, bool) error {
 				stop()
 				return nil
 			},

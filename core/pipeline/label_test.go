@@ -460,7 +460,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 	}
 }
 
-func run(t *testing.T, exe string, args ...string) string { // nolint: unparam
+func run(t *testing.T, exe string, args ...string) string { //nolint: unparam
 	t.Helper()
 	cmd := exec.Command(exe, args...)
 	cmd.Stderr = os.Stderr

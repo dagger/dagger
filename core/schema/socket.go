@@ -27,7 +27,6 @@ type socketArgs struct {
 	ID core.SocketID
 }
 
-// nolint: unparam
 func (s *socketSchema) socket(ctx context.Context, parent *core.Query, args socketArgs) (dagql.Instance[*core.Socket], error) {
 	return args.ID.Load(ctx, s.srv)
 }

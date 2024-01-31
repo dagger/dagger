@@ -1723,7 +1723,7 @@ func metaMount(stdin string) (llb.State, string) {
 	// TODO(vito): have the shim exec as the other user instead?
 	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
 	if stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o600, []byte(stdin))
+		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o666, []byte(stdin))
 	}
 
 	return llb.Scratch().File(

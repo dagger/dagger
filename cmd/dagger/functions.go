@@ -27,6 +27,7 @@ const (
 	Service     string = "Service"
 	Terminal    string = "Terminal"
 	PortForward string = "PortForward"
+	CacheVolume string = "CacheVolume"
 )
 
 var funcGroup = &cobra.Group{
@@ -381,13 +382,18 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	}()
 
 	load := vtx.Task("loading module")
-	mod, err := loadMod(ctx, dag)
+	modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
+	}
+	if !modConf.FullyInitialized() {
+		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalSourcePath)
+	}
+	mod := modConf.Mod.Initialize()
+	_, err = mod.Serve(ctx)
 	load.Done(err)
 	if err != nil {
 		return nil, nil, err
-	}
-	if mod == nil {
-		return nil, nil, fmt.Errorf("no module specified and no default module found in current directory")
 	}
 
 	load = vtx.Task("loading objects")

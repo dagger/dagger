@@ -43,7 +43,7 @@ EOF
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		focus = queryFocus
-		return loadModCmdWrapper(Query, "")(cmd, args)
+		return optionalModCmdWrapper(Query, "")(cmd, args)
 	},
 	Args: cobra.MaximumNArgs(1), // operation can be specified
 }

@@ -40,6 +40,6 @@ func setupDebugHandlers(addr string) error {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "debug handlers listening at", addr)
-	go http.Serve(l, m) // nolint:gosec
+	go http.Serve(l, m) //nolint:gosec
 	return nil
 }

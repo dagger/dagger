@@ -1,8 +1,0 @@
-{
-  "name": "good-sibling-dep",
-  "sdk": "go",
-  "root": "..",
-  "dependencies": [
-    "../good-base"
-  ]
-}
