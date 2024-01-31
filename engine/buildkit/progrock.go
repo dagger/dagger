@@ -1,7 +1,6 @@
 package buildkit
 
 import (
-	"bytes"
 	"context"
 	"net"
 	"os"
@@ -10,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend"
@@ -19,11 +18,14 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const FocusPrefix = "[focus] "
-const InternalPrefix = "[internal] "
+const (
+	FocusPrefix    = "[focus] "
+	InternalPrefix = "[internal] "
+)
 
 type BK2Progrock interface {
 	ConvertStatus(*bkclient.SolveStatus) *progrock.StatusUpdate
@@ -166,10 +168,8 @@ func (g *recordingGateway) ConvertStatus(event *bkclient.SolveStatus) *progrock.
 			if op != nil {
 				g.records[v.Digest] = nil // don't write out a record again
 
-				marshal := jsonpb.Marshaler{}
-				var buf bytes.Buffer
-				if err := marshal.Marshal(&buf, op); err == nil {
-					vtx.Labels = append(vtx.Labels, progrock.Labelf("llb", buf.String()))
+				if a, err := types.MarshalAny(op); err == nil {
+					status.Metas = append(status.Metas, &progrock.VertexMeta{Vertex: vtx.Id, Data: &anypb.Any{TypeUrl: a.TypeUrl, Value: a.Value}})
 				}
 			}
 		}
