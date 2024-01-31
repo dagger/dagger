@@ -47,7 +47,7 @@ Begin by running `dagger mod init` in your application directory to bootstrap a 
 <TabItem value="Go">
 
 ```sh
-dagger mod init --name=my-module --sdk=go
+dagger init --name=my-module --sdk=go
 ```
 
 This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
@@ -56,7 +56,7 @@ This will generate a `dagger.json` module file, an initial `main.go` source file
 <TabItem value="Python">
 
 ```sh
-dagger mod init --name=my-module --sdk=python
+dagger init --name=my-module --sdk=python
 ```
 
 This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
@@ -80,7 +80,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 1. Add the `node` module as a dependency:
 
     ```shell
-    dagger mod install github.com/quartz-technology/daggerverse/node/typescript
+    dagger install github.com/quartz-technology/daggerverse/node/typescript
     ```
 
 1. Update the generated `main.go` file with the following code:
@@ -92,15 +92,15 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
       - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
       - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
       - It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
-        - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.Host().Directory()`.
-        - The `dag.Host().Directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+        - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.CurrentModule().Source()`.
+        - The `dag.CurrentModule().Source()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
       - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
 </TabItem>
 <TabItem value="Python">
 1. Add the `node` module as a dependency:
 
     ```shell
-    dagger mod install github.com/quartz-technology/daggerverse/node/typescript
+    dagger install github.com/quartz-technology/daggerverse/node/typescript
     ```
 
 1. Update the generated `src/main.py` file with the following code:
@@ -112,8 +112,8 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
       - It calls the `node` module's `with_version()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
       - It calls the module's `Node.with_npm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
       - It calls the module's `Node.with_source()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
-        - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.host().directory()`.
-        - The `dag.host().directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+        - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.current_module().source()`.
+        - The `dag.current_module().source()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
       - It calls the module's `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
 </TabItem>
 </Tabs>
@@ -124,7 +124,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 
 ## Step 3: Add a function to test the application
 
-The return value of the `buildBase()` function is a `Node` object with the application source code, Node.js runtime and cahe volumes. This is everything needed to test, build and publish the application.
+The return value of the `buildBase()` function is a `Node` object with the application source code, Node.js runtime and cache volumes. This is everything needed to test, build and publish the application.
 
 Add a new function that runs tests for the example application, by executing the `test:unit run` command:
 
