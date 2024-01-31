@@ -94,6 +94,11 @@
             {
               "type": "doc",
               "id": "developer/typescript/quickstart"
+            },
+            {
+              "type": "doc",
+              "label": "Reference",
+              "id": "developer/typescript/reference/modules"
             }
           ]
         },
