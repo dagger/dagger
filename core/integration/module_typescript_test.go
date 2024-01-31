@@ -532,9 +532,10 @@ class Obj {
 @object
 class Foo {}
 `)).
-		WithWorkdir("/work/test").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=typescript", "--root=..")).
-		With(daggerExec("mod", "install", "../dep"))
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "-m=test", "--name=test", "--sdk=typescript")).
+		With(daggerExec("mod", "install", "-m=test", "./dep")).
+		WithWorkdir("/work/test")
 
 	t.Run("return as other module object", func(t *testing.T) {
 		t.Parallel()
