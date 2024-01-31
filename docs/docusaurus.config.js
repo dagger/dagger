@@ -118,7 +118,7 @@ const config = {
           skipErrorChecking: true,
           disableSources: true,
           sidebar: {
-            categoryLabel: 'Reference',
+            categoryLabel: 'TypeScript SDK Reference',
           },
           frontmatter: {
             displayed_sidebar: 'zenith',
