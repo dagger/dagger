@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	bkclient "github.com/moby/buildkit/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
@@ -84,33 +83,9 @@ func NewDaggerServer(
 	}
 	srv.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
-	statusCh := make(chan *bkclient.SolveStatus, 8)
-	go func() {
-		// NOTE: context.Background is used because if the provided context is canceled, buildkit can
-		// leave internal progress contexts open and leak goroutines.
-		err := bkClient.WriteStatusesTo(context.Background(), statusCh)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("failed to write status updates")
-		}
-	}()
-	go func() {
-		defer func() {
-			// drain channel on error
-			for range statusCh {
-			}
-		}()
-		for {
-			status, ok := <-statusCh
-			if !ok {
-				return
-			}
-			err := srv.recorder.Record(buildkit.BK2Progrock(status))
-			if err != nil {
-				bklog.G(ctx).WithError(err).Error("failed to record status update")
-				return
-			}
-		}
-	}()
+	// NOTE: context.Background is used because if the provided context is canceled, buildkit can
+	// leave internal progress contexts open and leak goroutines.
+	bkClient.WriteStatusesTo(context.Background(), srv.recorder)
 
 	apiSchema, err := schema.New(ctx, schema.InitializeArgs{
 		BuildkitClient: srv.bkClient,
