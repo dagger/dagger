@@ -185,10 +185,10 @@ appending it to the end of the command (for example, *stdout*, *entries*, or
 // writeOutputFile writes the buffer to a file, creating the parent directories
 // if needed.
 func writeOutputFile(path string, buf *bytes.Buffer) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // nolint: gosec
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, buf.Bytes(), 0o644) // nolint: gosec
+	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
 }
 
 // logOutputSuccess prints to stderr the the output path to the user.
