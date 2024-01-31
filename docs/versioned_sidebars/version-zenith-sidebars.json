@@ -20,6 +20,7 @@
         "quickstart/functions",
         "quickstart/chaining",
         "quickstart/containers",
+        "quickstart/create",
         "quickstart/daggerverse",
         "quickstart/conclusion"
       ]

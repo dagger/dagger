@@ -13,7 +13,7 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 Module functions can accept arguments and return both basic and custom types. The `HelloDagger()` function in the previous section returned a string, but you can also return Dagger's special `Directory`, `Container`, `Service` and other types, as well as your own custom types.
 
-To begin, try the following command:
+To begin, call a function using the Dagger CLI:
 
 ```shell
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger test --args ./core
@@ -28,7 +28,7 @@ Once the command completes, you should see output similar to the following:
 ┃ ok      github.com/dagger/dagger/core   0.397s
 ```
 
-Dagger functions can also return directories. To see this in action, try the following command:
+Dagger functions can also return directories. To see this in action, use the following command:
 
 ```shell
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger
@@ -47,6 +47,6 @@ This example uses the same Go builder module as before, but this time calls its 
 ┃ tracing
 ```
 
-:::info
+:::tip
 It's important to realize that even though you're testing and building a Go application in this example, you don't need to have Go, Git or any other local dependencies installed on your Dagger host. You only need the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
 :::
