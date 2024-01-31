@@ -67,8 +67,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
 
 1. Update the generated `main.go` file with the following code:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
     ```go file=./snippets/create/go/main.go
     ```
@@ -83,8 +83,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
     - It calls the `Container.WithFile()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
     - It calls the `Container.Publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
-</TabItem>
-<TabItem value="Python">
+    </TabItem>
+    <TabItem value="Python">
 
     ```python file=./snippets/create/python/main.py
     ```
@@ -99,8 +99,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
     - It calls the `Container.with_file()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
     - It calls the `Container.publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
-</TabItem>
-<TabItem value="TypeScript">
+    </TabItem>
+    <TabItem value="TypeScript">
 
     ```typescript file=./snippets/create/typescript/index.ts
     ```
@@ -115,8 +115,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
     - It calls the `Container.withFile()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
     - It calls the `Container.publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
-</TabItem>
-</Tabs>
+    </TabItem>
+    </Tabs>
 
 Call the new function using the Dagger CLI:
 
