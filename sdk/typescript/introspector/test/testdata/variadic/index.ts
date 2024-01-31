@@ -1,23 +1,23 @@
 import { func, object } from '../../../decorators/decorators.js'
 
-@object
+@object()
 export class Variadic {
-    @func
+    @func()
     fullVariadicStr(...vars: string[]): string {
         return `hello ${vars.join(' ')}`
     }
 
-    @func
+    @func()
     semiVariadicStr(separator: string, ...vars: string[]): string {
         return `hello ${vars.join(separator)}`
     }
 
-    @func
+    @func()
     fullVariadicNum(...vars: number[]): number {
         return vars.reduce((a, b) => a + b)
     }
 
-    @func
+    @func()
     semiVariadicNum(mul: number, ...vars: number[]): number {
         return vars.reduce((a, b) => a + b, 0) * mul
     }

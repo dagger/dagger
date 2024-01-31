@@ -11,12 +11,12 @@ import { Bar } from './bar.js'
 /**
  * Foo class
  */
-@object
+@object()
 export class Foo {
     /**
      * Return Bar object
      */
-    @func
+    @func()
     bar(): Bar {
         return new Bar()
     }

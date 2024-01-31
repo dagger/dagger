@@ -1557,9 +1557,9 @@ class Minimal:
 			source: `
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Minimal {
-  @field
+  @field()
   foo: string
 
   bar?: string
@@ -1569,14 +1569,14 @@ class Minimal {
     this.bar = bar
   }
 
-  @func
+  @func()
   set(foo: string, bar: string): Minimal {
     this.foo = foo
     this.bar = bar
     return this
   }
 
-  @func
+  @func()
   hello(): string {
     return this.foo + this.bar
   }
@@ -1708,12 +1708,12 @@ def repeater(msg: str, times: int) -> Repeater:
 			source: `
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Repeater {
-  @field
+  @field()
   message: string
 
-  @field
+  @field()
   times: number
 
   constructor(message: string, times: number) {
@@ -1721,13 +1721,13 @@ class Repeater {
     this.times = times
   }
 
-  @func
+  @func()
   render(): string {
     return this.message.repeat(this.times)
   }
 }
 
-@object
+@object()
 class Test {
   @func
   repeater(msg: string, times: number): Repeater {
@@ -1802,9 +1802,9 @@ def my_function() -> X:
 			source: `
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class X {
-  @field
+  @field()
   message: string
 
   constructor(message: string) {
@@ -1812,9 +1812,9 @@ class X {
   }
 }
 
-@object
+@object()
 class Foo {
-  @func
+  @func()
   myFunction(): X {
     return new X("foo");
   }
@@ -1895,18 +1895,18 @@ class Foo:
 			source: `
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class X {
-  @field
+  @field()
   message: string
 
-  @field
+  @field()
   timestamp: string
 
-  @field
+  @field()
   recipient: string
 
-  @field
+  @field()
   from: string
 
   constructor(message: string, timestamp: string, recipient: string, from: string) {
@@ -1917,9 +1917,9 @@ class X {
   }
 }
 
-@object
+@object()
 class Foo {
-  @func
+  @func()
   myFunction(): X {
     return new X("foo", "now", "user", "admin");
   }
@@ -2002,9 +2002,9 @@ class Playground:
 			source: `
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Bar {
-  @field
+  @field()
   msg: string;
 
   constructor(msg: string) {
@@ -2012,9 +2012,9 @@ class Bar {
   }
 }
 
-@object
+@object()
 class Foo {
-  @field
+  @field()
   msgContainer: Bar;
 
   constructor(msgContainer: Bar) {
@@ -2022,9 +2022,9 @@ class Foo {
   }
 }
 
-@object
+@object()
 class Playground {
-  @func
+  @func()
   myFunction(): Foo {
     return new Foo(new Bar("hello world"));
   }
@@ -2111,12 +2111,12 @@ class Playground:
 			source: `
 import { dag, Container, File, object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Foo {
-  @field
+  @field()
   con: Container
 
-  @field
+  @field()
   unsetFile?: File
 
   constructor(con: Container, usetFile?: File) {
@@ -2125,16 +2125,16 @@ class Foo {
   }
 }
 
-@object
+@object()
 class Playground {
-  @func
+  @func()
   mySlice(): Container[] {
     return [
       dag.container().from("alpine:latest").withExec(["echo", "hello world"])
     ]
   }
 
-  @func
+  @func()
   myStruct(): Foo {
     return new Foo(
       dag.container().from("alpine:latest").withExec(["echo", "hello world"])
@@ -2244,12 +2244,12 @@ class Playground:
 			source: `
 import { dag, Container, object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class ScanReport {
-  @field
+  @field()
   contents: string
 
-  @field
+  @field()
   authors: string[]
 
   constructor(contents: string, authors: string[]) {
@@ -2258,12 +2258,12 @@ class ScanReport {
   }
 }
 
-@object
+@object()
 class ScanResult {
-  @field
+  @field()
   targets: Container[]
 
-  @field
+  @field()
   report: ScanReport
 
   constructor(containers: Container[], report: ScanReport) {
@@ -2272,9 +2272,9 @@ class ScanResult {
   }
 }
 
-@object
+@object()
 class Playground {
-  @func
+  @func()
   async scan(): Promise<ScanResult> {
     return new ScanResult(
       [
@@ -2384,9 +2384,9 @@ import { dag, object, func } from "@dagger.io/dagger"
 
 var someDefault = dag.container().from("alpine:latest")
 
-@object
+@object()
 class Foo {
-  @func
+  @func()
   async fn(): Promise<string> {
     return someDefault.withExec(["echo", "foo"]).stdout()
   }
@@ -2469,17 +2469,17 @@ class Foo:
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 class Foo {
   data: string = ""
 
-  @func
+  @func()
   set(data: string): Foo {
     this.data = data
     return this
   }
 
-  @func
+  @func()
   get(): string {
     return this.data
   }
@@ -2595,9 +2595,9 @@ class Foo:
 			source: `
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Message {
-  @field
+  @field()
   content: string
 
   constructor(content: string) {
@@ -2605,20 +2605,20 @@ class Message {
   }
 }
 
-@object
+@object()
 class Foo {
-  @func
+  @func()
   sayHello(name: string): Message {
     return new Message("hello " + name)
   }
 
-  @func
+  @func()
   upper(msg: Message): Message {
     msg.content = msg.content.toUpperCase()
     return msg
   }
 
-  @func
+  @func()
   uppers(msg: Message[]): Message[] {
     for (let i = 0; i < msg.length; i++) {
       msg[i].content = msg[i].content.toUpperCase()
@@ -3201,9 +3201,9 @@ def use_hello() -> str:
 var useTSOuter = `
 import { dag, object, func } from '@dagger.io/dagger'
 
-@object
+@object()
 class Use {
-	@func
+	@func()
 	async useHello(): Promise<string> {
 		return dag.dep().hello()
 	}
@@ -3453,9 +3453,9 @@ async def names() -> list[str]:
 			source: `
 import { dag, object, func } from '@dagger.io/dagger'
 
-@object
+@object()
 class Use {
-	@func
+	@func()
 	async names(): Promise<string[]> {
 		return [await dag.foo().name(), await dag.bar().name()]
 	}
@@ -3603,21 +3603,21 @@ class Test:
 				source: `
 import { Directory, object, func, field } from '@dagger.io/dagger';
 
-@object
+@object()
 class Test {
-	@field
+	@field()
 	foo: string
 
-	@field
+	@field()
 	dir: Directory
 
-	@field
+	@field()
 	bar: number
 
-	@field
+	@field()
 	baz: string[]
 
-	@field
+	@field()
 	neverSetDir?: Directory
 
 	constructor(foo: string, dir: Directory, bar = 42, baz: string[] = []) {
@@ -3627,22 +3627,22 @@ class Test {
 		this.baz = baz;
 	}
 
-	@func
+	@func()
 	gimmeFoo(): string {
 		return this.foo;
 	}
 
-	@func
+	@func()
 	gimmeBar(): number {
 		return this.bar;
 	}
 
-	@func
+	@func()
 	gimmeBaz(): string[] {
 		return this.baz;
 	}
 
-	@func
+	@func()
 	async gimmeDirEnts(): Promise<string[]> {
 		return this.dir.entries();
 	}
@@ -3751,12 +3751,12 @@ class Test:
 				source: `
 import { dag, object, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Test {
-  @field
+  @field()
   alpineVersion: string
 
-  // NOTE: this is standard to do async operations in the constructor.
+  // NOTE: this is not standard to do async operations in the constructor.
   // This is only for testing purpose but it shouldn't be done in real usage.
   constructor() {
     return (async () => {
@@ -3826,9 +3826,9 @@ class Test:
 				source: `
 import { object, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Test {
-  @field
+  @field()
   foo: string
 
   constructor() {
@@ -3912,12 +3912,12 @@ class Test:
 			With(sdkSource("typescript", fmt.Sprintf(`
 import { dag, File, object, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Test {
-  @field
+  @field()
   foo: File = dag.directory().withNewFile("foo.txt", "%s").file("foo.txt")
 
-  @field
+  @field()
   bar: string[] = []
 
   // Allow foo to be set through the constructor
@@ -4003,24 +4003,24 @@ class Wrapper:
 			source: `
 import { dag, Container, object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class WrappedContainer {
-  @field
+  @field()
   unwrap: Container
 
   constructor(unwrap: Container) {
     this.unwrap = unwrap
   }
 
-  @func
+  @func()
   echo(msg: string): WrappedContainer {
     return new WrappedContainer(this.unwrap.withExec(["echo", "-n", msg]))
   }
 }
 
-@object
+@object()
 class Wrapper {
-  @func
+  @func()
   container(): WrappedContainer {
     return new WrappedContainer(dag.container().from("alpine"))
   }
@@ -4156,13 +4156,13 @@ def potato_%d() -> str:
 		mainSrc := `
 		import { object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 class PotatoSack {
 		`
 
 		for i := 0; i < funcCount; i++ {
 			mainSrc += fmt.Sprintf(`
-  @func
+  @func()
   potato_%d(): string {
     return "potato #%d"
   }

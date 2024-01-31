@@ -1,8 +1,8 @@
 import { dag, func, object, } from '@dagger.io/dagger';
 
-@object
+@object()
 class Trivy {
-  @func
+  @func()
   async scanImage(
     imageRef: string,
     severity: string = "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL",

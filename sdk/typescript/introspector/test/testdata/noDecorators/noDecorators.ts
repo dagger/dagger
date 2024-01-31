@@ -5,7 +5,7 @@ import { func } from '../../../decorators/decorators.js'
  * @object decorator is missing so this class should be ignored.
  */
 export class Foo {
-    @func
+    @func()
     bar(name: string): string {
         return `hello ${name}`
     }

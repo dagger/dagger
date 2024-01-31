@@ -1,23 +1,23 @@
 import { object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 class Foo {
-    @func
+    @func()
     hello(name: string): Foo {
         return new Foo()
     }
 }
 
-@object
+@object()
 class Minimal {
-    @func
+    @func()
     hello(name: string): string {
         return name
     } 
 }
 
 class Bar {
-    @func
+    @func()
     hello(name: string): string {
         return name
     }

@@ -3,9 +3,9 @@ import { func, object } from '../../../decorators/decorators.js'
 /**
  * HelloWorld class
  */
-@object
+@object()
 export class HelloWorld {
-    @func
+    @func()
     helloWorld(name: string): string {
         return `hello ${name}`
     }

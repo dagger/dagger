@@ -3,12 +3,12 @@ import { object, func, field } from "@dagger.io/dagger"
 /**
  * This is the Minimal object
  */
-@object
+@object()
 class Minimal {
 	/**
 	 * This is a field
 	 */
-	@field
+	@field()
 	foo: string = "bar"
 
 	@func
@@ -16,7 +16,7 @@ class Minimal {
 		return "hello"
 	}
 
-	@func
+	@func()
 	echo(msg: string): string {
 		return this.echoOpts(msg, "...", 3)
 	}
@@ -28,7 +28,7 @@ class Minimal {
 	 * @param suffix String to append to the echoed message
 	 * @param times number of times to repeat the message
 	 */
-	@func
+	@func()
 	echoOpts(msg: string, suffix: string = "", times: number = 1): string {
 		msg = msg += suffix
 
@@ -39,7 +39,7 @@ class Minimal {
 	 * @param msg the message to echo
 	 * @param isQuestion set to true to add a question mark.
 	 */
-	@func
+	@func()
 	echoMaybe(msg: string, isQuestion = false): string {
 		if (isQuestion) {
 			return this.echo(msg + "?")
@@ -48,26 +48,26 @@ class Minimal {
 		return this.echo(msg)
 	}
 
-	@func
+	@func()
 	echoOptional(msg = "default"): string {
 		return this.echo(msg)
 	}
 
-	@func
+	@func()
 	echoOptionalSlice(msg = ["foobar"]): string {
 		return this.echo(msg.join("+"))
 	}
 
-	@func
+	@func()
 	echoes(msgs: string[]): string[] {
 		return [this.echo(msgs.join(" "))]
 	}
 
-	@func
+	@func()
 	echoesVariadic(...msgs: string[]): string {
 		return this.echo(msgs.join(" "))
 	}
 
-	@func
+	@func()
 	helloVoid(): void {}
 }

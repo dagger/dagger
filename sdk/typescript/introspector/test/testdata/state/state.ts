@@ -10,7 +10,7 @@ import { dag, Container } from '../../../../api/client.gen.js'
 /**
  * Alpine module
  */
-@object
+@object()
 export class Alpine {
     private version = "3.16.2"
 
@@ -19,17 +19,17 @@ export class Alpine {
     /**
      * packages to install
      */
-    @field
+    @field()
     public packages: string[] = []
 
-    @field
+    @field()
     ctr?: Container = undefined
 
     /**
      * Returns a base Alpine container
      * @param version version to use (default to: 3.16.2)
      */
-    @func
+    @func()
     base(version?: string): Alpine {
         if (version) {
             this.version = version
@@ -40,14 +40,14 @@ export class Alpine {
         return this
     }
 
-    @func
+    @func()
     install(pkgs: string[]): Alpine {
         this.packages.push(...pkgs)
 
         return this
     }
 
-    @func
+    @func()
     async exec(cmd: string[]): Promise<string> {
         return this
             .ctr!

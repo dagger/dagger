@@ -9,9 +9,9 @@ describe("Registry", function () {
   it("Should support function", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.func
+      @registry.func()
       greeting(name: string): string {
         return `Hello ${name}`
       }
@@ -31,9 +31,9 @@ describe("Registry", function () {
   it("Should support async function", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.func
+      @registry.func()
       async asyncGreeting(name: string): Promise<string> {
         return `Hello ${name}`
       }
@@ -53,14 +53,14 @@ describe("Registry", function () {
   it("Should support calling multiple method", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.func
+      @registry.func()
       async asyncGreeting(name: string): Promise<string> {
         return `Hello ${name}`
       }
 
-      @registry.func
+      @registry.func()
       greeting(name: string): string {
         return `Hello ${name}`
       }
@@ -90,11 +90,11 @@ describe("Registry", function () {
   it("Should support initialized state management", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
       prefix = "Hello"
 
-      @registry.func
+      @registry.func()
       greeting(name: string): string {
         return `${this.prefix} ${name}`
       }
@@ -115,12 +115,12 @@ describe("Registry", function () {
   it("Should support dynamic state management", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.field
+      @registry.field()
       prefix = "placeholder"
 
-      @registry.func
+      @registry.func()
       greeting(name: string): string {
         return `${this.prefix} ${name}`
       }
@@ -143,12 +143,12 @@ describe("Registry", function () {
   it("Should support returning self", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.field
+      @registry.field()
       prefix = "placeholder"
 
-      @registry.func
+      @registry.func()
       greeting(): HelloWorld {
         this.prefix = "self"
 
@@ -174,12 +174,12 @@ describe("Registry", function () {
 
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.field
+      @registry.field()
       ctr?: Ctr = undefined
 
-      @registry.func
+      @registry.func()
       container(ctr: Ctr): HelloWorld {
         this.ctr = ctr
 
@@ -202,9 +202,9 @@ describe("Registry", function () {
   it("Should supports multiple arguments", async function () {
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.func
+      @registry.func()
       compute(a: number, b: number, c: number): number {
         return a * b + c
       }
@@ -230,15 +230,15 @@ describe("Registry", function () {
 
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class Bar {
-      @registry.field
+      @registry.field()
       ctr?: Container = undefined
 
-      @registry.field
+      @registry.field()
       msg = "foobar"
 
-      @registry.func
+      @registry.func()
       async bar(): Promise<string> {
         return (
           (await this.ctr?.withExec(["echo", "-n", this.msg]).stdout()) || ""
@@ -246,9 +246,9 @@ describe("Registry", function () {
       }
     }
 
-    @registry.object
+    @registry.object()
     class Foo {
-      @registry.field
+      @registry.field()
       foo(): Bar {
         const b = new Bar()
 
@@ -273,16 +273,16 @@ describe("Registry", function () {
 
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.field
+      @registry.field()
       msg: string
 
       constructor(msg?: string) {
         this.msg = msg || "world"
       }
 
-      @registry.func
+      @registry.func()
       sayHi(): string {
         return `Hello ${this.msg}`
       }
@@ -312,9 +312,9 @@ describe("Registry", function () {
 
     const registry = new Registry()
 
-    @registry.object
+    @registry.object()
     class HelloWorld {
-      @registry.func
+      @registry.func()
       sayHi(msg = ["foobar"]): string {
         return msg.join(" ")
       }

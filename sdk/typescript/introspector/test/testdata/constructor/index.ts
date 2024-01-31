@@ -6,7 +6,7 @@ import { func, object } from '../../../decorators/decorators.js'
 /**
  * HelloWorld class
  */
-@object
+@object()
 export class HelloWorld {
     name: string
 
@@ -14,7 +14,7 @@ export class HelloWorld {
         this.name = name
     }
 
-    @func
+    @func()
     sayHello(name: string): string {
         return `hello ${name}`
     }
