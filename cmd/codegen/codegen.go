@@ -4,25 +4,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
+	"time"
+
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
 	typescriptgenerator "github.com/dagger/dagger/cmd/codegen/generator/typescript"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/koron-go/prefixw"
 )
 
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
-	logsW := os.Stdout
+	rec := progrock.FromContext(ctx)
 
+	var vtxName string
 	if cfg.ModuleName != "" {
-		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleName)
+		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleName)
 	} else {
-		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)
+		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
 	}
+
+	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
+	defer func() { vtx.Done(err) }()
+
+	logsW := vtx.Stdout()
 
 	var introspectionSchema *introspection.Schema
 	if cfg.IntrospectionJSON != "" {
@@ -49,14 +57,10 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 		}
 
 		for _, cmd := range generated.PostCommands {
-			pw := prefixw.New(logsW, strings.Join(cmd.Args, " ")+" | ")
 			cmd.Dir = cfg.OutputDir
-			cmd.Stdout = pw
-			cmd.Stderr = pw
-			if err := cmd.Run(); err != nil {
-				fmt.Fprintf(pw, "error: %s\n", err)
-				return fmt.Errorf("failed to run post command: %w", err)
-			}
+			cmd.Stdout = vtx.Stdout()
+			cmd.Stderr = vtx.Stderr()
+			vtx.Task(strings.Join(cmd.Args, " ")).Done(cmd.Run())
 		}
 
 		if !generated.NeedRegenerate {
