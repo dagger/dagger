@@ -70,34 +70,16 @@ Here is an example module using the Go SDK:
 
 ```
 
-And here is an example query for this module:
+And here is an example call for this module:
 
-```graphql
-{
-  helloWorld {
-    message
-    withName(name: "Monde") {
-      withGreeting(greeting: "Bonjour") {
-        message
-      }
-    }
-  }
-}
+```console
+dagger call with-name --name=Monde with-greeting --greeting=Bonjour message
 ```
 
 The result will be:
 
-```json
-{
-  "helloWorld": {
-    "message": "Hello, World!",
-    "withName": {
-      "withGreeting": {
-        "message": "Bonjour, Monde!"
-      }
-    }
-  }
-}
+```console
+Bonjour, Monde!
 ```
 
 ## Write a module constructor function

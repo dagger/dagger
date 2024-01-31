@@ -35,7 +35,7 @@ The example module used in this guide builds, tests and publishes a Node.js appl
 Begin by running `dagger mod init` in your application directory to bootstrap a new module:
 
 ```sh
-dagger mod init --name=mymod --sdk=go
+dagger mod init --name=my-mod --sdk=go
 ```
 
 This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `internal` folder for the generated module code.
@@ -57,17 +57,18 @@ Since the application is a Node.js application, it's convenient to use the [`nod
     ```go
     package main
 
-    type Mymod struct {}
+    type MyMod struct {}
 
     const defaultNodeVersion = "16"
 
-    func (m *Mymod) buildBase(nodeVersion Optional[string]) *Node {
+    func (m *MyMod) buildBase(nodeVersion string) *Node {
+      if nodeVersion == "" {
+        nodeVersion = defaultNodeVersion
+      }
       return dag.Node().
-        WithVersion(nodeVersion.GetOr(defaultNodeVersion)).
+        WithVersion(nodeVersion).
         WithNpm().
-        WithSource(dag.Host().Directory(".", HostDirectoryOpts{
-          Exclude: []string{".git", "**/node_modules"},
-        })).
+        WithSource(dag.CurrentModule().Source()).
         Install(nil)
     }
     ```
@@ -97,7 +98,11 @@ import (
 
 // ...
 
-func (m *Mymod) Test(ctx context.Context, nodeVersion Optional[string]) (string, error) {
+func (m *MyMod) Test(
+  ctx context.Context, 
+  // +optional
+  nodeVersion string,
+) (string, error) {
   return m.buildBase(nodeVersion).
     Run([]string{"test", "--", "--watchAll=false"}).
     Stderr(ctx)
@@ -145,7 +150,10 @@ If your application passes all its tests, the typical next step is to build it.
 Add a new `Build()` function that creates a production build of the example application:
 
 ```go
-func (m *Mymod) Build(nodeVersion Optional[string]) *Directory {
+func (m *MyMod) Build(
+  // +optional
+  nodeVersion string,
+) *Directory {
   return m.buildBase(nodeVersion).Build().Container().Directory("./build")
 }
 ```
@@ -195,13 +203,20 @@ One such registry is [ttl.sh](https://ttl.sh), an ephemeral Docker registry. The
 1. Update the module and add new `Package()` and `Publish()` functions to copy the built application into an NGINX web server container image and deliver the result to the registry:
 
     ```go
-    func (m *Mymod) Package(nodeVersion Optional[string]) *Container {
+    func (m *MyMod) Package(
+      // +optional
+      nodeVersion string,
+    ) *Container {
       return dag.Container().From("nginx:1.23-alpine").
         WithDirectory("/usr/share/nginx/html", m.Build(nodeVersion)).
         WithExposedPort(80)
     }
 
-    func (m *Mymod) Publish(ctx context.Context, nodeVersion Optional[string]) (string, error) {
+    func (m *MyMod) Publish(
+      ctx context.Context, 
+      // +optional
+      nodeVersion string,
+    ) (string, error) {
       return dag.Ttlsh().Publish(ctx, m.Package(nodeVersion))
     }
     ```
@@ -229,16 +244,14 @@ Here's an example of the output you will see:
 
 Apart from the usual debugging techniques, Dagger provides two commands that come in very handy when debugging modules.
 
-### dagger shell
+### Interactive shells
 
-The `dagger shell` command can be used to open an interactive shell session with any `Container` type returned by a function. This is very useful for debugging and experimenting since it allows you to interact with containers directly.
-
-By default, `dagger shell` will execute the container's entrypoint, but you can override this with the `--entrypoint` flag.
+The `shell` API on `Container` types can be used to open an interactive shell session with any `Container` returned by a function. This is very useful for debugging and experimenting since it allows you to interact with containers directly.
 
 Try it with the command below:
 
 ```shell
-dagger shell package --entrypoint /bin/sh
+dagger call package shell --args sh
 ```
 
 This command drops you into an interactive shell, allowing you to directly execute commands in the container returned by the `package` function, as in the example below:
@@ -251,23 +264,26 @@ asset-manifest.json  index.html           logo512.png          robots.txt
 /usr/share/nginx/html #
 ```
 
-### dagger up
+### Connecting to Services from your machine
 
-The `dagger up` command allows `Service` and `Container` types returned by a function to be executed and have any exposed ports forwarded to the host machine. This has many potential use cases, such as manually testing web servers or databases directly from the host browser or host system.
+The `up` API allows `Service` types returned by a function to be executed and have any exposed ports forwarded to the host machine. This has many potential use cases, such as manually testing web servers or databases directly from the host browser or host system.
 
 In order for this to work, the service/container returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports. This is already implemented in the `Package()` function shown in the previous section. So, all that's needed is a new `PackageService()` function, as shown below:
 
 ```go
-func (m *Mymod) PackageService(nodeVersion Optional[string]) *Service {
-  return m.Package().
+func (m *MyMod) PackageService(
+  // +optional
+  nodeVersion string,
+) *Service {
+  return m.Package(nodeVersion).
     AsService()
 }
 ```
 
-Then, use the `dagger up` command to build the application and serve it with NGINX, mapping container port 80 to host port 8080:
+Then, use the `up` API to build the application and serve it with NGINX, mapping container port 80 to host port 8080:
 
 ```shell
-dagger up --port 8080:80 package-service
+dagger call package-service up --ports 8080:80
 ```
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
