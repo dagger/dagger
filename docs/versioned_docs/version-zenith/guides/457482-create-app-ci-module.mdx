@@ -47,7 +47,7 @@ Begin by running `dagger mod init` in your application directory to bootstrap a 
 <TabItem value="Go">
 
 ```sh
-dagger init --name=my-module --sdk=go
+dagger mod init --name=my-module --sdk=go
 ```
 
 This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
@@ -56,7 +56,7 @@ This will generate a `dagger.json` module file, an initial `main.go` source file
 <TabItem value="Python">
 
 ```sh
-dagger init --name=my-module --sdk=python
+dagger mod init --name=my-module --sdk=python
 ```
 
 This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
@@ -80,7 +80,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 1. Add the `node` module as a dependency:
 
     ```shell
-    dagger install github.com/quartz-technology/daggerverse/node/typescript
+    dagger mod install github.com/quartz-technology/daggerverse/node/typescript
     ```
 
 1. Update the generated `main.go` file with the following code:
@@ -100,7 +100,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 1. Add the `node` module as a dependency:
 
     ```shell
-    dagger install github.com/quartz-technology/daggerverse/node/typescript
+    dagger mod install github.com/quartz-technology/daggerverse/node/typescript
     ```
 
 1. Update the generated `src/main.py` file with the following code:
