@@ -169,7 +169,7 @@ func (g *recordingGateway) ConvertStatus(event *bkclient.SolveStatus) *progrock.
 				g.records[v.Digest] = nil // don't write out a record again
 
 				if a, err := types.MarshalAny(op); err == nil {
-					status.Metas = append(status.Metas, &progrock.VertexMeta{Vertex: vtx.Id, Data: &anypb.Any{TypeUrl: a.TypeUrl, Value: a.Value}})
+					status.Metas = append(status.Metas, &progrock.VertexMeta{Name: "op", Vertex: vtx.Id, Data: &anypb.Any{TypeUrl: a.TypeUrl, Value: a.Value}})
 				}
 			}
 		}
