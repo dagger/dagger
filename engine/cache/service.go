@@ -109,7 +109,6 @@ func (r UpdateCacheRecordsRequest) String() string {
 	return string(b)
 }
 
-//nolint:revive
 type CacheKey struct {
 	ID      string
 	Results []Result
@@ -319,7 +318,6 @@ func (c *client) UpdateCacheRecords(
 	return resp, nil
 }
 
-//nolint:dupl
 func (c *client) UpdateCacheLayers(
 	ctx context.Context,
 	req UpdateCacheLayersRequest,
@@ -354,7 +352,6 @@ func (c *client) UpdateCacheLayers(
 	return nil
 }
 
-//nolint:dupl
 func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/import", nil)
 	if err != nil {

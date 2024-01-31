@@ -779,3 +779,51 @@ exec "$@"
 		})
 	})
 }
+
+func TestModuleCallByName(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/mod-a").
+		With(daggerExec("mod", "init", "--name=mod-a", "--sdk=go")).
+		WithNewFile("/work/mod-a/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string { 
+				return "hi from mod-a"
+			}
+			`,
+		}).
+		WithWorkdir("/work/mod-b").
+		With(daggerExec("mod", "init", "--name=mod-b", "--sdk=go")).
+		WithNewFile("/work/mod-b/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+			import "context"
+
+			type ModB struct {}
+
+			func (m *ModB) Fn(ctx context.Context) string { 
+				return "hi from mod-b"
+			}
+			`,
+		}).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init")).
+		With(daggerExec("mod", "install", "--name", "foo", "./mod-a")).
+		With(daggerExec("mod", "install", "--name", "bar", "./mod-b"))
+
+	out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
+}

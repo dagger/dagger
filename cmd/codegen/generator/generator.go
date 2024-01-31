@@ -12,7 +12,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/core/modules"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -31,9 +30,9 @@ type Config struct {
 	// Destination directory for generated code.
 	OutputDir string
 
-	// Generate code for a Dagger module.
-	ModuleRef    *modules.Ref
-	ModuleConfig *modules.Config
+	// Name of the module to generate code for
+	ModuleName           string
+	ModuleSourceRootPath string
 
 	// Optional pre-computed introspection json string
 	IntrospectionJSON string

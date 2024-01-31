@@ -106,23 +106,22 @@ type customMarshaller struct {
 	count int
 }
 
-// nolint
+//nolint:stylecheck
 func (m *customMarshaller) XXX_GraphQLType() string { return "idTest" }
 
-// nolint
+//nolint:stylecheck
 func (m *customMarshaller) XXX_GraphQLIDType() string { return "idTypeTest" }
 
-// nolint
+//nolint:stylecheck
 func (m *customMarshaller) XXX_GraphQLID(context.Context) (string, error) {
 	m.count++
 	return m.v, nil
 }
 
-// nolint
 func (m *customMarshaller) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		v     string
-		count int
+		V     string `json:"v"`
+		Count int    `json:"count"`
 	}{m.v, m.count})
 }
 

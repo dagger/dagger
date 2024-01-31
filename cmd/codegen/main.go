@@ -8,14 +8,15 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
-	"github.com/dagger/dagger/core/modules"
 )
 
 var (
 	outputDir             string
-	moduleRef             string
 	lang                  string
 	introspectionJSONPath string
+
+	moduleSourceRootPath string
+	moduleName           string
 )
 
 var rootCmd = &cobra.Command{
@@ -31,8 +32,10 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
-	rootCmd.Flags().StringVar(&moduleRef, "module", "", "module to load and codegen dependency code")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
+
+	rootCmd.Flags().StringVar(&moduleSourceRootPath, "module-source-root", "", "path to root directory of module source (i.e. where its dagger.json is located)")
+	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
@@ -48,19 +51,13 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		OutputDir: outputDir,
 	}
 
-	if moduleRef != "" {
-		ref, err := modules.ResolveMovingRef(ctx, dag, moduleRef)
-		if err != nil {
-			return fmt.Errorf("resolve module ref: %w", err)
-		}
+	if moduleName != "" {
+		cfg.ModuleName = moduleName
 
-		modCfg, err := ref.Config(ctx, dag)
-		if err != nil {
-			return fmt.Errorf("load module config: %w", err)
+		if moduleSourceRootPath == "" {
+			return fmt.Errorf("--module-name requires --module-source-root")
 		}
-
-		cfg.ModuleRef = ref
-		cfg.ModuleConfig = modCfg
+		cfg.ModuleSourceRootPath = moduleSourceRootPath
 	}
 
 	if introspectionJSONPath != "" {

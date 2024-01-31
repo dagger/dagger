@@ -57,7 +57,7 @@ func openEditor(filePath string) tea.Cmd {
 	}
 	editorArgs = append(editorArgs, filePath)
 
-	cmd := exec.Command(editorArgs[0], editorArgs[1:]...) // nolint:gosec
+	cmd := exec.Command(editorArgs[0], editorArgs[1:]...) //nolint:gosec
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

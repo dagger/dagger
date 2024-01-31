@@ -113,7 +113,7 @@ func run(ctx context.Context, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		go http.Serve(sessionL, engineClient) // nolint:gosec
+		go http.Serve(sessionL, engineClient) //nolint:gosec
 
 		var cmdErr error
 		if !silent {

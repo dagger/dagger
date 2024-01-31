@@ -311,7 +311,7 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 }
 
 func LoadCircleCILabels() ([]Label, error) {
-	if os.Getenv("CIRCLECI") != "true" { // nolint:goconst
+	if os.Getenv("CIRCLECI") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -398,7 +398,7 @@ func LoadCircleCILabels() ([]Label, error) {
 }
 
 func LoadGitLabLabels() ([]Label, error) {
-	if os.Getenv("GITLAB_CI") != "true" { // nolint:goconst
+	if os.Getenv("GITLAB_CI") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -490,7 +490,7 @@ func LoadGitLabLabels() ([]Label, error) {
 }
 
 func LoadGitHubLabels() ([]Label, error) {
-	if os.Getenv("GITHUB_ACTIONS") != "true" { // nolint:goconst
+	if os.Getenv("GITHUB_ACTIONS") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
 

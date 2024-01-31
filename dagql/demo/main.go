@@ -71,7 +71,7 @@ func main() {
 			<-ctx.Done()
 			l.Close()
 		}()
-		return http.Serve(l, nil) // nolint: gosec
+		return http.Serve(l, nil) //nolint: gosec
 	}); err != nil {
 		panic(err)
 	}

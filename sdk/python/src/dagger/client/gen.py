@@ -19,6 +19,11 @@ class ContainerID(Scalar):
     object of type Container."""
 
 
+class CurrentModuleID(Scalar):
+    """The `CurrentModuleID` scalar type represents an identifier for an
+    object of type CurrentModule."""
+
+
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
     object of type Directory."""
@@ -64,6 +69,11 @@ class GeneratedCodeID(Scalar):
     object of type GeneratedCode."""
 
 
+class GitModuleSourceID(Scalar):
+    """The `GitModuleSourceID` scalar type represents an identifier for an
+    object of type GitModuleSource."""
+
+
 class GitRefID(Scalar):
     """The `GitRefID` scalar type represents an identifier for an object
     of type GitRef."""
@@ -103,14 +113,24 @@ class ListTypeDefID(Scalar):
     object of type ListTypeDef."""
 
 
-class ModuleConfigID(Scalar):
-    """The `ModuleConfigID` scalar type represents an identifier for an
-    object of type ModuleConfig."""
+class LocalModuleSourceID(Scalar):
+    """The `LocalModuleSourceID` scalar type represents an identifier for
+    an object of type LocalModuleSource."""
+
+
+class ModuleDependencyID(Scalar):
+    """The `ModuleDependencyID` scalar type represents an identifier for
+    an object of type ModuleDependency."""
 
 
 class ModuleID(Scalar):
     """The `ModuleID` scalar type represents an identifier for an object
     of type Module."""
+
+
+class ModuleSourceID(Scalar):
+    """The `ModuleSourceID` scalar type represents an identifier for an
+    object of type ModuleSource."""
 
 
 class ObjectTypeDefID(Scalar):
@@ -190,6 +210,14 @@ class ImageMediaTypes(Enum):
     DockerMediaTypes = "DockerMediaTypes"
 
     OCIMediaTypes = "OCIMediaTypes"
+
+
+class ModuleSourceKind(Enum):
+    """The kind of module source."""
+
+    GIT_SOURCE = "GIT_SOURCE"
+
+    LOCAL_SOURCE = "LOCAL_SOURCE"
 
 
 class NetworkProtocol(Enum):
@@ -1823,11 +1851,125 @@ class Container(Type):
         return cb(self)
 
 
+class CurrentModule(Type):
+    """Reflective module API provided to functions at runtime."""
+
+    @typecheck
+    async def id(self) -> CurrentModuleID:
+        """A unique identifier for this CurrentModule.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        CurrentModuleID
+            The `CurrentModuleID` scalar type represents an identifier for an
+            object of type CurrentModule.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(CurrentModuleID)
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the module being executed in
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def source(self) -> "Directory":
+        """The directory containing the module's source code loaded into the
+        engine (plus any generated code that may have been created).
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def workdir(
+        self,
+        path: str,
+        *,
+        exclude: Sequence[str] | None = [],
+        include: Sequence[str] | None = [],
+    ) -> "Directory":
+        """Load a directory from the module's scratch working directory,
+        including any changes that may have been made to it during module
+        function execution.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to access (e.g., ".").
+        exclude:
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
+        include:
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
+        """
+        _args = [
+            Arg("path", path),
+            Arg("exclude", exclude, []),
+            Arg("include", include, []),
+        ]
+        _ctx = self._select("workdir", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def workdir_file(self, path: str) -> "File":
+        """Load a file from the module's scratch working directory, including any
+        changes that may have been made to it during module function
+        execution.Load a file from the module's scratch working directory,
+        including any changes that may have been made to it during module
+        function execution.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to retrieve (e.g., "README.md").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("workdirFile", _args)
+        return File(_ctx)
+
+
 class Directory(Type):
     """A directory."""
 
     @typecheck
-    def as_module(self, *, source_subpath: str | None = "") -> "Module":
+    def as_module(
+        self,
+        *,
+        source_subpath: str | None = "/",
+    ) -> "Module":
         """Load the directory as a Dagger module
 
         Parameters
@@ -1843,7 +1985,7 @@ class Directory(Type):
             directory.
         """
         _args = [
-            Arg("sourceSubpath", source_subpath, ""),
+            Arg("sourceSubpath", source_subpath, "/"),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -3173,6 +3315,139 @@ class GeneratedCode(Type):
         return cb(self)
 
 
+class GitModuleSource(Type):
+    """Module source originating from a git repo."""
+
+    @typecheck
+    async def clone_url(self) -> str:
+        """The URL from which the source's git repo can be cloned.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("cloneURL", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def commit(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("commit", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def html_url(self) -> str:
+        """The URL to the source's git repo in a web browser
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("htmlURL", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def id(self) -> GitModuleSourceID:
+        """A unique identifier for this GitModuleSource.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        GitModuleSourceID
+            The `GitModuleSourceID` scalar type represents an identifier for
+            an object of type GitModuleSource.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(GitModuleSourceID)
+
+    @typecheck
+    async def source_subpath(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceSubpath", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def version(self) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("version", _args)
+        return await _ctx.execute(str)
+
+
 class GitRef(Type):
     """A git ref (tag, branch, or commit)."""
 
@@ -3773,44 +4048,40 @@ class ListTypeDef(Type):
         return await _ctx.execute(ListTypeDefID)
 
 
-class Module(Type):
-    """A Dagger module."""
-
-    __slots__ = (
-        "_dependency_config",
-        "_description",
-        "_name",
-        "_sdk",
-        "_serve",
-        "_source_directory_subpath",
-    )
-
-    _dependency_config: str | None
-    _description: str | None
-    _name: str | None
-    _sdk: str | None
-    _serve: Void | None
-    _source_directory_subpath: str | None
+class LocalModuleSource(Type):
+    """Module source that that originates from a path locally relative to
+    an arbitrary directory."""
 
     @typecheck
-    async def dependencies(self) -> list["Module"]:
+    async def id(self) -> LocalModuleSourceID:
+        """A unique identifier for this LocalModuleSource.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        LocalModuleSourceID
+            The `LocalModuleSourceID` scalar type represents an identifier for
+            an object of type LocalModuleSource.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
         _args: list[Arg] = []
-        _ctx = self._select("dependencies", _args)
-        _ctx = Module(_ctx)._select_multiple(
-            _dependency_config="dependencyConfig",
-            _description="description",
-            _name="name",
-            _sdk="sdk",
-            _serve="serve",
-            _source_directory_subpath="sourceDirectorySubpath",
-        )
-        return await _ctx.execute(list[Module])
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(LocalModuleSourceID)
 
     @typecheck
-    async def dependency_config(self) -> list[str]:
+    async def source_subpath(self) -> str:
         """Returns
         -------
-        list[str]
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -3822,11 +4093,46 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_dependency_config"):
-            return self._dependency_config
+        _args: list[Arg] = []
+        _ctx = self._select("sourceSubpath", _args)
+        return await _ctx.execute(str)
+
+
+class Module(Type):
+    """A Dagger module."""
+
+    __slots__ = (
+        "_description",
+        "_name",
+        "_sdk",
+        "_serve",
+    )
+
+    _description: str | None
+    _name: str | None
+    _sdk: str | None
+    _serve: Void | None
+
+    @typecheck
+    async def dependencies(self) -> list["Module"]:
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        _ctx = Module(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+            _sdk="sdk",
+            _serve="serve",
+        )
+        return await _ctx.execute(list[Module])
+
+    @typecheck
+    async def dependency_config(self) -> list["ModuleDependency"]:
         _args: list[Arg] = []
         _ctx = self._select("dependencyConfig", _args)
-        return await _ctx.execute(list[str])
+        _ctx = ModuleDependency(_ctx)._select_multiple(
+            _name="name",
+        )
+        return await _ctx.execute(list[ModuleDependency])
 
     @typecheck
     async def description(self) -> str:
@@ -3851,10 +4157,15 @@ class Module(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def generated_code(self) -> GeneratedCode:
+    def generated_source_root_directory(self) -> Directory:
+        """The module's root directory containing the config file for it and its
+        source (possibly as a subdir). It includes any generated code or
+        updated config files created after initial load, but not any
+        files/directories that were unchanged after sdk codegen was run.
+        """
         _args: list[Arg] = []
-        _ctx = self._select("generatedCode", _args)
-        return GeneratedCode(_ctx)
+        _ctx = self._select("generatedSourceRootDirectory", _args)
+        return Directory(_ctx)
 
     @typecheck
     async def id(self) -> ModuleID:
@@ -3979,32 +4290,28 @@ class Module(Type):
         return await _ctx.execute(Void | None)
 
     @typecheck
-    def source_directory(self) -> Directory:
+    def source(self) -> "ModuleSource":
         _args: list[Arg] = []
-        _ctx = self._select("sourceDirectory", _args)
-        return Directory(_ctx)
+        _ctx = self._select("source", _args)
+        return ModuleSource(_ctx)
 
     @typecheck
-    async def source_directory_subpath(self) -> str:
-        """Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+    def with_dependencies(
+        self,
+        dependencies: Sequence["ModuleDependency"],
+    ) -> "Module":
+        """Update the module configuration to use the given dependencies.
 
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
+        Parameters
+        ----------
+        dependencies:
+            The dependency modules to install.
         """
-        if hasattr(self, "_source_directory_subpath"):
-            return self._source_directory_subpath
-        _args: list[Arg] = []
-        _ctx = self._select("sourceDirectorySubpath", _args)
-        return await _ctx.execute(str)
+        _args = [
+            Arg("dependencies", dependencies),
+        ]
+        _ctx = self._select("withDependencies", _args)
+        return Module(_ctx)
 
     @typecheck
     def with_description(self, description: str) -> "Module":
@@ -4031,6 +4338,21 @@ class Module(Type):
         return Module(_ctx)
 
     @typecheck
+    def with_name(self, name: str) -> "Module":
+        """Update the module configuration to use the given name.
+
+        Parameters
+        ----------
+        name:
+            The name to use.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return Module(_ctx)
+
+    @typecheck
     def with_object(self, object: "TypeDef") -> "Module":
         """This module plus the given Object type and associated functions."""
         _args = [
@@ -4040,32 +4362,31 @@ class Module(Type):
         return Module(_ctx)
 
     @typecheck
-    def with_source(
-        self,
-        directory: Directory,
-        *,
-        subpath: str | None = "",
-    ) -> "Module":
-        """Retrieves the module with basic configuration loaded, ready for
-        initialization.
+    def with_sdk(self, sdk: str) -> "Module":
+        """Update the module configuration to use the given SDK.
 
         Parameters
         ----------
-        directory:
-            The directory containing the module's source code.
-        subpath:
-            An optional subpath of the directory which contains the module's
-            source code.
-            This is needed when the module code is in a subdirectory but
-            requires parent directories to be loaded in order to execute. For
-            example, the module source code may need a go.mod, project.toml,
-            package.json, etc. file from a parent directory.
-            If not set, the module source code is loaded from the root of the
-            directory.
+        sdk:
+            The SDK to use.
         """
         _args = [
-            Arg("directory", directory),
-            Arg("subpath", subpath, ""),
+            Arg("sdk", sdk),
+        ]
+        _ctx = self._select("withSDK", _args)
+        return Module(_ctx)
+
+    @typecheck
+    def with_source(self, source: "ModuleSource") -> "Module":
+        """Retrieves the module with basic configuration loaded if present.
+
+        Parameters
+        ----------
+        source:
+            The module source to initialize from.
+        """
+        _args = [
+            Arg("source", source),
         ]
         _ctx = self._select("withSource", _args)
         return Module(_ctx)
@@ -4078,53 +4399,16 @@ class Module(Type):
         return cb(self)
 
 
-class ModuleConfig(Type):
-    """Static configuration for a module (e.g. parsed contents of
-    dagger.json)"""
+class ModuleDependency(Type):
+    """The configuration of dependency of a module."""
+
+    __slots__ = ("_name",)
+
+    _name: str | None
 
     @typecheck
-    async def dependencies(self) -> list[str]:
-        """Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("dependencies", _args)
-        return await _ctx.execute(list[str])
-
-    @typecheck
-    async def exclude(self) -> list[str]:
-        """Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("exclude", _args)
-        return await _ctx.execute(list[str])
-
-    @typecheck
-    async def id(self) -> ModuleConfigID:
-        """A unique identifier for this ModuleConfig.
+    async def id(self) -> ModuleDependencyID:
+        """A unique identifier for this ModuleDependency.
 
         Note
         ----
@@ -4132,9 +4416,9 @@ class ModuleConfig(Type):
 
         Returns
         -------
-        ModuleConfigID
-            The `ModuleConfigID` scalar type represents an identifier for an
-            object of type ModuleConfig.
+        ModuleDependencyID
+            The `ModuleDependencyID` scalar type represents an identifier for
+            an object of type ModuleDependency.
 
         Raises
         ------
@@ -4145,27 +4429,7 @@ class ModuleConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ModuleConfigID)
-
-    @typecheck
-    async def include(self) -> list[str]:
-        """Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("include", _args)
-        return await _ctx.execute(list[str])
+        return await _ctx.execute(ModuleDependencyID)
 
     @typecheck
     async def name(self) -> str:
@@ -4183,13 +4447,49 @@ class ModuleConfig(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_name"):
+            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
     @typecheck
-    async def root(self) -> str:
-        """Returns
+    def source(self) -> "ModuleSource":
+        _args: list[Arg] = []
+        _ctx = self._select("source", _args)
+        return ModuleSource(_ctx)
+
+
+class ModuleSource(Type):
+    """The source needed to load and run a module, along with any metadata
+    about the source such as versions/urls/etc."""
+
+    @typecheck
+    def as_git_source(self) -> GitModuleSource:
+        _args: list[Arg] = []
+        _ctx = self._select("asGitSource", _args)
+        return GitModuleSource(_ctx)
+
+    @typecheck
+    def as_local_source(self) -> LocalModuleSource:
+        _args: list[Arg] = []
+        _ctx = self._select("asLocalSource", _args)
+        return LocalModuleSource(_ctx)
+
+    @typecheck
+    def as_module(self) -> Module:
+        """Load the source as a module. If this is a local source, the parent
+        directory must have been provided during module source creation
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asModule", _args)
+        return Module(_ctx)
+
+    @typecheck
+    async def as_string(self) -> str:
+        """A human readable ref string representation of this module source.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4204,12 +4504,73 @@ class ModuleConfig(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("root", _args)
+        _ctx = self._select("asString", _args)
         return await _ctx.execute(str)
 
     @typecheck
-    async def sdk(self) -> str:
+    def directory(self, path: str) -> Directory:
+        """The directory containing the actual module's source code, as
+        determined from the root directory and subpath.
+
+        Parameters
+        ----------
+        path:
+            The path from the source directory to select.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("directory", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    async def id(self) -> ModuleSourceID:
+        """A unique identifier for this ModuleSource.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ModuleSourceID
+            The `ModuleSourceID` scalar type represents an identifier for an
+            object of type ModuleSource.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ModuleSourceID)
+
+    @typecheck
+    async def kind(self) -> ModuleSourceKind:
         """Returns
+        -------
+        ModuleSourceKind
+            The kind of module source.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("kind", _args)
+        return await _ctx.execute(ModuleSourceKind)
+
+    @typecheck
+    async def module_name(self) -> str:
+        """If set, the name of the module this source references
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4224,8 +4585,60 @@ class ModuleConfig(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("sdk", _args)
+        _ctx = self._select("moduleName", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    def resolve_dependency(self, dep: "ModuleSource") -> "ModuleSource":
+        """Resolve the provided module source arg as a dependency relative to
+        this module source.
+
+        Parameters
+        ----------
+        dep:
+            The dependency module source to resolve.
+        """
+        _args = [
+            Arg("dep", dep),
+        ]
+        _ctx = self._select("resolveDependency", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    def root_directory(self) -> Directory:
+        _args: list[Arg] = []
+        _ctx = self._select("rootDirectory", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    async def subpath(self) -> str:
+        """The path to the module subdirectory containing the actual module's
+        source code.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("subpath", _args)
+        return await _ctx.execute(str)
+
+    def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
+        """Call the provided callable with current ModuleSource.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
 
 
 class ObjectTypeDef(Type):
@@ -4585,11 +4998,11 @@ class Client(Root):
         return FunctionCall(_ctx)
 
     @typecheck
-    def current_module(self) -> Module:
+    def current_module(self) -> CurrentModule:
         """The module currently being served in the session, if any."""
         _args: list[Arg] = []
         _ctx = self._select("currentModule", _args)
-        return Module(_ctx)
+        return CurrentModule(_ctx)
 
     @typecheck
     async def current_type_defs(self) -> list["TypeDef"]:
@@ -4774,6 +5187,15 @@ class Client(Root):
         return Container(_ctx)
 
     @typecheck
+    def load_current_module_from_id(self, id: CurrentModuleID) -> CurrentModule:
+        """Load a CurrentModule from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCurrentModuleFromID", _args)
+        return CurrentModule(_ctx)
+
+    @typecheck
     def load_directory_from_id(self, id: DirectoryID) -> Directory:
         """Load a Directory from its ID."""
         _args = [
@@ -4857,6 +5279,15 @@ class Client(Root):
         return GeneratedCode(_ctx)
 
     @typecheck
+    def load_git_module_source_from_id(self, id: GitModuleSourceID) -> GitModuleSource:
+        """Load a GitModuleSource from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGitModuleSourceFromID", _args)
+        return GitModuleSource(_ctx)
+
+    @typecheck
     def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
         """Load a GitRef from its ID."""
         _args = [
@@ -4922,13 +5353,26 @@ class Client(Root):
         return ListTypeDef(_ctx)
 
     @typecheck
-    def load_module_config_from_id(self, id: ModuleConfigID) -> ModuleConfig:
-        """Load a ModuleConfig from its ID."""
+    def load_local_module_source_from_id(
+        self, id: LocalModuleSourceID
+    ) -> LocalModuleSource:
+        """Load a LocalModuleSource from its ID."""
         _args = [
             Arg("id", id),
         ]
-        _ctx = self._select("loadModuleConfigFromID", _args)
-        return ModuleConfig(_ctx)
+        _ctx = self._select("loadLocalModuleSourceFromID", _args)
+        return LocalModuleSource(_ctx)
+
+    @typecheck
+    def load_module_dependency_from_id(
+        self, id: ModuleDependencyID
+    ) -> ModuleDependency:
+        """Load a ModuleDependency from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleDependencyFromID", _args)
+        return ModuleDependency(_ctx)
 
     @typecheck
     def load_module_from_id(self, id: ModuleID) -> Module:
@@ -4938,6 +5382,15 @@ class Client(Root):
         ]
         _ctx = self._select("loadModuleFromID", _args)
         return Module(_ctx)
+
+    @typecheck
+    def load_module_source_from_id(self, id: ModuleSourceID) -> ModuleSource:
+        """Load a ModuleSource from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleSourceFromID", _args)
+        return ModuleSource(_ctx)
 
     @typecheck
     def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
@@ -5010,21 +5463,60 @@ class Client(Root):
         return Module(_ctx)
 
     @typecheck
-    def module_config(
+    def module_dependency(
         self,
-        source_directory: Directory,
+        source: ModuleSource,
         *,
-        subpath: str | None = "",
-    ) -> ModuleConfig:
-        """Load the static configuration for a module from the given source
-        directory and optional subpath.
+        name: str | None = "",
+    ) -> ModuleDependency:
+        """Create a new module dependency configuration from a module source and
+        name
+
+        Parameters
+        ----------
+        source:
+            The source of the dependency
+        name:
+            If set, the name to use for the dependency. Otherwise, once
+            installed to a parent module, the name of the dependency module
+            will be used by default.
         """
         _args = [
-            Arg("sourceDirectory", source_directory),
-            Arg("subpath", subpath, ""),
+            Arg("source", source),
+            Arg("name", name, ""),
         ]
-        _ctx = self._select("moduleConfig", _args)
-        return ModuleConfig(_ctx)
+        _ctx = self._select("moduleDependency", _args)
+        return ModuleDependency(_ctx)
+
+    @typecheck
+    def module_source(
+        self,
+        ref_string: str,
+        *,
+        root_directory: Directory | None = None,
+        stable: bool | None = False,
+    ) -> ModuleSource:
+        """Create a new module source instance from a source ref string.
+
+        Parameters
+        ----------
+        ref_string:
+            The string ref representation of the module source
+        root_directory:
+            An explicitly set root directory for the module source. This is
+            required to load local sources as modules; other source types
+            implicitly encode the root directory and do not require this.
+        stable:
+            If true, enforce that the source is a stable version for source
+            kinds that support versioning.
+        """
+        _args = [
+            Arg("refString", ref_string),
+            Arg("rootDirectory", root_directory, None),
+            Arg("stable", stable, False),
+        ]
+        _ctx = self._select("moduleSource", _args)
+        return ModuleSource(_ctx)
 
     @typecheck
     def pipeline(
@@ -5663,6 +6155,8 @@ __all__ = [
     "Client",
     "Container",
     "ContainerID",
+    "CurrentModule",
+    "CurrentModuleID",
     "Directory",
     "DirectoryID",
     "EnvVariable",
@@ -5681,6 +6175,8 @@ __all__ = [
     "FunctionID",
     "GeneratedCode",
     "GeneratedCodeID",
+    "GitModuleSource",
+    "GitModuleSourceID",
     "GitRef",
     "GitRefID",
     "GitRepository",
@@ -5698,10 +6194,15 @@ __all__ = [
     "LabelID",
     "ListTypeDef",
     "ListTypeDefID",
+    "LocalModuleSource",
+    "LocalModuleSourceID",
     "Module",
-    "ModuleConfig",
-    "ModuleConfigID",
+    "ModuleDependency",
+    "ModuleDependencyID",
     "ModuleID",
+    "ModuleSource",
+    "ModuleSourceID",
+    "ModuleSourceKind",
     "NetworkProtocol",
     "ObjectTypeDef",
     "ObjectTypeDefID",
