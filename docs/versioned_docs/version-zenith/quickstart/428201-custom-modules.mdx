@@ -70,47 +70,76 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
 <Tabs groupId="language">
 <TabItem value="Go">
 
-    ```go file=./snippets/create/main.go
+    ```go file=./snippets/create/go/main.go
     ```
+
+    This new `BuildAndPublish()` function accepts three arguments - the source directory, a list of build arguments and the path to the compiled binary file - and does the following:
+
+    - It invokes the `Golang` module via the `dag` Dagger client.
+    - It calls the module's `WithProject()` and `Build()` functions to build the remote directory. As you've seen already, the `Build()` function returns a `Directory` representing the state of the filesystem following the build.
+    - It calls the `Directory.File()` method to return a reference to the compiled binary file.
+    - It invokes the `Wolfi` module via the `dag` client.
+    - It calls the module's `Base()` and `Container()` functions to return a new Wolfi container image as a `Container`.
+    - It calls the `Container.WithFile()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
+    - It calls the `Container.Publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
 </TabItem>
 <TabItem value="Python">
 
-    ```python file=./snippets/create/main.py
+    ```python file=./snippets/create/python/main.py
     ```
+
+    This new `build_and_publish()` function accepts three arguments - the source directory, a list of build arguments and the path to the compiled binary file - and does the following:
+
+    - It invokes the `Golang` module via the `dag` Dagger client.
+    - It calls the module's `with_project()` and `build()` functions to build the remote directory. As you've seen already, the `build()` function returns a `Directory` representing the state of the filesystem following the build.
+    - It calls the `Directory.file()` method to return a reference to the compiled binary file.
+    - It invokes the `Wolfi` module via the `dag` client.
+    - It calls the module's `base()` and `container()` functions to return a new Wolfi container image as a `Container`.
+    - It calls the `Container.with_file()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
+    - It calls the `Container.publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
 </TabItem>
 <TabItem value="TypeScript">
 
-    ```typescript file=./snippets/create/index.ts
+    ```typescript file=./snippets/create/typescript/index.ts
     ```
+
+    This new `buildAndPublish()` function accepts three arguments - the source directory, a list of build arguments and the path to the compiled binary file - and does the following:
+
+    - It invokes the `Golang` module via the `dag` Dagger client.
+    - It calls the module's `withProject()` and `build()` functions to build the remote directory. As you've seen already, the `build()` function returns a `Directory` representing the state of the filesystem following the build.
+    - It calls the `Directory.file()` method to return a reference to the compiled binary file.
+    - It invokes the `Wolfi` module via the `dag` client.
+    - It calls the module's `base()` and `container()` functions to return a new Wolfi container image as a `Container`.
+    - It calls the `Container.withFile()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
+    - It calls the `Container.publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
 </TabItem>
 </Tabs>
 
-    This new `BuildAndPublish()` function does the following:
-
-FIXME
-- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is again `node:18-slim`. This method returns a `Container` initialized from that base image.
-- When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.Host().Directory()`.
-    - The function code uses the `Container.WithDirectory()` method to mount the source code directory from the module container's filesystem at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
-    - The `dag.Host().Directory()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
-- It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
-- It uses the `Container.Stdout()` method to return the output of the last executed command (the test results). If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
-END FIXME
-
 Call the new function using the Dagger CLI:
 
 ```shell
-dagger call build-and-publish
+dagger call build-and-publish --build-src https://github.com/dagger/dagger --build-args ./cmd/dagger --out-file ./dagger
 ```
 
-Here's an example of the output you will see:
+Here's an example of the output you should see:
 
 ```shell
+✔ dagger call build-and-publish [3m35.8s]
+┃ ttl.sh/my-dagger-container-3056246@sha256:ef0ffb71286be8c51e3d432fb9428ce46c80a32e8456dc963d0
+┃ 1798fcba1e880
 ```
 
+Test the published container image using the command below (remember to update the image name based on the function output):
+
+```shell
+docker run --rm -it ttl.sh/my-dagger-container-3056246 dagger version
+```
+
+Well done! You've just successfully written your first Dagger module and function!
 
 :::info
-Each module executes in a container and the common interface between modules is GraphQL. When you install one module in another, Dagger exposes its functions using a language-agnostic GraphQL API. This means that any module is usable from any other module, regardless of whether they use the same programming language or not - for example, you can use a Python module from Go, or a TypeScript module from Python. This also means that you no longer care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits the requirements at hand. [Learn more about how Dagger works](../index.mdx#how-does-it-work).
+When you install one module in another, Dagger exposes its functions using a language-agnostic GraphQL API. This means that any module is usable from any other module, regardless of whether they use the same programming language or not - for example, you can use a Python module from Go, or a TypeScript module from Python. This also means that you no longer care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits the requirements at hand. [Learn more about how Dagger works](../index.mdx#how-does-it-work).
 :::
