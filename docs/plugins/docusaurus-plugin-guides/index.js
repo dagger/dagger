@@ -31,7 +31,7 @@ module.exports = async function guidesPlugin(context, options) {
 
           if (isNaN(timestamp)) {
             throw new Error(
-              `Given date in ${x} is not ISO 8601 compatible. Please, set the date in this guide to MM-DD-YY format.`,
+              `Given date in ${x} is not ISO 8601 compatible. Please, set the date in this guide to MM-DD-YY format.`
             );
           }
 
@@ -49,10 +49,13 @@ module.exports = async function guidesPlugin(context, options) {
         .flatMap((x) => {
           const versionedGuidePath = `${versionedGuidesFolderPath}/${x}`;
           const isFile = fs.lstatSync(versionedGuidePath).isFile();
+          const isMarkdown =
+            versionedGuidePath.endsWith(".md") ||
+            versionedGuidePath.endsWith(".mdx");
 
           let content = "";
 
-          if (isFile) {
+          if (isFile && isMarkdown) {
             content = fs.readFileSync(versionedGuidePath).toString();
           } else {
             return [];
@@ -63,7 +66,7 @@ module.exports = async function guidesPlugin(context, options) {
 
           if (isNaN(timestamp)) {
             throw new Error(
-              `Given date in ${x} is not ISO 8601 compatible. Please, set the date in this guide to MM-DD-YY format.`,
+              `Given date in ${x} is not ISO 8601 compatible. Please, set the date in this guide to MM-DD-YY format.`
             );
           }
 
@@ -86,12 +89,12 @@ module.exports = async function guidesPlugin(context, options) {
 
       let allTags = new Set();
       currentGuides.forEach((guide) =>
-        guide.frontMatter.tags.forEach((tag) => allTags.add(tag)),
+        guide.frontMatter.tags.forEach((tag) => allTags.add(tag))
       );
       allTags = [...allTags];
       fs.writeFileSync(
         guidesJSONPath,
-        JSON.stringify({currentGuides, versionedGuides, allTags}),
+        JSON.stringify({ currentGuides, versionedGuides, allTags })
       );
     },
   };
