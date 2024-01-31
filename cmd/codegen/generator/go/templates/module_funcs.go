@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
 const errorTypeName = "error"

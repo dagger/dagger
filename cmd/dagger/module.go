@@ -349,7 +349,7 @@ var modulePublishCmd = &cobra.Command{
 
 			data := url.Values{}
 			data.Add("ref", refStr)
-			req, err := http.NewRequest(http.MethodPut, crawlURL, strings.NewReader(data.Encode())) // nolint: gosec
+			req, err := http.NewRequest(http.MethodPut, crawlURL, strings.NewReader(data.Encode()))
 			if err != nil {
 				return fmt.Errorf("failed to create request: %w", err)
 			}

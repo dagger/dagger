@@ -1143,7 +1143,7 @@ type containerImportArgs struct {
 	Tag    string `default:""`
 }
 
-func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
+func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) {
 	start := time.Now()
 	slog.Debug("importing container", "source", args.Source.Display(), "tag", args.Tag)
 	defer func() {

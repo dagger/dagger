@@ -1008,7 +1008,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 
 	// update .gitattributes
 	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
-	// nolint: dupl
+	//nolint:dupl
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
 		gitAttrsPath := filepath.Join(sourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
@@ -1049,7 +1049,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 
 	// update .gitignore
 	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
-	// nolint: dupl
+	//nolint:dupl
 	if len(generatedCode.VCSIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte

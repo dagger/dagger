@@ -76,7 +76,7 @@ func (*Frontend) Close() error {
 var _ progrock.Frontend = (*Frontend)(nil)
 
 func (f *Frontend) Render(tape *progrock.Tape, w io.Writer, u *progrock.UI) error {
-	var ids []vertexAndID // nolint:prealloc
+	var ids []vertexAndID //nolint:prealloc
 	for vid, id := range f.leafIDs {
 		vtx := tape.Vertices[vid]
 		if vtx == nil {
@@ -314,7 +314,7 @@ func renderID(tape *progrock.Tape, out *termenv.Output, u *progrock.UI, vtx *pro
 }
 
 func collectTransitiveChildren(tape *progrock.Tape, groupID string) []*progrock.Vertex {
-	var children []*progrock.Vertex // nolint:prealloc
+	var children []*progrock.Vertex //nolint:prealloc
 	for id := range tape.GroupVertices[groupID] {
 		child := tape.Vertices[id]
 		if child == nil {

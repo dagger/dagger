@@ -568,7 +568,7 @@ func appendHostAlias(hostsFilePath string, env string, searchDomains []string) e
 	return hostsFile.Close()
 }
 
-// nolint: unparam
+//nolint:unparam
 func execRunc() int {
 	args := []string{runcPath}
 	args = append(args, os.Args[1:]...)

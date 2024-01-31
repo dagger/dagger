@@ -40,7 +40,7 @@ type ModuleConfig struct {
 func (modCfg *ModuleConfig) Validate() error {
 	if modCfg.Root != "" {
 		// this is too hard to handle automatically, just tell the user they need to update via error message
-		// nolint:stylecheck // we're okay with an error message formated as full sentences in this case
+		//nolint:stylecheck // we're okay with an error message formated as full sentences in this case
 		return fmt.Errorf(legacyRootUsageMessage, modCfg.Root)
 	}
 	return nil
