@@ -29,14 +29,14 @@ This quickstart assumes that:
 
 ## Step 1: Initialize a new module
 
-1. Create a new directory on your filesystem and run `dagger init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
+1. Create a new directory on your filesystem and run `dagger mod init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
 
     ```sh
     mkdir potato/
     cd potato/
 
     # initialize Dagger module
-    dagger init --name=potato --sdk=python
+    dagger mod init --name=potato --sdk=python
     ```
 
     This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
@@ -72,7 +72,7 @@ pip install -e ./sdk
 :::tip
 As always, you can use any virtual environment manager, including [Poetry](https://python-poetry.org) and others. Just make sure you add `./sdk` as a development dependency. If you place the virtual environment inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json`.
 
-It's also important to install the SDK in **editable mode** (the `-e` in the `pip install` command) so you don't have to reinstall it after a `dagger develop`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
+It's also important to install the SDK in **editable mode** (the `-e` in the `pip install` command) so you don't have to reinstall it after a `dagger mod sync`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
 :::
 
 ## Step 3: Add a function
@@ -137,7 +137,7 @@ The example module in the previous sections was just that - an example. Next, le
     ```shell
     mkdir trivy/
     cd trivy/
-    dagger init --name=trivy --sdk=python
+    dagger mod init --name=trivy --sdk=python
     ```
 
 1. Replace the generated `main.py` file with the following code:

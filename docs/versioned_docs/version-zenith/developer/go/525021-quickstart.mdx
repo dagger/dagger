@@ -29,14 +29,14 @@ This quickstart assumes that:
 
 ## Step 1: Initialize a new module
 
-1. Create a new directory on your filesystem and run `dagger init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
+1. Create a new directory on your filesystem and run `dagger mod init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
 
     ```sh
     mkdir potato/
     cd potato/
 
     # initialize Dagger module
-    dagger init --name=potato --sdk=go
+    dagger mod init --name=potato --sdk=go
     ```
 
     This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and library folders for the generated module code.
@@ -123,7 +123,7 @@ The example module in the previous sections was just that - an example. Next, le
     ```shell
     mkdir trivy/
     cd trivy/
-    dagger init --name=trivy --sdk=go
+    dagger mod init --name=trivy --sdk=go
     ```
 
 1. Replace the generated `main.go` file with the following code:
