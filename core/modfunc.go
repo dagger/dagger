@@ -22,7 +22,6 @@ import (
 type ModuleFunction struct {
 	root    *Query
 	mod     *Module
-	modID   *idproto.ID
 	objDef  *ObjectTypeDef // may be nil for special functions like the module definition function call
 	runtime *Container
 
@@ -71,7 +70,6 @@ func newModFunction(
 	return &ModuleFunction{
 		root:       root,
 		mod:        mod,
-		modID:      modID,
 		objDef:     objDef,
 		runtime:    runtime,
 		metadata:   metadata,
@@ -219,7 +217,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 		deps = mod.Deps.Prepend(mod)
 	}
 
-	err = mod.Query.RegisterFunctionCall(callerDigest, deps, fn.modID, callMeta,
+	err = mod.Query.RegisterFunctionCall(callerDigest, deps, fn.mod, callMeta,
 		progrock.FromContext(ctx).Parent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
