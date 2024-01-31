@@ -29,4 +29,3 @@ func TestIsSemver(t *testing.T) {
 	require.False(t, isSemver("v1"))
 	require.False(t, isSemver("foo"))
 }
-
