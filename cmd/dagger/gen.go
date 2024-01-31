@@ -63,7 +63,7 @@ pagination_prev: null
 
 import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
-# Reference
+# CLI Reference
 
 <PartialExperimentalDocs />
 
