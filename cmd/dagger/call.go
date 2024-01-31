@@ -142,48 +142,53 @@ appending it to the end of the command (for example, *stdout*, *entries*, or
 			// to get the name from modType.
 			// You can't select `id`, but you can select `sync`, and there
 			// may be others.
-			writer := cmd.OutOrStdout()
-
-			if outputPath != "" {
-				file, err := openOutputFile(outputPath)
-				if err != nil {
-					return fmt.Errorf("couldn't write output to file: %w", err)
-				}
-
-				defer func() {
-					file.Close()
-					logOutputSuccess(cmd, outputPath)
-				}()
-
-				writer = io.MultiWriter(writer, file)
-			}
+			buf := new(bytes.Buffer)
 
 			// especially useful for lists and maps
 			if jsonOutput {
 				// disable HTML escaping to improve readability
-				var buf bytes.Buffer
-				encoder := json.NewEncoder(&buf)
+				encoder := json.NewEncoder(buf)
 				encoder.SetEscapeHTML(false)
 				encoder.SetIndent("", "    ")
-
 				if err := encoder.Encode(response); err != nil {
 					return err
 				}
-				fmt.Fprintf(writer, "%s\n", buf.String())
-				return nil
+			} else {
+				if err := printFunctionResult(buf, response); err != nil {
+					return err
+				}
 			}
 
-			return printFunctionResult(writer, response)
+			if outputPath != "" {
+				if err := writeOutputFile(outputPath, buf); err != nil {
+					return fmt.Errorf("couldn't write output to file: %w", err)
+				}
+				logOutputSuccess(cmd, outputPath)
+			}
+
+			writer := cmd.OutOrStdout()
+			buf.WriteTo(writer)
+
+			// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
+			// vertex, which currently adds its own linebreak (as well as all the
+			// other UI clutter), so there's no point doing this. consider adding
+			// back when we switch to printing "clean" output on exit.
+			// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
+			// 	fmt.Fprintln(writer, "⏎")
+			// }
+
+			return nil
 		}
 	},
 }
 
-// openOutputFile opens a file for writing, creating the parent directories if needed.
-func openOutputFile(path string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+// writeOutputFile writes the buffer to a file, creating the parent directories
+// if needed.
+func writeOutputFile(path string, buf *bytes.Buffer) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // nolint: gosec
+		return err
 	}
-	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	return os.WriteFile(path, buf.Bytes(), 0o644) // nolint: gosec
 }
 
 // logOutputSuccess prints to stderr the the output path to the user.
@@ -205,18 +210,22 @@ func printFunctionResult(w io.Writer, r any) error {
 			if err := printFunctionResult(w, v); err != nil {
 				return err
 			}
+			fmt.Fprintln(w)
 		}
 		return nil
 	case map[string]any:
-		// TODO: group in progrock
+		// NB: we're only interested in values because this is where we unwrap
+		// things like {"container":{"from":{"withExec":{"stdout":"foo"}}}}.
 		for _, v := range t {
 			if err := printFunctionResult(w, v); err != nil {
 				return err
 			}
 		}
 		return nil
+	case string:
+		fmt.Fprint(w, t)
 	default:
-		fmt.Fprintf(w, "%+v\n", t)
+		fmt.Fprintf(w, "%+v", t)
 	}
 	return nil
 }
