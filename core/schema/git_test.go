@@ -1,4 +1,4 @@
-package modules
+package schema
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 func TestMatchVersion(t *testing.T) {
 	vers := []string{"v1.0.0", "v1.0.1", "v2.0.0", "path/v1.0.1", "path/v2.0.1"}
 
-	match1, err := matchVersion(vers, "v1.0.1", "")
+	match1, err := matchVersion(vers, "v1.0.1", "/")
 	require.NoError(t, err)
 	require.Equal(t, "v1.0.1", match1)
 
@@ -17,7 +17,7 @@ func TestMatchVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "path/v1.0.1", match2)
 
-	_, err = matchVersion(vers, "v2.0.1", "")
+	_, err = matchVersion(vers, "v2.0.1", "/")
 	require.Error(t, err)
 }
 

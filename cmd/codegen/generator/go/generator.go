@@ -75,7 +75,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 		// generate an initial dagger.gen.go from the base Dagger API
 		baseCfg := g.Config
-		baseCfg.ModuleConfig = nil
+		baseCfg.ModuleName = ""
 		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
@@ -149,14 +149,15 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 
 		info.PackageImport = currentMod.Module.Mod.Path
 	} else {
-		if g.Config.ModuleConfig != nil {
+		if g.Config.ModuleName != "" {
 			outDir, err := filepath.Abs(outDir)
 			if err != nil {
 				return nil, false, fmt.Errorf("get absolute path: %w", err)
 			}
-			rootDir, subdirRelPath, err := g.Config.ModuleConfig.RootAndSubpath(outDir)
+			rootDir := g.Config.ModuleSourceRootPath
+			subdirRelPath, err := filepath.Rel(rootDir, outDir)
 			if err != nil {
-				return nil, false, fmt.Errorf("failed to get module root: %w", err)
+				return nil, false, fmt.Errorf("failed to get output dir rel path: %w", err)
 			}
 
 			// when a module is configured, look for a go.mod in its root dir instead
@@ -174,7 +175,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 
 			// bootstrap go.mod using dependencies from the embedded Go SDK
 
-			newModName := "main" // use a safe default, no going to be a reserved word. User is free to modify
+			newModName := "main" // use a safe default, not going to be a reserved word. User is free to modify
 
 			newMod.AddModuleStmt(newModName)
 			newMod.SetRequire(sdkMod.Require)
@@ -220,7 +221,7 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleConfig, pkg, fset, pass)
+	funcs := templates.GoTemplateFuncs(ctx, schema, cfg.ModuleName, pkg, fset, pass)
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {
@@ -314,7 +315,7 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 }
 
 func (g *GoGenerator) baseModuleSource() string {
-	moduleStructName := strcase.ToCamel(g.Config.ModuleConfig.Name)
+	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
 
 	return fmt.Sprintf(`package main
 

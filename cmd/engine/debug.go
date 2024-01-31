@@ -53,7 +53,7 @@ func setupDebugHandlers(addr string) error {
 		return err
 	}
 	logrus.Debugf("debug handlers listening at %s", addr)
-	go http.Serve(l, m) // nolint:gosec
+	go http.Serve(l, m) //nolint:gosec
 	return nil
 }
 

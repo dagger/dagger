@@ -31,10 +31,13 @@ class Module extends Client\AbstractObject implements Client\IdAble
         return (string)$this->queryLeaf($leafQueryBuilder, 'description');
     }
 
-    public function generatedCode(): GeneratedCode
+    /**
+     * The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
+     */
+    public function generatedSourceRootDirectory(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedCode');
-        return new \Dagger\GeneratedCode($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedSourceRootDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -90,16 +93,20 @@ class Module extends Client\AbstractObject implements Client\IdAble
         $this->queryLeaf($leafQueryBuilder, 'serve');
     }
 
-    public function sourceDirectory(): Directory
+    public function source(): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDirectory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('source');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
-    public function sourceDirectorySubpath(): string
+    /**
+     * Update the module configuration to use the given dependencies.
+     */
+    public function withDependencies(array $dependencies): Module
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceDirectorySubpath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceDirectorySubpath');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -123,6 +130,16 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Update the module configuration to use the given name.
+     */
+    public function withName(string $name): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * This module plus the given Object type and associated functions.
      */
     public function withObject(TypeDefId|TypeDef $object): Module
@@ -133,15 +150,22 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves the module with basic configuration loaded, ready for initialization.
+     * Update the module configuration to use the given SDK.
      */
-    public function withSource(DirectoryId|Directory $directory, ?string $subpath = ''): Module
+    public function withSDK(string $sdk): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves the module with basic configuration loaded if present.
+     */
+    public function withSource(ModuleSourceId|ModuleSource $source): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSource');
-        $innerQueryBuilder->setArgument('directory', $directory);
-        if (null !== $subpath) {
-        $innerQueryBuilder->setArgument('subpath', $subpath);
-        }
+        $innerQueryBuilder->setArgument('source', $source);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

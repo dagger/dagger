@@ -202,7 +202,7 @@ func (svc *Service) Start(
 	}
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
 	id *idproto.ID,

@@ -36,6 +36,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &serviceValue{}
 	case PortForward:
 		return &portForwardValue{}
+	case CacheVolume:
+		return &cacheVolumeValue{}
 	}
 	return nil
 }
@@ -55,6 +57,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*serviceValue]{}
 	case PortForward:
 		return &sliceValue[*portForwardValue]{}
+	case CacheVolume:
+		return &sliceValue[*cacheVolumeValue]{}
 	}
 	return nil
 }
@@ -181,23 +185,6 @@ func (v *directoryValue) String() string {
 	return v.address
 }
 
-func parseGit(urlStr string) (*gitutil.GitURL, error) {
-	// FIXME: handle tarball-over-http (where http(s):// is scheme but not a git repo)
-	u, err := gitutil.ParseURL(urlStr)
-	if err != nil {
-		return nil, err
-	}
-	if u.Fragment == nil {
-		u.Fragment = &gitutil.GitURLFragment{}
-	}
-	if u.Fragment.Ref == "" {
-		// FIXME: default branch can be remotely looked up, but that would
-		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
-		u.Fragment.Ref = "main"
-	}
-	return u, nil
-}
-
 func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("directory address cannot be empty")
@@ -223,6 +210,23 @@ func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error)
 	vStr := v.String()
 	vStr = strings.TrimPrefix(vStr, "file://")
 	return dag.Host().Directory(vStr), nil
+}
+
+func parseGit(urlStr string) (*gitutil.GitURL, error) {
+	// FIXME: handle tarball-over-http (where http(s):// is scheme but not a git repo)
+	u, err := gitutil.ParseURL(urlStr)
+	if err != nil {
+		return nil, err
+	}
+	if u.Fragment == nil {
+		u.Fragment = &gitutil.GitURLFragment{}
+	}
+	if u.Fragment.Ref == "" {
+		// FIXME: default branch can be remotely looked up, but that would
+		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
+		u.Fragment.Ref = "main"
+	}
+	return u, nil
 }
 
 // fileValue is a pflag.Value that builds a dagger.File from a host path.
@@ -445,6 +449,35 @@ func (v *portForwardValue) Get(_ context.Context, c *dagger.Client) (any, error)
 		Frontend: v.frontend,
 		Backend:  v.backend,
 	}, nil
+}
+
+// cacheVolumeValue is a pflag.Value that builds a dagger.CacheVolume from a
+// volume name.
+type cacheVolumeValue struct {
+	name string
+}
+
+func (v *cacheVolumeValue) Type() string {
+	return CacheVolume
+}
+
+func (v *cacheVolumeValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("cacheVolume name cannot be empty")
+	}
+	v.name = s
+	return nil
+}
+
+func (v *cacheVolumeValue) String() string {
+	return v.name
+}
+
+func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
+	if v.String() == "" {
+		return nil, fmt.Errorf("cacheVolume name cannot be empty")
+	}
+	return dag.CacheVolume(v.name), nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a

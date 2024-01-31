@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"go/types"
 
-	. "github.com/dave/jennifer/jen" // nolint:revive,stylecheck
+	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 )
 
 // A Go type that has been parsed and can be registered with the dagger API

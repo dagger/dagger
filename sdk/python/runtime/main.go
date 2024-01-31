@@ -1,13 +1,24 @@
 package main
 
 import (
+	"context"
 	_ "embed"
-	"os"
+	"fmt"
 	"path"
-	"path/filepath"
 )
 
-type PythonSdk struct{}
+func New(
+	// +optional
+	sdkSourceDir *Directory,
+) *PythonSdk {
+	return &PythonSdk{
+		SDKSourceDir: sdkSourceDir,
+	}
+}
+
+type PythonSdk struct {
+	SDKSourceDir *Directory
+}
 
 const (
 	ModSourceDirPath      = "/src"
@@ -24,44 +35,57 @@ const (
 //go:embed scripts/runtime.py
 var runtimeTmpl string
 
-func (m *PythonSdk) ModuleRuntime(modSource *Directory, subPath string, introspectionJson string) *Container {
-	return m.CodegenBase(modSource, subPath, introspectionJson).
+func (m *PythonSdk) ModuleRuntime(
+	ctx context.Context,
+	modSource *ModuleSource,
+	introspectionJson string,
+) (*Container, error) {
+	ctr, err := m.CodegenBase(ctx, modSource, introspectionJson)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr.
 		WithExec([]string{"python", "-m", "pip", "install", "."}).
-		WithWorkdir(ModSourceDirPath).
 		WithNewFile(RuntimeExecutablePath, ContainerWithNewFileOpts{
 			Contents:    runtimeTmpl,
 			Permissions: 0755,
 		}).
-		WithEntrypoint([]string{RuntimeExecutablePath})
+		WithEntrypoint([]string{RuntimeExecutablePath}), nil
 }
 
-func (m *PythonSdk) Codegen(modSource *Directory, subPath string, introspectionJson string) *GeneratedCode {
-	ctr := m.CodegenBase(modSource, subPath, introspectionJson)
+func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*GeneratedCode, error) {
+	ctr, err := m.CodegenBase(ctx, modSource, introspectionJson)
+	if err != nil {
+		return nil, err
+	}
+
 	ctr = ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
 		Exclude: []string{
 			"**/__pycache__",
 		},
 	})
 
-	modified := ctr.Directory(ModSourceDirPath)
-	diff := modSource.Diff(modified).Directory(subPath)
-
-	return dag.GeneratedCode(diff).
-		WithVCSIgnoredPaths([]string{
-			genDir,
-		})
+	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
+		WithVCSGeneratedPaths(
+			[]string{genDir + "/**"},
+		).
+		WithVCSIgnoredPaths(
+			[]string{genDir},
+		), nil
 }
 
-func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string, introspectionJson string) *Container {
+func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
+	subPath, err := modSource.Subpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %v", err)
+	}
+
 	return m.Base("").
-		WithDirectory(sdkSrc, dag.Host().Directory(root(), HostDirectoryOpts{
-			Exclude: []string{"runtime"},
-		})).
-		WithMountedDirectory("/opt", dag.Host().Directory(root(), HostDirectoryOpts{
-			Include: []string{"runtime/template"},
-		})).
+		WithMountedDirectory(sdkSrc, m.SDKSourceDir.WithoutDirectory("runtime")).
+		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory("./template")).
 		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc}).
-		WithMountedDirectory(ModSourceDirPath, modSource).
+		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
@@ -74,8 +98,8 @@ func (m *PythonSdk) CodegenBase(modSource *Directory, subPath string, introspect
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
-		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /opt/runtime/template/pyproject.toml ."}).
-		WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /opt/runtime/template/src/main.py src/main.py; }"})
+		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /opt/pyproject.toml ."}).
+		WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /opt/src/main.py src/main.py; }"}), nil
 }
 
 func (m *PythonSdk) Base(version string) *Container {
@@ -90,13 +114,4 @@ func (m *PythonSdk) Base(version string) *Container {
 		WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", ContainerWithEnvVariableOpts{
 			Expand: true,
 		})
-}
-
-// TODO: fix .. restriction
-func root() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	return filepath.Join(wd, "..")
 }

@@ -112,7 +112,6 @@ func (iface *InterfaceType) TypeDef() *TypeDef {
 	}
 }
 
-// nolint:gocyclo
 func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) error {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("interface", iface.typeDef.Name))
 	bklog.G(ctx).Debug("installing interface")

@@ -343,6 +343,7 @@ func pythonSDK(c *dagger.Client) *dagger.Directory {
 			"runtime/",
 			"LICENSE",
 			"README.md",
+			"dagger.json",
 		},
 	})
 }
@@ -355,6 +356,7 @@ func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
 			"README.md",
 			"runtime",
 			"package.json",
+			"dagger.json",
 		},
 		Exclude: []string{
 			"node_modules",
