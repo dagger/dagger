@@ -1,7 +1,7 @@
 ---
-slug: /quickstart/853930/chaining
+slug: /quickstart/853930/chains
 hide_table_of_contents: true
-title: "Chain functions together"
+title: "Chain function calls together"
 ---
 import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
@@ -9,11 +9,11 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-## Chain functions together
+## Chain function calls together
 
-Typically, you will want something from the directory returned by a function. In the previous case, this would be the binary file produced at the end of the build process.
+The previous example is incomplete because typically, you will want one or more files from a directory rather than just a file listing. In the previous example, this would be the binary file produced at the end of the build process.
 
-One of Dagger's key features is that the custom objects returned by module functions can, in turn, define new functions. This allows function calls to be "chained" together to achieve a specific result.
+With Dagger, objects returned by module functions can, in turn, define new functions. This enables function calls to be "chained" together to achieve a specific result.
 
 The `Directory` returned by the previous `Build()` function is a core type, which comes with a number of functions of its own - most notably, an `Export()` function, which exports the directory's contents to a specified path on the host.
 
@@ -23,12 +23,12 @@ To see this in action, call the previous function using the Dagger CLI again, th
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger export --path ./my-dagger-build
 ```
 
-This revised command builds the Go binary and exports the build output directory to the Dagger host. Once the command completes execution, a new `my-dagger-build` directory is created in the current working directory on the Dagger host. This directory contains the built Go binary.
+This revised command builds the Go binary and exports the build output directory to the Dagger host. Once the command completes execution, a new `my-dagger-build` directory is created in the current working directory on the Dagger host. This directory contains the compiled Go binary.
 
-Validate the binary file by executing the following commands on the Dagger host:
+Validate the compiled binary by executing the following commands on the Dagger host:
 
 ```shell
-cd my-dagger build
+cd my-dagger-build
 ./dagger version
 ```
 

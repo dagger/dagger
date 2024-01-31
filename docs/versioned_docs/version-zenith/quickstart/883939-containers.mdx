@@ -22,7 +22,18 @@ This Wolfi container builder module exposes a number of functions:
 - A `WithPackage()` function that installs additional packages in the base image - here, the `cowsay` package;
 - A `Container()` function that returns the container.
 
-The example above chains these various functions together and returns a special Dagger `Container` type representing the base image plus additional packages. The interesting thing here is that `Container` is a core type, which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
+The example above chains these various functions together and returns a special Dagger `Container` type representing the base image plus additional packages. You should see the container being built and the packages being added, as shown below:
+
+```shell
+✔ dagger call base with-package container [5.00s]
+┃ fetch https://packages.wolfi.dev/os/x86_64/APKINDEX.tar.gz
+┃ (1/3) Installing libbz2-1 (1.0.8-r6)
+┃ (2/3) Installing perl (5.38.2-r0)
+┃ (3/3) Installing cowsay (3.04-r0)
+┃ OK: 54 MiB in 17 packages
+```
+
+The interesting thing here is that `Container` is a core type, which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
 
 :::tip
 This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
@@ -42,7 +53,7 @@ Verify this by executing the following command:
 cowsay "hello"
 ```
 
-You should see output similar to the following, which confirms that you're executing commands in the just-built Wolfi container image:
+You should see output similar to the following:
 
 ```shell
  _______
@@ -55,12 +66,31 @@ You should see output similar to the following, which confirms that you're execu
                 ||     ||
 ```
 
-The `Container` type also has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same output as before by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
+:::caution
+While most terminal programs such as `htop` or `vim` work with `dagger ... shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
+:::
+
+The `Container` type has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same output as before by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
 
 ```shell
 dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container with-exec --args "cowsay" --args "dagger"
 ```
 
-:::caution
-While most terminal programs such as `htop` or `vim` work with `dagger ... shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
-:::
+The `Container` type also has a `Publish()` function, which publishes the container to a registry. To see this in action, call the previous function again, this time chaining an additional function call to `Publish()` on the returned `Container`:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container publish --address ttl.sh/my-wolfi:10m
+```
+
+The output will be a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
+
+```shell
+✔ dagger call base with-package container publish [10.38s]
+┃ ttl.sh/my-wolfi:10m@sha256:1da9eea134000de6b9afef7d812ced0d6f4ebe45db50c0f1afdac5864862ae56
+```
+
+Test the container image using the command below:
+
+```shell
+docker run --rm -it ttl.sh/my-wolfi:10m@sha256:1da9eea134000de6b9afef7d812ced0d6f4ebe45db50c0f1afdac5864862ae56 cowsay "hello"
+```

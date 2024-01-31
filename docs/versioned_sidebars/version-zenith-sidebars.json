@@ -17,10 +17,10 @@
         "quickstart/index",
         "quickstart/cli",
         "quickstart/hello",
-        "quickstart/functions",
-        "quickstart/chaining",
+        "quickstart/inputs-outputs",
+        "quickstart/chains",
         "quickstart/containers",
-        "quickstart/create",
+        "quickstart/custom-modules",
         "quickstart/daggerverse",
         "quickstart/conclusion"
       ]

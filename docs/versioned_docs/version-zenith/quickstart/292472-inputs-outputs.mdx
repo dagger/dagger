@@ -1,7 +1,7 @@
 ---
-slug: /quickstart/292472/functions
+slug: /quickstart/292472/inputs-outputs
 hide_table_of_contents: true
-title: "Understand function arguments and return values"
+title: "Understand function inputs and outputs"
 ---
 import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
@@ -9,7 +9,7 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-## Understand function arguments and return values
+## Understand function inputs and outputs
 
 Module functions can accept arguments and return both basic and custom types. The `HelloDagger()` function in the previous section returned a string, but you can also return Dagger's special `Directory`, `Container`, `Service` and other types, as well as your own custom types.
 
@@ -37,7 +37,7 @@ dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.
 This example uses the same Go builder module as before, but this time calls its `Build()` function. Like the `Test()` function, the `Build()` function accepts a remote Go repository URL and builds a binary from the remote Go repository. It returns a special Dagger `Directory` type representing the state of the working directory in the repository after the build, similar to the output shown below:
 
 ```
- dagger call build [3m13.7s]
+✔ dagger call build [3m13.7s]
 ┃ .changes
 ┃ .git
 ┃ .github
@@ -48,5 +48,5 @@ This example uses the same Go builder module as before, but this time calls its 
 ```
 
 :::tip
-It's important to realize that even though you're testing and building a Go application in this example, you don't need to have Go, Git or any other local dependencies installed on your Dagger host. You only need the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
+It's important to realize that even though you're testing and building a Go application in this example, you don't need to have Go, Git or any other local dependencies installed on the Dagger host. You only need the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
 :::

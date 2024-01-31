@@ -1,6 +1,5 @@
-
 ---
-slug: /quickstart/428201/create
+slug: /quickstart/428201/custom-modules
 hide_table_of_contents: true
 title: "Create your first module"
 ---
@@ -20,14 +19,14 @@ In the previous sections, you've used the Dagger CLI to call Dagger functions to
 
 One approach is to use multiple Dagger CLI calls (similar to what you've used in previous sections) and connect them together using shell scripts. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
 
-A better approach here is to create and program your own Dagger module, which can then call other Dagger modules and functions to achieve the required results. Creating your own Dagger module enables you to transform your workflows into structured, discrete and composable units with clear inputs and outputs, with all the benefits of using a native programming language.
+A better approach is to create a programmable Dagger module, which can then call other Dagger modules and functions to achieve the required results. Creating your own Dagger module enables you to transform your workflows into structured, discrete and composable units with clear inputs and outputs, with all the benefits of using a native programming language.
 
 To see this in action, create a custom Dagger module to build a Go binary, add it to a container image and publish the container image to a registry.
 
 1. Begin by creating a new directory for your Dagger module and running `dagger init` to bootstrap a new module:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
     ```shell
     mkdir my-module
@@ -36,8 +35,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
 
     This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
 
-</TabItem>
-<TabItem value="Python">
+    </TabItem>
+    <TabItem value="Python">
 
     ```shell
     mkdir my-module
@@ -46,8 +45,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
 
     This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
 
-</TabItem>
-<TabItem value="TypeScript">
+    </TabItem>
+    <TabItem value="TypeScript">
 
     ```shell
     mkdir my-module
@@ -56,8 +55,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
 
     This will generate a `dagger.json` module file, initial `src/index.ts`, `package.json` and `tsconfig.json` files, as well as a generated `sdk` folder for local development.
 
-</TabItem>
-</Tabs>
+    </TabItem>
+    </Tabs>
 
 1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new module using `dagger install`:
 
@@ -113,5 +112,5 @@ Here's an example of the output you will see:
 
 
 :::info
-Each module executes in a container and the common interface between modules is GraphQL. When you install one module in another, Dagger exposes its functions using a language-agnostic GraphQL API. This means that any module is usable from any other module, regardless of whether they use the same programming language or not - for example, you can use a Python module from Go, or a TypeScript module from Python. This also means that you no longer care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits the requirements at hand. [Learn more about how Dagger works](../index.mdx#how-does-dagger-work).
+Each module executes in a container and the common interface between modules is GraphQL. When you install one module in another, Dagger exposes its functions using a language-agnostic GraphQL API. This means that any module is usable from any other module, regardless of whether they use the same programming language or not - for example, you can use a Python module from Go, or a TypeScript module from Python. This also means that you no longer care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits the requirements at hand. [Learn more about how Dagger works](../index.mdxhow-does-it-work).
 :::
