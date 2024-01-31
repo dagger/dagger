@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"regexp"
 
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
@@ -288,6 +289,19 @@ func ResolveMovingRef(ctx context.Context, dag *dagger.Client, modQuery string) 
 		}
 	}
 
+	if hasVersion && isSemver(modVersion) {
+		allTags, err := gitTags(ctx, dag, ref.Git.CloneURL)
+		if err != nil {
+			return nil, fmt.Errorf("get git tags: %w", err)
+		}
+		matched, err := matchVersion(allTags, modVersion, ref.SubPath)
+		if err != nil {
+			return nil, fmt.Errorf("matching version to tags: %w", err)
+		}
+		// reassign modVersion to matched tag which could be subPath/tag
+		modVersion = matched
+	}
+
 	gitCommit, err := dag.Git(ref.Git.CloneURL, dagger.GitOpts{KeepGitDir: true}).Commit(modVersion).Commit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve git ref: %w", err)
@@ -357,4 +371,59 @@ func defaultBranch(ctx context.Context, dag *dagger.Client, repo string) (string
 	}
 
 	return "", fmt.Errorf("could not deduce default branch from output:\n%s", output)
+}
+
+// find all git tags for a given repo
+func gitTags(ctx context.Context, dag *dagger.Client, repo string) ([]string, error) {
+	output, err := dag.Container().
+		From(gitImageRef).
+		WithEnvVariable("CACHEBUSTER", identity.NewID()). // force this to always run so we don't get stale data
+		WithExec([]string{"git", "ls-remote", "--tags", "--symref", repo}, dagger.ContainerWithExecOpts{
+			SkipEntrypoint: true,
+		}).
+		Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBufferString(output))
+
+	tags := []string{}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+
+		tags = append(tags, strings.TrimPrefix(fields[1], "refs/tags/"))
+	}
+
+	return tags, nil
+}
+
+func isSemver(ver string) bool {
+	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	return re.MatchString(ver)
+}
+
+// Match a version string in a list of versions with optional subPath
+// e.g. github.com/foo/daggerverse/mod@mod/v1.0.0
+// e.g. github.com/foo/mod@v1.0.0
+// TODO smarter matching logic, e.g. v1 == v1.0.0
+func matchVersion(versions []string, match, subPath string) (string, error) {
+	// If theres a subPath, first match on {subPath}/{match} for monorepo tags
+	if subPath != "" {
+		matched, err := matchVersion(versions, fmt.Sprintf("%s/%s", subPath, match), "")
+		// no error means there's a match with subpath/match
+		if err == nil {
+			return matched, nil
+		}
+	}
+
+	for _, v := range versions {
+		if v == match {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("unable to find version %s", match)
 }
