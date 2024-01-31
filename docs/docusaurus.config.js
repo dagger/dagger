@@ -122,8 +122,8 @@ const config = {
           },
           frontmatter: {
             displayed_sidebar: 'zenith',
-            sidebar_label: 'Reference',
-            title: "Dagger TypeScript SDK"
+            sidebar_label: 'TypeScript SDK Reference',
+            title: "TypeScript SDK Reference"
           },
           hideMembersSymbol: true,
           requiredToBeDocumented: ["Class"]
