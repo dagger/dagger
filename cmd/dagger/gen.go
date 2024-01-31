@@ -13,30 +13,26 @@ import (
 	"github.com/spf13/cobra/doc"
 )
 
-func newGenCmd() *cobra.Command {
-	var gendoc string
-
-	var cmd = &cobra.Command{
-		Use:    "gen",
-		Short:  "Generate CLI reference documentation",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cmd.Printf("Generating dagger command-line documentation in %q...\n", gendoc)
-			return genRun(rootCmd, gendoc)
-		},
-	}
-
-	cmd.Flags().StringVar(
-		&gendoc,
-		"file",
-		"./docs/versioned_docs/version-zenith/reference/979596-cli.mdx",
-		"the file to write the reference doc",
-	)
-
-	return cmd
+var genDocCmd = &cobra.Command{
+	Use:    "gen FILE",
+	Short:  "Generate CLI reference documentation",
+	Long:   "Generate CLI reference documentation in the given file path.",
+	Args:   cobra.ExactArgs(1),
+	Hidden: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// TODO: The file name is necessary for the slug in the frontmatter,
+		// but provide it as a flag instead and default to printing to stdout,
+		// with an additional --output flag to write to a file.
+		gendoc := args[0]
+		if err := genDocRun(rootCmd, gendoc); err != nil {
+			return err
+		}
+		cmd.Printf("Generated command-line documentation: %s\n", gendoc)
+		return nil
+	},
 }
 
-func genRun(cmd *cobra.Command, target string) error {
+func genDocRun(cmd *cobra.Command, target string) error {
 	cmd.DisableAutoGenTag = true
 
 	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)

@@ -39,7 +39,7 @@ func init() {
 		runCmd,
 		moduleCmd,
 		sessionCmd(),
-		newGenCmd(),
+		genDocCmd,
 		downloadCmd,
 		upCmd,
 		shellCmd,
