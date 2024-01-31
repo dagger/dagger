@@ -29,14 +29,14 @@ This quickstart assumes that:
 
 ## Step 1: Initialize a new module
 
-1. Create a new directory on your filesystem and run `dagger mod init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
+1. Create a new directory on your filesystem and run `dagger init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
 
     ```sh
     mkdir potato/
     cd potato/
 
     # initialize Dagger module
-    dagger mod init --name=potato --sdk=python
+    dagger init --name=potato --sdk=python
     ```
 
     This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
@@ -51,16 +51,8 @@ This quickstart assumes that:
     When using `dagger call` to call module functions, do not explicitly use the name of the module.
     :::
 
-    An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
-
-    ```sh
-    echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
-    ```
-
 :::note
 When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
-
-When using `dagger query` and GraphQL, all names are converted into a language-agnostic "camelCase" style.
 :::
 
 ## Step 2: Prepare the development environment
@@ -80,7 +72,7 @@ pip install -e ./sdk
 :::tip
 As always, you can use any virtual environment manager, including [Poetry](https://python-poetry.org) and others. Just make sure you add `./sdk` as a development dependency. If you place the virtual environment inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json`.
 
-It's also important to install the SDK in **editable mode** (the `-e` in the `pip install` command) so you don't have to reinstall it after a `dagger mod sync`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
+It's also important to install the SDK in **editable mode** (the `-e` in the `pip install` command) so you don't have to reinstall it after a `dagger develop`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
 :::
 
 ## Step 3: Add a function
@@ -92,16 +84,10 @@ Let's try changing the `src/main.py` file.
     ```python file=./snippets/quickstart/step2/main.py
     ```
 
-1. Test the new function, once again using `dagger call` or `dagger query`:
+1. Test the new function, once again using `dagger call`:
 
     ```sh
     dagger call hello-world
-    ```
-
-    or
-
-    ```sh
-    echo '{potato{helloWorld}}' | dagger query
     ```
 
 ## Step 4: Use input parameters and return types
@@ -121,30 +107,18 @@ Your module functions can accept and return multiple different types, not just b
     dagger call hello-world --count 10 --mashed
     ```
 
-    or
-
-    ```sh
-    echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
-    ```
-
 1. Update the function to return a custom `PotatoMessage` type:
 
     ```python file=./snippets/quickstart/step3b/main.py
     ```
 
-    Test it using `dagger call` or `dagger query`:
+    Test it using `dagger call`:
 
     ```sh
     dagger call hello-world --message "I am a potato" message
     dagger call hello-world --message "I am a potato" from
+
     ```
-
-    or
-
-    ```sh
-    echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
-    ```
-
     [dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
     is only needed to allow accessing the field directly via the API. Otherwise,
     it will still be used during serialization/deserialization when passing the
@@ -163,7 +137,7 @@ The example module in the previous sections was just that - an example. Next, le
     ```shell
     mkdir trivy/
     cd trivy/
-    dagger mod init --name=trivy --sdk=python
+    dagger init --name=trivy --sdk=python
     ```
 
 1. Replace the generated `main.py` file with the following code:

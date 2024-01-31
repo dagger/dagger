@@ -25,10 +25,10 @@ This guide assumes that:
 
 ## Use modules in other modules
 
-Modules can call each other. To add a dependency to your module, you can use `dagger mod install`, as in the following example:
+Modules can call each other. To add a dependency to your module, you can use `dagger install`, as in the following example:
 
 ```sh
-dagger mod install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
+dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
 ```
 
 This module will be added to your `dagger.json`:
@@ -42,7 +42,7 @@ This module will be added to your `dagger.json`:
 You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
 
 ```sh
-dagger mod install ./path/to/module
+dagger install ./path/to/module
 ```
 
 The dependent module will be added to your code-generation routines, so you can access it from your own module's code, as shown below:
@@ -70,34 +70,16 @@ Here is an example module using the Python SDK:
 
 ```
 
-And here is an example query for this module:
+And here is an example call for this module:
 
-```graphql
-{
-  helloWorld {
-    message
-    withName(name: "Monde") {
-      withGreeting(greeting: "Bonjour") {
-        message
-      }
-    }
-  }
-}
+```console
+dagger call with-name --name=Monde with-greeting --greeting=Bonjour message
 ```
 
 The result will be:
 
-```json
-{
-  "helloWorld": {
-    "message": "Hello, World!",
-    "withName": {
-      "withGreeting": {
-        "message": "Bonjour, Monde!"
-      }
-    }
-  }
-}
+```console
+Bonjour, Monde!
 ```
 
 ## Write an asynchronous module constructor function

@@ -6,10 +6,15 @@ import (
 	"fmt"
 )
 
-func New(greeting Optional[string], name Optional[string]) *HelloWorld {
+func New(
+	// +default=Hello
+	greeting string,
+	// +default=World
+	name string,
+) *HelloWorld {
 	return &HelloWorld{
-		Greeting: greeting.GetOr("Hello"),
-		Name:     name.GetOr("World"),
+		Greeting: greeting,
+		Name:     name,
 	}
 }
 
