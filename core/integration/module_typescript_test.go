@@ -403,7 +403,7 @@ func TestModuleTypescriptSignatureUnexported(t *testing.T) {
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.objects")
+	objs := gjson.Get(out, "host.directory.asModule.initialize.objects")
 
 	require.Equal(t, 2, len(objs.Array()))
 	minimal := objs.Get(`1.asObject`)
