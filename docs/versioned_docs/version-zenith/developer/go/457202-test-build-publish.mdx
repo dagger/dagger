@@ -251,7 +251,7 @@ The `shell` API on `Container` types can be used to open an interactive shell se
 Try it with the command below:
 
 ```shell
-dagger call package --args sh shell
+dagger call package shell --args sh
 ```
 
 This command drops you into an interactive shell, allowing you to directly execute commands in the container returned by the `package` function, as in the example below:
@@ -275,7 +275,7 @@ func (m *MyMod) PackageService(
   // +optional
   nodeVersion string,
 ) *Service {
-  return m.Package().
+  return m.Package(nodeVersion).
     AsService()
 }
 ```
@@ -283,7 +283,7 @@ func (m *MyMod) PackageService(
 Then, use the `up` API to build the application and serve it with NGINX, mapping container port 80 to host port 8080:
 
 ```shell
-dagger call package-service up --port 8080:80
+dagger call package-service up --ports 8080:80
 ```
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the host (replace `localhost` with your Docker host's network name if accessing it remotely).

@@ -13,7 +13,7 @@ func (m *MyMod) buildBase(nodeVersion string) *Node {
 		nodeVersion = defaultNodeVersion
 	}
 	return dag.Node().
-		WithVersion(nodeVersion.GetOr(defaultNodeVersion)).
+		WithVersion(nodeVersion).
 		WithNpm().
 		WithSource(dag.CurrentModule().Source()).
 		Install(nil)

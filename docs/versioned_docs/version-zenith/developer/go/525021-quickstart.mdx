@@ -44,7 +44,7 @@ This quickstart assumes that:
 1. Test the module. Run the generated `main.go` with the `dagger call` command:
 
     ```sh
-    dagger call container-echo --string-arg 'Hello daggernauts!'
+    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
     ```
 
     :::tip
@@ -95,7 +95,7 @@ Your module functions can accept and return multiple different types, not just b
     Here's an example of calling the function with optional parameters:
 
     ```sh
-    dagger call hello-world --count 10 --mashed true
+    dagger call hello-world --count 10 --mashed
     ```
 
 1. Update the function to return a custom `PotatoMessage` type:

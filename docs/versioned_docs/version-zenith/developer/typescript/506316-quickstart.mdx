@@ -44,7 +44,7 @@ This quickstart assumes that:
 2. Test the module. Run the generated `index.ts` with the `dagger call` command:
 
     ```sh
-    dagger call container-echo --string-arg 'Hello daggernauts!'
+    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
     ```
 
     :::tip
@@ -118,7 +118,7 @@ The example module in the previous sections was just that - an example. Next, le
 
     cd trivy/
 
-    dagger mod init --name=trivy --sdk=python
+    dagger mod init --name=trivy --sdk=typescript
     ```
 
 2. Replace the generated `index.ts` file with the following code:

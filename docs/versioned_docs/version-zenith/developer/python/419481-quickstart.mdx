@@ -44,7 +44,7 @@ This quickstart assumes that:
 1. Test the module. Run the generated `main.py` with the `dagger call` command:
 
     ```sh
-    dagger call container-echo --string-arg 'Hello daggernauts!'
+    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
     ```
 
     :::tip
@@ -140,7 +140,7 @@ The example module in the previous sections was just that - an example. Next, le
     dagger mod init --name=trivy --sdk=python
     ```
 
-1. Replace the generated `main.py` file with the following code:
+1. Replace the generated `src/main.py` file with the following code:
 
     ```python file=./snippets/quickstart/trivy/main.py
     ```
