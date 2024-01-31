@@ -31,8 +31,9 @@ type DaggerServer struct {
 	bkClient *buildkit.Client
 	worker   bkworker.Worker
 
-	schema   *schema.APIServer
-	recorder *progrock.Recorder
+	schema      *schema.APIServer
+	recorder    *progrock.Recorder
+	progCleanup func() error
 
 	doneCh    chan struct{}
 	closeOnce sync.Once
@@ -65,10 +66,14 @@ func NewDaggerServer(
 		return nil, err
 	}
 
-	progWriter := progrock.MultiWriter{
+	progWriter, progCleanup, err := buildkit.ProgrockForwarder(bkClient.ProgSockPath, progrock.MultiWriter{
 		progrock.NewRPCWriter(clientConn, progUpdates),
 		buildkit.ProgrockLogrusWriter{},
+	})
+	if err != nil {
+		return nil, err
 	}
+	srv.progCleanup = progCleanup
 
 	progrockLabels := []*progrock.Label{}
 	for _, label := range rootLabels {
@@ -110,6 +115,7 @@ func NewDaggerServer(
 	apiSchema, err := schema.New(ctx, schema.InitializeArgs{
 		BuildkitClient: srv.bkClient,
 		Platform:       srv.worker.Platforms(true)[0],
+		ProgSockPath:   bkClient.ProgSockPath,
 		OCIStore:       srv.worker.ContentStore(),
 		LeaseManager:   srv.worker.LeaseManager(),
 		Secrets:        secretStore,
@@ -137,6 +143,8 @@ func (srv *DaggerServer) Close() {
 	srv.recorder.Complete()
 	// close the recorder so the UI exits
 	srv.recorder.Close()
+
+	srv.progCleanup()
 }
 
 func (srv *DaggerServer) Wait(ctx context.Context) error {
