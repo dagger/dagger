@@ -17,6 +17,10 @@ func TestMatchVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "path/v1.0.1", match2)
 
+	match3, err := matchVersion(vers, "v1.0.1", "/path")
+	require.NoError(t, err)
+	require.Equal(t, "path/v1.0.1", match3)
+
 	_, err = matchVersion(vers, "v2.0.1", "/")
 	require.Error(t, err)
 }

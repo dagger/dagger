@@ -227,7 +227,8 @@ func isSemver(ver string) bool {
 func matchVersion(versions []string, match, subPath string) (string, error) {
 	// If theres a subPath, first match on {subPath}/{match} for monorepo tags
 	if subPath != "/" {
-		matched, err := matchVersion(versions, fmt.Sprintf("%s/%s", subPath, match), "/")
+		rawSubPath, _ := strings.CutPrefix(subPath, "/")
+		matched, err := matchVersion(versions, fmt.Sprintf("%s/%s", rawSubPath, match), "/")
 		// no error means there's a match with subpath/match
 		if err == nil {
 			return matched, nil
