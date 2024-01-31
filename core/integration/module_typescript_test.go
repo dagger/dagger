@@ -36,11 +36,11 @@ func TestModuleTypescriptInit(t *testing.T) {
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/child").
-			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript", "--root=.."))
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "-m=child", "--name=bare", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQueryAt("child", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
@@ -167,28 +167,6 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
 	})
-}
-
-func TestModuleTypescriptGitRemovesIgnored(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	committedModGen := goGitBase(t, c).
-		With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript")).
-		WithExec([]string{"rm", ".gitignore"}).
-		WithExec([]string{"git", "add", "."}).
-		WithExec([]string{"git", "commit", "-m", "init with generated files"})
-
-	changedAfterSync, err := committedModGen.
-		With(daggerExec("mod", "sync")).
-		WithExec([]string{"git", "diff"}). // for debugging
-		WithExec([]string{"git", "status", "--short"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	t.Logf("changed after sync:\n%s", changedAfterSync)
-	require.Contains(t, changedAfterSync, "D  sdk/index.ts\n")
-	require.Contains(t, changedAfterSync, "D  sdk/entrypoint/entrypoint.ts\n")
 }
 
 //go:embed testdata/modules/typescript/syntax/index.ts
@@ -447,7 +425,7 @@ func TestModuleTypescriptDocs(t *testing.T) {
 
 	out, err := modGen.With(inspectModule).Stdout(ctx)
 	require.NoError(t, err)
-	obj := gjson.Get(out, "host.directory.asModule.objects.0.asObject")
+	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
 	require.Equal(t, "Minimal", obj.Get("name").String())
 
 	hello := obj.Get(`functions.#(name="hello")`)
