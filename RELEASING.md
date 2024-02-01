@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-January%2019,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-February%201,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -71,8 +71,8 @@ preferably a few days in advance so that they can react. We do this by:
 
 - [ ] Create a new post in [Discord
       #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
-      e.g. [`v0.8.3 release - August 16,
-2023`](https://discord.com/channels/707636530424053791/1141077859964821745)
+      e.g. [`v0.9.8 release - January 26,
+2024`](https://discord.com/channels/707636530424053791/1200404768540069908)
 
 This allows others to weigh in whether:
 
@@ -129,29 +129,30 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.9.2.md` by either running `changie batch
+- [ ] Create e.g. `.changes/v0.9.8.md` by either running `changie batch
 patch` (or `changie batch minor` if this is a new minor).
 
 > **Note**
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.9.2.md`
+      `.changes/v0.9.8.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `20 mins` Submit a PR - e.g. `add-v0.9.2-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.9.8-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
       `main` branch that you are about to release.
-- [ ] `20mins` When you have confirmed that all checks are green, run the following:
+- [ ] `30mins` When you have confirmed that all checks are green, run the following:
 
 ```console
 git checkout main
-git pull
 
 # If not named "origin" in your local checkout, replace "origin" with whatever the
 # github.com/dagger/dagger repo is named for you locally
 export DAGGER_REPO_REMOTE=origin
+
+git pull $DAGGER_REPO_REMOTE main
 
 export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
 export ENGINE_VERSION="$(changie latest)"
@@ -207,7 +208,7 @@ cd ../..
 ```
 
 - [ ] Commit and push the changes with the message `Add SDK release notes`
-- [ ] `10mins` Open this draft PR in
+- [ ] `30mins` Open this draft PR in
       [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
       click on **Ready to review**.
 - [ ] **After all checks pass**, merge this PR. Tip: go to the **Files
@@ -257,8 +258,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.2 sh
-# mv ~/.local/bin/dagger{,-0.9.2}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.8 sh
+# mv ~/.local/bin/dagger{,-0.9.8}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 cd ../..
 dagger run ./hack/make engine:test
