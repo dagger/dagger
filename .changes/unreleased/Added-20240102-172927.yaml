@@ -1,6 +1,0 @@
-kind: Added
-body: New kill option for Service.Stop
-time: 2024-01-02T17:29:27.031546286Z
-custom:
-  Author: jedevc
-  PR: "6354"
