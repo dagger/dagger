@@ -12,11 +12,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache"
@@ -27,34 +25,37 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
 	srchttp "github.com/moby/buildkit/source/http"
-	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/tracing"
-	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
 type Opt struct {
-	CacheAccessor cache.Accessor
+	srchttp.Opt
 	BaseDNSConfig *oci.DNSConfig
-	Transport     http.RoundTripper
 }
 
 type httpSource struct {
+	src source.Source
+
 	cache     cache.Accessor
-	locker    *locker.Locker
 	transport http.RoundTripper
 	dns       *oci.DNSConfig
 }
 
 func NewSource(opt Opt) (source.Source, error) {
+	src, err := srchttp.NewSource(opt.Opt)
+	if err != nil {
+		return nil, err
+	}
+
 	transport := opt.Transport
 	if transport == nil {
 		transport = tracing.DefaultTransport
 	}
 	hs := &httpSource{
+		src:       src,
 		cache:     opt.CacheAccessor,
-		locker:    locker.New(),
 		transport: transport,
 		dns:       opt.BaseDNSConfig,
 	}
@@ -62,93 +63,53 @@ func NewSource(opt Opt) (source.Source, error) {
 }
 
 func (hs *httpSource) Schemes() []string {
-	return []string{srctypes.HTTPSScheme}
+	return hs.src.Schemes()
 }
 
 func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := srchttp.NewHTTPIdentifier(ref, scheme == "https")
+	srcid, err := hs.src.Identifier(scheme, ref, attrs, platform)
 	if err != nil {
 		return nil, err
 	}
+	id := &HTTPIdentifier{
+		HTTPIdentifier: *(srcid.(*srchttp.HTTPIdentifier)),
+	}
 
+	//nolint:gocritic
 	for k, v := range attrs {
 		switch k {
-		case pb.AttrHTTPChecksum:
-			dgst, err := digest.Parse(v)
-			if err != nil {
-				return nil, err
-			}
-			id.Checksum = dgst
-		case pb.AttrHTTPFilename:
-			id.Filename = v
-		case pb.AttrHTTPPerm:
-			i, err := strconv.ParseInt(v, 0, 64)
-			if err != nil {
-				return nil, err
-			}
-			id.Perm = int(i)
-		case pb.AttrHTTPUID:
-			i, err := strconv.ParseInt(v, 0, 64)
-			if err != nil {
-				return nil, err
-			}
-			id.UID = int(i)
-		case pb.AttrHTTPGID:
-			i, err := strconv.ParseInt(v, 0, 64)
-			if err != nil {
-				return nil, err
-			}
-			id.GID = int(i)
+		case "dagger.git.clientids":
+			id.ClientIDs = strings.Split(v, ",")
 		}
 	}
 
 	return id, nil
 }
 
-type httpSourceHandler struct {
-	*httpSource
-	src       srchttp.HTTPIdentifier
-	clientIDs []string
-	refID     string
-	cacheKey  digest.Digest
-	sm        *session.Manager
-}
-
-// TODO(vito): this can be cleaned up if/when
-// https://github.com/moby/buildkit/pull/4035 is merged
-type DaggerHTTPURLHack struct {
-	URL       string   `json:"url"`
-	ClientIDs []string `json:"client_ids"`
-}
-
 func (hs *httpSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	httpIdentifier, ok := id.(*srchttp.HTTPIdentifier)
+	httpIdentifier, ok := id.(*HTTPIdentifier)
 	if !ok {
 		return nil, errors.Errorf("invalid http identifier %v", id)
 	}
 
-	var clientIDs []string
-	var hack DaggerHTTPURLHack
-	if err := buildkit.DecodeIDHack(srctypes.HTTPSScheme, httpIdentifier.URL, &hack); err != nil {
-		// ignore error; we have to handle both scenarios because this Source
-		// entirely _replaces_ the HTTP source, so we have to handle usage from
-		// Dockerfile frontends too
-	} else {
-		httpIdentifier.URL = hack.URL
-		clientIDs = hack.ClientIDs
-	}
-
 	return &httpSourceHandler{
-		src:        *httpIdentifier,
-		clientIDs:  clientIDs,
 		httpSource: hs,
+		src:        *httpIdentifier,
 		sm:         sm,
 	}, nil
 }
 
+type httpSourceHandler struct {
+	*httpSource
+	src      HTTPIdentifier
+	refID    string
+	cacheKey digest.Digest
+	sm       *session.Manager
+}
+
 func (hs *httpSourceHandler) client(g session.Group) *http.Client {
 	clientDomains := []string{}
-	for _, clientID := range hs.clientIDs {
+	for _, clientID := range hs.src.ClientIDs {
 		clientDomains = append(clientDomains, network.ClientDomain(clientID))
 	}
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/user"
 	"path"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
@@ -28,9 +26,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
 	srcgit "github.com/moby/buildkit/source/git"
-	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/sshutil"
 	"github.com/moby/buildkit/util/urlutil"
 	"github.com/moby/locker"
 	"github.com/pkg/errors"
@@ -42,26 +38,25 @@ var validHex = regexp.MustCompile(`^[a-f0-9]{40}$`)
 var defaultBranch = regexp.MustCompile(`refs/heads/(\S+)`)
 
 type Opt struct {
-	CacheAccessor cache.Accessor
+	srcgit.Opt
 	BaseDNSConfig *oci.DNSConfig
 }
 
 type gitSource struct {
+	src source.Source
+
 	cache  cache.Accessor
 	locker *locker.Locker
 	dns    *oci.DNSConfig
 }
 
-// Supported returns nil if the system supports Git source
-func Supported() error {
-	if err := exec.Command("git", "version").Run(); err != nil {
-		return errors.Wrap(err, "failed to find git binary")
-	}
-	return nil
-}
-
 func NewSource(opt Opt) (source.Source, error) {
+	src, err := srcgit.NewSource(opt.Opt)
+	if err != nil {
+		return nil, err
+	}
 	gs := &gitSource{
+		src:    src,
 		cache:  opt.CacheAccessor,
 		locker: locker.New(),
 		dns:    opt.BaseDNSConfig,
@@ -70,43 +65,40 @@ func NewSource(opt Opt) (source.Source, error) {
 }
 
 func (gs *gitSource) Schemes() []string {
-	return []string{srctypes.GitScheme}
+	return gs.src.Schemes()
 }
 
 func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := srcgit.NewGitIdentifier(ref)
+	srcid, err := gs.src.Identifier(scheme, ref, attrs, platform)
 	if err != nil {
 		return nil, err
 	}
+	id := &GitIdentifier{
+		GitIdentifier: *(srcid.(*srcgit.GitIdentifier)),
+	}
 
+	//nolint:gocritic
 	for k, v := range attrs {
 		switch k {
-		case pb.AttrKeepGitDir:
-			if v == "true" {
-				id.KeepGitDir = true
-			}
-		case pb.AttrFullRemoteURL:
-			if !isGitTransport(v) {
-				v = "https://" + v
-			}
-			id.Remote = v
-		case pb.AttrAuthHeaderSecret:
-			id.AuthHeaderSecret = v
-		case pb.AttrAuthTokenSecret:
-			id.AuthTokenSecret = v
-		case pb.AttrKnownSSHHosts:
-			id.KnownSSHHosts = v
-		case pb.AttrMountSSHSock:
-			id.MountSSHSock = v
+		case "dagger.git.clientids":
+			id.ClientIDs = strings.Split(v, ",")
 		}
 	}
 
 	return id, nil
 }
 
-// TODO: this logic should be public in buildkit
-func isGitTransport(str string) bool {
-	return strings.HasPrefix(str, "http://") || strings.HasPrefix(str, "https://") || strings.HasPrefix(str, "git://") || strings.HasPrefix(str, "ssh://") || sshutil.IsImplicitSSHTransport(str)
+func (gs *gitSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
+	gitIdentifier, ok := id.(*GitIdentifier)
+	if !ok {
+		return nil, errors.Errorf("invalid git identifier %v", id)
+	}
+
+	return &gitSourceHandler{
+		gitSource: gs,
+		src:       *gitIdentifier,
+		sm:        sm,
+	}, nil
 }
 
 // needs to be called with repo lock
@@ -199,11 +191,10 @@ func (gs *gitSource) mountRemote(ctx context.Context, remote string, auth []stri
 
 type gitSourceHandler struct {
 	*gitSource
-	src       srcgit.GitIdentifier
-	clientIDs []string
-	cacheKey  string
-	sm        *session.Manager
-	auth      []string
+	src      GitIdentifier
+	cacheKey string
+	sm       *session.Manager
+	auth     []string
 }
 
 func (gs *gitSourceHandler) shaToCacheKey(sha string) string {
@@ -215,38 +206,6 @@ func (gs *gitSourceHandler) shaToCacheKey(sha string) string {
 		key += ":" + gs.src.Subdir
 	}
 	return key
-}
-
-// TODO(vito): this can be cleaned up if/when
-// https://github.com/moby/buildkit/pull/4035 is merged
-type DaggerGitURLHack struct {
-	Remote    string   `json:"remote"`
-	ClientIDs []string `json:"client_ids"`
-}
-
-func (gs *gitSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	gitIdentifier, ok := id.(*srcgit.GitIdentifier)
-	if !ok {
-		return nil, errors.Errorf("invalid git identifier %v", id)
-	}
-
-	var clientIDs []string
-	var hack DaggerGitURLHack
-	if err := buildkit.DecodeIDHack("git", gitIdentifier.Remote, &hack); err != nil {
-		// ignore error; we have to handle both scenarios because this Source
-		// entirely _replaces_ the HTTP source, so we have to handle usage from
-		// Dockerfile frontends too
-	} else {
-		gitIdentifier.Remote = hack.Remote
-		clientIDs = hack.ClientIDs
-	}
-
-	return &gitSourceHandler{
-		src:       *gitIdentifier,
-		clientIDs: clientIDs,
-		gitSource: gs,
-		sm:        sm,
-	}, nil
 }
 
 type authSecret struct {
@@ -366,7 +325,7 @@ func (gs *gitSourceHandler) mountKnownHosts() (string, func() error, error) {
 
 func (gs *gitSourceHandler) dnsConfig() *oci.DNSConfig {
 	clientDomains := []string{}
-	for _, clientID := range gs.clientIDs {
+	for _, clientID := range gs.src.ClientIDs {
 		clientDomains = append(clientDomains, network.ClientDomain(clientID))
 	}
 

@@ -37,6 +37,8 @@ import (
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
+	srcgit "github.com/moby/buildkit/source/git"
+	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/network/cniprovider"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/resolver"
@@ -359,7 +361,9 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 // registerDaggerCustomSources adds Dagger's custom sources to the worker.
 func registerDaggerCustomSources(worker *base.Worker, dns *oci.DNSConfig) error {
 	hs, err := httpdns.NewSource(httpdns.Opt{
-		CacheAccessor: worker.CacheMgr,
+		Opt: srchttp.Opt{
+			CacheAccessor: worker.CacheMgr,
+		},
 		BaseDNSConfig: dns,
 	})
 	if err != nil {
@@ -369,7 +373,9 @@ func registerDaggerCustomSources(worker *base.Worker, dns *oci.DNSConfig) error 
 	worker.SourceManager.Register(hs)
 
 	gs, err := gitdns.NewSource(gitdns.Opt{
-		CacheAccessor: worker.CacheMgr,
+		Opt: srcgit.Opt{
+			CacheAccessor: worker.CacheMgr,
+		},
 		BaseDNSConfig: dns,
 	})
 	if err != nil {
