@@ -8,14 +8,12 @@ title: "Start an interactive shell in a container from a function"
 
 ## Start an interactive shell in a container from a function
 
-The `dagger shell` command can be used to open an interactive shell session with any container returned by a function.
-
-This is very useful for debugging and experimenting since it allows you to interact with containers directly.
+The `shell` API can be used to open an interactive shell session with any container returned by a function. This is very useful for debugging and experimenting since it allows you to interact with containers directly.
 
 Try it with the command below:
 
 ```shell
-dagger shell debug
+dagger call debug shell
 ```
 
 This command drops you into an interactive shell, allowing you to directly execute commands in the container returned by the `debug` function, as in the example below:
@@ -32,12 +30,12 @@ Linux vtmeopf0atpc2.3jgto8svt9r6s.dagger.local 6.2.0-34-generic #34-Ubuntu SMP P
 
 ### Override the entrypoint
 
-By default, `dagger shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
+By default, `shell` will execute the container's entrypoint. If the container doesn't have an entrypoint, it will default to executing `sh`.
 
-However, you can also override the command that is executed when the shell session starts via the `--entrypoint` flag. You can use this to (for example) drop into a `node` shell in the container returned by `debug`, rather than `sh`. Use the following command to understand how this works:
+However, you can also override the command that is executed when the shell session starts via the `--args` argument. You can use this to (for example) drop into a `node` shell in the container returned by `debug`, rather than `sh`. Use the following command to understand how this works:
 
 ```shell
-dagger shell --entrypoint node debug
+dagger call debug shell --args node
 ```
 
 This command drops you into an interactive Node.js shell, allowing you to directly execute Node.js code in the running container, as in the example below:
@@ -52,14 +50,12 @@ undefined
 ```
 
 :::caution
-While most terminal programs such as `htop` or `vim` work with `dagger shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities at this time.
+While most terminal programs such as `htop` or `vim` work with `dagger ... shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities at this time.
 :::
 
 :::tip
 Here are a few examples of using this command with modules from the [Daggerverse](https://daggerverse.dev/):
 
-- `dagger -m github.com/shykes/daggerverse/wolfi shell base with-package --name curl with-package --name cowsay container`
-   - Module information: https://daggerverse.dev/mod/github.com/shykes/daggerverse/wolfi@faf1103e0b125477d840d2b96a937518ebc0d5bd
-- `dagger -m github.com/sipsma/daggerverse/yamlinvaders shell play`
-   - Module information: https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders@bbdd8736c41ab7d867a62e3db32895c143e78248
+- [Create a Wolfi container image, add packages to it and start an interactive shell](https://daggerverse.dev/mod/github.com/shykes/daggerverse/wolfi): `dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name curl with-package --name cowsay container shell`
+- [Play an interactive game](https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders): `dagger call -m github.com/sipsma/daggerverse/yamlinvaders play shell`
 :::
