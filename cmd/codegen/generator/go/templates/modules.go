@@ -509,8 +509,8 @@ func (ps *parseState) fillObjectFunctionCase(
 	}
 
 	vars := map[string]struct{}{}
-	for i, spec := range paramSpecs {
-		if i == 0 && spec.paramType.String() == contextTypename {
+	for _, spec := range paramSpecs {
+		if spec.isContext {
 			fnCallArgs = append(fnCallArgs, Id("ctx"))
 			continue
 		}
