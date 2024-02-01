@@ -26,7 +26,7 @@ import (
 var (
 	moduleGroup = &cobra.Group{
 		ID:    "module",
-		Title: "Dagger Modules (Experimental)",
+		Title: "Dagger Module Commands (Experimental)",
 	}
 
 	moduleURL   string

@@ -44,7 +44,8 @@ queries in the document.
 }
 EOF
 `,
-	Args: cobra.MaximumNArgs(1), // operation can be specified
+	GroupID: execGroup.ID,
+	Args:    cobra.MaximumNArgs(1), // operation can be specified
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return optionalModCmdWrapper(Query, "")(cmd, args)
 	},
