@@ -1,0 +1,6 @@
+kind: Breaking
+body: Refactor module configuration + loading. This breaks modules currently using "root" in dagger.json and changes the working directory of modules. See the linked PR for update instructions if impacted.
+time: 2024-01-31T22:08:47.229427944-08:00
+custom:
+  Author: sipsma
+  PR: "6386"
