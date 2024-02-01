@@ -7,8 +7,12 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
+	"unicode"
 
 	"github.com/dagger/dagger/tracing"
+	"github.com/muesli/reflow/indent"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -59,6 +63,7 @@ func init() {
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
+	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	rootCmd.SetUsageTemplate(usageTemplate)
 }
 
@@ -169,13 +174,40 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 	return flags.FlagUsagesWrapped(getViewWidth())
 }
 
+// cmdShortWrapped returns the short description for the given command wrapped
+// to the width of the terminal.
+//
+// This reduces visual noise by preventing `c.Short` descriptions from showing
+// above the next command name.
+//
+// Ideally `c.Short` fields should be as short as possible.
+func cmdShortWrapped(c *cobra.Command) string {
+	width := getViewWidth()
+
+	// Produce the same string length for all sibling commands by padding to
+	// the right based on the longest name. Add two extra spaces to the left
+	// of the screen, and three extra spaces before the description.
+	nameFormat := fmt.Sprintf("  %%-%ds   ", c.NamePadding())
+	name := fmt.Sprintf(nameFormat, c.Name())
+
+	description := c.Short
+	if len(name)+len(description) >= width {
+		wrapped := wordwrap.String(c.Short, width-len(name))
+		indented := indent.String(wrapped, uint(len(name)))
+		// first line shouldn't be indented since we're going to prepend the name
+		description = strings.TrimLeftFunc(indented, unicode.IsSpace)
+	}
+
+	return name + description
+}
+
 const usageTemplate = `Usage:
 
 {{- if .Runnable}}
   {{.UseLine}}
 {{- end}}
 {{- if .HasAvailableSubCommands}}
-  {{ .CommandPath}} [command]
+  {{ .CommandPath}}{{ if .HasAvailableFlags}} [flags]{{end}} [command]
 {{- end}}
 
 {{- if gt (len .Aliases) 0}}
@@ -205,7 +237,7 @@ Examples:
 Available Commands:
 {{- range $cmds }}
 {{- if (or .IsAvailableCommand (eq .Name "help"))}}
-  {{rpad .Name .NamePadding }} {{.Short}}
+{{cmdShortWrapped .}}
 {{- end}}
 {{- end}}
 
@@ -215,7 +247,7 @@ Available Commands:
 {{.Title}}:
 {{- range $cmds }}
 {{- if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}
+{{cmdShortWrapped .}}
 {{- end}}
 {{- end}}{{/* range $cmds */}}
 {{- end}}{{/* range $group := .Groups */}}
@@ -225,7 +257,7 @@ Available Commands:
 Additional Commands:
 {{- range $cmds }}
 {{- if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}
+{{cmdShortWrapped .}}
 {{- end}}
 {{- end}}{{/* range $cmds */}}
 {{- end}}{{/* if not .AllChildCommandsHaveGroup */}}
