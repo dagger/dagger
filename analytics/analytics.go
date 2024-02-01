@@ -71,9 +71,39 @@ func (t *noopTracker) Close() error {
 	return nil
 }
 
+func DoNotTrack() bool {
+	// from https://consoledonottrack.com/
+	return os.Getenv("DO_NOT_TRACK") == "1"
+}
+
+type Config struct {
+	DoNotTrack bool
+	Labels     pipeline.Labels
+	CloudToken string
+}
+
+func DefaultConfig() Config {
+	cfg := Config{
+		DoNotTrack: DoNotTrack(),
+		CloudToken: os.Getenv("DAGGER_CLOUD_TOKEN"),
+	}
+
+	workdir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to get cwd: %v\n", err)
+		return cfg
+	}
+
+	cfg.Labels.AppendCILabel()
+	cfg.Labels = append(cfg.Labels, pipeline.LoadVCSLabels(workdir)...)
+	cfg.Labels = append(cfg.Labels, pipeline.LoadClientLabels(engine.Version)...)
+
+	return cfg
+}
+
 type CloudTracker struct {
-	labels     map[string]string
-	cloudToken string
+	cfg    Config
+	labels map[string]string
 
 	closed bool
 	mu     sync.Mutex
@@ -82,44 +112,25 @@ type CloudTracker struct {
 	doneCh chan struct{}
 }
 
-func DoNotTrack() bool {
-	// from https://consoledonottrack.com/
-	return os.Getenv("DO_NOT_TRACK") == "1"
-}
-
-func New(doNotTrack bool, labels ...pipeline.Label) Tracker {
-	if doNotTrack {
+func New(cfg Config) Tracker {
+	if cfg.DoNotTrack {
 		return &noopTracker{}
 	}
 
 	t := &CloudTracker{
-		cloudToken: os.Getenv("DAGGER_CLOUD_TOKEN"),
-		labels:     make(map[string]string),
-		stopCh:     make(chan struct{}),
-		doneCh:     make(chan struct{}),
+		cfg:    cfg,
+		labels: make(map[string]string),
+		stopCh: make(chan struct{}),
+		doneCh: make(chan struct{}),
 	}
-	t.loadLabels(labels)
+
+	for _, l := range cfg.Labels {
+		t.labels[l.Name] = l.Value
+	}
+
 	go t.start()
 
 	return t
-}
-
-func (t *CloudTracker) loadLabels(labels pipeline.Labels) {
-	// Load default labels if none provided
-	if len(labels) == 0 {
-		workdir, err := os.Getwd()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to get cwd: %v\n", err)
-			return
-		}
-
-		labels.AppendCILabel()
-		labels = append(labels, pipeline.LoadVCSLabels(workdir)...)
-		labels = append(labels, pipeline.LoadClientLabels(engine.Version)...)
-	}
-	for _, l := range labels {
-		t.labels[l.Name] = l.Value
-	}
 }
 
 func (t *CloudTracker) Capture(ctx context.Context, event string, properties map[string]string) {
@@ -197,8 +208,8 @@ func (t *CloudTracker) send() {
 		fmt.Fprintln(os.Stderr, "analytics: new request:", err)
 		return
 	}
-	if t.cloudToken != "" {
-		req.SetBasicAuth(t.cloudToken, "")
+	if t.cfg.CloudToken != "" {
+		req.SetBasicAuth(t.cfg.CloudToken, "")
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

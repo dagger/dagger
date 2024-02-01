@@ -294,6 +294,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				Labels:                    c.labels,
 				ModuleCallerDigest:        c.ModuleCallerDigest,
+				CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 				DoNotTrack:                analytics.DoNotTrack(),
 			}.AppendToMD(meta))
 		})

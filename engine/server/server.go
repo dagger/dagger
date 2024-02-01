@@ -52,14 +52,19 @@ func NewDaggerServer(
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
 	rootLabels []pipeline.Label,
+	cloudToken string,
 	doNotTrack bool,
 ) (*DaggerServer, error) {
 	srv := &DaggerServer{
-		serverID:  serverID,
-		bkClient:  bkClient,
-		worker:    worker,
-		analytics: analytics.New(doNotTrack || analytics.DoNotTrack(), rootLabels...),
-		doneCh:    make(chan struct{}, 1),
+		serverID: serverID,
+		bkClient: bkClient,
+		worker:   worker,
+		analytics: analytics.New(analytics.Config{
+			DoNotTrack: doNotTrack || analytics.DoNotTrack(),
+			Labels:     rootLabels,
+			CloudToken: cloudToken,
+		}),
+		doneCh: make(chan struct{}, 1),
 	}
 
 	clientConn := caller.Conn()

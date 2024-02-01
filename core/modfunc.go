@@ -100,14 +100,18 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 	}
 	ctx = bklog.WithLogger(ctx, lg)
 
-	props := map[string]string{
-		"target_function": fn.metadata.Name,
+	// Capture analytics for the function call.
+	// Calls without function name are internal and excluded.
+	if fn.metadata.Name != "" {
+		props := map[string]string{
+			"target_function": fn.metadata.Name,
+		}
+		moduleAnalyticsProps(mod, "target_", props)
+		if caller, err := mod.Query.CurrentModule(ctx); err == nil {
+			moduleAnalyticsProps(caller, "caller_", props)
+		}
+		analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 	}
-	moduleAnalyticsProps(mod, "target_", props)
-	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
-		moduleAnalyticsProps(caller, "caller_", props)
-	}
-	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}

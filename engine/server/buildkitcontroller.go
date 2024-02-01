@@ -273,7 +273,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		labels = append(labels, pipeline.EngineLabel(e.EngineName))
 		labels = append(labels, pipeline.LoadServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH, e.cacheManager.ID() != cache.LocalCacheID)...)
 
-		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels, opts.DoNotTrack)
+		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels, opts.CloudToken, opts.DoNotTrack)
 		if err != nil {
 			e.perServerMu.Unlock(opts.ServerID)
 			return fmt.Errorf("new Dagger server: %w", err)

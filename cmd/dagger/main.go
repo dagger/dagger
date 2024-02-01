@@ -122,7 +122,7 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
-		t := analytics.New(analytics.DoNotTrack())
+		t := analytics.New(analytics.DefaultConfig())
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
 
 		t.Capture(cmd.Context(), "cli_command", map[string]string{
