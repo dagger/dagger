@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -190,4 +191,54 @@ func defaultBranch(ctx context.Context, repoURL string) (string, error) {
 	}
 
 	return "", fmt.Errorf("could not deduce default branch from output:\n%s", string(stdoutBytes))
+}
+
+// find all git tags for a given repo
+func gitTags(ctx context.Context, repoURL string) ([]string, error) {
+	stdoutBytes, err := exec.CommandContext(ctx, "git", "ls-remote", "--refs", "--tags", "--symref", repoURL).Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run git: %w", err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(stdoutBytes))
+
+	tags := []string{}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+
+		tags = append(tags, strings.TrimPrefix(fields[1], "refs/tags/"))
+	}
+
+	return tags, nil
+}
+
+func isSemver(ver string) bool {
+	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+	return re.MatchString(ver)
+}
+
+// Match a version string in a list of versions with optional subPath
+// e.g. github.com/foo/daggerverse/mod@mod/v1.0.0
+// e.g. github.com/foo/mod@v1.0.0
+// TODO smarter matching logic, e.g. v1 == v1.0.0
+func matchVersion(versions []string, match, subPath string) (string, error) {
+	// If theres a subPath, first match on {subPath}/{match} for monorepo tags
+	if subPath != "/" {
+		rawSubPath, _ := strings.CutPrefix(subPath, "/")
+		matched, err := matchVersion(versions, fmt.Sprintf("%s/%s", rawSubPath, match), "/")
+		// no error means there's a match with subpath/match
+		if err == nil {
+			return matched, nil
+		}
+	}
+
+	for _, v := range versions {
+		if v == match {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("unable to find version %s", match)
 }

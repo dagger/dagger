@@ -1152,12 +1152,34 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			if args.Stable {
 				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 			}
-
 			var err error
 			modVersion, err = defaultBranch(ctx, cloneURL)
 			if err != nil {
 				return nil, fmt.Errorf("determine default branch: %w", err)
 			}
+		}
+		src.AsGitSource.Value.Version = modVersion
+
+		var subPath string
+		if len(segments) == 4 {
+			subPath = segments[3]
+		} else {
+			subPath = "/"
+		}
+		src.AsGitSource.Value.Subpath = subPath
+
+		commitRef := modVersion
+		if hasVersion && isSemver(modVersion) {
+			allTags, err := gitTags(ctx, cloneURL)
+			if err != nil {
+				return nil, fmt.Errorf("get git tags: %w", err)
+			}
+			matched, err := matchVersion(allTags, modVersion, subPath)
+			if err != nil {
+				return nil, fmt.Errorf("matching version to tags: %w", err)
+			}
+			// reassign modVersion to matched tag which could be subPath/tag
+			commitRef = matched
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]
@@ -1171,7 +1193,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			dagql.Selector{
 				Field: "commit",
 				Args: []dagql.NamedInput{
-					{Name: "id", Value: dagql.String(modVersion)},
+					{Name: "id", Value: dagql.String(commitRef)},
 				},
 			},
 		)
@@ -1182,16 +1204,8 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve git src to commit: %w", err)
 		}
+		src.AsGitSource.Value.Commit = gitCommit
 
-		src.AsGitSource.Value.Version = gitCommit // TODO preserve semver here
-		src.AsGitSource.Value.Commit = gitCommit  // but tell the truth here
-
-		if len(segments) == 4 {
-			src.AsGitSource.Value.Subpath = segments[3]
-		} else {
-			src.AsGitSource.Value.Subpath = "/"
-		}
-		subPath := src.AsGitSource.Value.Subpath
 		if !filepath.IsAbs(subPath) && !filepath.IsLocal(subPath) {
 			return nil, fmt.Errorf("git module source subpath points out of root: %q", subPath)
 		}
