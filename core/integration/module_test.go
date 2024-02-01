@@ -549,7 +549,7 @@ func TestModuleGit(t *testing.T) {
 				ignore, err := modGen.File(".gitattributes").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitGeneratedFiles {
-					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated=true\n", fileName))
+					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated\n", fileName))
 				}
 			})
 			if len(tc.gitIgnoredFiles) > 0 {
@@ -4828,7 +4828,7 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 
 			type WaCkY struct {}
 
-			func (m *WaCkY) Fn(ctx context.Context) (string, error) { 
+			func (m *WaCkY) Fn(ctx context.Context) (string, error) {
 				return dag.CurrentModule().Name(ctx)
 			}
 			`,
@@ -4856,7 +4856,7 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 
 			type Test struct {}
 
-			func (m *Test) Fn(ctx context.Context) *File { 
+			func (m *Test) Fn(ctx context.Context) *File {
 				return dag.CurrentModule().Source().File("subdir/coolfile.txt")
 			}
 			`,

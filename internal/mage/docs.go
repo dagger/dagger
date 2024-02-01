@@ -3,6 +3,7 @@ package mage
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/dagger/dagger/internal/mage/util"
 
@@ -14,7 +15,8 @@ import (
 type Docs mg.Namespace
 
 const (
-	generatedSchemaPath = "docs/docs-graphql/schema.graphqls"
+	generatedSchemaPath       = "docs/docs-graphql/schema.graphqls"
+	generatedCliReferencePath = "docs/versioned_docs/version-zenith/reference/979596-cli.mdx"
 )
 
 // Lint lints documentation files
@@ -62,14 +64,30 @@ func (d Docs) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// Generate re-generates the API schema and CLI reference
 func (d Docs) Generate(ctx context.Context) error {
+	eg, gctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		return d.GenerateSdl(gctx)
+	})
+
+	eg.Go(func() error {
+		return d.GenerateCli(gctx)
+	})
+
+	return eg.Wait()
+}
+
+// GenerateSdl re-generates the API schema
+func (d Docs) GenerateSdl(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	c = c.Pipeline("docs").Pipeline("generate-sdl")
+	c = c.Pipeline("docs").Pipeline("generate").Pipeline("sdl")
 
 	introspectionJSON :=
 		util.GoBase(c).
@@ -85,5 +103,26 @@ func (d Docs) Generate(ctx context.Context) error {
 		WithExec([]string{"graphql-json-to-sdl", "/src/schema.json", "/src/schema.graphql"}).
 		File("/src/schema.graphql").
 		Export(ctx, generatedSchemaPath)
+	return err
+}
+
+// GenerateCli re-generates the CLI reference documentation
+func (d Docs) GenerateCli(ctx context.Context) error {
+	// this avoids having to create the dirs since GoBase only has go files
+	filename := filepath.Base(generatedCliReferencePath)
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("docs").Pipeline("generate").Pipeline("cli-reference")
+
+	_, err = util.GoBase(c).
+		WithExec([]string{"go", "run", "./cmd/dagger", "gen", filename}).
+		File(filename).
+		Export(ctx, generatedCliReferencePath)
+
 	return err
 }
