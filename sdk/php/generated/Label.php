@@ -22,12 +22,18 @@ class Label extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\LabelId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The label name.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
+    /**
+     * The label value.
+     */
     public function value(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');

@@ -15,7 +15,7 @@ defmodule Dagger.LocalModuleSource do
   )
 
   (
-    @doc ""
+    @doc "The path to the module source code dir specified by this source."
     @spec source_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def source_subpath(%__MODULE__{} = local_module_source) do
       selection = select(local_module_source.selection, "sourceSubpath")

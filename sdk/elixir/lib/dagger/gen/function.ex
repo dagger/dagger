@@ -6,7 +6,7 @@ defmodule Dagger.Function do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "Arguments accepted by the function, if any."
     @spec args(t()) :: {:ok, [Dagger.FunctionArg.t()]} | {:error, term()}
     def args(%__MODULE__{} = function) do
       selection = select(function.selection, "args")
@@ -26,7 +26,7 @@ defmodule Dagger.Function do
   )
 
   (
-    @doc ""
+    @doc "A doc string for the function, if any."
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = function) do
       selection = select(function.selection, "description")
@@ -44,7 +44,7 @@ defmodule Dagger.Function do
   )
 
   (
-    @doc ""
+    @doc "The name of the function."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = function) do
       selection = select(function.selection, "name")
@@ -53,7 +53,7 @@ defmodule Dagger.Function do
   )
 
   (
-    @doc ""
+    @doc "The type returned by the function."
     @spec return_type(t()) :: Dagger.TypeDef.t()
     def return_type(%__MODULE__{} = function) do
       selection = select(function.selection, "returnType")

@@ -13,6 +13,9 @@ namespace Dagger;
  */
 class GeneratedCode extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * The directory containing the generated code.
+     */
     public function code(): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('code');
@@ -28,12 +31,18 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * List of paths to mark generated in version control (i.e. .gitattributes).
+     */
     public function vcsGeneratedPaths(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsGeneratedPaths');
         return (array)$this->queryLeaf($leafQueryBuilder, 'vcsGeneratedPaths');
     }
 
+    /**
+     * List of paths to ignore in version control (i.e. .gitignore).
+     */
     public function vcsIgnoredPaths(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('vcsIgnoredPaths');

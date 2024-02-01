@@ -15,7 +15,7 @@ defmodule Dagger.FunctionCall do
   )
 
   (
-    @doc ""
+    @doc "The argument values the function is being invoked with."
     @spec input_args(t()) :: {:ok, [Dagger.FunctionCallArgValue.t()]} | {:error, term()}
     def input_args(%__MODULE__{} = function_call) do
       selection = select(function_call.selection, "inputArgs")
@@ -35,7 +35,7 @@ defmodule Dagger.FunctionCall do
   )
 
   (
-    @doc ""
+    @doc "The name of the function being called."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = function_call) do
       selection = select(function_call.selection, "name")
@@ -44,7 +44,7 @@ defmodule Dagger.FunctionCall do
   )
 
   (
-    @doc ""
+    @doc "The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."
     @spec parent(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
     def parent(%__MODULE__{} = function_call) do
       selection = select(function_call.selection, "parent")
@@ -53,7 +53,7 @@ defmodule Dagger.FunctionCall do
   )
 
   (
-    @doc ""
+    @doc "The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."
     @spec parent_name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def parent_name(%__MODULE__{} = function_call) do
       selection = select(function_call.selection, "parentName")

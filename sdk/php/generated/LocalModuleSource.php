@@ -22,6 +22,9 @@ class LocalModuleSource extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\LocalModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The path to the module source code dir specified by this source.
+     */
     public function sourceSubpath(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');

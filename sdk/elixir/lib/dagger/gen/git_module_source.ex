@@ -15,7 +15,7 @@ defmodule Dagger.GitModuleSource do
   )
 
   (
-    @doc ""
+    @doc "The resolved commit of the git repo this source points to."
     @spec commit(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def commit(%__MODULE__{} = git_module_source) do
       selection = select(git_module_source.selection, "commit")
@@ -42,7 +42,7 @@ defmodule Dagger.GitModuleSource do
   )
 
   (
-    @doc ""
+    @doc "The path to the module source code dir specified by this source relative to the source's root directory."
     @spec source_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def source_subpath(%__MODULE__{} = git_module_source) do
       selection = select(git_module_source.selection, "sourceSubpath")
@@ -51,7 +51,7 @@ defmodule Dagger.GitModuleSource do
   )
 
   (
-    @doc ""
+    @doc "The specified version of the git repo this source points to."
     @spec version(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def version(%__MODULE__{} = git_module_source) do
       selection = select(git_module_source.selection, "version")

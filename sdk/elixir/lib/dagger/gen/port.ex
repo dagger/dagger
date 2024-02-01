@@ -6,7 +6,7 @@ defmodule Dagger.Port do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "The port description."
     @spec description(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def description(%__MODULE__{} = port) do
       selection = select(port.selection, "description")
@@ -15,7 +15,7 @@ defmodule Dagger.Port do
   )
 
   (
-    @doc ""
+    @doc "Skip the health check when run as a service."
     @spec experimental_skip_healthcheck(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
     def experimental_skip_healthcheck(%__MODULE__{} = port) do
       selection = select(port.selection, "experimentalSkipHealthcheck")
@@ -33,7 +33,7 @@ defmodule Dagger.Port do
   )
 
   (
-    @doc ""
+    @doc "The port number."
     @spec port(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
     def port(%__MODULE__{} = port) do
       selection = select(port.selection, "port")
@@ -42,7 +42,7 @@ defmodule Dagger.Port do
   )
 
   (
-    @doc ""
+    @doc "The transport layer protocol."
     @spec protocol(t()) :: {:ok, Dagger.NetworkProtocol.t()} | {:error, term()}
     def protocol(%__MODULE__{} = port) do
       selection = select(port.selection, "protocol")

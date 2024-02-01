@@ -6,7 +6,7 @@ defmodule Dagger.FieldTypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "A doc string for the field, if any."
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = field_type_def) do
       selection = select(field_type_def.selection, "description")
@@ -24,7 +24,7 @@ defmodule Dagger.FieldTypeDef do
   )
 
   (
-    @doc ""
+    @doc "The name of the field in lowerCamelCase format."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = field_type_def) do
       selection = select(field_type_def.selection, "name")
@@ -33,7 +33,7 @@ defmodule Dagger.FieldTypeDef do
   )
 
   (
-    @doc ""
+    @doc "The type of the field."
     @spec type_def(t()) :: Dagger.TypeDef.t()
     def type_def(%__MODULE__{} = field_type_def) do
       selection = select(field_type_def.selection, "typeDef")

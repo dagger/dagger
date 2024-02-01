@@ -6,7 +6,7 @@ defmodule Dagger.GeneratedCode do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "The directory containing the generated code."
     @spec code(t()) :: Dagger.Directory.t()
     def code(%__MODULE__{} = generated_code) do
       selection = select(generated_code.selection, "code")
@@ -24,7 +24,7 @@ defmodule Dagger.GeneratedCode do
   )
 
   (
-    @doc ""
+    @doc "List of paths to mark generated in version control (i.e. .gitattributes)."
     @spec vcs_generated_paths(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
     def vcs_generated_paths(%__MODULE__{} = generated_code) do
       selection = select(generated_code.selection, "vcsGeneratedPaths")
@@ -33,7 +33,7 @@ defmodule Dagger.GeneratedCode do
   )
 
   (
-    @doc ""
+    @doc "List of paths to ignore in version control (i.e. .gitignore)."
     @spec vcs_ignored_paths(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
     def vcs_ignored_paths(%__MODULE__{} = generated_code) do
       selection = select(generated_code.selection, "vcsIgnoredPaths")
