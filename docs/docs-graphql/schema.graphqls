@@ -1534,6 +1534,7 @@ type Module {
   interfaces: [TypeDef!]!
   name: String!
   objects: [TypeDef!]!
+  runtime: Container!
   sdk: String!
 
   """

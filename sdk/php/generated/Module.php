@@ -76,6 +76,12 @@ class Module extends Client\AbstractObject implements Client\IdAble
         return (array)$this->queryLeaf($leafQueryBuilder, 'objects');
     }
 
+    public function runtime(): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('runtime');
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
     public function sdk(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');

@@ -34,11 +34,17 @@ func (s *moduleSchema) sdkForModule(
 	var sdkMod dagql.Instance[*core.Module]
 	err = s.dag.Select(ctx, s.dag.Root(), &sdkMod,
 		dagql.Selector{
-			Field: "moduleRef",
+			Field: "moduleSource",
 			Args: []dagql.NamedInput{
 				{Name: "refString", Value: dagql.String(sdk)},
-				{Name: "parentDirectory", Value: dagql.NewID[*core.Directory](parentDir.ID())},
+				{Name: "rootDirectory", Value: dagql.Opt(dagql.NewID[*core.Directory](parentDir.ID()))},
 			},
+		},
+		dagql.Selector{
+			Field: "asModule",
+		},
+		dagql.Selector{
+			Field: "initialize",
 		},
 	)
 	if err != nil {
@@ -434,6 +440,7 @@ func (sdk *goSDK) baseWithCodegen(
 				Value: dagql.ArrayInput[dagql.String]{
 					"--module-source-root", goSDKUserModSourceDirPath,
 					"--module-name", dagql.String(mod.OriginalName),
+					"--propagate-logs=true",
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},
 			},

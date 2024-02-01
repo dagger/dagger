@@ -4208,6 +4208,15 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+func (r *Module) Runtime() *Container {
+	q := r.q.Select("runtime")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil

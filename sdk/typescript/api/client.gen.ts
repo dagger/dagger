@@ -5217,6 +5217,17 @@ export class Module_ extends BaseClient {
         )
     )
   }
+  runtime = (): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "runtime",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
   sdk = async (): Promise<string> => {
     if (this._sdk) {
       return this._sdk
