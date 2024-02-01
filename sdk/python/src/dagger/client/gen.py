@@ -4242,6 +4242,12 @@ class Module(Type):
         return await _ctx.execute(list[TypeDef])
 
     @typecheck
+    def runtime(self) -> Container:
+        _args: list[Arg] = []
+        _ctx = self._select("runtime", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def sdk(self) -> str:
         """Returns
         -------

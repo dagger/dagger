@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedSourceRootDirectory id initialize interfaces name objects sdk serve source withDependencies withDescription withInterface withName withObject withSDK withSource"
+          "dependencies dependencyConfig description generatedSourceRootDirectory id initialize interfaces name objects runtime sdk serve source withDependencies withDescription withInterface withName withObject withSDK withSource"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -142,6 +142,15 @@ defmodule Dagger.Module do
            %Dagger.TypeDef{selection: elem_selection, client: module.client}
          end)}
       end
+    end
+  )
+
+  (
+    @doc ""
+    @spec runtime(t()) :: Dagger.Container.t()
+    def runtime(%__MODULE__{} = module) do
+      selection = select(module.selection, "runtime")
+      %Dagger.Container{selection: selection, client: module.client}
     end
   )
 
