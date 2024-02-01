@@ -1558,12 +1558,27 @@ func TestBuiltins(t *testing.T) {
 	})
 }
 
+type IntrospectTest struct {
+	Field           int `field:"true" doc:"I'm a field!"`
+	NotField        int
+	DeprecatedField int `field:"true" doc:"Don't use me." deprecated:"use something else"`
+}
+
+func (IntrospectTest) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "IntrospectTest",
+		NonNull:   true,
+	}
+}
+
 func TestIntrospection(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	introspection.Install[Query](srv)
 
 	// just a quick way to get more coverage
 	points.Install[Query](srv)
+
+	dagql.Fields[IntrospectTest]{}.Install(srv)
 
 	dagql.Fields[Query]{
 		dagql.Func("fieldDoc", func(ctx context.Context, self Query, args struct{}) (bool, error) {

@@ -498,8 +498,10 @@ func (fields Fields[T]) Install(server *Server) {
 		name := field.Name
 		fields = append(fields, Field[T]{
 			Spec: FieldSpec{
-				Name: name,
-				Type: field.Value,
+				Name:             name,
+				Type:             field.Value,
+				Description:      field.Field.Tag.Get("doc"),
+				DeprecatedReason: field.Field.Tag.Get("deprecated"),
 			},
 			Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 				t, found, err := getField(self.Self, false, name)
