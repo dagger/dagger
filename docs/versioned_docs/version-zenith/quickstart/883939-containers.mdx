@@ -1,7 +1,7 @@
 ---
 slug: /quickstart/883939/containers
 hide_table_of_contents: true
-title: "Use functions with containers"
+title: "Chain container functions"
 ---
 import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
@@ -9,20 +9,20 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-## Use functions with containers
+## Chain container function calls
 
-Just as functions can return strings and directories, so too can they return containers. To see this in action, call another function using the Dagger CLI:
-
-```shell
-dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container
-```
-
-This Wolfi container builder module exposes a number of functions:
+Just as you can chain `Directory` function calls, you can also chain `Container` function calls. As an example, the Wolfi container builder module exposes a number of functions:
 - A `Base()` function that creates a base container image using the `cgr.dev/chainguard/wolfi-base` container image;
-- A `WithPackage()` function that installs additional packages in the base image - here, the `cowsay` package;
+- A `WithPackage()` function that installs additional packages in the base image;
 - A `Container()` function that returns the container.
 
-The example above chains these various functions together and returns a Dagger `Container` type representing the base image plus additional packages. You should see the container being built and the packages being added, as shown below:
+Chain these functions together to build a Wolfi container image with the `cowsay` package:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi base with-package cowsay container
+```
+
+The function call above returns a Dagger `Container` representing the base image plus additional packages. You should see the container being built and the packages being added, as shown below:
 
 ```shell
 ✔ dagger call base with-package container [5.00s]
@@ -33,7 +33,7 @@ The example above chains these various functions together and returns a Dagger `
 ┃ OK: 54 MiB in 17 packages
 ```
 
-The interesting thing here is that `Container` is a core type, which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
+The interesting thing here is that `Container` is a Dagger primitive, which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
 
 :::tip
 This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
@@ -70,13 +70,13 @@ You should see output similar to the following:
 While most terminal programs such as `htop` or `vim` work with `dagger ... shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
 :::
 
-The `Container` type has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same output as before by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
+The `Container` primitive has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same output as before by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
 
 ```shell
 dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container with-exec --args "cowsay" --args "dagger"
 ```
 
-The `Container` type also has a `Publish()` function, which publishes the container to a registry. To see this in action, call the previous function again, this time chaining an additional function call to `Publish()` on the returned `Container`:
+The `Container` primitive also has a `Publish()` function, which publishes the container to a registry. To see this in action, call the previous function again, this time chaining an additional function call to `Publish()` on the returned `Container`:
 
 ```shell
 dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container publish --address ttl.sh/my-wolfi:10m
