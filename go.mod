@@ -30,7 +30,7 @@ require (
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/gofrs/flock v0.8.1
 	github.com/gogo/protobuf v1.3.2
-	github.com/google/go-containerregistry v0.15.2
+	github.com/google/go-containerregistry v0.19.0
 	github.com/google/go-github/v50 v50.2.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/google/uuid v1.5.0
