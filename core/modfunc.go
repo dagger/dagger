@@ -100,10 +100,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 	}
 	ctx = bklog.WithLogger(ctx, lg)
 
-	analytics.Ctx(ctx).Capture(ctx, "module_call", map[string]any{
-		"module_name":   fn.mod.Name(),
+	props := map[string]any{
 		"function_name": fn.metadata.Name,
-	})
+	}
+	moduleAnalyticsProps(mod, "", props)
+	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
+		moduleAnalyticsProps(caller, "caller_", props)
+	}
+	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
@@ -286,6 +290,25 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 		return nil, fmt.Errorf("failed to find arg %q", argName)
 	}
 	return arg.modType, nil
+}
+
+func moduleAnalyticsProps(mod *Module, prefix string, props map[string]any) {
+	props[prefix+"module_name"] = mod.Name()
+
+	source := mod.Source.Self
+	switch source.Kind {
+	case ModuleSourceKindLocal:
+		props[prefix+"source_kind"] = "local"
+		props[prefix+"local_subpath"] = source.AsLocalSource.Value.Subpath
+	case ModuleSourceKindGit:
+		git := source.AsGitSource.Value
+		props[prefix+"source_kind"] = "git"
+		props[prefix+"git_symbolic"] = git.Symbolic()
+		props[prefix+"git_clone_url"] = git.CloneURL()
+		props[prefix+"git_subpath"] = git.Subpath
+		props[prefix+"git_version"] = git.Version
+		props[prefix+"git_commit"] = git.Commit
+	}
 }
 
 // If the result of a Function call contains IDs of resources, we need to
