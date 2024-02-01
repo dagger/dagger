@@ -101,9 +101,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 	ctx = bklog.WithLogger(ctx, lg)
 
 	props := map[string]any{
-		"function_name": fn.metadata.Name,
+		"target_function": fn.metadata.Name,
 	}
-	moduleAnalyticsProps(mod, "", props)
+	moduleAnalyticsProps(mod, "target_", props)
 	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
 		moduleAnalyticsProps(caller, "caller_", props)
 	}
