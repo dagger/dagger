@@ -87,6 +87,10 @@ func DefaultConfig() Config {
 		DoNotTrack: DoNotTrack(),
 		CloudToken: os.Getenv("DAGGER_CLOUD_TOKEN"),
 	}
+	// Backward compatibility with the old environment variable.
+	if cfg.CloudToken == "" {
+		cfg.CloudToken = os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN")
+	}
 
 	workdir, err := os.Getwd()
 	if err != nil {
