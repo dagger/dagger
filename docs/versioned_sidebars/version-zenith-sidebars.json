@@ -46,6 +46,10 @@
             },
             {
               "type": "doc",
+              "id": "developer/go/test-build-publish"
+            },
+            {
+              "type": "doc",
               "id": "developer/go/advanced-programming"
             },
             {
