@@ -22,7 +22,7 @@ This Wolfi container builder module exposes a number of functions:
 - A `WithPackage()` function that installs additional packages in the base image - here, the `cowsay` package;
 - A `Container()` function that returns the container.
 
-The example above chains these various functions together and returns a special Dagger `Container` type representing the base image plus additional packages. You should see the container being built and the packages being added, as shown below:
+The example above chains these various functions together and returns a Dagger `Container` type representing the base image plus additional packages. You should see the container being built and the packages being added, as shown below:
 
 ```shell
 ✔ dagger call base with-package container [5.00s]

@@ -11,9 +11,10 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 ## Understand function inputs and outputs
 
-Module functions can accept arguments and return both basic and custom types. The `HelloDagger()` function in the previous section returned a string, but you can also return Dagger's special `Directory`, `Container`, `Service` and other types, as well as your own custom types.
 
-To begin, call a function using the Dagger CLI:
+Module functions can accept arguments and return both basic and custom types. Dagger introduces valuable new primitives such as `Directory`, `Container`, and `Service`, and Dagger functions can use these as both inputs and outputs (in addition to your own custom types).
+
+To begin understanding this, call a function using the Dagger CLI:
 
 ```shell
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger test --args ./core
@@ -34,7 +35,7 @@ Dagger functions can also return directories. To see this in action, use the fol
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger
 ```
 
-This example uses the same Go builder module as before, but this time calls its `Build()` function. Like the `Test()` function, the `Build()` function accepts a remote Go repository URL and builds a binary from the remote Go repository. It returns a special Dagger `Directory` type representing the state of the working directory in the repository after the build, similar to the output shown below:
+This example uses the same Go builder module as before, but this time calls its `Build()` function. Like the `Test()` function, the `Build()` function accepts a remote Go repository URL and builds a binary from the remote Go repository. It returns a Dagger `Directory` type representing the state of the working directory in the repository after the build, similar to the output shown below:
 
 ```
 ✔ dagger call build [3m13.7s]
