@@ -11,6 +11,8 @@ import (
 	"github.com/dagger/dagger/tracing"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"golang.org/x/term"
 )
 
 var (
@@ -56,6 +58,7 @@ func init() {
 	rootCmd.AddGroup(execGroup)
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
+	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	rootCmd.SetUsageTemplate(usageTemplate)
 }
 
@@ -151,6 +154,21 @@ func isExperimental(cmd *cobra.Command) bool {
 	return experimental
 }
 
+// getViewWidth returns the width of the terminal, or 80 if it cannot be determined.
+func getViewWidth() int {
+	width, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil {
+		width = 80
+	}
+	return width - 1
+}
+
+// flagUsagesWrapped returns the usage string for all flags in the given FlagSet
+// wrapped to the width of the terminal.
+func flagUsagesWrapped(flags *pflag.FlagSet) string {
+	return flags.FlagUsagesWrapped(getViewWidth())
+}
+
 const usageTemplate = `Usage:
 
 {{- if .Runnable}}
@@ -217,14 +235,14 @@ Additional Commands:
 {{- if .HasAvailableLocalFlags}}
 
 Flags:
-{{ .LocalFlags.FlagUsages | trimTrailingWhitespaces}}
+{{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
 
 {{- end}}
 
 {{- if .HasAvailableInheritedFlags}}
 
 Global Flags:
-{{ .InheritedFlags.FlagUsages | trimTrailingWhitespaces}}
+{{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces}}
 
 {{- end}}
 
