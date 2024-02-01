@@ -322,7 +322,7 @@ func LoadGitLabels(workdir string) (Labels, error) {
 }
 
 func LoadCircleCILabels() (Labels, error) {
-	if os.Getenv("CIRCLECI") != "true" { // nolint:goconst
+	if os.Getenv("CIRCLECI") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -409,7 +409,7 @@ func LoadCircleCILabels() (Labels, error) {
 }
 
 func LoadGitLabLabels() (Labels, error) {
-	if os.Getenv("GITLAB_CI") != "true" { // nolint:goconst
+	if os.Getenv("GITLAB_CI") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -501,7 +501,7 @@ func LoadGitLabLabels() (Labels, error) {
 }
 
 func LoadGitHubLabels() (Labels, error) {
-	if os.Getenv("GITHUB_ACTIONS") != "true" { // nolint:goconst
+	if os.Getenv("GITHUB_ACTIONS") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
 
@@ -653,11 +653,11 @@ func (labels *Labels) AppendCILabel() *Labels {
 
 	vendor := ""
 	switch {
-	case os.Getenv("GITHUB_ACTIONS") == "true":
+	case os.Getenv("GITHUB_ACTIONS") == "true": //nolint:goconst
 		vendor = "GitHub"
-	case os.Getenv("CIRCLECI") == "true":
+	case os.Getenv("CIRCLECI") == "true": //nolint:goconst
 		vendor = "CircleCI"
-	case os.Getenv("GITLAB_CI") == "true":
+	case os.Getenv("GITLAB_CI") == "true": //nolint:goconst
 		vendor = "GitLab"
 	}
 	if vendor != "" {

@@ -246,6 +246,8 @@ var moduleInstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
+			depSrc = modConf.Mod.Source().ResolveDependency(depSrc)
+
 			name, err := depSrc.ModuleName(ctx)
 			if err != nil {
 				return err
@@ -254,6 +256,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+
 			if depSrcKind == dagger.GitSource {
 				git := depSrc.AsGitSource()
 				gitURL, err := git.CloneURL(ctx)
@@ -275,6 +278,7 @@ var moduleInstallCmd = &cobra.Command{
 
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
+					"install_name":  installName,
 					"module_sdk":    sdk,
 					"source_kind":   "git",
 					"git_symbolic":  filepath.Join(gitURL, gitSubpath),
@@ -292,6 +296,7 @@ var moduleInstallCmd = &cobra.Command{
 
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
+					"install_name":  installName,
 					"module_sdk":    sdk,
 					"source_kind":   "local",
 					"local_subpath": subpath,
