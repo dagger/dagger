@@ -108,7 +108,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 		}
 		moduleAnalyticsProps(mod, "target_", props)
 		if caller, err := mod.Query.CurrentModule(ctx); err == nil {
+			props["caller_type"] = "module"
 			moduleAnalyticsProps(caller, "caller_", props)
+		} else {
+			props["caller_type"] = "direct"
 		}
 		analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 	}
