@@ -94,7 +94,7 @@ require (
 	golang.org/x/text v0.14.0
 	golang.org/x/tools v0.17.0
 	google.golang.org/grpc v1.60.1
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.32.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
 	oss.terrastruct.com/d2 v0.6.1
