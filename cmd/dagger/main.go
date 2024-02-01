@@ -65,6 +65,11 @@ func init() {
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	rootCmd.SetUsageTemplate(usageTemplate)
+
+	// hide the help flag as it's ubiquitous and thus noisy
+	// we'll add it in the last line of the usage template
+	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
+	rootCmd.PersistentFlags().Lookup("help").Hidden = true
 }
 
 var rootCmd = &cobra.Command{
