@@ -273,7 +273,7 @@ var moduleInstallCmd = &cobra.Command{
 					return err
 				}
 
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]any{
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
 					"module_sdk":    sdk,
 					"source_kind":   "git",
@@ -290,7 +290,7 @@ var moduleInstallCmd = &cobra.Command{
 					return err
 				}
 
-				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]any{
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
 					"module_sdk":    sdk,
 					"source_kind":   "local",

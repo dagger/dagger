@@ -23,9 +23,9 @@ const (
 )
 
 type Event struct {
-	Timestamp  time.Time              `json:"ts,omitempty"`
-	Type       string                 `json:"type,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	Timestamp  time.Time         `json:"ts,omitempty"`
+	Type       string            `json:"type,omitempty"`
+	Properties map[string]string `json:"properties,omitempty"`
 
 	DeviceID string `json:"device_id,omitempty"`
 	OrgID    string `json:"org_id,omitempty"`
@@ -44,7 +44,7 @@ type Event struct {
 }
 
 type Tracker interface {
-	Capture(ctx context.Context, event string, properties map[string]any)
+	Capture(ctx context.Context, event string, properties map[string]string)
 	io.Closer
 }
 
@@ -64,7 +64,7 @@ func Ctx(ctx context.Context) Tracker {
 type noopTracker struct {
 }
 
-func (t *noopTracker) Capture(ctx context.Context, event string, properties map[string]any) {
+func (t *noopTracker) Capture(ctx context.Context, event string, properties map[string]string) {
 }
 
 func (t *noopTracker) Close() error {
@@ -122,7 +122,7 @@ func (t *CloudTracker) loadLabels(labels pipeline.Labels) {
 	}
 }
 
-func (t *CloudTracker) Capture(ctx context.Context, event string, properties map[string]any) {
+func (t *CloudTracker) Capture(ctx context.Context, event string, properties map[string]string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -192,9 +192,6 @@ func (t *CloudTracker) send() {
 		}
 	}
 
-	// FIXME: remove this
-	fmt.Fprintf(os.Stderr, "ANALYTICS: SENDING %s\n", payload.String())
-
 	req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(payload.Bytes()))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "analytics: new request:", err)
@@ -208,11 +205,7 @@ func (t *CloudTracker) send() {
 		fmt.Fprintln(os.Stderr, "analytics: do request:", err)
 		return
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		fmt.Fprintln(os.Stderr, "analytics: unexpected response:", resp.Status)
-	}
+	resp.Body.Close()
 }
 
 func (t *CloudTracker) Close() error {

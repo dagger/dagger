@@ -100,7 +100,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 	}
 	ctx = bklog.WithLogger(ctx, lg)
 
-	props := map[string]any{
+	props := map[string]string{
 		"target_function": fn.metadata.Name,
 	}
 	moduleAnalyticsProps(mod, "target_", props)
@@ -292,7 +292,7 @@ func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
 	return arg.modType, nil
 }
 
-func moduleAnalyticsProps(mod *Module, prefix string, props map[string]any) {
+func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
 	source := mod.Source.Self

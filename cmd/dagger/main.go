@@ -125,7 +125,7 @@ var rootCmd = &cobra.Command{
 		t := analytics.New(analytics.DoNotTrack())
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
 
-		t.Capture(cmd.Context(), "cli_command", map[string]any{
+		t.Capture(cmd.Context(), "cli_command", map[string]string{
 			"name": commandName(cmd),
 		})
 
