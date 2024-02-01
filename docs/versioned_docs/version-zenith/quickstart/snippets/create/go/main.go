@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/rand"
 )
 
 type MyModule struct{}
@@ -20,5 +22,5 @@ func (m *MyModule) BuildAndPublish(ctx context.Context, buildSrc *Directory, bui
 		Base().
 		Container().
 		WithFile("/usr/local/bin/dagger", file).
-		Publish(ctx, fmt.Sprintf("ttl.sh/my-dagger-container:10m"))
+		Publish(ctx, fmt.Sprintf("ttl.sh/my-dagger-container-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 }

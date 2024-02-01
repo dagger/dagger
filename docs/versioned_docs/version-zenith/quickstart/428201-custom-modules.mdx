@@ -23,7 +23,7 @@ A better approach is to create a programmable Dagger module, which can then call
 
 To see this in action, create a custom Dagger module to build a Go binary, add it to a container image and publish the container image to a registry.
 
-1. Begin by creating a new directory for your Dagger module and running `dagger init` to bootstrap a new module:
+1. Begin by creating a new directory for your Dagger module and running `dagger mod init` to bootstrap a new module:
 
     <Tabs groupId="language">
     <TabItem value="Go">
@@ -58,17 +58,19 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
     </TabItem>
     </Tabs>
 
-1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new module using `dagger install`:
+1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new module using `dagger mod install`:
 
     ```shell
     dagger mod install github.com/kpenfound/dagger-modules/golang
     dagger mod install github.com/shykes/daggerverse/wolfi
     ```
 
-1. Update the generated `main.go` file with the following code:
+1. Update the generated module template:
 
     <Tabs groupId="language">
     <TabItem value="Go">
+
+    Update `main.go` with the following code:
 
     ```go file=./snippets/create/go/main.go
     ```
@@ -86,6 +88,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
     </TabItem>
     <TabItem value="Python">
 
+    Update `src/main.py` with the following code:
+
     ```python file=./snippets/create/python/main.py
     ```
 
@@ -101,6 +105,8 @@ To see this in action, create a custom Dagger module to build a Go binary, add i
 
     </TabItem>
     <TabItem value="TypeScript">
+
+    Update `src/index.ts` with the following code:
 
     ```typescript file=./snippets/create/typescript/index.ts
     ```
