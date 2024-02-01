@@ -505,9 +505,13 @@ func NewDynamicID[T Typed](id *idproto.ID, typed T) ID[T] {
 	}
 }
 
+func IDTypeNameFor(t Typed) string {
+	return t.Type().Name() + "ID"
+}
+
 // TypeName returns the name of the type with "ID" appended, e.g. `FooID`.
 func (i ID[T]) TypeName() string {
-	return i.inner.Type().Name() + "ID"
+	return IDTypeNameFor(i.inner)
 }
 
 var _ Typed = ID[Typed]{}
