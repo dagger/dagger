@@ -1463,6 +1463,36 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 	require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
 }
 
+func TestModuleGoBadCtx(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=foo", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Foo struct {}
+
+func (f *Foo) Echo(ctx context.Context, ctx2 context.Context) (string, error) {
+	return "", nil
+}
+`,
+		}).
+		With(daggerQuery(`{foo{echo}}`)).
+		Sync(ctx)
+	require.Error(t, err)
+	require.NoError(t, c.Close())
+	t.Log(logs.String())
+	require.Contains(t, logs.String(), "unexpected context type")
+}
+
 func TestModuleCustomTypes(t *testing.T) {
 	t.Parallel()
 
