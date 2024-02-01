@@ -45,6 +45,19 @@ func (s *Schema) Visit() []*Type {
 	return v.Run()
 }
 
+// Remove all occurrences of a type from the schema, including
+// any fields, input fields, and enum values that reference it.
+func (s *Schema) ScrubType(typeName string) {
+	filteredTypes := make(Types, 0, len(s.Types))
+	for _, t := range s.Types {
+		if t.ScrubType(typeName) {
+			continue
+		}
+		filteredTypes = append(filteredTypes, t)
+	}
+	s.Types = filteredTypes
+}
+
 type TypeKind string
 
 const (
@@ -76,6 +89,52 @@ type Type struct {
 	EnumValues  []EnumValue  `json:"enumValues,omitempty"`
 }
 
+// Remove all occurrences of a type from the schema, including
+// any fields, input fields, and enum values that reference it.
+// Returns true if this type should be removed, whether because
+// it is the type being scrubbed, or because it is now empty after
+// scrubbing its references.
+func (t *Type) ScrubType(typeName string) bool {
+	if t.Kind == TypeKindScalar {
+		return t.Name == typeName
+	}
+
+	filteredFields := make([]*Field, 0, len(t.Fields))
+	for _, f := range t.Fields {
+		if f.TypeRef.ReferencesType(typeName) {
+			continue
+		}
+		filteredFields = append(filteredFields, f)
+	}
+	t.Fields = filteredFields
+
+	filteredInputFields := make([]InputValue, 0, len(t.InputFields))
+	for _, f := range t.InputFields {
+		if f.Name == typeName {
+			continue
+		}
+		if f.TypeRef.ReferencesType(typeName) {
+			continue
+		}
+		filteredInputFields = append(filteredInputFields, f)
+	}
+	t.InputFields = filteredInputFields
+
+	filteredEnumValues := make([]EnumValue, 0, len(t.EnumValues))
+	for _, e := range t.EnumValues {
+		if e.Name == typeName {
+			continue
+		}
+		filteredEnumValues = append(filteredEnumValues, e)
+	}
+	t.EnumValues = filteredEnumValues
+
+	// check if we removed everything from it, in which case it should
+	// be removed itself
+	isEmpty := len(t.Fields) == 0 && len(t.InputFields) == 0 && len(t.EnumValues) == 0
+	return t.Name == typeName || isEmpty
+}
+
 type Types []*Type
 
 func (t Types) Get(name string) *Type {
@@ -96,6 +155,20 @@ type Field struct {
 	DeprecationReason string      `json:"deprecationReason"`
 
 	ParentObject *Type `json:"-"`
+}
+
+func (f *Field) ReferencesType(typeName string) bool {
+	// check return
+	if f.TypeRef.ReferencesType(typeName) {
+		return true
+	}
+	// check args
+	for _, arg := range f.Args {
+		if arg.TypeRef.ReferencesType(typeName) {
+			return true
+		}
+	}
+	return false
 }
 
 type TypeRef struct {
@@ -142,6 +215,13 @@ func (r TypeRef) IsList() bool {
 		return true
 	}
 	return false
+}
+
+func (r TypeRef) ReferencesType(typeName string) bool {
+	if r.OfType != nil {
+		return r.OfType.ReferencesType(typeName)
+	}
+	return r.Name == typeName
 }
 
 type InputValues []InputValue
