@@ -486,7 +486,8 @@ func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fn
 func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:     cliName(fn.Name),
-		Short:   fn.Description,
+		Short:   strings.SplitN(fn.Description, "\n", 2)[0],
+		Long:    fn.Description,
 		GroupID: funcGroup.ID,
 		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
 			if err := fc.addArgsForFunction(cmd, args, fn, dag); err != nil {
