@@ -163,6 +163,25 @@ Follow these steps:
       - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
     :::
 
+### Does Dagger send telemetry?
+
+By default, the Dagger CLI sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used. Telemetry is optional and can be disabled at any time. If you are willing and able to leave telemetry enabled: thank you! This will help us better understand how Dagger is used, and will allow us to improve your experience.
+
+### What telemetry does Dagger send?
+
+The following information is included in telemetry:
+
+- Dagger version
+- Platform information
+- Command run
+- Anonymous device ID
+
+We use telemetry for aggregate analysis, and do not tie telemetry events to a specific identity. Our telemetry implementation is open-source and can be reviewed in our [GitHub repository](https://github.com/dagger/dagger).
+
+### Can Dagger telemetry be disabled?
+
+Dagger implements the [Console Do Not Track (DNT) standard](https://consoledonottrack.com/). As a result, you can disable the telemetry by setting the environment variable `DO_NOT_TRACK=1` before running the Dagger CLI.
+
 ### What are Dagger's caching features?
 
 Dagger is able to cache:
