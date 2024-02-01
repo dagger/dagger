@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -59,17 +60,26 @@ var outputPath string
 var jsonOutput bool
 
 var callCmd = &FuncCommand{
-	Name:  "call",
+	Name:  "call [flags] [FUNCTION]...",
 	Short: "Call a module function",
-	Long: `Call a module function and print the result
+	Long: strings.ReplaceAll(`Call a module function and print the result.
 
-If the last argument is either Container, Directory, or File, the pipeline
-will be evaluated (the result of calling *sync*) without presenting any output.
-Providing the --output option (shorthand: -o) is equivalent to calling *export*
-instead. To print a property of these core objects, continue chaining by
-appending it to the end of the command (for example, *stdout*, *entries*, or
-*contents*).
+If the last argument is either a Container, Directory, or File, the pipeline
+will be evaluated (the result of calling ´sync´) without presenting any output.
+Providing the ´--output´ option (shorthand: ´-o´) is equivalent to calling
+´export´ instead. To print a property of these core objects, continue chaining
+by appending it to the end of the command (for example, ´stdout´, ´entries´, or
+´contents´).
 `,
+		"´",
+		"`",
+	),
+	Example: strings.TrimSpace(`
+dagger call test
+dagger call build -o ./bin/myapp
+dagger call lint stdout
+`,
+	),
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Present result as JSON")
 		cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Path in the host to save the result to")

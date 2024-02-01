@@ -1028,7 +1028,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 				continue
 			}
 			gitAttrsContents = append(gitAttrsContents,
-				[]byte(fmt.Sprintf("/%s linguist-generated=true\n", fileName))...,
+				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
 			)
 		}
 
