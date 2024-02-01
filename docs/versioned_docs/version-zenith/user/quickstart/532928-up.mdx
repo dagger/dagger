@@ -8,7 +8,7 @@ title: "Expose services returned by a function on the host"
 
 ## Expose services returned by a function on the host
 
-The `dagger up` command allows `Service` types returned by a function to be executed and have any exposed ports forwarded to the host machine.
+The `up` API allows services returned by a function to be executed and have any exposed ports forwarded to the host machine.
 
 This has many potential use cases, such as manually testing web servers or databases directly from the host browser or host system.
 
@@ -21,7 +21,7 @@ In order for this to work, the service returned by the function must have the `C
 Use the `dagger up` command to build the React application and serve it with NGINX:
 
 ```shell
-dagger up --native service
+dagger call service up --native
 ```
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
@@ -33,7 +33,7 @@ The `--native` flag results in the exposed ports on the container being auto-map
 However, you can modify this behavior and choose a different port on your host via the `--port` flag. For example:
 
 ```shell
-dagger up --port 9090:8080 service
+dagger call service up --ports 9090:8080
 ```
 
 This results in container port 8080 being mapped to host port 9090. You should now be able to access the application by browsing to `http://localhost:9090` (or equivalent host name) on the host.
@@ -41,6 +41,5 @@ This results in container port 8080 being mapped to host port 9090. You should n
 :::tip
 Here is an example of using this command with a module from the [Daggerverse](https://daggerverse.dev/):
 
-- `dagger up --native --mod github.com/helderco/daggerverse/python@kcna23 http-server --src <path/to/web/assets>`
-  - Module information: https://github.com/helderco/daggerverse/tree/main/python/kcna23
+- [Start an HTTP service](https://github.com/helderco/daggerverse/tree/main/python/): `dagger call -m github.com/helderco/daggerverse/python http-server --src <path/to/web/assets> up  --native`
 :::

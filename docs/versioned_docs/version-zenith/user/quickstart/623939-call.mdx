@@ -84,31 +84,25 @@ dagger call test --node-version 18
 
 ### Use modules from remote sources
 
-Modules don't need to be installed locally. Dagger lets you consume modules from remote sources as well. For example, you can `dagger call` a function from a module using its GitHub URL:
+Modules don't need to be installed locally. Dagger lets you consume modules from GitHub as well. For example, you can `dagger call` a function from a module using its GitHub URL:
 
 ```shell
-dagger call -m "github.com/sipsma/daggerverse@main" test
+dagger call -m github.com/vikram-dagger/daggerverse/hello-dagger@main hello-dagger
 ```
 
-Or, if the target module is in a subdirectory of the repository:
-
-```shell
-dagger call -m "github.com/sipsma/daggerverse/example@main" test
-```
+### Use modules from the local filesystem
 
 You can also use modules from the local filesystem, without needing to push them to GitHub. For example:
 
 ```shell
-dagger call -m "./path/to/module" test
+dagger call -m ./path/to/module test
 ```
 
 :::tip
-The [Daggerverse](https://daggerverse.dev) is an online catalog of Dagger modules that enables users to easily discover and use modules created by the Dagger community.
+The [Daggerverse](https://daggerverse.dev) is an online catalog that enables users to easily discover and use modules created by the Dagger community.
 
 Here are a few examples of using this command with modules from the [Daggerverse](https://daggerverse.dev/):
 
-- `dagger call -m github.com/jpadams/daggerverse/trivy scan-image --image-ref alpine/git:latest`
-  - Module information: https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy@d444ed56169d3737c018ed16e2d6bab92886f951
-- `dagger call -m github.com/shykes/daggerverse/ttlsh publish --ctr alpine:latest`
-  - Module information: https://daggerverse.dev/mod/github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
+- [Scan a container image for vulnerabilities](https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy): `dagger call -m github.com/jpadams/daggerverse/trivy scan-image --image-ref alpine/git:latest`
+- [Publish a container to the `ttl.sh` registry](https://daggerverse.dev/mod/github.com/shykes/daggerverse/ttlsh): `dagger call -m github.com/shykes/daggerverse/ttlsh publish --ctr alpine:latest`
 :::

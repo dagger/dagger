@@ -1,0 +1,40 @@
+---
+slug: /user/quickstart/292861/export
+hide_table_of_contents: true
+title: "Export function outputs"
+---
+
+# Quickstart
+
+## Export function outputs
+
+The `export` API allows you to retrieve file, directory and container outputs from functions and write them to the host filesystem.
+
+To see it in action, use `export` with the `build` function used previously, to export the built application to an `out` directory on the host:
+
+```shell
+dagger call build export --path ./out
+```
+
+Here's an example of the output:
+
+```shell
+✔ dagger call build export [31.79s]
+┃ Asset exported to "./out"
+$ ls out/
+asset-manifest.json  index.html   logo512.png    robots.txt
+favicon.ico          logo192.png  manifest.json  static
+```
+
+The `export` API also works with functions that return `Container` types, in which case the `Container` is exported as a TAR file to the host file system. Here's an example:
+
+```shell
+dagger call app-container export --path ./container.tar
+```
+
+:::tip
+Here are a few examples of using this command with modules from the [Daggerverse](https://daggerverse.dev/):
+
+- [Build a Go binary from a remote repository and export it to the local filesystem](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/golang): `dagger call -m github.com/kpenfound/dagger-modules/golang build-remote --remote github.com/dagger/dagger --ref main --module "./cmd/dagger" --platform darwin export --path ./build`
+- [Stitch videos together](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch): `wget -q https://download.samplelib.com/mp4/sample-5s.mp4  && wget -q https://download.samplelib.com/mp4/sample-10s.mp4 && dagger call -m github.com/marcosnils/daggerverse/videostitch@main stitch --src-dir . export --path output.mp4`
+:::
