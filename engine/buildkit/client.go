@@ -389,7 +389,8 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
 		context.Background(),
-		c.Worker,
+		c.Worker.CacheManager(),
+		c.Worker.Executor(),
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
