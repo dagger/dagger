@@ -236,6 +236,13 @@ Examples:
 
 {{- end}}
 
+{{- if .HasAvailableLocalFlags}}
+
+Flags:
+{{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
+
+{{- end}}
+
 {{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
 {{- if eq (len .Groups) 0}}
 
@@ -268,13 +275,6 @@ Additional Commands:
 {{- end}}{{/* if not .AllChildCommandsHaveGroup */}}
 {{- end}}{{/* if eq (len .Groups) 0 */}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
-
-{{- if .HasAvailableLocalFlags}}
-
-Flags:
-{{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
-
-{{- end}}
 
 {{- if .HasAvailableInheritedFlags}}
 
