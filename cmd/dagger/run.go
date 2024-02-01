@@ -47,6 +47,7 @@ dagger run node index.mjs
 dagger run python main.py
 `,
 	),
+	GroupID:      execGroup.ID,
 	Run:          Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,

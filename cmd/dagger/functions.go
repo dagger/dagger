@@ -30,6 +30,11 @@ const (
 	CacheVolume string = "CacheVolume"
 )
 
+var funcGroup = &cobra.Group{
+	ID:    "functions",
+	Title: "Function Commands",
+}
+
 var funcCmds = FuncCommands{
 	funcListCmd,
 	callCmd,
@@ -470,6 +475,7 @@ func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, err
 
 func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fnProvider functionProvider) {
 	if fnProvider != nil {
+		cmd.AddGroup(funcGroup)
 		for _, fn := range fnProvider.GetFunctions() {
 			subCmd := fc.makeSubCmd(dag, fn)
 			cmd.AddCommand(subCmd)
@@ -479,8 +485,9 @@ func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fn
 
 func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
-		Use:   cliName(fn.Name),
-		Short: fn.Description,
+		Use:     cliName(fn.Name),
+		Short:   fn.Description,
+		GroupID: funcGroup.ID,
 		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
 			if err := fc.addArgsForFunction(cmd, args, fn, dag); err != nil {
 				return err

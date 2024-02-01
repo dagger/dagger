@@ -14,6 +14,11 @@ import (
 )
 
 var (
+	execGroup = &cobra.Group{
+		ID:    "exec",
+		Title: "Execution Commands",
+	}
+
 	workdir string
 
 	cpuprofile string
@@ -47,10 +52,11 @@ func init() {
 
 	funcCmds.AddParent(rootCmd)
 
-	cobra.AddTemplateFunc("isExperimental", isExperimental)
-
-	rootCmd.SetUsageTemplate(usageTemplate)
 	rootCmd.AddGroup(moduleGroup)
+	rootCmd.AddGroup(execGroup)
+
+	cobra.AddTemplateFunc("isExperimental", isExperimental)
+	rootCmd.SetUsageTemplate(usageTemplate)
 }
 
 var rootCmd = &cobra.Command{
