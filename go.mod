@@ -43,7 +43,7 @@ require (
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
-	github.com/moby/buildkit v0.13.0-beta2 // https://github.com/moby/buildkit/commit/ef61ad133d7fd20632eb964dfc78292360f2f09d
+	github.com/moby/buildkit v0.13.0-beta3 // https://github.com/moby/buildkit/commit/1981eb123dc979fc71d097adeb5bbb84110aa9f4
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.3
