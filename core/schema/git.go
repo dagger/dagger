@@ -195,7 +195,7 @@ func defaultBranch(ctx context.Context, repoURL string) (string, error) {
 
 // find all git tags for a given repo
 func gitTags(ctx context.Context, repoURL string) ([]string, error) {
-	stdoutBytes, err := exec.CommandContext(ctx, "git", "ls-remote", "--tags", "--symref", repoURL).Output()
+	stdoutBytes, err := exec.CommandContext(ctx, "git", "ls-remote", "--refs", "--tags", "--symref", repoURL).Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run git: %w", err)
 	}
