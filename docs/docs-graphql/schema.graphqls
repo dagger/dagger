@@ -1057,7 +1057,11 @@ scalar DirectoryID
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
   id: EnvVariableID!
+
+  """The environment variable name."""
   name: String!
+
+  """The environment variable value."""
   value: String!
 }
 
@@ -1073,11 +1077,16 @@ A field on an object has a static value, as opposed to a function on an object
 whose value is computed by invoking code (and can accept arguments).
 """
 type FieldTypeDef {
+  """A doc string for the field, if any."""
   description: String!
 
   """A unique identifier for this FieldTypeDef."""
   id: FieldTypeDefID!
+
+  """The name of the field in lowerCamelCase format."""
   name: String!
+
+  """The type of the field."""
   typeDef: TypeDef!
 }
 
@@ -1139,12 +1148,19 @@ Function represents a resolver provided by a Module.
 A function always evaluates against a parent object and is given a set of named arguments.
 """
 type Function {
+  """Arguments accepted by the function, if any."""
   args: [FunctionArg!]!
+
+  """A doc string for the function, if any."""
   description: String!
 
   """A unique identifier for this Function."""
   id: FunctionID!
+
+  """The name of the function."""
   name: String!
+
+  """The type returned by the function."""
   returnType: TypeDef!
 
   """Returns the function with the provided argument"""
@@ -1177,12 +1193,21 @@ An argument accepted by a function.
 This is a specification for an argument at function definition time, not an argument passed at function call time.
 """
 type FunctionArg {
+  """
+  A default value to use for this argument when not explicitly set by the caller, if any.
+  """
   defaultValue: JSON!
+
+  """A doc string for the argument, if any."""
   description: String!
 
   """A unique identifier for this FunctionArg."""
   id: FunctionArgID!
+
+  """The name of the argument in lowerCamelCase format."""
   name: String!
+
+  """The type of the argument."""
   typeDef: TypeDef!
 }
 
@@ -1195,9 +1220,23 @@ scalar FunctionArgID
 type FunctionCall {
   """A unique identifier for this FunctionCall."""
   id: FunctionCallID!
+
+  """The argument values the function is being invoked with."""
   inputArgs: [FunctionCallArgValue!]!
+
+  """The name of the function being called."""
   name: String!
+
+  """
+  The value of the parent object of the function being called. If the function
+  is top-level to the module, this is always an empty object.
+  """
   parent: JSON!
+
+  """
+  The name of the parent object of the function being called. If the function is
+  top-level to the module, this is the name of the module.
+  """
   parentName: String!
 
   """Set the return value of the function call to the provided value."""
@@ -1211,7 +1250,11 @@ type FunctionCall {
 type FunctionCallArgValue {
   """A unique identifier for this FunctionCallArgValue."""
   id: FunctionCallArgValueID!
+
+  """The name of the argument."""
   name: String!
+
+  """The value of the argument represented as a JSON serialized string."""
   value: JSON!
 }
 
@@ -1232,11 +1275,18 @@ scalar FunctionID
 
 """The result of running an SDK's codegen."""
 type GeneratedCode {
+  """The directory containing the generated code."""
   code: Directory!
 
   """A unique identifier for this GeneratedCode."""
   id: GeneratedCodeID!
+
+  """
+  List of paths to mark generated in version control (i.e. .gitattributes).
+  """
   vcsGeneratedPaths: [String!]!
+
+  """List of paths to ignore in version control (i.e. .gitignore)."""
   vcsIgnoredPaths: [String!]!
 
   """Set the list of paths to mark generated in version control."""
@@ -1255,6 +1305,8 @@ scalar GeneratedCodeID
 type GitModuleSource {
   """The URL from which the source's git repo can be cloned."""
   cloneURL: String!
+
+  """The resolved commit of the git repo this source points to."""
   commit: String!
 
   """The URL to the source's git repo in a web browser"""
@@ -1262,7 +1314,13 @@ type GitModuleSource {
 
   """A unique identifier for this GitModuleSource."""
   id: GitModuleSourceID!
+
+  """
+  The path to the module source code dir specified by this source relative to the source's root directory.
+  """
   sourceSubpath: String!
+
+  """The specified version of the git repo this source points to."""
   version: String!
 }
 
@@ -1441,10 +1499,13 @@ in the core API. It is not used by user modules and shouldn't ever be as user
 module accept input objects via their id rather than graphql input types.
 """
 type InputTypeDef {
+  """Static fields defined on this input object, if any."""
   fields: [FieldTypeDef!]!
 
   """A unique identifier for this InputTypeDef."""
   id: InputTypeDefID!
+
+  """The name of the input object."""
   name: String!
 }
 
@@ -1455,12 +1516,21 @@ scalar InputTypeDefID
 
 """A definition of a custom interface defined in a Module."""
 type InterfaceTypeDef {
+  """The doc string for the interface, if any."""
   description: String!
+
+  """Functions defined on this interface, if any."""
   functions: [Function!]!
 
   """A unique identifier for this InterfaceTypeDef."""
   id: InterfaceTypeDefID!
+
+  """The name of the interface."""
   name: String!
+
+  """
+  If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
   sourceModuleName: String!
 }
 
@@ -1476,7 +1546,11 @@ scalar JSON
 type Label {
   """A unique identifier for this Label."""
   id: LabelID!
+
+  """The label name."""
   name: String!
+
+  """The label value."""
   value: String!
 }
 
@@ -1487,6 +1561,7 @@ scalar LabelID
 
 """A definition of a list type in a Module."""
 type ListTypeDef {
+  """The type of the elements in the list."""
   elementTypeDef: TypeDef!
 
   """A unique identifier for this ListTypeDef."""
@@ -1504,6 +1579,8 @@ Module source that that originates from a path locally relative to an arbitrary 
 type LocalModuleSource {
   """A unique identifier for this LocalModuleSource."""
   id: LocalModuleSourceID!
+
+  """The path to the module source code dir specified by this source."""
   sourceSubpath: String!
 }
 
@@ -1514,8 +1591,13 @@ scalar LocalModuleSourceID
 
 """A Dagger module."""
 type Module {
+  """Modules used by this module."""
   dependencies: [Module!]!
+
+  """The dependencies as configured by the module."""
   dependencyConfig: [ModuleDependency!]!
+
+  """The doc string of the module, if any"""
   description: String!
 
   """
@@ -1531,10 +1613,25 @@ type Module {
 
   """Retrieves the module with the objects loaded via its SDK."""
   initialize: Module!
+
+  """Interfaces served by this module."""
   interfaces: [TypeDef!]!
+
+  """The name of the module"""
   name: String!
+
+  """Objects served by this module."""
   objects: [TypeDef!]!
+
+  """
+  The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+  """
   runtime: Container!
+
+  """
+  The SDK used by this module. Either a name of a builtin SDK or a module source
+  ref string pointing to the SDK's implementation.
+  """
   sdk: String!
 
   """
@@ -1544,6 +1641,8 @@ type Module {
   a stream or service to remove the side effect.
   """
   serve: Void
+
+  """The source for the module."""
   source: ModuleSource!
 
   """Update the module configuration to use the given dependencies."""
@@ -1587,7 +1686,11 @@ type Module {
 type ModuleDependency {
   """A unique identifier for this ModuleDependency."""
   id: ModuleDependencyID!
+
+  """The name of the dependency module."""
   name: String!
+
+  """The source for the dependency module."""
   source: ModuleSource!
 }
 
@@ -1605,7 +1708,10 @@ scalar ModuleID
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
 type ModuleSource {
+  """If the source is a of kind git, the git source representation of it."""
   asGitSource: GitModuleSource
+
+  """If the source is of kind local, the local source representation of it."""
   asLocalSource: LocalModuleSource
 
   """
@@ -1627,6 +1733,8 @@ type ModuleSource {
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
+
+  """The kind of source (e.g. local, git, etc.)"""
   kind: ModuleSourceKind!
 
   """If set, the name of the module this source references"""
@@ -1639,6 +1747,11 @@ type ModuleSource {
     """The dependency module source to resolve."""
     dep: ModuleSourceID!
   ): ModuleSource!
+
+  """
+  The root directory of the module source that contains its configuration and
+  source code (which may be in a subdirectory of this root).
+  """
   rootDirectory: Directory!
 
   """
@@ -1666,14 +1779,27 @@ enum NetworkProtocol {
 
 """A definition of a custom object defined in a Module."""
 type ObjectTypeDef {
+  """The function used to construct new instances of this object, if any"""
   constructor: Function
+
+  """The doc string for the object, if any."""
   description: String!
+
+  """Static fields defined on this object, if any."""
   fields: [FieldTypeDef!]!
+
+  """Functions defined on this object, if any."""
   functions: [Function!]!
 
   """A unique identifier for this ObjectTypeDef."""
   id: ObjectTypeDefID!
+
+  """The name of the object."""
   name: String!
+
+  """
+  If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
   sourceModuleName: String!
 }
 
@@ -1700,12 +1826,19 @@ scalar Platform
 
 """A port exposed by a container."""
 type Port {
+  """The port description."""
   description: String
+
+  """Skip the health check when run as a service."""
   experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
   id: PortID!
+
+  """The port number."""
   port: Int!
+
+  """The transport layer protocol."""
   protocol: NetworkProtocol!
 }
 
@@ -2110,14 +2243,33 @@ scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
+  """
+  If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
+  """
   asInput: InputTypeDef
+
+  """
+  If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
+  """
   asInterface: InterfaceTypeDef
+
+  """
+  If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
+  """
   asList: ListTypeDef
+
+  """
+  If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
+  """
   asObject: ObjectTypeDef
 
   """A unique identifier for this TypeDef."""
   id: TypeDefID!
+
+  """The kind of type this is (e.g. primitive, list, object)."""
   kind: TypeDefKind!
+
+  """Whether this type can be set to null. Defaults to false."""
   optional: Boolean!
 
   """

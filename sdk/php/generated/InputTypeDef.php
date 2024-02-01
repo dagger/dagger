@@ -16,6 +16,9 @@ namespace Dagger;
  */
 class InputTypeDef extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * Static fields defined on this input object, if any.
+     */
     public function fields(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('fields');
@@ -31,6 +34,9 @@ class InputTypeDef extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\InputTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The name of the input object.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');

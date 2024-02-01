@@ -6,7 +6,7 @@ defmodule Dagger.Module do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "Modules used by this module."
     @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
     def dependencies(%__MODULE__{} = module) do
       selection = select(module.selection, "dependencies")
@@ -31,7 +31,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "The dependencies as configured by the module."
     @spec dependency_config(t()) :: {:ok, [Dagger.ModuleDependency.t()]} | {:error, term()}
     def dependency_config(%__MODULE__{} = module) do
       selection = select(module.selection, "dependencyConfig")
@@ -51,7 +51,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "The doc string of the module, if any"
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = module) do
       selection = select(module.selection, "description")
@@ -87,7 +87,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "Interfaces served by this module."
     @spec interfaces(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
     def interfaces(%__MODULE__{} = module) do
       selection = select(module.selection, "interfaces")
@@ -112,7 +112,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "The name of the module"
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = module) do
       selection = select(module.selection, "name")
@@ -121,7 +121,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "Objects served by this module."
     @spec objects(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
     def objects(%__MODULE__{} = module) do
       selection = select(module.selection, "objects")
@@ -146,7 +146,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."
     @spec runtime(t()) :: Dagger.Container.t()
     def runtime(%__MODULE__{} = module) do
       selection = select(module.selection, "runtime")
@@ -155,7 +155,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."
     @spec sdk(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def sdk(%__MODULE__{} = module) do
       selection = select(module.selection, "sdk")
@@ -173,7 +173,7 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc ""
+    @doc "The source for the module."
     @spec source(t()) :: Dagger.ModuleSource.t()
     def source(%__MODULE__{} = module) do
       selection = select(module.selection, "source")

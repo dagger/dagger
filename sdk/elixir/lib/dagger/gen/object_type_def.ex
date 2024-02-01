@@ -6,7 +6,7 @@ defmodule Dagger.ObjectTypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "The function used to construct new instances of this object, if any"
     @spec constructor(t()) :: {:ok, Dagger.Function.t() | nil} | {:error, term()}
     def constructor(%__MODULE__{} = object_type_def) do
       selection = select(object_type_def.selection, "constructor")
@@ -20,7 +20,7 @@ defmodule Dagger.ObjectTypeDef do
   )
 
   (
-    @doc ""
+    @doc "The doc string for the object, if any."
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = object_type_def) do
       selection = select(object_type_def.selection, "description")
@@ -29,7 +29,7 @@ defmodule Dagger.ObjectTypeDef do
   )
 
   (
-    @doc ""
+    @doc "Static fields defined on this object, if any."
     @spec fields(t()) :: {:ok, [Dagger.FieldTypeDef.t()]} | {:error, term()}
     def fields(%__MODULE__{} = object_type_def) do
       selection = select(object_type_def.selection, "fields")
@@ -49,7 +49,7 @@ defmodule Dagger.ObjectTypeDef do
   )
 
   (
-    @doc ""
+    @doc "Functions defined on this object, if any."
     @spec functions(t()) :: {:ok, [Dagger.Function.t()]} | {:error, term()}
     def functions(%__MODULE__{} = object_type_def) do
       selection = select(object_type_def.selection, "functions")
@@ -78,7 +78,7 @@ defmodule Dagger.ObjectTypeDef do
   )
 
   (
-    @doc ""
+    @doc "The name of the object."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = object_type_def) do
       selection = select(object_type_def.selection, "name")
@@ -87,7 +87,7 @@ defmodule Dagger.ObjectTypeDef do
   )
 
   (
-    @doc ""
+    @doc "If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."
     @spec source_module_name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def source_module_name(%__MODULE__{} = object_type_def) do
       selection = select(object_type_def.selection, "sourceModuleName")

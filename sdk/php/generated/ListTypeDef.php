@@ -13,6 +13,9 @@ namespace Dagger;
  */
 class ListTypeDef extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * The type of the elements in the list.
+     */
     public function elementTypeDef(): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('elementTypeDef');

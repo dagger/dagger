@@ -58,6 +58,59 @@
       },
       {
         "kind": "OBJECT",
+        "name": "IntrospectTest",
+        "fields": [
+          {
+            "name": "deprecatedField",
+            "description": "Don't use me.",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int"
+              }
+            },
+            "args": [],
+            "isDeprecated": true,
+            "deprecationReason": "use something else"
+          },
+          {
+            "name": "field",
+            "description": "I'm a field!",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          },
+          {
+            "name": "id",
+            "description": "A unique identifier for this IntrospectTest.",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "IntrospectTestID"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          }
+        ]
+      },
+      {
+        "kind": "SCALAR",
+        "name": "IntrospectTestID",
+        "description": "The `IntrospectTestID` scalar type represents an identifier for an object of type IntrospectTest."
+      },
+      {
+        "kind": "OBJECT",
         "name": "Line",
         "description": "A line connecting two points.",
         "fields": [
@@ -467,6 +520,35 @@
               }
             },
             "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          },
+          {
+            "name": "loadIntrospectTestFromID",
+            "description": "Load a IntrospectTest from its ID.",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "IntrospectTest"
+              }
+            },
+            "args": [
+              {
+                "name": "id",
+                "description": "",
+                "defaultValue": null,
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "IntrospectTestID"
+                  }
+                },
+                "isDeprecated": false,
+                "deprecationReason": ""
+              }
+            ],
             "isDeprecated": false,
             "deprecationReason": ""
           },

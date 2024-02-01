@@ -15,7 +15,7 @@ defmodule Dagger.Label do
   )
 
   (
-    @doc ""
+    @doc "The label name."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = label) do
       selection = select(label.selection, "name")
@@ -24,7 +24,7 @@ defmodule Dagger.Label do
   )
 
   (
-    @doc ""
+    @doc "The label value."
     @spec value(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def value(%__MODULE__{} = label) do
       selection = select(label.selection, "value")

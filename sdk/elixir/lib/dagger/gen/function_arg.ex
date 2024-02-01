@@ -6,7 +6,7 @@ defmodule Dagger.FunctionArg do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "A default value to use for this argument when not explicitly set by the caller, if any."
     @spec default_value(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
     def default_value(%__MODULE__{} = function_arg) do
       selection = select(function_arg.selection, "defaultValue")
@@ -15,7 +15,7 @@ defmodule Dagger.FunctionArg do
   )
 
   (
-    @doc ""
+    @doc "A doc string for the argument, if any."
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = function_arg) do
       selection = select(function_arg.selection, "description")
@@ -33,7 +33,7 @@ defmodule Dagger.FunctionArg do
   )
 
   (
-    @doc ""
+    @doc "The name of the argument in lowerCamelCase format."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = function_arg) do
       selection = select(function_arg.selection, "name")
@@ -42,7 +42,7 @@ defmodule Dagger.FunctionArg do
   )
 
   (
-    @doc ""
+    @doc "The type of the argument."
     @spec type_def(t()) :: Dagger.TypeDef.t()
     def type_def(%__MODULE__{} = function_arg) do
       selection = select(function_arg.selection, "typeDef")

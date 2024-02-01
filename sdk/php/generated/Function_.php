@@ -15,12 +15,18 @@ namespace Dagger;
  */
 class Function_ extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * Arguments accepted by the function, if any.
+     */
     public function args(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('args');
         return (array)$this->queryLeaf($leafQueryBuilder, 'args');
     }
 
+    /**
+     * A doc string for the function, if any.
+     */
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
@@ -36,12 +42,18 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The name of the function.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
+    /**
+     * The type returned by the function.
+     */
     public function returnType(): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('returnType');

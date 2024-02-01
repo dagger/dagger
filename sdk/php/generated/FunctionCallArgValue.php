@@ -22,12 +22,18 @@ class FunctionCallArgValue extends Client\AbstractObject implements Client\IdAbl
         return new \Dagger\FunctionCallArgValueId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The name of the argument.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
+    /**
+     * The value of the argument represented as a JSON serialized string.
+     */
     public function value(): Json
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');

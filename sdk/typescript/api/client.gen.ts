@@ -3098,6 +3098,10 @@ export class EnvVariable extends BaseClient {
 
     return response
   }
+
+  /**
+   * The environment variable name.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3115,6 +3119,10 @@ export class EnvVariable extends BaseClient {
 
     return response
   }
+
+  /**
+   * The environment variable value.
+   */
   value = async (): Promise<string> => {
     if (this._value) {
       return this._value
@@ -3180,6 +3188,10 @@ export class FieldTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * A doc string for the field, if any.
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -3197,6 +3209,10 @@ export class FieldTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the field in lowerCamelCase format.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3214,6 +3230,10 @@ export class FieldTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * The type of the field.
+   */
   typeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
@@ -3460,6 +3480,10 @@ export class Function_ extends BaseClient {
 
     return response
   }
+
+  /**
+   * Arguments accepted by the function, if any.
+   */
   args = async (): Promise<FunctionArg[]> => {
     type args = {
       id: FunctionArgID
@@ -3494,6 +3518,10 @@ export class Function_ extends BaseClient {
         )
     )
   }
+
+  /**
+   * A doc string for the function, if any.
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -3511,6 +3539,10 @@ export class Function_ extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the function.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3528,6 +3560,10 @@ export class Function_ extends BaseClient {
 
     return response
   }
+
+  /**
+   * The type returned by the function.
+   */
   returnType = (): TypeDef => {
     return new TypeDef({
       queryTree: [
@@ -3640,6 +3676,10 @@ export class FunctionArg extends BaseClient {
 
     return response
   }
+
+  /**
+   * A default value to use for this argument when not explicitly set by the caller, if any.
+   */
   defaultValue = async (): Promise<JSON> => {
     if (this._defaultValue) {
       return this._defaultValue
@@ -3657,6 +3697,10 @@ export class FunctionArg extends BaseClient {
 
     return response
   }
+
+  /**
+   * A doc string for the argument, if any.
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -3674,6 +3718,10 @@ export class FunctionArg extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the argument in lowerCamelCase format.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3691,6 +3739,10 @@ export class FunctionArg extends BaseClient {
 
     return response
   }
+
+  /**
+   * The type of the argument.
+   */
   typeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
@@ -3754,6 +3806,10 @@ export class FunctionCall extends BaseClient {
 
     return response
   }
+
+  /**
+   * The argument values the function is being invoked with.
+   */
   inputArgs = async (): Promise<FunctionCallArgValue[]> => {
     type inputArgs = {
       id: FunctionCallArgValueID
@@ -3788,6 +3844,10 @@ export class FunctionCall extends BaseClient {
         )
     )
   }
+
+  /**
+   * The name of the function being called.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3805,6 +3865,10 @@ export class FunctionCall extends BaseClient {
 
     return response
   }
+
+  /**
+   * The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
+   */
   parent = async (): Promise<JSON> => {
     if (this._parent) {
       return this._parent
@@ -3822,6 +3886,10 @@ export class FunctionCall extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
+   */
   parentName = async (): Promise<string> => {
     if (this._parentName) {
       return this._parentName
@@ -3908,6 +3976,10 @@ export class FunctionCallArgValue extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the argument.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -3925,6 +3997,10 @@ export class FunctionCallArgValue extends BaseClient {
 
     return response
   }
+
+  /**
+   * The value of the argument represented as a JSON serialized string.
+   */
   value = async (): Promise<JSON> => {
     if (this._value) {
       return this._value
@@ -3982,6 +4058,10 @@ export class GeneratedCode extends BaseClient {
 
     return response
   }
+
+  /**
+   * The directory containing the generated code.
+   */
   code = (): Directory => {
     return new Directory({
       queryTree: [
@@ -3993,6 +4073,10 @@ export class GeneratedCode extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * List of paths to mark generated in version control (i.e. .gitattributes).
+   */
   vcsGeneratedPaths = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
@@ -4006,6 +4090,10 @@ export class GeneratedCode extends BaseClient {
 
     return response
   }
+
+  /**
+   * List of paths to ignore in version control (i.e. .gitignore).
+   */
   vcsIgnoredPaths = async (): Promise<string[]> => {
     const response: Awaited<string[]> = await computeQuery(
       [
@@ -4136,6 +4224,10 @@ export class GitModuleSource extends BaseClient {
 
     return response
   }
+
+  /**
+   * The resolved commit of the git repo this source points to.
+   */
   commit = async (): Promise<string> => {
     if (this._commit) {
       return this._commit
@@ -4174,6 +4266,10 @@ export class GitModuleSource extends BaseClient {
 
     return response
   }
+
+  /**
+   * The path to the module source code dir specified by this source relative to the source's root directory.
+   */
   sourceSubpath = async (): Promise<string> => {
     if (this._sourceSubpath) {
       return this._sourceSubpath
@@ -4191,6 +4287,10 @@ export class GitModuleSource extends BaseClient {
 
     return response
   }
+
+  /**
+   * The specified version of the git repo this source points to.
+   */
   version = async (): Promise<string> => {
     if (this._version) {
       return this._version
@@ -4589,6 +4689,10 @@ export class InputTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * Static fields defined on this input object, if any.
+   */
   fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
       id: FieldTypeDefID
@@ -4623,6 +4727,10 @@ export class InputTypeDef extends BaseClient {
         )
     )
   }
+
+  /**
+   * The name of the input object.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -4689,6 +4797,10 @@ export class InterfaceTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * The doc string for the interface, if any.
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -4706,6 +4818,10 @@ export class InterfaceTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * Functions defined on this interface, if any.
+   */
   functions = async (): Promise<Function_[]> => {
     type functions = {
       id: FunctionID
@@ -4740,6 +4856,10 @@ export class InterfaceTypeDef extends BaseClient {
         )
     )
   }
+
+  /**
+   * The name of the interface.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -4757,6 +4877,10 @@ export class InterfaceTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
   sourceModuleName = async (): Promise<string> => {
     if (this._sourceModuleName) {
       return this._sourceModuleName
@@ -4820,6 +4944,10 @@ export class Label extends BaseClient {
 
     return response
   }
+
+  /**
+   * The label name.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -4837,6 +4965,10 @@ export class Label extends BaseClient {
 
     return response
   }
+
+  /**
+   * The label value.
+   */
   value = async (): Promise<string> => {
     if (this._value) {
       return this._value
@@ -4894,6 +5026,10 @@ export class ListTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * The type of the elements in the list.
+   */
   elementTypeDef = (): TypeDef => {
     return new TypeDef({
       queryTree: [
@@ -4948,6 +5084,10 @@ export class LocalModuleSource extends BaseClient {
 
     return response
   }
+
+  /**
+   * The path to the module source code dir specified by this source.
+   */
   sourceSubpath = async (): Promise<string> => {
     if (this._sourceSubpath) {
       return this._sourceSubpath
@@ -5017,6 +5157,10 @@ export class Module_ extends BaseClient {
 
     return response
   }
+
+  /**
+   * Modules used by this module.
+   */
   dependencies = async (): Promise<Module_[]> => {
     type dependencies = {
       id: ModuleID
@@ -5051,6 +5195,10 @@ export class Module_ extends BaseClient {
         )
     )
   }
+
+  /**
+   * The dependencies as configured by the module.
+   */
   dependencyConfig = async (): Promise<ModuleDependency[]> => {
     type dependencyConfig = {
       id: ModuleDependencyID
@@ -5085,6 +5233,10 @@ export class Module_ extends BaseClient {
         )
     )
   }
+
+  /**
+   * The doc string of the module, if any
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -5132,6 +5284,10 @@ export class Module_ extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * Interfaces served by this module.
+   */
   interfaces = async (): Promise<TypeDef[]> => {
     type interfaces = {
       id: TypeDefID
@@ -5166,6 +5322,10 @@ export class Module_ extends BaseClient {
         )
     )
   }
+
+  /**
+   * The name of the module
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -5183,6 +5343,10 @@ export class Module_ extends BaseClient {
 
     return response
   }
+
+  /**
+   * Objects served by this module.
+   */
   objects = async (): Promise<TypeDef[]> => {
     type objects = {
       id: TypeDefID
@@ -5217,6 +5381,10 @@ export class Module_ extends BaseClient {
         )
     )
   }
+
+  /**
+   * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+   */
   runtime = (): Container => {
     return new Container({
       queryTree: [
@@ -5228,6 +5396,10 @@ export class Module_ extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+   */
   sdk = async (): Promise<string> => {
     if (this._sdk) {
       return this._sdk
@@ -5268,6 +5440,10 @@ export class Module_ extends BaseClient {
 
     return response
   }
+
+  /**
+   * The source for the module.
+   */
   source = (): ModuleSource => {
     return new ModuleSource({
       queryTree: [
@@ -5448,6 +5624,10 @@ export class ModuleDependency extends BaseClient {
 
     return response
   }
+
+  /**
+   * The name of the dependency module.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -5465,6 +5645,10 @@ export class ModuleDependency extends BaseClient {
 
     return response
   }
+
+  /**
+   * The source for the dependency module.
+   */
   source = (): ModuleSource => {
     return new ModuleSource({
       queryTree: [
@@ -5528,6 +5712,10 @@ export class ModuleSource extends BaseClient {
 
     return response
   }
+
+  /**
+   * If the source is a of kind git, the git source representation of it.
+   */
   asGitSource = (): GitModuleSource => {
     return new GitModuleSource({
       queryTree: [
@@ -5539,6 +5727,10 @@ export class ModuleSource extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * If the source is of kind local, the local source representation of it.
+   */
   asLocalSource = (): LocalModuleSource => {
     return new LocalModuleSource({
       queryTree: [
@@ -5603,6 +5795,10 @@ export class ModuleSource extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * The kind of source (e.g. local, git, etc.)
+   */
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {
       return this._kind
@@ -5658,6 +5854,10 @@ export class ModuleSource extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
+   */
   rootDirectory = (): Directory => {
     return new Directory({
       queryTree: [
@@ -5748,6 +5948,10 @@ export class ObjectTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * The function used to construct new instances of this object, if any
+   */
   constructor_ = (): Function_ => {
     return new Function_({
       queryTree: [
@@ -5759,6 +5963,10 @@ export class ObjectTypeDef extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * The doc string for the object, if any.
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -5776,6 +5984,10 @@ export class ObjectTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * Static fields defined on this object, if any.
+   */
   fields = async (): Promise<FieldTypeDef[]> => {
     type fields = {
       id: FieldTypeDefID
@@ -5810,6 +6022,10 @@ export class ObjectTypeDef extends BaseClient {
         )
     )
   }
+
+  /**
+   * Functions defined on this object, if any.
+   */
   functions = async (): Promise<Function_[]> => {
     type functions = {
       id: FunctionID
@@ -5844,6 +6060,10 @@ export class ObjectTypeDef extends BaseClient {
         )
     )
   }
+
+  /**
+   * The name of the object.
+   */
   name = async (): Promise<string> => {
     if (this._name) {
       return this._name
@@ -5861,6 +6081,10 @@ export class ObjectTypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
   sourceModuleName = async (): Promise<string> => {
     if (this._sourceModuleName) {
       return this._sourceModuleName
@@ -5930,6 +6154,10 @@ export class Port extends BaseClient {
 
     return response
   }
+
+  /**
+   * The port description.
+   */
   description = async (): Promise<string> => {
     if (this._description) {
       return this._description
@@ -5947,6 +6175,10 @@ export class Port extends BaseClient {
 
     return response
   }
+
+  /**
+   * Skip the health check when run as a service.
+   */
   experimentalSkipHealthcheck = async (): Promise<boolean> => {
     if (this._experimentalSkipHealthcheck) {
       return this._experimentalSkipHealthcheck
@@ -5964,6 +6196,10 @@ export class Port extends BaseClient {
 
     return response
   }
+
+  /**
+   * The port number.
+   */
   port = async (): Promise<number> => {
     if (this._port) {
       return this._port
@@ -5981,6 +6217,10 @@ export class Port extends BaseClient {
 
     return response
   }
+
+  /**
+   * The transport layer protocol.
+   */
   protocol = async (): Promise<NetworkProtocol> => {
     if (this._protocol) {
       return this._protocol
@@ -7383,6 +7623,10 @@ export class TypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
+   */
   asInput = (): InputTypeDef => {
     return new InputTypeDef({
       queryTree: [
@@ -7394,6 +7638,10 @@ export class TypeDef extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
+   */
   asInterface = (): InterfaceTypeDef => {
     return new InterfaceTypeDef({
       queryTree: [
@@ -7405,6 +7653,10 @@ export class TypeDef extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
+   */
   asList = (): ListTypeDef => {
     return new ListTypeDef({
       queryTree: [
@@ -7416,6 +7668,10 @@ export class TypeDef extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
+   */
   asObject = (): ObjectTypeDef => {
     return new ObjectTypeDef({
       queryTree: [
@@ -7427,6 +7683,10 @@ export class TypeDef extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * The kind of type this is (e.g. primitive, list, object).
+   */
   kind = async (): Promise<TypeDefKind> => {
     if (this._kind) {
       return this._kind
@@ -7444,6 +7704,10 @@ export class TypeDef extends BaseClient {
 
     return response
   }
+
+  /**
+   * Whether this type can be set to null. Defaults to false.
+   */
   optional = async (): Promise<boolean> => {
     if (this._optional) {
       return this._optional

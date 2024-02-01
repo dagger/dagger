@@ -13,24 +13,36 @@ namespace Dagger;
  */
 class TypeDef extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
+     */
     public function asInput(): InputTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInput');
         return new \Dagger\InputTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
+     */
     public function asInterface(): InterfaceTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asInterface');
         return new \Dagger\InterfaceTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
+     */
     public function asList(): ListTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asList');
         return new \Dagger\ListTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
+     */
     public function asObject(): ObjectTypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asObject');
@@ -46,12 +58,18 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\TypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The kind of type this is (e.g. primitive, list, object).
+     */
     public function kind(): TypeDefKind
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
         return \Dagger\TypeDefKind::from((string)$this->queryLeaf($leafQueryBuilder, 'kind'));
     }
 
+    /**
+     * Whether this type can be set to null. Defaults to false.
+     */
     public function optional(): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('optional');

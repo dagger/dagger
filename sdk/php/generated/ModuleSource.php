@@ -13,12 +13,18 @@ namespace Dagger;
  */
 class ModuleSource extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * If the source is a of kind git, the git source representation of it.
+     */
     public function asGitSource(): GitModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitSource');
         return new \Dagger\GitModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * If the source is of kind local, the local source representation of it.
+     */
     public function asLocalSource(): LocalModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asLocalSource');
@@ -62,6 +68,9 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The kind of source (e.g. local, git, etc.)
+     */
     public function kind(): ModuleSourceKind
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('kind');
@@ -87,6 +96,9 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
+     */
     public function rootDirectory(): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('rootDirectory');

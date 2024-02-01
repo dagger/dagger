@@ -22,12 +22,18 @@ class EnvVariable extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\EnvVariableId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The environment variable name.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
+    /**
+     * The environment variable value.
+     */
     public function value(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('value');
