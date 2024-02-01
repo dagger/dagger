@@ -59,7 +59,7 @@ type Module struct {
 	DirectoryExcludeConfig []string
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime *Container
+	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
 

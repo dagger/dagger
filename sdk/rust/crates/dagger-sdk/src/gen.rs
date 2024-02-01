@@ -3930,6 +3930,14 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    pub fn runtime(&self) -> Container {
+        let query = self.selection.select("runtime");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     pub async fn sdk(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sdk");
         query.execute(self.graphql_client.clone()).await

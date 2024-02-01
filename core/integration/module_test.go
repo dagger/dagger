@@ -5007,6 +5007,58 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 	})
 }
 
+func TestModuleCustomSDK(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/coolsdk").
+		With(daggerExec("mod", "init", "--name=cool-sdk", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleRuntime(modSource *ModuleSource, introspectionJson string) *Container {
+	return modSource.AsModule().WithSDK("go").Initialize().Runtime().WithEnvVariable("COOL", "true")
+}
+
+func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
+	existingConfig := modSource.Directory("/").File("dagger.json")
+	return dag.GeneratedCode(modSource.
+		AsModule().
+		WithSDK("go").
+		GeneratedSourceRootDirectory().
+		WithFile("dagger.json", existingConfig),
+	)
+}
+`,
+		}).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=coolsdk")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "os"
+
+type Test struct {}
+
+func (m *Test) Fn() string {
+	return os.Getenv("COOL")
+}
+`,
+		})
+
+	out, err := ctr.
+		With(daggerCall("fn")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "true", strings.TrimSpace(out))
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
