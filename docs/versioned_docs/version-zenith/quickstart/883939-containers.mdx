@@ -9,7 +9,7 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-## Chain container function calls
+## Chain container functions
 
 Just as you can chain `Directory` function calls, you can also chain `Container` function calls. As an example, the Wolfi container builder module exposes a number of functions:
 - A `Base()` function that creates a base container image using the `cgr.dev/chainguard/wolfi-base` container image;
@@ -33,7 +33,7 @@ The function call above returns a Dagger `Container` representing the base image
 ┃ OK: 54 MiB in 17 packages
 ```
 
-The interesting thing here is that `Container` is a Dagger primitive, which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
+Like `Directory`, `Container` is a Dagger primitive which comes with a number of functions of its own - in particular, a `Shell()` function, which can be used to open an interactive shell session with the running container.
 
 :::tip
 This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
