@@ -1,7 +1,0 @@
-kind: Breaking
-body: Remove Host API from module SDKs. See linked PR for descriptions on how to update
-  if impacted.
-time: 2024-01-31T22:50:25.44606116-08:00
-custom:
-  Author: sipsma
-  PR: "6535"
