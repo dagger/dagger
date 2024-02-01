@@ -16,14 +16,14 @@ type Response struct {
 
 type Schema struct {
 	QueryType struct {
-		Name string `json:"name"`
-	} `json:"queryType"`
-	MutationType struct {
-		Name string `json:"name"`
-	} `json:"mutationType"`
-	SubscriptionType struct {
-		Name string `json:"name"`
-	} `json:"subscriptionType"`
+		Name string `json:"name,omitempty"`
+	} `json:"queryType,omitempty"`
+	MutationType *struct {
+		Name string `json:"name,omitempty"`
+	} `json:"mutationType,omitempty"`
+	SubscriptionType *struct {
+		Name string `json:"name,omitempty"`
+	} `json:"subscriptionType,omitempty"`
 
 	Types Types `json:"types"`
 }
@@ -33,10 +33,16 @@ func (s *Schema) Query() *Type {
 }
 
 func (s *Schema) Mutation() *Type {
+	if s.MutationType == nil {
+		return nil
+	}
 	return s.Types.Get(s.MutationType.Name)
 }
 
 func (s *Schema) Subscription() *Type {
+	if s.SubscriptionType == nil {
+		return nil
+	}
 	return s.Types.Get(s.SubscriptionType.Name)
 }
 
@@ -87,6 +93,7 @@ type Type struct {
 	Fields      []*Field     `json:"fields,omitempty"`
 	InputFields []InputValue `json:"inputFields,omitempty"`
 	EnumValues  []EnumValue  `json:"enumValues,omitempty"`
+	Interfaces  []*Type      `json:"interfaces"`
 }
 
 // Remove all occurrences of a type from the schema, including
