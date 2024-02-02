@@ -83,9 +83,7 @@ func LoadClientLabels(engineVersion string) Labels {
 	}
 
 	machineID, err := machineid.ProtectedID("dagger")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to resolve machine id: %v\n", err)
-	} else {
+	if err == nil {
 		labels = append(labels, Label{
 			Name:  "dagger.io/client.machine_id",
 			Value: machineID,
