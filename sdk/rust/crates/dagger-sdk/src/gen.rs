@@ -5429,10 +5429,13 @@ pub struct ServiceStopOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub native: Option<bool>,
+    /// List of frontend/backend port mappings to forward.
+    /// Frontend is the port accepting traffic on the host, backend is the service port.
     #[builder(setter(into, strip_option), default)]
     pub ports: Option<Vec<PortForward>>,
+    /// Bind each tunnel port to a random port on the host.
+    #[builder(setter(into, strip_option), default)]
+    pub random: Option<bool>,
 }
 impl Service {
     /// Retrieves an endpoint that clients can use to reach this container.
@@ -5531,8 +5534,8 @@ impl Service {
         if let Some(ports) = opts.ports {
             query = query.arg("ports", ports);
         }
-        if let Some(native) = opts.native {
-            query = query.arg("native", native);
+        if let Some(random) = opts.random {
+            query = query.arg("random", random);
         }
         query.execute(self.graphql_client.clone()).await
     }

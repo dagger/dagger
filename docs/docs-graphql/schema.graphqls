@@ -2214,7 +2214,17 @@ type Service {
   """
   Creates a tunnel that forwards traffic from the caller's network to this service.
   """
-  up(native: Boolean = false, ports: [PortForward!] = []): Void
+  up(
+    """
+    List of frontend/backend port mappings to forward.
+    
+    Frontend is the port accepting traffic on the host, backend is the service port.
+    """
+    ports: [PortForward!] = []
+
+    """Bind each tunnel port to a random port on the host."""
+    random: Boolean = false
+  ): Void
 }
 
 """
