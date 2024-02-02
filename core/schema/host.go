@@ -81,6 +81,8 @@ func (s *hostSchema) Install() {
 		dagql.Func("tunnel", s.tunnel).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
 			ArgDoc("service", `Service to send traffic from the tunnel.`).
+			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
+				`Frontend is the port accepting traffic on the host, backend is the service port.`).
 			ArgDoc("native",
 				`Map each service port to the same port on the host, as if the service were running natively.`,
 				`Note: enabling may result in port conflicts.`).

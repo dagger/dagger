@@ -49,7 +49,10 @@ func (s *serviceSchema) Install() {
 
 		dagql.NodeFunc("up", s.up).
 			Impure("Starts a host tunnel, possibly with ports that change each time it's started.").
-			Doc(`Creates a tunnel that forwards traffic from the caller's network to this service.`),
+			Doc(`Creates a tunnel that forwards traffic from the caller's network to this service.`).
+			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
+			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
+				`Frontend is the port accepting traffic on the host, backend is the service port.`),
 
 		dagql.NodeFunc("stop", s.stop).
 			Impure("Imperatively mutates runtime state.").
@@ -115,7 +118,7 @@ func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Se
 
 type upArgs struct {
 	Ports  []dagql.InputObject[core.PortForward] `default:"[]"`
-	Native bool                                  `default:"false"`
+	Random bool                                  `default:"false"`
 }
 
 func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service], args upArgs) (dagql.Nullable[core.Void], error) {
@@ -131,7 +134,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 			Args: []dagql.NamedInput{
 				{Name: "service", Value: dagql.NewID[*core.Service](svc.ID())},
 				{Name: "ports", Value: dagql.ArrayInput[dagql.InputObject[core.PortForward]](args.Ports)},
-				{Name: "native", Value: dagql.Boolean(args.Native)},
+				{Name: "native", Value: dagql.Boolean(!args.Random)},
 			},
 		},
 	)
