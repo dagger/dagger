@@ -900,8 +900,17 @@ export type ServiceStopOpts = {
 }
 
 export type ServiceUpOpts = {
+  /**
+   * List of frontend/backend port mappings to forward.
+   *
+   * Frontend is the port accepting traffic on the host, backend is the service port.
+   */
   ports?: PortForward[]
-  native?: boolean
+
+  /**
+   * Bind each tunnel port to a random port on the host.
+   */
+  random?: boolean
 }
 
 /**
@@ -7471,6 +7480,10 @@ export class Service extends BaseClient {
 
   /**
    * Creates a tunnel that forwards traffic from the caller's network to this service.
+   * @param opts.ports List of frontend/backend port mappings to forward.
+   *
+   * Frontend is the port accepting traffic on the host, backend is the service port.
+   * @param opts.random Bind each tunnel port to a random port on the host.
    */
   up = async (opts?: ServiceUpOpts): Promise<Void> => {
     if (this._up) {
