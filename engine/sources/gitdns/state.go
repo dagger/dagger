@@ -78,7 +78,7 @@ func Git(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
 		}
 	}
 
-	attrs["dagger.git.clientids"] = strings.Join(clientIDs, ",")
+	attrs[AttrGitClientIDs] = strings.Join(clientIDs, ",")
 
 	source := llb.NewSource("git://"+id, attrs, gi.Constraints)
 	return llb.NewState(source.Output())

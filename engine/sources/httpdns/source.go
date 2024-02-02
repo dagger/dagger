@@ -75,12 +75,8 @@ func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, pl
 		HTTPIdentifier: *(srcid.(*srchttp.HTTPIdentifier)),
 	}
 
-	//nolint:gocritic
-	for k, v := range attrs {
-		switch k {
-		case "dagger.git.clientids":
-			id.ClientIDs = strings.Split(v, ",")
-		}
+	if v, ok := attrs[AttrHTTPClientIDs]; ok {
+		id.ClientIDs = strings.Split(v, ",")
 	}
 
 	return id, nil

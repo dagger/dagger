@@ -77,12 +77,8 @@ func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, pla
 		GitIdentifier: *(srcid.(*srcgit.GitIdentifier)),
 	}
 
-	//nolint:gocritic
-	for k, v := range attrs {
-		switch k {
-		case "dagger.git.clientids":
-			id.ClientIDs = strings.Split(v, ",")
-		}
+	if v, ok := attrs[AttrGitClientIDs]; ok {
+		id.ClientIDs = strings.Split(v, ",")
 	}
 
 	return id, nil

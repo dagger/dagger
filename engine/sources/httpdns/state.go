@@ -34,7 +34,7 @@ func HTTP(url string, clientIDs []string, opts ...llb.HTTPOption) llb.State {
 		attrs[pb.AttrHTTPGID] = strconv.Itoa(hi.GID)
 	}
 
-	attrs["dagger.git.clientids"] = strings.Join(clientIDs, ",")
+	attrs[AttrHTTPClientIDs] = strings.Join(clientIDs, ",")
 
 	source := llb.NewSource(url, attrs, hi.Constraints)
 	return llb.NewState(source.Output())
