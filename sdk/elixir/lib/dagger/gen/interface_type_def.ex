@@ -6,7 +6,7 @@ defmodule Dagger.InterfaceTypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "The doc string for the interface, if any."
     @spec description(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def description(%__MODULE__{} = interface_type_def) do
       selection = select(interface_type_def.selection, "description")
@@ -15,7 +15,7 @@ defmodule Dagger.InterfaceTypeDef do
   )
 
   (
-    @doc ""
+    @doc "Functions defined on this interface, if any."
     @spec functions(t()) :: {:ok, [Dagger.Function.t()]} | {:error, term()}
     def functions(%__MODULE__{} = interface_type_def) do
       selection = select(interface_type_def.selection, "functions")
@@ -44,7 +44,7 @@ defmodule Dagger.InterfaceTypeDef do
   )
 
   (
-    @doc ""
+    @doc "The name of the interface."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = interface_type_def) do
       selection = select(interface_type_def.selection, "name")
@@ -53,7 +53,7 @@ defmodule Dagger.InterfaceTypeDef do
   )
 
   (
-    @doc ""
+    @doc "If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise."
     @spec source_module_name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def source_module_name(%__MODULE__{} = interface_type_def) do
       selection = select(interface_type_def.selection, "sourceModuleName")

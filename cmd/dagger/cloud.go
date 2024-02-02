@@ -15,17 +15,25 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cloud.API, "api", "https://api.dagger.cloud", "Dagger Cloud API URL")
 	rootCmd.PersistentFlags().MarkHidden("api")
 
+	group := &cobra.Group{
+		ID:    "cloud",
+		Title: "Dagger Cloud Commands",
+	}
+	rootCmd.AddGroup(group)
+
 	loginCmd := &cobra.Command{
-		Use:   "login",
-		Short: "Log in to Dagger Cloud",
-		RunE:  cloud.Login,
+		Use:     "login",
+		Short:   "Log in to Dagger Cloud",
+		GroupID: group.ID,
+		RunE:    cloud.Login,
 	}
 	rootCmd.AddCommand(loginCmd)
 
 	logoutCmd := &cobra.Command{
-		Use:   "logout",
-		Short: "Log out from Dagger Cloud",
-		RunE:  cloud.Logout,
+		Use:     "logout",
+		Short:   "Log out from Dagger Cloud",
+		GroupID: group.ID,
+		RunE:    cloud.Logout,
 	}
 	rootCmd.AddCommand(logoutCmd)
 }

@@ -13,18 +13,27 @@ namespace Dagger;
  */
 class Module extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * Modules used by this module.
+     */
     public function dependencies(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
     }
 
+    /**
+     * The dependencies as configured by the module.
+     */
     public function dependencyConfig(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencyConfig');
         return (array)$this->queryLeaf($leafQueryBuilder, 'dependencyConfig');
     }
 
+    /**
+     * The doc string of the module, if any
+     */
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
@@ -58,30 +67,45 @@ class Module extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * Interfaces served by this module.
+     */
     public function interfaces(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('interfaces');
         return (array)$this->queryLeaf($leafQueryBuilder, 'interfaces');
     }
 
+    /**
+     * The name of the module
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
+    /**
+     * Objects served by this module.
+     */
     public function objects(): array
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('objects');
         return (array)$this->queryLeaf($leafQueryBuilder, 'objects');
     }
 
+    /**
+     * The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+     */
     public function runtime(): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('runtime');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
+    /**
+     * The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
+     */
     public function sdk(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sdk');
@@ -99,6 +123,9 @@ class Module extends Client\AbstractObject implements Client\IdAble
         $this->queryLeaf($leafQueryBuilder, 'serve');
     }
 
+    /**
+     * The source for the module.
+     */
     public function source(): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('source');

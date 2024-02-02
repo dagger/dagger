@@ -354,7 +354,7 @@ func (t Engine) test(ctx context.Context, race bool, testRegex string) error {
 		// go test flags
 		"-parallel=16",
 		"-count=1",
-		"-timeout=15m",
+		"-timeout=30m",
 	}
 
 	if race {

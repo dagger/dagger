@@ -19,7 +19,6 @@ The Dagger CLI provides a command-line interface to Dagger.
 ```
       --cpuprofile string   collect CPU profile to path, and trace at path.trace
       --debug               Show more information for debugging
-  -h, --help                help for dagger
       --pprof string        serve HTTP pprof at this address
       --progress string     progress output format (auto, plain, tty) (default "auto")
   -s, --silent              disable terminal UI and progress output
@@ -70,7 +69,6 @@ dagger call lint stdout
 
 ```
       --focus           Only show output for focused commands (default true)
-  -h, --help            help for call
       --json            Present result as JSON
   -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
   -o, --output string   Path in the host to save the result to
@@ -111,7 +109,6 @@ dagger functions [flags] [FUNCTION]...
 
 ```
       --focus        Only show output for focused commands (default true)
-  -h, --help         help for functions
   -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 
@@ -138,12 +135,6 @@ Log in to Dagger Cloud
 dagger login [flags]
 ```
 
-### Options
-
-```
-  -h, --help   help for login
-```
-
 ### Options inherited from parent commands
 
 ```
@@ -165,12 +156,6 @@ Log out from Dagger Cloud
 
 ```
 dagger logout [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for logout
 ```
 
 ### Options inherited from parent commands
@@ -211,7 +196,6 @@ dagger mod -m github.com/dagger/hello-dagger
 
 ```
       --focus        Only show output for focused commands (default true)
-  -h, --help         help for module
   -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 
@@ -255,7 +239,6 @@ dagger mod init --name=hello --sdk=python
 ### Options
 
 ```
-  -h, --help             help for init
       --license string   License identifier to generate - see https://spdx.org/licenses/
       --name string      Name of the new module
       --sdk string       SDK name or image ref to use for the module
@@ -299,7 +282,6 @@ dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6
 ### Options
 
 ```
-  -h, --help          help for install
   -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
@@ -341,7 +323,6 @@ dagger module publish [flags]
 
 ```
   -f, --force   Force publish even if the git repository is not clean
-  -h, --help    help for publish
 ```
 
 ### Options inherited from parent commands
@@ -379,12 +360,6 @@ and the current state of the module's source code.
 
 ```
 dagger module sync [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for sync
 ```
 
 ### Options inherited from parent commands
@@ -444,7 +419,6 @@ EOF
 ```
       --doc string        Read query from file (defaults to reading from stdin)
       --focus             Only show output for focused commands (default true)
-  -h, --help              help for query
   -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
       --var strings       List of query variables, in key=value format
       --var-json string   Query variables in JSON format (overrides --var)
@@ -504,7 +478,6 @@ dagger run python main.py
 ```
       --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
       --focus                      Only show output for focused commands.
-  -h, --help                       help for run
 ```
 
 ### Options inherited from parent commands
@@ -528,12 +501,6 @@ Print dagger version
 
 ```
 dagger version [flags]
-```
-
-### Options
-
-```
-  -h, --help   help for version
 ```
 
 ### Options inherited from parent commands

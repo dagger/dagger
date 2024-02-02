@@ -15,7 +15,7 @@ defmodule Dagger.EnvVariable do
   )
 
   (
-    @doc ""
+    @doc "The environment variable name."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = env_variable) do
       selection = select(env_variable.selection, "name")
@@ -24,7 +24,7 @@ defmodule Dagger.EnvVariable do
   )
 
   (
-    @doc ""
+    @doc "The environment variable value."
     @spec value(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def value(%__MODULE__{} = env_variable) do
       selection = select(env_variable.selection, "value")

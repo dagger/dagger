@@ -6,7 +6,7 @@ defmodule Dagger.InputTypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "Static fields defined on this input object, if any."
     @spec fields(t()) :: {:ok, [Dagger.FieldTypeDef.t()]} | {:error, term()}
     def fields(%__MODULE__{} = input_type_def) do
       selection = select(input_type_def.selection, "fields")
@@ -35,7 +35,7 @@ defmodule Dagger.InputTypeDef do
   )
 
   (
-    @doc ""
+    @doc "The name of the input object."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = input_type_def) do
       selection = select(input_type_def.selection, "name")

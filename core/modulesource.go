@@ -232,7 +232,7 @@ func (src *GitModuleSource) String() string {
 	if src.Subpath != "/" {
 		refPath += src.Subpath
 	}
-	return fmt.Sprintf("%s@%s", refPath, src.Version)
+	return fmt.Sprintf("%s@%s", refPath, src.Commit)
 }
 
 func (src *GitModuleSource) Symbolic() string {
@@ -244,5 +244,5 @@ func (src *GitModuleSource) CloneURL() string {
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	return "https://" + src.URLParent + "/tree" + src.Version + "/" + src.Subpath
+	return "https://" + src.URLParent + "/tree/" + src.Commit + src.Subpath
 }

@@ -15,12 +15,18 @@ namespace Dagger;
  */
 class FunctionArg extends Client\AbstractObject implements Client\IdAble
 {
+    /**
+     * A default value to use for this argument when not explicitly set by the caller, if any.
+     */
     public function defaultValue(): Json
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultValue');
         return new \Dagger\Json((string)$this->queryLeaf($leafQueryBuilder, 'defaultValue'));
     }
 
+    /**
+     * A doc string for the argument, if any.
+     */
     public function description(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('description');
@@ -36,12 +42,18 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The name of the argument in lowerCamelCase format.
+     */
     public function name(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
     }
 
+    /**
+     * The type of the argument.
+     */
     public function typeDef(): TypeDef
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('typeDef');

@@ -183,7 +183,7 @@ func (s *APIServer) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error
 }
 
 func (s *APIServer) Introspect(ctx context.Context) (string, error) {
-	return s.root.DefaultDeps.SchemaIntrospectionJSON(ctx)
+	return s.root.DefaultDeps.SchemaIntrospectionJSON(ctx, false)
 }
 
 type SchemaResolvers interface {

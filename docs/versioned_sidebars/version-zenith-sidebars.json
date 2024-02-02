@@ -17,11 +17,10 @@
         "quickstart/index",
         "quickstart/cli",
         "quickstart/hello",
-        "quickstart/primitives",
+        "quickstart/arguments",
         "quickstart/directories",
         "quickstart/containers",
         "quickstart/custom-modules",
-        "quickstart/daggerverse",
         "quickstart/conclusion"
       ]
     },

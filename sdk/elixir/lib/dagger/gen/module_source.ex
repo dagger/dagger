@@ -6,7 +6,7 @@ defmodule Dagger.ModuleSource do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "If the source is a of kind git, the git source representation of it."
     @spec as_git_source(t()) :: {:ok, Dagger.GitModuleSource.t() | nil} | {:error, term()}
     def as_git_source(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "asGitSource")
@@ -20,7 +20,7 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc ""
+    @doc "If the source is of kind local, the local source representation of it."
     @spec as_local_source(t()) :: {:ok, Dagger.LocalModuleSource.t() | nil} | {:error, term()}
     def as_local_source(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "asLocalSource")
@@ -71,7 +71,7 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc ""
+    @doc "The kind of source (e.g. local, git, etc.)"
     @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
     def kind(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "kind")
@@ -99,7 +99,7 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc ""
+    @doc "The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root)."
     @spec root_directory(t()) :: Dagger.Directory.t()
     def root_directory(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "rootDirectory")

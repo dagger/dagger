@@ -5059,6 +5059,31 @@ func (m *Test) Fn() string {
 	require.Equal(t, "true", strings.TrimSpace(out))
 }
 
+// TestModuleHostError verifies the host api is not exposed to modules
+func TestModuleHostError(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+ 			import (
+ 				"context"
+ 			)
+ 			type Test struct {}
+ 			func (m *Test) Fn(ctx context.Context) *Directory {
+ 				return dag.Host().Directory(".")
+ 			}
+ 			`,
+		}).
+		With(daggerCall("fn")).
+		Sync(ctx)
+	require.ErrorContains(t, err, "dag.Host undefined")
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
