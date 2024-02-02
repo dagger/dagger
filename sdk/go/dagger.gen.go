@@ -3403,6 +3403,17 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Returns details of a ref.
+func (r *GitRepository) Ref(name string) *GitRef {
+	q := r.q.Select("ref")
+	q = q.Arg("name", name)
+
+	return &GitRef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Returns details of a tag.
 func (r *GitRepository) Tag(name string) *GitRef {
 	q := r.q.Select("tag")

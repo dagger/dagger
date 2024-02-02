@@ -43,6 +43,16 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns details of a ref.
+     */
+    public function ref(string $name): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('ref');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details of a tag.
      */
     public function tag(string $name): GitRef

@@ -1371,6 +1371,14 @@ type GitRepository {
   """A unique identifier for this GitRepository."""
   id: GitRepositoryID!
 
+  """Returns details of a ref."""
+  ref(
+    """
+    Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    """
+    name: String!
+  ): GitRef!
+
   """Returns details of a tag."""
   tag(
     """Tag's name (e.g., "v0.3.9")."""

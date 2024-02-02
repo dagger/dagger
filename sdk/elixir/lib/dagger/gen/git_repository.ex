@@ -35,6 +35,16 @@ defmodule Dagger.GitRepository do
   )
 
   (
+    @doc "Returns details of a ref.\n\n## Required Arguments\n\n* `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref)."
+    @spec ref(t(), Dagger.String.t()) :: Dagger.GitRef.t()
+    def ref(%__MODULE__{} = git_repository, name) do
+      selection = select(git_repository.selection, "ref")
+      selection = arg(selection, "name", name)
+      %Dagger.GitRef{selection: selection, client: git_repository.client}
+    end
+  )
+
+  (
     @doc "Returns details of a tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\")."
     @spec tag(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def tag(%__MODULE__{} = git_repository, name) do

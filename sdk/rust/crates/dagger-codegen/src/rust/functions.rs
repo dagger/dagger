@@ -15,7 +15,11 @@ pub fn format_name(s: &str) -> String {
 }
 
 pub fn format_struct_name(s: &str) -> String {
-    s.to_case(Case::Snake)
+    let s = s.to_case(Case::Snake);
+    match s.as_ref() {
+        "ref" => "r#ref".to_string(),
+        _ => s,
+    }
 }
 
 pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
