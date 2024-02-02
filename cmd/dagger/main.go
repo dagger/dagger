@@ -125,9 +125,11 @@ var rootCmd = &cobra.Command{
 		t := analytics.New(analytics.DefaultConfig())
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
 
-		t.Capture(cmd.Context(), "cli_command", map[string]string{
-			"name": commandName(cmd),
-		})
+		if cmdName := commandName(cmd); cmdName != "session" {
+			t.Capture(cmd.Context(), "cli_command", map[string]string{
+				"name": cmdName,
+			})
+		}
 
 		return nil
 	},
