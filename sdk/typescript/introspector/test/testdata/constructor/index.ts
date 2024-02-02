@@ -1,3 +1,6 @@
+/**
+ * Constructor module
+ */
 import { func, object } from '../../../decorators/decorators.js'
 
 /**

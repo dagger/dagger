@@ -20,14 +20,14 @@ export async function entrypoint() {
   // or an invocation
   const files = await listFiles(moduleSrcDirectory)
 
-  const scanResult = await scan(files)
-
   // Start a Dagger session to get the call context
   await connection(
     async () => {
       const fnCall = dag.currentFunctionCall()
-
+      const moduleName = await dag.currentModule().name()
       const parentName = await fnCall.parentName()
+
+      const scanResult = await scan(files, moduleName)
 
       // Pre allocate the result, we got one in both case.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
