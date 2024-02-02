@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
+	"github.com/vito/progrock"
 )
 
 const (
@@ -105,13 +106,18 @@ func DefaultConfig() Config {
 	return cfg
 }
 
+type queuedEvent struct {
+	ctx   context.Context
+	event *Event
+}
+
 type CloudTracker struct {
 	cfg    Config
 	labels map[string]string
 
 	closed bool
 	mu     sync.Mutex
-	queue  []*Event
+	queue  []*queuedEvent
 	stopCh chan struct{}
 	doneCh chan struct{}
 }
@@ -169,7 +175,7 @@ func (t *CloudTracker) Capture(ctx context.Context, event string, properties map
 		ev.ServerID = clientMetadata.ServerID
 	}
 
-	t.queue = append(t.queue, ev)
+	t.queue = append(t.queue, &queuedEvent{ctx: ctx, event: ev})
 }
 
 func (t *CloudTracker) start() {
@@ -189,27 +195,30 @@ func (t *CloudTracker) start() {
 
 func (t *CloudTracker) send() {
 	t.mu.Lock()
-	queue := append([]*Event{}, t.queue...)
-	t.queue = []*Event{}
+	queue := append([]*queuedEvent{}, t.queue...)
+	t.queue = []*queuedEvent{}
 	t.mu.Unlock()
 
 	if len(queue) == 0 {
 		return
 	}
 
+	// grab the progrock recorder from the last event in the queue
+	rec := progrock.FromContext(queue[len(queue)-1].ctx)
+
 	payload := bytes.NewBuffer([]byte{})
 	enc := json.NewEncoder(payload)
-	for _, ev := range queue {
-		err := enc.Encode(ev)
+	for _, q := range queue {
+		err := enc.Encode(q.event)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "analytics: encode:", err)
+			rec.Debug("analytics: encode failed", progrock.ErrorLabel(err))
 			continue
 		}
 	}
 
 	req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(payload.Bytes()))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "analytics: new request:", err)
+		rec.Debug("analytics: new request failed", progrock.ErrorLabel(err))
 		return
 	}
 	if t.cfg.CloudToken != "" {
@@ -217,10 +226,13 @@ func (t *CloudTracker) send() {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "analytics: do request:", err)
+		rec.Debug("analytics: do request failed", progrock.ErrorLabel(err))
 		return
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		rec.Debug("analytics: unexpected response", progrock.Labelf("status", resp.Status))
+	}
 }
 
 func (t *CloudTracker) Close() error {
