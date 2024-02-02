@@ -9,13 +9,17 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-## Chain directory functions
+## Building binaries with a function
+Not only can functions use Dagger's powerful core types in their arguments: they can use them in their return value as well.
 
-Typically, you will want to perform further operations on the directory or container returned by a function. With Dagger, objects returned by module functions can, in turn, define new functions. This enables function calls to be "chained" together to achieve a specific result.
+This opens powerful applications to Dagger Functions. For example, a function that builds binaries would take a directory as argument (the source code) and return another directory (containing binaries).
 
-The `Directory` returned by the `Build()` function in the previous section is a Dagger primitive, which comes with a number of functions of its own - most notably, an `Export()` function, which exports the directory's contents to a specified path on the host.
+### Call a builder function
 
-To see this in action, call the function again, this time chaining an additional function call to `Export()` on the `Directory` returned by the first function call:
+Let's try calling this Go builder function:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger call build --args ./cmd/dagger
 
 ```shell
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger export --path ./my-dagger-build
@@ -39,6 +43,6 @@ dagger devel (f11d17fb2) (registry.dagger.io/engine) linux/amd64
 As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
 
 ```shell
-dagger functions -m github.com/kpenfound/dagger-modules/golang
-dagger call -m github.com/kpenfound/dagger-modules/golang --help
+dagger -m github.com/kpenfound/dagger-modules/golang functions
+dagger -m github.com/kpenfound/dagger-modules/golang call --help
 ```
