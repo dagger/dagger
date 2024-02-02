@@ -197,11 +197,11 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerShellOpts = {
+export type ContainerTerminalOpts = {
   /**
-   * If set, override the container's default shell and invoke these arguments instead.
+   * If set, override the container's default shell command and invoke these command arguments instead.
    */
-  args?: string[]
+  cmd?: string[]
 }
 
 export type ContainerWithDirectoryOpts = {
@@ -1696,23 +1696,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-   * @param opts.args If set, override the container's default shell and invoke these arguments instead.
-   */
-  shell = (opts?: ContainerShellOpts): Terminal => {
-    return new Terminal({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "shell",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * The error stream of the last executed command.
    *
    * Will execute default command if none is set, or error if there's no default.
@@ -1775,6 +1758,23 @@ export class Container extends BaseClient {
     )
 
     return this
+  }
+
+  /**
+   * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+   * @param opts.cmd If set, override the container's default shell command and invoke these command arguments instead.
+   */
+  terminal = (opts?: ContainerTerminalOpts): Terminal => {
+    return new Terminal({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "terminal",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**

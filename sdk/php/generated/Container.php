@@ -333,18 +333,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-     */
-    public function shell(?array $args = null): Terminal
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('shell');
-        if (null !== $args) {
-        $innerQueryBuilder->setArgument('args', $args);
-        }
-        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The error stream of the last executed command.
      *
      * Will execute default command if none is set, or error if there's no default.
@@ -375,6 +363,18 @@ class Container extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
+     * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+     */
+    public function terminal(?array $cmd = null): Terminal
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

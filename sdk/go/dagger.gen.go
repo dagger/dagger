@@ -930,28 +930,6 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// ContainerShellOpts contains options for Container.Shell
-type ContainerShellOpts struct {
-	// If set, override the container's default shell and invoke these arguments instead.
-	Args []string
-}
-
-// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-func (r *Container) Shell(opts ...ContainerShellOpts) *Terminal {
-	q := r.q.Select("shell")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
-
-	return &Terminal{
-		q: q,
-		c: r.c,
-	}
-}
-
 // The error stream of the last executed command.
 //
 // Will execute default command if none is set, or error if there's no default.
@@ -989,6 +967,28 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	q := r.q.Select("sync")
 
 	return r, q.Execute(ctx, r.c)
+}
+
+// ContainerTerminalOpts contains options for Container.Terminal
+type ContainerTerminalOpts struct {
+	// If set, override the container's default shell command and invoke these command arguments instead.
+	Cmd []string
+}
+
+// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
+	q := r.q.Select("terminal")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cmd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cmd) {
+			q = q.Arg("cmd", opts[i].Cmd)
+		}
+	}
+
+	return &Terminal{
+		q: q,
+		c: r.c,
+	}
 }
 
 // Retrieves the user to be set for all commands.

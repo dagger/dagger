@@ -424,23 +424,6 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `args` - If set, override the container's default shell and invoke these arguments instead."
-    @spec shell(t(), keyword()) :: Dagger.Terminal.t()
-    def shell(%__MODULE__{} = container, optional_args \\ []) do
-      selection = select(container.selection, "shell")
-
-      selection =
-        if is_nil(optional_args[:args]) do
-          selection
-        else
-          arg(selection, "args", optional_args[:args])
-        end
-
-      %Dagger.Terminal{selection: selection, client: container.client}
-    end
-  )
-
-  (
     @doc "The error stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
     @spec stderr(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def stderr(%__MODULE__{} = container) do
@@ -464,6 +447,23 @@ defmodule Dagger.Container do
     def sync(%__MODULE__{} = container) do
       selection = select(container.selection, "sync")
       execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `cmd` - If set, override the container's default shell command and invoke these command arguments instead."
+    @spec terminal(t(), keyword()) :: Dagger.Terminal.t()
+    def terminal(%__MODULE__{} = container, optional_args \\ []) do
+      selection = select(container.selection, "terminal")
+
+      selection =
+        if is_nil(optional_args[:cmd]) do
+          selection
+        else
+          arg(selection, "cmd", optional_args[:cmd])
+        end
+
+      %Dagger.Terminal{selection: selection, client: container.client}
     end
   )
 
