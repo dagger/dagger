@@ -43,6 +43,13 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
 	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
 
+	for _, fl := range []string{"workdir", "cpuprofile", "pprof"} {
+		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {
+			fmt.Println("Error hiding flag: "+fl, err)
+			os.Exit(1)
+		}
+	}
+
 	rootCmd.AddCommand(
 		listenCmd,
 		versionCmd,
