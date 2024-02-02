@@ -438,6 +438,7 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 	}
 	lines := strings.Split(buf.String(), "\n")
 
+	// simulate git-checkout semantics, and make sure to select exactly the right ref
 	var (
 		partialRef      = "refs/" + strings.TrimPrefix(ref, "refs/")
 		headRef         = "refs/heads/" + strings.TrimPrefix(ref, "refs/heads/")
