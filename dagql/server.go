@@ -457,18 +457,32 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	return s.toSelectable(id, res)
 }
 
+// Select evaluates a series of chained field selections starting from the
+// given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
-	for _, sel := range sels {
-		res, id, err := s.cachedSelect(ctx, self, sel)
+	var res Typed = self
+	var id *idproto.ID
+	var err error
+	for i, sel := range sels {
+		res, id, err = s.cachedSelect(ctx, self, sel)
 		if err != nil {
 			return err
 		}
-		self, err = s.toSelectable(id, res)
-		if err != nil {
-			return err
+		if _, ok := s.ObjectType(res.Type().Name()); ok {
+			// if the result is an Object, set it as the next selection target, and
+			// assign res to the "hydrated" Object
+			self, err = s.toSelectable(id, res)
+			if err != nil {
+				return err
+			}
+			res = self
+		} else if i+1 < len(sels) {
+			// if the result is not an object and there are further selections,
+			// that's a logic error.
+			return fmt.Errorf("cannot sub-select %s", res.Type())
 		}
 	}
-	return assign(reflect.ValueOf(dest).Elem(), self)
+	return assign(reflect.ValueOf(dest).Elem(), res)
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
