@@ -53,37 +53,42 @@ You have already passed a string and boolean argument earlier:
 dagger -m github.com/shykes/daggerverse/hello call test --giant --name daggernaut
 ```
 
-FIX FIX
-### Directories
+### Pass a directory as argument
 
-Dagger functions can also return directories. To see this in action, use the following command:
+In addition to basic types, Dagger defines powerful core types, which can be used in a function's arguments. One such type is the `Directory` type, representing a directory.
+
+To see how this works, use the following command:
 
 ```shell
-dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger entries
+dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir .
 ```
 
-This example uses a Go builder module and calls its `Build()` function. The `Build()` function accepts a remote Go repository URL and builds a binary from the remote Go repository. It returns a Dagger `Directory` representing the state of the working directory in the repository after the build, similar to the output shown below:
+This example uses a file utility module and calls its `Tree()` function. The `Tree()` function accepts a directory (here, the current working directory) as argument and returns a tree representation of that directory. An (abbreviated) example of the output is shown below:
 
-```
-✔ dagger call build [3m13.7s]
-┃ .changes
-┃ .git
-┃ .github
+```shell
+✔ dagger call tree [31.01s]
+┃ .
+┃ ├── README.md
+┃ ├── cli
+┃ │   └── git-build
+┃ │       ├── README.md
+┃ │       └── build.sh
+┃ └── sdk
+┃     ├── go
+┃     │   ├── aws-cdk
+┃     │   │   ├── README.md
 ...
-┃ sdk
-┃ telemetry
-┃ tracing
+┃             ├── README.md
+┃             └── pipeline.py
+┃
+┃ 39 directories, 125 files
 ```
-
-:::tip
-It's important to realize that even though you're testing and building a Go application in this example, you don't need to have Go, Git or any other local dependencies installed on the Dagger host. You only need the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
-:::
 
 ### Pass a container as argument
 
-In addition to basic types, Dagger defines powerful core types, which can be used in a function's arguments. For example, using the core `Container` type, a function can literally receive a container as argument. So, a function that builds a container could use a default base image, but allow passing a custom base as an argument; or a custom publishing function could take a container as argument and upload it to a registry.
+Another example is the core `Container` type. With this, a function can literally receive a container as argument. So, a function that builds a container could use a default base image, but allow passing a custom base as an argument; or a custom publishing function could take a container as argument and upload it to a registry.
 
-This feature is most powerful when calling a function from your own code (see [Create your first module](/428201/custom-modules/)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
+This feature is most powerful when calling a function from your own code (see [the section on creating a module](./428201-custom-modules.mdx)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
 
 To see how this works, call the `hello` function again, but with a custom container in which to execute the `figlet` tool. Make sure that the container has the tool already installed.
 
