@@ -337,6 +337,9 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 	if err != nil {
 		return err
 	}
+	if getURLResp.Skip {
+		return nil
+	}
 
 	readerAt, err := provider.ReaderAt(ctx, layerDesc)
 	if err != nil {
