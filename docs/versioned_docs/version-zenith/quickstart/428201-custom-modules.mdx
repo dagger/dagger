@@ -13,9 +13,9 @@ import TabItem from "@theme/TabItem";
 
 ## Create your first module
 
-So far, you've been calling Dagger functions using the Dagger CLI. However, you can also call Dagger functions through code, by creating your own Dagger module and installing other modules into it. This allows you to express more complex workflows and operations by reusing modules created by others and connecting them together using the programming language you're most comfortable with.
+So far, you've been calling Dagger Functions using the Dagger CLI. However, you can also call Dagger Functions through code, by creating your own Dagger module and installing other modules into it. This allows you to express more complex workflows and operations by reusing modules created by others and connecting them together using the programming language you're most comfortable with.
 
-In the previous sections, you've used the Dagger CLI to call Dagger functions to build a Go binary from a remote repository and export it to your local filesystem, and to build and publish a container image to a registry. But what if you wanted to combine these operations (and other) into a single workflow?
+In the previous sections, you've used the Dagger CLI to call Dagger Functions to build a Go binary from a remote repository and export it to your local filesystem, and to build and publish a container image to a registry. But what if you wanted to combine these operations (and other) into a single workflow?
 
 One approach is to use multiple Dagger CLI calls (similar to what you've used in previous sections) and connect them together using shell scripts. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
 
