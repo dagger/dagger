@@ -340,7 +340,7 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 

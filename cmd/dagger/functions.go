@@ -223,7 +223,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			Short:   fc.Short,
 			Long:    fc.Long,
 			Example: fc.Example,
-			GroupID: funcGroup.ID,
+			GroupID: moduleGroup.ID,
 			Annotations: map[string]string{
 				"experimental": "",
 			},

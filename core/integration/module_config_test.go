@@ -558,7 +558,7 @@ func TestModuleDaggerInit(t *testing.T) {
 	})
 }
 
-func TestModuleDaggerUpdate(t *testing.T) {
+func TestModuleDaggerDevelop(t *testing.T) {
 	t.Parallel()
 	t.Run("name and sdk", func(t *testing.T) {
 		t.Parallel()
@@ -591,7 +591,7 @@ func TestModuleDaggerUpdate(t *testing.T) {
 
 		// now add an sdk+name
 		ctr = ctr.
-			With(daggerExec("update", "--sdk", "go", "--name", "test")).
+			With(daggerExec("develop", "--sdk", "go", "--name", "test")).
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -616,10 +616,24 @@ func TestModuleDaggerUpdate(t *testing.T) {
 
 		// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
 
-		_, err = ctr.With(daggerExec("update", "--sdk", "python")).Sync(ctx)
+		_, err = ctr.With(daggerExec("develop", "--sdk", "python", "--name", "foo")).Sync(ctx)
 		require.ErrorContains(t, err, `cannot update module SDK that has already been set to "go"`)
-
-		_, err = ctr.With(daggerExec("update", "--name", "foo")).Sync(ctx)
-		require.ErrorContains(t, err, `cannot update module name that has already been set to "test"`)
 	})
+}
+
+func TestModuleDaggerConfig(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "-m", "test", "--name=test", "--sdk=go")).
+		With(daggerExec("config", "-m", "test")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Regexp(t, `Name:\s+test`, out)
+	require.Regexp(t, `SDK:\s+go`, out)
+	require.Regexp(t, `Root Directory:\s+/work`, out)
+	require.Regexp(t, `Source Directory:\s+/work/test`, out)
 }
