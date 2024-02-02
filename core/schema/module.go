@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -105,7 +108,12 @@ func (s *moduleSchema) Install() {
 			ArgDoc(`path`, `The path from the source directory to select.`),
 	}.Install(s.dag)
 
-	dagql.Fields[*core.LocalModuleSource]{}.Install(s.dag)
+	dagql.Fields[*core.LocalModuleSource]{
+		dagql.Func("resolveFromCaller", s.moduleLocalSourceResolveFromCaller).
+			Impure(`Loads live caller-specific data from their filesystem.`).
+			Doc(`Load the local source from its path on the caller's filesystem.`).
+			ArgDoc("defaultRootPath", `The default root path to use if the caller does not provide one. Primarily useful for initializing new modules.`),
+	}.Install(s.dag)
 
 	dagql.Fields[*core.GitModuleSource]{
 		dagql.Func("cloneURL", s.gitModuleSourceCloneURL).
@@ -1138,6 +1146,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		}
 
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
+			Query:   query,
 			Subpath: modPath,
 		})
 	} else {
@@ -1373,6 +1382,295 @@ func (s *moduleSchema) moduleSourceAsModule(
 		return nil, fmt.Errorf("failed to load local src module: %w", err)
 	}
 	return mod.Self, nil
+}
+
+func (s *moduleSchema) moduleLocalSourceResolveFromCaller(
+	ctx context.Context,
+	src *core.LocalModuleSource,
+	args struct {
+		DefaultRootPath *string
+	},
+) (*core.ModuleSource, error) {
+	if !filepath.IsAbs(src.Subpath) {
+		return nil, fmt.Errorf("local module source subpath is not absolute: %s", src.Subpath)
+	}
+
+	rootPath, rootConfigExists, err := callerHostFindUpRoot(ctx, src.Query.Buildkit, src.Subpath, src.Subpath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find up root: %w", err)
+	}
+
+	if !rootConfigExists {
+		if args.DefaultRootPath == nil {
+			// Just use the source dir. This can happen legitimately when loading
+			// an older dagger.json that didn't have root-for yet.
+			rootPath = src.Subpath
+		} else {
+			// use the default, but double check it's not above any .git hit by the findUpRootFor
+			defaultRelPath, err := filepath.Rel(rootPath, *args.DefaultRootPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get relative path: %s", err)
+			}
+			if !filepath.IsLocal(defaultRelPath) {
+				return nil, fmt.Errorf("default module root directory %s escapes git root %s",
+					*args.DefaultRootPath, rootPath,
+				)
+			}
+			rootPath = *args.DefaultRootPath
+		}
+	}
+
+	var modCfg modules.ModuleConfig
+	var configExists bool
+	configPath := filepath.Join(src.Subpath, modules.Filename)
+	configBytes, err := src.Query.Buildkit.ReadCallerHostFile(ctx, configPath)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(configBytes, &modCfg); err != nil {
+			return nil, fmt.Errorf("error unmarshaling %s: %s", configPath, err)
+		}
+		if err := modCfg.Validate(); err != nil {
+			return nil, fmt.Errorf("error validating %s: %s", configPath, err)
+		}
+
+		configExists = true
+		if err := s.collectIncludeExcludes(ctx, src, rootPath, &modCfg); err != nil {
+			return nil, fmt.Errorf("failed to collect include/excludes: %w", err)
+		}
+
+	case strings.Contains(err.Error(), "no such file or directory"):
+		// config doesn't exist yet
+		// TODO: better way to check this error?
+
+	default:
+		return nil, fmt.Errorf("error reading config %s: %s", configPath, err)
+	}
+
+	pipelineName := fmt.Sprintf("%s %s", "load local module root", rootPath)
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
+	_, desc, err := src.Query.Buildkit.LocalImport(
+		ctx, subRecorder, src.Query.Platform.Spec(),
+		rootPath,
+		modCfg.Exclude,
+		modCfg.Include,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to import local module source: %w", err)
+	}
+	loadedDir, err := core.LoadBlob(ctx, s.dag, desc)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load local module source: %w", err)
+	}
+
+	srcRelPath, err := filepath.Rel(rootPath, src.Subpath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relative path: %s", err)
+	}
+
+	return &core.ModuleSource{
+		Kind:          core.ModuleSourceKindLocal,
+		RootDirectory: loadedDir,
+		AsLocalSource: dagql.NonNull(&core.LocalModuleSource{
+			Query:         src.Query,
+			Subpath:       filepath.Join("/", srcRelPath),
+			LocalRootPath: rootPath,
+			ConfigExists:  configExists,
+		}),
+	}, nil
+}
+
+func (s *moduleSchema) collectIncludeExcludes(
+	ctx context.Context,
+	src *core.LocalModuleSource,
+	rootPath string,
+	modCfg *modules.ModuleConfig,
+) error {
+	// TODO: dependencies should be resolved (recursively) with their include/exclude
+	// settings, overriding the parent's settings. Right now, if an include/exclude
+	// blocks a local dependency, the module will fail to load.
+	// Same for custom SDKs that are local to the module (and their dependencies, their
+	// SDKs, recursively).
+
+	srcRelPath, err := filepath.Rel(rootPath, src.Subpath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative path: %s", err)
+	}
+
+	for i, path := range modCfg.Include {
+		// these are relative to the module source dir
+		modCfg.Include[i] = filepath.Join(srcRelPath, path)
+	}
+	for i, path := range modCfg.Exclude {
+		modCfg.Exclude[i] = filepath.Join(srcRelPath, path)
+	}
+
+	if len(modCfg.Include) == 0 {
+		// an empty include means "include all", so we don't want
+		// to explicitly add any includes since it would implicitly
+		// result in an exclude of everything else
+		return nil
+	}
+
+	// always load config files
+	modCfg.Include = append(modCfg.Include,
+		// the config under the root path
+		modules.Filename,
+		// the config under the source dir (if same as above, no harm)
+		filepath.Join(srcRelPath, modules.Filename),
+	)
+
+	if modCfg.SDK == "" {
+		return nil
+	}
+
+	// always load files needed by SDKs
+	sdkConfig := modCfg.SDK
+	sdk, err := s.builtinSDK(ctx, src.Query, modCfg.SDK)
+	if errors.Is(err, errUnknownBuiltinSDK) {
+		// external SDK, need special handling in case it's local relative to this module
+		// since we need to resolve it from the same caller
+		var sdkModSource dagql.Instance[*core.ModuleSource]
+		err := s.dag.Select(ctx, s.dag.Root(), &sdkModSource,
+			dagql.Selector{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.String(modCfg.SDK)},
+				},
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to load sdk module source: %w", err)
+		}
+		var parentDir dagql.Instance[*core.Directory]
+		if sdkModSource.Self.Kind == core.ModuleSourceKindLocal {
+			sdkAbsPath := filepath.Join(src.Subpath, modCfg.SDK)
+			sdkRelPath, err := filepath.Rel(rootPath, sdkAbsPath)
+			if err != nil {
+				return fmt.Errorf("failed to get relative path: %s", err)
+			}
+			// explicitly include the SDK module source dir, though as
+			// noted in above TODO, this is doesn't honor include/excludes
+			// of *it* or its dependencies yet.
+			modCfg.Include = append(modCfg.Include, sdkRelPath)
+
+			var localSDKModSource dagql.Instance[*core.ModuleSource]
+			err = s.dag.Select(ctx, s.dag.Root(), &localSDKModSource,
+				dagql.Selector{
+					Field: "moduleSource",
+					Args: []dagql.NamedInput{
+						{Name: "refString", Value: dagql.String(sdkAbsPath)},
+					},
+				},
+				dagql.Selector{
+					Field: "asLocalSource",
+				},
+				dagql.Selector{
+					Field: "resolveFromCaller",
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to load sdk module source: %w", err)
+			}
+
+			sdkConfig = localSDKModSource.Self.AsLocalSource.Value.Subpath
+			parentDir = localSDKModSource.Self.RootDirectory
+		}
+
+		sdk, err = s.sdkForModule(ctx, src.Query, sdkConfig, parentDir)
+		if err != nil {
+			return fmt.Errorf("failed to get git module sdk: %w", err)
+		}
+	}
+
+	sdkRequirePaths, err := sdk.RequiredPaths(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get sdk required paths: %w", err)
+	}
+	for _, path := range sdkRequirePaths {
+		// sdk includes are relative to source path
+		modCfg.Include = append(modCfg.Include, filepath.Join(srcRelPath, path))
+	}
+
+	return nil
+}
+
+// TODO: move elsewhere, de-dupe with other findUpRoot
+func callerHostFindUpRoot(
+	ctx context.Context,
+	bk *buildkit.Client,
+	curDirPath string,
+	sourceSubpath string,
+) (string, bool, error) {
+	foundDir, found, err := callerHostFindUpConfig(ctx, bk, curDirPath)
+	if err != nil {
+		return "", false, err
+	}
+	if !found {
+		return foundDir, false, nil
+	}
+
+	configPath := filepath.Join(foundDir, modules.Filename)
+	contents, err := bk.ReadCallerHostFile(ctx, configPath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read %s: %s", configPath, err)
+	}
+	var modCfg modules.ModuleConfig
+	if err := json.Unmarshal(contents, &modCfg); err != nil {
+		return "", false, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
+	}
+	if err := modCfg.Validate(); err != nil {
+		return "", false, fmt.Errorf("error validating %s: %s", configPath, err)
+	}
+
+	sourceRelSubpath, err := filepath.Rel(curDirPath, sourceSubpath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get relative path: %s", err)
+	}
+	if modCfg.IsRootFor(sourceRelSubpath) {
+		return curDirPath, true, nil
+	}
+	return callerHostFindUpRoot(ctx, bk, filepath.Dir(foundDir), sourceSubpath)
+}
+
+// TODO: move elsewhere, de-dupe with other findUpConfig
+func callerHostFindUpConfig(
+	ctx context.Context,
+	bk *buildkit.Client,
+	curDirPath string,
+) (string, bool, error) {
+	if !filepath.IsAbs(curDirPath) {
+		return "", false, fmt.Errorf("path is not absolute: %s", curDirPath)
+	}
+
+	configPath := filepath.Join(curDirPath, modules.Filename)
+
+	stat, err := bk.StatCallerHostPath(ctx, configPath)
+	switch {
+	case err == nil:
+		// make sure it's a file
+		if !fs.FileMode(stat.Mode).IsRegular() {
+			return "", false, fmt.Errorf("expected %s to be a file", configPath)
+		}
+		return curDirPath, true, nil
+
+	case strings.Contains(err.Error(), "no such file or directory"):
+		// TODO: any better way to check for this error?
+
+	default:
+		return "", false, fmt.Errorf("failed to lstat %s: %s", configPath, err)
+	}
+
+	// didn't exist, try parent unless we've hit "/" or a git repo checkout root
+	if curDirPath == "/" {
+		return curDirPath, false, nil
+	}
+	_, err = bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"))
+	if err == nil {
+		return curDirPath, false, nil
+	}
+
+	parentDirPath := filepath.Dir(curDirPath)
+	return callerHostFindUpConfig(ctx, bk, parentDirPath)
 }
 
 func (s *moduleSchema) moduleSourceDirectory(

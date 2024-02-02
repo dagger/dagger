@@ -182,6 +182,19 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module, source dagq
 	return inst.Self, nil
 }
 
+func (sdk *moduleSDK) RequiredPaths(ctx context.Context) ([]string, error) {
+	var paths []string
+	err := sdk.dag.Select(ctx, sdk.sdk, &paths,
+		dagql.Selector{
+			Field: "requiredPaths",
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call sdk module requiredPaths: %w", err)
+	}
+	return paths, nil
+}
+
 // loadBuiltinSDK loads an SDK implemented as a module that is "builtin" to engine, which means its pre-packaged
 // with the engine container in order to enable use w/out hard dependencies on the internet
 func (s *moduleSchema) loadBuiltinSDK(
@@ -356,6 +369,10 @@ func (sdk *goSDK) Runtime(
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container runtime: %w", err)
 	}
 	return ctr.Self, nil
+}
+
+func (sdk *goSDK) RequiredPaths(_ context.Context) ([]string, error) {
+	return []string{"main.go"}, nil
 }
 
 func (sdk *goSDK) baseWithCodegen(

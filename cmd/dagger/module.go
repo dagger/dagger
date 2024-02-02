@@ -273,7 +273,7 @@ var moduleInstallCmd = &cobra.Command{
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
-				return fmt.Errorf("module must be fully initialized, root directory initialized: %t, source directory initialized: %t", modConf.ModuleRootConfigExists, modConf.ModuleSourceConfigExists)
+				return fmt.Errorf("module must be fully initialized")
 			}
 
 			depRefStr := extraArgs[0]
@@ -564,14 +564,12 @@ type configuredModule struct {
 	LocalRootPath   string
 	LocalSourcePath string
 
-	// whether the dagger.json in the module root dir exists yet
-	ModuleRootConfigExists bool
 	// whether the dagger.json in the module source dir exists yet
 	ModuleSourceConfigExists bool
 }
 
 func (c *configuredModule) FullyInitialized() bool {
-	return c.ModuleRootConfigExists && c.ModuleSourceConfigExists
+	return c.ModuleSourceConfigExists
 }
 
 func getDefaultModuleConfiguration(ctx context.Context, dag *dagger.Client, defaultRootPath string) (*configuredModule, error) {
@@ -599,134 +597,67 @@ func getModuleConfigurationForSourceRef(
 ) (*configuredModule, error) {
 	conf := &configuredModule{}
 
-	// first check if this is a named module from the default find-up dagger.json
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current working directory: %w", err)
-	}
-	defaultConfigDir, foundDefaultConfig, err := findUp(cwd)
-	if err != nil {
-		return nil, fmt.Errorf("error trying to find config path for %s: %s", cwd, err)
-	}
-	if foundDefaultConfig {
-		configPath := filepath.Join(defaultConfigDir, modules.Filename)
-		contents, err := os.ReadFile(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
-		}
-		var modCfg modules.ModuleConfig
-		if err := json.Unmarshal(contents, &modCfg); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
-		}
-		if err := modCfg.Validate(); err != nil {
-			return nil, fmt.Errorf("error validating %s: %s", configPath, err)
-		}
-		if namedDep, ok := modCfg.DependencyByName(srcRefStr); ok {
-			srcRefStr = namedDep.Source
-		}
-	}
-
 	src := dag.ModuleSource(srcRefStr)
+	var err error
 	conf.SourceKind, err = src.Kind(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
 	}
 
 	if conf.SourceKind == dagger.LocalSource {
+		// first check if this is a named module from the default find-up dagger.json
+		// TODO: can move this to engine now?
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current working directory: %w", err)
+		}
+		defaultConfigDir, foundDefaultConfig, err := findUp(cwd)
+		if err != nil {
+			return nil, fmt.Errorf("error trying to find config path for %s: %s", cwd, err)
+		}
+		if foundDefaultConfig {
+			configPath := filepath.Join(defaultConfigDir, modules.Filename)
+			contents, err := os.ReadFile(configPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
+			}
+			var modCfg modules.ModuleConfig
+			if err := json.Unmarshal(contents, &modCfg); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
+			}
+			if err := modCfg.Validate(); err != nil {
+				return nil, fmt.Errorf("error validating %s: %s", configPath, err)
+			}
+			if namedDep, ok := modCfg.DependencyByName(srcRefStr); ok {
+				srcRefStr = namedDep.Source
+			}
+		}
+
 		conf.LocalSourcePath, err = filepath.Abs(srcRefStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
 		}
+		src = dag.ModuleSource(conf.LocalSourcePath).AsLocalSource().ResolveFromCaller(dagger.LocalModuleSourceResolveFromCallerOpts{
+			DefaultRootPath: defaultRootPath,
+		})
 
-		conf.LocalRootPath, conf.ModuleRootConfigExists, err = findUpRootFor(conf.LocalSourcePath, conf.LocalSourcePath)
+		conf.LocalRootPath, err = src.AsLocalSource().LocalRootPath(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error trying to find config path for %s: %s", conf.LocalSourcePath, err)
-		}
-		if !conf.ModuleRootConfigExists {
-			if defaultRootPath == "" {
-				// Just use the source dir. This can happen legitimately when loading
-				// an older dagger.json that didn't have root-for yet.
-				conf.LocalRootPath = conf.LocalSourcePath
-			} else {
-				// use the default, but double check it's not above any .git hit by the findUpRootFor
-				defaultRelPath, err := filepath.Rel(conf.LocalRootPath, defaultRootPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get relative path: %s", err)
-				}
-				if !filepath.IsLocal(defaultRelPath) {
-					return nil, fmt.Errorf("default module root directory %s escapes git root %s", cwd, conf.LocalRootPath)
-				}
-				conf.LocalRootPath = cwd
-			}
+			return nil, fmt.Errorf("failed to get local root path: %w", err)
 		}
 
-		src, conf.ModuleSourceConfigExists, err = loadLocalModuleSource(dag, conf.LocalRootPath, conf.LocalSourcePath)
+		conf.ModuleSourceConfigExists, err = src.AsLocalSource().ConfigExists(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error loading local module: %s", err)
+			return nil, fmt.Errorf("failed to check if module source config exists: %w", err)
 		}
-
-		if !conf.ModuleRootConfigExists && conf.ModuleSourceConfigExists && defaultRootPath == "" {
-			// finish up the case above where we default old dagger.jsons that didn't
-			// have root-for to using the source dir. We know now that the source config
-			// file actually existed, so the root exists too. It will be updated in the engine
-			// when calling functions (and exported back to the client if they develop/install)
-			conf.ModuleRootConfigExists = true
-		}
-
 		conf.Mod = src.AsModule()
+
 	} else {
 		conf.Mod = src.AsModule()
-		conf.ModuleRootConfigExists = true
 		conf.ModuleSourceConfigExists = true
 	}
 
 	return conf, nil
-}
-
-// loadLocalModuleSource loads the module specified by the given paths.
-func loadLocalModuleSource(
-	dag *dagger.Client,
-	sourceRootAbsPath string,
-	sourceSubdirAbsPath string,
-) (*dagger.ModuleSource, bool, error) {
-	var include []string
-	var exclude []string
-	var exists bool
-	configPath := filepath.Join(sourceSubdirAbsPath, modules.Filename)
-	configBytes, err := os.ReadFile(configPath)
-	switch {
-	case err == nil:
-		var modCfg modules.ModuleConfig
-		if err := json.Unmarshal(configBytes, &modCfg); err != nil {
-			return nil, false, fmt.Errorf("error unmarshaling %s: %s", configPath, err)
-		}
-		if err := modCfg.Validate(); err != nil {
-			return nil, false, fmt.Errorf("error validating %s: %s", configPath, err)
-		}
-
-		include = modCfg.Include
-		exclude = modCfg.Exclude
-		exists = true
-
-	case os.IsNotExist(err):
-		// config doesn't exist yet, load with no include/exclude
-
-	default:
-		return nil, false, fmt.Errorf("error reading config %s: %s", configPath, err)
-	}
-
-	// reposition sourceSubdirAbsPath to be relative to configDirPath
-	sourceSubdirRelPath, err := filepath.Rel(sourceRootAbsPath, sourceSubdirAbsPath)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return dag.ModuleSource(sourceSubdirRelPath, dagger.ModuleSourceOpts{
-		RootDirectory: dag.Host().Directory(sourceRootAbsPath, dagger.HostDirectoryOpts{
-			Include: include,
-			Exclude: exclude,
-		}),
-	}), exists, nil
 }
 
 func findUp(curDirPath string) (string, bool, error) {
@@ -762,38 +693,6 @@ func findUp(curDirPath string) (string, bool, error) {
 
 	parentDirPath := filepath.Dir(curDirPath)
 	return findUp(parentDirPath)
-}
-
-func findUpRootFor(curDirPath string, sourceSubpath string) (string, bool, error) {
-	foundDir, found, err := findUp(curDirPath)
-	if err != nil {
-		return "", false, err
-	}
-	if !found {
-		return foundDir, false, nil
-	}
-
-	configPath := filepath.Join(foundDir, modules.Filename)
-	contents, err := os.ReadFile(configPath)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to read %s: %s", configPath, err)
-	}
-	var modCfg modules.ModuleConfig
-	if err := json.Unmarshal(contents, &modCfg); err != nil {
-		return "", false, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
-	}
-	if err := modCfg.Validate(); err != nil {
-		return "", false, fmt.Errorf("error validating %s: %s", configPath, err)
-	}
-
-	sourceRelSubpath, err := filepath.Rel(curDirPath, sourceSubpath)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to get relative path: %s", err)
-	}
-	if modCfg.IsRootFor(sourceRelSubpath) {
-		return curDirPath, true, nil
-	}
-	return findUpRootFor(filepath.Dir(foundDir), sourceSubpath)
 }
 
 // Wraps a command with optional module loading. If a module was explicitly specified by the user,

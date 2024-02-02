@@ -14,11 +14,15 @@ func New(
 ) *TypeScriptSdk {
 	return &TypeScriptSdk{
 		SDKSourceDir: sdkSourceDir,
+		RequiredPaths: []string{
+			"src/index.ts",
+		},
 	}
 }
 
 type TypeScriptSdk struct {
-	SDKSourceDir *Directory
+	SDKSourceDir  *Directory
+	RequiredPaths []string
 }
 
 const (

@@ -168,7 +168,15 @@ func (src *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 }
 
 type LocalModuleSource struct {
+	Query *Query
+
 	Subpath string `field:"true" name:"sourceSubpath" doc:"The path to the module source code dir specified by this source."`
+
+	// If source was loaded from a caller's filesystem, the path to the root directory on that filesystem.
+	LocalRootPath string `field:"true" doc:"The path to the root directory of the module source on the caller's filesystem."`
+
+	// Whether the module source has a configuration file already.
+	ConfigExists bool `field:"true" doc:"Whether the module source has a configuration file already."`
 }
 
 func (src *LocalModuleSource) Type() *ast.Type {

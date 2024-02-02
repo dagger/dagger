@@ -3961,8 +3961,23 @@ type LocalModuleSource struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	configExists  *bool
 	id            *LocalModuleSourceID
+	localRootPath *string
 	sourceSubpath *string
+}
+
+// TODO
+func (r *LocalModuleSource) ConfigExists(ctx context.Context) (bool, error) {
+	if r.configExists != nil {
+		return *r.configExists, nil
+	}
+	q := r.q.Select("configExists")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this LocalModuleSource.
@@ -4003,6 +4018,40 @@ func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// TODO
+func (r *LocalModuleSource) LocalRootPath(ctx context.Context) (string, error) {
+	if r.localRootPath != nil {
+		return *r.localRootPath, nil
+	}
+	q := r.q.Select("localRootPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// LocalModuleSourceResolveFromCallerOpts contains options for LocalModuleSource.ResolveFromCaller
+type LocalModuleSourceResolveFromCallerOpts struct {
+	DefaultRootPath string
+}
+
+// TODO
+func (r *LocalModuleSource) ResolveFromCaller(opts ...LocalModuleSourceResolveFromCallerOpts) *ModuleSource {
+	q := r.q.Select("resolveFromCaller")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `defaultRootPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultRootPath) {
+			q = q.Arg("defaultRootPath", opts[i].DefaultRootPath)
+		}
+	}
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
 }
 
 // The path to the module source code dir specified by this source.

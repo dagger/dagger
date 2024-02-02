@@ -786,6 +786,10 @@ type SDK interface {
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
 	Runtime(context.Context, *Module, dagql.Instance[*ModuleSource]) (*Container, error)
+
+	// Paths that should always be loaded from module sources using this SDK. Ensures that e.g. main.go
+	// in the Go SDK is always loaded even if dagger.json has include settings that don't include it.
+	RequiredPaths(context.Context) ([]string, error)
 }
 
 var _ HasPBDefinitions = (*Module)(nil)

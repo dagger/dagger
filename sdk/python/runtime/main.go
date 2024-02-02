@@ -13,11 +13,15 @@ func New(
 ) *PythonSdk {
 	return &PythonSdk{
 		SDKSourceDir: sdkSourceDir,
+		RequiredPaths: []string{
+			"src/main.py",
+		},
 	}
 }
 
 type PythonSdk struct {
-	SDKSourceDir *Directory
+	SDKSourceDir  *Directory
+	RequiredPaths []string
 }
 
 const (

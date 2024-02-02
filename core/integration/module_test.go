@@ -4375,6 +4375,10 @@ func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson string) *Ge
 		WithFile("dagger.json", existingConfig),
 	)
 }
+
+func (m *CoolSdk) RequiredPaths() []string {
+	return []string{"main.go"}
+}
 `,
 		}).
 		WithWorkdir("/work").

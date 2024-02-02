@@ -706,6 +706,14 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 		return stream.SendMsg(&filesync.BytesMessage{Data: fileContents})
 	}
 
+	if opts.StatPathOnly {
+		stat, err := fsutil.Stat(opts.Path)
+		if err != nil {
+			return fmt.Errorf("stat path: %w", err)
+		}
+		return stream.SendMsg(stat)
+	}
+
 	// otherwise, do the whole directory sync back to the caller
 	fs, err := fsutil.NewFS(opts.Path)
 	if err != nil {
