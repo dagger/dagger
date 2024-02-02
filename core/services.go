@@ -211,51 +211,39 @@ dance:
 // StartBindings starts each of the bound services in parallel and returns a
 // function that will detach from all of them after 10 seconds.
 func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
-	running := []*RunningService{}
+	running := make([]*RunningService, len(bindings))
 	detachOnce := sync.Once{}
 	detach := func() {
 		detachOnce.Do(func() {
 			go func() {
 				<-time.After(DetachGracePeriod)
 				for _, svc := range running {
-					ss.Detach(ctx, svc)
+					if svc != nil {
+						ss.Detach(ctx, svc)
+					}
 				}
 			}()
 		})
 	}
 
-	defer func() {
-		if err != nil {
-			detach()
-		}
-	}()
-
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
 	eg := new(errgroup.Group)
-
-	started := make(chan *RunningService, len(bindings))
-	for _, bnd := range bindings {
-		bnd := bnd
+	for i, bnd := range bindings {
+		i, bnd := i, bnd
 		eg.Go(func() error {
 			runningSvc, err := ss.Start(ctx, bnd.ID, bnd.Service)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
-			started <- runningSvc
+			running[i] = runningSvc
 			return nil
 		})
 	}
 
 	startErr := eg.Wait()
-
-	close(started)
-
 	if startErr != nil {
+		detach()
 		return nil, nil, startErr
-	}
-
-	for svc := range started {
-		running = append(running, svc)
 	}
 
 	return detach, running, nil
