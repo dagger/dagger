@@ -14,24 +14,46 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments: `Directory`, `Container`, `Service`, and `Secret`.
 
 When calling a function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
+
 ### List available arguments
 
-To list available arguments for a function, you can use `dagger call FUNC --help`. The Dagger CLI will dynamically inspect the function's arguments, and print the corresponding flag information.
+To list available arguments for a function, use `dagger call FUNC --help`. The Dagger CLI will dynamically inspect the function's arguments, and print the corresponding flag information.
 
-For example, let's inspect the arguments of the `hello` function we called earlier:
+For example, inspect the arguments of the `hello` function you called earlier:
 
 ```shell
 dagger -m github.com/shykes/daggerverse/hello call hello --help
+```
+
+You should see output that looks like this:
+
+```shell
+✔ dagger call hello [0.00s]
+┃ Say hello to the world!
+┃
+┃ Usage:
+┃   dagger call hello [flags]
+┃
+┃ Flags:
+┃       --figlet-container Container   Optional container for running the figlet tool
+┃       --giant                        Encode the message in giant multi-character letters
+┃       --greeting string              An optional greeting (default is "hello")
+┃       --name string                  An optional name (default is "world")
+┃       --shout                        Make the message uppercase, and add more exclamation
+┃                                      points
+```
 
 ### Pass a string or boolean argument
 
 To pass a string argument to a function, add the corresponding flag to your `dagger call` command, followed by the string value. Passing a boolean argument is even simpler: just add the corresponding flag (the value `true` is implied).
 
-We have already passed a string and boolean argument earlier:
+You have already passed a string and boolean argument earlier:
 
 ```shell
 dagger -m github.com/shykes/daggerverse/hello call test --giant --name daggernaut
+```
 
+FIX FIX
 ### Directories
 
 Dagger functions can also return directories. To see this in action, use the following command:
@@ -40,7 +62,7 @@ Dagger functions can also return directories. To see this in action, use the fol
 dagger call -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger build --args ./cmd/dagger entries
 ```
 
-This example uses the same Go builder module as before, but this time calls its `Build()` function. Like the `Test()` function, the `Build()` function accepts a remote Go repository URL and builds a binary from the remote Go repository. It returns a Dagger `Directory` representing the state of the working directory in the repository after the build, similar to the output shown below:
+This example uses a Go builder module and calls its `Build()` function. The `Build()` function accepts a remote Go repository URL and builds a binary from the remote Go repository. It returns a Dagger `Directory` representing the state of the working directory in the repository after the build, similar to the output shown below:
 
 ```
 ✔ dagger call build [3m13.7s]
@@ -59,11 +81,40 @@ It's important to realize that even though you're testing and building a Go appl
 
 ### Pass a container as argument
 
-In addition to basic types, Dagger defines powerful core types, which can be used in a function's arguments. For example, using the core `Container` type, a function can literally receive a container as argument. For example, a function that builds a container could use a default base image, but allow passing a custom base as an argument; or a custom publishing function could take a container as argument and upload it to a registry.
+In addition to basic types, Dagger defines powerful core types, which can be used in a function's arguments. For example, using the core `Container` type, a function can literally receive a container as argument. So, a function that builds a container could use a default base image, but allow passing a custom base as an argument; or a custom publishing function could take a container as argument and upload it to a registry.
 
 This feature is most powerful when calling a function from your own code (see [Create your first module](/428201/custom-modules/)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
 
-For example, let's call our `hello` function again, with a custom container in which to call the `figlet` tool. We must make sure that the container has the tool already installed.
+To see how this works, call the `hello` function again, but with a custom container in which to execute the `figlet` tool. Make sure that the container has the tool already installed.
 
 ```shell
 dagger -m github.com/shykes/daggerverse/hello call hello --giant --figlet-container index.docker.io/hairyhenderson/figlet
+```
+
+You should see the image being pulled, then the following output:
+
+```shell
+✔ dagger call hello [1.67s]
+┃  _   _      _ _                             _     _ _
+┃ | | | | ___| | | ___    __      _____  _ __| | __| | |
+┃ | |_| |/ _ \ | |/ _ \   \ \ /\ / / _ \| '__| |/ _` | |
+┃ |  _  |  __/ | | (_) |   \ V  V / (_) | |  | | (_| |_|
+┃ |_| |_|\___|_|_|\___( )   \_/\_/ \___/|_|  |_|\__,_(_)
+┃                     |/
+```
+
+It worked! What happens if you pass a container that doesn't have the required tool installed?
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello call hello --giant --figlet-container index.docker.io/alpine
+```
+
+You should see an error telling you that `figlet` could not be found:
+
+```shell
+✘ dagger call hello ERROR [0.98s]
+[...]
+✘ stdout ERROR [0.13s]
+✘ exec figlet Hello, world! ERROR [0.11s]
+┃ exec: "figlet": executable file not found in $PATH
+```
