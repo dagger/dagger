@@ -541,7 +541,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
 	}
 }
