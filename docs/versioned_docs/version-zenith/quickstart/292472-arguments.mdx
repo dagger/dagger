@@ -53,37 +53,9 @@ You have already passed a string and boolean argument earlier:
 dagger -m github.com/shykes/daggerverse/hello call test --giant --name daggernaut
 ```
 
-### Pass a directory as argument
-
-In addition to basic types, Dagger defines powerful core types, which can be used in a function's arguments. One such type is the `Directory` type, representing a directory.
-
-To see how this works, use the following command:
-
-```shell
-dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir .
-```
-
-This example uses a file utility module and calls its `Tree()` function. The `Tree()` function accepts a directory (here, the current working directory) as argument and returns a tree representation of that directory. An (abbreviated) example of the output is shown below:
-
-```shell
-✔ dagger call tree [31.01s]
-┃ .
-┃ ├── README.md
-┃ ├── cli
-┃ │   └── git-build
-┃ │       ├── README.md
-┃ │       └── build.sh
-┃ └── sdk
-┃     ├── go
-┃     │   ├── aws-cdk
-┃     │   │   ├── README.md
-...
-┃ 39 directories, 125 files
-```
-
 ### Pass a container as argument
 
-Another example is the core `Container` type. With this, a function can literally receive a container as argument. So, a function that builds a container could use a default base image, but allow passing a custom base as an argument; or a custom publishing function could take a container as argument and upload it to a registry.
+In addition to basic types, Dagger defines powerful core types, which can be used in a function's arguments. For example, with the core `Container` type, a function can literally receive a container as argument. So, a function that builds a container could use a default base image, but allow passing a custom base as an argument; or a custom publishing function could take a container as argument and upload it to a registry.
 
 This feature is most powerful when calling a function from your own code (see [the section on creating a module](./428201-custom-modules.mdx)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
 
@@ -119,4 +91,30 @@ You should see an error telling you that `figlet` could not be found:
 ✘ stdout ERROR [0.13s]
 ✘ exec figlet Hello, world! ERROR [0.11s]
 ┃ exec: "figlet": executable file not found in $PATH
+```
+
+### Pass a directory as argument
+
+Another example is the `Directory` type, representing a directory. To see how this works, use the following command:
+
+```shell
+dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir .
+```
+
+This example uses a file utility module and calls its `Tree()` function. The `Tree()` function accepts a directory (here, the current working directory) as argument and returns a tree representation of that directory. An abbreviated example of the output is shown below:
+
+```shell
+✔ dagger call tree [31.01s]
+┃ .
+┃ ├── README.md
+┃ ├── cli
+┃ │   └── git-build
+┃ │       ├── README.md
+┃ │       └── build.sh
+┃ └── sdk
+┃     ├── go
+┃     │   ├── aws-cdk
+┃     │   │   ├── README.md
+...
+┃ 39 directories, 125 files
 ```
