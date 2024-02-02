@@ -658,8 +658,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 		// object loaded from its ID.
 		return sel, nil
 	}
-
-	class, ok := s.objects[val.Type().Name()]
+	class, ok := s.ObjectType(val.Type().Name())
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 	}

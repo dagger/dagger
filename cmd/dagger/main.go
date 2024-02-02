@@ -21,6 +21,9 @@ import (
 )
 
 var (
+	cpuprofile = os.Getenv("CPUPROFILE")
+	pprofAddr  = os.Getenv("PPROF")
+
 	execGroup = &cobra.Group{
 		ID:    "exec",
 		Title: "Execution Commands",
@@ -28,9 +31,7 @@ var (
 
 	workdir string
 
-	cpuprofile string
-	pprofAddr  string
-	debug      bool
+	debug bool
 )
 
 func init() {
@@ -41,8 +42,6 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Show more information for debugging")
-	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
-	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
 
 	for _, fl := range []string{"workdir", "cpuprofile", "pprof"} {
 		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {

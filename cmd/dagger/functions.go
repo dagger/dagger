@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
@@ -310,8 +311,8 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		return err
 	}
 
-	vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
-	setCmdOutput(c, vtx)
+	cmd.SetOut(ioctx.Stdout(ctx))
+	cmd.SetErr(ioctx.Stderr(ctx))
 
 	defer func() {
 		if rerr != nil {
@@ -321,7 +322,6 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
 			}
 		}
-		vtx.Done(rerr)
 	}()
 
 	// TODO: Move help output out of progrock?

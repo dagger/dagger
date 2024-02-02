@@ -103,8 +103,13 @@ require (
 
 require (
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/a-h/templ v0.2.543
+	github.com/ajstarks/svgo v0.0.0-20211024235047-1546f124cd8b
 	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/lrstanley/bubblezone v0.0.0-20240125042004-b7bafc493195
+	github.com/lucasb-eyer/go-colorful v1.2.0
 	github.com/muesli/reflow v0.3.0
+	github.com/vito/invaders v0.0.2
 )
 
 require (
@@ -210,7 +215,6 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/lunixbochs/vtclean v1.0.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect

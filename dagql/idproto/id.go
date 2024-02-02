@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	sync "sync"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -201,14 +202,21 @@ func (id *ID) Canonical() *ID {
 	return canon
 }
 
+var digests = new(sync.Map)
+
 // Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
 // first.
 func (id *ID) Digest() (digest.Digest, error) {
+	if d, ok := digests.Load(id); ok {
+		return d.(digest.Digest), nil
+	}
 	bytes, err := proto.Marshal(id)
 	if err != nil {
 		return "", err
 	}
-	return digest.FromBytes(bytes), nil
+	d := digest.FromBytes(bytes)
+	digests.Store(id, d)
+	return d, nil
 }
 
 func (id *ID) Clone() *ID {
