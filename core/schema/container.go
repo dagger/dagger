@@ -428,9 +428,9 @@ func (s *containerSchema) Install() {
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
 				`This is the initial state of all containers.`),
 
-		dagql.Func("withDefaultShell", s.withDefaultShell).
-			Doc(`Set the default command to invoke for the "shell" API.`).
-			ArgDoc("args", `The args of the command to set the default shell to.`),
+		dagql.Func("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
+			Doc(`Set the default command to invoke for the container's terminal API.`).
+			ArgDoc("args", `The args of the command.`),
 
 		dagql.NodeFunc("terminal", s.terminal).
 			Doc(`Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).`).
@@ -1288,7 +1288,7 @@ func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Contain
 	return child, nil
 }
 
-func (s *containerSchema) withDefaultShell(
+func (s *containerSchema) withDefaultTerminalCmd(
 	ctx context.Context,
 	ctr *core.Container,
 	args struct {
@@ -1296,7 +1296,7 @@ func (s *containerSchema) withDefaultShell(
 	},
 ) (*core.Container, error) {
 	ctr = ctr.Clone()
-	ctr.DefaultShell = args.Args
+	ctr.DefaultTerminalCmd = args.Args
 	return ctr, nil
 }
 
@@ -1312,7 +1312,7 @@ func (s *containerSchema) terminal(
 		shellArgs = collectArrayInput(args.Cmd.Value, dagql.String.String)
 	} else {
 		// if no override args specified, use default shell
-		shellArgs = ctr.Self.DefaultShell
+		shellArgs = ctr.Self.DefaultTerminalCmd
 	}
 
 	// if still no args, default to sh

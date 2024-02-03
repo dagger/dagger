@@ -1356,13 +1356,13 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Set the default command to invoke for the "shell" API.
+    /// Set the default command to invoke for the container's terminal API.
     ///
     /// # Arguments
     ///
-    /// * `args` - The args of the command to set the default shell to.
-    pub fn with_default_shell(&self, args: Vec<impl Into<String>>) -> Container {
-        let mut query = self.selection.select("withDefaultShell");
+    /// * `args` - The args of the command.
+    pub fn with_default_terminal_cmd(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withDefaultTerminalCmd");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),

@@ -397,11 +397,11 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Set the default command to invoke for the "shell" API.
+     * Set the default command to invoke for the container's terminal API.
      */
-    public function withDefaultShell(array $args): Container
+    public function withDefaultTerminalCmd(array $args): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultShell');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultTerminalCmd');
         $innerQueryBuilder->setArgument('args', $args);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

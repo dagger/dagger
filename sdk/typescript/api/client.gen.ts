@@ -1816,15 +1816,15 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Set the default command to invoke for the "shell" API.
-   * @param args The args of the command to set the default shell to.
+   * Set the default command to invoke for the container's terminal API.
+   * @param args The args of the command.
    */
-  withDefaultShell = (args: string[]): Container => {
+  withDefaultTerminalCmd = (args: string[]): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "withDefaultShell",
+          operation: "withDefaultTerminalCmd",
           args: { args },
         },
       ],

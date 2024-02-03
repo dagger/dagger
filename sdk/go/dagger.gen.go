@@ -1015,9 +1015,9 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 	}
 }
 
-// Set the default command to invoke for the "shell" API.
-func (r *Container) WithDefaultShell(args []string) *Container {
-	q := r.q.Select("withDefaultShell")
+// Set the default command to invoke for the container's terminal API.
+func (r *Container) WithDefaultTerminalCmd(args []string) *Container {
+	q := r.q.Select("withDefaultTerminalCmd")
 	q = q.Arg("args", args)
 
 	return &Container{

@@ -1054,18 +1054,18 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_default_shell(self, args: Sequence[str]) -> "Container":
-        """Set the default command to invoke for the "shell" API.
+    def with_default_terminal_cmd(self, args: Sequence[str]) -> "Container":
+        """Set the default command to invoke for the container's terminal API.
 
         Parameters
         ----------
         args:
-            The args of the command to set the default shell to.
+            The args of the command.
         """
         _args = [
             Arg("args", args),
         ]
-        _ctx = self._select("withDefaultShell", _args)
+        _ctx = self._select("withDefaultTerminalCmd", _args)
         return Container(_ctx)
 
     @typecheck

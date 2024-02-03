@@ -35,7 +35,7 @@ func New(ctx context.Context) *Test {
 			From("mirror.gcr.io/alpine:3.18").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
-			WithDefaultShell([]string{"/bin/sh"}),
+			WithDefaultTerminalCmd([]string{"/bin/sh"}),
 	}
 }
 
@@ -106,7 +106,7 @@ func New(ctx context.Context) *Test {
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithExec([]string{"apk", "add", "python3"}).
-			WithDefaultShell([]string{"/bin/sh"}),
+			WithDefaultTerminalCmd([]string{"/bin/sh"}),
 	}
 }
 

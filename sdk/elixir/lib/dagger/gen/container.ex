@@ -487,10 +487,10 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Set the default command to invoke for the \"shell\" API.\n\n## Required Arguments\n\n* `args` - The args of the command to set the default shell to."
-    @spec with_default_shell(t(), [Dagger.String.t()]) :: Dagger.Container.t()
-    def with_default_shell(%__MODULE__{} = container, args) do
-      selection = select(container.selection, "withDefaultShell")
+    @doc "Set the default command to invoke for the container's terminal API.\n\n## Required Arguments\n\n* `args` - The args of the command."
+    @spec with_default_terminal_cmd(t(), [Dagger.String.t()]) :: Dagger.Container.t()
+    def with_default_terminal_cmd(%__MODULE__{} = container, args) do
+      selection = select(container.selection, "withDefaultTerminalCmd")
       selection = arg(selection, "args", args)
       %Dagger.Container{selection: selection, client: container.client}
     end

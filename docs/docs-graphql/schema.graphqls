@@ -361,9 +361,9 @@ type Container {
     args: [String!]!
   ): Container!
 
-  """Set the default command to invoke for the "shell" API."""
-  withDefaultShell(
-    """The args of the command to set the default shell to."""
+  """Set the default command to invoke for the container's terminal API."""
+  withDefaultTerminalCmd(
+    """The args of the command."""
     args: [String!]!
   ): Container!
 
