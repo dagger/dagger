@@ -14,7 +14,7 @@ func New(
 	return &PythonSdk{
 		SDKSourceDir: sdkSourceDir,
 		RequiredPaths: []string{
-			"src/main.py",
+			"**/pyproject.toml",
 		},
 	}
 }
@@ -80,7 +80,7 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 }
 
 func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
-	subPath, err := modSource.Subpath(ctx)
+	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
@@ -89,7 +89,7 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir.WithoutDirectory("runtime")).
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory("./template")).
 		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc}).
-		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).
+		WithMountedDirectory(ModSourceDirPath, modSource.BaseContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,

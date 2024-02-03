@@ -1,9 +1,4 @@
 {
   "name": "python-sdk",
-  "sdk": "go",
-  "root-for": [
-    {
-      "source": "."
-    }
-  ]
+  "sdk": "go"
 }

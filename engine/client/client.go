@@ -711,6 +711,12 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 		if err != nil {
 			return fmt.Errorf("stat path: %w", err)
 		}
+		if opts.StatReturnAbsPath {
+			stat.Path, err = filepath.Abs(opts.Path)
+			if err != nil {
+				return fmt.Errorf("get abs path: %w", err)
+			}
+		}
 		return stream.SendMsg(stat)
 	}
 

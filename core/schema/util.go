@@ -54,6 +54,18 @@ func collectIDObjects[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids
 	return ts, nil
 }
 
+func collectIDInstances[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.Instance[T], error) {
+	ts := make([]dagql.Instance[T], len(ids))
+	for i, id := range ids {
+		inst, err := id.Load(ctx, srv)
+		if err != nil {
+			return nil, err
+		}
+		ts[i] = inst
+	}
+	return ts, nil
+}
+
 func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput[I] {
 	ins := make(dagql.ArrayInput[I], len(ts))
 	for i, v := range ts {

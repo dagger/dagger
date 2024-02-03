@@ -153,7 +153,7 @@ func TestModuleGoInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		generated := c.Container().From(golangImage).
+		generated := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
@@ -168,7 +168,7 @@ func TestModuleGoInit(t *testing.T) {
 
 		parentEntries, err := generated.Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"child", "dagger.json", "foo.go", "go.mod", "go.sum"}, parentEntries)
+		require.Equal(t, []string{".git", "child", "foo.go", "go.mod", "go.sum"}, parentEntries)
 
 		childEntries, err := generated.Directory("child").Entries(ctx)
 		require.NoError(t, err)
@@ -186,9 +186,10 @@ func TestModuleGoInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		generated := c.Container().From(golangImage).
+		generated := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
+			WithExec([]string{"git", "init"}).
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithNewFile("/work/foo.go", dagger.ContainerWithNewFileOpts{
 				Contents: "package foo\n",
@@ -205,7 +206,7 @@ func TestModuleGoInit(t *testing.T) {
 		parentEntries, err := generated.Entries(ctx)
 		require.NoError(t, err)
 		// no go.sum
-		require.Equal(t, []string{"child", "dagger.json", "foo.go", "go.mod"}, parentEntries)
+		require.Equal(t, []string{".git", "child", "foo.go", "go.mod"}, parentEntries)
 
 		childEntries, err := generated.Directory("child").Entries(ctx)
 		require.NoError(t, err)
@@ -2477,7 +2478,7 @@ func TestModuleConflictingSameNameDeps(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	ctr := c.Container().From(golangImage).
+	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dstr").
 		With(daggerExec("init", "--name=d", "--sdk=go")).
@@ -2643,7 +2644,7 @@ func TestModuleGoWithOtherModuleTypes(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	ctr := c.Container().From(golangImage).
+	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -2872,7 +2873,7 @@ func TestModuleUseLocal(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			modGen := c.Container().From(golangImage).
+			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -2934,7 +2935,7 @@ func TestModuleCodegenOnDepChange(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			modGen := c.Container().From(golangImage).
+			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -3002,7 +3003,7 @@ func TestModuleSyncDeps(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			modGen := c.Container().From(golangImage).
+			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dep").
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -3103,7 +3104,7 @@ class Use {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			modGen := c.Container().From(golangImage).
+			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/foo").
 				WithNewFile("/work/foo/main.go", dagger.ContainerWithNewFileOpts{
@@ -3831,7 +3832,7 @@ func TestModuleLotsOfDeps(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := c.Container().From(golangImage).
+	modGen := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work")
 
@@ -3896,9 +3897,6 @@ func TestModuleLotsOfDeps(t *testing.T) {
 				SDK:          "go",
 				Dependencies: depCfgs,
 			}))
-			rootCfg.RootFor = append(rootCfg.RootFor, &modules.ModuleConfigRootFor{
-				Source: name,
-			})
 		}
 		return newModNames
 	}
@@ -3947,7 +3945,7 @@ func TestModuleLoops(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := c.Container().From(golangImage).
+	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		With(daggerExec("init", "--name=depA", "--sdk=go", "depA")).
 		With(daggerExec("init", "--name=depB", "--sdk=go", "depB")).
@@ -3956,7 +3954,7 @@ func TestModuleLoops(t *testing.T) {
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
 		Sync(ctx)
-	require.ErrorContains(t, err, "module depA has a circular dependency")
+	require.ErrorContains(t, err, `local module at "/work/depA" has a circular dependency`)
 }
 
 //go:embed testdata/modules/go/id/arg/main.go
@@ -4361,23 +4359,22 @@ func TestModuleCustomSDK(t *testing.T) {
 type CoolSdk struct {}
 
 func (m *CoolSdk) ModuleRuntime(modSource *ModuleSource, introspectionJson string) *Container {
-	return modSource.AsModule().WithSDK("go").Initialize().Runtime().WithEnvVariable("COOL", "true")
+	return modSource.WithSDK("go").AsModule().Initialize().Runtime().WithEnvVariable("COOL", "true")
 }
 
 func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
-	existingConfig := modSource.Directory("/").File("dagger.json")
-	return dag.GeneratedCode(modSource.
-		Directory("/").
-		WithoutFile("dagger.json").
-		AsModule().
-		WithSDK("go").
-		GeneratedSourceRootDirectory().
-		WithFile("dagger.json", existingConfig),
-	)
+	return dag.GeneratedCode(modSource.WithSDK("go").ContextDirectory())
 }
 
 func (m *CoolSdk) RequiredPaths() []string {
-	return []string{"main.go"}
+	return []string{
+		"**/go.mod",
+		"**/go.sum",
+		"**/go.work",
+		"**/go.work.sum",
+		"**/vendor/",
+		"**/*.go",
+	}
 }
 `,
 		}).

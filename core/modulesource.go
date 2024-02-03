@@ -42,14 +42,25 @@ func (proto ModuleSourceKind) ToLiteral() *idproto.Literal {
 }
 
 type ModuleSource struct {
+	Query *Query
+
 	Kind ModuleSourceKind `field:"true" name:"kind" doc:"The kind of source (e.g. local, git, etc.)"`
 
-	AsLocalSource dagql.Nullable[*LocalModuleSource] `field:"true" doc:"If the source is of kind local, the local source representation of it."`
-	AsGitSource   dagql.Nullable[*GitModuleSource]   `field:"true" doc:"If the source is a of kind git, the git source representation of it."`
+	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
 
-	// The root directory that was loaded for this module source, with any re-rooting
-	// based on the discovered path to the actual module configuration file.
-	RootDirectory dagql.Instance[*Directory] `field:"true" doc:"The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root)."`
+	// TODO: doc
+	WithName         string
+	WithDependencies []dagql.Instance[*ModuleDependency]
+	WithSDK          string
+
+	// the unmodifiied directory the source was was loaded from
+	BaseContextDirectory dagql.Instance[*Directory]
+	// the context directory plus any modifications made to config files/codegen
+	GeneratedContextDirectory dagql.Instance[*Directory]
+
+	AsLocalSource dagql.Nullable[*LocalModuleSource] `field:"true" doc:"If the source is of kind local, the local source representation of it."`
+
+	AsGitSource dagql.Nullable[*GitModuleSource] `field:"true" doc:"If the source is a of kind git, the git source representation of it."`
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -66,11 +77,26 @@ func (src *ModuleSource) TypeDescription() string {
 var _ HasPBDefinitions = (*ModuleSource)(nil)
 
 func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	return src.RootDirectory.Self.PBDefinitions(ctx)
+	var defs []*pb.Definition
+	baseDefs, err := src.BaseContextDirectory.Self.PBDefinitions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("base context directory: %w", err)
+	}
+	defs = append(defs, baseDefs...)
+	genDefs, err := src.GeneratedContextDirectory.Self.PBDefinitions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("generated context directory: %w", err)
+	}
+	defs = append(defs, genDefs...)
+	return defs, nil
 }
 
 func (src ModuleSource) Clone() *ModuleSource {
 	cp := src
+
+	if src.Query != nil {
+		cp.Query = src.Query.Clone()
+	}
 
 	if src.AsLocalSource.Valid {
 		cp.AsLocalSource.Value = src.AsLocalSource.Value.Clone()
@@ -80,38 +106,41 @@ func (src ModuleSource) Clone() *ModuleSource {
 		cp.AsGitSource.Value = src.AsGitSource.Value.Clone()
 	}
 
-	if src.RootDirectory.Self != nil {
-		cp.RootDirectory.Self = src.RootDirectory.Self.Clone()
+	if src.BaseContextDirectory.Self != nil {
+		cp.BaseContextDirectory.Self = src.BaseContextDirectory.Self.Clone()
+	}
+
+	if src.GeneratedContextDirectory.Self != nil {
+		cp.GeneratedContextDirectory.Self = src.GeneratedContextDirectory.Self.Clone()
+	}
+
+	if src.WithDependencies != nil {
+		cp.WithDependencies = make([]dagql.Instance[*ModuleDependency], len(src.WithDependencies))
+		copy(cp.WithDependencies, src.WithDependencies)
 	}
 
 	return &cp
 }
 
-func (src *ModuleSource) Subpath() (string, error) {
-	switch src.Kind {
-	case ModuleSourceKindLocal:
-		if !src.AsLocalSource.Valid {
-			return "", fmt.Errorf("local src not set")
-		}
-		return src.AsLocalSource.Value.Subpath, nil
-
-	case ModuleSourceKindGit:
-		if !src.AsGitSource.Valid {
-			return "", fmt.Errorf("git src not set")
-		}
-		return src.AsGitSource.Value.Subpath, nil
-
-	default:
-		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
-	}
-}
-
 func (src *ModuleSource) RefString() (string, error) {
 	switch src.Kind {
 	case ModuleSourceKindLocal:
-		return src.AsLocalSource.Value.String()
+		srcPath := src.RootSubpath
+		if filepath.IsAbs(srcPath) {
+			var err error
+			srcPath, err = filepath.Rel("/", srcPath)
+			if err != nil {
+				return "", fmt.Errorf("get relative path: %w", err)
+			}
+		}
+		return srcPath, nil
 	case ModuleSourceKindGit:
-		return src.AsGitSource.Value.String(), nil
+		gitSrc := src.AsGitSource.Value
+		refPath := gitSrc.URLParent
+		if src.RootSubpath != "/" {
+			refPath += src.RootSubpath
+		}
+		return fmt.Sprintf("%s@%s", refPath, gitSrc.Commit), nil
 	default:
 		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
 	}
@@ -123,60 +152,117 @@ func (src *ModuleSource) Symbolic() (string, error) {
 		if !src.AsLocalSource.Valid {
 			return "", fmt.Errorf("local src not set")
 		}
-		return src.AsLocalSource.Value.Symbolic()
+		return src.RefString()
 
 	case ModuleSourceKindGit:
 		if !src.AsGitSource.Valid {
 			return "", fmt.Errorf("git src not set")
 		}
-		return src.AsGitSource.Value.Symbolic(), nil
+		gitSrc := src.AsGitSource.Value
+		return filepath.Join(gitSrc.CloneURL(), src.RootSubpath), nil
 
 	default:
 		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
 	}
 }
 
-func (src *ModuleSource) ModuleName(ctx context.Context) (string, error) {
-	if src.RootDirectory.Self == nil {
-		return "", nil
+func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], err error) {
+	if src.GeneratedContextDirectory.Self != nil {
+		return src.GeneratedContextDirectory, nil
+	}
+	if src.BaseContextDirectory.Self == nil {
+		return inst, fmt.Errorf("base context directory not set")
+	}
+	return src.BaseContextDirectory, nil
+}
+
+func (src *ModuleSource) ModuleSourceSubpath(ctx context.Context) (string, error) {
+	cfg, ok, err := src.ModuleConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("module config: %w", err)
+	}
+	if !ok {
+		// default to the root subpath for unintialized modules
+		return src.RootSubpath, nil
 	}
 
-	sourceSubpath, err := src.Subpath()
+	return filepath.Join(src.RootSubpath, cfg.Source), nil
+}
+
+func (src *ModuleSource) ModuleSourceRelSubpath(ctx context.Context) (string, error) {
+	sourceSubpath, err := src.ModuleSourceSubpath(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get module source path: %w", err)
+		return "", fmt.Errorf("failed to get module source subpath: %w", err)
+	}
+	return filepath.Rel(src.RootSubpath, sourceSubpath)
+}
+
+func (src *ModuleSource) ModuleName(ctx context.Context) (string, error) {
+	if src.WithName != "" {
+		// use override name if set
+		return src.WithName, nil
+	}
+
+	cfg, ok, err := src.ModuleConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("module config: %w", err)
+	}
+	if !ok {
+		return "", nil
+	}
+	return cfg.Name, nil
+}
+
+func (src *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
+	cfg, ok, err := src.OriginalModuleConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("module config: %w", err)
+	}
+	if !ok || cfg.Name == "" {
+		// no name for this module yet in static config, use the caller specified name if set
+		// since that is what will become the original name once configuration is generated
+		return src.WithName, nil
+	}
+	return cfg.Name, nil
+}
+
+func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfig, bool, error) {
+	contextDir := src.GeneratedContextDirectory.Self
+	if contextDir == nil {
+		contextDir = src.BaseContextDirectory.Self
+	}
+	return src.moduleConfigFromContext(ctx, contextDir)
+}
+
+func (src *ModuleSource) OriginalModuleConfig(ctx context.Context) (*modules.ModuleConfig, bool, error) {
+	return src.moduleConfigFromContext(ctx, src.BaseContextDirectory.Self)
+}
+
+func (src *ModuleSource) moduleConfigFromContext(ctx context.Context, contextDir *Directory) (*modules.ModuleConfig, bool, error) {
+	if contextDir == nil {
+		return nil, false, nil
 	}
 
 	var modCfg modules.ModuleConfig
-	configFile, err := src.RootDirectory.Self.File(ctx, filepath.Join("/", sourceSubpath, modules.Filename))
+	configFile, err := contextDir.File(ctx, filepath.Join(src.RootSubpath, modules.Filename))
 	if err != nil {
 		// no configuration for this module yet, so no name
-		return "", nil
+		return nil, false, nil
 	}
 	configBytes, err := configFile.Contents(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to read module config file: %w", err)
+		return nil, false, fmt.Errorf("failed to read module config file: %w", err)
 	}
 
 	if err := json.Unmarshal(configBytes, &modCfg); err != nil {
-		return "", fmt.Errorf("failed to decode module config: %w", err)
-	}
-	if err := modCfg.Validate(); err != nil {
-		return "", fmt.Errorf("invalid module config: %w", err)
+		return nil, false, fmt.Errorf("failed to decode module config: %w", err)
 	}
 
-	return modCfg.Name, nil
+	return &modCfg, true, nil
 }
 
 type LocalModuleSource struct {
 	Query *Query
-
-	Subpath string `field:"true" name:"sourceSubpath" doc:"The path to the module source code dir specified by this source."`
-
-	// If source was loaded from a caller's filesystem, the path to the root directory on that filesystem.
-	LocalRootPath string `field:"true" doc:"The path to the root directory of the module source on the caller's filesystem."`
-
-	// Whether the module source has a configuration file already.
-	ConfigExists bool `field:"true" doc:"Whether the module source has a configuration file already."`
 }
 
 func (src *LocalModuleSource) Type() *ast.Type {
@@ -191,33 +277,23 @@ func (src *LocalModuleSource) TypeDescription() string {
 }
 
 func (src LocalModuleSource) Clone() *LocalModuleSource {
-	return &src
-}
+	cp := src
 
-func (src *LocalModuleSource) String() (string, error) {
-	srcPath := src.Subpath
-	if filepath.IsAbs(srcPath) {
-		var err error
-		srcPath, err = filepath.Rel("/", srcPath)
-		if err != nil {
-			return "", fmt.Errorf("get relative path: %w", err)
-		}
+	if src.Query != nil {
+		cp.Query = src.Query.Clone()
 	}
-	return srcPath, nil
-}
 
-func (src *LocalModuleSource) Symbolic() (string, error) {
-	return src.String()
+	return &cp
 }
 
 type GitModuleSource struct {
-	Subpath string `field:"true" name:"sourceSubpath" doc:"The path to the module source code dir specified by this source relative to the source's root directory."`
-
 	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
 
 	Commit string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
 	URLParent string
+
+	RootSubpath string
 }
 
 func (src *GitModuleSource) Type() *ast.Type {
@@ -235,22 +311,10 @@ func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
 }
 
-func (src *GitModuleSource) String() string {
-	refPath := src.URLParent
-	if src.Subpath != "/" {
-		refPath += src.Subpath
-	}
-	return fmt.Sprintf("%s@%s", refPath, src.Commit)
-}
-
-func (src *GitModuleSource) Symbolic() string {
-	return filepath.Join(src.CloneURL(), src.Subpath)
-}
-
 func (src *GitModuleSource) CloneURL() string {
 	return "https://" + src.URLParent
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	return "https://" + src.URLParent + "/tree/" + src.Commit + src.Subpath
+	return "https://" + src.URLParent + "/tree/" + src.Commit + src.RootSubpath
 }

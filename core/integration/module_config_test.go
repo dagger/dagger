@@ -48,9 +48,6 @@ func TestModuleConfigs(t *testing.T) {
 				Name:   "dep",
 				Source: "foo",
 			}},
-			RootFor: []*modules.ModuleConfigRootFor{{
-				Source: ".",
-			}},
 		}
 		expectedConfBytes, err := json.Marshal(expectedConf)
 		require.NoError(t, err)
@@ -67,29 +64,12 @@ func TestModuleConfigs(t *testing.T) {
 		require.Equal(t, "wowzas", strings.TrimSpace(out))
 	})
 
-	t.Run("old config with root fails", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
-
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
-			WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{"name": "test", "sdk": "go", "root": ".."}`,
-			}).
-			With(daggerCall("container-echo", "--string-arg", "hey")).
-			Stdout(ctx)
-		require.Error(t, err)
-		require.Contains(t, `Cannot load module config with legacy "root" setting`, out)
-	})
-
 	t.Run("dep has separate config", func(t *testing.T) {
 		// Verify that if a local dep has its own dagger.json, that's used to load it correctly.
 		t.Parallel()
 		c, ctx := connect(t)
 
-		base := c.Container().From(golangImage).
+		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/subdir/dep").
 			With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -159,7 +139,7 @@ func TestModuleConfigs(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
 
-		base := c.Container().From(golangImage).
+		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=dep", "--sdk=go", "subdir/dep")).
@@ -238,9 +218,9 @@ func TestModuleConfigs(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
 
-		base := c.Container().From(golangImage).
+		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
+			WithWorkdir("/play/dep").
 			With(daggerExec("init", "--name=dep", "--sdk=go")).
 			WithWorkdir("/work/test").
 			With(daggerExec("init", "--name=test", "--sdk=go"))
@@ -249,27 +229,27 @@ func TestModuleConfigs(t *testing.T) {
 			t.Parallel()
 			_, err := base.
 				WithWorkdir("/work/test").
-				With(daggerExec("install", "../dep")).
+				With(daggerExec("install", "../../play/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../dep" escapes root "/"`)
+			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from dep dir", func(t *testing.T) {
 			t.Parallel()
 			_, err := base.
-				WithWorkdir("/work/dep").
-				With(daggerExec("install", "-m=../test", ".")).
+				WithWorkdir("/play/dep").
+				With(daggerExec("install", "-m=../../work/test", ".")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../dep" escapes root "/"`)
+			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from root", func(t *testing.T) {
 			t.Parallel()
 			_, err := base.
 				WithWorkdir("/").
-				With(daggerExec("install", "-m=work/test", "work/dep")).
+				With(daggerExec("install", "-m=work/test", "play/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../dep" escapes root "/"`)
+			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 	})
 
@@ -278,7 +258,7 @@ func TestModuleConfigs(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
 
-		base := c.Container().From(golangImage).
+		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -335,19 +315,16 @@ func TestModuleConfigs(t *testing.T) {
 						Name:   "escape",
 						Source: "..",
 					}},
-					RootFor: []*modules.ModuleConfigRootFor{{
-						Source: ".",
-					}},
 				}))
 
 			_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path ".." escapes root "/"`)
+			require.ErrorContains(t, err, `local module dep source path ".." escapes context "/work"`)
 
 			_, err = base.With(daggerExec("develop")).Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path ".." escapes root "/"`)
+			require.ErrorContains(t, err, `local module dep source path ".." escapes context "/work"`)
 
 			_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path ".." escapes root "/"`)
+			require.ErrorContains(t, err, `local module dep source path ".." escapes context "/work"`)
 		})
 	})
 }
@@ -358,7 +335,7 @@ func TestModuleCustomDepNames(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
-		ctr := c.Container().From(golangImage).
+		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--name=dep", "--sdk=go")).
@@ -718,21 +695,22 @@ func (m *Test) Fn() *Directory {
 type Coolsdk struct {}
 
 func (m *Coolsdk) ModuleRuntime(modSource *ModuleSource, introspectionJson string) *Container {
-	return modSource.AsModule().WithSDK("go").Initialize().Runtime().WithEnvVariable("COOL", "true")
+	return modSource.WithSDK("go").AsModule().Initialize().Runtime().WithEnvVariable("COOL", "true")
 }
 
 func (m *Coolsdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
-	existingConfig := modSource.Directory("/").File("dagger.json")
-	return dag.GeneratedCode(modSource.
-		AsModule().
-		WithSDK("go").
-		GeneratedSourceRootDirectory().
-		WithFile("dagger.json", existingConfig),
-	)
+	return dag.GeneratedCode(modSource.WithSDK("go").ContextDirectory())
 }
 
 func (m *Coolsdk) RequiredPaths() []string {
-	return []string{"main.go"}
+	return []string{
+		"**/go.mod",
+		"**/go.sum",
+		"**/go.work",
+		"**/go.work.sum",
+		"**/vendor/",
+		"**/*.go",
+	}
 }
 `,
 		},
@@ -768,7 +746,6 @@ func (m *Coolsdk) RequiredPaths() []string {
 				With(configFile(".", &modules.ModuleConfig{
 					Name:    "test",
 					SDK:     tc.sdk,
-					RootFor: []*modules.ModuleConfigRootFor{{Source: "."}},
 					Include: []string{"subdir/keepdir"},
 					Exclude: []string{"subdir/keepdir/rmdir"},
 				})).
@@ -791,7 +768,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 			// call should also work from other directories
 			out, err = ctr.
 				WithWorkdir("/mnt").
-				With(daggerCallAt("/work", "fn", "directory", "--path", "subdir", "entries")).
+				With(daggerCallAt("../work", "fn", "directory", "--path", "subdir", "entries")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "keepdir", strings.TrimSpace(out))

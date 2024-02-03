@@ -20,24 +20,40 @@ const (
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
 func (s *moduleSchema) sdkForModule(
 	ctx context.Context,
-	root *core.Query,
+	query *core.Query,
 	sdk string,
-	parentDir dagql.Instance[*core.Directory],
+	parentSrc dagql.Instance[*core.ModuleSource],
 ) (core.SDK, error) {
-	builtinSDK, err := s.builtinSDK(ctx, root, sdk)
+	if sdk == "" {
+		return nil, errors.New("sdk ref is required")
+	}
+
+	builtinSDK, err := s.builtinSDK(ctx, query, sdk)
 	if err == nil {
 		return builtinSDK, nil
 	} else if !errors.Is(err, errUnknownBuiltinSDK) {
 		return nil, err
 	}
 
-	var sdkMod dagql.Instance[*core.Module]
-	err = s.dag.Select(ctx, s.dag.Root(), &sdkMod,
+	var sdkSource dagql.Instance[*core.ModuleSource]
+	err = s.dag.Select(ctx, s.dag.Root(), &sdkSource,
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
 				{Name: "refString", Value: dagql.String(sdk)},
-				{Name: "rootDirectory", Value: dagql.Opt(dagql.NewID[*core.Directory](parentDir.ID()))},
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sdk source for %s: %w", sdk, err)
+	}
+
+	var sdkMod dagql.Instance[*core.Module]
+	err = s.dag.Select(ctx, parentSrc, &sdkMod,
+		dagql.Selector{
+			Field: "resolveDependency",
+			Args: []dagql.NamedInput{
+				{Name: "dep", Value: dagql.NewID[*core.ModuleSource](sdkSource.ID())},
 			},
 		},
 		dagql.Selector{
@@ -52,7 +68,7 @@ func (s *moduleSchema) sdkForModule(
 	}
 
 	// TODO: include sdk source dir from module config dagger.json once we support default-args/scripts
-	return s.newModuleSDK(ctx, root, sdkMod, dagql.Instance[*core.Directory]{})
+	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
 }
 
 var errUnknownBuiltinSDK = fmt.Errorf("unknown builtin sdk")
@@ -118,8 +134,8 @@ func (s *moduleSchema) newModuleSDK(
 }
 
 // Codegen calls the Codegen function on the SDK Module
-func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
-	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx, true)
+func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
+	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
@@ -145,8 +161,8 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, source dagq
 }
 
 // Runtime calls the Runtime function on the SDK Module
-func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
-	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx, true)
+func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
+	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
@@ -205,6 +221,13 @@ func (s *moduleSchema) loadBuiltinSDK(
 ) (*moduleSDK, error) {
 	ctx, recorder := progrock.WithGroup(ctx, fmt.Sprintf("load builtin module sdk %s", name))
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: I think the problem of not honoring include/exclude can be fixed now
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
 	// subdir right under the *full* sdk source dir. Can be generalized once we support
 	// default-args/scripts in dagger.json
@@ -276,16 +299,10 @@ type goSDK struct {
 
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
-	mod *core.Module,
+	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (*core.GeneratedCode, error) {
-	configDir := source.Self.RootDirectory
-	sourceDirSubpath, err := source.Self.Subpath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get source subpath for go module sdk codegen: %w", err)
-	}
-
-	ctr, err := sdk.baseWithCodegen(ctx, mod, configDir, sourceDirSubpath)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
 	}
@@ -314,16 +331,10 @@ func (sdk *goSDK) Codegen(
 
 func (sdk *goSDK) Runtime(
 	ctx context.Context,
-	mod *core.Module,
+	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (*core.Container, error) {
-	configDir := source.Self.RootDirectory
-	sourceDirSubpath, err := source.Self.Subpath()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get source subpath for go module sdk codegen: %w", err)
-	}
-
-	ctr, err := sdk.baseWithCodegen(ctx, mod, configDir, sourceDirSubpath)
+	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
 	}
@@ -372,20 +383,35 @@ func (sdk *goSDK) Runtime(
 }
 
 func (sdk *goSDK) RequiredPaths(_ context.Context) ([]string, error) {
-	return []string{"main.go"}, nil
+	return []string{
+		"**/go.mod",
+		"**/go.sum",
+		"**/go.work",
+		"**/go.work.sum",
+		// TODO: the below could be optimized by scoping only to go modules that actually
+		// end up being needed for the dagger module.
+		// including vendor/ is potentially expensive, but required
+		"**/vendor/",
+		// needed in order to re-use go.mod from any parent dir (otherwise it's an invalid go module)
+		"**/*.go",
+	}, nil
 }
 
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
-	mod *core.Module,
-	configDir dagql.Instance[*core.Directory],
-	sourceDirSubpath string,
+	deps *core.ModDeps,
+	src dagql.Instance[*core.ModuleSource],
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
-	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx, true)
+	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
 	if err != nil {
-		return ctr, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", mod.Name(), err)
+		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
+	}
+
+	modName, err := src.Self.ModuleOriginalName(ctx)
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get module name for go module sdk codegen: %w", err)
 	}
 
 	ctr, err = sdk.base(ctx)
@@ -393,18 +419,22 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, err
 	}
 
+	contextDir := src.Self.BaseContextDirectory
+	srcSubpath, err := src.Self.ModuleSourceSubpath(ctx)
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
+	}
+
 	// Delete dagger.gen.go if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
-
-	// need to put this in a separate instance, otherwise the ID won't be updated when used as an arg below
-	var updatedConfigDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, configDir, &updatedConfigDir, dagql.Selector{
+	var updatedContextDir dagql.Instance[*core.Directory]
+	if err := sdk.dag.Select(ctx, contextDir, &updatedContextDir, dagql.Selector{
 		Field: "withoutFile",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.String(filepath.Join(sourceDirSubpath, "dagger.gen.go")),
+				Value: dagql.String(filepath.Join(srcSubpath, "dagger.gen.go")),
 			},
 		},
 	}); err != nil {
@@ -436,7 +466,7 @@ func (sdk *goSDK) baseWithCodegen(
 			},
 			{
 				Name:  "source",
-				Value: dagql.NewID[*core.Directory](updatedConfigDir.ID()),
+				Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
 			},
 		},
 	}, dagql.Selector{
@@ -444,7 +474,7 @@ func (sdk *goSDK) baseWithCodegen(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.NewString(filepath.Join(goSDKUserModSourceDirPath, sourceDirSubpath)),
+				Value: dagql.NewString(filepath.Join(goSDKUserModSourceDirPath, srcSubpath)),
 			},
 		},
 	}, dagql.Selector{
@@ -456,7 +486,7 @@ func (sdk *goSDK) baseWithCodegen(
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
 					"--module-source-root", goSDKUserModSourceDirPath,
-					"--module-name", dagql.String(mod.OriginalName),
+					"--module-name", dagql.String(modName),
 					"--propagate-logs=true",
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},

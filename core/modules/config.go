@@ -8,10 +8,6 @@ import (
 // Filename is the name of the module config file.
 const Filename = "dagger.json"
 
-// TODO: update message
-const legacyRootUsageMessage = `Cannot load module config with legacy "root" setting %q, manual updates needed. Delete the current dagger.json file and re-initialize the module from the directory where root is pointing, using the -m flag to point to the module's source directory.
-`
-
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
 type ModuleConfig struct {
 	// The name of the module.
@@ -29,30 +25,8 @@ type ModuleConfig struct {
 	// The modules this module depends on.
 	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`
 
-	// Modules in subdirs that this config is the root for, which impacts those modules'
-	// root directory and possibly other global settings that propagate from the root.
-	RootFor []*ModuleConfigRootFor `json:"root-for,omitempty"`
-
-	// Deprecated: use Source instead, only used to identify legacy config files
-	Root string `json:"root,omitempty"`
-}
-
-func (modCfg *ModuleConfig) Validate() error {
-	if modCfg.Root != "" {
-		// this is too hard to handle automatically, just tell the user they need to update via error message
-		//nolint:stylecheck // we're okay with an error message formated as full sentences in this case
-		return fmt.Errorf(legacyRootUsageMessage, modCfg.Root)
-	}
-	return nil
-}
-
-func (modCfg *ModuleConfig) IsRootFor(source string) bool {
-	for _, rootFor := range modCfg.RootFor {
-		if rootFor.Source == source {
-			return true
-		}
-	}
-	return false
+	// TODO:
+	Source string `json:"source,omitempty"`
 }
 
 func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependency, bool) {
@@ -62,11 +36,6 @@ func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependen
 		}
 	}
 	return nil, false
-}
-
-type ModuleConfigRootFor struct {
-	// The path to the module that this config is the root for, relative to the configuration file.
-	Source string `json:"source"`
 }
 
 type ModuleConfigDependency struct {

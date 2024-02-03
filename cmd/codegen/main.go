@@ -38,6 +38,11 @@ func init() {
 	rootCmd.Flags().BoolVar(&propagateLogs, "propagate-logs", false, "propagate logs directly to progrock.sock")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: technically should be renamed to module-context-root
 	rootCmd.Flags().StringVar(&moduleSourceRootPath, "module-source-root", "", "path to root directory of module source (i.e. where its dagger.json is located)")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 }

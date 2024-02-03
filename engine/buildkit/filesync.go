@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -106,6 +107,8 @@ func (c *Client) EngineContainerLocalImport(
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+	slog.Debug("ReadCallerHostFile", "path", path)
+
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -141,7 +144,9 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	return msg.Data, nil
 }
 
-func (c *Client) StatCallerHostPath(ctx context.Context, path string) (*fsutiltypes.Stat, error) {
+func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
+	slog.Debug("StatCallerHostPath", "path", path, "returnAbsPath", returnAbsPath)
+
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -154,9 +159,10 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string) (*fsutilty
 	}
 
 	ctx = engine.LocalImportOpts{
-		OwnerClientID: clientMetadata.ClientID,
-		Path:          path,
-		StatPathOnly:  true,
+		OwnerClientID:     clientMetadata.ClientID,
+		Path:              path,
+		StatPathOnly:      true,
+		StatReturnAbsPath: returnAbsPath,
 	}.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)

@@ -115,8 +115,9 @@ type LocalImportOpts struct {
 	ExcludePatterns    []string `json:"exclude_patterns"`
 	FollowPaths        []string `json:"follow_paths"`
 	ReadSingleFileOnly bool     `json:"read_single_file_only"`
-	StatPathOnly       bool     `json:"stat_path_only"`
 	MaxFileSize        int64    `json:"max_file_size"`
+	StatPathOnly       bool     `json:"stat_path_only"`
+	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {

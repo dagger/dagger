@@ -605,8 +605,7 @@ func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
 	return field
 }
 
-// Impure marks the field as "impure", meaning its result may change over time,
-// or it has side effects.
+// Meta indicates that the field has no impact on the field's result.
 func (field Field[T]) Meta() Field[T] {
 	field.Spec.Meta = true
 	return field
