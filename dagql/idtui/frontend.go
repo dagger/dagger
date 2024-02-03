@@ -36,6 +36,9 @@ type Frontend struct {
 	steps []*Step
 	rows  []*TraceRow
 
+	// frames per second
+	fps float64
+
 	// da spin zone
 	spin tea.Model
 	// da bubble zone
@@ -51,12 +54,10 @@ type Frontend struct {
 	mu sync.Mutex
 }
 
-const FPS = 60
-
 func New() *Frontend {
 	zone.NewGlobal()
 	spin := ui.NewRave()
-	spin.Frames = ui.DotFrames
+	spin.Frames = ui.MiniDotFrames
 	return &Frontend{
 		// TODO need to silence logging so it doesn't break the TUI. would be better
 		// to hook into progrock logs.
@@ -103,22 +104,10 @@ func (f *Frontend) Close() error {
 	return nil
 }
 
-func (row *TraceRow) IsRunning() bool {
-	if row.Step.IsRunning() {
-		return true
-	}
-	for _, child := range row.Children {
-		if child.IsRunning() {
-			return true
-		}
-	}
-	return false
-}
-
 func (f *Frontend) Render(w io.Writer) error {
 	out := ui.NewOutput(w)
 	for _, row := range f.rows {
-		if !row.IsRunning() {
+		if !row.IsRunning {
 			continue
 		}
 
@@ -134,7 +123,7 @@ var _ tea.Model = (*Frontend)(nil)
 func (f *Frontend) Init() tea.Cmd {
 	return tea.Batch(
 		f.spin.Init(),
-		ui.Frame(FPS),
+		ui.Frame(30), // sane default, adjusted later by spinner
 		f.spawn,
 	)
 }
@@ -182,14 +171,16 @@ func (m *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.window = msg
 		return m, nil
 
+	case ui.SetFPSMsg:
+		m.fps = float64(msg)
+		return m, nil
+
 	case ui.FrameMsg:
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
 		m.render()
-		return m, tea.Batch(
-			ui.Frame(FPS),
-		)
+		return m, ui.Frame(m.fps)
 
 	default:
 		return m, nil
@@ -215,37 +206,38 @@ func (f *Frontend) View() string {
 	if f.done && f.eof {
 		return ""
 	}
-	return f.view.String() + "\n"
+	return fmt.Sprintf("fps: %0.2f\n%s\n", f.fps, f.view)
 }
 
 func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
-	vtx := row.Step.FirstVertex()
-
-	if row.IsRunning() {
-		id := row.Step.ID()
-		if id != nil {
-			if err := fe.renderID(out, vtx, row.Step.ID(), row.Depth()); err != nil {
-				return err
-			}
-		} else if vtx := row.Step.FirstVertex(); vtx != nil {
-			if err := fe.renderVertex(out, vtx, row.Depth()); err != nil {
-				return err
-			}
-		}
-		if logs, ok := fe.db.Logs[row.Step.Digest]; ok {
-			logs.SetPrefix(strings.Repeat("  ", row.Depth()+1))
-			logs.SetHeight(fe.window.Height / 3)
-			fmt.Fprint(out, logs.View())
-		}
+	if row.IsRunning {
+		fe.renderStep(out, row.Step, row.Depth())
 	}
-
 	for _, child := range row.Children {
-		// out.SetWindowTitle // TODO  this would be cool
 		if err := fe.renderRow(out, child); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
+func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error {
+	id := step.ID()
+	vtx := step.FirstVertex()
+	if id != nil {
+		if err := fe.renderID(out, vtx, id, depth); err != nil {
+			return err
+		}
+	} else if vtx != nil {
+		if err := fe.renderVertex(out, vtx, depth); err != nil {
+			return err
+		}
+	}
+	if logs, ok := fe.db.Logs[step.Digest]; ok {
+		logs.SetPrefix(strings.Repeat("  ", depth+1))
+		logs.SetHeight(fe.window.Height / 3)
+		fmt.Fprint(out, logs.View())
+	}
 	return nil
 }
 
@@ -256,16 +248,11 @@ func indent(out io.Writer, depth int) {
 func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int) error {
 	indent(out, depth)
 
-	// if id.Parent == nil {
-	// 	fmt.Fprintln(out, out.String(dot+" id: "+dig.String()).Bold())
-	// 	indent()
-	// }
-
 	if vtx != nil {
 		fe.renderStatus(out, vtx)
 	}
 
-	fmt.Fprint(out, id.Field)
+	fmt.Fprint(out, out.String(id.Field).Bold())
 
 	kwColor := termenv.ANSIBlue
 
@@ -327,7 +314,14 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 	}
 
 	typeStr := out.String(": " + id.Type.ToAST().String()).Foreground(termenv.ANSIBrightBlack)
-	fmt.Fprintln(out, typeStr)
+	fmt.Fprint(out, typeStr)
+
+	if vtx != nil {
+		fmt.Fprint(out, " ")
+		fe.renderDuration(out, vtx)
+	}
+
+	fmt.Fprintln(out)
 
 	// if vtx != nil && (tape.IsClosed || tape.ShowCompletedLogs || vtx.Completed == nil || vtx.Error != nil) {
 	// 	renderVertexTasksAndLogs(out, u, tape, vtx, depth)
@@ -418,7 +412,17 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 
 	symbol = out.String(symbol).Foreground(color).String()
 
-	fmt.Fprintf(out, "%s ", symbol) // NB: has to match indent level
+	fmt.Fprintf(out, "%s ", symbol)
+}
+
+func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
+	duration := out.String("[" + fmtDuration(vtx.Duration()) + "]")
+	if vtx.Completed != nil {
+		duration = duration.Foreground(termenv.ANSIBrightBlack)
+	} else {
+		duration = duration.Foreground(termenv.ANSIYellow)
+	}
+	fmt.Fprint(out, duration)
 }
 
 // func renderVertexTasksAndLogs(out *termenv.Output, u *progrock.UI, tape *progrock.Tape, vtx *progrock.Vertex, depth int) error {

@@ -36,8 +36,10 @@ type Pipeline []TraceRow
 type TraceRow struct {
 	Step *Step
 
-	Parent   *TraceRow
-	ByParent bool
+	Parent *TraceRow
+
+	IsRunning bool
+	ByParent  bool
 
 	Children []*TraceRow
 }
@@ -47,6 +49,13 @@ func (row *TraceRow) Depth() int {
 		return 0
 	}
 	return row.Parent.Depth() + 1
+}
+
+func (row *TraceRow) setRunning() {
+	row.IsRunning = true
+	if row.Parent != nil && !row.Parent.IsRunning {
+		row.Parent.setRunning()
+	}
 }
 
 func WalkSteps(steps []*Step, f func(*TraceRow)) {
@@ -63,6 +72,9 @@ func WalkSteps(steps []*Step, f func(*TraceRow)) {
 		}
 		if step.Base != nil {
 			row.ByParent = step.Base.Digest == lastSeen
+		}
+		if step.IsRunning() {
+			row.setRunning()
 		}
 		f(row)
 		lastSeen = step.Digest
