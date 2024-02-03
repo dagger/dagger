@@ -77,11 +77,8 @@ func getCustomError(err error) error {
 			}
 			e.Cmd = cmd
 		}
-		if stdout, ok := ext["stdout"].(string); ok {
-			e.Stdout = stdout
-		}
-		if stderr, ok := ext["stderr"].(string); ok {
-			e.Stderr = stderr
+		if output, ok := ext["combinedOutput"].(string); ok {
+			e.CombinedOutput = output
 		}
 		return e
 	}
@@ -94,20 +91,19 @@ type ExecError struct {
 	original error
 	Cmd      []string
 	ExitCode int
-	Stdout   string
-	Stderr   string
+	CombinedOutput string
 }
 
 func (e *ExecError) Error() string {
 	// As a default when just printing the error, include the stdout
 	// and stderr for visibility
 	return fmt.Sprintf(
-		"%s\nStdout:\n%s\nStderr:\n%s",
+		"%s\nOutput:\n%s\n",
 		e.Message(),
-		e.Stdout,
-		e.Stderr,
+		e.CombinedOutput,
 	)
 }
+
 
 func (e *ExecError) Message() string {
 	return e.original.Error()

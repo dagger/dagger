@@ -326,7 +326,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
-			gqlOp.Error(ctx, err)
 			gqlErr := &gqlerror.Error{
 				Err:     err,
 				Message: err.Error(),
@@ -343,7 +342,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		data, err := json.Marshal(results)
 		if err != nil {
-			gqlOp.Error(ctx, err)
 			return graphql.ErrorResponse(ctx, "marshal: %s", err)
 		}
 

@@ -71,11 +71,8 @@ func getCustomError(err error) error {
 			}
 			e.Cmd = cmd
 		}
-		if stdout, ok := ext["stdout"].(string); ok {
-			e.Stdout = stdout
-		}
-		if stderr, ok := ext["stderr"].(string); ok {
-			e.Stderr = stderr
+		if output, ok := ext["combinedOutput"].(string); ok {
+			e.CombinedOutput = output
 		}
 		return e
 	}
@@ -85,21 +82,19 @@ func getCustomError(err error) error {
 
 // ExecError is an API error from an exec operation.
 type ExecError struct {
-	original error
-	Cmd      []string
-	ExitCode int
-	Stdout   string
-	Stderr   string
+	original       error
+	Cmd            []string
+	ExitCode       int
+	CombinedOutput string
 }
 
 func (e *ExecError) Error() string {
 	// As a default when just printing the error, include the stdout
 	// and stderr for visibility
 	return fmt.Sprintf(
-		"%s\nStdout:\n%s\nStderr:\n%s",
+		"%s\nOutput:\n%s\n",
 		e.Message(),
-		e.Stdout,
-		e.Stderr,
+		e.CombinedOutput,
 	)
 }
 
@@ -290,7 +285,7 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -673,7 +668,7 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Container) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -1710,7 +1705,7 @@ func (r *CurrentModule) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *CurrentModule) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -1986,7 +1981,7 @@ func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Directory) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2208,7 +2203,7 @@ func (r *EnvVariable) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *EnvVariable) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2299,7 +2294,7 @@ func (r *FieldTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *FieldTypeDef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2422,7 +2417,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *File) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2573,7 +2568,7 @@ func (r *Function) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Function) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2717,7 +2712,7 @@ func (r *FunctionArg) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *FunctionArg) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2792,7 +2787,7 @@ func (r *FunctionCall) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *FunctionCall) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -2929,7 +2924,7 @@ func (r *FunctionCallArgValue) XXX_GraphQLID(ctx context.Context) (string, error
 func (r *FunctionCallArgValue) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3021,7 +3016,7 @@ func (r *GeneratedCode) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3165,7 +3160,7 @@ func (r *GitModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3253,7 +3248,7 @@ func (r *GitRef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *GitRef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3351,7 +3346,7 @@ func (r *GitRepository) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3461,7 +3456,7 @@ func (r *Host) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Host) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3633,7 +3628,7 @@ func (r *InputTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *InputTypeDef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3744,7 +3739,7 @@ func (r *InterfaceTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *InterfaceTypeDef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3820,7 +3815,7 @@ func (r *Label) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Label) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3904,7 +3899,7 @@ func (r *ListTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -3963,7 +3958,7 @@ func (r *LocalModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -4137,7 +4132,7 @@ func (r *Module) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Module) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -4372,7 +4367,7 @@ func (r *ModuleDependency) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *ModuleDependency) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -4570,7 +4565,7 @@ func (r *ModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -4868,7 +4863,7 @@ func (r *ObjectTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *ObjectTypeDef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -4972,7 +4967,7 @@ func (r *Port) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Port) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -5795,7 +5790,7 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Secret) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -5909,7 +5904,7 @@ func (r *Service) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Service) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -6052,7 +6047,7 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Socket) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -6101,7 +6096,7 @@ func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *Terminal) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
@@ -6212,7 +6207,7 @@ func (r *TypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 func (r *TypeDef) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object could not be created")
 	}
 	return json.Marshal(id)
 }
