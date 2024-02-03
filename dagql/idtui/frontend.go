@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
 	zone "github.com/lrstanley/bubblezone"
@@ -36,19 +35,11 @@ type Frontend struct {
 	steps []*Step
 	rows  []*TraceRow
 
-	// frames per second
-	fps float64
-
-	// da spin zone
-	spin tea.Model
-	// da bubble zone
-
-	// set by BubbleTea
-	window tea.WindowSizeMsg
-
-	// view is rendered async into this buffer to avoid rendering and allocating
-	// too frequently
-	view *bytes.Buffer
+	// TUI state/config
+	fps    float64           // frames per second
+	spin   tea.Model         // da spin zone
+	window tea.WindowSizeMsg // set by BubbleTea
+	view   *bytes.Buffer     // rendered async
 
 	// held to synchronize tea.Model and progrock.Writer
 	mu sync.Mutex
@@ -63,6 +54,8 @@ func New() *Frontend {
 		// to hook into progrock logs.
 		db: NewDB(slog.New(slog.NewTextHandler(io.Discard, nil))),
 
+		// sane default, fine-tune if needed
+		fps:  30,
 		spin: spin,
 		view: new(bytes.Buffer),
 	}
@@ -107,12 +100,10 @@ func (f *Frontend) Close() error {
 func (f *Frontend) Render(w io.Writer) error {
 	out := ui.NewOutput(w)
 	for _, row := range f.rows {
-		if !row.IsRunning {
-			continue
-		}
-
-		if err := f.renderRow(out, row); err != nil {
-			return err
+		if row.IsRunning || row.Step.FirstVertex().Error != nil {
+			if err := f.renderRow(out, row); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -123,7 +114,7 @@ var _ tea.Model = (*Frontend)(nil)
 func (f *Frontend) Init() tea.Cmd {
 	return tea.Batch(
 		f.spin.Init(),
-		ui.Frame(30), // sane default, adjusted later by spinner
+		ui.Frame(f.fps),
 		f.spawn,
 	)
 }
@@ -138,6 +129,21 @@ func (m *Frontend) spawn() tea.Msg {
 
 func (m *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case doneMsg: // run finished
+		m.done = true
+		m.err = msg.err
+		if m.eof {
+			return m, tea.Quit
+		}
+		return m, nil
+
+	case eofMsg: // received end of updates
+		m.eof = true
+		if m.done {
+			return m, tea.Quit
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -147,32 +153,8 @@ func (m *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case spinner.TickMsg:
-		var cmd tea.Cmd
-		m.spin, cmd = m.spin.Update(msg)
-		return m, cmd
-
-	case doneMsg:
-		m.done = true
-		m.err = msg.err
-		if m.eof {
-			return m, tea.Quit
-		}
-		return m, nil
-
-	case eofMsg:
-		m.eof = true
-		if m.done {
-			return m, tea.Quit
-		}
-		return m, nil
-
 	case tea.WindowSizeMsg:
 		m.window = msg
-		return m, nil
-
-	case ui.SetFPSMsg:
-		m.fps = float64(msg)
 		return m, nil
 
 	case ui.FrameMsg:
@@ -201,17 +183,18 @@ func (f *Frontend) View() string {
 		if errors.Is(f.runCtx.Err(), context.Canceled) {
 			return "canceled\n"
 		}
-		return f.err.Error() + "\n"
+		return fmt.Sprintf("%s\n", f.view)
 	}
 	if f.done && f.eof {
 		return ""
 	}
-	return fmt.Sprintf("fps: %0.2f\n%s\n", f.fps, f.view)
+	return fmt.Sprintf("%s\n", f.view)
 }
 
 func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
-	if row.IsRunning {
+	if row.IsRunning || row.Step.FirstVertex().Error != nil {
 		fe.renderStep(out, row.Step, row.Depth())
+		fe.renderLogs(out, row)
 	}
 	for _, child := range row.Children {
 		if err := fe.renderRow(out, child); err != nil {
@@ -225,7 +208,7 @@ func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error
 	id := step.ID()
 	vtx := step.FirstVertex()
 	if id != nil {
-		if err := fe.renderID(out, vtx, id, depth); err != nil {
+		if err := fe.renderID(out, vtx, id, depth, false); err != nil {
 			return err
 		}
 	} else if vtx != nil {
@@ -233,23 +216,82 @@ func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error
 			return err
 		}
 	}
-	if logs, ok := fe.db.Logs[step.Digest]; ok {
-		logs.SetPrefix(strings.Repeat("  ", depth+1))
+	return nil
+}
+
+func (fe *Frontend) renderLogs(out *termenv.Output, row *TraceRow) {
+	if logs, ok := fe.db.Logs[row.Step.Digest]; ok {
+		bar := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+		logs.SetPrefix(strings.Repeat("  ", row.Depth()) + bar.String() + " ")
+		// logs.SetPrefix(strings.Repeat("  ", row.Depth()+1))
 		logs.SetHeight(fe.window.Height / 3)
 		fmt.Fprint(out, logs.View())
 	}
-	return nil
 }
 
 func indent(out io.Writer, depth int) {
 	fmt.Fprint(out, strings.Repeat("  ", depth))
 }
 
-func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int) error {
+func (fe *Frontend) renderIDAncestry(out *termenv.Output, id *idproto.ID, depth int) error {
+	if baseStep, ok := fe.db.HighLevelStep(id); ok {
+		id = baseStep.ID()
+	}
+	if id.Parent != nil {
+		if err := fe.renderIDAncestry(out, id.Parent, depth); err != nil {
+			return err
+		}
+	}
 	indent(out, depth)
+	dig, err := id.Digest()
+	if err != nil {
+		return err
+	}
+	if vtx := fe.db.Vertices[dig.String()]; vtx != nil {
+		fe.renderStatus(out, vtx)
+	} else {
+		fmt.Fprint(out, "  ")
+	}
+	fmt.Fprint(out, out.String(id.Field).Bold())
+	if len(id.Args) > 0 {
+		fmt.Fprintf(out, "(%s)", out.String("...").Faint())
+	}
+	fmt.Fprintln(out)
+	return nil
+}
+
+func (fe *Frontend) renderIDPath(out *termenv.Output, id *idproto.ID) error {
+	if baseStep, ok := fe.db.HighLevelStep(id); ok {
+		id = baseStep.ID()
+	}
+	if id.Parent != nil {
+		if err := fe.renderIDPath(out, id.Parent); err != nil {
+			return err
+		}
+	}
+	fmt.Fprint(out, out.String(id.Field+"."))
+	return nil
+}
+
+func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
+	// if id.Parent != nil {
+	// 	if err := fe.renderIDAncestry(out, id.Parent, depth); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	if !inline {
+		indent(out, depth)
+	}
 
 	if vtx != nil {
 		fe.renderStatus(out, vtx)
+	}
+
+	if id.Parent != nil {
+		if err := fe.renderIDPath(out, id.Parent); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprint(out, out.String(id.Field).Bold())
@@ -275,23 +317,20 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 				val := arg.Value.GetValue()
 				switch x := val.(type) {
 				case *idproto.Literal_Id:
+					// fmt.Fprintln(out)
+					fmt.Fprint(out, " ")
 					argVertexID, err := x.Id.Digest()
 					if err != nil {
 						return err
 					}
-					fmt.Fprintln(out, " "+x.Id.Type.ToAST().Name()+"@"+argVertexID.String()+"{")
-					depth++
 					argVtx := fe.db.Vertices[argVertexID.String()]
 					base := x.Id
 					if baseStep, ok := fe.db.HighLevelStep(x.Id); ok {
 						base = baseStep.ID()
 					}
-					if err := fe.renderID(out, argVtx, base, depth); err != nil {
+					if err := fe.renderID(out, argVtx, base, depth-1, true); err != nil {
 						return err
 					}
-					depth--
-					indent(out, depth)
-					fmt.Fprintln(out, "}")
 				default:
 					fmt.Fprint(out, " ")
 					renderLiteral(out, arg.Value)
@@ -317,7 +356,6 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 	fmt.Fprint(out, typeStr)
 
 	if vtx != nil {
-		fmt.Fprint(out, " ")
 		fe.renderDuration(out, vtx)
 	}
 
@@ -333,7 +371,10 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, depth int) error {
 	indent(out, depth)
 	fe.renderStatus(out, vtx)
-	fmt.Fprintln(out, vtx.Name)
+	fmt.Fprint(out, vtx.Name)
+	fe.renderVertexTasks(out, vtx, depth)
+	fe.renderDuration(out, vtx)
+	fmt.Fprintln(out)
 	// if err := u.RenderVertexTree(out, vtx); err != nil {
 	// 	return err
 	// }
@@ -406,7 +447,7 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 			color = termenv.ANSIGreen
 		}
 	} else {
-		symbol = fe.spin.View()
+		symbol = ui.DotFilled // fe.spin.View()
 		color = termenv.ANSIYellow
 	}
 
@@ -416,7 +457,8 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 }
 
 func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
-	duration := out.String("[" + fmtDuration(vtx.Duration()) + "]")
+	fmt.Fprint(out, " ")
+	duration := out.String(fmtDuration(vtx.Duration()))
 	if vtx.Completed != nil {
 		duration = duration.Foreground(termenv.ANSIBrightBlack)
 	} else {
@@ -425,39 +467,46 @@ func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
 	fmt.Fprint(out, duration)
 }
 
-// func renderVertexTasksAndLogs(out *termenv.Output, u *progrock.UI, tape *progrock.Tape, vtx *progrock.Vertex, depth int) error {
-// 	indent := func() {
-// 		fmt.Fprint(out, strings.Repeat("  ", depth))
-// 	}
+var (
+	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
+)
 
-// 	tasks := tape.VertexTasks[vtx.Id]
-// 	for _, t := range tasks {
-// 		if t.Completed != nil {
-// 			continue
-// 		}
-// 		indent()
-// 		fmt.Fprint(out, ui.VertRightBar, " ")
-// 		if err := u.RenderTask(out, t); err != nil {
-// 			return err
-// 		}
-// 	}
-
-// 	term := tape.VertexLogs(vtx.Id)
-
-// 	if vtx.Error != nil {
-// 		term.SetHeight(term.UsedHeight())
-// 	} else {
-// 		term.SetHeight(tape.ReasonableTermHeight)
-// 	}
-
-// 	term.SetPrefix(strings.Repeat("  ", depth) + ui.VertBoldBar + " ")
-
-// 	if tape.IsClosed {
-// 		term.SetHeight(term.UsedHeight())
-// 	}
-
-// 	return u.RenderTerm(out, term)
-// }
+func (fe *Frontend) renderVertexTasks(out *termenv.Output, vtx *progrock.Vertex, depth int) error {
+	tasks := fe.db.Tasks[vtx.Id]
+	if len(tasks) == 0 {
+		return nil
+	}
+	var spaced bool
+	for _, t := range tasks {
+		var sym termenv.Style
+		if t.GetTotal() != 0 {
+			percent := int(100 * (float64(t.GetCurrent()) / float64(t.GetTotal())))
+			idx := (len(progChars) - 1) * percent / 100
+			chr := progChars[idx]
+			// chr = fmt.Sprintf("(%d/%d=%d=%d:%q)", t.GetCurrent(), t.GetTotal(), percent, idx, chr)
+			sym = out.String(chr)
+		} else {
+			// don't bother printing non-progress-bar tasks for now
+			//else if t.Completed != nil {
+			// sym = out.String(ui.IconSuccess)
+			// } else if t.Started != nil {
+			// sym = out.String(ui.DotFilled)
+			// }
+			continue
+		}
+		if t.Completed != nil {
+			sym = sym.Foreground(termenv.ANSIGreen)
+		} else if t.Started != nil {
+			sym = sym.Foreground(termenv.ANSIYellow)
+		}
+		if !spaced {
+			fmt.Fprint(out, " ")
+			spaced = true
+		}
+		fmt.Fprint(out, sym)
+	}
+	return nil
+}
 
 func DebugRenderID(out *termenv.Output, u *progrock.UI, id *idproto.ID, depth int) error {
 	if id.Parent != nil {

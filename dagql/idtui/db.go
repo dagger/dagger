@@ -20,6 +20,7 @@ type DB struct {
 
 	IDs       map[string]*idproto.ID
 	Vertices  map[string]*progrock.Vertex
+	Tasks     map[string][]*progrock.VertexTask
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Children  map[string]map[string]struct{}
@@ -40,6 +41,7 @@ func NewDB(log *slog.Logger) *DB {
 
 		IDs:       make(map[string]*idproto.ID),
 		Vertices:  make(map[string]*progrock.Vertex),
+		Tasks:     make(map[string][]*progrock.VertexTask),
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
 		Children:  make(map[string]map[string]struct{}),
@@ -100,6 +102,11 @@ func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 		}
 	}
 
+	// track vertex sub-tasks
+	for _, t := range status.Tasks {
+		db.recordTask(t)
+	}
+
 	// track parent/child vertices
 	for _, v := range status.Children {
 		if db.Children[v.Vertex] == nil {
@@ -115,6 +122,21 @@ func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 	}
 
 	return nil
+}
+
+func (db *DB) recordTask(t *progrock.VertexTask) {
+	tasks := db.Tasks[t.Vertex]
+	var updated bool
+	for i, task := range tasks {
+		if task.Name == t.Name {
+			tasks[i] = t
+			updated = true
+		}
+	}
+	if !updated {
+		tasks = append(tasks, t)
+		db.Tasks[t.Vertex] = tasks
+	}
 }
 
 func (db *DB) VertexLogs(vertex string) *Vterm {

@@ -187,7 +187,7 @@ func fmtDuration(d time.Duration) string {
 
 	switch {
 	case d < time.Minute:
-		return fmt.Sprintf("%.2fs", seconds)
+		return fmt.Sprintf("%.1fs", seconds)
 	case d < time.Hour:
 		return fmt.Sprintf("%dm%.1fs", minutes, seconds)
 	case d < 24*time.Hour:
