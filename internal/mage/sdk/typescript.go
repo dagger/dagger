@@ -97,6 +97,52 @@ func (t TypeScript) Test(ctx context.Context) error {
 	return err
 }
 
+
+// Test tests the TypeScript SDK with Bun
+func (t TypeScript) TestBun(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("typescript").Pipeline("testbun")
+
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-typescript-test"})
+	if err != nil {
+		return err
+	}
+	cliBinPath := "/.dagger-cli"
+
+	nodeBuild := nodeJsBase(c).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"yarn", "build"})
+
+
+
+	appDir := "sdk/bun"
+	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
+	mountPath := fmt.Sprintf("/%s", appDir)
+
+	_, err = c.Container().
+		From("oven/bun:1").
+		WithWorkdir(mountPath).
+		WithDirectory("../typescript/dist", nodeBuild.Directory("./dist")).
+		WithDirectory("../typescript/node_modules", nodeBuild.Directory("./node_modules")).
+		WithDirectory(mountPath, src).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"bun", "test"}).
+		Sync(ctx)
+
+	return err
+}
+
 // Generate re-generates the SDK API
 func (t TypeScript) Generate(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
@@ -202,3 +248,4 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 		WithExec([]string{"yarn", "install"}).
 		WithDirectory(mountPath, src)
 }
+

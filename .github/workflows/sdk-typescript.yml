@@ -28,3 +28,9 @@ jobs:
     secrets: inherit
     with:
       mage-targets: sdk:typescript:test
+
+  test:
+    uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
+    with:
+      mage-targets: sdk:typescript:testbun
