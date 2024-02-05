@@ -433,8 +433,8 @@ func (s *containerSchema) Install() {
 			ArgDoc("args", `The args of the command.`),
 
 		dagql.NodeFunc("terminal", s.terminal).
-			Doc(`Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).`).
-			ArgDoc("cmd", `If set, override the container's default shell command and invoke these command arguments instead.`),
+			Doc(`Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`),
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
@@ -1304,12 +1304,12 @@ func (s *containerSchema) terminal(
 	ctx context.Context,
 	ctr dagql.Instance[*core.Container],
 	args struct {
-		Cmd dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Cmd *[]string
 	},
 ) (*core.Terminal, error) {
 	var shellArgs []string
-	if args.Cmd.Valid {
-		shellArgs = collectArrayInput(args.Cmd.Value, dagql.String.String)
+	if args.Cmd != nil {
+		shellArgs = *args.Cmd
 	} else {
 		// if no override args specified, use default shell
 		shellArgs = ctr.Self.DefaultTerminalCmd
