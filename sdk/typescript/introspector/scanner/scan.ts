@@ -10,6 +10,7 @@ import {
   FunctionTypedef,
 } from "./typeDefs.js"
 import {
+  getAlias,
   isFunction,
   isMainObject,
   isObject,
@@ -63,11 +64,11 @@ export function scan(files: string[], moduleName = ""): ScanResult {
       if (ts.isClassDeclaration(node) && isObject(node)) {
         const classTypeDef = introspectClass(checker, node)
 
-        metadata.classes[classTypeDef.name] = classTypeDef
-
         if (isMainObject(classTypeDef.name, moduleName)) {
           metadata.module.description = introspectTopLevelComment(file)
         }
+
+        metadata.classes[classTypeDef.alias ?? classTypeDef.name] = classTypeDef
       }
     })
   }
@@ -111,6 +112,7 @@ function introspectClass(
   const metadata: ClassTypeDef = {
     name,
     description,
+    alias: getAlias(node, "object"),
     constructor: undefined,
     fields: {},
     methods: {},
@@ -127,14 +129,14 @@ function introspectClass(
     if (ts.isMethodDeclaration(member) && isFunction(member)) {
       const fctTypeDef = introspectMethod(checker, member)
 
-      metadata.methods[fctTypeDef.name] = fctTypeDef
+      metadata.methods[fctTypeDef.alias ?? fctTypeDef.name] = fctTypeDef
     }
 
     // Handle public properties from the class.
     if (ts.isPropertyDeclaration(member)) {
       const fieldTypeDef = introspectProperty(checker, member)
 
-      metadata.fields[fieldTypeDef.name] = fieldTypeDef
+      metadata.fields[fieldTypeDef.alias ?? fieldTypeDef.name] = fieldTypeDef
     }
   })
 
@@ -169,6 +171,7 @@ function introspectProperty(
   return {
     name,
     description,
+    alias: getAlias(property, "field"),
     typeDef: typeNameToTypedef(typeName),
     isExposed: isPublicProperty(property),
   }
@@ -227,7 +230,7 @@ function introspectConstructor(
  */
 function introspectMethod(
   checker: ts.TypeChecker,
-  method: ts.MethodDeclaration | ts.ArrowFunction
+  method: ts.MethodDeclaration
 ): FunctionTypedef {
   const methodSymbol = checker.getSymbolAtLocation(method.name)
   if (!methodSymbol) {
@@ -245,6 +248,7 @@ function introspectMethod(
   return {
     name: methodMetadata.name,
     description: methodMetadata.description,
+    alias: getAlias(method, "func"),
     args: methodSignature.params.reduce(
       (
         acc: { [name: string]: FunctionArg },

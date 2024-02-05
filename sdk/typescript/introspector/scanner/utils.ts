@@ -88,6 +88,33 @@ export function isField(property: ts.PropertyDeclaration): boolean {
   )
 }
 
+export function getAlias(
+  elem: ts.HasDecorators,
+  kind: "field" | "func" | "object"
+): string | undefined {
+  const decorator = ts.getDecorators(elem)?.find((d) => {
+    if (ts.isCallExpression(d.expression)) {
+      return d.expression.expression.getText() === kind
+    }
+
+    return false
+  })
+
+  if (!decorator) {
+    return undefined
+  }
+
+  const expression = decorator.expression as ts.CallExpression
+  const args = expression.arguments
+
+  const alias = args[0]?.getText()
+  if (alias) {
+    return JSON.parse(alias.replace(/'/g, '"'))
+  }
+
+  return undefined
+}
+
 /**
  * Return true if the given property is public.
  *
