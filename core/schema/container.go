@@ -428,13 +428,13 @@ func (s *containerSchema) Install() {
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
 				`This is the initial state of all containers.`),
 
-		dagql.Func("withDefaultShell", s.withDefaultShell).
-			Doc(`Set the default command to invoke for the "shell" API.`).
-			ArgDoc("args", `The args of the command to set the default shell to.`),
+		dagql.Func("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
+			Doc(`Set the default command to invoke for the container's terminal API.`).
+			ArgDoc("args", `The args of the command.`),
 
-		dagql.NodeFunc("shell", s.shell).
-			Doc(`Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).`).
-			ArgDoc("args", `If set, override the container's default shell and invoke these arguments instead.`),
+		dagql.NodeFunc("terminal", s.terminal).
+			Doc(`Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`),
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
@@ -1288,7 +1288,7 @@ func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Contain
 	return child, nil
 }
 
-func (s *containerSchema) withDefaultShell(
+func (s *containerSchema) withDefaultTerminalCmd(
 	ctx context.Context,
 	ctr *core.Container,
 	args struct {
@@ -1296,23 +1296,23 @@ func (s *containerSchema) withDefaultShell(
 	},
 ) (*core.Container, error) {
 	ctr = ctr.Clone()
-	ctr.DefaultShell = args.Args
+	ctr.DefaultTerminalCmd = args.Args
 	return ctr, nil
 }
 
-func (s *containerSchema) shell(
+func (s *containerSchema) terminal(
 	ctx context.Context,
 	ctr dagql.Instance[*core.Container],
 	args struct {
-		Args dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Cmd *[]string
 	},
 ) (*core.Terminal, error) {
 	var shellArgs []string
-	if args.Args.Valid {
-		shellArgs = collectArrayInput(args.Args.Value, dagql.String.String)
+	if args.Cmd != nil {
+		shellArgs = *args.Cmd
 	} else {
 		// if no override args specified, use default shell
-		shellArgs = ctr.Self.DefaultShell
+		shellArgs = ctr.Self.DefaultTerminalCmd
 	}
 
 	// if still no args, default to sh

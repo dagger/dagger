@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Shells tests are run directly on the host rather than in exec containers because we want to
+// Terminal tests are run directly on the host rather than in exec containers because we want to
 // directly interact with the dagger shell tui without resorting to embedding more go code
 // into a container for driving it.
 
-func TestModuleDaggerShell(t *testing.T) {
+func TestModuleDaggerTerminal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -35,7 +35,7 @@ func New(ctx context.Context) *Test {
 			From("mirror.gcr.io/alpine:3.18").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
-			WithDefaultShell([]string{"/bin/sh"}),
+			WithDefaultTerminalCmd([]string{"/bin/sh"}),
 	}
 }
 
@@ -65,7 +65,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "shell")
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -106,7 +106,7 @@ func New(ctx context.Context) *Test {
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithExec([]string{"apk", "add", "python3"}).
-			WithDefaultShell([]string{"/bin/sh"}),
+			WithDefaultTerminalCmd([]string{"/bin/sh"}),
 	}
 }
 
@@ -132,7 +132,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "shell", "--args=python")
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal", "--cmd=python")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

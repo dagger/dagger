@@ -921,27 +921,6 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    def shell(
-        self,
-        *,
-        args: Sequence[str] | None = None,
-    ) -> "Terminal":
-        """Return an interactive terminal for this container using its configured
-        shell if not overridden by args (or sh as a fallback default).
-
-        Parameters
-        ----------
-        args:
-            If set, override the container's default shell and invoke these
-            arguments instead.
-        """
-        _args = [
-            Arg("args", args, None),
-        ]
-        _ctx = self._select("shell", _args)
-        return Terminal(_ctx)
-
-    @typecheck
     async def stderr(self) -> str:
         """The error stream of the last executed command.
 
@@ -1016,6 +995,28 @@ class Container(Type):
         return self.sync().__await__()
 
     @typecheck
+    def terminal(
+        self,
+        *,
+        cmd: Sequence[str] | None = None,
+    ) -> "Terminal":
+        """Return an interactive terminal for this container using its configured
+        default terminal command if not overridden by args (or sh as a
+        fallback default).
+
+        Parameters
+        ----------
+        cmd:
+            If set, override the container's default terminal command and
+            invoke these command arguments instead.
+        """
+        _args = [
+            Arg("cmd", cmd, None),
+        ]
+        _ctx = self._select("terminal", _args)
+        return Terminal(_ctx)
+
+    @typecheck
     async def user(self) -> str:
         """Retrieves the user to be set for all commands.
 
@@ -1054,18 +1055,18 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_default_shell(self, args: Sequence[str]) -> "Container":
-        """Set the default command to invoke for the "shell" API.
+    def with_default_terminal_cmd(self, args: Sequence[str]) -> "Container":
+        """Set the default command to invoke for the container's terminal API.
 
         Parameters
         ----------
         args:
-            The args of the command to set the default shell to.
+            The args of the command.
         """
         _args = [
             Arg("args", args),
         ]
-        _ctx = self._select("withDefaultShell", _args)
+        _ctx = self._select("withDefaultTerminalCmd", _args)
         return Container(_ctx)
 
     @typecheck

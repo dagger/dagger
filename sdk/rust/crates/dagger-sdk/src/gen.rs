@@ -697,10 +697,10 @@ pub struct ContainerPublishOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerShellOpts<'a> {
-    /// If set, override the container's default shell and invoke these arguments instead.
+pub struct ContainerTerminalOpts<'a> {
+    /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
-    pub args: Option<Vec<&'a str>>,
+    pub cmd: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
@@ -1287,35 +1287,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn shell(&self) -> Terminal {
-        let query = self.selection.select("shell");
-        return Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn shell_opts<'a>(&self, opts: ContainerShellOpts<'a>) -> Terminal {
-        let mut query = self.selection.select("shell");
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        return Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
     pub async fn stderr(&self) -> Result<String, DaggerError> {
@@ -1333,6 +1304,35 @@ impl Container {
     pub async fn sync(&self) -> Result<ContainerId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal(&self) -> Terminal {
+        let query = self.selection.select("terminal");
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal_opts<'a>(&self, opts: ContainerTerminalOpts<'a>) -> Terminal {
+        let mut query = self.selection.select("terminal");
+        if let Some(cmd) = opts.cmd {
+            query = query.arg("cmd", cmd);
+        }
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// Retrieves the user to be set for all commands.
     pub async fn user(&self) -> Result<String, DaggerError> {
@@ -1356,13 +1356,13 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Set the default command to invoke for the "shell" API.
+    /// Set the default command to invoke for the container's terminal API.
     ///
     /// # Arguments
     ///
-    /// * `args` - The args of the command to set the default shell to.
-    pub fn with_default_shell(&self, args: Vec<impl Into<String>>) -> Container {
-        let mut query = self.selection.select("withDefaultShell");
+    /// * `args` - The args of the command.
+    pub fn with_default_terminal_cmd(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withDefaultTerminalCmd");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
