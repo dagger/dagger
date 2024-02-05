@@ -3631,6 +3631,22 @@ class GitRepository(Type):
         return await _ctx.execute(GitRepositoryID)
 
     @typecheck
+    def ref(self, name: str) -> GitRef:
+        """Returns details of a ref.
+
+        Parameters
+        ----------
+        name:
+            Ref's name (can be a commit identifier, a tag name, a branch name,
+            or a fully-qualified ref).
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("ref", _args)
+        return GitRef(_ctx)
+
+    @typecheck
     def tag(self, name: str) -> GitRef:
         """Returns details of a tag.
 
@@ -5932,10 +5948,19 @@ class Service(Type):
         self,
         *,
         ports: Sequence[PortForward] | None = [],
-        native: bool | None = False,
+        random: bool | None = False,
     ) -> Void | None:
         """Creates a tunnel that forwards traffic from the caller's network to
         this service.
+
+        Parameters
+        ----------
+        ports:
+            List of frontend/backend port mappings to forward.
+            Frontend is the port accepting traffic on the host, backend is the
+            service port.
+        random:
+            Bind each tunnel port to a random port on the host.
 
         Returns
         -------
@@ -5952,7 +5977,7 @@ class Service(Type):
         """
         _args = [
             Arg("ports", ports, []),
-            Arg("native", native, False),
+            Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
         return await _ctx.execute(Void | None)

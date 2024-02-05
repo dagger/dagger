@@ -1,3 +1,6 @@
+/**
+ * Should be ignored
+ */
 import { func, object } from '../../../decorators/decorators.js'
 import { dag } from '../../../../api/client.gen.js'
 

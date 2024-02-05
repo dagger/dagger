@@ -534,3 +534,26 @@ func TestModuleCustomDepNames(t *testing.T) {
 		require.Equal(t, "hi from dep1 hi from dep2", strings.TrimSpace(out))
 	})
 }
+
+func TestModuleDaggerInit(t *testing.T) {
+	t.Parallel()
+	t.Run("name and sdk must be set together", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=test")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `if any flags in the group [sdk name] are set they must all be set; missing [sdk]`)
+
+		_, err = c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--sdk=go")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `if any flags in the group [sdk name] are set they must all be set; missing [name]`)
+	})
+}

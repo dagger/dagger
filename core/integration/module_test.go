@@ -1560,6 +1560,26 @@ class Minimal:
     foo: str = field(default="foo")
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `
+/**
+ * Minimal module, short description
+ *
+ * Long description, with full sentences.
+ */
+import { object, field } from '@dagger.io/dagger'
+
+/**
+* Minimal object, short description
+*/
+@object
+class Minimal {
+	@field
+	foo: string = "foo"
+}
+`,
+		},
 	} {
 		tc := tc
 

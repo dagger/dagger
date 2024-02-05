@@ -900,8 +900,17 @@ export type ServiceStopOpts = {
 }
 
 export type ServiceUpOpts = {
+  /**
+   * List of frontend/backend port mappings to forward.
+   *
+   * Frontend is the port accepting traffic on the host, backend is the service port.
+   */
   ports?: PortForward[]
-  native?: boolean
+
+  /**
+   * Bind each tunnel port to a random port on the host.
+   */
+  random?: boolean
 }
 
 /**
@@ -4466,6 +4475,23 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Returns details of a ref.
+   * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+   */
+  ref = (name: string): GitRef => {
+    return new GitRef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "ref",
+          args: { name },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Returns details of a tag.
    * @param name Tag's name (e.g., "v0.3.9").
    */
@@ -7454,6 +7480,10 @@ export class Service extends BaseClient {
 
   /**
    * Creates a tunnel that forwards traffic from the caller's network to this service.
+   * @param opts.ports List of frontend/backend port mappings to forward.
+   *
+   * Frontend is the port accepting traffic on the host, backend is the service port.
+   * @param opts.random Bind each tunnel port to a random port on the host.
    */
   up = async (opts?: ServiceUpOpts): Promise<Void> => {
     if (this._up) {

@@ -94,7 +94,7 @@ defmodule Dagger.Service do
   )
 
   (
-    @doc "Creates a tunnel that forwards traffic from the caller's network to this service.\n\n\n\n## Optional Arguments\n\n* `ports` - \n* `native` -"
+    @doc "Creates a tunnel that forwards traffic from the caller's network to this service.\n\n\n\n## Optional Arguments\n\n* `ports` - List of frontend/backend port mappings to forward.\n\nFrontend is the port accepting traffic on the host, backend is the service port.\n* `random` - Bind each tunnel port to a random port on the host."
     @spec up(t(), keyword()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
     def up(%__MODULE__{} = service, optional_args \\ []) do
       selection = select(service.selection, "up")
@@ -107,10 +107,10 @@ defmodule Dagger.Service do
         end
 
       selection =
-        if is_nil(optional_args[:native]) do
+        if is_nil(optional_args[:random]) do
           selection
         else
-          arg(selection, "native", optional_args[:native])
+          arg(selection, "random", optional_args[:random])
         end
 
       execute(selection, service.client)

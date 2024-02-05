@@ -3538,6 +3538,20 @@ impl GitRepository {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Returns details of a ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
+        let mut query = self.selection.select("ref");
+        query = query.arg("name", name.into());
+        return GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Returns details of a tag.
     ///
     /// # Arguments
@@ -5415,10 +5429,13 @@ pub struct ServiceStopOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub native: Option<bool>,
+    /// List of frontend/backend port mappings to forward.
+    /// Frontend is the port accepting traffic on the host, backend is the service port.
     #[builder(setter(into, strip_option), default)]
     pub ports: Option<Vec<PortForward>>,
+    /// Bind each tunnel port to a random port on the host.
+    #[builder(setter(into, strip_option), default)]
+    pub random: Option<bool>,
 }
 impl Service {
     /// Retrieves an endpoint that clients can use to reach this container.
@@ -5517,8 +5534,8 @@ impl Service {
         if let Some(ports) = opts.ports {
             query = query.arg("ports", ports);
         }
-        if let Some(native) = opts.native {
-            query = query.arg("native", native);
+        if let Some(random) = opts.random {
+            query = query.arg("random", random);
         }
         query.execute(self.graphql_client.clone()).await
     }

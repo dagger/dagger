@@ -3403,6 +3403,17 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// Returns details of a ref.
+func (r *GitRepository) Ref(name string) *GitRef {
+	q := r.q.Select("ref")
+	q = q.Arg("name", name)
+
+	return &GitRef{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Returns details of a tag.
 func (r *GitRepository) Tag(name string) *GitRef {
 	q := r.q.Select("tag")
@@ -5877,9 +5888,12 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 
 // ServiceUpOpts contains options for Service.Up
 type ServiceUpOpts struct {
+	// List of frontend/backend port mappings to forward.
+	//
+	// Frontend is the port accepting traffic on the host, backend is the service port.
 	Ports []PortForward
-
-	Native bool
+	// Bind each tunnel port to a random port on the host.
+	Random bool
 }
 
 // Creates a tunnel that forwards traffic from the caller's network to this service.
@@ -5893,9 +5907,9 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
 		if !querybuilder.IsZeroValue(opts[i].Ports) {
 			q = q.Arg("ports", opts[i].Ports)
 		}
-		// `native` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Native) {
-			q = q.Arg("native", opts[i].Native)
+		// `random` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Random) {
+			q = q.Arg("random", opts[i].Random)
 		}
 	}
 

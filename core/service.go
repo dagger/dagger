@@ -262,7 +262,7 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	vtx := rec.Vertex(dig, "start "+strings.Join(execOp.Meta.Args, " "))
+	vtx := rec.Vertex(dig+".start", "start "+strings.Join(execOp.Meta.Args, " "))
 	defer func() {
 		if err != nil {
 			vtx.Error(err)
