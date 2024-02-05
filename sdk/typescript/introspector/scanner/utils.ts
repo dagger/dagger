@@ -150,6 +150,22 @@ export function isOptional(param: ts.Symbol): OptionalValue {
   return result
 }
 
+export function isVariadic(param: ts.Symbol): boolean {
+  const declarations = param.getDeclarations()
+
+  // Only check if the parameters actually have declarations
+  if (declarations && declarations.length > 0) {
+    const parameterDeclaration = declarations[0]
+
+    // Convert the symbol declaration into Parameter
+    if (ts.isParameter(parameterDeclaration)) {
+      return parameterDeclaration.dotDotDotToken !== undefined
+    }
+  }
+
+  return false
+}
+
 function formatDefaultValue(value: string): string {
   const isSingleQuoteString = (): boolean =>
     value.startsWith("'") && value.endsWith("'")
