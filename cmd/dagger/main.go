@@ -50,7 +50,7 @@ func init() {
 		runCmd,
 		moduleCmd,
 		sessionCmd(),
-		genDocCmd,
+		newGenCmd(),
 		downloadCmd,
 		upCmd,
 		shellCmd,
