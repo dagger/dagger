@@ -727,13 +727,9 @@ func (b *bar) Hello(name string) string {
 		})
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.initialize.objects")
-
+	objs := inspectModuleObjects(ctx, t, modGen)
 	require.Equal(t, 1, len(objs.Array()))
-	minimal := objs.Get(`0.asObject`)
-	require.Equal(t, "Minimal", minimal.Get("name").String())
+	require.Equal(t, "Minimal", objs.Get("0.name").String())
 
 	modGen = c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -763,15 +759,10 @@ func (b *bar) Hello(name string) string {
 		})
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err = modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	objs = gjson.Get(out, "host.directory.asModule.initialize.objects")
-
+	objs = inspectModuleObjects(ctx, t, modGen)
 	require.Equal(t, 2, len(objs.Array()))
-	minimal = objs.Get(`0.asObject`)
-	require.Equal(t, "Minimal", minimal.Get("name").String())
-	foo := objs.Get(`1.asObject`)
-	require.Equal(t, "MinimalFoo", foo.Get("name").String())
+	require.Equal(t, "Minimal", objs.Get("0.name").String())
+	require.Equal(t, "MinimalFoo", objs.Get("1.name").String())
 
 	modGen = c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -803,7 +794,7 @@ func (b *bar) Hello(name string) string {
 		})
 	logGen(ctx, t, modGen.Directory("."))
 
-	_, err = modGen.With(inspectModule).Stderr(ctx)
+	_, err := modGen.With(moduleIntrospection).Stderr(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
 	require.Contains(t, logs.String(), "cannot code-generate unexported type bar")
@@ -876,54 +867,13 @@ func (b *Baz) Hello() (string, error) {
 		})
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.initialize.objects")
-
+	objs := inspectModuleObjects(ctx, t, modGen)
 	require.Equal(t, 4, len(objs.Array()))
-
-	obj := objs.Get(`0.asObject`)
-	require.Equal(t, "Minimal", obj.Get("name").String())
-	obj = objs.Get(`1.asObject`)
-	require.Equal(t, "MinimalFoo", obj.Get("name").String())
-	obj = objs.Get(`2.asObject`)
-	require.Equal(t, "MinimalBar", obj.Get("name").String())
-	obj = objs.Get(`3.asObject`)
-	require.Equal(t, "MinimalBaz", obj.Get("name").String())
+	require.Equal(t, "Minimal", objs.Get("0.name").String())
+	require.Equal(t, "MinimalFoo", objs.Get("1.name").String())
+	require.Equal(t, "MinimalBar", objs.Get("2.name").String())
+	require.Equal(t, "MinimalBaz", objs.Get("3.name").String())
 }
-
-var inspectModule = daggerQuery(`
-query {
-  host {
-    directory(path: ".") {
-      asModule {
-				initialize {
-        	description
-					objects {
-						asObject {
-							name
-							description
-							functions {
-								name
-								description
-								args {
-									name
-									description
-									defaultValue
-								}
-							}
-							fields {
-								name
-								description
-							}
-						}
-					}
-				}
-      }
-    }
-  }
-}
-`)
 
 func TestModuleGoDocs(t *testing.T) {
 	t.Parallel()
@@ -940,9 +890,7 @@ func TestModuleGoDocs(t *testing.T) {
 
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
+	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
 	require.Equal(t, "Minimal", obj.Get("name").String())
 
 	hello := obj.Get(`functions.#(name="hello")`)
@@ -1050,9 +998,7 @@ func (m *Minimal) HelloFinal(
 
 	logGen(ctx, t, modGen.Directory("."))
 
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
+	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
 	require.Equal(t, "Minimal", obj.Get("name").String())
 	require.Equal(t, "Minimal is a thing", obj.Get("description").String())
 
@@ -1368,9 +1314,8 @@ class Minimal {
 				logGen(ctx, t, modGen.Directory("."))
 			}
 
-			out, err := modGen.With(inspectModule).Stdout(ctx)
-			require.NoError(t, err)
-			mod := gjson.Get(out, "host.directory.asModule.initialize")
+			mod := inspectModule(ctx, t, modGen)
+
 			require.Equal(t,
 				"Minimal module, short description\n\nLong description, with full sentences.",
 				mod.Get("description").String(),
@@ -1479,15 +1424,13 @@ class Minimal {
 				logGen(ctx, t, modGen.Directory("."))
 			}
 
-			out, err := modGen.With(inspectModule).Stdout(ctx)
-			require.NoError(t, err)
-			obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
+			obj := inspectModuleObjects(ctx, t, modGen).Get("0")
 			require.Equal(t, "Minimal", obj.Get("name").String())
 			require.Len(t, obj.Get(`fields`).Array(), 1)
 			prop := obj.Get(`fields.#(name="foo")`)
 			require.Equal(t, "foo", prop.Get("name").String())
 
-			out, err = modGen.With(daggerQuery(`{minimal{set(foo: "abc", bar: "xyz"){hello}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{minimal{set(foo: "abc", bar: "xyz"){hello}}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"minimal":{"set":{"hello": "abcxyz"}}}`, out)
 
@@ -4589,6 +4532,53 @@ func currentSchema(ctx context.Context, t *testing.T, ctr *dagger.Container) *in
 	err = json.Unmarshal([]byte(out), &schemaResp)
 	require.NoError(t, err)
 	return schemaResp.Schema
+}
+
+var moduleIntrospection = daggerQuery(`
+query { host { directory(path: ".") { asModule { initialize {
+    description
+    objects {
+        asObject {
+            name
+            description
+            constructor {
+                description
+                args {
+                    name
+                    description
+                    defaultValue
+                }
+            }
+            functions {
+                name
+                description
+                args {
+                    name
+                    description
+                    defaultValue
+                }
+			}
+            fields {
+                name
+                description
+            }
+        }
+    }
+} } } } }
+`)
+
+func inspectModule(ctx context.Context, t *testing.T, ctr *dagger.Container) gjson.Result {
+	t.Helper()
+	out, err := ctr.With(moduleIntrospection).Stdout(ctx)
+	require.NoError(t, err)
+	result := gjson.Get(out, "host.directory.asModule.initialize")
+	t.Logf("module introspection:\n%v", result.Raw)
+	return result
+}
+
+func inspectModuleObjects(ctx context.Context, t *testing.T, ctr *dagger.Container) gjson.Result {
+	t.Helper()
+	return inspectModule(ctx, t, ctr).Get("objects.#.asObject")
 }
 
 func goGitBase(t *testing.T, c *dagger.Client) *dagger.Container {
