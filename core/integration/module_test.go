@@ -1893,7 +1893,7 @@ func TestModuleReturnCompositeCore(t *testing.T) {
 type Playground struct{}
 
 func (m *Playground) MySlice() []*Container {
-	return []*Container{dag.Container().From("alpine:latest").WithExec([]string{"echo", "hello world"})}
+	return []*Container{dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"})}
 }
 
 type Foo struct {
@@ -1903,7 +1903,7 @@ type Foo struct {
 }
 
 func (m *Playground) MyStruct() *Foo {
-	return &Foo{Con: dag.Container().From("alpine:latest").WithExec([]string{"echo", "hello world"})}
+	return &Foo{Con: dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"})}
 }
 `,
 		},
@@ -1921,11 +1921,11 @@ class Foo:
 class Playground:
     @function
     def my_slice(self) -> list[dagger.Container]:
-        return [dag.container().from_("alpine:latest").with_exec(["echo", "hello world"])]
+        return [dag.container().from_("` + alpineImage + `").with_exec(["echo", "hello world"])]
 
     @function
     def my_struct(self) -> Foo:
-        return Foo(con=dag.container().from_("alpine:latest").with_exec(["echo", "hello world"]))
+        return Foo(con=dag.container().from_("` + alpineImage + `").with_exec(["echo", "hello world"]))
 `,
 		},
 		{
@@ -1952,14 +1952,14 @@ class Playground {
   @func()
   mySlice(): Container[] {
     return [
-      dag.container().from("alpine:latest").withExec(["echo", "hello world"])
+      dag.container().from("` + alpineImage + `").withExec(["echo", "hello world"])
     ]
   }
 
   @func()
   myStruct(): Foo {
     return new Foo(
-      dag.container().from("alpine:latest").withExec(["echo", "hello world"])
+      dag.container().from("` + alpineImage + `").withExec(["echo", "hello world"])
     )
   }
 }
@@ -2021,7 +2021,7 @@ type ScanReport struct {
 func (m *Playground) Scan() ScanResult {
 	return ScanResult{
 		Containers: []*Container{
-			dag.Container().From("alpine:latest").WithExec([]string{"echo", "hello world"}),
+			dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"}),
 		},
 		Report: ScanReport{
 			Contents: "hello world",
@@ -2052,7 +2052,7 @@ class Playground:
     def scan(self) -> ScanResult:
         return ScanResult(
             containers=[
-                dag.container().from_("alpine:latest").with_exec(["echo", "hello world"]),
+                dag.container().from_("` + alpineImage + `").with_exec(["echo", "hello world"]),
             ],
             report=ScanReport(
                 contents="hello world",
@@ -2100,7 +2100,7 @@ class Playground {
   async scan(): Promise<ScanResult> {
     return new ScanResult(
       [
-        dag.container().from("alpine:latest").withExec(["echo", "hello world"])
+        dag.container().from("` + alpineImage + `").withExec(["echo", "hello world"])
       ],
       new ScanReport("hello world", ["foo", "bar"])
     )
@@ -2149,7 +2149,7 @@ import "context"
 
 type Foo struct {}
 
-var someDefault = dag.Container().From("alpine:latest")
+var someDefault = dag.Container().From("` + alpineImage + `")
 
 func (m *Foo) Fn(ctx context.Context) (string, error) {
 	return someDefault.WithExec([]string{"echo", "foo"}).Stdout(ctx)
@@ -2160,7 +2160,7 @@ func (m *Foo) Fn(ctx context.Context) (string, error) {
 			sdk: "python",
 			source: `from dagger import dag, function, object_type
 
-SOME_DEFAULT = dag.container().from_("alpine:latest")
+SOME_DEFAULT = dag.container().from_("` + alpineImage + `")
 
 @object_type
 class Foo:
@@ -2174,7 +2174,7 @@ class Foo:
 			source: `
 import { dag, object, func } from "@dagger.io/dagger"
 
-var someDefault = dag.container().from("alpine:latest")
+var someDefault = dag.container().from("` + alpineImage + `")
 
 @object()
 class Foo {
@@ -3581,7 +3581,7 @@ type Wrapper struct{}
 
 func (m *Wrapper) Container() *WrappedContainer {
 	return &WrappedContainer{
-		dag.Container().From("alpine"),
+		dag.Container().From("` + alpineImage + `"),
 	}
 }
 
@@ -3615,7 +3615,7 @@ class WrappedContainer:
 class Wrapper:
     @function
     def container(self) -> WrappedContainer:
-        return WrappedContainer(unwrap=dag.container().from_("alpine"))
+        return WrappedContainer(unwrap=dag.container().from_("` + alpineImage + `"))
 
 `,
 		},
@@ -3643,7 +3643,7 @@ class WrappedContainer {
 class Wrapper {
   @func()
   container(): WrappedContainer {
-    return new WrappedContainer(dag.container().from("alpine"))
+    return new WrappedContainer(dag.container().from("` + alpineImage + `"))
   }
 }
 `,
@@ -4115,7 +4115,7 @@ import (
 type Playground struct{}
 
 func (p *Playground) DoThing(ctx context.Context) error {
-	_, err := dag.Container().From("alpine").WithExec([]string{"sh", "-c", "exit 5"}).Sync(ctx)
+	_, err := dag.Container().From("` + alpineImage + `").WithExec([]string{"sh", "-c", "exit 5"}).Sync(ctx)
 	var e *ExecError
 	if errors.As(err, &e) {
 		if e.ExitCode == 5 {
