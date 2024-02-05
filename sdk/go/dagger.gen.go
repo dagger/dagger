@@ -971,11 +971,11 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 
 // ContainerTerminalOpts contains options for Container.Terminal
 type ContainerTerminalOpts struct {
-	// If set, override the container's default shell command and invoke these command arguments instead.
+	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
 }
 
-// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
 func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
 	q := r.q.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {

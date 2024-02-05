@@ -199,7 +199,7 @@ export type ContainerPublishOpts = {
 
 export type ContainerTerminalOpts = {
   /**
-   * If set, override the container's default shell command and invoke these command arguments instead.
+   * If set, override the container's default terminal command and invoke these command arguments instead.
    */
   cmd?: string[]
 }
@@ -1761,8 +1761,8 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-   * @param opts.cmd If set, override the container's default shell command and invoke these command arguments instead.
+   * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    */
   terminal = (opts?: ContainerTerminalOpts): Terminal => {
     return new Terminal({

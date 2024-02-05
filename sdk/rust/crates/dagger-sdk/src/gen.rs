@@ -698,7 +698,7 @@ pub struct ContainerPublishOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerTerminalOpts<'a> {
-    /// If set, override the container's default shell command and invoke these command arguments instead.
+    /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
 }
@@ -1305,7 +1305,7 @@ impl Container {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
     /// # Arguments
     ///
@@ -1318,7 +1318,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
+    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
     /// # Arguments
     ///
