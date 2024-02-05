@@ -511,7 +511,7 @@ describe("scan static TypeScript", function () {
   it("Should correctly scan variadic arguments", async function () {
     const files = await listFiles(`${rootDirectory}/variadic`)
 
-    const result = scan(files)
+    const result = scan(files, "Variadic")
     const expected: ScanResult = {
       module: {
         description: undefined,

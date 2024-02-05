@@ -66,7 +66,6 @@ export function scan(files: string[], moduleName = ""): ScanResult {
         metadata.classes[classTypeDef.name] = classTypeDef
 
         if (isMainObject(classTypeDef.name, moduleName)) {
-          console.log(classTypeDef.name, moduleName)
           metadata.module.description = introspectTopLevelComment(file)
         }
       }
