@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -15,14 +16,13 @@ func TestModulePythonInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=bare", "--sdk=python"))
-
-		out, err := modGen.
+			With(daggerExec("init", "--name=bare", "--sdk=python")).
 			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
+
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -32,14 +32,13 @@ func TestModulePythonInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=bare", "--sdk=python", "child"))
-
-		out, err := modGen.
+			With(daggerExec("init", "--name=bare", "--sdk=python", "child")).
 			With(daggerQueryAt("child", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
+
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
@@ -53,10 +52,11 @@ func TestModulePythonInit(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("pyproject.toml", dagger.ContainerWithNewFileOpts{
-				Contents: `[project]
-name = "has-pyproject"
-version = "0.0.0"
-`,
+				Contents: heredoc.Doc(`
+                    [project]
+                    name = "has-pyproject"
+                    version = "0.0.0"
+                `),
 			}).
 			With(daggerExec("init", "--name=hasPyproject", "--sdk=python"))
 
@@ -78,25 +78,25 @@ version = "0.0.0"
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/src/main/__init__.py", dagger.ContainerWithNewFileOpts{
 				Contents: "from . import notmain\n",
 			}).
 			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
-				Contents: `from dagger import function
+				Contents: heredoc.Doc(`
+                    from dagger import function
 
-@function
-def hello() -> str:
-    return "Hello, world!"
-`,
+                    @function
+                    def hello() -> str:
+                        return "Hello, world!"
+                `),
 			}).
-			With(daggerExec("init", "--name=hasMainPy", "--sdk=python"))
-
-		out, err := modGen.
+			With(daggerExec("init", "--name=hasMainPy", "--sdk=python")).
 			With(daggerQuery(`{hasMainPy{hello}}`)).
 			Stdout(ctx)
+
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasMainPy":{"hello":"Hello, world!"}}`, out)
 	})
@@ -106,23 +106,21 @@ def hello() -> str:
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=hello-world", "--sdk=python")).
-			With(pythonSource(`from dagger import field, function, object_type
+			With(pythonSource(`
+                from dagger import field, function, object_type
 
-@object_type
-class HelloWorld:
-    my_name: str = field(default="World")
+                @object_type
+                class HelloWorld:
+                    my_name: str = field(default="World")
 
-    @function
-    def message(self) -> str:
-        return f"Hello, {self.my_name}!"
-`,
-			))
-
-		out, err := modGen.
+                    @function
+                    def message(self) -> str:
+                        return f"Hello, {self.my_name}!"
+            `)).
 			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
 			Stdout(ctx)
 
@@ -136,26 +134,27 @@ func TestModulePythonReturnSelf(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := c.Container().From(golangImage).
+	out, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=foo", "--sdk=python")).
-		With(pythonSource(`from typing import Self
+		With(pythonSource(`
+            from typing import Self
 
-from dagger import field, function, object_type
+            from dagger import field, function, object_type
 
-@object_type
-class Foo:
-    message: str = field(default="")
+            @object_type
+            class Foo:
+                message: str = field(default="")
 
-    @function
-    def bar(self) -> Self:
-        self.message = "foobar"
-        return self
-`,
-		))
+                @function
+                def bar(self) -> Self:
+                    self.message = "foobar"
+                    return self
+        `)).
+		With(daggerQuery(`{foo{bar{message}}}`)).
+		Stdout(ctx)
 
-	out, err := modGen.With(daggerQuery(`{foo{bar{message}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"foo":{"bar":{"message":"foobar"}}}`, out)
 }
@@ -169,19 +168,19 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=python")).
-		With(pythonSource(`from dagger import field, function, object_type
+		With(pythonSource(`
+            from dagger import field, function, object_type
 
-@object_type
-class Obj:
-    foo: str = field()
+            @object_type
+            class Obj:
+                foo: str = field()
 
-@object_type
-class Dep:
-    @function
-    def fn(self) -> Obj:
-        return Obj(foo="foo")
-`,
-		)).
+            @object_type
+            class Dep:
+                @function
+                def fn(self) -> Obj:
+                    return Obj(foo="foo")
+        `)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=test", "--sdk=python", "test")).
 		With(daggerExec("install", "-m=test", "./dep")).
@@ -190,15 +189,15 @@ class Dep:
 	t.Run("return as other module object", func(t *testing.T) {
 		t.Run("direct", func(t *testing.T) {
 			_, err := ctr.
-				With(pythonSource(`import dagger
+				With(pythonSource(`
+                    import dagger
 
-@dagger.object_type
-class Test:
-    @dagger.function
-    def fn(self) -> dagger.DepObj:
-        ...
-`,
-				)).
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> dagger.DepObj:
+                            ...
+                `)).
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
@@ -210,15 +209,15 @@ class Test:
 
 		t.Run("list", func(t *testing.T) {
 			_, err := ctr.
-				With(pythonSource(`import dagger
+				With(pythonSource(`
+                    import dagger
 
-@dagger.object_type
-class Test:
-    @dagger.function
-    def fn(self) -> list[dagger.DepObj]:
-        ...
-`,
-				)).
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> list[dagger.DepObj]:
+                            ...
+                `)).
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
@@ -231,15 +230,15 @@ class Test:
 
 	t.Run("arg as other module object", func(t *testing.T) {
 		t.Run("direct", func(t *testing.T) {
-			_, err := ctr.With(pythonSource(`import dagger
+			_, err := ctr.With(pythonSource(`
+                import dagger
 
-@dagger.object_type
-class Test:
-    @dagger.function
-    def fn(self, obj: dagger.DepObj):
-        ...
-`,
-			)).
+                @dagger.object_type
+                class Test:
+                    @dagger.function
+                    def fn(self, obj: dagger.DepObj):
+                        ...
+                `)).
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
@@ -250,15 +249,15 @@ class Test:
 		})
 
 		t.Run("list", func(t *testing.T) {
-			_, err := ctr.With(pythonSource(`import dagger
+			_, err := ctr.With(pythonSource(`
+                import dagger
 
-@dagger.object_type
-class Test:
-    @dagger.function
-    def fn(self, obj: list[dagger.DepObj]):
-        ...
-`,
-			)).
+                @dagger.object_type
+                class Test:
+                    @dagger.function
+                    def fn(self, obj: list[dagger.DepObj]):
+                        ...
+                `)).
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
@@ -272,19 +271,19 @@ class Test:
 	t.Run("field as other module object", func(t *testing.T) {
 		t.Run("direct", func(t *testing.T) {
 			_, err := ctr.
-				With(pythonSource(`import dagger
+				With(pythonSource(`
+                    import dagger
 
-@dagger.object_type
-class Obj:
-    foo: dagger.DepObj = dagger.field()
+                    @dagger.object_type
+                    class Obj:
+                        foo: dagger.DepObj = dagger.field()
 
-@dagger.object_type
-class Test:
-    @dagger.function
-    def fn(self) -> Obj:
-        ...
-`,
-				)).
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> Obj:
+                            ...
+                `)).
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
@@ -296,19 +295,19 @@ class Test:
 
 		t.Run("list", func(t *testing.T) {
 			_, err := ctr.
-				With(pythonSource(`import dagger
+				With(pythonSource(`
+                    import dagger
 
-@dagger.object_type
-class Obj:
-    foo: list[dagger.DepObj] = dagger.field()
+                    @dagger.object_type
+                    class Obj:
+                        foo: list[dagger.DepObj] = dagger.field()
 
-@dagger.object_type
-class Test:
-    @dagger.function
-    def fn(self) -> list[Obj]:
-        ...
-`,
-				)).
+                    @dagger.object_type
+                    class Test:
+                        @dagger.function
+                        def fn(self) -> list[Obj]:
+                            ...
+                `)).
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)

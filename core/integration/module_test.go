@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/iancoleman/strcase"
@@ -4561,7 +4562,7 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 			return c
 		}
 		return c.WithNewFile(sourcePath, dagger.ContainerWithNewFileOpts{
-			Contents: contents,
+			Contents: heredoc.Doc(contents),
 		})
 	}
 }

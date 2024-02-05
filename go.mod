@@ -101,7 +101,11 @@ require (
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
 
-require github.com/muesli/reflow v0.3.0
+require (
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/muesli/reflow v0.3.0
+)
 
 require (
 	cdr.dev/slog v1.4.2 // indirect
@@ -161,7 +165,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
