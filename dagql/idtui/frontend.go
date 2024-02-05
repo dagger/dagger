@@ -15,8 +15,10 @@ import (
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock"
 	"github.com/vito/progrock/ui"
+	"golang.org/x/term"
 )
 
 type Frontend struct {
@@ -25,6 +27,8 @@ type Frontend struct {
 
 	// updated by Run
 	program   *tea.Program
+	in        *swappableWriter
+	out       *termenv.Output
 	run       func(context.Context) error
 	runCtx    context.Context
 	interrupt func()
@@ -38,13 +42,22 @@ type Frontend struct {
 	rows  []*TraceRow
 
 	// TUI state/config
-	fps    float64           // frames per second
-	spin   tea.Model         // da spin zone
-	window tea.WindowSizeMsg // set by BubbleTea
-	view   *bytes.Buffer     // rendered async
+	fps      float64 // frames per second
+	profile  termenv.Profile
+	spin     tea.Model             // da spin zone
+	window   tea.WindowSizeMsg     // set by BubbleTea
+	view     *bytes.Buffer         // rendered async
+	logs     map[string]*Vterm     // vertex logs
+	zoomed   map[string]*zoomState // interactive zoomed terminals
+	lastZoom *zoomState
 
 	// held to synchronize tea.Model and progrock.Writer
 	mu sync.Mutex
+}
+
+type zoomState struct {
+	Input  io.Writer
+	Output *midterm.Terminal
 }
 
 func New() *Frontend {
@@ -56,16 +69,63 @@ func New() *Frontend {
 		db: NewDB(slog.New(slog.NewTextHandler(io.Discard, nil))),
 
 		// sane default, fine-tune if needed
-		fps:  30,
-		spin: spin,
-		view: new(bytes.Buffer),
+
+		fps:     30,
+		profile: ui.ColorProfile(),
+		spin:    spin,
+		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		view:    new(bytes.Buffer),
+		logs:    make(map[string]*Vterm),
+		zoomed:  make(map[string]*zoomState),
 	}
 }
 
 func (f *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
+	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
+	// can show the TUI on stderr.
+	tty, isTTY := findTTY()
+
+	// NOTE: establish color cache before we start consuming stdin
+	f.out = ui.NewOutput(tty, termenv.WithProfile(f.profile), termenv.WithColorCache(true))
+
+	var inR io.Reader
+	if isTTY {
+		// in order to allow the TUI to receive user input but _also_ allow an
+		// interactive terminal to receive keyboard input, we pipe the user input
+		// to an io.Writer that can have its destination swapped between the TUI
+		// and the remote terminal.
+		var inW io.Writer
+		inR, inW = io.Pipe()
+		f.in = &swappableWriter{original: inW}
+
+		// Bubbletea will just receive an `io.Reader` for its input rather than the
+		// raw TTY *os.File, so we need to set up the TTY ourselves.
+		ttyFd := int(tty.Fd())
+		oldState, err := term.MakeRaw(ttyFd)
+		if err != nil {
+			return err
+		}
+		defer term.Restore(ttyFd, oldState) // nolint: errcheck
+
+		// start piping from the TTY to our swappable writer.
+		go io.Copy(f.in, tty) // nolint: errcheck
+
+		// TODO: support scrollable viewport?
+		// f.out.EnableMouseCellMotion()
+	} else {
+		// no TTY found, so no input can be sent to the TUI
+		inR = nil
+	}
+
 	f.run = run
 	f.runCtx, f.interrupt = context.WithCancel(ctx)
-	f.program = tea.NewProgram(f, tea.WithOutput(os.Stderr))
+	f.program = tea.NewProgram(f,
+		tea.WithInput(inR),
+		tea.WithOutput(f.out),
+		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
+		// counter-productive.
+		tea.WithoutCatchPanics(),
+	)
 	_, err := f.program.Run()
 	if err != nil {
 		return err
@@ -76,6 +136,57 @@ func (f *Frontend) Run(ctx context.Context, run func(context.Context) error) err
 	return f.err
 }
 
+func (f *Frontend) directStdin(st *zoomState) {
+	if st == nil {
+		f.in.Restore()
+		// TODO: support scrollable viewport?
+		// restore scrolling as we transition back to the DAG UI, since an app
+		// may have disabled it
+		// f.out.EnableMouseCellMotion()
+	} else {
+		// TODO: support scrollable viewport?
+		// disable mouse events, can't assume zoomed input wants it (might be
+		// regular shell like sh)
+		// f.out.DisableMouseCellMotion()
+		f.in.SetOverride(st.Input)
+	}
+}
+
+func findTTY() (*os.File, bool) {
+	// some of these may be redirected
+	for _, f := range []*os.File{os.Stderr, os.Stdout, os.Stdin} {
+		if term.IsTerminal(int(f.Fd())) {
+			return f, true
+		}
+	}
+	return nil, false
+}
+
+type swappableWriter struct {
+	original io.Writer
+	override io.Writer
+	sync.Mutex
+}
+
+func (w *swappableWriter) SetOverride(to io.Writer) {
+	w.Lock()
+	w.override = to
+	w.Unlock()
+}
+
+func (w *swappableWriter) Restore() {
+	w.SetOverride(nil)
+}
+
+func (w *swappableWriter) Write(p []byte) (int, error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.override != nil {
+		return w.override.Write(p)
+	}
+	return w.original.Write(p)
+}
+
 var _ progrock.Writer = (*Frontend)(nil)
 
 func (f *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
@@ -84,11 +195,86 @@ func (f *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
 	if err := f.db.WriteStatus(update); err != nil {
 		return err
 	}
+	for _, v := range update.Vertexes {
+		_, isZoomed := f.zoomed[v.Id]
+		if v.Zoomed && !isZoomed {
+			f.initZoom(v)
+		} else if isZoomed {
+			f.releaseZoom(v)
+		}
+	}
+	for _, l := range update.Logs {
+		var w io.Writer
+		if t, found := f.zoomed[l.Vertex]; found {
+			w = t.Output
+		} else {
+			w = f.vertexLogs(l.Vertex)
+		}
+		_, err := w.Write(l.Data)
+		if err != nil {
+			return fmt.Errorf("write logs: %w", err)
+		}
+	}
 	if len(update.Vertexes) > 0 {
 		f.steps = CollectSteps(f.db)
 		f.rows = CollectRows(f.steps)
 	}
 	return nil
+}
+
+func (fe *Frontend) vertexLogs(id string) *Vterm {
+	term, found := fe.logs[id]
+	if !found {
+		term = NewVterm()
+		fe.logs[id] = term
+	}
+	return term
+}
+
+var (
+	// what's a little global state between friends?
+	termSetups  = map[string]progrock.TermSetupFunc{}
+	termSetupsL = new(sync.Mutex)
+)
+
+func setupTerm(vId string, vt *midterm.Terminal) io.Writer {
+	termSetupsL.Lock()
+	defer termSetupsL.Unlock()
+	setup, ok := termSetups[vId]
+	if ok && setup != nil {
+		return setup(vt)
+	}
+	return nil
+}
+
+// Zoomed marks the vertex as zoomed, indicating it should take up as much
+// screen space as possible.
+func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
+	return func(vertex *progrock.Vertex) {
+		termSetupsL.Lock()
+		termSetups[vertex.Id] = setup
+		termSetupsL.Unlock()
+		vertex.Zoomed = true
+	}
+}
+
+func (tape *Frontend) initZoom(v *progrock.Vertex) {
+	var vt *midterm.Terminal
+	if tape.window.Height == -1 || tape.window.Width == -1 {
+		vt = midterm.NewAutoResizingTerminal()
+	} else {
+		vt = midterm.NewTerminal(tape.window.Height, tape.window.Width)
+	}
+	// vt := NewVterm()
+	w := setupTerm(v.Id, vt)
+	tape.zoomed[v.Id] = &zoomState{
+		Output: vt,
+		Input:  w,
+	}
+}
+
+func (tape *Frontend) releaseZoom(vtx *progrock.Vertex) {
+	delete(tape.zoomed, vtx.Id)
 }
 
 type eofMsg struct{}
@@ -99,12 +285,58 @@ func (f *Frontend) Close() error {
 }
 
 func (f *Frontend) Render(w io.Writer) error {
-	out := ui.NewOutput(w)
+	out := ui.NewOutput(w, termenv.WithProfile(f.profile))
+
+	zoomSt := f.currentZoom()
+	if zoomSt != f.lastZoom {
+		f.directStdin(zoomSt)
+		if zoomSt != nil {
+			f.lastZoom = zoomSt
+		}
+	}
+
+	// if we're zoomed, render the zoomed terminal and nothing else, but only
+	// after we've actually seen output from it.
+	if zoomSt != nil && zoomSt.Output.UsedHeight() > 0 {
+		return f.renderZoomed(out, zoomSt)
+	}
+
 	for _, row := range f.rows {
 		if f.Debug || row.IsInteresting() {
 			if err := f.renderRow(out, row); err != nil {
 				return err
 			}
+		}
+	}
+
+	return nil
+}
+
+func (f *Frontend) currentZoom() *zoomState {
+	var firstZoomed *progrock.Vertex
+	var firstState *zoomState
+	for vId, st := range f.zoomed {
+		v := f.db.FirstVertex(vId)
+		if v == nil {
+			// should be impossible
+			continue
+		}
+		if v.Started == nil {
+			// just being defensive, theoretically this is a valid state
+			continue
+		}
+		if firstZoomed == nil || v.Started.AsTime().Before(firstZoomed.Started.AsTime()) {
+			firstZoomed = v
+			firstState = st
+		}
+	}
+	return firstState
+}
+
+func (f *Frontend) renderZoomed(out *termenv.Output, st *zoomState) error {
+	for i := 0; i < st.Output.UsedHeight(); i++ {
+		if err := st.Output.RenderLine(out, i); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -156,6 +388,9 @@ func (m *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.window = msg
+		for _, st := range m.zoomed {
+			st.Output.Resize(msg.Height, msg.Width)
+		}
 		return m, nil
 
 	case ui.FrameMsg:
@@ -184,12 +419,31 @@ func (f *Frontend) View() string {
 		if errors.Is(f.runCtx.Err(), context.Canceled) {
 			return "canceled\n"
 		}
-		return fmt.Sprintf("%s\n", f.view)
+		return fmt.Sprintf("%s", f.view)
 	}
 	if f.done && f.eof {
+		if zoom := f.lastZoom; zoom != nil {
+			return f.zoomedOutput(zoom)
+		}
 		return ""
 	}
-	return fmt.Sprintf("%s\n", f.view)
+	return fmt.Sprintf("%s", f.view)
+}
+
+func (fe *Frontend) zoomedOutput(st *zoomState) string {
+	buf := new(strings.Builder)
+	fe.renderZoomed(termenv.NewOutput(buf), st)
+	return buf.String()
+}
+
+// DumpID is exposed for troubleshooting.
+func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
+	if id.Parent != nil {
+		if err := fe.DumpID(out, id.Parent); err != nil {
+			return err
+		}
+	}
+	return fe.renderID(out, nil, id, 0, false)
 }
 
 func (f *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
@@ -221,7 +475,7 @@ func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error
 }
 
 func (fe *Frontend) renderLogs(out *termenv.Output, row *TraceRow) {
-	if logs, ok := fe.db.Logs[row.Step.Digest]; ok {
+	if logs, ok := fe.logs[row.Step.Digest]; ok {
 		bar := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		logs.SetPrefix(strings.Repeat("  ", row.Depth()) + bar.String() + " ")
 		// logs.SetPrefix(strings.Repeat("  ", row.Depth()+1))
@@ -275,12 +529,6 @@ func (fe *Frontend) renderIDPath(out *termenv.Output, id *idproto.ID) error {
 }
 
 func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
-	// if id.Parent != nil {
-	// 	if err := fe.renderIDAncestry(out, id.Parent, depth); err != nil {
-	// 		return err
-	// 	}
-	// }
-
 	if !inline {
 		indent(out, depth)
 	}
@@ -506,78 +754,5 @@ func (fe *Frontend) renderVertexTasks(out *termenv.Output, vtx *progrock.Vertex,
 		}
 		fmt.Fprint(out, sym)
 	}
-	return nil
-}
-
-func DebugRenderID(out *termenv.Output, u *progrock.UI, id *idproto.ID, depth int) error {
-	if id.Parent != nil {
-		if err := DebugRenderID(out, u, id.Parent, depth); err != nil {
-			return err
-		}
-	}
-
-	indent := func() {
-		fmt.Fprint(out, strings.Repeat("  ", depth))
-	}
-
-	indent()
-
-	fmt.Fprint(out, id.Field)
-
-	kwColor := termenv.ANSIBlue
-
-	if len(id.Args) > 0 {
-		fmt.Fprint(out, "(")
-		var needIndent bool
-		for _, arg := range id.Args {
-			if _, ok := arg.Value.ToInput().(*idproto.ID); ok {
-				needIndent = true
-				break
-			}
-		}
-		if needIndent {
-			fmt.Fprintln(out)
-			depth++
-			for _, arg := range id.Args {
-				indent()
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
-				val := arg.Value.GetValue()
-				switch x := val.(type) {
-				case *idproto.Literal_Id:
-					argVertexID, err := x.Id.Digest()
-					if err != nil {
-						return err
-					}
-					fmt.Fprintln(out, " "+x.Id.Type.ToAST().Name()+"@"+argVertexID.String()+"{")
-					depth++
-					if err := DebugRenderID(out, u, x.Id, depth); err != nil {
-						return err
-					}
-					depth--
-					indent()
-					fmt.Fprintln(out, "}")
-				default:
-					fmt.Fprint(out, " ")
-					renderLiteral(out, arg.Value)
-					fmt.Fprintln(out)
-				}
-			}
-			depth--
-			indent()
-		} else {
-			for i, arg := range id.Args {
-				if i > 0 {
-					fmt.Fprint(out, ", ")
-				}
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
-				renderLiteral(out, arg.Value)
-			}
-		}
-		fmt.Fprint(out, ")")
-	}
-
-	typeStr := out.String(": " + id.Type.ToAST().String()).Foreground(termenv.ANSIBrightBlack)
-	fmt.Fprintln(out, typeStr)
-
 	return nil
 }

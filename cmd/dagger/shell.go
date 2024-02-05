@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
@@ -47,7 +48,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 
 	vtx := rec.Vertex("shell", "shell",
 		progrock.Focused(),
-		progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
+		idtui.Zoomed(func(term *midterm.Terminal) io.Writer {
 			term.ForwardRequests = os.Stderr
 			term.ForwardResponses = shellStdinW
 			term.CursorVisible = true
@@ -57,12 +58,14 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				// best effort
 				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
 			})
-
 			return shellStdinW
 		}))
 	defer func() {
 		vtx.Done(rerr)
 	}()
+
+	stdout := vtx.Stdout()
+	stderr := vtx.Stderr()
 
 	// Handle incoming messages
 	errCh := make(chan error)
@@ -78,9 +81,9 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 			}
 			switch {
 			case bytes.HasPrefix(buff, []byte(engine.StdoutPrefix)):
-				vtx.Stdout().Write(bytes.TrimPrefix(buff, []byte(engine.StdoutPrefix)))
+				stdout.Write(bytes.TrimPrefix(buff, []byte(engine.StdoutPrefix)))
 			case bytes.HasPrefix(buff, []byte(engine.StderrPrefix)):
-				vtx.Stderr().Write(bytes.TrimPrefix(buff, []byte(engine.StderrPrefix)))
+				stderr.Write(bytes.TrimPrefix(buff, []byte(engine.StderrPrefix)))
 			case bytes.HasPrefix(buff, []byte(engine.ExitPrefix)):
 				code, err := strconv.Atoi(string(bytes.TrimPrefix(buff, []byte(engine.ExitPrefix))))
 				if err == nil {

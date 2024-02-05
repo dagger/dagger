@@ -25,7 +25,6 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Children  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*progrock.Vertex
-	Logs      map[string]*Vterm
 }
 
 func NewDB(log *slog.Logger) *DB {
@@ -46,7 +45,6 @@ func NewDB(log *slog.Logger) *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Children:  make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*progrock.Vertex),
-		Logs:      make(map[string]*Vterm),
 	}
 }
 
@@ -117,10 +115,6 @@ func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 		}
 	}
 
-	for _, log := range status.Logs {
-		_, _ = db.VertexLogs(log.Vertex).Write(log.Data)
-	}
-
 	return nil
 }
 
@@ -137,15 +131,6 @@ func (db *DB) recordTask(t *progrock.VertexTask) {
 		tasks = append(tasks, t)
 		db.Tasks[t.Vertex] = tasks
 	}
-}
-
-func (db *DB) VertexLogs(vertex string) *Vterm {
-	term, found := db.Logs[vertex]
-	if !found {
-		term = NewVterm()
-		db.Logs[vertex] = term
-	}
-	return term
 }
 
 // Step returns a Step for the given digest if and only if the step should be

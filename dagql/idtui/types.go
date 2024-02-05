@@ -46,9 +46,8 @@ type TraceRow struct {
 }
 
 func (row *TraceRow) IsInteresting() bool {
-	return row.IsRunning ||
-		row.Step.FirstVertex().Duration() > 100*time.Millisecond ||
-		row.Step.FirstVertex().Error != nil
+	vtx := row.Step.FirstVertex()
+	return row.IsRunning || vtx.Duration() > time.Second || vtx.Error != nil
 }
 
 func (row *TraceRow) Depth() int {
