@@ -62,7 +62,6 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
-	moduleInitCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
@@ -192,7 +191,7 @@ dagger config -m github.com/dagger/hello-dagger
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:     "init [--sdk string --name string]",
+	Use:     "init [--sdk string --name string] [PATH]",
 	Short:   "Initialize a new Dagger module",
 	Long:    "Initialize a new Dagger module in a local directory.",
 	Example: "dagger mod init --name=hello --sdk=python",
@@ -200,19 +199,24 @@ var moduleInitCmd = &cobra.Command{
 	Annotations: map[string]string{
 		"experimental": "true",
 	},
-	RunE: func(cmd *cobra.Command, _ []string) (rerr error) {
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			// default the module root to the current working directory if it doesn't exist yet
+			// default the module source root to the current working directory if it doesn't exist yet
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
+			srcRootPath := cwd
+			if len(extraArgs) > 0 {
+				srcRootPath = extraArgs[0]
+			}
 
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, cwd)
+			modConf, err := getModuleConfigurationForSourceRef(ctx, dag, srcRootPath, cwd)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}

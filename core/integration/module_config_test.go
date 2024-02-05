@@ -91,7 +91,7 @@ func TestModuleConfigs(t *testing.T) {
 			`,
 			}).
 			WithWorkdir("/work").
-			With(daggerExec("init", "-m=test", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--name=test", "--sdk=go", "test")).
 			With(daggerExec("install", "-m=test", "./subdir/dep")).
 			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
@@ -149,7 +149,7 @@ func TestModuleConfigs(t *testing.T) {
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "-m=subdir/dep", "--name=dep", "--sdk=go")).
+			With(daggerExec("init", "--name=dep", "--sdk=go", "subdir/dep")).
 			WithNewFile("/work/subdir/dep/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -160,7 +160,7 @@ func TestModuleConfigs(t *testing.T) {
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
 			`,
 			}).
-			With(daggerExec("init", "-m=test", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--name=test", "--sdk=go", "test")).
 			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -628,7 +628,7 @@ func TestModuleDaggerConfig(t *testing.T) {
 	out, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "-m", "test", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--name=test", "--sdk=go", "test")).
 		With(daggerExec("config", "-m", "test")).
 		Stdout(ctx)
 	require.NoError(t, err)

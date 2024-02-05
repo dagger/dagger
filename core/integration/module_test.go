@@ -159,7 +159,7 @@ func TestModuleGoInit(t *testing.T) {
 			WithNewFile("/work/foo.go", dagger.ContainerWithNewFileOpts{
 				Contents: "package foo\n",
 			}).
-			With(daggerExec("init", "-m=./child", "--name=child", "--sdk=go")).
+			With(daggerExec("init", "--name=child", "--sdk=go", "./child")).
 			WithWorkdir("/work/child").
 			// explicitly develop to see whether it makes a go.mod
 			With(daggerExec("develop")).
@@ -195,7 +195,7 @@ func TestModuleGoInit(t *testing.T) {
 			WithWorkdir("/work/child").
 			WithExec([]string{"go", "mod", "init", "my-mod"}).
 			WithWorkdir("/work").
-			With(daggerExec("init", "-m=./child", "--name=child", "--sdk=go")).
+			With(daggerExec("init", "--name=child", "--sdk=go", "./child")).
 			WithWorkdir("/work/child").
 			// explicitly develop to see whether it makes a go.mod
 			With(daggerExec("develop")).
@@ -326,7 +326,7 @@ func TestModulePythonInit(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "-m=child", "--name=bare", "--sdk=python"))
+			With(daggerExec("init", "--name=bare", "--sdk=python", "child"))
 
 		out, err := modGen.
 			With(daggerQueryAt("child", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -438,7 +438,7 @@ func TestModuleInitLICENSE(t *testing.T) {
 		require.Contains(t, content, "Apache License, Version 2.0")
 	})
 
-	t.Run("creates LICENSE file in the directory specified by -m", func(t *testing.T) {
+	t.Run("creates LICENSE file in the directory specified by arg", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -446,7 +446,7 @@ func TestModuleInitLICENSE(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "-m", "./mymod", "--name=licensed-to-ill", "--sdk=go"))
+			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go", "./mymod"))
 
 		content, err := modGen.File("mymod/LICENSE").Contents(ctx)
 		require.NoError(t, err)
@@ -2712,7 +2712,7 @@ func (m *D) Fn(foo int) Obj {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("init", "-m=c", "--name=c", "--sdk=go")).
+		With(daggerExec("init", "--name=c", "--sdk=go", "c")).
 		WithWorkdir("/work/c").
 		With(daggerExec("install", "../dstr")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
@@ -2732,7 +2732,7 @@ func (m *C) Fn(ctx context.Context, foo string) (string, error) {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("init", "-m=b", "--name=b", "--sdk=go")).
+		With(daggerExec("init", "--name=b", "--sdk=go", "b")).
 		With(daggerExec("install", "-m=b", "./dint")).
 		WithNewFile("/work/b/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
@@ -2751,7 +2751,7 @@ func (m *B) Fn(ctx context.Context, foo int) (int, error) {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("init", "-m=a", "--name=a", "--sdk=go")).
+		With(daggerExec("init", "--name=a", "--sdk=go", "a")).
 		WithWorkdir("/work/a").
 		With(daggerExec("install", "../b")).
 		With(daggerExec("install", "../c")).
@@ -2857,7 +2857,7 @@ func (m *Dep) Fn() Obj {
 `,
 		}).
 		WithWorkdir("/work").
-		With(daggerExec("init", "-m=test", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--name=test", "--sdk=go", "test")).
 		With(daggerExec("install", "-m=test", "./dep")).
 		WithWorkdir("/work/test")
 
@@ -3028,7 +3028,7 @@ class Dep:
 `,
 		}).
 		WithWorkdir("/work").
-		With(daggerExec("init", "-m=test", "--name=test", "--sdk=python")).
+		With(daggerExec("init", "--name=test", "--sdk=python", "test")).
 		WithWorkdir("/work/test").
 		With(daggerExec("install", "../dep"))
 
@@ -4320,9 +4320,9 @@ func TestModuleLoops(t *testing.T) {
 
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		With(daggerExec("init", "-m=depA", "--name=depA", "--sdk=go")).
-		With(daggerExec("init", "-m=depB", "--name=depB", "--sdk=go")).
-		With(daggerExec("init", "-m=depC", "--name=depC", "--sdk=go")).
+		With(daggerExec("init", "--name=depA", "--sdk=go", "depA")).
+		With(daggerExec("init", "--name=depB", "--sdk=go", "depB")).
+		With(daggerExec("init", "--name=depC", "--sdk=go", "depC")).
 		With(daggerExec("install", "-m=depC", "./depB")).
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
