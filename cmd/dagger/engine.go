@@ -145,6 +145,7 @@ func inlineTUI(
 	fn runClientCallback,
 ) error {
 	frontend := idtui.New()
+	frontend.Debug = debug
 	params.ProgrockWriter = frontend
 	outBuf := new(bytes.Buffer)
 	ctx = ioctx.WithStdout(ctx, outBuf)

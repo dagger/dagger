@@ -2,6 +2,7 @@ package idtui
 
 import (
 	"sort"
+	"time"
 )
 
 func CollectSteps(db *DB) []*Step {
@@ -42,6 +43,12 @@ type TraceRow struct {
 	ByParent  bool
 
 	Children []*TraceRow
+}
+
+func (row *TraceRow) IsInteresting() bool {
+	return row.IsRunning ||
+		row.Step.FirstVertex().Duration() > 100*time.Millisecond ||
+		row.Step.FirstVertex().Error != nil
 }
 
 func (row *TraceRow) Depth() int {

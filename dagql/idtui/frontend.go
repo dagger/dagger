@@ -13,7 +13,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
-	zone "github.com/lrstanley/bubblezone"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
@@ -21,6 +20,9 @@ import (
 )
 
 type Frontend struct {
+	// Debug tells the frontend to show everything and do one big final render.
+	Debug bool
+
 	// updated by Run
 	program   *tea.Program
 	run       func(context.Context) error
@@ -46,7 +48,6 @@ type Frontend struct {
 }
 
 func New() *Frontend {
-	zone.NewGlobal()
 	spin := ui.NewRave()
 	spin.Frames = ui.MiniDotFrames
 	return &Frontend{
@@ -100,7 +101,7 @@ func (f *Frontend) Close() error {
 func (f *Frontend) Render(w io.Writer) error {
 	out := ui.NewOutput(w)
 	for _, row := range f.rows {
-		if row.IsRunning || row.Step.FirstVertex().Error != nil {
+		if f.Debug || row.IsInteresting() {
 			if err := f.renderRow(out, row); err != nil {
 				return err
 			}
@@ -191,13 +192,13 @@ func (f *Frontend) View() string {
 	return fmt.Sprintf("%s\n", f.view)
 }
 
-func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
-	if row.IsRunning || row.Step.FirstVertex().Error != nil {
-		fe.renderStep(out, row.Step, row.Depth())
-		fe.renderLogs(out, row)
+func (f *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
+	if f.Debug || row.IsInteresting() {
+		f.renderStep(out, row.Step, row.Depth())
+		f.renderLogs(out, row)
 	}
 	for _, child := range row.Children {
-		if err := fe.renderRow(out, child); err != nil {
+		if err := f.renderRow(out, child); err != nil {
 			return err
 		}
 	}
