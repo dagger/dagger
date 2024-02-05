@@ -664,8 +664,11 @@ describe("scan static TypeScript", function () {
   it("Should correctly scan alias", async function () {
     const files = await listFiles(`${rootDirectory}/alias`)
 
-    const result = scan(files)
+    const result = scan(files, "HelloWorld")
     const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
       classes: {
         Foo: {
           name: "HelloWorld",

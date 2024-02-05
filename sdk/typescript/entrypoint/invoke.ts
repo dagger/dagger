@@ -1,5 +1,7 @@
+import { TypeDefKind } from "../api/client.gen.js"
 import { Args, registry } from "../introspector/registry/registry.js"
 import { ScanResult } from "../introspector/scanner/scan.js"
+import { TypeDef } from "../introspector/scanner/typeDefs.js"
 import {
   loadArgOrder,
   loadArg,
@@ -66,7 +68,14 @@ Promise<any> {
     parentArgs,
     args
   )
+
   if (result) {
+    // Handle alias serialization by getting the return type to load
+    const retType = scanResult.classes[parentName].methods[fnName].returnType
+    if (retType.kind === TypeDefKind.ObjectKind) {
+      parentName = (retType as TypeDef<TypeDefKind.ObjectKind>).name
+    }
+
     result = await loadResult(result, scanResult, parentName)
   }
 

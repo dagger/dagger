@@ -209,12 +209,47 @@ export function loadResultAlias(
     return alias
   }
 
-  const fieldTypeDef = classTypeDef.fields[alias]
+  const fieldTypeDef = Object.values(classTypeDef.fields).find(
+    (field) => field.name === alias
+  )
   if (!fieldTypeDef) {
     return alias
   }
 
   return fieldTypeDef.alias ?? fieldTypeDef.name
+}
+
+/**
+ * Return the eventual parent name of a field if its return type is a
+ * registered object.
+ * If not found, return the original parent name.
+ *
+ * @param scanResult The result of the scan.
+ * @param parentName Original parent name
+ * @param alias The field alias
+ */
+export function loadAliasParentName(
+  scanResult: ScanResult,
+  parentName: string,
+  alias: string
+): string {
+  const classTypeDef = scanResult.classes[parentName]
+  if (!classTypeDef) {
+    return parentName
+  }
+
+  const fieldTypeDef = Object.values(classTypeDef.fields).find(
+    (field) => field.name === alias
+  )
+  if (!fieldTypeDef) {
+    return parentName
+  }
+
+  if (fieldTypeDef.typeDef.kind === TypeDefKind.ObjectKind) {
+    return (fieldTypeDef.typeDef as TypeDef<TypeDefKind.ObjectKind>).name
+  }
+
+  return parentName
 }
 
 /**
@@ -287,7 +322,7 @@ export async function loadResult(
       result[loadResultAlias(scanResult, parentName, key)] = await loadResult(
         value,
         scanResult,
-        parentName
+        loadAliasParentName(scanResult, parentName, key)
       )
     }
   }

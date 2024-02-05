@@ -2260,14 +2260,14 @@ class ScanReport {
 
 @object()
 class ScanResult {
-  @field()
-  targets: Container[]
+  @field("targets")
+  containers: Container[]
 
   @field()
   report: ScanReport
 
   constructor(containers: Container[], report: ScanReport) {
-    this.targets = containers
+    this.containers = containers
     this.report = report
   }
 }
