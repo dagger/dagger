@@ -21,31 +21,23 @@ Before you can start using Dagger, here are a few important concepts to know.
 You're now ready to dive into Dagger and call your first function! Use the following command:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello call hello --giant --name=daggernaut
+dagger -m github.com/shykes/daggerverse/hello call hello
 ```
 
 Here's what you should see:
 
 ```shell
 ✔ dagger call hello [0.68s]
-┃  _   _      _ _
-┃ | | | | ___| | | ___
-┃ | |_| |/ _ \ | |/ _ \
-┃ |  _  |  __/ | | (_) |
-┃ |_| |_|\___|_|_|\___( )
-┃                     |/
-┃      _                                               _   _
-┃   __| | __ _  __ _  __ _  ___ _ __ _ __   __ _ _   _| |_| |
-┃  / _` |/ _` |/ _` |/ _` |/ _ \ '__| '_ \ / _` | | | | __| |
-┃ | (_| | (_| | (_| | (_| |  __/ |  | | | | (_| | |_| | |_|_|
-┃  \__,_|\__,_|\__, |\__, |\___|_|  |_| |_|\__,_|\__,_|\__(_)
-┃              |___/ |___/
-
-Well done! You've just called your first Dagger function!
+dagger -m github.com/shykes/daggerverse/hello call hello
+✔ dagger call hello [0.20s]
+┃ Hello, world!                                                                                  
+⧗ 2.01s ✔ 63 ∅ 7
 
 As you can see, Dagger loaded a module directly from its GitHub repository, and executed the function `hello` from that module.
 
-If you [inspect the source code of the module](https://github.com/shykes/daggerverse/blob/0d8450fb2554d17854566028538aa6d55cdc1640/hello/main.go), you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string. if the `giant` argument is set, it dynamically installs a tool called `figlet` into a container, executes it to produce giant letters, and returns the result.
+If you [inspect the source code of the module](https://github.com/shykes/daggerverse/blob/0d8450fb2554d17854566028538aa6d55cdc1640/hello/main.go), you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string.
+
+Note that the function supports arguments - we'll get to that later.
 
 :::info
 When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Hello()` is invoked as `dagger call hello`.
