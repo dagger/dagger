@@ -20,6 +20,7 @@ import (
 
 const (
 	flushInterval = 1 * time.Second
+	closeTimeout  = 1 * time.Second
 	trackURL      = "https://api.dagger.cloud/analytics"
 )
 
@@ -29,8 +30,6 @@ type Event struct {
 	Properties map[string]string `json:"properties,omitempty"`
 
 	DeviceID string `json:"device_id,omitempty"`
-	OrgID    string `json:"org_id,omitempty"`
-	IP       string `json:"ip,omitempty"`
 	ServerID string `json:"server_id,omitempty"`
 
 	ClientVersion string `json:"client_version,omitempty"`
@@ -250,8 +249,11 @@ func (t *CloudTracker) Close() error {
 	// Flush events in queue
 	close(t.stopCh)
 
-	// Wait for completion
-	<-t.doneCh
+	// Wait for completion or timeout
+	select {
+	case <-t.doneCh:
+	case <-time.After(closeTimeout):
+	}
 
 	return nil
 }
