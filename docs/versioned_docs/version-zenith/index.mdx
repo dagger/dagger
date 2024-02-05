@@ -96,7 +96,7 @@ gql  <-..-> ModB
 cli <-..-> gql
 ```
 
-1. You execute a Dagger CLI command like `dagger call`, `dagger download`, `dagger shell`, `dagger up`, etc. against a Dagger Module. The CLI either connects to an existing engine or provisions one on-the-fly. Once connected, it opens a new session with the Dagger Engine.
+1. You execute a Dagger CLI command like `dagger call` against a Dagger Module. The CLI either connects to an existing engine or provisions one on-the-fly. Once connected, it opens a new session with the Dagger Engine.
 
    - Each session is associated with its own GraphQL server instance running inside the Dagger Engine. This GraphQL server initially only has the "core" API available, which provides basic functionality like running containers, interacting with files and directories, etc.
    - The core API is highly optimized: each request is turned into a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result. It uses caching and other optimizations to compute these results as efficiently as possible.

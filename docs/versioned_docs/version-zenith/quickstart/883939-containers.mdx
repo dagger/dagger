@@ -36,17 +36,17 @@ You can chain these functions together to build and return a Wolfi container ima
 
 This means that the build succeeded, and a `Container` type representing the built container image was returned. And, like `Directory`, `Container` is a Dagger core type which comes with useful functions of its own.
 
-### Start an interactive shell session with the container
+### Start an interactive terminal session with the container
 
-One of the most interesting `Container` functions is `Shell()`, which can be used to open an interactive shell session with the container. This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
+One of the most interesting `Container` functions is `Shell()`, which can be used to open an interactive terminal session with the container. This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
 
 To see this in action, call the previous function again, this time chaining an additional function call to `Shell()` on the returned `Container`:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container shell
+dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container terminal --cmd sh
 ```
 
-This revised command builds the container image and then drops you into an interactive shell, allowing you to directly execute commands in the running container.
+This revised command builds the container image and then drops you into an interactive terminal, allowing you to directly execute commands in the running container.
 
 Verify this by executing the following command:
 
@@ -68,7 +68,7 @@ You should see output similar to the following:
 ```
 
 :::caution
-While most terminal programs such as `htop` or `vim` work with `dagger ... shell`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
+While most terminal programs such as `htop` or `vim` work with `dagger ... terminal`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
 :::
 
 ### Execute commands in the container

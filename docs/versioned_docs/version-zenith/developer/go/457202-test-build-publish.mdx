@@ -15,7 +15,7 @@ This guide walks you through the process of creating a Dagger module from scratc
 - Initialize a new Dagger module and add dependencies to it
 - Write custom functions using the Go SDK to test, build and package an application
 - Use containers as function input arguments and return values
-- Debug module code using an interactive shell
+- Debug module code using an interactive terminal
 - Test module code by exposing services or containers returned by a function on the host
 
 ## Requirements
@@ -244,14 +244,14 @@ Here's an example of the output you will see:
 
 Apart from the usual debugging techniques, Dagger provides two commands that come in very handy when debugging modules.
 
-### Interactive shells
+### Interactive terminals
 
-The `shell` API on `Container` types can be used to open an interactive shell session with any `Container` returned by a function. This is very useful for debugging and experimenting since it allows you to interact with containers directly.
+The `terminal` API on `Container` types can be used to open an interactive terminal with any `Container` returned by a function. This is very useful for debugging and experimenting since it allows you to interact with containers directly.
 
 Try it with the command below:
 
 ```shell
-dagger call package shell --args sh
+dagger call package terminal --cmd sh
 ```
 
 This command drops you into an interactive shell, allowing you to directly execute commands in the container returned by the `package` function, as in the example below:
