@@ -61,7 +61,6 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
-	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
@@ -71,7 +70,6 @@ func init() {
 
 	moduleDevelopCmd.PersistentFlags().StringVar(&developName, "name", "", "New name for the module")
 	moduleDevelopCmd.PersistentFlags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
-	moduleDevelopCmd.MarkFlagsRequiredTogether("sdk", "name")
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -226,6 +224,11 @@ var moduleInitCmd = &cobra.Command{
 			}
 			if modConf.ModuleSourceConfigExists {
 				return fmt.Errorf("module already exists")
+			}
+
+			// default module name to directory of source root
+			if moduleName == "" {
+				moduleName = filepath.Base(modConf.LocalSourcePath)
 			}
 
 			_, err = modConf.Mod.

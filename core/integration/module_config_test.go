@@ -537,24 +537,29 @@ func TestModuleCustomDepNames(t *testing.T) {
 
 func TestModuleDaggerInit(t *testing.T) {
 	t.Parallel()
-	t.Run("name and sdk must be set together", func(t *testing.T) {
+	t.Run("name defaults to source root dir name", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
-		_, err := c.Container().From(golangImage).
+		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test")).
-			Stdout(ctx)
-		require.Error(t, err)
-		require.ErrorContains(t, err, `if any flags in the group [sdk name] are set they must all be set; missing [sdk]`)
+			With(daggerExec("init", "--sdk=go", "coolmod")).
+			WithNewFile("/work/coolmod/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
 
-		_, err = c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go")).
+			import "context"
+
+			type Coolmod struct {}
+
+			func (m *Coolmod) Fn(ctx context.Context) (string, error) {
+				return dag.CurrentModule().Name(ctx)
+			}
+			`,
+			}).
+			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
-		require.Error(t, err)
-		require.ErrorContains(t, err, `if any flags in the group [sdk name] are set they must all be set; missing [name]`)
+		require.NoError(t, err)
+		require.Equal(t, "coolmod", strings.TrimSpace(out))
 	})
 }
 
@@ -591,20 +596,20 @@ func TestModuleDaggerDevelop(t *testing.T) {
 
 		// now add an sdk+name
 		ctr = ctr.
-			With(daggerExec("develop", "--sdk", "go", "--name", "test")).
+			With(daggerExec("develop", "--sdk", "go")).
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
 			import "context"
 
-			type Test struct {}
+			type Work struct {}
 
-			func (m *Test) Fn(ctx context.Context) (string, error) { 
+			func (m *Work) Fn(ctx context.Context) (string, error) {
 				depStr, err := dag.Dep().Fn(ctx)
 				if err != nil {
 					return "", err
 				}
-				return "hi from test " + depStr, nil
+				return "hi from work " + depStr, nil
 			}
 			`,
 			})
@@ -612,12 +617,15 @@ func TestModuleDaggerDevelop(t *testing.T) {
 		// should be able to invoke it directly now
 		out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hi from test hi from dep", strings.TrimSpace(out))
+		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
 
 		// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
 
-		_, err = ctr.With(daggerExec("develop", "--sdk", "python", "--name", "foo")).Sync(ctx)
-		require.ErrorContains(t, err, `cannot update module name that has already been set to "test"`)
+		_, err = ctr.With(daggerExec("develop", "--name", "foo")).Sync(ctx)
+		require.ErrorContains(t, err, `cannot update module name that has already been set to "work"`)
+
+		_, err = ctr.With(daggerExec("develop", "--sdk", "python")).Sync(ctx)
+		require.ErrorContains(t, err, `cannot update module sdk that has already been set to "go"`)
 	})
 }
 
