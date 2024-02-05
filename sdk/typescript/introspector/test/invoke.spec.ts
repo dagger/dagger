@@ -263,7 +263,7 @@ describe("Invoke typescript function", function () {
         it("Should correctly invoke hello world", async function () {
           // Mocking the fetch from the dagger API
           const input = {
-            parentName: "Foo", // HelloWorld
+            parentName: "HelloWorld", // HelloWorld
             fnName: "greet", // helloWorld
             parentArgs: {},
             fnArgs: { name: "Dagger" },

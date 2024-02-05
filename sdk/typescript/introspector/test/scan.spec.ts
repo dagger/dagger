@@ -24,7 +24,6 @@ describe("scan static TypeScript", function () {
         HelloWorld: {
           name: "HelloWorld",
           description: "HelloWorld class",
-          alias: undefined,
           fields: {},
           constructor: undefined,
           methods: {
@@ -81,7 +80,6 @@ describe("scan static TypeScript", function () {
         Bar: {
           name: "Bar",
           description: "Bar class",
-          alias: undefined,
           constructor: undefined,
           fields: {},
           methods: {
@@ -110,7 +108,6 @@ describe("scan static TypeScript", function () {
         },
         Foo: {
           name: "Foo",
-          alias: undefined,
           description: "Foo class",
           constructor: undefined,
           fields: {},
@@ -145,7 +142,6 @@ describe("scan static TypeScript", function () {
       classes: {
         HelloWorld: {
           name: "HelloWorld",
-          alias: undefined,
           description: "HelloWorld class",
           constructor: undefined,
           fields: {},
@@ -203,7 +199,6 @@ describe("scan static TypeScript", function () {
       classes: {
         Alpine: {
           name: "Alpine",
-          alias: undefined,
           description: "Alpine module",
           constructor: undefined,
           fields: {
@@ -329,7 +324,6 @@ describe("scan static TypeScript", function () {
       classes: {
         HelloWorld: {
           name: "HelloWorld",
-          alias: undefined,
           description: "HelloWorld class",
           fields: {},
           constructor: undefined,
@@ -426,7 +420,6 @@ describe("scan static TypeScript", function () {
       classes: {
         HelloWorld: {
           name: "HelloWorld",
-          alias: undefined,
           description: "HelloWorld class",
           constructor: undefined,
           fields: {},
@@ -483,7 +476,6 @@ describe("scan static TypeScript", function () {
       classes: {
         HelloWorld: {
           name: "HelloWorld",
-          alias: undefined,
           description: "HelloWorld class",
           fields: {
             name: {
@@ -547,7 +539,6 @@ describe("scan static TypeScript", function () {
       classes: {
         Variadic: {
           name: "Variadic",
-          alias: undefined,
           description: "",
           fields: {},
           constructor: undefined,
@@ -670,9 +661,8 @@ describe("scan static TypeScript", function () {
         description: undefined,
       },
       classes: {
-        Foo: {
+        HelloWorld: {
           name: "HelloWorld",
-          alias: "Foo",
           description: "",
           fields: {},
           constructor: undefined,
@@ -734,9 +724,8 @@ describe("scan static TypeScript", function () {
             },
           },
         },
-        Boo: {
+        Bar: {
           name: "Bar",
-          alias: "Boo",
           description: "",
           fields: {
             bar: {

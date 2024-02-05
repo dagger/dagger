@@ -34,7 +34,7 @@ export async function register(
   // For each class scanned, register its type, method and properties in the module.
   Object.values(scanResult.classes).forEach((modClass) => {
     // Register the class Typedef object in Dagger
-    let typeDef = dag.typeDef().withObject(modClass.alias ?? modClass.name, {
+    let typeDef = dag.typeDef().withObject(modClass.name, {
       description: modClass.description,
     })
 

@@ -1,6 +1,6 @@
 import { func, object, field } from '../../../decorators/decorators.js'
 
-@object("Boo")
+@object()
 export class Bar {
     @field("bar")
     baz: string = "baz"
@@ -19,7 +19,7 @@ export class Bar {
     }
 }
 
-@object('Foo')
+@object()
 export class HelloWorld {
     @func('testBar')
     bar(): Bar {

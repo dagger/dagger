@@ -40,7 +40,7 @@ export class Registry {
    * class module that must be exposed to the Dagger API.
    *
    */
-  object = (alias?: string): (<T extends Class>(constructor: T) => T) => {
+  object = (): (<T extends Class>(constructor: T) => T) => {
     return <T extends Class>(constructor: T): T => {
       const methods: string[] = []
 

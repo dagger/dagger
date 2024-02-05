@@ -90,7 +90,7 @@ export function isField(property: ts.PropertyDeclaration): boolean {
 
 export function getAlias(
   elem: ts.HasDecorators,
-  kind: "field" | "func" | "object"
+  kind: "field" | "func"
 ): string | undefined {
   const decorator = ts.getDecorators(elem)?.find((d) => {
     if (ts.isCallExpression(d.expression)) {

@@ -68,7 +68,7 @@ export function scan(files: string[], moduleName = ""): ScanResult {
           metadata.module.description = introspectTopLevelComment(file)
         }
 
-        metadata.classes[classTypeDef.alias ?? classTypeDef.name] = classTypeDef
+        metadata.classes[classTypeDef.name] = classTypeDef
       }
     })
   }
@@ -112,7 +112,6 @@ function introspectClass(
   const metadata: ClassTypeDef = {
     name,
     description,
-    alias: getAlias(node, "object"),
     constructor: undefined,
     fields: {},
     methods: {},

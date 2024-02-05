@@ -81,7 +81,6 @@ export type ConstructorTypeDef = {
 export type ClassTypeDef = {
   name: string
   description: string
-  alias?: string
   fields: { [name: string]: FieldTypeDef }
   constructor?: ConstructorTypeDef
   methods: { [name: string]: FunctionTypedef }
