@@ -635,3 +635,128 @@ class Obj {
 		})
 	})
 }
+
+func TestModuleTypescriptAliases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("alias in function", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=alias", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { object, func } from "@dagger.io/dagger"
+
+@object()
+class Alias {
+  @func("bar")
+  foo(): string {
+	return "hello world"
+  }
+}
+`))
+
+		out, err := modGen.With(daggerQuery(`{alias{bar}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"alias": {"bar": "hello world"}}`, out)
+	})
+
+	t.Run("nested alias in function", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=alias", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { object, func } from "@dagger.io/dagger"
+
+@object()
+class SubSub {
+	@func("zoo")
+	subSubHello(): string {
+		return "hello world"
+	}
+}
+
+@object()
+class Sub {
+	@func("hello")
+	subHello(): SubSub {
+		return new SubSub()
+	}
+}
+
+@object()
+class Alias {
+  @func("bar")
+  foo(): Sub {
+	return new Sub()
+  }
+}
+`))
+
+		out, err := modGen.With(daggerQuery(`{alias{bar{hello{zoo}}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"alias": {"bar": {"hello": {"zoo": "hello world"}}}}`, out)
+	})
+
+	t.Run("nested alias in field", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=alias", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { object, func, field } from "@dagger.io/dagger"
+
+@object()
+class SuperSubSub {
+	@field("farFarNested")
+	far = true
+}
+
+@object()
+class SubSub {
+	@field("zoo")
+	a = 4
+
+	@field("hey")
+	b = [true, false, true]
+
+	@field("far")
+	subsubsub = new SuperSubSub()
+}
+
+@object()
+class Sub {
+	@field("hello")
+	hey = "a"
+
+	@field("foo")
+	sub = new SubSub()
+}
+
+@object()
+class Alias {
+  @func("bar")
+  foo(): Sub {
+	return new Sub()
+  }
+}
+`))
+
+		out, err := modGen.With(daggerQuery(`{alias{bar{hello,foo{zoo,hey,far{farFarNested}}}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"alias": {"bar": {"foo": {"far": {"farFarNested": true}, "hey": [true, false, true], "zoo": 4}, "hello": "a"}}}`, out)
+	})
+}
