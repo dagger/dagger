@@ -23,11 +23,105 @@ The Dagger CLI provides a command-line interface to Dagger.
 
 ### SEE ALSO
 
+* [dagger call](#dagger-call)	 - Call a module function
+* [dagger completion](#dagger-completion)	 - Generate the autocompletion script for the specified shell
+* [dagger functions](#dagger-functions)	 - List available functions
 * [dagger login](#dagger-login)	 - Log in to Dagger Cloud
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
+* [dagger module](#dagger-module)	 - Manage Dagger modules
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
 * [dagger version](#dagger-version)	 - Print dagger version
+
+## dagger call
+
+Call a module function
+
+### Synopsis
+
+Call a module function and print the result.
+
+If the last argument is either a Container, Directory, or File, the pipeline
+will be evaluated (the result of calling `sync`) without presenting any output.
+Providing the `--output` option (shorthand: `-o`) is equivalent to calling
+`export` instead. To print a property of these core objects, continue chaining
+by appending it to the end of the command (for example, `stdout`, `entries`, or
+`contents`).
+
+
+```
+dagger call [flags] [FUNCTION]...
+```
+
+### Examples
+
+```
+dagger call test
+dagger call build -o ./bin/myapp
+dagger call lint stdout
+```
+
+### Options
+
+```
+      --focus           Only show output for focused commands (default true)
+      --json            Present result as JSON
+  -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -o, --output string   Path in the host to save the result to
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+
+## dagger functions
+
+List available functions
+
+### Synopsis
+
+List available functions in a module.
+
+This is similar to `dagger call --help`, but only focused on showing the
+available functions.
+
+
+```
+dagger functions [flags] [FUNCTION]...
+```
+
+### Options
+
+```
+      --focus        Only show output for focused commands (default true)
+  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger login
 
@@ -74,6 +168,212 @@ dagger logout [flags]
 ### SEE ALSO
 
 * [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+
+## dagger module
+
+Manage Dagger modules
+
+### Synopsis
+
+Manage Dagger modules. By default, print the configuration of the specified module in json format.
+
+```
+dagger module [flags]
+```
+
+### Examples
+
+```
+dagger mod -m /path/to/some/dir
+dagger mod -m github.com/dagger/hello-dagger
+```
+
+### Options
+
+```
+      --focus        Only show output for focused commands (default true)
+  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger module init](#dagger-module-init)	 - Initialize a new Dagger module
+* [dagger module install](#dagger-module-install)	 - Add a new dependency to a Dagger module
+* [dagger module publish](#dagger-module-publish)	 - Publish a Dagger module to the Daggerverse
+* [dagger module sync](#dagger-module-sync)	 - Synchronize a Dagger module
+
+## dagger module init
+
+Initialize a new Dagger module
+
+### Synopsis
+
+Initialize a new Dagger module in a local directory.
+
+```
+dagger module init [--sdk string --name string] [flags]
+```
+
+### Examples
+
+```
+dagger mod init --name=hello --sdk=python
+```
+
+### Options
+
+```
+      --license string   License identifier to generate - see https://spdx.org/licenses/
+      --name string      Name of the new module
+      --sdk string       SDK name or image ref to use for the module
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --focus               Only show output for focused commands (default true)
+  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+
+## dagger module install
+
+Add a new dependency to a Dagger module
+
+### Synopsis
+
+Add a Dagger module as a dependency of a local module.
+
+```
+dagger module install [flags] MODULE
+```
+
+### Examples
+
+```
+dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
+```
+
+### Options
+
+```
+  -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --focus               Only show output for focused commands (default true)
+  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+
+## dagger module publish
+
+Publish a Dagger module to the Daggerverse
+
+### Synopsis
+
+Publish a local module to the Daggerverse (https://daggerverse.dev).
+
+The module needs to be committed to a git repository and have a remote
+configured with name "origin". The git repository must be clean (unless
+forced), to avoid mistakingly depending on uncommitted files.
+
+
+```
+dagger module publish [flags]
+```
+
+### Options
+
+```
+  -f, --force   Force publish even if the git repository is not clean
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --focus               Only show output for focused commands (default true)
+  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+
+## dagger module sync
+
+Synchronize a Dagger module
+
+### Synopsis
+
+Synchronize a Dagger module with the latest version of its extensions.
+
+:::note
+This is only required for IDE auto-completion/LSP purposes.
+:::
+
+This command re-regerates the module's generated code based on dependencies
+and the current state of the module's source code.
+
+
+```
+dagger module sync [flags]
+```
+
+### Options inherited from parent commands
+
+```
+      --cpuprofile string   collect CPU profile to path, and trace at path.trace
+      --debug               Show more information for debugging
+      --focus               Only show output for focused commands (default true)
+  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --pprof string        serve HTTP pprof at this address
+      --progress string     progress output format (auto, plain, tty) (default "auto")
+  -s, --silent              disable terminal UI and progress output
+      --workdir string      The host workdir loaded into dagger (default ".")
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
 
 ## dagger query
 
@@ -213,4 +513,3 @@ dagger version [flags]
 ### SEE ALSO
 
 * [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
-
