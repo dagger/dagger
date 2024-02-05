@@ -513,6 +513,9 @@ describe("scan static TypeScript", function () {
 
     const result = scan(files)
     const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
       classes: {
         Variadic: {
           name: "Variadic",

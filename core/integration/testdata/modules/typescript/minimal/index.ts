@@ -1,7 +1,16 @@
-import { object, func } from "@dagger.io/dagger"
+import { object, func, field } from "@dagger.io/dagger"
 
+/**
+ * This is the Minimal object
+ */
 @object
 class Minimal {
+	/**
+	 * This is a field
+	 */
+	@field
+	foo: string = "bar"
+
 	@func
 	hello(): string {
 		return "hello"

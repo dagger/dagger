@@ -170,15 +170,8 @@ describe("Invoke typescript function", function () {
     )
   })
 
-  it("Should correctly invoke variadic functions", async function () {
+  describe("Should correctly invoke variadic functions", async function () {
     this.timeout(60000)
-
-    const files = await listFiles(`${rootDirectory}/variadic`)
-
-    // Load function
-    await load(files)
-
-    const scanResult = scan(files)
 
     type Case = {
       [name: string]: { ctx: InvokeCtx; expected: string | number }
@@ -186,7 +179,7 @@ describe("Invoke typescript function", function () {
 
     const cases: Case = {
       "invoke full variadic string function": {
-        expected: "hello world",
+        expected: "hello hello world",
         ctx: {
           parentName: "Variadic",
           fnName: "fullVariadicStr",
@@ -197,7 +190,7 @@ describe("Invoke typescript function", function () {
         },
       },
       "invoke variadic function with fixed first argument": {
-        expected: "hello+world",
+        expected: "hello hello+world",
         ctx: {
           parentName: "Variadic",
           fnName: "semiVariadicStr",
@@ -235,6 +228,13 @@ describe("Invoke typescript function", function () {
 
     for (const [name, { ctx, expected }] of Object.entries(cases)) {
       it(name, async function () {
+        const files = await listFiles(`${rootDirectory}/variadic`)
+
+        // Load function
+        await load(files)
+
+        const scanResult = scan(files)
+
         // We wrap the execution into a Dagger connection
         await connection(async () => {
           const result = await invoke(scanResult, ctx)

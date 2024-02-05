@@ -12,6 +12,8 @@ import (
 )
 
 func TestModuleTypescriptInit(t *testing.T) {
+	t.Parallel()
+
 	t.Run("from scratch", func(t *testing.T) {
 		t.Parallel()
 
@@ -146,11 +148,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 				import { dag, Container, object, func } from "@dagger.io/dagger"
 
 				@object
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
 				class ExistingSource {
-				  /**
-				   * example usage: "dagger call container-echo --string-arg yo"
-				   */
 				  @func
 				  helloWorld(stringArg: string): Container {
 					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
@@ -184,8 +182,6 @@ func TestModuleTypescriptSyntaxSupport(t *testing.T) {
 		With(sdkSource("typescript", tsSyntax))
 
 	t.Run("singleQuoteDefaultArgHello(msg: string = 'world'): string", func(t *testing.T) {
-		t.Parallel()
-
 		defaultOut, err := modGen.With(daggerQuery(`{syntax{singleQuoteDefaultArgHello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -198,8 +194,6 @@ func TestModuleTypescriptSyntaxSupport(t *testing.T) {
 	})
 
 	t.Run("doubleQuotesDefaultArgHello(msg: string = \"world\"): string", func(t *testing.T) {
-		t.Parallel()
-
 		defaultOut, err := modGen.With(daggerQuery(`{syntax{doubleQuotesDefaultArgHello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -227,8 +221,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		With(sdkSource("typescript", tsSignatures))
 
 	t.Run("hello(): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -236,8 +228,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoes(msgs: string[]): string[]", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -245,8 +235,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoOptional(msg = 'default'): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -259,8 +247,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoesVariadic(...msgs: string[]): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -268,8 +254,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echo(msg: string): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -277,8 +261,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoOptionalSlice(msg = ['foobar']): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -291,8 +273,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("helloVoid(): void", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -300,8 +280,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoOpts(msg: string, suffix: string = '', times: number = 1): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
@@ -318,8 +296,6 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 	})
 
 	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
-		t.Parallel()
-
 		out, err := modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
@@ -355,28 +331,24 @@ func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("async read(dir: Directory): Promise<string>", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
 	})
 
 	t.Run("async readSlice(dir: Directory[]): Promise<string>", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
 	})
 
 	t.Run("async readVariadic(...dir: Directory[]): Promise<string>", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
 	})
 
 	t.Run("async readOptional(dir?: Directory): Promise<string>", func(t *testing.T) {
-		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
@@ -427,6 +399,11 @@ func TestModuleTypescriptDocs(t *testing.T) {
 	require.NoError(t, err)
 	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
 	require.Equal(t, "Minimal", obj.Get("name").String())
+	require.Equal(t, "This is the Minimal object", obj.Get("description").String())
+
+	fooField := obj.Get(`fields.#(name="foo")`)
+	require.Equal(t, "foo", fooField.Get("name").String())
+	require.Equal(t, "This is a field", fooField.Get("description").String())
 
 	hello := obj.Get(`functions.#(name="hello")`)
 	require.Equal(t, "hello", hello.Get("name").String())
@@ -516,11 +493,7 @@ class Foo {}
 		WithWorkdir("/work/test")
 
 	t.Run("return as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
-
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
 			
@@ -542,8 +515,6 @@ class Foo {}
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
-
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
 			
@@ -566,11 +537,7 @@ class Foo {}
 	})
 
 	t.Run("arg as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
-
 			_, err := ctr.With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
 			
@@ -590,8 +557,6 @@ class Test {
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
-
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
@@ -613,11 +578,7 @@ class Test {
 	})
 
 	t.Run("field as other module object", func(t *testing.T) {
-		t.Parallel()
-
 		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
-
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
@@ -646,8 +607,6 @@ class Obj {
 		})
 
 		t.Run("list", func(t *testing.T) {
-			t.Parallel()
-
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
