@@ -895,7 +895,7 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 }
 
 type CurrentModule struct {
-	Module dagql.Instance[*Module]
+	Module *Module
 }
 
 func (*CurrentModule) Type() *ast.Type {
@@ -911,6 +911,6 @@ func (*CurrentModule) TypeDescription() string {
 
 func (mod CurrentModule) Clone() *CurrentModule {
 	cp := mod
-	cp.Module.Self = mod.Module.Self.Clone()
+	cp.Module = mod.Module.Clone()
 	return &cp
 }

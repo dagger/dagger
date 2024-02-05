@@ -68,6 +68,12 @@ type ClientMetadata struct {
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
+
+	// Dagger Cloud Token
+	CloudToken string
+
+	// Disable analytics
+	DoNotTrack bool
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.
