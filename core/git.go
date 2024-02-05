@@ -103,7 +103,7 @@ func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State
 		// networks API cap.
 		//
 		// TODO: add API cap
-		st = gitdns.State(ref.Repo.URL, ref.Ref, clientMetadata.ClientIDs(), opts...)
+		st = gitdns.Git(ref.Repo.URL, ref.Ref, clientMetadata.ClientIDs(), opts...)
 	} else {
 		st = llb.Git(ref.Repo.URL, ref.Ref, opts...)
 	}
