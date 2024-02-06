@@ -246,35 +246,29 @@ describe("Invoke typescript function", function () {
     }
   })
 
-  it("Should correctly handle aliases", async function () {
+  describe("Should correctly handle aliases", async function () {
     this.timeout(60000)
 
-    const files = await listFiles(`${rootDirectory}/alias`)
+    // Mocking the fetch from the dagger API
+    it("Should correctly invoke hello world", async function () {
+      const files = await listFiles(`${rootDirectory}/alias`)
 
-    // Load function
-    await load(files)
+      // Load function
+      await load(files)
 
-    const scanResult = scan(files)
+      const scanResult = scan(files)
 
-    // We wrap the execution into a Dagger connection
-    await connection(
-      async () => {
-        // Mocking the fetch from the dagger API
-        it("Should correctly invoke hello world", async function () {
-          // Mocking the fetch from the dagger API
-          const input = {
-            parentName: "HelloWorld", // HelloWorld
-            fnName: "greet", // helloWorld
-            parentArgs: {},
-            fnArgs: { name: "Dagger" },
-          }
+      // Mocking the fetch from the dagger API
+      const input = {
+        parentName: "HelloWorld", // HelloWorld
+        fnName: "greet", // helloWorld
+        parentArgs: {},
+        fnArgs: { name: "Dagger" },
+      }
 
-          const result = await invoke(scanResult, input)
+      const result = await invoke(scanResult, input)
 
-          assert.equal("hello Dagger", result)
-        })
-      },
-      { LogOutput: process.stderr }
-    )
+      assert.equal("hello Dagger", result)
+    })
   })
 })
