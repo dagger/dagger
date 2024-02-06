@@ -71,9 +71,12 @@ Promise<any> {
 
   if (result) {
     // Handle alias serialization by getting the return type to load
-    const retType = scanResult.classes[parentName].methods[fnName].returnType
-    if (retType.kind === TypeDefKind.ObjectKind) {
-      parentName = (retType as TypeDef<TypeDefKind.ObjectKind>).name
+    // if the function called isn't a constructor.
+    if (fnName !== "") {
+      const retType = scanResult.classes[parentName].methods[fnName].returnType
+      if (retType.kind === TypeDefKind.ObjectKind) {
+        parentName = (retType as TypeDef<TypeDefKind.ObjectKind>).name
+      }
     }
 
     result = await loadResult(result, scanResult, parentName)

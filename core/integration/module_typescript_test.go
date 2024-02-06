@@ -468,7 +468,7 @@ func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
 
 @object()
 class Dep {
-  @func
+  @func()
   fn(): Obj {
     return new Obj("foo")
   }
@@ -476,7 +476,7 @@ class Dep {
 
 @object()
 class Obj {
-  @field
+  @field()
   foo: string = ""
 
   constructor(foo: string) {

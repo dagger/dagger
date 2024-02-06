@@ -1729,7 +1729,7 @@ class Repeater {
 
 @object()
 class Test {
-  @func
+  @func()
   repeater(msg: string, times: number): Repeater {
     return new Repeater(msg, times)
   }

@@ -172,6 +172,11 @@ export function loadName(
       return classTypeDef.name
     }
     case "function": {
+      // Handle constructor
+      if (alias === "") {
+        return ""
+      }
+
       const methodTypeDef = classTypeDef.methods[alias]
       if (!methodTypeDef) {
         throw new Error(`could not find method ${alias} type`)
