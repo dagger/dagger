@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
@@ -66,6 +67,7 @@ type Params struct {
 
 	JournalFile        string
 	ProgrockWriter     progrock.Writer
+	ProgrockParent     string
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
 
@@ -143,7 +145,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		cloudURL = tel.URL()
 		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
-	c.Recorder = progrock.NewRecorder(progMultiW)
+	if c.ProgrockParent != "" {
+		c.Recorder = progrock.NewSubRecorder(progMultiW, c.ProgrockParent)
+	} else {
+		c.Recorder = progrock.NewRecorder(progMultiW)
+	}
 	ctx = progrock.ToContext(ctx, c.Recorder)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
@@ -236,8 +242,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 
-	c.labels = pipeline.LoadVCSLabels(workdir)
-	c.labels = append(c.labels, pipeline.LoadClientLabels(engine.Version)...)
+	labels := pipeline.Labels{}
+	labels.AppendCILabel()
+	labels = append(labels, pipeline.LoadVCSLabels(workdir)...)
+	labels = append(labels, pipeline.LoadClientLabels(engine.Version)...)
+
+	c.labels = labels
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:           c.ID(),
@@ -284,6 +294,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				Labels:                    c.labels,
 				ModuleCallerDigest:        c.ModuleCallerDigest,
+				CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
+				DoNotTrack:                analytics.DoNotTrack(),
 			}.AppendToMD(meta))
 		})
 	})
@@ -536,7 +548,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 	_, err = io.Copy(w, resp.Body)
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		panic(err) // don't write header because we already wrote to the body, which isn't allowed
 	}
 }

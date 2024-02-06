@@ -20,11 +20,8 @@ This page describes known issues and how to debug problems you may encounter whe
 - Custom struct types cannot currently be used as parameters.
 - Calls to functions across modules will be run exactly _once_ per-session --
   after that, the result will be cached, but only until the next session (a new
-  `dagger query`, etc).
+  `dagger call`, etc).
   - At some point, we will add more fine-grained cache-control.
-- Currently, Go and Python are the only supported languages for module development.
-  - Python module development is not yet on par with Go.
-  - Node.js modules are not yet available, but under development.
 
 ## Troubleshooting
 

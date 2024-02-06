@@ -59,7 +59,7 @@ type Module struct {
 	DirectoryExcludeConfig []string
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
-	Runtime *Container
+	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
 
 	// The following are populated while initializing the module
 
@@ -428,8 +428,8 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	return typeDefs, nil
 }
 
-func (mod *Module) DependencySchemaIntrospectionJSON(ctx context.Context) (string, error) {
-	return mod.Deps.SchemaIntrospectionJSON(ctx)
+func (mod *Module) DependencySchemaIntrospectionJSON(ctx context.Context, forModule bool) (string, error) {
+	return mod.Deps.SchemaIntrospectionJSON(ctx, forModule)
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -895,7 +895,7 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 }
 
 type CurrentModule struct {
-	Module dagql.Instance[*Module]
+	Module *Module
 }
 
 func (*CurrentModule) Type() *ast.Type {
@@ -911,6 +911,6 @@ func (*CurrentModule) TypeDescription() string {
 
 func (mod CurrentModule) Clone() *CurrentModule {
 	cp := mod
-	cp.Module.Self = mod.Module.Self.Clone()
+	cp.Module = mod.Module.Clone()
 	return &cp
 }

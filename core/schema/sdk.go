@@ -34,11 +34,17 @@ func (s *moduleSchema) sdkForModule(
 	var sdkMod dagql.Instance[*core.Module]
 	err = s.dag.Select(ctx, s.dag.Root(), &sdkMod,
 		dagql.Selector{
-			Field: "moduleRef",
+			Field: "moduleSource",
 			Args: []dagql.NamedInput{
 				{Name: "refString", Value: dagql.String(sdk)},
-				{Name: "parentDirectory", Value: dagql.NewID[*core.Directory](parentDir.ID())},
+				{Name: "rootDirectory", Value: dagql.Opt(dagql.NewID[*core.Directory](parentDir.ID()))},
 			},
+		},
+		dagql.Selector{
+			Field: "asModule",
+		},
+		dagql.Selector{
+			Field: "initialize",
 		},
 	)
 	if err != nil {
@@ -113,7 +119,7 @@ func (s *moduleSchema) newModuleSDK(
 
 // Codegen calls the Codegen function on the SDK Module
 func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
-	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
@@ -140,7 +146,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, mod *core.Module, source dagq
 
 // Runtime calls the Runtime function on the SDK Module
 func (sdk *moduleSDK) Runtime(ctx context.Context, mod *core.Module, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
-	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
@@ -360,7 +366,7 @@ func (sdk *goSDK) baseWithCodegen(
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
-	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx)
+	introspectionJSON, err := mod.DependencySchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", mod.Name(), err)
 	}
@@ -434,6 +440,7 @@ func (sdk *goSDK) baseWithCodegen(
 				Value: dagql.ArrayInput[dagql.String]{
 					"--module-source-root", goSDKUserModSourceDirPath,
 					"--module-name", dagql.String(mod.OriginalName),
+					"--propagate-logs=true",
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},
 			},

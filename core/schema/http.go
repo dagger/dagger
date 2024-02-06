@@ -75,7 +75,7 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 		// that use a Buildkit frontend (# syntax = ...).
 		//
 		// TODO: add API cap
-		st = httpdns.State(args.URL, clientMetadata.ClientIDs(), opts...)
+		st = httpdns.HTTP(args.URL, clientMetadata.ClientIDs(), opts...)
 	} else {
 		st = llb.HTTP(args.URL, opts...)
 	}

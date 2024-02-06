@@ -228,7 +228,11 @@ func (src GitModuleSource) Clone() *GitModuleSource {
 }
 
 func (src *GitModuleSource) String() string {
-	return fmt.Sprintf("%s/%s@%s", src.URLParent, src.Subpath, src.Version)
+	refPath := src.URLParent
+	if src.Subpath != "/" {
+		refPath += src.Subpath
+	}
+	return fmt.Sprintf("%s@%s", refPath, src.Commit)
 }
 
 func (src *GitModuleSource) Symbolic() string {
@@ -240,5 +244,5 @@ func (src *GitModuleSource) CloneURL() string {
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	return "https://" + src.URLParent + "/tree" + src.Version + "/" + src.Subpath
+	return "https://" + src.URLParent + "/tree/" + src.Commit + src.Subpath
 }

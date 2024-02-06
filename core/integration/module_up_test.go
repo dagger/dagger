@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +51,7 @@ type Test struct {
 	defer cancel()
 
 	t.Run("native", func(t *testing.T) {
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--native")
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -67,6 +68,53 @@ type Test struct {
 			}
 
 			resp, err := http.Get("http://127.0.0.1:23457")
+			if err != nil {
+				t.Logf("waiting for container to start: %s", err)
+				time.Sleep(time.Second)
+				continue
+			}
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, "hey there", string(body))
+			break
+		}
+	})
+
+	t.Run("random", func(t *testing.T) {
+		console, err := newTUIConsole(t, time.Minute)
+		require.NoError(t, err)
+
+		tty := console.Tty()
+
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 22})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "--progress=plain", "ctr", "as-service", "up", "--random")
+		cmd.Stdin = nil
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+		defer cmd.Process.Kill()
+
+		_, matches, err := console.MatchLine(ctx, `(\d+)/TCP:`)
+		require.NoError(t, err)
+
+		port := matches[1]
+		t.Logf("random port: %s", port)
+
+		for {
+			select {
+			case <-ctx.Done():
+				require.FailNow(t, "timed out waiting for container to start")
+			default:
+			}
+
+			resp, err := http.Get("http://127.0.0.1:" + port)
 			if err != nil {
 				t.Logf("waiting for container to start: %s", err)
 				time.Sleep(time.Second)

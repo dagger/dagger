@@ -930,28 +930,6 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// ContainerShellOpts contains options for Container.Shell
-type ContainerShellOpts struct {
-	// If set, override the container's default shell and invoke these arguments instead.
-	Args []string
-}
-
-// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-func (r *Container) Shell(opts ...ContainerShellOpts) *Terminal {
-	q := r.q.Select("shell")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-	}
-
-	return &Terminal{
-		q: q,
-		c: r.c,
-	}
-}
-
 // The error stream of the last executed command.
 //
 // Will execute default command if none is set, or error if there's no default.
@@ -991,6 +969,28 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	return r, q.Execute(ctx, r.c)
 }
 
+// ContainerTerminalOpts contains options for Container.Terminal
+type ContainerTerminalOpts struct {
+	// If set, override the container's default terminal command and invoke these command arguments instead.
+	Cmd []string
+}
+
+// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
+	q := r.q.Select("terminal")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cmd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cmd) {
+			q = q.Arg("cmd", opts[i].Cmd)
+		}
+	}
+
+	return &Terminal{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
 	if r.user != nil {
@@ -1015,9 +1015,9 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 	}
 }
 
-// Set the default command to invoke for the "shell" API.
-func (r *Container) WithDefaultShell(args []string) *Container {
-	q := r.q.Select("withDefaultShell")
+// Set the default command to invoke for the container's terminal API.
+func (r *Container) WithDefaultTerminalCmd(args []string) *Container {
+	q := r.q.Select("withDefaultTerminalCmd")
 	q = q.Arg("args", args)
 
 	return &Container{
@@ -2270,6 +2270,7 @@ func (r *EnvVariable) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The environment variable name.
 func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2282,6 +2283,7 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The environment variable value.
 func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -2306,6 +2308,7 @@ type FieldTypeDef struct {
 	name        *string
 }
 
+// A doc string for the field, if any.
 func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -2358,6 +2361,7 @@ func (r *FieldTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the field in lowerCamelCase format.
 func (r *FieldTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2370,6 +2374,7 @@ func (r *FieldTypeDef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The type of the field.
 func (r *FieldTypeDef) TypeDef() *TypeDef {
 	q := r.q.Select("typeDef")
 
@@ -2543,6 +2548,7 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 	return f(r)
 }
 
+// Arguments accepted by the function, if any.
 func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	q := r.q.Select("args")
 
@@ -2576,6 +2582,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	return convert(response), nil
 }
 
+// A doc string for the function, if any.
 func (r *Function) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -2628,6 +2635,7 @@ func (r *Function) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the function.
 func (r *Function) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2640,6 +2648,7 @@ func (r *Function) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The type returned by the function.
 func (r *Function) ReturnType() *TypeDef {
 	q := r.q.Select("returnType")
 
@@ -2704,6 +2713,7 @@ type FunctionArg struct {
 	name         *string
 }
 
+// A default value to use for this argument when not explicitly set by the caller, if any.
 func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	if r.defaultValue != nil {
 		return *r.defaultValue, nil
@@ -2716,6 +2726,7 @@ func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// A doc string for the argument, if any.
 func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -2768,6 +2779,7 @@ func (r *FunctionArg) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the argument in lowerCamelCase format.
 func (r *FunctionArg) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2780,6 +2792,7 @@ func (r *FunctionArg) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The type of the argument.
 func (r *FunctionArg) TypeDef() *TypeDef {
 	q := r.q.Select("typeDef")
 
@@ -2841,6 +2854,7 @@ func (r *FunctionCall) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The argument values the function is being invoked with.
 func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, error) {
 	q := r.q.Select("inputArgs")
 
@@ -2874,6 +2888,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 	return convert(response), nil
 }
 
+// The name of the function being called.
 func (r *FunctionCall) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2886,6 +2901,7 @@ func (r *FunctionCall) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
 func (r *FunctionCall) Parent(ctx context.Context) (JSON, error) {
 	if r.parent != nil {
 		return *r.parent, nil
@@ -2898,6 +2914,7 @@ func (r *FunctionCall) Parent(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
 func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 	if r.parentName != nil {
 		return *r.parentName, nil
@@ -2974,6 +2991,7 @@ func (r *FunctionCallArgValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the argument.
 func (r *FunctionCallArgValue) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -2986,6 +3004,7 @@ func (r *FunctionCallArgValue) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The value of the argument represented as a JSON serialized string.
 func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -3014,6 +3033,7 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 	return f(r)
 }
 
+// The directory containing the generated code.
 func (r *GeneratedCode) Code() *Directory {
 	q := r.q.Select("code")
 
@@ -3063,6 +3083,7 @@ func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// List of paths to mark generated in version control (i.e. .gitattributes).
 func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
 	q := r.q.Select("vcsGeneratedPaths")
 
@@ -3072,6 +3093,7 @@ func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error)
 	return response, q.Execute(ctx, r.c)
 }
 
+// List of paths to ignore in version control (i.e. .gitignore).
 func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
 	q := r.q.Select("vcsIgnoredPaths")
 
@@ -3129,6 +3151,7 @@ func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The resolved commit of the git repo this source points to.
 func (r *GitModuleSource) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
@@ -3194,6 +3217,7 @@ func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The path to the module source code dir specified by this source relative to the source's root directory.
 func (r *GitModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	if r.sourceSubpath != nil {
 		return *r.sourceSubpath, nil
@@ -3206,6 +3230,7 @@ func (r *GitModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The specified version of the git repo this source points to.
 func (r *GitModuleSource) Version(ctx context.Context) (string, error) {
 	if r.version != nil {
 		return *r.version, nil
@@ -3376,6 +3401,17 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Returns details of a ref.
+func (r *GitRepository) Ref(name string) *GitRef {
+	q := r.q.Select("ref")
+	q = q.Arg("name", name)
+
+	return &GitRef{
+		q: q,
+		c: r.c,
+	}
 }
 
 // Returns details of a tag.
@@ -3575,6 +3611,7 @@ type InputTypeDef struct {
 	name *string
 }
 
+// Static fields defined on this input object, if any.
 func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q := r.q.Select("fields")
 
@@ -3648,6 +3685,7 @@ func (r *InputTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the input object.
 func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3671,6 +3709,7 @@ type InterfaceTypeDef struct {
 	sourceModuleName *string
 }
 
+// The doc string for the interface, if any.
 func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -3683,6 +3722,7 @@ func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Functions defined on this interface, if any.
 func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q := r.q.Select("functions")
 
@@ -3756,6 +3796,7 @@ func (r *InterfaceTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the interface.
 func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3768,6 +3809,7 @@ func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
 func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	if r.sourceModuleName != nil {
 		return *r.sourceModuleName, nil
@@ -3830,6 +3872,7 @@ func (r *Label) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The label name.
 func (r *Label) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -3842,6 +3885,7 @@ func (r *Label) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The label value.
 func (r *Label) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
@@ -3862,6 +3906,7 @@ type ListTypeDef struct {
 	id *ListTypeDefID
 }
 
+// The type of the elements in the list.
 func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	q := r.q.Select("elementTypeDef")
 
@@ -3960,6 +4005,7 @@ func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The path to the module source code dir specified by this source.
 func (r *LocalModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	if r.sourceSubpath != nil {
 		return *r.sourceSubpath, nil
@@ -3992,6 +4038,7 @@ func (r *Module) With(f WithModuleFunc) *Module {
 	return f(r)
 }
 
+// Modules used by this module.
 func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q := r.q.Select("dependencies")
 
@@ -4025,6 +4072,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	return convert(response), nil
 }
 
+// The dependencies as configured by the module.
 func (r *Module) DependencyConfig(ctx context.Context) ([]ModuleDependency, error) {
 	q := r.q.Select("dependencyConfig")
 
@@ -4058,6 +4106,7 @@ func (r *Module) DependencyConfig(ctx context.Context) ([]ModuleDependency, erro
 	return convert(response), nil
 }
 
+// The doc string of the module, if any
 func (r *Module) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -4130,6 +4179,7 @@ func (r *Module) Initialize() *Module {
 	}
 }
 
+// Interfaces served by this module.
 func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	q := r.q.Select("interfaces")
 
@@ -4163,6 +4213,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// The name of the module
 func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -4175,6 +4226,7 @@ func (r *Module) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Objects served by this module.
 func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	q := r.q.Select("objects")
 
@@ -4208,6 +4260,17 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+func (r *Module) Runtime() *Container {
+	q := r.q.Select("runtime")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
 func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
@@ -4235,6 +4298,7 @@ func (r *Module) Serve(ctx context.Context) (Void, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The source for the module.
 func (r *Module) Source() *ModuleSource {
 	q := r.q.Select("source")
 
@@ -4373,6 +4437,7 @@ func (r *ModuleDependency) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the dependency module.
 func (r *ModuleDependency) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -4385,6 +4450,7 @@ func (r *ModuleDependency) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The source for the dependency module.
 func (r *ModuleDependency) Source() *ModuleSource {
 	q := r.q.Select("source")
 
@@ -4414,6 +4480,7 @@ func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
 	return f(r)
 }
 
+// If the source is a of kind git, the git source representation of it.
 func (r *ModuleSource) AsGitSource() *GitModuleSource {
 	q := r.q.Select("asGitSource")
 
@@ -4423,6 +4490,7 @@ func (r *ModuleSource) AsGitSource() *GitModuleSource {
 	}
 }
 
+// If the source is of kind local, the local source representation of it.
 func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
 	q := r.q.Select("asLocalSource")
 
@@ -4506,6 +4574,7 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The kind of source (e.g. local, git, etc.)
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
@@ -4543,6 +4612,7 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	}
 }
 
+// The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
 func (r *ModuleSource) RootDirectory() *Directory {
 	q := r.q.Select("rootDirectory")
 
@@ -4576,6 +4646,7 @@ type ObjectTypeDef struct {
 	sourceModuleName *string
 }
 
+// The function used to construct new instances of this object, if any
 func (r *ObjectTypeDef) Constructor() *Function {
 	q := r.q.Select("constructor")
 
@@ -4585,6 +4656,7 @@ func (r *ObjectTypeDef) Constructor() *Function {
 	}
 }
 
+// The doc string for the object, if any.
 func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -4597,6 +4669,7 @@ func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Static fields defined on this object, if any.
 func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q := r.q.Select("fields")
 
@@ -4630,6 +4703,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	return convert(response), nil
 }
 
+// Functions defined on this object, if any.
 func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q := r.q.Select("functions")
 
@@ -4703,6 +4777,7 @@ func (r *ObjectTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The name of the object.
 func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -4715,6 +4790,7 @@ func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
 func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	if r.sourceModuleName != nil {
 		return *r.sourceModuleName, nil
@@ -4739,6 +4815,7 @@ type Port struct {
 	protocol                    *NetworkProtocol
 }
 
+// The port description.
 func (r *Port) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
@@ -4751,6 +4828,7 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Skip the health check when run as a service.
 func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
 	if r.experimentalSkipHealthcheck != nil {
 		return *r.experimentalSkipHealthcheck, nil
@@ -4803,6 +4881,7 @@ func (r *Port) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The port number.
 func (r *Port) Port(ctx context.Context) (int, error) {
 	if r.port != nil {
 		return *r.port, nil
@@ -4815,6 +4894,7 @@ func (r *Port) Port(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// The transport layer protocol.
 func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	if r.protocol != nil {
 		return *r.protocol, nil
@@ -5808,9 +5888,12 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 
 // ServiceUpOpts contains options for Service.Up
 type ServiceUpOpts struct {
+	// List of frontend/backend port mappings to forward.
+	//
+	// Frontend is the port accepting traffic on the host, backend is the service port.
 	Ports []PortForward
-
-	Native bool
+	// Bind each tunnel port to a random port on the host.
+	Random bool
 }
 
 // Creates a tunnel that forwards traffic from the caller's network to this service.
@@ -5824,9 +5907,9 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
 		if !querybuilder.IsZeroValue(opts[i].Ports) {
 			q = q.Arg("ports", opts[i].Ports)
 		}
-		// `native` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Native) {
-			q = q.Arg("native", opts[i].Native)
+		// `random` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Random) {
+			q = q.Arg("random", opts[i].Random)
 		}
 	}
 
@@ -5964,6 +6047,7 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 	return f(r)
 }
 
+// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
 func (r *TypeDef) AsInput() *InputTypeDef {
 	q := r.q.Select("asInput")
 
@@ -5973,6 +6057,7 @@ func (r *TypeDef) AsInput() *InputTypeDef {
 	}
 }
 
+// If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
 func (r *TypeDef) AsInterface() *InterfaceTypeDef {
 	q := r.q.Select("asInterface")
 
@@ -5982,6 +6067,7 @@ func (r *TypeDef) AsInterface() *InterfaceTypeDef {
 	}
 }
 
+// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
 func (r *TypeDef) AsList() *ListTypeDef {
 	q := r.q.Select("asList")
 
@@ -5991,6 +6077,7 @@ func (r *TypeDef) AsList() *ListTypeDef {
 	}
 }
 
+// If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
 func (r *TypeDef) AsObject() *ObjectTypeDef {
 	q := r.q.Select("asObject")
 
@@ -6040,6 +6127,7 @@ func (r *TypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The kind of type this is (e.g. primitive, list, object).
 func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
@@ -6052,6 +6140,7 @@ func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Whether this type can be set to null. Defaults to false.
 func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 	if r.optional != nil {
 		return *r.optional, nil

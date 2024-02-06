@@ -444,15 +444,10 @@ func (s *moduleSchema) currentModule(
 	self *core.Query,
 	_ struct{},
 ) (*core.CurrentModule, error) {
-	id, err := self.CurrentModule(ctx)
+	mod, err := self.CurrentModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	mod, err := id.Load(ctx, s.dag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load current module: %w", err)
-	}
-
 	return &core.CurrentModule{Module: mod}, nil
 }
 
@@ -510,7 +505,7 @@ func (s *moduleSchema) currentModuleName(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (string, error) {
-	return curMod.Module.Self.Name(), nil
+	return curMod.Module.Name(), nil
 }
 
 func (s *moduleSchema) currentModuleSource(
@@ -518,8 +513,8 @@ func (s *moduleSchema) currentModuleSource(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], rerr error) {
-	rootDir := curMod.Module.Self.GeneratedSourceRootDirectory
-	subPath := curMod.Module.Self.GeneratedSourceSubpath
+	rootDir := curMod.Module.GeneratedSourceRootDirectory
+	subPath := curMod.Module.GeneratedSourceSubpath
 	if subPath == "/" {
 		return rootDir, nil
 	}
@@ -1028,7 +1023,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(ctx context.Context, mod *core.Mo
 				continue
 			}
 			gitAttrsContents = append(gitAttrsContents,
-				[]byte(fmt.Sprintf("/%s linguist-generated=true\n", fileName))...,
+				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
 			)
 		}
 
@@ -1152,12 +1147,34 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			if args.Stable {
 				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 			}
-
 			var err error
 			modVersion, err = defaultBranch(ctx, cloneURL)
 			if err != nil {
 				return nil, fmt.Errorf("determine default branch: %w", err)
 			}
+		}
+		src.AsGitSource.Value.Version = modVersion
+
+		var subPath string
+		if len(segments) == 4 {
+			subPath = segments[3]
+		} else {
+			subPath = "/"
+		}
+		src.AsGitSource.Value.Subpath = subPath
+
+		commitRef := modVersion
+		if hasVersion && isSemver(modVersion) {
+			allTags, err := gitTags(ctx, cloneURL)
+			if err != nil {
+				return nil, fmt.Errorf("get git tags: %w", err)
+			}
+			matched, err := matchVersion(allTags, modVersion, subPath)
+			if err != nil {
+				return nil, fmt.Errorf("matching version to tags: %w", err)
+			}
+			// reassign modVersion to matched tag which could be subPath/tag
+			commitRef = matched
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]
@@ -1171,7 +1188,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			dagql.Selector{
 				Field: "commit",
 				Args: []dagql.NamedInput{
-					{Name: "id", Value: dagql.String(modVersion)},
+					{Name: "id", Value: dagql.String(commitRef)},
 				},
 			},
 		)
@@ -1182,16 +1199,8 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve git src to commit: %w", err)
 		}
+		src.AsGitSource.Value.Commit = gitCommit
 
-		src.AsGitSource.Value.Version = gitCommit // TODO preserve semver here
-		src.AsGitSource.Value.Commit = gitCommit  // but tell the truth here
-
-		if len(segments) == 4 {
-			src.AsGitSource.Value.Subpath = segments[3]
-		} else {
-			src.AsGitSource.Value.Subpath = "/"
-		}
-		subPath := src.AsGitSource.Value.Subpath
 		if !filepath.IsAbs(subPath) && !filepath.IsLocal(subPath) {
 			return nil, fmt.Errorf("git module source subpath points out of root: %q", subPath)
 		}

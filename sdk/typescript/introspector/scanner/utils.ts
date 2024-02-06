@@ -17,6 +17,38 @@ export function isObject(object: ts.ClassDeclaration): boolean {
 }
 
 /**
+ * Check if the class is the main object of the module.
+ *
+ * @param classtName The name of the class to check.
+ * @param moduleName The name of the module.
+ */
+export function isMainObject(className: string, moduleName: string): boolean {
+  const toPascalCase = (input: string): string => {
+    const words = input
+      .replace(/[^a-zA-Z0-9]/g, " ") // Replace non-alphanumeric characters with spaces
+      .split(/\s+/)
+      .filter((word) => word.length > 0)
+
+    if (words.length === 0) {
+      return "" // No valid words found
+    }
+
+    // It's an edge case when moduleName is already in PascalCase or camelCase
+    if (words.length === 1) {
+      return words[0].charAt(0).toUpperCase() + words[0].slice(1)
+    }
+
+    const pascalCase = words
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join("")
+
+    return pascalCase
+  }
+
+  return toPascalCase(moduleName) === className
+}
+
+/**
  * Return true if the given method has the decorator @fct on top
  * of its declaration.
  *
@@ -116,6 +148,22 @@ export function isOptional(param: ts.Symbol): OptionalValue {
   }
 
   return result
+}
+
+export function isVariadic(param: ts.Symbol): boolean {
+  const declarations = param.getDeclarations()
+
+  // Only check if the parameters actually have declarations
+  if (declarations && declarations.length > 0) {
+    const parameterDeclaration = declarations[0]
+
+    // Convert the symbol declaration into Parameter
+    if (ts.isParameter(parameterDeclaration)) {
+      return parameterDeclaration.dotDotDotToken !== undefined
+    }
+  }
+
+  return false
 }
 
 function formatDefaultValue(value: string): string {

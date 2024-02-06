@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix auto-provision not working on Windows
+time: 2024-02-03T10:57:21.881275+07:00
+custom:
+  Author: wingyplus
+  PR: "6579"

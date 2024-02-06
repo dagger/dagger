@@ -38,32 +38,32 @@ Follow the steps below to sign up for Dagger Cloud, create an organization and o
 
 1. Browse to the [Dagger Cloud website](https://dagger.cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
 
-  ![Authenticate with GitHub](/img/current_docs/cloud/get-started/connect-github.png)
+    ![Authenticate with GitHub](/img/current_docs/cloud/get-started/connect-github.png)
 
 1. On the GitHub authorization screen, confirm the Dagger Cloud connection for authentication. Once authorized, you will be redirected to a welcome page and prompted to create a new Dagger Cloud organization. Enter a name for your organization in the *Organization Name* field. Click *Next* to proceed.
 
-  :::info
-  The organization name can only contain alphanumeric characters and dashes and is unique across Dagger Cloud.
-  :::
+    :::info
+    The organization name can only contain alphanumeric characters and dashes and is unique across Dagger Cloud.
+    :::
 
-  ![Create Dagger Cloud organization](/img/current_docs/cloud/get-started/create-organization.png)
+    ![Create Dagger Cloud organization](/img/current_docs/cloud/get-started/create-organization.png)
 
 1. Review the available Dagger Cloud subscription plans. Choose a plan by clicking *Select*.
 1. If you selected the *Team* plan, you will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in individual plans. Enter one or more email addresses as required. Click *Next* to proceed.
 
-  ![Select plan](/img/current_docs/cloud/get-started/invite-team.png)
+    ![Select plan](/img/current_docs/cloud/get-started/invite-team.png)
 
 1. Enter the required payment details. Click *Sign up* to proceed.
 
-  ![Add payment method](/img/current_docs/cloud/get-started/add-payment.png)
+    ![Add payment method](/img/current_docs/cloud/get-started/add-payment.png)
 
 1. Your payment information will now be verified. If all is well, your new organization will be created and you will be redirected to a success page confirming that your Dagger Cloud account and organization have been created.
 
-  ![Create organization](/img/current_docs/cloud/get-started/create-organization-success.png)
+    ![Create organization](/img/current_docs/cloud/get-started/create-organization-success.png)
 
 1. Click *Go to dashboard* to visit the Dagger Cloud dashboard, which allows you to manage your Dagger Cloud organization and account.
 
-  ![View dashboard](/img/current_docs/cloud/get-started/connect-cloud.png)
+    ![View dashboard](/img/current_docs/cloud/get-started/connect-cloud.png)
 
 The Dagger Cloud dashboard will not display any data until you connect your Dagger Cloud account with a CI provider or CI tool. The next step describes how to do this.
 
@@ -77,7 +77,7 @@ To connect your Dagger Cloud account with a CI provider or CI tool, you must fir
 
 Browse to the *Organizations Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully.
 
-  ![Get token](/img/current_docs/cloud/get-started/get-token.png)
+    ![Get token](/img/current_docs/cloud/get-started/get-token.png)
 
 Once you have a token, the general procedure to connect Dagger Cloud with a CI provider/CI tool is:
 
@@ -136,29 +136,29 @@ Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighte
 
 1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following pipeline values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
 
-  GitHub:
+    GitHub:
 
-  ```yaml
-  environment:
-    CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
-  ```
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+    ```
 
-  GitLab:
+    GitLab:
 
-  ```yaml
-  environment:
-    CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
-    CIRCLE_PIPELINE_TRIGGER_LOGIN: << pipeline.trigger_parameters.gitlab.user_username >>
-    CIRCLE_PIPELINE_REPO_URL: << pipeline.trigger_parameters.gitlab.repo_url >>
-    CIRCLE_PIPELINE_REPO_FULL_NAME: << pipeline.trigger_parameters.gitlab.repo_name >>
-  ```
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+      CIRCLE_PIPELINE_TRIGGER_LOGIN: << pipeline.trigger_parameters.gitlab.user_username >>
+      CIRCLE_PIPELINE_REPO_URL: << pipeline.trigger_parameters.gitlab.repo_url >>
+      CIRCLE_PIPELINE_REPO_FULL_NAME: << pipeline.trigger_parameters.gitlab.repo_name >>
+    ```
 
-  Atlassian BitBucket:
+    Atlassian BitBucket:
 
-  ```yaml
-  environment:
-    CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
-  ```
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+    ```
 
 Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variable will be automatically injected.
 
@@ -178,11 +178,9 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 ```
 
 :::note
-
 - This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
 - If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
 - Typically, Jenkins servers are non-ephemeral and therefore it is not necessary to adjust the `docker stop` timeout.
-
 :::
 
 </TabItem>
@@ -190,9 +188,9 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 
 1. Create a new Kubernetes secret named `dagger-cloud` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). An example command to achieve this is shown below (replace the `TOKEN` placeholder with your actual token value). Refer to the Kubernetes documentation [on creating secrets](https://kubernetes.io/docs/concepts/configuration/secret/).
 
-  ```shell
-  kubectl create secret generic dagger-cloud --from-literal=token=TOKEN
-  ```
+    ```shell
+    kubectl create secret generic dagger-cloud --from-literal=token=TOKEN
+    ```
 
 1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
 
@@ -209,7 +207,7 @@ Learn more about [using Dagger with Argo Workflows](../guides/324301-argo-workfl
 
 :::tip
 Do you also want to see local runs in Dagger Cloud? Create and export a new local environment variable named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Your local run data will now appear in Dagger Cloud.
-:::tip
+:::
 
 ## Step 3: Visualize a CI run with Dagger Cloud
 
@@ -287,39 +285,39 @@ This section assumes that you have a Node.js development environment. It uses th
 
 1. Begin by cloning the example application's repository:
 
-  ```shell
-  git clone https://github.com/dagger/hello-dagger.git
-  ```
+    ```shell
+    git clone https://github.com/dagger/hello-dagger.git
+    ```
 
 1. Install the Dagger Node.js SDK:
 
-  ```shell
-  cd hello-dagger
-  npm install @dagger.io/dagger --save-dev
-  ```
+    ```shell
+    cd hello-dagger
+    npm install @dagger.io/dagger --save-dev
+    ```
 
 1. In the application directory, create a file named `index.mjs` and add the following code to it.
 
-  ```javascript file=./snippets/get-started/appa/index.mjs
-  ```
+    ```javascript file=./snippets/get-started/appa/index.mjs
+    ```
 
-  This Dagger pipeline uses the Dagger Node.js SDK to test, build and publish a containerized version of the application to a public registry.
+    This Dagger pipeline uses the Dagger Node.js SDK to test, build and publish a containerized version of the application to a public registry.
 
-  :::info
-  Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation and equivalent pipeline code for Go and Python in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
-  :::
+    :::info
+    Explaining the details of how this pipeline works is outside the scope of this guide; however, you can find a detailed explanation and equivalent pipeline code for Go and Python in the [Dagger Quickstart](../quickstart/730264-publish.mdx).
+    :::
 
 1. Commit the changes:
 
-  ```shell
-  git add .
-  git commit -a -m "Added Dagger pipeline"
-  ```
+    ```shell
+    git add .
+    git commit -a -m "Added Dagger pipeline"
+    ```
 
 1. Create a private repository in your GitHub account and push the changes to it:
 
-  ```shell
-  git remote remove origin
-  gh auth login
-  gh repo create hello-dagger --push --source . --private
-  ```
+    ```shell
+    git remote remove origin
+    gh auth login
+    gh repo create hello-dagger --push --source . --private
+    ```

@@ -262,7 +262,7 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	vtx := rec.Vertex(dig, "start "+strings.Join(execOp.Meta.Args, " "))
+	vtx := rec.Vertex(dig+".start", "start "+strings.Join(execOp.Meta.Args, " "))
 	defer func() {
 		if err != nil {
 			vtx.Error(err)
@@ -339,6 +339,8 @@ func (svc *Service) startContainer(
 	execMeta := buildkit.ContainerExecUncachedMetadata{
 		ParentClientIDs: clientMetadata.ClientIDs(),
 		ServerID:        clientMetadata.ServerID,
+		ProgSockPath:    bk.ProgSockPath,
+		ProgParent:      rec.Parent,
 	}
 	execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 	if err != nil {

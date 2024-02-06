@@ -697,10 +697,10 @@ pub struct ContainerPublishOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerShellOpts<'a> {
-    /// If set, override the container's default shell and invoke these arguments instead.
+pub struct ContainerTerminalOpts<'a> {
+    /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
-    pub args: Option<Vec<&'a str>>,
+    pub cmd: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
@@ -1287,35 +1287,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn shell(&self) -> Terminal {
-        let query = self.selection.select("shell");
-        return Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn shell_opts<'a>(&self, opts: ContainerShellOpts<'a>) -> Terminal {
-        let mut query = self.selection.select("shell");
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        return Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
     pub async fn stderr(&self) -> Result<String, DaggerError> {
@@ -1333,6 +1304,35 @@ impl Container {
     pub async fn sync(&self) -> Result<ContainerId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal(&self) -> Terminal {
+        let query = self.selection.select("terminal");
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal_opts<'a>(&self, opts: ContainerTerminalOpts<'a>) -> Terminal {
+        let mut query = self.selection.select("terminal");
+        if let Some(cmd) = opts.cmd {
+            query = query.arg("cmd", cmd);
+        }
+        return Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// Retrieves the user to be set for all commands.
     pub async fn user(&self) -> Result<String, DaggerError> {
@@ -1356,13 +1356,13 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Set the default command to invoke for the "shell" API.
+    /// Set the default command to invoke for the container's terminal API.
     ///
     /// # Arguments
     ///
-    /// * `args` - The args of the command to set the default shell to.
-    pub fn with_default_shell(&self, args: Vec<impl Into<String>>) -> Container {
-        let mut query = self.selection.select("withDefaultShell");
+    /// * `args` - The args of the command.
+    pub fn with_default_terminal_cmd(&self, args: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withDefaultTerminalCmd");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
@@ -2988,10 +2988,12 @@ impl EnvVariable {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The environment variable name.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The environment variable value.
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
@@ -3004,6 +3006,7 @@ pub struct FieldTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl FieldTypeDef {
+    /// A doc string for the field, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
@@ -3013,10 +3016,12 @@ impl FieldTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the field in lowerCamelCase format.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The type of the field.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
         return TypeDef {
@@ -3126,6 +3131,7 @@ pub struct FunctionWithArgOpts<'a> {
     pub description: Option<&'a str>,
 }
 impl Function {
+    /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
         let query = self.selection.select("args");
         return vec![FunctionArg {
@@ -3134,6 +3140,7 @@ impl Function {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// A doc string for the function, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
@@ -3143,10 +3150,12 @@ impl Function {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the function.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The type returned by the function.
     pub fn return_type(&self) -> TypeDef {
         let query = self.selection.select("returnType");
         return TypeDef {
@@ -3234,10 +3243,12 @@ pub struct FunctionArg {
     pub graphql_client: DynGraphQLClient,
 }
 impl FunctionArg {
+    /// A default value to use for this argument when not explicitly set by the caller, if any.
     pub async fn default_value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("defaultValue");
         query.execute(self.graphql_client.clone()).await
     }
+    /// A doc string for the argument, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
@@ -3247,10 +3258,12 @@ impl FunctionArg {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the argument in lowerCamelCase format.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The type of the argument.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
         return TypeDef {
@@ -3272,6 +3285,7 @@ impl FunctionCall {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The argument values the function is being invoked with.
     pub fn input_args(&self) -> Vec<FunctionCallArgValue> {
         let query = self.selection.select("inputArgs");
         return vec![FunctionCallArgValue {
@@ -3280,14 +3294,17 @@ impl FunctionCall {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// The name of the function being called.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
     pub async fn parent(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("parent");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
     pub async fn parent_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("parentName");
         query.execute(self.graphql_client.clone()).await
@@ -3315,10 +3332,12 @@ impl FunctionCallArgValue {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the argument.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The value of the argument represented as a JSON serialized string.
     pub async fn value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
@@ -3331,6 +3350,7 @@ pub struct GeneratedCode {
     pub graphql_client: DynGraphQLClient,
 }
 impl GeneratedCode {
+    /// The directory containing the generated code.
     pub fn code(&self) -> Directory {
         let query = self.selection.select("code");
         return Directory {
@@ -3344,10 +3364,12 @@ impl GeneratedCode {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// List of paths to mark generated in version control (i.e. .gitattributes).
     pub async fn vcs_generated_paths(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("vcsGeneratedPaths");
         query.execute(self.graphql_client.clone()).await
     }
+    /// List of paths to ignore in version control (i.e. .gitignore).
     pub async fn vcs_ignored_paths(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("vcsIgnoredPaths");
         query.execute(self.graphql_client.clone()).await
@@ -3391,6 +3413,7 @@ impl GitModuleSource {
         let query = self.selection.select("cloneURL");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The resolved commit of the git repo this source points to.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
         query.execute(self.graphql_client.clone()).await
@@ -3405,10 +3428,12 @@ impl GitModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The path to the module source code dir specified by this source relative to the source's root directory.
     pub async fn source_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceSubpath");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The specified version of the git repo this source points to.
     pub async fn version(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("version");
         query.execute(self.graphql_client.clone()).await
@@ -3512,6 +3537,20 @@ impl GitRepository {
     pub async fn id(&self) -> Result<GitRepositoryId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Returns details of a ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
+    pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
+        let mut query = self.selection.select("ref");
+        query = query.arg("name", name.into());
+        return GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// Returns details of a tag.
     ///
@@ -3750,6 +3789,7 @@ pub struct InputTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl InputTypeDef {
+    /// Static fields defined on this input object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
         let query = self.selection.select("fields");
         return vec![FieldTypeDef {
@@ -3763,6 +3803,7 @@ impl InputTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the input object.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
@@ -3775,10 +3816,12 @@ pub struct InterfaceTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl InterfaceTypeDef {
+    /// The doc string for the interface, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Functions defined on this interface, if any.
     pub fn functions(&self) -> Vec<Function> {
         let query = self.selection.select("functions");
         return vec![Function {
@@ -3792,10 +3835,12 @@ impl InterfaceTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the interface.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
@@ -3813,10 +3858,12 @@ impl Label {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The label name.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The label value.
     pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
         query.execute(self.graphql_client.clone()).await
@@ -3829,6 +3876,7 @@ pub struct ListTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl ListTypeDef {
+    /// The type of the elements in the list.
     pub fn element_type_def(&self) -> TypeDef {
         let query = self.selection.select("elementTypeDef");
         return TypeDef {
@@ -3855,6 +3903,7 @@ impl LocalModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The path to the module source code dir specified by this source.
     pub async fn source_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceSubpath");
         query.execute(self.graphql_client.clone()).await
@@ -3867,6 +3916,7 @@ pub struct Module {
     pub graphql_client: DynGraphQLClient,
 }
 impl Module {
+    /// Modules used by this module.
     pub fn dependencies(&self) -> Vec<Module> {
         let query = self.selection.select("dependencies");
         return vec![Module {
@@ -3875,6 +3925,7 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// The dependencies as configured by the module.
     pub fn dependency_config(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencyConfig");
         return vec![ModuleDependency {
@@ -3883,6 +3934,7 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// The doc string of the module, if any
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
@@ -3910,6 +3962,7 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Interfaces served by this module.
     pub fn interfaces(&self) -> Vec<TypeDef> {
         let query = self.selection.select("interfaces");
         return vec![TypeDef {
@@ -3918,10 +3971,12 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Objects served by this module.
     pub fn objects(&self) -> Vec<TypeDef> {
         let query = self.selection.select("objects");
         return vec![TypeDef {
@@ -3930,6 +3985,16 @@ impl Module {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
+    pub fn runtime(&self) -> Container {
+        let query = self.selection.select("runtime");
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
     pub async fn sdk(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sdk");
         query.execute(self.graphql_client.clone()).await
@@ -3940,6 +4005,7 @@ impl Module {
         let query = self.selection.select("serve");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The source for the module.
     pub fn source(&self) -> ModuleSource {
         let query = self.selection.select("source");
         return ModuleSource {
@@ -4069,10 +4135,12 @@ impl ModuleDependency {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the dependency module.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The source for the dependency module.
     pub fn source(&self) -> ModuleSource {
         let query = self.selection.select("source");
         return ModuleSource {
@@ -4089,6 +4157,7 @@ pub struct ModuleSource {
     pub graphql_client: DynGraphQLClient,
 }
 impl ModuleSource {
+    /// If the source is a of kind git, the git source representation of it.
     pub fn as_git_source(&self) -> GitModuleSource {
         let query = self.selection.select("asGitSource");
         return GitModuleSource {
@@ -4097,6 +4166,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// If the source is of kind local, the local source representation of it.
     pub fn as_local_source(&self) -> LocalModuleSource {
         let query = self.selection.select("asLocalSource");
         return LocalModuleSource {
@@ -4138,6 +4208,7 @@ impl ModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The kind of source (e.g. local, git, etc.)
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
@@ -4167,6 +4238,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
     pub fn root_directory(&self) -> Directory {
         let query = self.selection.select("rootDirectory");
         return Directory {
@@ -4188,6 +4260,7 @@ pub struct ObjectTypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 impl ObjectTypeDef {
+    /// The function used to construct new instances of this object, if any
     pub fn constructor(&self) -> Function {
         let query = self.selection.select("constructor");
         return Function {
@@ -4196,10 +4269,12 @@ impl ObjectTypeDef {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// The doc string for the object, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Static fields defined on this object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
         let query = self.selection.select("fields");
         return vec![FieldTypeDef {
@@ -4208,6 +4283,7 @@ impl ObjectTypeDef {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// Functions defined on this object, if any.
     pub fn functions(&self) -> Vec<Function> {
         let query = self.selection.select("functions");
         return vec![Function {
@@ -4221,10 +4297,12 @@ impl ObjectTypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of the object.
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
@@ -4237,10 +4315,12 @@ pub struct Port {
     pub graphql_client: DynGraphQLClient,
 }
 impl Port {
+    /// The port description.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Skip the health check when run as a service.
     pub async fn experimental_skip_healthcheck(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("experimentalSkipHealthcheck");
         query.execute(self.graphql_client.clone()).await
@@ -4250,10 +4330,12 @@ impl Port {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The port number.
     pub async fn port(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("port");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The transport layer protocol.
     pub async fn protocol(&self) -> Result<NetworkProtocol, DaggerError> {
         let query = self.selection.select("protocol");
         query.execute(self.graphql_client.clone()).await
@@ -5347,10 +5429,13 @@ pub struct ServiceStopOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
-    #[builder(setter(into, strip_option), default)]
-    pub native: Option<bool>,
+    /// List of frontend/backend port mappings to forward.
+    /// Frontend is the port accepting traffic on the host, backend is the service port.
     #[builder(setter(into, strip_option), default)]
     pub ports: Option<Vec<PortForward>>,
+    /// Bind each tunnel port to a random port on the host.
+    #[builder(setter(into, strip_option), default)]
+    pub random: Option<bool>,
 }
 impl Service {
     /// Retrieves an endpoint that clients can use to reach this container.
@@ -5449,8 +5534,8 @@ impl Service {
         if let Some(ports) = opts.ports {
             query = query.arg("ports", ports);
         }
-        if let Some(native) = opts.native {
-            query = query.arg("native", native);
+        if let Some(random) = opts.random {
+            query = query.arg("random", random);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -5509,6 +5594,7 @@ pub struct TypeDefWithObjectOpts<'a> {
     pub description: Option<&'a str>,
 }
 impl TypeDef {
+    /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
     pub fn as_input(&self) -> InputTypeDef {
         let query = self.selection.select("asInput");
         return InputTypeDef {
@@ -5517,6 +5603,7 @@ impl TypeDef {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
     pub fn as_interface(&self) -> InterfaceTypeDef {
         let query = self.selection.select("asInterface");
         return InterfaceTypeDef {
@@ -5525,6 +5612,7 @@ impl TypeDef {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
     pub fn as_list(&self) -> ListTypeDef {
         let query = self.selection.select("asList");
         return ListTypeDef {
@@ -5533,6 +5621,7 @@ impl TypeDef {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
     pub fn as_object(&self) -> ObjectTypeDef {
         let query = self.selection.select("asObject");
         return ObjectTypeDef {
@@ -5546,10 +5635,12 @@ impl TypeDef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The kind of type this is (e.g. primitive, list, object).
     pub async fn kind(&self) -> Result<TypeDefKind, DaggerError> {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Whether this type can be set to null. Defaults to false.
     pub async fn optional(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("optional");
         query.execute(self.graphql_client.clone()).await

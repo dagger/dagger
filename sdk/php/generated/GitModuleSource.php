@@ -22,6 +22,9 @@ class GitModuleSource extends Client\AbstractObject implements Client\IdAble
         return (string)$this->queryLeaf($leafQueryBuilder, 'cloneURL');
     }
 
+    /**
+     * The resolved commit of the git repo this source points to.
+     */
     public function commit(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
@@ -46,12 +49,18 @@ class GitModuleSource extends Client\AbstractObject implements Client\IdAble
         return new \Dagger\GitModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
+    /**
+     * The path to the module source code dir specified by this source relative to the source's root directory.
+     */
     public function sourceSubpath(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
     }
 
+    /**
+     * The specified version of the git repo this source points to.
+     */
     public function version(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('version');

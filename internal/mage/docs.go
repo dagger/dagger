@@ -15,7 +15,33 @@ type Docs mg.Namespace
 
 const (
 	generatedSchemaPath = "docs/docs-graphql/schema.graphqls"
+	generatedCliRefPath = "docs/current_docs/cli/979595-reference.mdx"
+	generatedCliZenPath = "docs/versioned_docs/version-zenith/reference/979596-cli.mdx"
 )
+
+const cliRefFrontmatter = `---
+slug: /cli/979595/reference
+pagination_next: null
+pagination_prev: null
+---
+
+# Reference
+
+`
+
+const cliZenFrontmatter = `---
+slug: /reference/979596/cli/
+pagination_next: null
+pagination_prev: null
+---
+
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+
+# CLI Reference
+
+<PartialExperimentalDocs />
+
+`
 
 // Lint lints documentation files
 func (d Docs) Lint(ctx context.Context) error {
@@ -62,14 +88,30 @@ func (d Docs) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
+// Generate re-generates the API schema and CLI reference
 func (d Docs) Generate(ctx context.Context) error {
+	eg, gctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		return d.GenerateSdl(gctx)
+	})
+
+	eg.Go(func() error {
+		return d.GenerateCli(gctx)
+	})
+
+	return eg.Wait()
+}
+
+// GenerateSdl re-generates the API schema
+func (d Docs) GenerateSdl(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	c = c.Pipeline("docs").Pipeline("generate-sdl")
+	c = c.Pipeline("docs").Pipeline("generate").Pipeline("sdl")
 
 	introspectionJSON :=
 		util.GoBase(c).
@@ -86,4 +128,39 @@ func (d Docs) Generate(ctx context.Context) error {
 		File("/src/schema.graphql").
 		Export(ctx, generatedSchemaPath)
 	return err
+}
+
+// GenerateCli re-generates the CLI reference documentation
+func (d Docs) GenerateCli(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	eg, gctx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		c = c.Pipeline("docs").Pipeline("generate").Pipeline("cli-reference")
+
+		_, err = util.GoBase(c).
+			WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliRefFrontmatter, "--output=cli.mdx"}).
+			File("cli.mdx").
+			Export(gctx, generatedCliRefPath)
+
+		return err
+	})
+
+	eg.Go(func() error {
+		c = c.Pipeline("docs").Pipeline("generate").Pipeline("cli-zenith-reference")
+
+		_, err = util.GoBase(c).
+			WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
+			File("cli.mdx").
+			Export(gctx, generatedCliZenPath)
+
+		return err
+	})
+
+	return eg.Wait()
 }

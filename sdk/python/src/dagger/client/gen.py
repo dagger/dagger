@@ -921,27 +921,6 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    def shell(
-        self,
-        *,
-        args: Sequence[str] | None = None,
-    ) -> "Terminal":
-        """Return an interactive terminal for this container using its configured
-        shell if not overridden by args (or sh as a fallback default).
-
-        Parameters
-        ----------
-        args:
-            If set, override the container's default shell and invoke these
-            arguments instead.
-        """
-        _args = [
-            Arg("args", args, None),
-        ]
-        _ctx = self._select("shell", _args)
-        return Terminal(_ctx)
-
-    @typecheck
     async def stderr(self) -> str:
         """The error stream of the last executed command.
 
@@ -1016,6 +995,28 @@ class Container(Type):
         return self.sync().__await__()
 
     @typecheck
+    def terminal(
+        self,
+        *,
+        cmd: Sequence[str] | None = None,
+    ) -> "Terminal":
+        """Return an interactive terminal for this container using its configured
+        default terminal command if not overridden by args (or sh as a
+        fallback default).
+
+        Parameters
+        ----------
+        cmd:
+            If set, override the container's default terminal command and
+            invoke these command arguments instead.
+        """
+        _args = [
+            Arg("cmd", cmd, None),
+        ]
+        _ctx = self._select("terminal", _args)
+        return Terminal(_ctx)
+
+    @typecheck
     async def user(self) -> str:
         """Retrieves the user to be set for all commands.
 
@@ -1054,18 +1055,18 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_default_shell(self, args: Sequence[str]) -> "Container":
-        """Set the default command to invoke for the "shell" API.
+    def with_default_terminal_cmd(self, args: Sequence[str]) -> "Container":
+        """Set the default command to invoke for the container's terminal API.
 
         Parameters
         ----------
         args:
-            The args of the command to set the default shell to.
+            The args of the command.
         """
         _args = [
             Arg("args", args),
         ]
-        _ctx = self._select("withDefaultShell", _args)
+        _ctx = self._select("withDefaultTerminalCmd", _args)
         return Container(_ctx)
 
     @typecheck
@@ -2435,7 +2436,9 @@ class EnvVariable(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The environment variable name.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2457,7 +2460,9 @@ class EnvVariable(Type):
 
     @typecheck
     async def value(self) -> str:
-        """Returns
+        """The environment variable value.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2494,7 +2499,9 @@ class FieldTypeDef(Type):
 
     @typecheck
     async def description(self) -> str:
-        """Returns
+        """A doc string for the field, if any.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2541,7 +2548,9 @@ class FieldTypeDef(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the field in lowerCamelCase format.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2563,6 +2572,7 @@ class FieldTypeDef(Type):
 
     @typecheck
     def type_def(self) -> "TypeDef":
+        """The type of the field."""
         _args: list[Arg] = []
         _ctx = self._select("typeDef", _args)
         return TypeDef(_ctx)
@@ -2759,6 +2769,7 @@ class Function(Type):
 
     @typecheck
     async def args(self) -> list["FunctionArg"]:
+        """Arguments accepted by the function, if any."""
         _args: list[Arg] = []
         _ctx = self._select("args", _args)
         _ctx = FunctionArg(_ctx)._select_multiple(
@@ -2770,7 +2781,9 @@ class Function(Type):
 
     @typecheck
     async def description(self) -> str:
-        """Returns
+        """A doc string for the function, if any.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2817,7 +2830,9 @@ class Function(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the function.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2839,6 +2854,7 @@ class Function(Type):
 
     @typecheck
     def return_type(self) -> "TypeDef":
+        """The type returned by the function."""
         _args: list[Arg] = []
         _ctx = self._select("returnType", _args)
         return TypeDef(_ctx)
@@ -2915,7 +2931,10 @@ class FunctionArg(Type):
 
     @typecheck
     async def default_value(self) -> JSON:
-        """Returns
+        """A default value to use for this argument when not explicitly set by
+        the caller, if any.
+
+        Returns
         -------
         JSON
             An arbitrary JSON-encoded value.
@@ -2935,7 +2954,9 @@ class FunctionArg(Type):
 
     @typecheck
     async def description(self) -> str:
-        """Returns
+        """A doc string for the argument, if any.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -2982,7 +3003,9 @@ class FunctionArg(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the argument in lowerCamelCase format.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3004,6 +3027,7 @@ class FunctionArg(Type):
 
     @typecheck
     def type_def(self) -> "TypeDef":
+        """The type of the argument."""
         _args: list[Arg] = []
         _ctx = self._select("typeDef", _args)
         return TypeDef(_ctx)
@@ -3039,6 +3063,7 @@ class FunctionCall(Type):
 
     @typecheck
     async def input_args(self) -> list["FunctionCallArgValue"]:
+        """The argument values the function is being invoked with."""
         _args: list[Arg] = []
         _ctx = self._select("inputArgs", _args)
         _ctx = FunctionCallArgValue(_ctx)._select_multiple(
@@ -3049,7 +3074,9 @@ class FunctionCall(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the function being called.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3069,7 +3096,10 @@ class FunctionCall(Type):
 
     @typecheck
     async def parent(self) -> JSON:
-        """Returns
+        """The value of the parent object of the function being called. If the
+        function is top-level to the module, this is always an empty object.
+
+        Returns
         -------
         JSON
             An arbitrary JSON-encoded value.
@@ -3087,7 +3117,10 @@ class FunctionCall(Type):
 
     @typecheck
     async def parent_name(self) -> str:
-        """Returns
+        """The name of the parent object of the function being called. If the
+        function is top-level to the module, this is the name of the module.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3172,7 +3205,9 @@ class FunctionCallArgValue(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the argument.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3194,7 +3229,9 @@ class FunctionCallArgValue(Type):
 
     @typecheck
     async def value(self) -> JSON:
-        """Returns
+        """The value of the argument represented as a JSON serialized string.
+
+        Returns
         -------
         JSON
             An arbitrary JSON-encoded value.
@@ -3218,6 +3255,7 @@ class GeneratedCode(Type):
 
     @typecheck
     def code(self) -> Directory:
+        """The directory containing the generated code."""
         _args: list[Arg] = []
         _ctx = self._select("code", _args)
         return Directory(_ctx)
@@ -3249,7 +3287,10 @@ class GeneratedCode(Type):
 
     @typecheck
     async def vcs_generated_paths(self) -> list[str]:
-        """Returns
+        """List of paths to mark generated in version control (i.e.
+        .gitattributes).
+
+        Returns
         -------
         list[str]
             The `String` scalar type represents textual data, represented as
@@ -3269,7 +3310,9 @@ class GeneratedCode(Type):
 
     @typecheck
     async def vcs_ignored_paths(self) -> list[str]:
-        """Returns
+        """List of paths to ignore in version control (i.e. .gitignore).
+
+        Returns
         -------
         list[str]
             The `String` scalar type represents textual data, represented as
@@ -3342,7 +3385,9 @@ class GitModuleSource(Type):
 
     @typecheck
     async def commit(self) -> str:
-        """Returns
+        """The resolved commit of the git repo this source points to.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3409,7 +3454,10 @@ class GitModuleSource(Type):
 
     @typecheck
     async def source_subpath(self) -> str:
-        """Returns
+        """The path to the module source code dir specified by this source
+        relative to the source's root directory.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3429,7 +3477,9 @@ class GitModuleSource(Type):
 
     @typecheck
     async def version(self) -> str:
-        """Returns
+        """The specified version of the git repo this source points to.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3580,6 +3630,22 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRepositoryID)
+
+    @typecheck
+    def ref(self, name: str) -> GitRef:
+        """Returns details of a ref.
+
+        Parameters
+        ----------
+        name:
+            Ref's name (can be a commit identifier, a tag name, a branch name,
+            or a fully-qualified ref).
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("ref", _args)
+        return GitRef(_ctx)
 
     @typecheck
     def tag(self, name: str) -> GitRef:
@@ -3779,6 +3845,7 @@ class InputTypeDef(Type):
 
     @typecheck
     async def fields(self) -> list[FieldTypeDef]:
+        """Static fields defined on this input object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
         _ctx = FieldTypeDef(_ctx)._select_multiple(
@@ -3814,7 +3881,9 @@ class InputTypeDef(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the input object.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3838,7 +3907,9 @@ class InterfaceTypeDef(Type):
 
     @typecheck
     async def description(self) -> str:
-        """Returns
+        """The doc string for the interface, if any.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3858,6 +3929,7 @@ class InterfaceTypeDef(Type):
 
     @typecheck
     async def functions(self) -> list[Function]:
+        """Functions defined on this interface, if any."""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
         _ctx = Function(_ctx)._select_multiple(
@@ -3893,7 +3965,9 @@ class InterfaceTypeDef(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the interface.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3913,7 +3987,10 @@ class InterfaceTypeDef(Type):
 
     @typecheck
     async def source_module_name(self) -> str:
-        """Returns
+        """If this InterfaceTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3970,7 +4047,9 @@ class Label(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The label name.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -3992,7 +4071,9 @@ class Label(Type):
 
     @typecheck
     async def value(self) -> str:
-        """Returns
+        """The label value.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4018,6 +4099,7 @@ class ListTypeDef(Type):
 
     @typecheck
     def element_type_def(self) -> "TypeDef":
+        """The type of the elements in the list."""
         _args: list[Arg] = []
         _ctx = self._select("elementTypeDef", _args)
         return TypeDef(_ctx)
@@ -4079,7 +4161,9 @@ class LocalModuleSource(Type):
 
     @typecheck
     async def source_subpath(self) -> str:
-        """Returns
+        """The path to the module source code dir specified by this source.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4115,6 +4199,7 @@ class Module(Type):
 
     @typecheck
     async def dependencies(self) -> list["Module"]:
+        """Modules used by this module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
         _ctx = Module(_ctx)._select_multiple(
@@ -4127,6 +4212,7 @@ class Module(Type):
 
     @typecheck
     async def dependency_config(self) -> list["ModuleDependency"]:
+        """The dependencies as configured by the module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencyConfig", _args)
         _ctx = ModuleDependency(_ctx)._select_multiple(
@@ -4136,7 +4222,9 @@ class Module(Type):
 
     @typecheck
     async def description(self) -> str:
-        """Returns
+        """The doc string of the module, if any
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4201,6 +4289,7 @@ class Module(Type):
 
     @typecheck
     async def interfaces(self) -> list["TypeDef"]:
+        """Interfaces served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("interfaces", _args)
         _ctx = TypeDef(_ctx)._select_multiple(
@@ -4211,7 +4300,9 @@ class Module(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the module
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4233,6 +4324,7 @@ class Module(Type):
 
     @typecheck
     async def objects(self) -> list["TypeDef"]:
+        """Objects served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("objects", _args)
         _ctx = TypeDef(_ctx)._select_multiple(
@@ -4242,8 +4334,20 @@ class Module(Type):
         return await _ctx.execute(list[TypeDef])
 
     @typecheck
+    def runtime(self) -> Container:
+        """The container that runs the module's entrypoint. It will fail to
+        execute if the module doesn't compile.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("runtime", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def sdk(self) -> str:
-        """Returns
+        """The SDK used by this module. Either a name of a builtin SDK or a
+        module source ref string pointing to the SDK's implementation.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4291,6 +4395,7 @@ class Module(Type):
 
     @typecheck
     def source(self) -> "ModuleSource":
+        """The source for the module."""
         _args: list[Arg] = []
         _ctx = self._select("source", _args)
         return ModuleSource(_ctx)
@@ -4433,7 +4538,9 @@ class ModuleDependency(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the dependency module.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4455,6 +4562,7 @@ class ModuleDependency(Type):
 
     @typecheck
     def source(self) -> "ModuleSource":
+        """The source for the dependency module."""
         _args: list[Arg] = []
         _ctx = self._select("source", _args)
         return ModuleSource(_ctx)
@@ -4466,12 +4574,14 @@ class ModuleSource(Type):
 
     @typecheck
     def as_git_source(self) -> GitModuleSource:
+        """If the source is a of kind git, the git source representation of it."""
         _args: list[Arg] = []
         _ctx = self._select("asGitSource", _args)
         return GitModuleSource(_ctx)
 
     @typecheck
     def as_local_source(self) -> LocalModuleSource:
+        """If the source is of kind local, the local source representation of it."""
         _args: list[Arg] = []
         _ctx = self._select("asLocalSource", _args)
         return LocalModuleSource(_ctx)
@@ -4550,7 +4660,9 @@ class ModuleSource(Type):
 
     @typecheck
     async def kind(self) -> ModuleSourceKind:
-        """Returns
+        """The kind of source (e.g. local, git, etc.)
+
+        Returns
         -------
         ModuleSourceKind
             The kind of module source.
@@ -4606,6 +4718,10 @@ class ModuleSource(Type):
 
     @typecheck
     def root_directory(self) -> Directory:
+        """The root directory of the module source that contains its
+        configuration and source code (which may be in a subdirectory of this
+        root).
+        """
         _args: list[Arg] = []
         _ctx = self._select("rootDirectory", _args)
         return Directory(_ctx)
@@ -4646,13 +4762,16 @@ class ObjectTypeDef(Type):
 
     @typecheck
     def constructor(self) -> Function:
+        """The function used to construct new instances of this object, if any"""
         _args: list[Arg] = []
         _ctx = self._select("constructor", _args)
         return Function(_ctx)
 
     @typecheck
     async def description(self) -> str:
-        """Returns
+        """The doc string for the object, if any.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4672,6 +4791,7 @@ class ObjectTypeDef(Type):
 
     @typecheck
     async def fields(self) -> list[FieldTypeDef]:
+        """Static fields defined on this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
         _ctx = FieldTypeDef(_ctx)._select_multiple(
@@ -4682,6 +4802,7 @@ class ObjectTypeDef(Type):
 
     @typecheck
     async def functions(self) -> list[Function]:
+        """Functions defined on this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
         _ctx = Function(_ctx)._select_multiple(
@@ -4717,7 +4838,9 @@ class ObjectTypeDef(Type):
 
     @typecheck
     async def name(self) -> str:
-        """Returns
+        """The name of the object.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4737,7 +4860,10 @@ class ObjectTypeDef(Type):
 
     @typecheck
     async def source_module_name(self) -> str:
-        """Returns
+        """If this ObjectTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -4773,7 +4899,9 @@ class Port(Type):
 
     @typecheck
     async def description(self) -> str | None:
-        """Returns
+        """The port description.
+
+        Returns
         -------
         str | None
             The `String` scalar type represents textual data, represented as
@@ -4795,7 +4923,9 @@ class Port(Type):
 
     @typecheck
     async def experimental_skip_healthcheck(self) -> bool:
-        """Returns
+        """Skip the health check when run as a service.
+
+        Returns
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
@@ -4840,7 +4970,9 @@ class Port(Type):
 
     @typecheck
     async def port(self) -> int:
-        """Returns
+        """The port number.
+
+        Returns
         -------
         int
             The `Int` scalar type represents non-fractional signed whole
@@ -4862,7 +4994,9 @@ class Port(Type):
 
     @typecheck
     async def protocol(self) -> NetworkProtocol:
-        """Returns
+        """The transport layer protocol.
+
+        Returns
         -------
         NetworkProtocol
             Transport layer network protocol associated to a port.
@@ -5815,10 +5949,19 @@ class Service(Type):
         self,
         *,
         ports: Sequence[PortForward] | None = [],
-        native: bool | None = False,
+        random: bool | None = False,
     ) -> Void | None:
         """Creates a tunnel that forwards traffic from the caller's network to
         this service.
+
+        Parameters
+        ----------
+        ports:
+            List of frontend/backend port mappings to forward.
+            Frontend is the port accepting traffic on the host, backend is the
+            service port.
+        random:
+            Bind each tunnel port to a random port on the host.
 
         Returns
         -------
@@ -5835,7 +5978,7 @@ class Service(Type):
         """
         _args = [
             Arg("ports", ports, []),
-            Arg("native", native, False),
+            Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
         return await _ctx.execute(Void | None)
@@ -5935,24 +6078,36 @@ class TypeDef(Type):
 
     @typecheck
     def as_input(self) -> InputTypeDef:
+        """If kind is INPUT, the input-specific type definition. If kind is not
+        INPUT, this will be null.
+        """
         _args: list[Arg] = []
         _ctx = self._select("asInput", _args)
         return InputTypeDef(_ctx)
 
     @typecheck
     def as_interface(self) -> InterfaceTypeDef:
+        """If kind is INTERFACE, the interface-specific type definition. If kind
+        is not INTERFACE, this will be null.
+        """
         _args: list[Arg] = []
         _ctx = self._select("asInterface", _args)
         return InterfaceTypeDef(_ctx)
 
     @typecheck
     def as_list(self) -> ListTypeDef:
+        """If kind is LIST, the list-specific type definition. If kind is not
+        LIST, this will be null.
+        """
         _args: list[Arg] = []
         _ctx = self._select("asList", _args)
         return ListTypeDef(_ctx)
 
     @typecheck
     def as_object(self) -> ObjectTypeDef:
+        """If kind is OBJECT, the object-specific type definition. If kind is not
+        OBJECT, this will be null.
+        """
         _args: list[Arg] = []
         _ctx = self._select("asObject", _args)
         return ObjectTypeDef(_ctx)
@@ -5984,7 +6139,9 @@ class TypeDef(Type):
 
     @typecheck
     async def kind(self) -> TypeDefKind:
-        """Returns
+        """The kind of type this is (e.g. primitive, list, object).
+
+        Returns
         -------
         TypeDefKind
             Distinguishes the different kinds of TypeDefs.
@@ -6004,7 +6161,9 @@ class TypeDef(Type):
 
     @typecheck
     async def optional(self) -> bool:
-        """Returns
+        """Whether this type can be set to null. Defaults to false.
+
+        Returns
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.

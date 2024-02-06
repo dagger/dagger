@@ -1,7 +1,16 @@
-import { dag, object, func } from "@dagger.io/dagger"
+import { object, func, field } from "@dagger.io/dagger"
 
+/**
+ * This is the Minimal object
+ */
 @object
 class Minimal {
+	/**
+	 * This is a field
+	 */
+	@field
+	foo: string = "bar"
+
 	@func
 	hello(): string {
 		return "hello"
@@ -12,6 +21,13 @@ class Minimal {
 		return this.echoOpts(msg, "...", 3)
 	}
 
+	/**
+	 * EchoOpts does some opts things
+	 * 
+	 * @param msg the message to echo
+	 * @param suffix String to append to the echoed message
+	 * @param times number of times to repeat the message
+	 */
 	@func
 	echoOpts(msg: string, suffix: string = "", times: number = 1): string {
 		msg = msg += suffix
@@ -19,6 +35,10 @@ class Minimal {
 		return msg.repeat(times)
 	}
 
+	/**
+	 * @param msg the message to echo
+	 * @param isQuestion set to true to add a question mark.
+	 */
 	@func
 	echoMaybe(msg: string, isQuestion = false): string {
 		if (isQuestion) {

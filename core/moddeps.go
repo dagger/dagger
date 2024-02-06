@@ -19,6 +19,14 @@ const (
 	ModuleName = "daggercore"
 )
 
+// We don't expose these types to modules SDK codegen, but
+// we still want their graphql schemas to be available for
+// internal usage. So we use this list to scrub them from
+// the introspection JSON that module SDKs use for codegen.
+var typesHiddenFromModuleSDKs = []dagql.Typed{
+	&Host{},
+}
+
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
 particular set of modules to be served.
@@ -63,12 +71,30 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 }
 
 // The introspection json for combined schema exposed by each mod in this set of dependencies
-func (d *ModDeps) SchemaIntrospectionJSON(ctx context.Context) (string, error) {
+func (d *ModDeps) SchemaIntrospectionJSON(ctx context.Context, forModule bool) (string, error) {
 	_, introspectionJSON, err := d.lazilyLoadSchema(ctx)
 	if err != nil {
 		return "", err
 	}
-	return introspectionJSON, nil
+
+	if !forModule {
+		return introspectionJSON, nil
+	}
+
+	var introspection introspection.Response
+	if err := json.Unmarshal([]byte(introspectionJSON), &introspection); err != nil {
+		return "", fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
+	}
+
+	for _, typed := range typesHiddenFromModuleSDKs {
+		introspection.Schema.ScrubType(typed.Type().Name())
+		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
+	}
+	bs, err := json.Marshal(introspection)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal introspection JSON: %w", err)
+	}
+	return string(bs), nil
 }
 
 // All the TypeDefs exposed by this set of dependencies

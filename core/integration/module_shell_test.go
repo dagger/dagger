@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Shells tests are run directly on the host rather than in exec containers because we want to
+// Terminal tests are run directly on the host rather than in exec containers because we want to
 // directly interact with the dagger shell tui without resorting to embedding more go code
 // into a container for driving it.
 
-func TestModuleDaggerShell(t *testing.T) {
+func TestModuleDaggerTerminal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -34,7 +35,7 @@ func New(ctx context.Context) *Test {
 			From("mirror.gcr.io/alpine:3.18").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
-			WithDefaultShell([]string{"/bin/sh"}),
+			WithDefaultTerminalCmd([]string{"/bin/sh"}),
 	}
 }
 
@@ -52,7 +53,7 @@ type Test struct {
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
-		console, err := newShellTestConsole(60 * time.Second)
+		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
 		defer console.Close()
 
@@ -64,7 +65,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "shell")
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -105,7 +106,7 @@ func New(ctx context.Context) *Test {
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithExec([]string{"apk", "add", "python3"}).
-			WithDefaultShell([]string{"/bin/sh"}),
+			WithDefaultTerminalCmd([]string{"/bin/sh"}),
 	}
 }
 
@@ -122,7 +123,7 @@ type Test struct {
 		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "call", "ctr", "sync")
 		require.NoError(t, err)
 
-		console, err := newShellTestConsole(60 * time.Second)
+		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
 		defer console.Close()
 
@@ -131,7 +132,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "shell", "--args=python")
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal", "--cmd=python")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -164,32 +165,43 @@ type Test struct {
 	})
 }
 
-// shellTestConsole wraps expect.Console with methods that allow us to enforce timeouts despite
-// the fact that the TUI is constantly writing more data (which invalidates the expect lib's builtin
-// read timeout mechanisms).
-type shellTestConsole struct {
+// tuiConsole wraps expect.Console with methods that allow us to enforce
+// timeouts despite the fact that the TUI is constantly writing more data
+// (which invalidates the expect lib's builtin read timeout mechanisms).
+type tuiConsole struct {
 	*expect.Console
 	expectLineTimeout time.Duration
 	output            *bytes.Buffer
 }
 
-func newShellTestConsole(expectLineTimeout time.Duration) (*shellTestConsole, error) {
+func newTUIConsole(t *testing.T, expectLineTimeout time.Duration) (*tuiConsole, error) {
 	output := bytes.NewBuffer(nil)
-	console, err := expect.NewConsole(expect.WithStdout(output), expect.WithDefaultTimeout(expectLineTimeout))
+	console, err := expect.NewConsole(
+		expect.WithStdout(io.MultiWriter(newTWriter(t), output)),
+		expect.WithDefaultTimeout(expectLineTimeout),
+	)
 	if err != nil {
 		return nil, err
 	}
-	return &shellTestConsole{
+	t.Cleanup(func() {
+		console.Close()
+	})
+	return &tuiConsole{
 		Console:           console,
 		expectLineTimeout: expectLineTimeout,
 		output:            output,
 	}, nil
 }
 
-func (e *shellTestConsole) ExpectLineRegex(ctx context.Context, pattern string) error {
+func (e *tuiConsole) ExpectLineRegex(ctx context.Context, pattern string) error {
+	_, _, err := e.MatchLine(ctx, pattern)
+	return err
+}
+
+func (e *tuiConsole) MatchLine(ctx context.Context, pattern string) (string, []string, error) {
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, e.expectLineTimeout)
@@ -198,16 +210,16 @@ func (e *shellTestConsole) ExpectLineRegex(ctx context.Context, pattern string) 
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for line matching %q, most recent output:\n%s", pattern, e.output.String())
+			return "", nil, fmt.Errorf("timed out waiting for line matching %q, most recent output:\n%s", pattern, e.output.String())
 		default:
 		}
 
 		line, err := e.Expect(lineMatcher)
 		if err != nil {
-			return err
+			return "", nil, err
 		}
-		if re.MatchString(line) {
-			return nil
+		if matches := re.FindStringSubmatch(line); matches != nil {
+			return line, matches, nil
 		}
 	}
 }

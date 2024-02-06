@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/denisbrodbeck/machineid"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -41,7 +42,7 @@ func EngineLabel(engineName string) Label {
 	}
 }
 
-func LoadServerLabels(engineVersion, os, arch string, cacheEnabled bool) []Label {
+func LoadServerLabels(engineVersion, os, arch string, cacheEnabled bool) Labels {
 	labels := []Label{
 		{
 			Name:  "dagger.io/server.os",
@@ -65,7 +66,7 @@ func LoadServerLabels(engineVersion, os, arch string, cacheEnabled bool) []Label
 	return labels
 }
 
-func LoadClientLabels(engineVersion string) []Label {
+func LoadClientLabels(engineVersion string) Labels {
 	labels := []Label{
 		{
 			Name:  "dagger.io/client.os",
@@ -81,10 +82,18 @@ func LoadClientLabels(engineVersion string) []Label {
 		},
 	}
 
+	machineID, err := machineid.ProtectedID("dagger")
+	if err == nil {
+		labels = append(labels, Label{
+			Name:  "dagger.io/client.machine_id",
+			Value: machineID,
+		})
+	}
+
 	return labels
 }
 
-func LoadVCSLabels(workdir string) []Label {
+func LoadVCSLabels(workdir string) Labels {
 	labels := []Label{}
 
 	if gitLabels, err := LoadGitLabels(workdir); err == nil {
@@ -190,7 +199,7 @@ func fetchFromFork(repo *git.Repository, branch string) (*object.Commit, error) 
 	return branchCommit, nil
 }
 
-func LoadGitLabels(workdir string) ([]Label, error) {
+func LoadGitLabels(workdir string) (Labels, error) {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -310,7 +319,7 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 	return labels, nil
 }
 
-func LoadCircleCILabels() ([]Label, error) {
+func LoadCircleCILabels() (Labels, error) {
 	if os.Getenv("CIRCLECI") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
@@ -397,7 +406,7 @@ func LoadCircleCILabels() ([]Label, error) {
 	return labels, nil
 }
 
-func LoadGitLabLabels() ([]Label, error) {
+func LoadGitLabLabels() (Labels, error) {
 	if os.Getenv("GITLAB_CI") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
@@ -489,7 +498,7 @@ func LoadGitLabLabels() ([]Label, error) {
 	return labels, nil
 }
 
-func LoadGitHubLabels() ([]Label, error) {
+func LoadGitHubLabels() (Labels, error) {
 	if os.Getenv("GITHUB_ACTIONS") != "true" { //nolint:goconst
 		return []Label{}, nil
 	}
@@ -639,6 +648,19 @@ func (labels *Labels) AppendCILabel() *Labels {
 		isCIValue = "true"
 	}
 	labels.Add("dagger.io/ci", isCIValue)
+
+	vendor := ""
+	switch {
+	case os.Getenv("GITHUB_ACTIONS") == "true": //nolint:goconst
+		vendor = "GitHub"
+	case os.Getenv("CIRCLECI") == "true": //nolint:goconst
+		vendor = "CircleCI"
+	case os.Getenv("GITLAB_CI") == "true": //nolint:goconst
+		vendor = "GitLab"
+	}
+	if vendor != "" {
+		labels.Add("dagger.io/ci.vendor", vendor)
+	}
 
 	return labels
 }

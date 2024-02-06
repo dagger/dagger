@@ -31,8 +31,7 @@ func init() {
 	logrus.AddHook(&cloudHook{})
 }
 
-type cloudHook struct {
-}
+type cloudHook struct{}
 
 var _ logrus.Hook = (*cloudHook)(nil)
 

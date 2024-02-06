@@ -24,7 +24,7 @@ import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quic
 This quickstart assumes that:
 
 - You have a good understanding of the Dagger Go SDK. If not, refer to the [Go](https://pkg.go.dev/dagger.io/dagger) SDK reference.
-- You have the Dagger CLI installed. If not, [install Dagger](../../user/329058-install.mdx).
+- You have the Dagger CLI installed. If not, [install Dagger](../../329058-install.mdx).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Step 1: Initialize a new module
@@ -39,28 +39,20 @@ This quickstart assumes that:
     dagger mod init --name=potato --sdk=go
     ```
 
-    This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `internal` folder for the generated module code.
+    This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and library folders for the generated module code.
 
 1. Test the module. Run the generated `main.go` with the `dagger call` command:
 
     ```sh
-    dagger call container-echo --string-arg 'Hello daggernauts!'
+    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
     ```
 
     :::tip
     When using `dagger call` to call module functions, do not explicitly use the name of the module.
     :::
 
-    An alternative approach is to run the module using a GraphQL query piped through the `dagger query` command:
-
-    ```sh
-    echo '{potato{containerEcho(stringArg:"Hello daggernauts!"){stdout}}}' | dagger query
-    ```
-
 :::note
 When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
-
-When using `dagger query` and GraphQL, all names are converted into a language-agnostic "camelCase" style.
 :::
 
 ## Step 2: Add a function
@@ -83,26 +75,10 @@ Let's try changing the `main.go` file.
     func (m *Potato) HelloWorld(ctx context.Context) (string, error)
     ```
 
-1. Run `dagger mod sync` to regenerate the module code:
-
-    ```sh
-    dagger mod sync
-    ```
-
-    :::important
-    You must run `dagger mod sync` after every change to your module's interface (when you add/remove functions or change their parameters and return types).
-    :::
-
-1. Test the new function, once again using `dagger call` or `dagger query`:
+1. Test the new function, once again using `dagger call`:
 
     ```sh
     dagger call hello-world
-    ```
-
-    or
-
-    ```sh
-    echo '{potato{helloWorld}}' | dagger query
     ```
 
 ## Step 3: Use input parameters and return types
@@ -116,18 +92,10 @@ Your module functions can accept and return multiple different types, not just b
 
     The optional parameters are specified using the special `// +optional` comment, which dagger uses to set these as optional in the generated API. These comments must appear in the comment block before the parameter.
 
-    You can also use the `Optional` generic helper type, which has helper methods, like `GetOr` to easily get the underlying value.
-
     Here's an example of calling the function with optional parameters:
 
     ```sh
-    dagger call hello-world --count 10 --mashed true
-    ```
-
-    or
-
-    ```sh
-    echo '{potato{helloWorld(count:10, mashed:true)}}' | dagger query
+    dagger call hello-world --count 10 --mashed
     ```
 
 1. Update the function to return a custom `PotatoMessage` type:
@@ -135,17 +103,11 @@ Your module functions can accept and return multiple different types, not just b
     ```go file=./snippets/quickstart/step3b/main.go
     ```
 
-    Test it using `dagger call` or `dagger query`:
+    Test it using `dagger call`:
 
     ```sh
     dagger call hello-world --message "I am a potato" message
     dagger call hello-world --message "I am a potato" from
-    ```
-
-    or
-
-    ```sh
-    echo '{potato{helloWorld(message: "I am a potato"){message, from}}}' | dagger query
     ```
 
 :::tip

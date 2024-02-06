@@ -33,6 +33,7 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 )
@@ -51,6 +52,7 @@ type Opts struct {
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
+	ProgSockPath          string
 	// MainClientCaller is the caller who initialized the server associated with this
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
@@ -64,9 +66,10 @@ type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remo
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
 	Opts
-	session   *bksession.Session
-	job       *bksolver.Job
-	llbBridge bkfrontend.FrontendLLBBridge
+	session     *bksession.Session
+	job         *bksolver.Job
+	llbBridge   bkfrontend.FrontendLLBBridge
+	bk2progrock BK2Progrock
 
 	clientMu              sync.RWMutex
 	clientIDToSecretToken map[string]string
@@ -117,8 +120,9 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	}
 	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
-	client.llbBridge = client.LLBSolver.Bridge(client.job)
-	client.llbBridge = recordingGateway{client.llbBridge}
+	gw := &recordingGateway{llbBridge: client.LLBSolver.Bridge(client.job)}
+	client.llbBridge = gw
+	client.bk2progrock = gw
 
 	client.dialer = &net.Dialer{}
 
@@ -262,6 +266,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 				execMeta = ContainerExecUncachedMetadata{
 					ParentClientIDs: clientMetadata.ClientIDs(),
 					ServerID:        clientMetadata.ServerID,
+					ProgSockPath:    c.ProgSockPath,
+					ProgParent:      progrock.FromContext(ctx).Parent,
 				}
 				c.execMetadata[*execOp.OpDigest] = execMeta
 			}
@@ -383,7 +389,8 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
 		context.Background(),
-		c.Worker,
+		c.Worker.CacheManager(),
+		c.Worker.Executor(),
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
@@ -404,8 +411,32 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	return ctr, nil
 }
 
-func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveStatus) error {
-	return c.job.Status(ctx, ch)
+func (c *Client) WriteStatusesTo(ctx context.Context, recorder *progrock.Recorder) {
+	statusCh := make(chan *bkclient.SolveStatus, 8)
+	go func() {
+		err := c.job.Status(ctx, statusCh)
+		if err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to write status updates")
+		}
+	}()
+	go func() {
+		defer func() {
+			// drain channel on error
+			for range statusCh {
+			}
+		}()
+		for {
+			status, ok := <-statusCh
+			if !ok {
+				return
+			}
+			err := recorder.Record(c.bk2progrock.ConvertStatus(status))
+			if err != nil {
+				bklog.G(ctx).WithError(err).Error("failed to record status update")
+				return
+			}
+		}
+	}()
 }
 
 func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) error {
@@ -707,6 +738,9 @@ func withOutgoingContext(ctx context.Context) context.Context {
 type ContainerExecUncachedMetadata struct {
 	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
 	ServerID        string   `json:"serverID,omitempty"`
+	// Progrock propagation
+	ProgSockPath string `json:"progSockPath,omitempty"`
+	ProgParent   string `json:"progParent,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {

@@ -15,8 +15,11 @@ describe("scan static TypeScript", function () {
   it("Should correctly scan a basic class with one method", async function () {
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
-    const result = scan(files)
+    const result = scan(files, "helloWorld")
     const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
       classes: {
         HelloWorld: {
           name: "HelloWorld",
@@ -37,6 +40,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -52,8 +56,9 @@ describe("scan static TypeScript", function () {
   it("Should ignore class that does not have the object decorator", async function () {
     const files = await listFiles(`${rootDirectory}/noDecorators`)
 
-    const result = scan(files)
+    const result = scan(files, "foo")
     const expected: ScanResult = {
+      module: {},
       classes: {},
       functions: {},
     }
@@ -64,8 +69,12 @@ describe("scan static TypeScript", function () {
   it("Should supports multiple files and classes that returns classes", async function () {
     const files = await listFiles(`${rootDirectory}/multipleObjects`)
 
-    const result = scan(files)
+    const result = scan(files, "foo")
     const expected: ScanResult = {
+      module: {
+        description:
+          "Foo object module\n\nCompose of bar but its file description should be ignore.",
+      },
       classes: {
         Bar: {
           name: "Bar",
@@ -89,6 +98,7 @@ describe("scan static TypeScript", function () {
                   description: "Command to execute",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -121,8 +131,11 @@ describe("scan static TypeScript", function () {
   it("Should not expose private methods from a class", async function () {
     const files = await listFiles(`${rootDirectory}/privateMethod`)
 
-    const result = scan(files)
+    const result = scan(files, "hello-world")
     const expected: ScanResult = {
+      module: {
+        description: "HelloWorld module with private things",
+      },
       classes: {
         HelloWorld: {
           name: "HelloWorld",
@@ -141,6 +154,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -155,6 +169,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -170,8 +185,12 @@ describe("scan static TypeScript", function () {
   it("should scan classes' properties to keep a state", async function () {
     const files = await listFiles(`${rootDirectory}/state`)
 
-    const result = scan(files)
+    const result = scan(files, "alpine")
     const expected: ScanResult = {
+      module: {
+        description:
+          "An Alpine Module for testing purpose only.\n\nWarning: Do not reproduce in production.",
+      },
       classes: {
         Alpine: {
           name: "Alpine",
@@ -226,6 +245,7 @@ describe("scan static TypeScript", function () {
                   description: "version to use (default to: 3.16.2)",
                   optional: true,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -248,6 +268,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -267,6 +288,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -282,8 +304,11 @@ describe("scan static TypeScript", function () {
   it("Should detect optional parameters of a method", async function () {
     const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
-    const result = scan(files)
+    const result = scan(files, "helloWorld")
     const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
       classes: {
         HelloWorld: {
           name: "HelloWorld",
@@ -302,6 +327,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -316,6 +342,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -330,6 +357,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: "0",
+                  isVariadic: false,
                 },
                 b: {
                   name: "b",
@@ -337,6 +365,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: "0",
+                  isVariadic: false,
                 },
               },
             },
@@ -351,6 +380,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: "false",
+                  isVariadic: false,
                 },
               },
             },
@@ -366,8 +396,11 @@ describe("scan static TypeScript", function () {
   it("Should correctly handle function with void return", async function () {
     const files = await listFiles(`${rootDirectory}/voidReturn`)
 
-    const result = scan(files)
+    const result = scan(files, "helloWorld")
     const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
       classes: {
         HelloWorld: {
           name: "HelloWorld",
@@ -386,6 +419,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -400,6 +434,7 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: true,
                   defaultValue: undefined,
+                  isVariadic: false,
                 },
               },
             },
@@ -415,8 +450,11 @@ describe("scan static TypeScript", function () {
   it("Should introspect constructor", async function () {
     const files = await listFiles(`${rootDirectory}/constructor`)
 
-    const result = scan(files)
+    const result = scan(files, "helloWorld")
     const expected: ScanResult = {
+      module: {
+        description: "Constructor module",
+      },
       classes: {
         HelloWorld: {
           name: "HelloWorld",
@@ -439,6 +477,7 @@ describe("scan static TypeScript", function () {
                 description: "",
                 defaultValue: '"world"',
                 optional: true,
+                isVariadic: false,
               },
             },
           },
@@ -456,6 +495,127 @@ describe("scan static TypeScript", function () {
                   description: "",
                   optional: false,
                   defaultValue: undefined,
+                  isVariadic: false,
+                },
+              },
+            },
+          },
+        },
+      },
+      functions: {},
+    }
+
+    assert.deepEqual(result, expected)
+  })
+
+  it("Should correctly scan variadic arguments", async function () {
+    const files = await listFiles(`${rootDirectory}/variadic`)
+
+    const result = scan(files, "Variadic")
+    const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
+      classes: {
+        Variadic: {
+          name: "Variadic",
+          description: "",
+          fields: {},
+          constructor: undefined,
+          methods: {
+            fullVariadicStr: {
+              name: "fullVariadicStr",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.StringKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
+                },
+              },
+            },
+            semiVariadicStr: {
+              name: "semiVariadicStr",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {
+                separator: {
+                  name: "separator",
+                  typeDef: { kind: TypeDefKind.StringKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.StringKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
+                },
+              },
+            },
+            fullVariadicNum: {
+              name: "fullVariadicNum",
+              returnType: {
+                kind: TypeDefKind.IntegerKind,
+              },
+              description: "",
+              args: {
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.IntegerKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
+                },
+              },
+            },
+            semiVariadicNum: {
+              name: "semiVariadicNum",
+              returnType: {
+                kind: TypeDefKind.IntegerKind,
+              },
+              description: "",
+              args: {
+                mul: {
+                  name: "mul",
+                  typeDef: { kind: TypeDefKind.IntegerKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                vars: {
+                  name: "vars",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.IntegerKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: true,
                 },
               },
             },

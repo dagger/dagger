@@ -19,29 +19,35 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:                   "run [command]",
-	Aliases:               []string{"r"},
-	DisableFlagsInUseLine: true,
-	Long: `Runs the specified command in a Dagger session and shows progress in a TUI
+	Use:     "run [flags] COMMAND",
+	Aliases: []string{"r"},
+	Short:   "Run a command in a Dagger session",
+	Long: strings.ReplaceAll(
+		`Executes the specified command in a Dagger Session and displays
+live progress in a TUI.
 
-DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected automatically.`,
-	Short: "Runs a command in a Dagger session",
-	Example: `  Run a Dagger pipeline written in Go:
-    dagger run go run main.go
+´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ will be convieniently
+injected automatically.
 
-  Run a Dagger pipeline written in Node.js:
-    dagger run node index.mjs
-
-  Run a Dagger pipeline written in Python:
-    dagger run python main.py
-
-  Run a Dagger API request directly:
-    jq -n '{query:"{container{id}}"}' | \
-      dagger run sh -c 'curl -s \
-        -u $DAGGER_SESSION_TOKEN: \
-        -H "content-type:application/json" \
-        -d @- \
-        http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
+For example:
+´´´shell
+jq -n '{query:"{container{id}}"}' | \
+  dagger run sh -c 'curl -s \
+    -u $DAGGER_SESSION_TOKEN: \
+    -H "content-type:application/json" \
+    -d @- \
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query
+´´´`,
+		"´",
+		"`",
+	),
+	Example: strings.TrimSpace(`
+dagger run go run main.go
+dagger run node index.mjs
+dagger run python main.py
+`,
+	),
+	GroupID:      execGroup.ID,
 	Run:          Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,

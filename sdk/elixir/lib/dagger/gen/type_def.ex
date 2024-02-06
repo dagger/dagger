@@ -6,7 +6,7 @@ defmodule Dagger.TypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."
     @spec as_input(t()) :: {:ok, Dagger.InputTypeDef.t() | nil} | {:error, term()}
     def as_input(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asInput")
@@ -20,7 +20,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc ""
+    @doc "If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."
     @spec as_interface(t()) :: {:ok, Dagger.InterfaceTypeDef.t() | nil} | {:error, term()}
     def as_interface(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asInterface")
@@ -34,7 +34,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc ""
+    @doc "If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."
     @spec as_list(t()) :: {:ok, Dagger.ListTypeDef.t() | nil} | {:error, term()}
     def as_list(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asList")
@@ -48,7 +48,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc ""
+    @doc "If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."
     @spec as_object(t()) :: {:ok, Dagger.ObjectTypeDef.t() | nil} | {:error, term()}
     def as_object(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "asObject")
@@ -71,7 +71,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc ""
+    @doc "The kind of type this is (e.g. primitive, list, object)."
     @spec kind(t()) :: {:ok, Dagger.TypeDefKind.t()} | {:error, term()}
     def kind(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "kind")
@@ -80,7 +80,7 @@ defmodule Dagger.TypeDef do
   )
 
   (
-    @doc ""
+    @doc "Whether this type can be set to null. Defaults to false."
     @spec optional(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
     def optional(%__MODULE__{} = type_def) do
       selection = select(type_def.selection, "optional")

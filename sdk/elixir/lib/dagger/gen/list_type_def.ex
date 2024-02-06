@@ -6,7 +6,7 @@ defmodule Dagger.ListTypeDef do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "The type of the elements in the list."
     @spec element_type_def(t()) :: Dagger.TypeDef.t()
     def element_type_def(%__MODULE__{} = list_type_def) do
       selection = select(list_type_def.selection, "elementTypeDef")

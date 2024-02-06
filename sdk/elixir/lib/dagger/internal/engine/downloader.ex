@@ -8,7 +8,8 @@ defmodule Dagger.Internal.Engine.Downloader do
   def download(cli_version, opts \\ []) do
     cli_host = opts[:cli_host] || @dagger_default_cli_host
     cache_dir = :filename.basedir(:user_cache, "dagger")
-    bin_name = dagger_bin_name(cli_version, os())
+    {os, _} = target()
+    bin_name = dagger_bin_name(cli_version, os)
     cache_bin_path = Path.join([cache_dir, bin_name])
     perm = 0o700
 
@@ -35,7 +36,8 @@ defmodule Dagger.Internal.Engine.Downloader do
 
       {_, dagger_bin} =
         Enum.find(files, fn {filename, _bin} ->
-          filename == dagger_bin_in_archive(os())
+          {os, _} = target()
+          filename == dagger_bin_in_archive(os)
         end)
 
       File.write(bin_path, dagger_bin)
@@ -59,7 +61,7 @@ defmodule Dagger.Internal.Engine.Downloader do
   end
 
   defp expected_checksum(cli_host, cli_version) do
-    archive_name = default_cli_archive_name(os(), arch(), cli_version)
+    archive_name = default_cli_archive_name(target(), cli_version)
 
     {:ok, checksum_map} = checksum_map(cli_host, cli_version)
 
@@ -106,26 +108,29 @@ defmodule Dagger.Internal.Engine.Downloader do
   end
 
   defp cli_archive_url(cli_host, cli_version) do
-    archive_name = default_cli_archive_name(os(), arch(), cli_version)
+    archive_name = default_cli_archive_name(target(), cli_version)
     "https://#{cli_host}/dagger/releases/#{cli_version}/#{archive_name}"
   end
 
-  defp arch() do
-    case :erlang.system_info(:system_architecture) |> to_string() do
-      "aarch64" <> _rest -> "arm64"
-      "x86_64" <> _rest -> "amd64"
-    end
-  end
-
-  defp os() do
+  defp target() do
     case :os.type() do
-      {:unix, :darwin} -> :darwin
-      {:unix, :linux} -> :linux
-      {:windows, :nt} -> :windows
+      {:win32, _} ->
+        {:windows, "amd64"}
+
+      {:unix, osname} ->
+        [arch | _] = :erlang.system_info(:system_architecture) |> to_string() |> String.split("-")
+
+        arch =
+          case arch do
+            "aarch64" -> "arm64"
+            "x86_64" -> "amd64"
+          end
+
+        {osname, arch}
     end
   end
 
-  defp default_cli_archive_name(os, arch, cli_version) do
+  defp default_cli_archive_name({os, arch}, cli_version) do
     ext =
       case os do
         os when os in [:linux, :darwin] -> "tar.gz"

@@ -15,7 +15,7 @@ defmodule Dagger.FunctionCallArgValue do
   )
 
   (
-    @doc ""
+    @doc "The name of the argument."
     @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = function_call_arg_value) do
       selection = select(function_call_arg_value.selection, "name")
@@ -24,7 +24,7 @@ defmodule Dagger.FunctionCallArgValue do
   )
 
   (
-    @doc ""
+    @doc "The value of the argument represented as a JSON serialized string."
     @spec value(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
     def value(%__MODULE__{} = function_call_arg_value) do
       selection = select(function_call_arg_value.selection, "value")

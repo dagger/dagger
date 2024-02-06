@@ -16,20 +16,23 @@ import (
 )
 
 var (
-	queryFocus         bool
 	queryFile          string
 	queryVarsInput     []string
 	queryVarsJSONInput string
 )
 
 var queryCmd = &cobra.Command{
-	Use:                   "query [flags] [operation]",
-	Aliases:               []string{"q"},
-	DisableFlagsInUseLine: true,
-	Long:                  "Send API queries to a dagger engine\n\nWhen no document file, read query from standard input.",
-	Short:                 "Send API queries to a dagger engine",
-	Example: `
-dagger query <<EOF
+	Use:     "query [flags] [OPERATION]",
+	Aliases: []string{"q"},
+	Short:   "Send API queries to a dagger engine",
+	Long: `Send API queries to a dagger engine.
+
+When no document file is provided, reads query from standard input.
+
+Can optionally provide the GraphQL operation name if there are multiple
+queries in the document.
+`,
+	Example: `dagger query <<EOF
 {
   container {
     from(address:"hello-world") {
@@ -41,15 +44,11 @@ dagger query <<EOF
 }
 EOF
 `,
+	GroupID: execGroup.ID,
+	Args:    cobra.MaximumNArgs(1), // operation can be specified
 	RunE: func(cmd *cobra.Command, args []string) error {
-		focus = queryFocus
 		return optionalModCmdWrapper(Query, "")(cmd, args)
 	},
-	Args: cobra.MaximumNArgs(1), // operation can be specified
-}
-
-func init() {
-	queryCmd.Flags().BoolVar(&queryFocus, "focus", false, "Only show output for focused commands.")
 }
 
 func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, args []string) (rerr error) {
@@ -160,7 +159,8 @@ Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
 Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
 `)
 
-	queryCmd.Flags().StringVar(&queryFile, "doc", "", "document query file")
-	queryCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "query variable")
-	queryCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "json query variables (overrides --var)")
+	queryCmd.Flags().StringVar(&queryFile, "doc", "", "Read query from file (defaults to reading from stdin)")
+	queryCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "List of query variables, in key=value format")
+	queryCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "Query variables in JSON format (overrides --var)")
+	queryCmd.MarkFlagFilename("doc", "graphql", "gql")
 }

@@ -6,6 +6,7 @@ import {
   loadArgType,
   loadPropertyType,
   loadResult,
+  isArgVariadic,
 } from "./load.js"
 
 export type InvokeCtx = {
@@ -33,10 +34,21 @@ Promise<any> {
 
   // Load function arguments in the right order
   for (const argName of loadArgOrder(scanResult, parentName, fnName)) {
-    args[argName] = await loadArg(
+    const loadedArg = await loadArg(
       fnArgs[argName],
       loadArgType(scanResult, parentName, fnName, argName)
     )
+
+    if (isArgVariadic(scanResult, parentName, fnName, argName)) {
+      // If the argument is variadic, we need to load each args independently
+      // so it's correctly propagated when it's sent to the function.
+      // Note: variadic args are always last in the list of args.
+      for (const [i, arg] of loadedArg.entries()) {
+        args[`${argName}${i}`] = arg
+      }
+    } else {
+      args[argName] = loadedArg
+    }
   }
 
   // Load parent state

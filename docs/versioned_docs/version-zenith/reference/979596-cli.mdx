@@ -6,483 +6,475 @@ pagination_prev: null
 
 import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
-# Reference
+# CLI Reference
 
 <PartialExperimentalDocs />
 
+## dagger
+
 The Dagger CLI provides a command-line interface to Dagger.
 
-## Usage
+### Options
 
-```shell
-dagger [options] [command]
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
-## Options
+### SEE ALSO
 
-The options below can be used with all CLI commands.
-
-| Option                | Description                                                      |
-| --------------------- | ---------------------------------------------------------------- |
-| `--cpuprofile string` | Collect CPU profile to path, and trace at path.trace             |
-| `--debug`             | Show more information for debugging                              |
-| `--pprof string`      | Serve HTTP pprof at this address                                 |
-| `--progress string`   | Progress output format (`auto`, `plain`, `tty`) (default `auto`) |
-| `-s`, `--silent`      | Disable terminal UI and progress output                          |
-| `-h`, `--help`        | Show help text                                                   |
-| `--workdir`           | Define the host working directory (default `.`)                  |
-
-## Commands
+* [dagger call](#dagger-call)	 - Call a module function
+* [dagger functions](#dagger-functions)	 - List available functions
+* [dagger login](#dagger-login)	 - Log in to Dagger Cloud
+* [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+* [dagger query](#dagger-query)	 - Send API queries to a dagger engine
+* [dagger run](#dagger-run)	 - Run a command in a Dagger session
+* [dagger version](#dagger-version)	 - Print dagger version
 
 ## dagger call
 
-:::note
-This command is currently under development, may change in future and is therefore hidden in the CLI.
-:::
+Call a module function
 
-Call a module function and print the result. When called:
+### Synopsis
 
-- on a container, the standard output is returned;
-- on a directory, the list of entries is returned;
-- on a file, the file contents are returned.
+Call a module function and print the result.
 
-### Usage
+If the last argument is either a Container, Directory, or File, the pipeline
+will be evaluated (the result of calling `sync`) without presenting any output.
+Providing the `--output` option (shorthand: `-o`) is equivalent to calling
+`export` instead. To print a property of these core objects, continue chaining
+by appending it to the end of the command (for example, `stdout`, `entries`, or
+`contents`).
 
-```shell
-dagger call [function]
+
+```
+dagger call [flags] [FUNCTION]...
 ```
 
 ### Examples
 
-Call a function returning a container. The standard output of the container is returned.
-
-```shell
+```
 dagger call test
+dagger call build -o ./bin/myapp
+dagger call lint stdout
 ```
 
-## dagger completion
+### Options
 
-Generate the autocompletion script for dagger for the specified shell. Available shells are `bash`, `fish`, `zsh` and `powershell`.
-
-:::note
-You will need to start a new shell for this setup to take effect.
-:::
-
-### Usage
-
-```shell
-dagger completion [shell]
+```
+      --focus           Only show output for focused commands (default true)
+      --json            Present result as JSON
+  -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -o, --output string   Path in the host to save the result to
 ```
 
-### Examples
+### Options inherited from parent commands
 
-Load completions for every new session on Linux:
-
-```shell
-dagger completion bash > /etc/bash_completion.d/dagger
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
-To load completions for every new session on macOS:
+### SEE ALSO
 
-```shell
-dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
-```
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger functions
 
-:::note
-This command is currently under development, may change in future and is therefore hidden in the CLI.
-:::
+List available functions
 
-List all functions in a module.
+### Synopsis
+
+List available functions in a module.
+
+This is similar to `dagger call --help`, but only focused on showing the
+available functions.
+
+
+```
+dagger functions [flags] [FUNCTION]...
+```
 
 ### Options
 
-| Option               | Description                           |
-| ---------------------| --------------------------------------|
-| `--focus`            | Only show output for focused commands |
-| `-m, --mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
-
-### Usage
-
-```shell
-dagger functions
+```
+      --focus        Only show output for focused commands (default true)
+  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 
-### Examples
+### Options inherited from parent commands
 
-List functions in local module:
-
-```shell
-dagger functions -m /path/to/some/dir
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
-List functions in remote module:
+### SEE ALSO
 
-```shell
-dagger functions -m github.com/dagger/hello-dagger
-```
-
-## dagger help
-
-### Usage
-
-```shell
-dagger help [command]
-```
-
-Retrieve detailed help text for any command in the application.
-
-### Example
-
-Obtain help for the `dagger query` command:
-
-```shell
-dagger help query
-```
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger login
 
-Log in to Dagger Cloud.
+Log in to Dagger Cloud
 
-### Usage
-
-```shell
-dagger login
+```
+dagger login [flags]
 ```
 
-### Example
+### Options inherited from parent commands
 
-Log in to Dagger Cloud:
-
-```shell
-dagger login
 ```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger logout
 
-Log out of Dagger Cloud.
+Log out from Dagger Cloud
 
-### Usage
-
-```shell
-dagger logout
+```
+dagger logout [flags]
 ```
 
-### Example
+### Options inherited from parent commands
 
-Log out of Dagger Cloud:
-
-```shell
-dagger logout
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
-## dagger mod
+### SEE ALSO
 
-Manage Dagger modules. By default, print the configuration of the current module in JSON format.
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
-### Usage
+## dagger module
 
-```shell
-dagger mod [-m string] [--focus]
-dagger mod [-m string] [--focus] [sub-command [sub-command options]]
+Manage Dagger modules
+
+### Synopsis
+
+Manage Dagger modules. By default, print the configuration of the specified module in json format.
+
+```
+dagger module [flags]
+```
+
+### Examples
+
+```
+dagger mod -m /path/to/some/dir
+dagger mod -m github.com/dagger/hello-dagger
 ```
 
 ### Options
 
-| Option               | Description                           |
-| ---------------------| --------------------------------------|
-| `--focus`            | Only show output for focused commands |
-| `-m, --mod string` | Path to `dagger.json` config file for the module or a directory containing that file. May be a local path or a remote Git repository |
+```
+      --focus        Only show output for focused commands (default true)
+  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+```
+
+### Options inherited from parent commands
+
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger module init](#dagger-module-init)	 - Initialize a new Dagger module
+* [dagger module install](#dagger-module-install)	 - Add a new dependency to a Dagger module
+* [dagger module publish](#dagger-module-publish)	 - Publish a Dagger module to the Daggerverse
+* [dagger module sync](#dagger-module-sync)	 - Synchronize a Dagger module
+
+## dagger module init
+
+Initialize a new Dagger module
+
+### Synopsis
+
+Initialize a new Dagger module in a local directory.
+
+```
+dagger module init [--sdk string --name string] [flags]
+```
 
 ### Examples
 
-Print the configuration of a local Dagger module:
-
-```shell
-dagger mod -m /path/to/some/dir
 ```
-
-Print the configuration of a remote Dagger module:
-
-```shell
-dagger mod -m github.com/dagger/hello-dagger
-```
-
-### Sub-commands
-
-| Sub-command  | Description                                                           |
-| ------------ | --------------------------------------------------------------------- |
-| `init`       | Initialize a new Dagger module in a local directory                   |
-| `install`    | Add a new dependency to a Dagger module                              |
-| `sync`       | Synchronize a Dagger module with the latest version of its extensions |
-| `publish`    | Publish a Dagger module to the Daggerverse                            |
-
-#### dagger mod init
-
-Initialize a new Dagger module in the current directory.
-
-##### Usage
-
-```shell
-dagger mod init --name string --sdk string [--root string] [--license string]
-```
-
-##### Options
-
-| Option               | Description                                                     |
-| ---------------------| ----------------------------------------------------------------|
-| `--license string`   | License identifier to generate                                  |
-| `--name string`      | Name of the new module                                          |
-| `--root string`      | Root directory that should be loaded for the full module context. Defaults to the parent directory containing `dagger.json` |
-| `--sdk string`       | DK name or image ref to use for the module                      |
-
-##### Example
-
-Initialize a new module named `hello` with the Python SDK:
-
-```shell
 dagger mod init --name=hello --sdk=python
 ```
 
-#### dagger mod install
+### Options
 
-Add a new dependency to a Dagger module.
-
-##### Usage
-
-```shell
-dagger mod install
+```
+      --license string   License identifier to generate - see https://spdx.org/licenses/
+      --name string      Name of the new module
+      --sdk string       SDK name or image ref to use for the module
 ```
 
-##### Example
+### Options inherited from parent commands
 
-Install the `ttlsh` module from the Daggerverse:
+```
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
 
-```shell
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+
+## dagger module install
+
+Add a new dependency to a Dagger module
+
+### Synopsis
+
+Add a Dagger module as a dependency of a local module.
+
+```
+dagger module install [flags] MODULE
+```
+
+### Examples
+
+```
 dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
 ```
 
-#### dagger mod sync
+### Options
 
-Synchronize a Dagger module after a change in its function signature(s).
+```
+  -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
+```
+
+### Options inherited from parent commands
+
+```
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+
+## dagger module publish
+
+Publish a Dagger module to the Daggerverse
+
+### Synopsis
+
+Publish a local module to the Daggerverse (https://daggerverse.dev).
+
+The module needs to be committed to a git repository and have a remote
+configured with name "origin". The git repository must be clean (unless
+forced), to avoid mistakingly depending on uncommitted files.
+
+
+```
+dagger module publish [flags]
+```
+
+### Options
+
+```
+  -f, --force   Force publish even if the git repository is not clean
+```
+
+### Options inherited from parent commands
+
+```
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
+
+### SEE ALSO
+
+* [dagger module](#dagger-module)	 - Manage Dagger modules
+
+## dagger module sync
+
+Synchronize a Dagger module
+
+### Synopsis
+
+Synchronize a Dagger module with the latest version of its extensions.
 
 :::note
 This is only required for IDE auto-completion/LSP purposes.
 :::
 
-##### Usage
+This command re-regerates the module's generated code based on dependencies
+and the current state of the module's source code.
 
-```shell
-dagger mod sync
+
+```
+dagger module sync [flags]
 ```
 
-#### dagger mod publish
+### Options inherited from parent commands
 
-Publish a Dagger module to the Daggerverse.
-
-##### Usage
-
-```shell
-dagger mod publish [--force]
+```
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
-##### Options
+### SEE ALSO
 
-| Option      | Description                                                     |
-| ------------| ----------------------------------------------------------------|
-| `-f, --force`   | Force publish even if the Git repository is not clean           |
+* [dagger module](#dagger-module)	 - Manage Dagger modules
 
 ## dagger query
 
-Send API queries to the Dagger Engine. When no file provider, read query string from standard input.
+Send API queries to a dagger engine
 
-### Usage
+### Synopsis
 
-```shell
-dagger query [--doc file] [--var string] [--var-json string] [query]
+Send API queries to a dagger engine.
+
+When no document file is provided, reads query from standard input.
+
+Can optionally provide the GraphQL operation name if there are multiple
+queries in the document.
+
+
+```
+dagger query [flags] [OPERATION]
 ```
 
-### Options
+### Examples
 
-| Option       | Description                 |
-| ------------ | --------------------------- |
-| `--doc`      | Read query from file        |
-| `--var`      | Read query from string      |
-| `--var-json` | Read query from JSON string |
-
-### Example
-
-Execute an API query:
-
-```shell
+```
 dagger query <<EOF
 {
   container {
     from(address:"hello-world") {
-      exec(args:["/hello"]) {
-        stdout {
-          contents
-        }
+      withExec(args:["/hello"]) {
+        stdout
       }
     }
   }
 }
 EOF
+
 ```
+
+### Options
+
+```
+      --doc string        Read query from file (defaults to reading from stdin)
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --var strings       List of query variables, in key=value format
+      --var-json string   Query variables in JSON format (overrides --var)
+```
+
+### Options inherited from parent commands
+
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger run
 
-Executes the specified command in a Dagger session and displays live progress. `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be injected automatically.
+Run a command in a Dagger session
 
-In the live progress output:
+### Synopsis
 
-- Parallel pipelines are represented by vertical columns (┃ for active, │ for inactive).
-- Operations within a pipeline are represented by block characters (█).
-- Sub-tasks of an operation are listed beneath it (┣).
-- Actively running operations blink until they finish (█▓▒░█▓▒░).
-- Each pipeline forks from its parent pipeline and show its name in bold after a caret (▼).
-- Dependencies across pipelines are shown as a column that forks beneath the output operation and connects to each input, with the name of the output in grey (`pull docker.io/library/node:16`).
-- Actively running operations are always shown at the bottom of the screen.
-- Failed operations are also always shown at the bottom of the screen.
+Executes the specified command in a Dagger Session and displays
+live progress in a TUI.
 
-### Usage
+`DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be convieniently
+injected automatically.
 
+For example:
 ```shell
-dagger run [--debug] [--cleanup-timeout integer] [--focus] [command]
+jq -n '{query:"{container{id}}"}' | \
+  dagger run sh -c 'curl -s \
+    -u $DAGGER_SESSION_TOKEN: \
+    -H "content-type:application/json" \
+    -d @- \
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query
 ```
 
-### Options
-
-| Option       | Description                  |
-| ------------ | -----------------------------|
-| `--debug`    | Display underlying API calls |
-| `--cleanup-timeout duration` |  Set max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s) |
-| `--focus`    | Only show output for focused commands |
+```
+dagger run [flags] COMMAND
+```
 
 ### Examples
 
-Make an HTTP request using `curl`:
-
-```shell
-dagger run -- sh -c 'curl \
-  -u $DAGGER_SESSION_TOKEN: \
-  -H "content-type:application/json" \
-  -d "{\"query\":\"{container{id}}\"}" \
-  http://127.0.0.1:$DAGGER_SESSION_PORT/query'
 ```
-
-Direct command output to file, displaying progress in terminal:
-
-```shell
-dagger run go run ci.go > foo.out
-```
-
-Output Dagger logs to file:
-
-```shell
-dagger run go run ci.go > log.txt 2>&1
-```
-
-Output Dagger logs to terminal and to file:
-
-```shell
-dagger run go run ci.go 2>&1 | tee log.txt
-```
-
-Disable Dagger terminal output, but continue emitting program standard output:
-
-```shell
-dagger --silent run go run ci.go 2>&1 | tee foo.out
-```
-
-## dagger shell
-
-:::note
-This command is currently under development, may change in future and is therefore hidden in the CLI.
-:::
-
-Open a shell in a container returned by a function. If no entrypoint is specified and the container doesn't have a default command, `sh` will be used for the shell.
-
-### Usage
-
-```shell
-dagger shell [--entrypoint strings] [function]
+dagger run go run main.go
+dagger run node index.mjs
+dagger run python main.py
 ```
 
 ### Options
 
-| Option                 | Description                  |
-| ---------------------- | -----------------------------|
-| `--entrypoint strings` | Entrypoint to use            |
-
-### Example
-
-Open a shell session in the container returned by the `debug` function:
-
-```shell
-dagger shell debug
+```
+      --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
+      --focus                      Only show output for focused commands.
 ```
 
-Open a shell session in the container returned by the `debug` function using a different entrypoint:
+### Options inherited from parent commands
 
-```shell
-dagger shell --entrypoint /bin/zsh debug
+```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
-## dagger up
+### SEE ALSO
 
-:::note
-This command is currently under development, may change in future and is therefore hidden in the CLI.
-:::
-
-Start a service returned by a function and expose its ports to the host.
-
-:::note
-In order for this to work, the service returned by the function must have the `Container.withExposedPort` field defining one or more exposed ports.
-:::
-
-### Usage
-
-```shell
-dagger up [--port string] [--native] [function]
-```
-
-### Options
-
-| Option        | Description                                                        |
-| ------------- | -------------------------------------------------------------------|
-| `-p, --port string` | Port forwarding rule in FRONTEND[:BACKEND][/PROTO] format          |
-| `-n, --native`    | Forward all ports natively, matching frontend port to backend port |
-
-### Examples
-
-Start the service returned by the `service` function:
-
-```shell
-dagger up --native service
-```
-
-Start the service returned by the `service` function, mapping container port 8080 to host port 9090:
-
-```shell
-dagger up --port 9090:8080 service
-```
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger version
 
-Display version.
+Print dagger version
 
-### Usage
-
-```shell
-dagger version
+```
+dagger version [flags]
 ```
 
-### Example
+### Options inherited from parent commands
 
-Display the current version:
-
-```shell
-dagger version
 ```
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+

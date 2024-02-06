@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/go-git/go-git/v5"
@@ -24,6 +25,11 @@ import (
 )
 
 var (
+	moduleGroup = &cobra.Group{
+		ID:    "module",
+		Title: "Dagger Module Commands (Experimental)",
+	}
+
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
@@ -42,24 +48,22 @@ const (
 )
 
 func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\").")
-	moduleFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands.")
+	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
+	moduleFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands")
 
 	moduleCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
 
-	moduleInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
-	moduleInitCmd.PersistentFlags().StringVar(&moduleName, "name", "", "Name of the new module")
-	moduleInitCmd.PersistentFlags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
+	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
+	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
+	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
 
-	modulePublishCmd.PersistentFlags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean.")
+	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 
-	moduleInstallCmd.PersistentFlags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
-
-	// also include codegen flags since codegen will run on module init
+	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 
 	moduleCmd.AddCommand(moduleInitCmd)
 	moduleCmd.AddCommand(moduleInstallCmd)
@@ -70,9 +74,17 @@ func init() {
 var moduleCmd = &cobra.Command{
 	Use:     "module",
 	Aliases: []string{"mod"},
-	Short:   "Manage dagger modules",
-	Long:    "Manage dagger modules. By default, print the configuration of the specified module in json format.",
-	Hidden:  true, // for now, remove once we're ready for primetime
+	Short:   "Manage Dagger modules",
+	Long:    "Manage Dagger modules. By default, print the configuration of the specified module in json format.",
+	Example: strings.TrimSpace(`
+dagger mod -m /path/to/some/dir
+dagger mod -m github.com/dagger/hello-dagger
+`,
+	),
+	GroupID: moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
@@ -135,9 +147,10 @@ var moduleCmd = &cobra.Command{
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:    "init [--sdk string --name string]",
-	Short:  "Initialize a new dagger module in a local directory.",
-	Hidden: false,
+	Use:     "init [--sdk string --name string]",
+	Short:   "Initialize a new Dagger module",
+	Long:    "Initialize a new Dagger module in a local directory.",
+	Example: "dagger mod init --name=hello --sdk=python",
 	RunE: func(cmd *cobra.Command, _ []string) (rerr error) {
 		ctx := cmd.Context()
 
@@ -181,10 +194,12 @@ var moduleInitCmd = &cobra.Command{
 }
 
 var moduleInstallCmd = &cobra.Command{
-	Use:     "install MODULE",
+	Use:     "install [flags] MODULE",
 	Aliases: []string{"use"},
-	Short:   "Add a new dependency to a dagger module",
-	Hidden:  false,
+	Short:   "Add a new dependency to a Dagger module",
+	Long:    "Add a Dagger module as a dependency of a local module.",
+	// TODO: use example from a reference module, using a tag instead of commit
+	Example: "dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
@@ -230,15 +245,82 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
+
+			depSrc = modConf.Mod.Source().ResolveDependency(depSrc)
+
+			name, err := depSrc.ModuleName(ctx)
+			if err != nil {
+				return err
+			}
+			sdk, err := depSrc.AsModule().SDK(ctx)
+			if err != nil {
+				return err
+			}
+
+			if depSrcKind == dagger.GitSource {
+				git := depSrc.AsGitSource()
+				gitURL, err := git.CloneURL(ctx)
+				if err != nil {
+					return err
+				}
+				gitVersion, err := git.Version(ctx)
+				if err != nil {
+					return err
+				}
+				gitCommit, err := git.Commit(ctx)
+				if err != nil {
+					return err
+				}
+				gitSubpath, err := git.SourceSubpath(ctx)
+				if err != nil {
+					return err
+				}
+
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+					"module_name":   name,
+					"install_name":  installName,
+					"module_sdk":    sdk,
+					"source_kind":   "git",
+					"git_symbolic":  filepath.Join(gitURL, gitSubpath),
+					"git_clone_url": gitURL,
+					"git_subpath":   gitSubpath,
+					"git_version":   gitVersion,
+					"git_commit":    gitCommit,
+				})
+			} else if depSrcKind == dagger.LocalSource {
+				local := depSrc.AsLocalSource()
+				subpath, err := local.SourceSubpath(ctx)
+				if err != nil {
+					return err
+				}
+
+				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
+					"module_name":   name,
+					"install_name":  installName,
+					"module_sdk":    sdk,
+					"source_kind":   "local",
+					"local_subpath": subpath,
+				})
+
+			}
+
 			return nil
 		})
 	},
 }
 
 var moduleSyncCmd = &cobra.Command{
-	Use:    "sync",
-	Short:  "Synchronize a dagger module with the latest version of its extensions",
-	Hidden: false,
+	Use:   "sync",
+	Short: "Synchronize a Dagger module",
+	Long: `Synchronize a Dagger module with the latest version of its extensions.
+
+:::note
+This is only required for IDE auto-completion/LSP purposes.
+:::
+
+This command re-regerates the module's generated code based on dependencies
+and the current state of the module's source code.
+`,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -264,9 +346,16 @@ var moduleSyncCmd = &cobra.Command{
 const daDaggerverse = "https://daggerverse.dev"
 
 var modulePublishCmd = &cobra.Command{
-	Use:    "publish",
-	Short:  fmt.Sprintf("Publish your module to The Daggerverse (%s)", daDaggerverse),
-	Hidden: false,
+	Use:   "publish",
+	Short: "Publish a Dagger module to the Daggerverse",
+	Long: fmt.Sprintf(`Publish a local module to the Daggerverse (%s).
+
+The module needs to be committed to a git repository and have a remote
+configured with name "origin". The git repository must be clean (unless
+forced), to avoid mistakingly depending on uncommitted files.
+`,
+		daDaggerverse,
+	),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
