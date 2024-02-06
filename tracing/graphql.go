@@ -131,7 +131,7 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(id *idproto.ID) bool {
-	if id.Parent == nil {
+	if id.Base == nil {
 		switch id.Field {
 		case "__schema",
 			"currentTypeDefs",
@@ -142,6 +142,6 @@ func isIntrospection(id *idproto.ID) bool {
 			return false
 		}
 	} else {
-		return isIntrospection(id.Parent)
+		return isIntrospection(id.Base)
 	}
 }

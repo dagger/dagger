@@ -12,8 +12,10 @@ option go_package = "./idproto";
 // objects. Alternatively it may be stored in a database and referred to via an
 // RFC-6920 ni://sha-256;... URI.
 message ID {
-  // The parent ID, if any.
-  ID parent = 1;
+  // The ID of the object that the field selection will be evaluated against.
+  //
+  // If not present, the root Query object is implied.
+  ID base = 1;
 
   // The GraphQL type of the value.
   Type type = 2;
@@ -52,7 +54,7 @@ message ID {
   // handled is a nested list. Don't do that; have a type instead.
   int64 nth = 7;
 
-  // A module that must be loaded prior to evaluating this ID.
+  // The module that provides the implementation of the field.
   //
   // The actual usage of this ID is opaque to the protocol. In Dagger this is
   // the module ID providing the implementation of the field.

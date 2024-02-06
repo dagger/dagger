@@ -169,8 +169,8 @@ func (db *DB) Step(dig string) (*Step, bool) {
 	}
 	if outID != nil {
 		var ok bool
-		if outID.Parent != nil {
-			step.Base, ok = db.HighLevelStep(outID.Parent)
+		if outID.Base != nil {
+			step.Base, ok = db.HighLevelStep(outID.Base)
 			if !ok {
 				db.l.Warn("missing base", "step", outID.Display(), "digest", dig)
 				return nil, false
@@ -234,7 +234,7 @@ func (*DB) Close() error {
 
 func idSize(id *idproto.ID) int {
 	size := 0
-	for id := id; id != nil; id = id.Parent {
+	for id := id; id != nil; id = id.Base {
 		size++
 		size += len(id.Args)
 	}

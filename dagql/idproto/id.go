@@ -77,7 +77,7 @@ func (id *ID) Modules() []*ID {
 		for _, arg := range id.Args {
 			allMods = append(allMods, arg.Value.Modules()...)
 		}
-		id = id.Parent
+		id = id.Base
 	}
 	seen := map[digest.Digest]struct{}{}
 	deduped := []*ID{}
@@ -97,8 +97,8 @@ func (id *ID) Modules() []*ID {
 
 func (id *ID) Path() string {
 	buf := new(bytes.Buffer)
-	if id.Parent != nil {
-		fmt.Fprintf(buf, "%s.", id.Parent.Path())
+	if id.Base != nil {
+		fmt.Fprintf(buf, "%s.", id.Base.Path())
 	}
 	fmt.Fprint(buf, id.DisplaySelf())
 	return buf.String()
@@ -149,7 +149,7 @@ func (id *ID) Append(ret *ast.Type, field string, args ...*Argument) *ID {
 	}
 
 	return &ID{
-		Parent:  id,
+		Base:    id,
 		Type:    NewType(ret),
 		Field:   field,
 		Args:    args,
@@ -164,10 +164,10 @@ func (id *ID) Rebase(root *ID) *ID {
 }
 
 func rebase(id *ID, root *ID) {
-	if id.Parent == nil {
-		id.Parent = root
+	if id.Base == nil {
+		id.Base = root
 	} else {
-		rebase(id.Parent, root)
+		rebase(id.Base, root)
 	}
 }
 
@@ -180,8 +180,8 @@ func (id *ID) IsTainted() bool {
 	if id.Tainted {
 		return true
 	}
-	if id.Parent != nil {
-		return id.Parent.IsTainted()
+	if id.Base != nil {
+		return id.Base.IsTainted()
 	}
 	return false
 }
@@ -189,11 +189,11 @@ func (id *ID) IsTainted() bool {
 // Canonical returns the ID with any contained IDs canonicalized.
 func (id *ID) Canonical() *ID {
 	if id.Meta {
-		return id.Parent.Canonical()
+		return id.Base.Canonical()
 	}
 	canon := id.Clone()
-	if id.Parent != nil {
-		canon.Parent = id.Parent.Canonical()
+	if id.Base != nil {
+		canon.Base = id.Base.Canonical()
 	}
 	// TODO sort args...? is it worth preserving them in the first place? (default answer no)
 	for i, arg := range canon.Args {

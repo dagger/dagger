@@ -418,8 +418,8 @@ func (fe *Frontend) zoomedOutput(st *zoomState) string {
 
 // DumpID is exposed for troubleshooting.
 func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
-	if id.Parent != nil {
-		if err := fe.DumpID(out, id.Parent); err != nil {
+	if id.Base != nil {
+		if err := fe.DumpID(out, id.Base); err != nil {
 			return err
 		}
 	}
@@ -471,8 +471,8 @@ func (fe *Frontend) renderIDAncestry(out *termenv.Output, id *idproto.ID, depth 
 	if baseStep, ok := fe.db.HighLevelStep(id); ok {
 		id = baseStep.ID()
 	}
-	if id.Parent != nil {
-		if err := fe.renderIDAncestry(out, id.Parent, depth); err != nil {
+	if id.Base != nil {
+		if err := fe.renderIDAncestry(out, id.Base, depth); err != nil {
 			return err
 		}
 	}
@@ -498,8 +498,8 @@ func (fe *Frontend) renderIDPath(out *termenv.Output, id *idproto.ID) error {
 	if baseStep, ok := fe.db.HighLevelStep(id); ok {
 		id = baseStep.ID()
 	}
-	if id.Parent != nil {
-		if err := fe.renderIDPath(out, id.Parent); err != nil {
+	if id.Base != nil {
+		if err := fe.renderIDPath(out, id.Base); err != nil {
 			return err
 		}
 	}
@@ -516,8 +516,8 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 		fe.renderStatus(out, vtx)
 	}
 
-	if id.Parent != nil {
-		if err := fe.renderIDPath(out, id.Parent); err != nil {
+	if id.Base != nil {
+		if err := fe.renderIDPath(out, id.Base); err != nil {
 			return err
 		}
 	}

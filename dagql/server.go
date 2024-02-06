@@ -421,8 +421,8 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	var base Object
 	var err error
-	if id.Parent != nil {
-		base, err = s.Load(ctx, id.Parent)
+	if id.Base != nil {
+		base, err = s.Load(ctx, id.Base)
 		if err != nil {
 			return nil, err
 		}
