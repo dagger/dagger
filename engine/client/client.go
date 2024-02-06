@@ -180,7 +180,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		connectDigest = digest.FromString("_root") // arbitrary
 	}
 
-	loader := c.Recorder.Vertex(connectDigest, "connect")
+	loader := c.Recorder.Vertex(connectDigest, "connect", progrock.Internal())
 	defer func() {
 		loader.Done(rerr)
 	}()
