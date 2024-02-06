@@ -6,7 +6,7 @@ from typing_extensions import Doc, Self
 
 from dagger import Arg, field
 from dagger.mod import Module
-from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
+from dagger.mod._utils import get_arg_name, get_doc, is_nullable, non_null
 
 
 @pytest.mark.parametrize(
@@ -18,8 +18,8 @@ from dagger.mod._utils import get_arg_name, get_doc, is_optional, non_optional
         (Optional[str], True),
     ],
 )
-def test_is_optional(typ, expected):
-    assert is_optional(TypeHint(typ)) == expected
+def test_is_nullable(typ, expected):
+    assert is_nullable(TypeHint(typ)) == expected
 
 
 @pytest.mark.parametrize(
@@ -33,7 +33,7 @@ def test_is_optional(typ, expected):
     ],
 )
 def test_non_optional(typ, expected):
-    assert non_optional(TypeHint(typ)) == TypeHint(expected)
+    assert non_null(TypeHint(typ)) == TypeHint(expected)
 
 
 class ClassWithDocstring:

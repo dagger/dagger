@@ -131,6 +131,207 @@ func TestModulePythonInit(t *testing.T) {
 	})
 }
 
+func TestModulePythonSignatures(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := pythonModInit(ctx, t, c, `
+        from collections.abc import Sequence
+        from typing import Optional
+
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            @function
+            def hello(self) -> str:
+                return "hello"
+
+            @function
+            def hello_none(self) -> None:
+                ...
+
+            @function
+            def hello_void(self):
+                ...
+
+            @function
+            def echo(self, msg: str) -> str:
+                return msg
+
+            @function
+            def echo_default(self, msg: str = "hello") -> str:
+                return msg
+
+            @function
+            def echo_old_optional(self, msg: Optional[str] = None) -> str:
+                return "hello" if msg is None else msg
+
+            @function
+            def echo_optional(self, msg: str | None = None) -> str:
+                return "hello" if msg is None else msg
+
+            @function
+            def echo_sequence(self, msg: Sequence[str]) -> str:
+               return self.echo("+".join(msg))
+
+            @function
+            def echo_tuple(self, msg: tuple[str, ...]) -> str:
+                return self.echo_sequence(msg)
+
+            @function
+            def echo_list(self, msg: list[str]) -> str:
+                return self.echo_sequence(msg)
+
+            @function
+            def echo_opts(self, msg: str, suffix: str = "", times: int = 1) -> str:
+                return (msg + suffix) * times
+    `)
+
+	for _, tc := range []struct {
+		name     string
+		query    string
+		expected string
+	}{
+		{
+			name:     "def () -> str",
+			query:    `{test{hello}}`,
+			expected: `{"test":{"hello":"hello"}}`,
+		},
+		{
+			name:     "def () -> None",
+			query:    `{test{helloNone}}`,
+			expected: `{"test":{"helloNone":null}}`,
+		},
+		{
+			name:     "def ()",
+			query:    `{test{helloVoid}}`,
+			expected: `{"test":{"helloVoid":null}}`,
+		},
+		{
+			name:     "def (str) -> str",
+			query:    `{test{echo(msg:"world")}}`,
+			expected: `{"test":{"echo":"world"}}`,
+		},
+		{
+			name:     "def (str = 'hello') -> str",
+			query:    `{test{echoDefault}}`,
+			expected: `{"test":{"echoDefault":"hello"}}`,
+		},
+		{
+			name:     "def (str = 'hello') -> str: (bonjour)",
+			query:    `{test{echoDefault(msg:"bonjour")}}`,
+			expected: `{"test":{"echoDefault":"bonjour"}}`,
+		},
+		{
+			name:     "def (str | None = None) -> str",
+			query:    `{test{echoOptional}}`,
+			expected: `{"test":{"echoOptional":"hello"}}`,
+		},
+		{
+			name:     "def (Optional[str] = None) -> str",
+			query:    `{test{echoOldOptional}}`,
+			expected: `{"test":{"echoOldOptional":"hello"}}`,
+		},
+		{
+			name:     "def (str | None = None) -> str: (bonjour)",
+			query:    `{test{echoOptional(msg:"bonjour")}}`,
+			expected: `{"test":{"echoOptional":"bonjour"}}`,
+		},
+		{
+			name:     "sequence abc",
+			query:    `{test{echoSequence(msg:["a", "b", "c"])}}`,
+			expected: `{"test":{"echoSequence":"a+b+c"}}`,
+		},
+		{
+			name:     "tuple",
+			query:    `{test{echoTuple(msg:["a", "b", "c"])}}`,
+			expected: `{"test":{"echoTuple":"a+b+c"}}`,
+		},
+		{
+			name:     "list",
+			query:    `{test{echoList(msg:["a", "b", "c"])}}`,
+			expected: `{"test":{"echoList":"a+b+c"}}`,
+		},
+		{
+			name:     "def (str, str, int) -> str",
+			query:    `{test{echoOpts(msg:"hello", suffix:"!", times:3)}}`,
+			expected: `{"test":{"echoOpts":"hello!hello!hello!"}}`,
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expected, out)
+		})
+	}
+}
+
+func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := pythonModInit(ctx, t, c, `
+        import dagger
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            @function
+            async def read(self, dir: dagger.Directory) -> str:
+                return await dir.file("foo").contents()
+
+            @function
+            async def read_list(self, dir: list[dagger.Directory]) -> str:
+                return await dir[0].file("foo").contents()
+
+            @function
+            async def read_optional(self, dir: dagger.Directory | None = None) -> str:
+                return "" if dir is None else await dir.file("foo").contents()
+    `)
+
+	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	dirID := gjson.Get(out, "directory.withNewFile.id").String()
+
+	for _, tc := range []struct {
+		name     string
+		query    string
+		expected string
+	}{
+		{
+			name:     "read",
+			query:    fmt.Sprintf(`{test{read(dir: %q)}}`, dirID),
+			expected: `{"test":{"read":"bar"}}`,
+		},
+		{
+			name:     "read list",
+			query:    fmt.Sprintf(`{test{readList(dir: [%q])}}`, dirID),
+			expected: `{"test":{"readList":"bar"}}`,
+		},
+		{
+			name:     "read optional",
+			query:    fmt.Sprintf(`{test{readOptional(dir: %q)}}`, dirID),
+			expected: `{"test":{"readOptional":"bar"}}`,
+		},
+		{
+			name:     "read optional (default)",
+			query:    `{test{readOptional}}`,
+			expected: `{"test":{"readOptional":""}}`,
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expected, out)
+		})
+	}
+}
+
 func TestModulePythonDocs(t *testing.T) {
 	t.Parallel()
 

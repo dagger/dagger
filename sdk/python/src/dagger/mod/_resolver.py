@@ -82,7 +82,7 @@ class FieldResolver(Resolver):
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
         return typedef.with_field(
             self.name,
-            to_typedef(self.type_annotation).with_optional(self.is_optional),
+            to_typedef(self.type_annotation, self.is_optional),
             description=self.doc or None,
         )
 
@@ -131,7 +131,7 @@ class FunctionResolver(Resolver, Generic[P, R]):
         for param in self.parameters.values():
             fn = fn.with_arg(
                 param.name,
-                to_typedef(param.resolved_type).with_optional(param.is_optional),
+                to_typedef(param.resolved_type, param.is_optional),
                 description=param.doc,
                 default_value=self._get_default_value(param),
             )

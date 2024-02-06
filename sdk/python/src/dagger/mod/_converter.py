@@ -3,7 +3,7 @@ import functools
 import inspect
 import logging
 import typing
-from collections.abc import Sequence
+from collections.abc import Collection
 
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
@@ -12,9 +12,9 @@ from ._types import ObjectDefinition
 from ._utils import (
     get_doc,
     is_annotated,
-    is_optional,
+    is_nullable,
     is_union,
-    non_optional,
+    non_null,
     strip_annotations,
     syncify,
 )
@@ -67,7 +67,10 @@ def make_converter():
 
 
 @functools.cache
-def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
+def to_typedef(  # noqa: C901
+    annotation: type,
+    has_default: bool | None = None,
+) -> "TypeDef":
     """Convert Python object to API type."""
     assert not is_annotated(
         annotation
@@ -84,10 +87,14 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
 
     typ = TypeHint(annotation)
 
-    if is_optional(typ):
+    if is_nullable(typ) and has_default is False:
+        msg = f"Nullable type must have a default value: {typ.hint!r}"
+        raise TypeError(msg)
+
+    if is_nullable(typ) or has_default is True:
         td = td.with_optional(True)
 
-    typ = non_optional(typ)
+    typ = non_null(typ)
 
     if typ is TypeHint(type(None)):
         return td.with_kind(dagger.TypeDefKind.VOID_KIND)
@@ -106,15 +113,16 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901
         msg = f"Unsupported union type: {typ.hint}"
         raise TypeError(msg)
 
-    if typ.is_subhint(TypeHint(Sequence)):
-        if len(typ) != 1:
+    # NB: str is a Collection, but we've handled it above.
+    if typ.is_subhint(TypeHint(Collection)):
+        try:
+            return td.with_list_of(to_typedef(typ.args[0]))
+        except IndexError:
             msg = (
-                "Expected sequence type to be subscripted "
-                f"with 1 subtype, got {len(typ)}"
+                "Expected collection type to be subscripted "
+                f"with 1 subtype, got {len(typ)}: {typ.hint!r}"
             )
-            raise TypeError(msg)
-
-        return td.with_list_of(to_typedef(typ.args[0]))
+            raise TypeError(msg) from None
 
     if inspect.isclass(cls := typ.hint):
         custom_obj: ObjectDefinition | None = getattr(cls, "__dagger_type__", None)
