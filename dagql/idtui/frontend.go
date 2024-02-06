@@ -225,6 +225,9 @@ func (fe *Frontend) vertexLogs(id string) *Vterm {
 	term, found := fe.logs[id]
 	if !found {
 		term = NewVterm()
+		if fe.window.Width != -1 {
+			term.SetWidth(fe.window.Width)
+		}
 		fe.logs[id] = term
 	}
 	return term
@@ -365,6 +368,9 @@ func (m *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.window = msg
 		for _, st := range m.zoomed {
 			st.Output.Resize(msg.Height, msg.Width)
+		}
+		for _, vt := range m.logs {
+			vt.SetWidth(msg.Width)
 		}
 		return m, nil
 
