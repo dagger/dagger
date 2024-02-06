@@ -125,8 +125,8 @@ class FunctionResolver(Resolver, Generic[P, R]):
         """Add a new object to current module."""
         fn = dag.function(self.name, to_typedef(self.return_type))
 
-        if self.doc:
-            fn = fn.with_description(self.doc)
+        if self.func_doc is not None:
+            fn = fn.with_description(self.func_doc)
 
         for param in self.parameters.values():
             fn = fn.with_arg(
@@ -202,6 +202,11 @@ class FunctionResolver(Resolver, Generic[P, R]):
         # constructor which is different than `wrapped_func`.
         # It's simpler not to execute `__init__` directly since it's unbound.
         return get_alt_constructor(self.wrapped_func) or self.wrapped_func
+
+    @property
+    def func_doc(self):
+        """Return the description for the callable to invoke."""
+        return self.doc if self.doc is not None else get_doc(self.func)
 
     @property
     def sig_func(self):
@@ -355,7 +360,7 @@ class Function(Generic[P, R]):
             original_name=original_name,
             name=name,
             wrapped_func=self.func,
-            doc=self.doc or get_doc(self.func),
+            doc=self.doc,
             origin=origin,
         )
 

@@ -80,7 +80,7 @@ def get_doc(obj: Any) -> str | None:
             None,
         )
     if inspect.getmodule(obj) != builtins and (
-        inspect.isclass(obj) or inspect.isfunction(obj)
+        inspect.isclass(obj) or inspect.isroutine(obj)
     ):
         doc = inspect.getdoc(obj)
         # By default, a dataclass's __doc__ will be the signature of the class,

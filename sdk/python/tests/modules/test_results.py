@@ -1,6 +1,6 @@
 import json
 from dataclasses import InitVar
-from typing import Annotated
+from typing import Annotated, cast
 
 import pytest
 from typing_extensions import Self
@@ -9,6 +9,7 @@ import dagger
 from dagger import Arg, Doc, dag
 from dagger.mod import Module
 from dagger.mod._exceptions import FatalError
+from dagger.mod._resolver import FunctionResolver
 
 pytestmark = [
     pytest.mark.anyio,
@@ -173,6 +174,33 @@ async def test_alt_constructor():
     assert Foo.create().foo == "bar"
     assert await get_result(mod, "Foo", {}, "", {}) == {"foo": "bar"}
     assert await get_result(mod, "Foo", {}, "", {"bar": "baz"}) == {"foo": "baz"}
+
+
+async def test_constructor_doc():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        """Object doc."""
+
+    constructor = cast(FunctionResolver, get_resolver(mod, "Foo", ""))
+    assert constructor.func_doc == "Object doc."
+
+
+async def test_alt_constructor_doc():
+    mod = Module()
+
+    @mod.object_type
+    class Foo:
+        """Object doc."""
+
+        @classmethod
+        def create(cls):
+            """Constructor doc."""
+            return cls()
+
+    constructor = cast(FunctionResolver, get_resolver(mod, "Foo", ""))
+    assert constructor.func_doc == "Constructor doc."
 
 
 async def test_alt_async_constructor():

@@ -2,7 +2,7 @@ from typing import Annotated, Optional
 
 import pytest
 from beartype.door import TypeHint
-from typing_extensions import Doc
+from typing_extensions import Doc, Self
 
 from dagger import Arg, field
 from dagger.mod import Module
@@ -39,6 +39,11 @@ def test_non_optional(typ, expected):
 class ClassWithDocstring:
     """Foo."""
 
+    @classmethod
+    def create(cls) -> Self:
+        """Bar."""
+        return cls()
+
 
 def func_with_docstring():
     """Foo."""
@@ -62,6 +67,10 @@ async def async_func_with_docstring():
 )
 def test_get_doc(annotation):
     assert get_doc(annotation) == "Foo."
+
+
+def test_get_factory_doc():
+    assert get_doc(ClassWithDocstring.create) == "Bar."
 
 
 class ClassWithoutDocstring:
