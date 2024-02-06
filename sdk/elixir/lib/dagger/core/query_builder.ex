@@ -1,4 +1,4 @@
-defmodule Dagger.QueryBuilder.Selection do
+defmodule Dagger.Core.QueryBuilder.Selection do
   @moduledoc false
 
   defstruct [:name, :args, :prev, alias: ""]
@@ -95,11 +95,11 @@ defmodule Dagger.QueryError do
   defstruct [:errors]
 end
 
-defmodule Dagger.QueryBuilder do
+defmodule Dagger.Core.QueryBuilder do
   @moduledoc false
 
-  alias Dagger.QueryBuilder.Selection
-  alias Dagger.Internal.Client
+  alias Dagger.Core.QueryBuilder.Selection
+  alias Dagger.Core.Client
 
   def execute(selection, client) do
     q = Selection.build(selection)
@@ -131,8 +131,8 @@ defmodule Dagger.QueryBuilder do
 
   defmacro __using__(_opts) do
     quote do
-      import Dagger.QueryBuilder.Selection
-      import Dagger.QueryBuilder, only: [execute: 2]
+      import Dagger.Core.QueryBuilder.Selection
+      import Dagger.Core.QueryBuilder, only: [execute: 2]
     end
   end
 end

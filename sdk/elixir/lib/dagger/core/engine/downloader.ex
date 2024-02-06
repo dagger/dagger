@@ -1,4 +1,4 @@
-defmodule Dagger.Internal.Engine.Downloader do
+defmodule Dagger.Core.Engine.Downloader do
   @moduledoc false
 
   @dagger_bin_prefix "dagger-"
