@@ -47,8 +47,6 @@ func (m *MyModule) buildBaseImage() *Node {
 	return dag.Node().
 		WithVersion("21").
 		WithNpm().
-		WithSource(dag.CurrentModule().Source(".", HostDirectoryOpts{
-			Exclude: []string{".git", "**/node_modules"},
-		})).
+		WithSource(dag.CurrentModule().Source()).
 		Install(nil)
 }

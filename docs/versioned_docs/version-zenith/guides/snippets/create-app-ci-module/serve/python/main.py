@@ -2,10 +2,12 @@ import random
 import dagger
 from dagger import dag, function
 
+# create a service from the production image
 @function
 def serve() -> dagger.Service:
     return package().as_service()
 
+# publish an image
 @function
 def publish() -> str:
     return (
@@ -13,6 +15,7 @@ def publish() -> str:
         .publish(f"ttl.sh/myapp-{random.randrange(10 ** 8)}")
     )
 
+# create a production build
 @function
 def build() -> dagger.Directory:
     return (
@@ -22,6 +25,7 @@ def build() -> dagger.Directory:
         .directory("./dist")
     )
 
+# run unit tests
 @function
 def test() -> str:
     return (
@@ -30,6 +34,7 @@ def test() -> str:
         .stdout()
     )
 
+# create a production image
 def package() -> dagger.Container:
     return (
         dag.container()
@@ -38,11 +43,12 @@ def package() -> dagger.Container:
         .with_exposed_port(80)
     )
 
+# build base image
 def build_base_image() -> dagger.Node:
     return (
         dag.node()
         .with_version("21")
         .with_npm()
-        .with_source(dag.current_module().source(".", exclude=[".git", "**/node_modules", "**/sdk"]))
+        .with_source(dag.current_module().source())
         .install([])
     )

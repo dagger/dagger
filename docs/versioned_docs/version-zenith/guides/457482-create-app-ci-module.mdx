@@ -3,7 +3,7 @@ slug: /guides/457482/create-app-ci-module
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
 authors: ["Erik Sipsma"]
-date: "2024-01-25"
+date: "2024-02-06"
 ---
 
 import PartialExperimentalDocs from '../partials/_experimental.mdx';
@@ -32,8 +32,8 @@ This guide walks you through the process of creating a Dagger module encapsulati
 
 This guide assumes that:
 
-- You know the basics of calling and writing Dagger modules. If not, refer to the [user quickstart](../user/quickstart/index.mdx) and the [programming quickstart](../developer/go/525021-quickstart.mdx).
-- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../user/329058-install.mdx).
+- You know the basics of calling and writing Dagger modules. If not, refer to the [quickstart](../quickstart/index.mdx).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../329058-install.mdx).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Node.js Web application. If not, follow the steps in Appendix A to [create an example Node.js application](#appendix-a-create-an-example-application).
 
@@ -62,16 +62,25 @@ dagger mod init --name=my-module --sdk=python
 This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
 
 </TabItem>
+<TabItem value="TypeScript">
+
+```sh
+dagger mod init --name=my-module --sdk=typescript
+```
+
+This will generate a `dagger.json` module file, initial `src/index.ts`, `package.json` and `tsconfig.json` files, as well as a generated `sdk` folder for local development.
+
+</TabItem>
 </Tabs>
 
 ## Step 2: Add a function to build the application base image
 
 The first step is to add a function to build a base image containing the application source code and runtime. This base image will serve as an input to other functions.
 
-Since the application is a Node.js application, it's convenient to use the [`node` module](https://daggerverse.dev/mod/github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f) from the [Daggerverse](https://daggerverse.dev), which provides a set of ready-made functions to manage a Node.js project.
+Since the application is a Node.js application, it's convenient to use the [`node` module](https://github.com/quartz-technology/daggerverse/node), which provides a set of ready-made functions to manage a Node.js project.
 
 :::note
-Dagger exposes every module using a language-agnostic HTTP API. So, even though the [`node` module](https://daggerverse.dev/mod/github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f) is written in TypeScript, you can transparently call its functions from your module written in Go, Python or any other supported language.
+Dagger exposes every module using a language-agnostic HTTP API. So, even though the [`node` module](https://github.com/quartz-technology/daggerverse/node) is written in TypeScript, you can transparently call its functions from your module written in Go, Python or any other supported language.
 :::
 
 <Tabs groupId="language">
@@ -93,7 +102,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
       - It calls the module's `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
       - It calls the module's `Node.WithSource()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
         - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.CurrentModule().Source()`.
-        - The `dag.CurrentModule().Source()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+        - The `dag.CurrentModule().Source()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem.
       - It calls the module's `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
 </TabItem>
 <TabItem value="Python">
@@ -113,8 +122,11 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
       - It calls the module's `Node.with_npm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
       - It calls the module's `Node.with_source()` function, which returns a revised `Node` object including the application source code and a cache volume for Node.js modules.
         - When a module is loaded into Dagger, it includes the directory tree at which `dagger.json` is located. In this example, since `dagger.json` is co-located with the application source code directory, that directory is auto-included in the module container's filesystem and can be accessed via `dag.current_module().source()`.
-        - The `dag.current_module().source()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem after excluding the `.git` and `node_modules` sub-directories.
+        - The `dag.current_module().source()` method queries the module container's environment and returns a reference to the application source code directory in the module container's filesystem.
       - It calls the module's `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+</TabItem>
+<TabItem value="TypeScript">
+TODO
 </TabItem>
 </Tabs>
 
@@ -157,6 +169,10 @@ This function does the following:
 - It uses the `Container.stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil `error` is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
 
 </TabItem>
+<TabItem value="TypeScript">
+TODO
+</TabItem>
+
 </Tabs>
 
 Try the function by running it as below:
@@ -214,6 +230,10 @@ This function does the following:
 - It obtains a reference to the `dist/` directory in the container with the `container.directory()` function. This function returns a `Directory` object.
 
 </TabItem>
+<TabItem value="TypeScript">
+TODO
+</TabItem>
+
 </Tabs>
 
 :::note
@@ -223,7 +243,7 @@ The `npm run build` command is appropriate for the example Vue application used 
 Try the function by running it as below:
 
 ```shell
-dagger call build
+dagger call build entries
 ```
 
 Here's an example of the output you will see:
@@ -268,6 +288,10 @@ This code listing adds two functions:
 - The `publish()` function calls the `package()` function to obtain the container image and then calls the built-in `Container.publish()` function to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
 
 </TabItem>
+<TabItem value="TypeScript">
+TODO
+</TabItem>
+
 </Tabs>
 
 Try the function by running the command below:
@@ -306,6 +330,10 @@ This function simply calls the `Package()` function to obtain the container imag
 This function simply calls the `package()` function to obtain the container image and then returns it as a service using the `Container.as_service()` function.
 
 </TabItem>
+<TabItem value="TypeScript">
+TODO
+</TabItem>
+
 </Tabs>
 
 Try the function by running the command below:
@@ -323,11 +351,6 @@ The `--ports 8080:80` argument results in container port 80 being mapped to host
 ## Conclusion
 
 This guide walked you through the process of creating a Dagger module to encapsulate common CI pipeline operations for an application. It explained how to create a module, add functions to it, and work with function inputs and outputs. It also demonstrated how to use modules from the Daggerverse to speed up your own module development, by reusing functionality developed by the Dagger community.
-
-Continue your journey into Dagger with the following resources:
-
-- The [Daggerverse](https://daggerverse.dev), an online catalog of Dagger modules for you to use and learn from
-- Guide on [publishing modules to the Daggerverse](../developer/821742-publishing-modules.mdx)
 
 ## Appendix A: Create an example application
 
