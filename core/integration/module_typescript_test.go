@@ -757,6 +757,8 @@ class Alias {
 
 		out, err := modGen.With(daggerQuery(`{alias{bar{hello,foo{zoo,hey,far{farFarNested}}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"alias": {"bar": {"hello": "a", "foo": {"zoo": 4", "hey": [true, false, true], far": {"farFarNested": true} }}}}`, out)
+		require.JSONEq(t, `{"alias": {"bar": {"hello": "a", "foo": {"zoo": 4, "hey": [true, false, true], far": {"farFarNested": true} }}}}`, out)
 	})
 }
+
+
