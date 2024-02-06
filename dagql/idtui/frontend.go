@@ -3,7 +3,6 @@ package idtui
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -42,14 +41,14 @@ type Frontend struct {
 	rows  []*TraceRow
 
 	// TUI state/config
-	fps      float64 // frames per second
-	profile  termenv.Profile
-	spin     tea.Model             // da spin zone
-	window   tea.WindowSizeMsg     // set by BubbleTea
-	view     *bytes.Buffer         // rendered async
-	logs     map[string]*Vterm     // vertex logs
-	zoomed   map[string]*zoomState // interactive zoomed terminals
-	lastZoom *zoomState
+	fps         float64 // frames per second
+	profile     termenv.Profile
+	spin        tea.Model             // da spin zone
+	window      tea.WindowSizeMsg     // set by BubbleTea
+	view        *bytes.Buffer         // rendered async
+	logs        map[string]*Vterm     // vertex logs
+	zoomed      map[string]*zoomState // interactive zoomed terminals
+	currentZoom *zoomState            // current zoomed terminal
 
 	// held to synchronize tea.Model and progrock.Writer
 	mu sync.Mutex
@@ -258,19 +257,22 @@ func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
 	}
 }
 
-func (tape *Frontend) initZoom(v *progrock.Vertex) {
+func (f *Frontend) initZoom(v *progrock.Vertex) {
 	var vt *midterm.Terminal
-	if tape.window.Height == -1 || tape.window.Width == -1 {
+	if f.window.Height == -1 || f.window.Width == -1 {
 		vt = midterm.NewAutoResizingTerminal()
 	} else {
-		vt = midterm.NewTerminal(tape.window.Height, tape.window.Width)
+		vt = midterm.NewTerminal(f.window.Height, f.window.Width)
 	}
 	// vt := NewVterm()
 	w := setupTerm(v.Id, vt)
-	tape.zoomed[v.Id] = &zoomState{
+	st := &zoomState{
 		Output: vt,
 		Input:  w,
 	}
+	f.zoomed[v.Id] = st
+	f.currentZoom = st
+	f.directStdin(st)
 }
 
 func (tape *Frontend) releaseZoom(vtx *progrock.Vertex) {
@@ -287,13 +289,7 @@ func (f *Frontend) Close() error {
 func (f *Frontend) Render(w io.Writer) error {
 	out := ui.NewOutput(w, termenv.WithProfile(f.profile))
 
-	zoomSt := f.currentZoom()
-	if zoomSt != f.lastZoom {
-		f.directStdin(zoomSt)
-		if zoomSt != nil {
-			f.lastZoom = zoomSt
-		}
-	}
+	zoomSt := f.currentZoom
 
 	// if we're zoomed, render the zoomed terminal and nothing else, but only
 	// after we've actually seen output from it.
@@ -310,27 +306,6 @@ func (f *Frontend) Render(w io.Writer) error {
 	}
 
 	return nil
-}
-
-func (f *Frontend) currentZoom() *zoomState {
-	var firstZoomed *progrock.Vertex
-	var firstState *zoomState
-	for vId, st := range f.zoomed {
-		v := f.db.FirstVertex(vId)
-		if v == nil {
-			// should be impossible
-			continue
-		}
-		if v.Started == nil {
-			// just being defensive, theoretically this is a valid state
-			continue
-		}
-		if firstZoomed == nil || v.Started.AsTime().Before(firstZoomed.Started.AsTime()) {
-			firstZoomed = v
-			firstState = st
-		}
-	}
-	return firstState
 }
 
 func (f *Frontend) renderZoomed(out *termenv.Output, st *zoomState) error {
@@ -415,19 +390,18 @@ func (f *Frontend) render() {
 func (f *Frontend) View() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	view := f.view.String()
 	if f.err != nil {
-		if errors.Is(f.runCtx.Err(), context.Canceled) {
-			return "canceled\n"
-		}
-		return fmt.Sprintf("%s", f.view)
+		return view
 	}
 	if f.done && f.eof {
-		if zoom := f.lastZoom; zoom != nil {
+		if zoom := f.currentZoom; zoom != nil {
+			// show the zoomed output on last render
 			return f.zoomedOutput(zoom)
 		}
 		return ""
 	}
-	return fmt.Sprintf("%s", f.view)
+	return view
 }
 
 func (fe *Frontend) zoomedOutput(st *zoomState) string {
@@ -476,9 +450,8 @@ func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error
 
 func (fe *Frontend) renderLogs(out *termenv.Output, row *TraceRow) {
 	if logs, ok := fe.logs[row.Step.Digest]; ok {
-		bar := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
-		logs.SetPrefix(strings.Repeat("  ", row.Depth()) + bar.String() + " ")
-		// logs.SetPrefix(strings.Repeat("  ", row.Depth()+1))
+		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+		logs.SetPrefix(strings.Repeat("  ", row.Depth()) + pipe.String() + " ")
 		logs.SetHeight(fe.window.Height / 3)
 		fmt.Fprint(out, logs.View())
 	}
@@ -564,10 +537,9 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 				indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
 				val := arg.Value.GetValue()
+				fmt.Fprint(out, " ")
 				switch x := val.(type) {
 				case *idproto.Literal_Id:
-					// fmt.Fprintln(out)
-					fmt.Fprint(out, " ")
 					argVertexID, err := x.Id.Digest()
 					if err != nil {
 						return err
@@ -581,7 +553,6 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 						return err
 					}
 				default:
-					fmt.Fprint(out, " ")
 					renderLiteral(out, arg.Value)
 					fmt.Fprintln(out)
 				}
@@ -610,10 +581,6 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 
 	fmt.Fprintln(out)
 
-	// if vtx != nil && (tape.IsClosed || tape.ShowCompletedLogs || vtx.Completed == nil || vtx.Error != nil) {
-	// 	renderVertexTasksAndLogs(out, u, tape, vtx, depth)
-	// }
-
 	return nil
 }
 
@@ -624,10 +591,6 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 	fe.renderVertexTasks(out, vtx, depth)
 	fe.renderDuration(out, vtx)
 	fmt.Fprintln(out)
-	// if err := u.RenderVertexTree(out, vtx); err != nil {
-	// 	return err
-	// }
-	// return renderVertexTasksAndLogs(out, vtx, depth)
 	return nil
 }
 
@@ -732,7 +695,6 @@ func (fe *Frontend) renderVertexTasks(out *termenv.Output, vtx *progrock.Vertex,
 			percent := int(100 * (float64(t.GetCurrent()) / float64(t.GetTotal())))
 			idx := (len(progChars) - 1) * percent / 100
 			chr := progChars[idx]
-			// chr = fmt.Sprintf("(%d/%d=%d=%d:%q)", t.GetCurrent(), t.GetTotal(), percent, idx, chr)
 			sym = out.String(chr)
 		} else {
 			// don't bother printing non-progress-bar tasks for now
