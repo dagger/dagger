@@ -310,7 +310,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}}
 
 	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = 100 * time.Millisecond
+	bo.InitialInterval = 10 * time.Millisecond
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
