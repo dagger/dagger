@@ -1263,7 +1263,7 @@ func TestModuleDescription(t *testing.T) {
 	}{
 		{
 			sdk: "python",
-			source: `"""Minimal module, short description
+			source: `"""Test module, short description
 
 Long description, with full sentences.
 """
@@ -1271,8 +1271,8 @@ Long description, with full sentences.
 from dagger import field, function, object_type
 
 @object_type
-class Minimal:
-    """Minimal object, short description"""
+class Test:
+    """Test object, short description"""
 
     foo: str = field(default="foo")
 `,
@@ -1281,17 +1281,17 @@ class Minimal:
 			sdk: "typescript",
 			source: `
 /**
- * Minimal module, short description
+ * Test module, short description
  *
  * Long description, with full sentences.
  */
 import { object, field } from '@dagger.io/dagger'
 
 /**
-* Minimal object, short description
+* Test object, short description
 */
 @object()
-class Minimal {
+class Test {
 	@field()
 	foo: string = "foo"
 }
@@ -1304,24 +1304,14 @@ class Minimal {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=minimal", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
-
-			if tc.sdk == "go" {
-				logGen(ctx, t, modGen.Directory("."))
-			}
-
-			mod := inspectModule(ctx, t, modGen)
+			mod := inspectModule(ctx, t, modInit(ctx, t, c, tc.sdk, tc.source))
 
 			require.Equal(t,
-				"Minimal module, short description\n\nLong description, with full sentences.",
+				"Test module, short description\n\nLong description, with full sentences.",
 				mod.Get("description").String(),
 			)
 			require.Equal(t,
-				"Minimal object, short description",
+				"Test object, short description",
 				mod.Get("objects.0.asObject.description").String(),
 			)
 		})
@@ -1565,17 +1555,10 @@ class Test {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			out, err := modInit(ctx, t, c, tc.sdk, tc.source).
+				With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).
+				Stdout(ctx)
 
-			if tc.sdk == "go" {
-				logGen(ctx, t, modGen.Directory("."))
-			}
-
-			out, err := modGen.With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"test":{"repeater":{"render":"echo!echo!echo!"}}}`, out)
 		})
@@ -3276,12 +3259,7 @@ class Test {
 			t.Run(tc.sdk, func(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
-
-				ctr := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work/test").
-					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
-					With(sdkSource(tc.sdk, tc.source))
+				ctr := modInit(ctx, t, c, tc.sdk, tc.source)
 
 				out, err := ctr.With(daggerCall("--foo=abc", "--baz=x,y,z", "--dir=.", "foo")).Stdout(ctx)
 				require.NoError(t, err)
@@ -4011,11 +3989,7 @@ func TestModuleReservedWords(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)
 
-					_, err := c.Container().From(golangImage).
-						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-						WithWorkdir("/work").
-						With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
-						With(sdkSource(tc.sdk, tc.source)).
+					_, err := modInit(ctx, t, c, tc.sdk, tc.source).
 						With(daggerQuery(`{test{fn(id:"no")}}`)).
 						Sync(ctx)
 
@@ -4522,6 +4496,19 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	default:
 		return ""
 	}
+}
+
+func modInit(ctx context.Context, t *testing.T, c *dagger.Client, sdk, contents string) *dagger.Container {
+	t.Helper()
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk="+sdk)).
+		With(sdkSource(sdk, contents))
+	if sdk == "go" {
+		logGen(ctx, t, modGen.Directory("."))
+	}
+	return modGen
 }
 
 func currentSchema(ctx context.Context, t *testing.T, ctr *dagger.Container) *introspection.Schema {

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -129,34 +130,57 @@ func TestModulePythonInit(t *testing.T) {
 	})
 }
 
+func TestModulePythonNameOverrides(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := pythonModInit(ctx, t, c, `
+        from typing import Annotated
+
+        from dagger.mod import Arg, Doc, field, function, object_type
+
+        @object_type
+        class Test:
+            field_: str = field(name="field")
+
+            @function(name="func")
+            def func_(self, arg_: Annotated[str, Arg(name="arg")] = "") -> str:
+                return ""
+        `)
+
+	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+
+	require.Equal(t, "field", obj.Get("fields.0.name").String())
+	require.Equal(t, "func", obj.Get("functions.0.name").String())
+	require.Equal(t, "arg", obj.Get("functions.0.args.0.name").String())
+	require.Equal(t, "field", obj.Get("constructor.args.0.name").String())
+}
+
 func TestModulePythonReturnSelf(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 
-	out, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--sdk=python")).
-		With(pythonSource(`
-            from typing import Self
+	out, err := pythonModInit(ctx, t, c, `
+        from typing import Self
 
-            from dagger import field, function, object_type
+        from dagger import field, function, object_type
 
-            @object_type
-            class Foo:
-                message: str = field(default="")
+        @object_type
+        class Test:
+            message: str = field(default="")
 
-                @function
-                def bar(self) -> Self:
-                    self.message = "foobar"
-                    return self
-        `)).
-		With(daggerQuery(`{foo{bar{message}}}`)).
+            @function
+            def foo(self) -> Self:
+                self.message = "bar"
+                return self
+        `).
+		With(daggerQuery(`{test{foo{message}}}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
-	require.JSONEq(t, `{"foo":{"bar":{"message":"foobar"}}}`, out)
+	require.JSONEq(t, `{"test":{"foo":{"message":"bar"}}}`, out)
 }
 
 func TestModulePythonWithOtherModuleTypes(t *testing.T) {
@@ -359,4 +383,8 @@ func TestModulePythonPackageDescription(t *testing.T) {
 
 func pythonSource(contents string) dagger.WithContainerFunc {
 	return sdkSource("python", contents)
+}
+
+func pythonModInit(ctx context.Context, t *testing.T, c *dagger.Client, source string) *dagger.Container {
+	return modInit(ctx, t, c, "python", source)
 }
