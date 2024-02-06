@@ -96,6 +96,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withSDK", s.moduleSourceWithSDK).
 			Doc(`TODO`),
 
+		dagql.Func("withSourceSubdir", s.moduleSourceWithSourceSubdir).
+			Doc(`TODO`),
+
 		dagql.NodeFunc("contextDirectory", s.moduleSourceContextDirectory).
 			Doc(`TODO`),
 

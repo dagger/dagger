@@ -36,7 +36,8 @@ var (
 	sdk       string
 	licenseID string
 
-	moduleName string
+	moduleName       string
+	moduleSourcePath string
 
 	installName string
 
@@ -60,6 +61,7 @@ func init() {
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
+	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", ".", "Directory to store the module implementation source code in")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
@@ -189,7 +191,7 @@ dagger config -m github.com/dagger/hello-dagger
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:     "init [--sdk string --name string] [PATH]",
+	Use:     "init [--sdk string --name string] [--source string] [PATH]",
 	Short:   "Initialize a new Dagger module",
 	Long:    "Initialize a new Dagger module in a local directory.",
 	Example: "dagger mod init --name=hello --sdk=python",
@@ -229,6 +231,7 @@ var moduleInitCmd = &cobra.Command{
 			_, err = modConf.Source.
 				WithName(moduleName).
 				WithSDK(sdk).
+				WithSourceSubdir(moduleSourcePath).
 				ResolveFromCaller().
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
@@ -295,22 +298,28 @@ var moduleInstallCmd = &cobra.Command{
 				Name: installName,
 			})
 
-			_, err = modConf.Source.
+			modSource := modConf.Source.
 				WithDependencies([]*dagger.ModuleDependency{dep}).
-				ResolveFromCaller().
+				ResolveFromCaller()
+
+			_, err = modSource.
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			depSrc = modConf.Mod.Source().ResolveDependency(depSrc)
+			depSrc = modConf.Source.ResolveDependency(depSrc)
 
 			name, err := depSrc.ModuleName(ctx)
 			if err != nil {
 				return err
 			}
 			sdk, err := depSrc.AsModule().SDK(ctx)
+			if err != nil {
+				return err
+			}
+			depRootSubpath, err := depSrc.RootSubpath(ctx)
 			if err != nil {
 				return err
 			}
@@ -329,35 +338,25 @@ var moduleInstallCmd = &cobra.Command{
 				if err != nil {
 					return err
 				}
-				gitSubpath, err := git.SourceSubpath(ctx)
-				if err != nil {
-					return err
-				}
 
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
 					"install_name":  installName,
 					"module_sdk":    sdk,
 					"source_kind":   "git",
-					"git_symbolic":  filepath.Join(gitURL, gitSubpath),
+					"git_symbolic":  filepath.Join(gitURL, depRootSubpath),
 					"git_clone_url": gitURL,
-					"git_subpath":   gitSubpath,
+					"git_subpath":   depRootSubpath,
 					"git_version":   gitVersion,
 					"git_commit":    gitCommit,
 				})
 			} else if depSrcKind == dagger.LocalSource {
-				local := depSrc.AsLocalSource()
-				subpath, err := local.SourceSubpath(ctx)
-				if err != nil {
-					return err
-				}
-
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
 					"install_name":  installName,
 					"module_sdk":    sdk,
 					"source_kind":   "local",
-					"local_subpath": subpath,
+					"local_subpath": depRootSubpath,
 				})
 
 			}

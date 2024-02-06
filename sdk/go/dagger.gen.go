@@ -4705,6 +4705,17 @@ func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
 	}
 }
 
+// TODO
+func (r *ModuleSource) WithSourceSubdir(path string) *ModuleSource {
+	q := r.q.Select("withSourceSubdir")
+	q = q.Arg("path", path)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	q *querybuilder.Selection

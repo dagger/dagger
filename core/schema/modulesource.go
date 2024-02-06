@@ -323,6 +323,26 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	return src, nil
 }
 
+func (s *moduleSchema) moduleSourceWithSourceSubdir(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Path string
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+
+	if !filepath.IsLocal(args.Path) {
+		return nil, fmt.Errorf("source subdir path escapes parent dir: %s", args.Path)
+	}
+
+	// invalidate generated context if set
+	src.GeneratedContextDirectory = dagql.Instance[*core.Directory]{}
+
+	src.WithSourceSubdir = args.Path
+	return src, nil
+}
+
 func (s *moduleSchema) moduleSourceResolveDependency(
 	ctx context.Context,
 	src *core.ModuleSource,
@@ -593,6 +613,9 @@ func (s *moduleSchema) moduleSourceWithGeneratedContext(
 	}
 	if src.Self.WithSDK != "" {
 		modCfg.SDK = src.Self.WithSDK
+	}
+	if src.Self.WithSourceSubdir != "" {
+		modCfg.SourceSubdir = src.Self.WithSourceSubdir
 	}
 
 	existingDeps := make([]*core.ModuleDependency, len(modCfg.Dependencies))
@@ -1061,7 +1084,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		includeSet[configRelPath] = struct{}{}
 
 		// always include the source dir
-		source := localDep.modCfg.Source
+		source := localDep.modCfg.SourceSubdir
 		if source == "" {
 			source = "."
 		}
@@ -1166,6 +1189,19 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		)
 		if err != nil {
 			return inst, fmt.Errorf("failed to set sdk: %w", err)
+		}
+	}
+	if src.WithSourceSubdir != "" {
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withSourceSubdir",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(src.WithSourceSubdir)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set source subdir: %w", err)
 		}
 	}
 	if len(src.WithDependencies) > 0 {

@@ -52,6 +52,7 @@ type ModuleSource struct {
 	WithName         string
 	WithDependencies []dagql.Instance[*ModuleDependency]
 	WithSDK          string
+	WithSourceSubdir string
 
 	// the unmodifiied directory the source was was loaded from
 	BaseContextDirectory dagql.Instance[*Directory]
@@ -177,6 +178,10 @@ func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], er
 }
 
 func (src *ModuleSource) ModuleSourceSubpath(ctx context.Context) (string, error) {
+	if src.WithSourceSubdir != "" {
+		return filepath.Join(src.RootSubpath, src.WithSourceSubdir), nil
+	}
+
 	cfg, ok, err := src.ModuleConfig(ctx)
 	if err != nil {
 		return "", fmt.Errorf("module config: %w", err)
@@ -186,7 +191,7 @@ func (src *ModuleSource) ModuleSourceSubpath(ctx context.Context) (string, error
 		return src.RootSubpath, nil
 	}
 
-	return filepath.Join(src.RootSubpath, cfg.Source), nil
+	return filepath.Join(src.RootSubpath, cfg.SourceSubdir), nil
 }
 
 func (src *ModuleSource) ModuleSourceRelSubpath(ctx context.Context) (string, error) {

@@ -26,7 +26,7 @@ type ModuleConfig struct {
 	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`
 
 	// TODO:
-	Source string `json:"source,omitempty"`
+	SourceSubdir string `json:"sourceSubdir,omitempty"`
 }
 
 func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependency, bool) {

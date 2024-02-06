@@ -165,6 +165,31 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
 	})
+
+	t.Run("with source", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript", "--source=some/subdir"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		sourceSubdirEnts, err := modGen.Directory("/work/some/subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, sourceSubdirEnts, "src")
+
+		sourceRootEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, sourceRootEnts, "src")
+	})
 }
 
 //go:embed testdata/modules/typescript/syntax/index.ts

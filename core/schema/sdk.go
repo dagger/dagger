@@ -425,19 +425,34 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
 	}
 
-	// Delete dagger.gen.go if it exists, which is going to be overwritten
+	// Makethe source subpath if it doesn't exist already.
+	// Also rm dagger.gen.go if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.
+	var emptyDir dagql.Instance[*core.Directory]
+	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &emptyDir, dagql.Selector{Field: "directory"}); err != nil {
+		return ctr, fmt.Errorf("failed to create empty directory for go module sdk codegen: %w", err)
+	}
+
 	var updatedContextDir dagql.Instance[*core.Directory]
-	if err := sdk.dag.Select(ctx, contextDir, &updatedContextDir, dagql.Selector{
-		Field: "withoutFile",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.String(filepath.Join(srcSubpath, "dagger.gen.go")),
+	if err := sdk.dag.Select(ctx, contextDir, &updatedContextDir,
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(srcSubpath)},
+				{Name: "directory", Value: dagql.NewID[*core.Directory](emptyDir.ID())},
 			},
 		},
-	}); err != nil {
+		dagql.Selector{
+			Field: "withoutFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String(filepath.Join(srcSubpath, "dagger.gen.go")),
+				},
+			},
+		},
+	); err != nil {
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
 
