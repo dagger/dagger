@@ -1,26 +1,18 @@
 {
   "name": "typescript-sdk-dev",
-  "root": "..",
   "sdk": "typescript",
-  "include": [
-    "**/*.ts",
-    "**/package.json",
-    "**/*.lock",
-    "**/tsconfig.json",
-    "README.md",
-    "LICENSE",
-    ".mocharc.json",
-    ".prettierrc.cjs",
-    ".eslintrc.cjs",
-    "dev/dagger.json",
-    "dev/node"
-  ],
-  "exclude": [
-    "**/node_modules",
-    "**/dist",
-    "**/sdk"
-  ],
   "dependencies": [
-    "node"
+    {
+      "name": "node",
+      "source": "node"
+    }
+  ],
+  "root-for": [
+    {
+      "source": "."
+    },
+    {
+      "source": "."
+    }
   ]
 }

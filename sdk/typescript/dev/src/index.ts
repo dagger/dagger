@@ -1,11 +1,16 @@
-import { dag, Container, object, func } from "@dagger.io/dagger"
+import { dag, Container, object, func, Directory } from "@dagger.io/dagger"
 
 import { CI } from "./ci"
-import { source } from "./source"
 
 @object
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class TypescriptSdkDev {
+  source: Directory
+
+  constructor(source: Directory) {
+    this.source = source
+  }
+
   /**
    * CI commands for the TypeScript SDK.
    */
@@ -19,22 +24,22 @@ class TypescriptSdkDev {
    *
    * This is useful for debugging the CI locally or test commands in
    * an isolated environment.
-   * Example usage: `dagger call project shell --entrypoint /bin/sh`
+   * Example usage: `dagger call project shell --args /bin/sh`
    */
   @func
   project(): Container {
     // Extract package.json and yarn.lock to a temporary directory
     const dependencyFiles = dag
       .directory()
-      .withFile("package.json", source().file("package.json"))
-      .withFile("yarn.lock", source().file("yarn.lock"))
+      .withFile("package.json", this.source.file("package.json"))
+      .withFile("yarn.lock", this.source.file("yarn.lock"))
 
     return dag
       .node()
       .withPkgManager("yarn")
       .withSource(dependencyFiles)
       .install() // Install dependencies prior to adding source to improve caching
-      .withSource(source())
+      .withSource(this.source)
       .container()
   }
 }

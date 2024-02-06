@@ -1,4 +1,9 @@
 {
   "name": "node",
-  "sdk": "typescript"
+  "sdk": "typescript",
+  "root-for": [
+    {
+      "source": "."
+    }
+  ]
 }
