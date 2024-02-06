@@ -11,7 +11,7 @@ class Minimal {
 	@field()
 	foo: string = "bar"
 
-	@func
+	@func()
 	hello(): string {
 		return "hello"
 	}

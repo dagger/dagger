@@ -1465,9 +1465,9 @@ import { object, field } from '@dagger.io/dagger'
 /**
 * Minimal object, short description
 */
-@object
+@object()
 class Minimal {
-	@field
+	@field()
 	foo: string = "foo"
 }
 `,

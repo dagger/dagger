@@ -147,9 +147,9 @@ func TestModuleTypescriptInit(t *testing.T) {
 				Contents: `
 				import { dag, Container, object, func } from "@dagger.io/dagger"
 
-				@object
+				@object()
 				class ExistingSource {
-				  @func
+				  @func()
 				  helloWorld(stringArg: string): Container {
 					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
 				  }
@@ -466,7 +466,7 @@ func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
 		With(sdkSource("typescript", `
 	import {  object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Dep {
   @func
   fn(): Obj {
@@ -474,7 +474,7 @@ class Dep {
   }
 }
 
-@object
+@object()
 class Obj {
   @field
   foo: string = ""
@@ -484,7 +484,7 @@ class Obj {
   }
 }
 
-@object
+@object()
 class Foo {}
 `)).
 		WithWorkdir("/work").
@@ -497,9 +497,9 @@ class Foo {}
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
 			
-			@object
+			@object()
 			class Test {
-			  @func
+			  @func()
 			  fn(): DepObj {
 				 return new DepObj()
 			  }
@@ -518,9 +518,9 @@ class Foo {}
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
 			
-			@object
+			@object()
 			class Test {
-			  @func
+			  @func()
 			  fn(): DepObj[] {
 				 return [new DepObj()]
 			  }
@@ -541,9 +541,9 @@ class Foo {}
 			_, err := ctr.With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
 			
-@object
+@object()
 class Test {
-  @func
+  @func()
   fn(obj: DepObj): void {}
 }			
 			`)).
@@ -561,9 +561,9 @@ class Test {
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
 			
-@object
+@object()
 class Test {
-  @func
+  @func()
   fn(obj: DepObj[]): void {}
 }
 			`)).
@@ -583,17 +583,17 @@ class Test {
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
 			
-@object
+@object()
 class Test {
-  @func
+  @func()
   fn(): Obj {
     return new Obj()
   }
 }
 
-@object
+@object()
 class Obj {
-  @field
+  @field()
   foo: DepObj
 }
 			`)).
@@ -611,17 +611,17 @@ class Obj {
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
 			
-@object
+@object()
 class Test {
-  @func
+  @func()
   fn(): Obj {
     return new Obj()
   }
 }
 
-@object
+@object()
 class Obj {
-  @field
+  @field()
   foo: DepObj[]
 }
 			`)).
