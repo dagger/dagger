@@ -197,11 +197,11 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerShellOpts = {
+export type ContainerTerminalOpts = {
   /**
-   * If set, override the container's default shell and invoke these arguments instead.
+   * If set, override the container's default terminal command and invoke these command arguments instead.
    */
-  args?: string[]
+  cmd?: string[]
 }
 
 export type ContainerWithDirectoryOpts = {
@@ -1696,23 +1696,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-   * @param opts.args If set, override the container's default shell and invoke these arguments instead.
-   */
-  shell = (opts?: ContainerShellOpts): Terminal => {
-    return new Terminal({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "shell",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * The error stream of the last executed command.
    *
    * Will execute default command if none is set, or error if there's no default.
@@ -1778,6 +1761,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
+   */
+  terminal = (opts?: ContainerTerminalOpts): Terminal => {
+    return new Terminal({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "terminal",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves the user to be set for all commands.
    */
   user = async (): Promise<string> => {
@@ -1816,15 +1816,15 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Set the default command to invoke for the "shell" API.
-   * @param args The args of the command to set the default shell to.
+   * Set the default command to invoke for the container's terminal API.
+   * @param args The args of the command.
    */
-  withDefaultShell = (args: string[]): Container => {
+  withDefaultTerminalCmd = (args: string[]): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "withDefaultShell",
+          operation: "withDefaultTerminalCmd",
           args: { args },
         },
       ],

@@ -17,12 +17,9 @@ The Dagger CLI provides a command-line interface to Dagger.
 ### Options
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -76,12 +73,9 @@ dagger call lint stdout
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -114,12 +108,9 @@ dagger functions [flags] [FUNCTION]...
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -137,12 +128,9 @@ dagger login [flags]
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -160,12 +148,9 @@ dagger logout [flags]
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -201,12 +186,9 @@ dagger mod -m github.com/dagger/hello-dagger
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -246,14 +228,11 @@ dagger mod init --name=hello --sdk=python
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --focus               Only show output for focused commands (default true)
-  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -287,14 +266,11 @@ dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --focus               Only show output for focused commands (default true)
-  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -327,14 +303,11 @@ dagger module publish [flags]
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --focus               Only show output for focused commands (default true)
-  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -364,14 +337,11 @@ dagger module sync [flags]
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --focus               Only show output for focused commands (default true)
-  -m, --mod string          Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --focus             Only show output for focused commands (default true)
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -426,12 +396,9 @@ EOF
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -482,12 +449,9 @@ dagger run python main.py
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO
@@ -505,12 +469,9 @@ dagger version [flags]
 ### Options inherited from parent commands
 
 ```
-      --cpuprofile string   collect CPU profile to path, and trace at path.trace
-      --debug               Show more information for debugging
-      --pprof string        serve HTTP pprof at this address
-      --progress string     progress output format (auto, plain, tty) (default "auto")
-  -s, --silent              disable terminal UI and progress output
-      --workdir string      The host workdir loaded into dagger (default ".")
+      --debug             Show more information for debugging
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
 ```
 
 ### SEE ALSO

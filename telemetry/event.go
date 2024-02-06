@@ -27,6 +27,12 @@ const (
 	EventScopeRun    = EventScope("run")
 )
 
+const (
+	EventTypeOp        = EventType("op")
+	EventTypeLog       = EventType("log")
+	EventTypeAnalytics = EventType("analytics")
+)
+
 type Payload interface {
 	Type() EventType
 	Scope() EventScope
@@ -47,7 +53,7 @@ type OpPayload struct {
 	Error     string     `json:"error"`
 }
 
-func (OpPayload) Type() EventType   { return EventType("op") }
+func (OpPayload) Type() EventType   { return EventTypeOp }
 func (OpPayload) Scope() EventScope { return EventScopeRun }
 
 var _ Payload = LogPayload{}
@@ -58,5 +64,5 @@ type LogPayload struct {
 	Stream int    `json:"stream"`
 }
 
-func (LogPayload) Type() EventType   { return EventType("log") }
+func (LogPayload) Type() EventType   { return EventTypeLog }
 func (LogPayload) Scope() EventScope { return EventScopeRun }

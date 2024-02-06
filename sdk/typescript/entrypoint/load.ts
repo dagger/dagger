@@ -46,6 +46,40 @@ export function loadArgOrder(
 }
 
 /**
+ * Load the argument for the given function and check if it's variadic.
+ *
+ * @param scanResult The result of the scan.
+ * @param parentName The name of the class.
+ * @param fnName The name of the function.
+ * @param argName The name of the argument.
+ *
+ * @returns True if the argument is variadic, false otherwise.
+ */
+export function isArgVariadic(
+  scanResult: ScanResult,
+  parentName: string,
+  fnName: string,
+  argName: string
+): boolean {
+  const classTypeDef = scanResult.classes[parentName]
+  if (!classTypeDef) {
+    throw new Error(`could not find class ${parentName}`)
+  }
+
+  // It's not possible to have variadic arguments in the constructor.
+  if (fnName === "") {
+    return false
+  }
+
+  const methodTypeDef = classTypeDef.methods[fnName]
+  if (!methodTypeDef) {
+    throw new Error(`could not find method ${fnName}`)
+  }
+
+  return methodTypeDef.args[argName].isVariadic
+}
+
+/**
  * Load the argument type from the scan result.
  *
  * @param scanResult Result of the scan

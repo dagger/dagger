@@ -1,31 +1,41 @@
 package httpdns
 
 import (
-	"fmt"
+	"strconv"
+	"strings"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
-	srctypes "github.com/moby/buildkit/source/types"
+	"github.com/moby/buildkit/solver/pb"
 )
 
 const AttrNetConfig = "httpdns.netconfig"
 
-// State is a helper mimicking the llb.HTTP function, but with the ability to
+// HTTP is a helper mimicking the llb.HTTP function, but with the ability to
 // set additional attributes.
-func State(url string, clientIDs []string, opts ...llb.HTTPOption) llb.State {
-	hack, err := buildkit.EncodeIDHack(DaggerHTTPURLHack{
-		URL:       url,
-		ClientIDs: clientIDs,
-	})
-	if err != nil {
-		panic(err)
+func HTTP(url string, clientIDs []string, opts ...llb.HTTPOption) llb.State {
+	hi := &llb.HTTPInfo{}
+	for _, o := range opts {
+		o.SetHTTPOption(hi)
+	}
+	attrs := map[string]string{}
+	if hi.Checksum != "" {
+		attrs[pb.AttrHTTPChecksum] = hi.Checksum.String()
+	}
+	if hi.Filename != "" {
+		attrs[pb.AttrHTTPFilename] = hi.Filename
+	}
+	if hi.Perm != 0 {
+		attrs[pb.AttrHTTPPerm] = "0" + strconv.FormatInt(int64(hi.Perm), 8)
+	}
+	if hi.UID != 0 {
+		attrs[pb.AttrHTTPUID] = strconv.Itoa(hi.UID)
+	}
+	if hi.GID != 0 {
+		attrs[pb.AttrHTTPGID] = strconv.Itoa(hi.GID)
 	}
 
-	opts = append(opts, llb.WithCustomName(url))
+	attrs[AttrHTTPClientIDs] = strings.Join(clientIDs, ",")
 
-	// has to start with https:// for buildkit to recognize the scheme and
-	// associate it to the source
-	url = fmt.Sprintf("%s://%s", srctypes.HTTPSScheme, hack)
-
-	return llb.HTTP(url, opts...)
+	source := llb.NewSource(url, attrs, hi.Constraints)
+	return llb.NewState(source.Output())
 }

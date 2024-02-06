@@ -333,18 +333,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).
-     */
-    public function shell(?array $args = null): Terminal
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('shell');
-        if (null !== $args) {
-        $innerQueryBuilder->setArgument('args', $args);
-        }
-        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The error stream of the last executed command.
      *
      * Will execute default command if none is set, or error if there's no default.
@@ -378,6 +366,18 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+     */
+    public function terminal(?array $cmd = null): Terminal
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves the user to be set for all commands.
      */
     public function user(): string
@@ -397,11 +397,11 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Set the default command to invoke for the "shell" API.
+     * Set the default command to invoke for the container's terminal API.
      */
-    public function withDefaultShell(array $args): Container
+    public function withDefaultTerminalCmd(array $args): Container
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultShell');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultTerminalCmd');
         $innerQueryBuilder->setArgument('args', $args);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

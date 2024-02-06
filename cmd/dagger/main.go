@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/tracing"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -42,6 +43,13 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Show more information for debugging")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
 	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
+
+	for _, fl := range []string{"workdir", "cpuprofile", "pprof"} {
+		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {
+			fmt.Println("Error hiding flag: "+fl, err)
+			os.Exit(1)
+		}
+	}
 
 	rootCmd.AddCommand(
 		listenCmd,
@@ -113,11 +121,22 @@ var rootCmd = &cobra.Command{
 		if err := os.Chdir(workdir); err != nil {
 			return err
 		}
+
+		t := analytics.New(analytics.DefaultConfig())
+		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
+
+		if cmdName := commandName(cmd); cmdName != "session" {
+			t.Capture(cmd.Context(), "cli_command", map[string]string{
+				"name": cmdName,
+			})
+		}
+
 		return nil
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		pprof.StopCPUProfile()
 		trace.Stop()
+		analytics.Ctx(cmd.Context()).Close()
 	},
 }
 
@@ -148,6 +167,14 @@ func NormalizeWorkdir(workdir string) (string, error) {
 	}
 
 	return workdir, nil
+}
+
+func commandName(cmd *cobra.Command) string {
+	name := []string{}
+	for c := cmd; c.Parent() != nil; c = c.Parent() {
+		name = append([]string{c.Name()}, name...)
+	}
+	return strings.Join(name, " ")
 }
 
 func isExperimental(cmd *cobra.Command) bool {

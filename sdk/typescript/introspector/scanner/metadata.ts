@@ -13,6 +13,7 @@ export type SymbolMetadata = {
 export type ParamMetadata = SymbolMetadata & {
   optional: boolean
   defaultValue?: string
+  isVariadic: boolean
 }
 
 /**

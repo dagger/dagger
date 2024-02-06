@@ -103,7 +103,7 @@ type ClientCallContext struct {
 
 	// If the client is itself from a function call in a user module, these are set with the
 	// metadata of that ongoing function call
-	ModID  *idproto.ID
+	Module *Module
 	FnCall *FunctionCall
 
 	ProgrockParent string
@@ -151,7 +151,7 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 func (q *Query) RegisterFunctionCall(
 	dgst digest.Digest,
 	deps *ModDeps,
-	modID *idproto.ID,
+	mod *Module,
 	call *FunctionCall,
 	progrockParent string,
 ) error {
@@ -167,30 +167,29 @@ func (q *Query) RegisterFunctionCall(
 	}
 	q.clientCallContext[dgst] = &ClientCallContext{
 		Deps:           deps,
-		ModID:          modID,
+		Module:         mod,
 		FnCall:         call,
 		ProgrockParent: progrockParent,
 	}
 	return nil
 }
 
-func (q *Query) CurrentModule(ctx context.Context) (dagql.ID[*Module], error) {
-	var id dagql.ID[*Module]
+func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return id, err
+		return nil, err
 	}
 	if clientMetadata.ModuleCallerDigest == "" {
-		return id, fmt.Errorf("no current module for main client caller")
+		return nil, fmt.Errorf("no current module for main client caller")
 	}
 
 	q.clientCallMu.RLock()
 	defer q.clientCallMu.RUnlock()
 	callCtx, ok := q.clientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
-		return id, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
-	return dagql.NewID[*Module](callCtx.ModID), nil
+	return callCtx.Module, nil
 }
 
 func (q *Query) CurrentFunctionCall(ctx context.Context) (*FunctionCall, error) {

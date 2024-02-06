@@ -444,15 +444,10 @@ func (s *moduleSchema) currentModule(
 	self *core.Query,
 	_ struct{},
 ) (*core.CurrentModule, error) {
-	id, err := self.CurrentModule(ctx)
+	mod, err := self.CurrentModule(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current module: %w", err)
 	}
-	mod, err := id.Load(ctx, s.dag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load current module: %w", err)
-	}
-
 	return &core.CurrentModule{Module: mod}, nil
 }
 
@@ -510,7 +505,7 @@ func (s *moduleSchema) currentModuleName(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (string, error) {
-	return curMod.Module.Self.Name(), nil
+	return curMod.Module.Name(), nil
 }
 
 func (s *moduleSchema) currentModuleSource(
@@ -518,8 +513,8 @@ func (s *moduleSchema) currentModuleSource(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], rerr error) {
-	rootDir := curMod.Module.Self.GeneratedSourceRootDirectory
-	subPath := curMod.Module.Self.GeneratedSourceSubpath
+	rootDir := curMod.Module.GeneratedSourceRootDirectory
+	subPath := curMod.Module.GeneratedSourceSubpath
 	if subPath == "/" {
 		return rootDir, nil
 	}

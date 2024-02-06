@@ -55,6 +55,7 @@ export type FunctionArg = {
   description: string
   optional: boolean
   defaultValue?: string
+  isVariadic: boolean
   typeDef: TypeDef<TypeDefKind>
 }
 

@@ -424,23 +424,6 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Return an interactive terminal for this container using its configured shell if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `args` - If set, override the container's default shell and invoke these arguments instead."
-    @spec shell(t(), keyword()) :: Dagger.Terminal.t()
-    def shell(%__MODULE__{} = container, optional_args \\ []) do
-      selection = select(container.selection, "shell")
-
-      selection =
-        if is_nil(optional_args[:args]) do
-          selection
-        else
-          arg(selection, "args", optional_args[:args])
-        end
-
-      %Dagger.Terminal{selection: selection, client: container.client}
-    end
-  )
-
-  (
     @doc "The error stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
     @spec stderr(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def stderr(%__MODULE__{} = container) do
@@ -468,6 +451,23 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `cmd` - If set, override the container's default terminal command and invoke these command arguments instead."
+    @spec terminal(t(), keyword()) :: Dagger.Terminal.t()
+    def terminal(%__MODULE__{} = container, optional_args \\ []) do
+      selection = select(container.selection, "terminal")
+
+      selection =
+        if is_nil(optional_args[:cmd]) do
+          selection
+        else
+          arg(selection, "cmd", optional_args[:cmd])
+        end
+
+      %Dagger.Terminal{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Retrieves the user to be set for all commands."
     @spec user(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def user(%__MODULE__{} = container) do
@@ -487,10 +487,10 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Set the default command to invoke for the \"shell\" API.\n\n## Required Arguments\n\n* `args` - The args of the command to set the default shell to."
-    @spec with_default_shell(t(), [Dagger.String.t()]) :: Dagger.Container.t()
-    def with_default_shell(%__MODULE__{} = container, args) do
-      selection = select(container.selection, "withDefaultShell")
+    @doc "Set the default command to invoke for the container's terminal API.\n\n## Required Arguments\n\n* `args` - The args of the command."
+    @spec with_default_terminal_cmd(t(), [Dagger.String.t()]) :: Dagger.Container.t()
+    def with_default_terminal_cmd(%__MODULE__{} = container, args) do
+      selection = select(container.selection, "withDefaultTerminalCmd")
       selection = arg(selection, "args", args)
       %Dagger.Container{selection: selection, client: container.client}
     end

@@ -8,7 +8,7 @@ The `dagger` CLI is available for installation on macOS, Linux, and Windows to r
 Install the `dagger` CLI following the steps below.
 
 <Tabs>
-<TabItem value="macos">
+<TabItem value="macOS">
 
 We assume that you have [Homebrew](https://brew.sh/) installed. If you do, you can install `dagger` with a single command:
 
@@ -50,29 +50,14 @@ curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.7 sudo sh
 The quickest way of installing `dagger` on Linux is to run the following command:
 
 ```shell
-cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | sh
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 ```
 
-This installs `dagger` in `/usr/local/bin`:
+This installs `dagger` in `$HOME/.local/bin`:
 
 ```shell
 type dagger
-dagger is /usr/local/bin/dagger
-```
-
-If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
-
-```shell
-cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
-```
-
-Alternatively, install the Dagger Engine to a different location, such as your home directory:
-
-```shell
-cd ~
-curl -L https://dl.dagger.io/dagger/install.sh | sh
+dagger is $HOME/.local/bin/dagger
 ```
 
 If you want to install a specific version of `dagger`, you can run:
