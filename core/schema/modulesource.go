@@ -736,19 +736,6 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		}
 		includeSet[sourceRelSubpath+"/**/*"] = struct{}{}
 
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		slog.Debug("moduleSourceResolveFromCaller",
-			"rootPath", rootPath,
-			"sourceAbsSubpath", sourceAbsSubpath,
-			"configRelPath", configRelPath,
-			"sourceRelSubpath", sourceRelSubpath,
-		)
-	}
-
 	for _, sdk := range sdkSet {
 		// NOTE: required paths are currently **-style globs that apply to the whole context subtree
 		// This is a bit of a delicate assumption, if need arises for including exact paths, this
@@ -878,7 +865,11 @@ type callerLocalDep struct {
 	sourceRootAbsPath string
 	modCfg            *modules.ModuleConfig
 	sdk               core.SDK
-	sdkKey            string // TODO :explain..
+	// sdkKey is a unique identifer for the SDK, slightly different
+	// from the module ref for the SDK because custom local SDKs
+	// use their local path for sdkKey, which allows us to de-dupe
+	// loading them across the dag of local deps.
+	sdkKey string
 }
 
 func (s *moduleSchema) collectCallerLocalDeps(
@@ -886,7 +877,11 @@ func (s *moduleSchema) collectCallerLocalDeps(
 	query *core.Query,
 	contextAbsPath string,
 	sourceRootAbsPath string,
-	topLevel bool, // TODO: doc
+	// topLevel should only be true for the module source being operated on,
+	// everything else we collect is a (transitive) dep. The top level module
+	// is a bit special in that it is allowed to not be initialized yet and/or
+	// not have a name/sdk/etc.
+	topLevel bool,
 	src *core.ModuleSource,
 	// cache of sourceRootAbsPath -> *callerLocalDep
 	collectedDeps dagql.CacheMap[string, *callerLocalDep],
