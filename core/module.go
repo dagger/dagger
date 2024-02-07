@@ -35,6 +35,9 @@ type Module struct {
 	// The module's SDKConfig, as set in the module config file
 	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 
+	// TODO:
+	GeneratedContextDirectory dagql.Instance[*Directory]
+
 	// Dependencies as configured by the module
 	DependencyConfig []*ModuleDependency `field:"true" doc:"The dependencies as configured by the module."`
 

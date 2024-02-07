@@ -208,7 +208,7 @@ Initialize a new Dagger module
 Initialize a new Dagger module in a local directory.
 
 ```
-dagger module init [--sdk string --name string] [flags]
+dagger module init [--sdk string --name string] [--source string] [flags]
 ```
 
 ### Examples
@@ -223,6 +223,7 @@ dagger mod init --name=hello --sdk=python
       --license string   License identifier to generate - see https://spdx.org/licenses/
       --name string      Name of the new module
       --sdk string       SDK name or image ref to use for the module
+      --source string    Directory to store the module implementation source code in (default ".")
 ```
 
 ### Options inherited from parent commands

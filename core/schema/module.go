@@ -1,12 +1,14 @@
 package schema
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"golang.org/x/sync/errgroup"
 )
@@ -78,7 +80,23 @@ func (s *moduleSchema) Install() {
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleSource]{
+		dagql.Func("contextDirectory", s.moduleSourceContextDirectory).
+			Doc(`The directory containing everything needed to load load and use the module.`),
+
+		dagql.Func("withContextDirectory", s.moduleSourceWithContextDirectory).
+			Doc(`TODO`),
+
+		dagql.Func("directory", s.moduleSourceDirectory).
+			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
+			ArgDoc(`path`, `The path from the source directory to select.`),
+
+		dagql.Func("sourceRootSubpath", s.moduleSourceRootSubpath).
+			Doc(`TODO`),
+
 		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
+			Doc(`TODO`),
+
+		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath).
 			Doc(`TODO`),
 
 		dagql.Func("moduleName", s.moduleSourceModuleName).
@@ -90,29 +108,14 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withName", s.moduleSourceWithName).
 			Doc(`TODO`),
 
+		dagql.NodeFunc("dependencies", s.moduleSourceDependencies).
+			Doc(`TODO`),
+
 		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
 			Doc(`TODO`),
 
 		dagql.Func("withSDK", s.moduleSourceWithSDK).
 			Doc(`TODO`),
-
-		dagql.Func("withSourceSubdir", s.moduleSourceWithSourceSubdir).
-			Doc(`TODO`),
-
-		dagql.NodeFunc("contextDirectory", s.moduleSourceContextDirectory).
-			Doc(`TODO`),
-
-		dagql.NodeFunc("baseContextDirectory", s.moduleSourceBaseContextDirectory).
-			Doc(`TODO`),
-
-		dagql.Func("withContext", s.moduleSourceWithContext).
-			Doc(`TODO; doc that additive`),
-
-		dagql.NodeFunc("withGeneratedContext", s.moduleSourceWithGeneratedContext).
-			Doc(`TODO`),
-
-		dagql.NodeFunc("generatedContextDiff", s.moduleSourceGeneratedContextDiff).
-			Doc(`TODO; just the diff`),
 
 		dagql.Func("configExists", s.moduleSourceConfigExists).
 			Doc(`Returns whether the module source has a configuration file.`),
@@ -126,10 +129,6 @@ func (s *moduleSchema) Install() {
 
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
 			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
-
-		dagql.NodeFunc("directory", s.moduleSourceDirectory).
-			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
-			ArgDoc(`path`, `The path from the source directory to select.`),
 
 		dagql.Func("resolveFromCaller", s.moduleSourceResolveFromCaller).
 			Impure(`Loads live caller-specific data from their filesystem.`).
@@ -156,6 +155,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withSource", s.moduleWithSource).
 			Doc(`Retrieves the module with basic configuration loaded if present.`).
 			ArgDoc("source", `The module source to initialize from.`),
+
+		dagql.Func("generatedContextDiff", s.moduleGeneratedContextDiff).
+			Doc(`TODO`),
 
 		dagql.NodeFunc("initialize", s.moduleInitialize).
 			Doc(`Retrieves the module with the objects loaded via its SDK.`),
@@ -569,7 +571,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.I
 			},
 		},
 		dagql.Selector{
-			Field: "withContext",
+			Field: "withContextDirectory",
 			Args: []dagql.NamedInput{
 				{Name: "dir", Value: dagql.NewID[*core.Directory](contextDir.ID())},
 			},
@@ -582,6 +584,19 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.I
 		return nil, fmt.Errorf("failed to create module from directory: %w", err)
 	}
 	return inst.Self, nil
+}
+
+// TODO: initialize probably doesn't need to exist anymore
+func (s *moduleSchema) moduleInitialize(
+	ctx context.Context,
+	inst dagql.Instance[*core.Module],
+	args struct{},
+) (*core.Module, error) {
+	mod, err := inst.Self.Initialize(ctx, inst, dagql.CurrentID(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize module: %w", err)
+	}
+	return mod, nil
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
@@ -603,75 +618,80 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 		return nil, fmt.Errorf("failed to get module original name: %w", err)
 	}
 
-	modCfg, ok, err := src.Self.ModuleConfig(ctx)
+	mod.SDKConfig, err = src.Self.SDK(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module config: %w", err)
+		return nil, fmt.Errorf("failed to get module SDK: %w", err)
 	}
-	if !ok {
-		return nil, fmt.Errorf("module source has no config")
-	}
-
-	mod.SDKConfig = modCfg.SDK
 
 	if mod.NameField == "" || mod.SDKConfig == "" {
 		return nil, fmt.Errorf("module source has no name or SDK config")
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	slog.Debug("MODULEWITHSOURCE",
-		"modCfg", modCfg,
-		"name", mod.NameField,
-		"originalName", mod.OriginalName,
+	if err := s.updateDeps(ctx, mod, src); err != nil {
+		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
+	}
+	if err := s.updateCodegenAndRuntime(ctx, mod, src); err != nil {
+		return nil, fmt.Errorf("failed to update codegen and runtime: %w", err)
+	}
+	// update dagger.json last so SDKs can't intentionally or unintentionally
+	// modify it during codegen in ways that would be hard to deal with
+	if err := s.updateDaggerConfig(ctx, mod, src); err != nil {
+		return nil, fmt.Errorf("failed to update dagger.json: %w", err)
+	}
+
+	return mod, nil
+}
+
+func (s *moduleSchema) moduleGeneratedContextDiff(
+	ctx context.Context,
+	mod *core.Module,
+	args struct{},
+) (inst dagql.Instance[*core.Directory], err error) {
+	baseContext, err := mod.Source.Self.ContextDirectory()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get base context directory: %w", err)
+	}
+
+	var diff dagql.Instance[*core.Directory]
+	err = s.dag.Select(ctx, baseContext, &diff,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*core.Directory](mod.GeneratedContextDirectory.ID())},
+			},
+		},
 	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to diff generated context: %w", err)
+	}
+	return diff, nil
+}
 
-	depCfgs := modCfg.Dependencies
-	mod.DependencyConfig = make([]*core.ModuleDependency, len(depCfgs))
-	mod.DependenciesField = make([]dagql.Instance[*core.Module], len(depCfgs))
+func (s *moduleSchema) updateDeps(
+	ctx context.Context,
+	mod *core.Module,
+	src dagql.Instance[*core.ModuleSource],
+) error {
+	var deps []dagql.Instance[*core.ModuleDependency]
+	err := s.dag.Select(ctx, src, &deps, dagql.Selector{Field: "dependencies"})
+	if err != nil {
+		return fmt.Errorf("failed to load module dependencies: %w", err)
+	}
+	mod.DependencyConfig = make([]*core.ModuleDependency, len(deps))
+	for i, dep := range deps {
+		mod.DependencyConfig[i] = dep.Self
+	}
+
+	mod.DependenciesField = make([]dagql.Instance[*core.Module], len(deps))
 	var eg errgroup.Group
-	for i, depCfg := range modCfg.Dependencies {
-		i, depCfg := i, depCfg
+	for i, dep := range deps {
+		i, dep := i, dep
 		eg.Go(func() error {
-			var depSrc dagql.Instance[*core.ModuleSource]
-			err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
-				dagql.Selector{
-					Field: "moduleSource",
-					Args: []dagql.NamedInput{
-						{Name: "refString", Value: dagql.String(depCfg.Source)},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to create module source from dependency: %w", err)
-			}
-
-			var resolvedDepSrc dagql.Instance[*core.ModuleSource]
-			err = s.dag.Select(ctx, src, &resolvedDepSrc,
-				dagql.Selector{
-					Field: "resolveDependency",
-					Args: []dagql.NamedInput{
-						{Name: "dep", Value: dagql.NewID[*core.ModuleSource](depSrc.ID())},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dependency: %w", err)
-			}
-			mod.DependencyConfig[i] = &core.ModuleDependency{
-				Source: resolvedDepSrc,
-				Name:   depCfg.Name,
-			}
-
-			var depMod dagql.Instance[*core.Module]
-			err = s.dag.Select(ctx, resolvedDepSrc, &depMod,
+			err := s.dag.Select(ctx, dep.Self.Source, &mod.DependenciesField[i],
 				dagql.Selector{
 					Field: "withName",
 					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.String(depCfg.Name)},
+						{Name: "name", Value: dagql.String(dep.Self.Name)},
 					},
 				},
 				dagql.Selector{
@@ -684,13 +704,11 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 			if err != nil {
 				return fmt.Errorf("failed to initialize dependency module: %w", err)
 			}
-			mod.DependenciesField[i] = depMod
-
 			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return nil, fmt.Errorf("failed to load pre-configured dependencies: %w", err)
+		return fmt.Errorf("failed to initialize dependency modules: %w", err)
 	}
 
 	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
@@ -698,27 +716,210 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 		mod.Deps = mod.Deps.Append(dep.Self)
 	}
 
-	sdk, err := s.sdkForModule(ctx, mod.Query, mod.SDKConfig, src)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module SDK: %w", err)
-	}
-	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get module runtime: %w", err)
-	}
-
-	return mod, nil
+	return nil
 }
 
-// TODO: initialize really doesn't need to exist anymore
-func (s *moduleSchema) moduleInitialize(
+func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx context.Context,
-	inst dagql.Instance[*core.Module],
-	args struct{},
-) (*core.Module, error) {
-	mod, err := inst.Self.Initialize(ctx, inst, dagql.CurrentID(ctx))
+	mod *core.Module,
+	src dagql.Instance[*core.ModuleSource],
+) error {
+	baseContext, err := src.Self.ContextDirectory()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize module: %w", err)
+		return fmt.Errorf("failed to get base context directory: %w", err)
 	}
-	return mod, nil
+	mod.GeneratedContextDirectory = baseContext
+
+	rootSubpath, err := src.Self.SourceRootSubpath()
+	if err != nil {
+		return fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+
+	sdk, err := s.sdkForModule(ctx, src.Self.Query, mod.SDKConfig, src)
+	if err != nil {
+		return fmt.Errorf("failed to load sdk for module: %w", err)
+	}
+
+	generatedCode, err := sdk.Codegen(ctx, mod.Deps, src)
+	if err != nil {
+		return fmt.Errorf("failed to generate code: %w", err)
+	}
+
+	var diff dagql.Instance[*core.Directory]
+	err = s.dag.Select(ctx, baseContext, &diff,
+		dagql.Selector{
+			Field: "diff",
+			Args: []dagql.NamedInput{
+				{Name: "other", Value: dagql.NewID[*core.Directory](generatedCode.Code.ID())},
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to diff generated code: %w", err)
+	}
+
+	err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+		dagql.Selector{
+			Field: "withDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String("/")},
+				{Name: "directory", Value: dagql.NewID[*core.Directory](diff.ID())},
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to add codegen to module context directory: %w", err)
+	}
+
+	// update .gitattributes
+	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
+	//nolint:dupl
+	if len(generatedCode.VCSGeneratedPaths) > 0 {
+		gitAttrsPath := filepath.Join(rootSubpath, ".gitattributes")
+		var gitAttrsContents []byte
+		gitAttrsFile, err := baseContext.Self.File(ctx, gitAttrsPath)
+		if err == nil {
+			gitAttrsContents, err = gitAttrsFile.Contents(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get git attributes file contents: %w", err)
+			}
+			if !bytes.HasSuffix(gitAttrsContents, []byte("\n")) {
+				gitAttrsContents = append(gitAttrsContents, []byte("\n")...)
+			}
+		}
+		for _, fileName := range generatedCode.VCSGeneratedPaths {
+			if bytes.Contains(gitAttrsContents, []byte(fileName)) {
+				// already has some config for the file
+				continue
+			}
+			gitAttrsContents = append(gitAttrsContents,
+				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
+			)
+		}
+
+		err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+			dagql.Selector{
+				Field: "withNewFile",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(gitAttrsPath)},
+					{Name: "contents", Value: dagql.String(gitAttrsContents)},
+					{Name: "permissions", Value: dagql.Int(0600)},
+				},
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to add vcs generated file: %w", err)
+		}
+	}
+
+	// update .gitignore
+	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
+	//nolint:dupl
+	if len(generatedCode.VCSIgnoredPaths) > 0 {
+		gitIgnorePath := filepath.Join(rootSubpath, ".gitignore")
+		var gitIgnoreContents []byte
+		gitIgnoreFile, err := baseContext.Self.File(ctx, gitIgnorePath)
+		if err == nil {
+			gitIgnoreContents, err = gitIgnoreFile.Contents(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get .gitignore file contents: %w", err)
+			}
+			if !bytes.HasSuffix(gitIgnoreContents, []byte("\n")) {
+				gitIgnoreContents = append(gitIgnoreContents, []byte("\n")...)
+			}
+		}
+		for _, fileName := range generatedCode.VCSIgnoredPaths {
+			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
+				continue
+			}
+			gitIgnoreContents = append(gitIgnoreContents,
+				[]byte(fmt.Sprintf("/%s\n", fileName))...,
+			)
+		}
+
+		err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+			dagql.Selector{
+				Field: "withNewFile",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(gitIgnorePath)},
+					{Name: "contents", Value: dagql.String(gitIgnoreContents)},
+					{Name: "permissions", Value: dagql.Int(0600)},
+				},
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to add vcs ignore file: %w", err)
+		}
+	}
+
+	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
+	if err != nil {
+		return fmt.Errorf("failed to get module runtime: %w", err)
+	}
+
+	return nil
+}
+
+func (s *moduleSchema) updateDaggerConfig(
+	ctx context.Context,
+	mod *core.Module,
+	src dagql.Instance[*core.ModuleSource],
+) error {
+	modCfg, ok, err := src.Self.ModuleConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get module config: %w", err)
+	}
+	if !ok {
+		modCfg = &modules.ModuleConfig{}
+	}
+
+	modCfg.Name = mod.OriginalName
+	modCfg.SDK = mod.SDKConfig
+
+	sourceSubpath, err := src.Self.SourceSubpath(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get source subpath: %w", err)
+	}
+	if sourceSubpath != "." {
+		modCfg.Source = sourceSubpath
+	}
+
+	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(mod.DependencyConfig))
+	for i, dep := range mod.DependencyConfig {
+		refStr, err := dep.Source.Self.RefString()
+		if err != nil {
+			return fmt.Errorf("failed to get dependency ref string: %w", err)
+		}
+		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{
+			Name:   dep.Name,
+			Source: refStr,
+		}
+	}
+
+	rootSubpath, err := src.Self.SourceRootSubpath()
+	if err != nil {
+		return fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+
+	modCfgPath := filepath.Join(rootSubpath, modules.Filename)
+	updatedModCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to encode module config: %w", err)
+	}
+	updatedModCfgBytes = append(updatedModCfgBytes, '\n')
+	err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(modCfgPath)},
+				{Name: "contents", Value: dagql.String(updatedModCfgBytes)},
+				{Name: "permissions", Value: dagql.Int(0644)},
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update module context directory config file: %w", err)
+	}
+
+	return nil
 }

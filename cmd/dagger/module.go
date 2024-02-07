@@ -231,8 +231,9 @@ var moduleInitCmd = &cobra.Command{
 			_, err = modConf.Source.
 				WithName(moduleName).
 				WithSDK(sdk).
-				WithSourceSubdir(moduleSourcePath).
+				WithSourceSubpath(moduleSourcePath).
 				ResolveFromCaller().
+				AsModule().
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -298,11 +299,10 @@ var moduleInstallCmd = &cobra.Command{
 				Name: installName,
 			})
 
-			modSource := modConf.Source.
+			_, err = modConf.Source.
 				WithDependencies([]*dagger.ModuleDependency{dep}).
-				ResolveFromCaller()
-
-			_, err = modSource.
+				ResolveFromCaller().
+				AsModule().
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -319,7 +319,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			depRootSubpath, err := depSrc.RootSubpath(ctx)
+			depRootSubpath, err := depSrc.SourceRootSubpath(ctx)
 			if err != nil {
 				return err
 			}

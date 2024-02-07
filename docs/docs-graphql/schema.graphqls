@@ -1309,11 +1309,23 @@ type GitModuleSource {
   """The resolved commit of the git repo this source points to."""
   commit: String!
 
+  """
+  The directory containing everything needed to load load and use the module.
+  """
+  contextDirectory: Directory!
+
   """The URL to the source's git repo in a web browser"""
   htmlURL: String!
 
   """A unique identifier for this GitModuleSource."""
   id: GitModuleSourceID!
+
+  """
+  The path to the root of the module source under the context directory. This
+  directory contains its configuration file. It also contains its source code
+  (possibly as a subdirectory).
+  """
+  rootSubpath: String!
 
   """The specified version of the git repo this source points to."""
   version: String!
@@ -1580,8 +1592,20 @@ scalar ListTypeDefID
 Module source that that originates from a path locally relative to an arbitrary directory.
 """
 type LocalModuleSource {
+  """
+  The directory containing everything needed to load load and use the module.
+  """
+  contextDirectory: Directory!
+
   """A unique identifier for this LocalModuleSource."""
   id: LocalModuleSourceID!
+
+  """
+  The path to the root of the module source under the context directory. This
+  directory contains its configuration file. It also contains its source code
+  (possibly as a subdirectory).
+  """
+  rootSubpath: String!
 }
 
 """
@@ -1599,6 +1623,9 @@ type Module {
 
   """The doc string of the module, if any"""
   description: String!
+
+  """TODO"""
+  generatedContextDiff: Directory!
 
   """A unique identifier for this Module."""
   id: ModuleID!
@@ -1697,8 +1724,16 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
-  """TODO"""
+  """Returns whether the module source has a configuration file."""
+  configExists: Boolean!
+
+  """
+  The directory containing everything needed to load load and use the module.
+  """
   contextDirectory: Directory!
+
+  """TODO"""
+  dependencies: [ModuleDependency!]!
 
   """
   The directory containing the module configuration and source code (source code may be in a subdir).
@@ -1707,9 +1742,6 @@ type ModuleSource {
     """The path from the source directory to select."""
     path: String!
   ): Directory!
-
-  """TODO; just the diff"""
-  generatedContextDiff: Directory!
 
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
@@ -1722,6 +1754,9 @@ type ModuleSource {
 
   """TODO"""
   moduleOriginalName: String!
+
+  """TODO"""
+  resolveContextPathFromCaller: String!
 
   """
   Resolve the provided module source arg as a dependency relative to this module source.
@@ -1736,30 +1771,26 @@ type ModuleSource {
   """
   resolveFromCaller: ModuleSource!
 
-  """
-  The path to the root of the module source under the context directory. This
-  directory contains its configuration file. It also contains its source code
-  (possibly as a subdirectory).
-  """
-  rootSubpath: String!
+  """TODO"""
+  sourceRootSubpath: String!
 
   """TODO"""
   sourceSubpath: String!
 
-  """TODO; doc that additive"""
-  withContext(dir: DirectoryID!): ModuleSource!
+  """TODO"""
+  withContextDirectory(dir: DirectoryID!): ModuleSource!
 
   """TODO"""
   withDependencies(dependencies: [ModuleDependencyID!]!): ModuleSource!
-
-  """TODO"""
-  withGeneratedContext: ModuleSource!
 
   """TODO"""
   withName(name: String!): ModuleSource!
 
   """TODO"""
   withSDK(sdk: String!): ModuleSource!
+
+  """TODO"""
+  withSourceSubpath(path: String!): ModuleSource!
 }
 
 """

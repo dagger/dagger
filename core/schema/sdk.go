@@ -414,18 +414,21 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to get module name for go module sdk codegen: %w", err)
 	}
 
+	contextDir, err := src.Self.ContextDirectory()
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get context directory for go module sdk codegen: %w", err)
+	}
+	srcSubpath, err := src.Self.SourceSubpath(ctx)
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
+	}
+
 	ctr, err = sdk.base(ctx)
 	if err != nil {
 		return ctr, err
 	}
 
-	contextDir := src.Self.BaseContextDirectory
-	srcSubpath, err := src.Self.ModuleSourceSubpath(ctx)
-	if err != nil {
-		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
-	}
-
-	// Makethe source subpath if it doesn't exist already.
+	// Make the source subpath if it doesn't exist already.
 	// Also rm dagger.gen.go if it exists, which is going to be overwritten
 	// anyways. If it doesn't exist, we ignore not found in the implementation of
 	// `withoutFile` so it will be a no-op.

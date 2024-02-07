@@ -303,23 +303,17 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	props[prefix+"module_name"] = mod.Name()
 
 	source := mod.Source.Self
-
-	// TODO: go back to symbolic on each subtype
-	symbolic, err := source.Symbolic()
-	if err != nil {
-		symbolic = ""
-	}
-
 	switch source.Kind {
 	case ModuleSourceKindLocal:
+		local := source.AsLocalSource.Value
 		props[prefix+"source_kind"] = "local"
-		props[prefix+"local_subpath"] = source.RootSubpath
+		props[prefix+"local_subpath"] = local.RootSubpath
 	case ModuleSourceKindGit:
 		git := source.AsGitSource.Value
 		props[prefix+"source_kind"] = "git"
-		props[prefix+"git_symbolic"] = symbolic
+		props[prefix+"git_symbolic"] = git.Symbolic()
 		props[prefix+"git_clone_url"] = git.CloneURL()
-		props[prefix+"git_subpath"] = source.RootSubpath
+		props[prefix+"git_subpath"] = git.RootSubpath
 		props[prefix+"git_version"] = git.Version
 		props[prefix+"git_commit"] = git.Commit
 	}
