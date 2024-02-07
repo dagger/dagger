@@ -47,15 +47,15 @@ type ModuleSource struct {
 
 	Kind ModuleSourceKind `field:"true" name:"kind" doc:"The kind of source (e.g. local, git, etc.)"`
 
-	// TODO: doc
+	AsLocalSource dagql.Nullable[*LocalModuleSource] `field:"true" doc:"If the source is of kind local, the local source representation of it."`
+
+	AsGitSource dagql.Nullable[*GitModuleSource] `field:"true" doc:"If the source is a of kind git, the git source representation of it."`
+
+	// Settings that can be used to initialize or override the source's configuration
 	WithName          string
 	WithDependencies  []dagql.Instance[*ModuleDependency]
 	WithSDK           string
 	WithSourceSubpath string
-
-	AsLocalSource dagql.Nullable[*LocalModuleSource] `field:"true" doc:"If the source is of kind local, the local source representation of it."`
-
-	AsGitSource dagql.Nullable[*GitModuleSource] `field:"true" doc:"If the source is a of kind git, the git source representation of it."`
 }
 
 func (src *ModuleSource) Type() *ast.Type {

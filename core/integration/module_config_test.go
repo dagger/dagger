@@ -36,7 +36,7 @@ func TestModuleConfigs(t *testing.T) {
 			})
 
 		// verify develop updates config to new format
-		baseWithNewConfig := baseWithOldConfig.With(daggerExec("mod", "develop"))
+		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
 		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
 		expectedConf := modules.ModuleConfig{
@@ -290,10 +290,10 @@ func TestModuleConfigs(t *testing.T) {
 			_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
 			require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
 
-			_, err = base.With(daggerExec("mod", "sync")).Sync(ctx)
+			_, err = base.With(daggerExec("develop")).Sync(ctx)
 			require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
 
-			_, err = base.With(daggerExec("mod", "install", "./dep")).Sync(ctx)
+			_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
 			require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
 		})
 
@@ -573,7 +573,7 @@ func TestModuleDaggerInit(t *testing.T) {
 			t.Run(tc.sdk, func(t *testing.T) {
 				t.Parallel()
 				srcRootDir := ctr.
-					With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk)).
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
 					Directory(".")
 				srcRootEnts, err := srcRootDir.Entries(ctx)
 				require.NoError(t, err)
@@ -762,12 +762,12 @@ func (m *Coolsdk) RequiredPaths() []string {
 			if tc.customSDKSource != "" {
 				ctr = ctr.
 					WithWorkdir("/work/" + tc.sdk).
-					With(daggerExec("mod", "init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
+					With(daggerExec("init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
 					With(sdkSource(tc.customSDKUnderlyingSDK, tc.customSDKSource)).
 					WithWorkdir("/work")
 			}
 
-			ctr = ctr.With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk))
+			ctr = ctr.With(daggerExec("init", "--name=test", "--sdk="+tc.sdk))
 
 			if tc.customSDKSource != "" {
 				ctr = ctr.With(sdkSource(tc.customSDKUnderlyingSDK, tc.mainSource))
@@ -807,8 +807,8 @@ func (m *Coolsdk) RequiredPaths() []string {
 			require.NoError(t, err)
 			require.Equal(t, "keepdir", strings.TrimSpace(out))
 
-			// call should still work after sync
-			ctr = ctr.With(daggerExec("mod", "sync"))
+			// call should still work after develop
+			ctr = ctr.With(daggerExec("develop"))
 
 			out, err = ctr.
 				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
@@ -833,7 +833,7 @@ func TestModuleContextDefaultsToSourceRoot(t *testing.T) {
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/coolsdk").
-		With(daggerExec("mod", "init", "--name=cool-sdk", "--sdk=go")).
+		With(daggerExec("init", "--name=cool-sdk", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
@@ -862,7 +862,7 @@ func (m *CoolSdk) RequiredPaths() []string {
 		}).
 		WithWorkdir("/work").
 		WithNewFile("random-file").
-		With(daggerExec("mod", "init", "--name=test", "--sdk=coolsdk")).
+		With(daggerExec("init", "--name=test", "--sdk=coolsdk")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 

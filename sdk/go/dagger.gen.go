@@ -4139,7 +4139,7 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO
+// The generated files and directories made on top of the module source's context directory.
 func (r *Module) GeneratedContextDiff() *Directory {
 	q := r.q.Select("generatedContextDiff")
 
@@ -4547,7 +4547,7 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	}
 }
 
-// TODO
+// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
 func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, error) {
 	q := r.q.Select("dependencies")
 
@@ -4645,7 +4645,7 @@ func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// If set, the name of the module this source references
+// If set, the name of the module this source references, including any overrides at runtime by callers.
 func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	if r.moduleName != nil {
 		return *r.moduleName, nil
@@ -4658,7 +4658,7 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO
+// The original name of the module this source references, as defined in the module configuration.
 func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
@@ -4671,7 +4671,7 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO
+// The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
 func (r *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (string, error) {
 	if r.resolveContextPathFromCaller != nil {
 		return *r.resolveContextPathFromCaller, nil
@@ -4696,7 +4696,7 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	}
 }
 
-// Load the source from its path on the caller's filesystem. Only valid for local sources.
+// Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
 func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
 	q := r.q.Select("resolveFromCaller")
 
@@ -4706,7 +4706,7 @@ func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
 	}
 }
 
-// TODO
+// The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
 func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
@@ -4719,7 +4719,7 @@ func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO
+// The path relative to context of the module implementation source code.
 func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	if r.sourceSubpath != nil {
 		return *r.sourceSubpath, nil
@@ -4732,7 +4732,7 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO
+// Update the module source with a new context directory. Only valid for local sources.
 func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
 	assertNotNil("dir", dir)
 	q := r.q.Select("withContextDirectory")
@@ -4744,7 +4744,7 @@ func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
 	}
 }
 
-// TODO
+// Append the provided dependencies to the module source's dependency list.
 func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *ModuleSource {
 	q := r.q.Select("withDependencies")
 	q = q.Arg("dependencies", dependencies)
@@ -4755,7 +4755,7 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *Modul
 	}
 }
 
-// TODO
+// Update the module source with a new name.
 func (r *ModuleSource) WithName(name string) *ModuleSource {
 	q := r.q.Select("withName")
 	q = q.Arg("name", name)
@@ -4766,7 +4766,7 @@ func (r *ModuleSource) WithName(name string) *ModuleSource {
 	}
 }
 
-// TODO
+// Update the module source with a new SDK.
 func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
 	q := r.q.Select("withSDK")
 	q = q.Arg("sdk", sdk)
@@ -4777,7 +4777,7 @@ func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
 	}
 }
 
-// TODO
+// Update the module source with a new source subpath.
 func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	q := r.q.Select("withSourceSubpath")
 	q = q.Arg("path", path)

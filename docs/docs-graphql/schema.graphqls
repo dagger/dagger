@@ -1624,8 +1624,15 @@ type Module {
   """The doc string of the module, if any"""
   description: String!
 
-  """TODO"""
+  """
+  The generated files and directories made on top of the module source's context directory.
+  """
   generatedContextDiff: Directory!
+
+  """
+  The module source's context plus any configuration and source files created by codegen.
+  """
+  generatedContextDirectory: Directory!
 
   """A unique identifier for this Module."""
   id: ModuleID!
@@ -1732,7 +1739,10 @@ type ModuleSource {
   """
   contextDirectory: Directory!
 
-  """TODO"""
+  """
+  The dependencies of the module source. Includes dependencies from the
+  configuration and any extras from withDependencies calls.
+  """
   dependencies: [ModuleDependency!]!
 
   """
@@ -1749,13 +1759,19 @@ type ModuleSource {
   """The kind of source (e.g. local, git, etc.)"""
   kind: ModuleSourceKind!
 
-  """If set, the name of the module this source references"""
+  """
+  If set, the name of the module this source references, including any overrides at runtime by callers.
+  """
   moduleName: String!
 
-  """TODO"""
+  """
+  The original name of the module this source references, as defined in the module configuration.
+  """
   moduleOriginalName: String!
 
-  """TODO"""
+  """
+  The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+  """
   resolveContextPathFromCaller: String!
 
   """
@@ -1767,30 +1783,54 @@ type ModuleSource {
   ): ModuleSource!
 
   """
-  Load the source from its path on the caller's filesystem. Only valid for local sources.
+  Load the source from its path on the caller's filesystem, including only
+  needed+configured files and directories. Only valid for local sources.
   """
   resolveFromCaller: ModuleSource!
 
-  """TODO"""
+  """
+  The path relative to context of the root of the module source, which contains
+  dagger.json. It also contains the module implementation source code, but that
+  may or may not being a subdir of this root.
+  """
   sourceRootSubpath: String!
 
-  """TODO"""
+  """The path relative to context of the module implementation source code."""
   sourceSubpath: String!
 
-  """TODO"""
-  withContextDirectory(dir: DirectoryID!): ModuleSource!
+  """
+  Update the module source with a new context directory. Only valid for local sources.
+  """
+  withContextDirectory(
+    """The directory to set as the context directory."""
+    dir: DirectoryID!
+  ): ModuleSource!
 
-  """TODO"""
-  withDependencies(dependencies: [ModuleDependencyID!]!): ModuleSource!
+  """
+  Append the provided dependencies to the module source's dependency list.
+  """
+  withDependencies(
+    """The dependencies to append."""
+    dependencies: [ModuleDependencyID!]!
+  ): ModuleSource!
 
-  """TODO"""
-  withName(name: String!): ModuleSource!
+  """Update the module source with a new name."""
+  withName(
+    """The name to set."""
+    name: String!
+  ): ModuleSource!
 
-  """TODO"""
-  withSDK(sdk: String!): ModuleSource!
+  """Update the module source with a new SDK."""
+  withSDK(
+    """The SDK to set."""
+    sdk: String!
+  ): ModuleSource!
 
-  """TODO"""
-  withSourceSubpath(path: String!): ModuleSource!
+  """Update the module source with a new source subpath."""
+  withSourceSubpath(
+    """The path to set as the source subpath."""
+    path: String!
+  ): ModuleSource!
 }
 
 """

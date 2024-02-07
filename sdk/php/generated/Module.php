@@ -41,11 +41,20 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
+     * The generated files and directories made on top of the module source's context directory.
      */
-    public function generatedSourceRootDirectory(): Directory
+    public function generatedContextDiff(): Directory
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedSourceRootDirectory');
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDiff');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The module source's context plus any configuration and source files created by codegen.
+     */
+    public function generatedContextDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('generatedContextDirectory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -133,16 +142,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Update the module configuration to use the given dependencies.
-     */
-    public function withDependencies(array $dependencies): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
-        $innerQueryBuilder->setArgument('dependencies', $dependencies);
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieves the module with the given description
      */
     public function withDescription(string $description): Module
@@ -163,32 +162,12 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Update the module configuration to use the given name.
-     */
-    public function withName(string $name): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
-        $innerQueryBuilder->setArgument('name', $name);
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * This module plus the given Object type and associated functions.
      */
     public function withObject(TypeDefId|TypeDef $object): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('object', $object);
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module configuration to use the given SDK.
-     */
-    public function withSDK(string $sdk): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
-        $innerQueryBuilder->setArgument('sdk', $sdk);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

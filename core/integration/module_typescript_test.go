@@ -174,7 +174,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=bare", "--sdk=typescript", "--source=some/subdir"))
+			With(daggerExec("init", "--name=bare", "--sdk=typescript", "--source=some/subdir"))
 
 		out, err := modGen.
 			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).

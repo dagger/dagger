@@ -50,7 +50,34 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The directory containing the actual module's source code, as determined from the root directory and subpath.
+     * Returns whether the module source has a configuration file.
+     */
+    public function configExists(): bool
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('configExists');
+        return (bool)$this->queryLeaf($leafQueryBuilder, 'configExists');
+    }
+
+    /**
+     * The directory containing everything needed to load load and use the module.
+     */
+    public function contextDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('contextDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
+     */
+    public function dependencies(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dependencies');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'dependencies');
+    }
+
+    /**
+     * The directory containing the module configuration and source code (source code may be in a subdir).
      */
     public function directory(string $path): Directory
     {
@@ -78,12 +105,30 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * If set, the name of the module this source references
+     * If set, the name of the module this source references, including any overrides at runtime by callers.
      */
     public function moduleName(): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleName');
         return (string)$this->queryLeaf($leafQueryBuilder, 'moduleName');
+    }
+
+    /**
+     * The original name of the module this source references, as defined in the module configuration.
+     */
+    public function moduleOriginalName(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleOriginalName');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'moduleOriginalName');
+    }
+
+    /**
+     * The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+     */
+    public function resolveContextPathFromCaller(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('resolveContextPathFromCaller');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'resolveContextPathFromCaller');
     }
 
     /**
@@ -97,20 +142,79 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
+     * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
      */
-    public function rootDirectory(): Directory
+    public function resolveFromCaller(): ModuleSource
     {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('rootDirectory');
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveFromCaller');
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
-     * The path to the module subdirectory containing the actual module's source code.
+     * The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
      */
-    public function subpath(): string
+    public function sourceRootSubpath(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('subpath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'subpath');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceRootSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceRootSubpath');
+    }
+
+    /**
+     * The path relative to context of the module implementation source code.
+     */
+    public function sourceSubpath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
+    }
+
+    /**
+     * Update the module source with a new context directory. Only valid for local sources.
+     */
+    public function withContextDirectory(DirectoryId|Directory $dir): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withContextDirectory');
+        $innerQueryBuilder->setArgument('dir', $dir);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Append the provided dependencies to the module source's dependency list.
+     */
+    public function withDependencies(array $dependencies): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new name.
+     */
+    public function withName(string $name): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new SDK.
+     */
+    public function withSDK(string $sdk): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSDK');
+        $innerQueryBuilder->setArgument('sdk', $sdk);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new source subpath.
+     */
+    public function withSourceSubpath(string $path): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceSubpath');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

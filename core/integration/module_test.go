@@ -309,7 +309,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=bare", "--sdk=go", "--source=some/subdir"))
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--source=some/subdir"))
 
 		out, err := modGen.
 			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).

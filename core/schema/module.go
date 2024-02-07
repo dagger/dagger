@@ -84,38 +84,43 @@ func (s *moduleSchema) Install() {
 			Doc(`The directory containing everything needed to load load and use the module.`),
 
 		dagql.Func("withContextDirectory", s.moduleSourceWithContextDirectory).
-			Doc(`TODO`),
+			Doc(`Update the module source with a new context directory. Only valid for local sources.`).
+			ArgDoc("dir", `The directory to set as the context directory.`),
 
 		dagql.Func("directory", s.moduleSourceDirectory).
 			Doc(`The directory containing the module configuration and source code (source code may be in a subdir).`).
 			ArgDoc(`path`, `The path from the source directory to select.`),
 
 		dagql.Func("sourceRootSubpath", s.moduleSourceRootSubpath).
-			Doc(`TODO`),
+			Doc(`The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.`),
 
 		dagql.Func("sourceSubpath", s.moduleSourceSubpath).
-			Doc(`TODO`),
+			Doc(`The path relative to context of the module implementation source code.`),
 
 		dagql.Func("withSourceSubpath", s.moduleSourceWithSourceSubpath).
-			Doc(`TODO`),
+			Doc(`Update the module source with a new source subpath.`).
+			ArgDoc("path", `The path to set as the source subpath.`),
 
 		dagql.Func("moduleName", s.moduleSourceModuleName).
-			Doc(`If set, the name of the module this source references`),
+			Doc(`If set, the name of the module this source references, including any overrides at runtime by callers.`),
 
 		dagql.Func("moduleOriginalName", s.moduleSourceModuleOriginalName).
-			Doc(`TODO`),
+			Doc(`The original name of the module this source references, as defined in the module configuration.`),
 
 		dagql.Func("withName", s.moduleSourceWithName).
-			Doc(`TODO`),
+			Doc(`Update the module source with a new name.`).
+			ArgDoc("name", `The name to set.`),
 
 		dagql.NodeFunc("dependencies", s.moduleSourceDependencies).
-			Doc(`TODO`),
+			Doc(`The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.`),
 
 		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
-			Doc(`TODO`),
+			Doc(`Append the provided dependencies to the module source's dependency list.`).
+			ArgDoc("dependencies", `The dependencies to append.`),
 
 		dagql.Func("withSDK", s.moduleSourceWithSDK).
-			Doc(`TODO`),
+			Doc(`Update the module source with a new SDK.`).
+			ArgDoc("sdk", `The SDK to set.`),
 
 		dagql.Func("configExists", s.moduleSourceConfigExists).
 			Doc(`Returns whether the module source has a configuration file.`),
@@ -132,11 +137,11 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("resolveFromCaller", s.moduleSourceResolveFromCaller).
 			Impure(`Loads live caller-specific data from their filesystem.`).
-			Doc(`Load the source from its path on the caller's filesystem. Only valid for local sources.`),
+			Doc(`Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.`),
 
 		dagql.Func("resolveContextPathFromCaller", s.moduleSourceResolveContextPathFromCaller).
 			Impure(`Queries live caller-specific data from their filesystem.`).
-			Doc(`TODO`),
+			Doc(`The path to the module source's context directory on the caller's filesystem. Only valid for local sources.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.LocalModuleSource]{}.Install(s.dag)
@@ -157,7 +162,7 @@ func (s *moduleSchema) Install() {
 			ArgDoc("source", `The module source to initialize from.`),
 
 		dagql.Func("generatedContextDiff", s.moduleGeneratedContextDiff).
-			Doc(`TODO`),
+			Doc(`The generated files and directories made on top of the module source's context directory.`),
 
 		dagql.NodeFunc("initialize", s.moduleInitialize).
 			Doc(`Retrieves the module with the objects loaded via its SDK.`),
