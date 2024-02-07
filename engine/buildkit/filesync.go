@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -107,8 +106,6 @@ func (c *Client) EngineContainerLocalImport(
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
-	slog.Debug("ReadCallerHostFile", "path", path)
-
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -145,8 +142,6 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 }
 
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
-	slog.Debug("StatCallerHostPath", "path", path, "returnAbsPath", returnAbsPath)
-
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err

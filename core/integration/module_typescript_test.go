@@ -86,7 +86,7 @@ func TestModuleTypescriptInit(t *testing.T) {
   "license": "MIT"
 	}`,
 			}).
-			With(daggerExec("init", "--name=hasPkgJson", "--sdk=typescript"))
+			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -128,7 +128,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("Add dagger paths to the existing tsconfig.json", func(t *testing.T) {
-			tsConfig, err := modGen.File("/work/tsconfig.json").Contents(ctx)
+			tsConfig, err := modGen.File("/work/dagger/typescript/tsconfig.json").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, tsConfig, `"@dagger.io/dagger":`)
 		})
@@ -157,7 +157,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 
 				`,
 			}).
-			With(daggerExec("init", "--name=existingSource", "--sdk=typescript"))
+			With(daggerExec("init", "--source=.", "--name=existingSource", "--sdk=typescript"))
 
 		out, err := modGen.
 			With(daggerQuery(`{existingSource{helloWorld(stringArg:"hello"){stdout}}}`)).

@@ -41,8 +41,9 @@ var (
 
 	installName string
 
-	developName string
-	developSDK  string
+	developName       string
+	developSDK        string
+	developSourcePath string
 
 	force bool
 )
@@ -72,8 +73,9 @@ func init() {
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
-	moduleDevelopCmd.PersistentFlags().StringVar(&developName, "name", "", "New name for the module")
-	moduleDevelopCmd.PersistentFlags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
+	moduleDevelopCmd.Flags().StringVar(&developName, "name", "", "New name for the module")
+	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
+	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -215,6 +217,12 @@ var moduleInitCmd = &cobra.Command{
 			srcRootPath := cwd
 			if len(extraArgs) > 0 {
 				srcRootPath = extraArgs[0]
+			}
+			if filepath.IsAbs(srcRootPath) {
+				srcRootPath, err = filepath.Rel(cwd, srcRootPath)
+				if err != nil {
+					return fmt.Errorf("failed to get absolute path: %w", err)
+				}
 			}
 
 			modConf, err := getModuleConfigurationForSourceRef(ctx, dag, srcRootPath, false)
@@ -380,7 +388,7 @@ var moduleInstallCmd = &cobra.Command{
 }
 
 var moduleDevelopCmd = &cobra.Command{
-	Use:   "develop [--name string --sdk string]",
+	Use:   "develop [--name string --sdk string] [--source string]",
 	Short: "Setup or update all the resources needed to develop on a module locally",
 	Long: `Setup or update all the resources needed to develop on a module locally.
 
@@ -411,10 +419,41 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 
 			src := modConf.Source
 			if developName != "" {
+				existingName, err := modConf.Source.ModuleName(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get module name: %w", err)
+				}
+				if existingName != "" && existingName != developName {
+					return fmt.Errorf("cannot update module name that has already been set to %q", existingName)
+				}
 				src = src.WithName(developName)
 			}
 			if developSDK != "" {
+				existingSDK, err := modConf.Source.AsModule().SDK(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get module SDK: %w", err)
+				}
+				if existingSDK != "" && existingSDK != developSDK {
+					return fmt.Errorf("cannot update module SDK that has already been set to %q", existingSDK)
+				}
 				src = src.WithSDK(developSDK)
+			}
+			if developSourcePath != "" {
+				existingSourcePath, err := modConf.Source.SourceSubpath(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get module source subpath: %w", err)
+				}
+
+				// source path of uninitialized module is the source root
+				sourceRootRelPath, err := filepath.Rel(modConf.LocalContextPath, modConf.LocalSourcePath)
+				if err != nil {
+					return fmt.Errorf("failed to get source root relative path: %w", err)
+				}
+
+				if existingSourcePath != sourceRootRelPath && existingSourcePath != developSourcePath {
+					return fmt.Errorf("cannot update module source path that has already been set to %q", existingSourcePath)
+				}
+				src = src.WithSourceSubpath(developSourcePath)
 			}
 
 			_, err = src.AsModule().GeneratedContextDiff().Export(ctx, modConf.LocalContextPath)

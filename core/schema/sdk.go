@@ -221,13 +221,6 @@ func (s *moduleSchema) loadBuiltinSDK(
 ) (*moduleSDK, error) {
 	ctx, recorder := progrock.WithGroup(ctx, fmt.Sprintf("load builtin module sdk %s", name))
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO: I think the problem of not honoring include/exclude can be fixed now
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
 	// subdir right under the *full* sdk source dir. Can be generalized once we support
 	// default-args/scripts in dagger.json
@@ -278,7 +271,7 @@ func (s *moduleSchema) loadBuiltinSDK(
 }
 
 const (
-	goSDKUserModSourceDirPath  = "/src"
+	goSDKUserModContextDirPath = "/src"
 	goSDKRuntimePath           = "/runtime"
 	goSDKIntrospectionJSONPath = "/schema.json"
 )
@@ -313,7 +306,7 @@ func (sdk *goSDK) Codegen(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.String(goSDKUserModSourceDirPath),
+				Value: dagql.String(goSDKUserModContextDirPath),
 			},
 		},
 	}); err != nil {
@@ -480,7 +473,7 @@ func (sdk *goSDK) baseWithCodegen(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.NewString(goSDKUserModSourceDirPath),
+				Value: dagql.NewString(goSDKUserModContextDirPath),
 			},
 			{
 				Name:  "source",
@@ -492,7 +485,7 @@ func (sdk *goSDK) baseWithCodegen(
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
-				Value: dagql.NewString(filepath.Join(goSDKUserModSourceDirPath, srcSubpath)),
+				Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 			},
 		},
 	}, dagql.Selector{
@@ -503,7 +496,7 @@ func (sdk *goSDK) baseWithCodegen(
 			{
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
-					"--module-source-root", goSDKUserModSourceDirPath,
+					"--module-context", goSDKUserModContextDirPath,
 					"--module-name", dagql.String(modName),
 					"--propagate-logs=true",
 					"--introspection-json-path", goSDKIntrospectionJSONPath,

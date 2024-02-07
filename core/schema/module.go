@@ -63,8 +63,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.Directory]{
 		dagql.NodeFunc("asModule", s.directoryAsModule).
 			Doc(`Load the directory as a Dagger module`).
-			ArgDoc("sourceSubpath",
-				`An optional subpath of the directory which contains the module's source code.`,
+			ArgDoc("sourceRootPath",
+				`An optional subpath of the directory which contains the module's configuration file.`,
 				`This is needed when the module code is in a subdirectory but requires
 				parent directories to be loaded in order to execute. For example, the
 				module source code may need a go.mod, project.toml, package.json, etc.
@@ -567,8 +567,7 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 }
 
 type directoryAsModuleArgs struct {
-	// TODO: should be renamed to SourceRootPath
-	SourceSubpath string `default:"."`
+	SourceRootPath string `default:"."`
 }
 
 func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.Instance[*core.Directory], args directoryAsModuleArgs) (*core.Module, error) {
@@ -577,7 +576,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.I
 		dagql.Selector{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
-				{Name: "refString", Value: dagql.String(args.SourceSubpath)},
+				{Name: "refString", Value: dagql.String(args.SourceRootPath)},
 			},
 		},
 		dagql.Selector{
@@ -596,12 +595,16 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.I
 	return inst.Self, nil
 }
 
-// TODO: initialize probably doesn't need to exist anymore
+// TODO: initialize probably doesn't need to exist anymore, can just try to init in withSource
+// and, if error, return that error in future calls that rely on the module being initialized
 func (s *moduleSchema) moduleInitialize(
 	ctx context.Context,
 	inst dagql.Instance[*core.Module],
 	args struct{},
 ) (*core.Module, error) {
+	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
+		return nil, fmt.Errorf("module name and SDK must be set")
+	}
 	mod, err := inst.Self.Initialize(ctx, inst, dagql.CurrentID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
@@ -631,10 +634,6 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	mod.SDKConfig, err = src.Self.SDK(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module SDK: %w", err)
-	}
-
-	if mod.NameField == "" || mod.SDKConfig == "" {
-		return nil, fmt.Errorf("module source has no name or SDK config")
 	}
 
 	if err := s.updateDeps(ctx, mod, src); err != nil {
@@ -734,6 +733,11 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
+	if mod.NameField == "" || mod.SDKConfig == "" {
+		// can't codegen yet
+		return nil
+	}
+
 	baseContext, err := src.Self.ContextDirectory()
 	if err != nil {
 		return fmt.Errorf("failed to get base context directory: %w", err)
@@ -948,6 +952,17 @@ func (s *moduleSchema) updateDaggerConfig(
 		return fmt.Errorf("failed to encode module config: %w", err)
 	}
 	updatedModCfgBytes = append(updatedModCfgBytes, '\n')
+
+	if mod.GeneratedContextDirectory.Self == nil {
+		// valid case for sdk-less modules (i.e. dep only), initialize as empty directory
+		err = s.dag.Select(ctx, s.dag.Root(), &mod.GeneratedContextDirectory,
+			dagql.Selector{Field: "directory"},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to initialize module context directory: %w", err)
+		}
+	}
+
 	err = s.dag.Select(ctx, mod.GeneratedContextDirectory, &mod.GeneratedContextDirectory,
 		dagql.Selector{
 			Field: "withNewFile",

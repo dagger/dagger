@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -42,7 +41,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
 		if filepath.IsAbs(modPath) {
-			return nil, fmt.Errorf("local module source path is absolute: %s", modPath)
+			return nil, fmt.Errorf("local module source root path is absolute: %s", modPath)
 		}
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
 			RootSubpath: modPath,
@@ -174,22 +173,6 @@ func (s *moduleSchema) moduleSourceAsModule(
 	src dagql.Instance[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Instance[*core.Module], err error) {
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	/*
-		name, err := src.Self.ModuleName(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get module name: %w", err)
-		}
-		slog.Debug("MODULESOURCEASMODULE",
-			"name", name,
-			"rootSubpath", src.Self.RootSubpath,
-		)
-	*/
-
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
 			Field: "module",
@@ -247,8 +230,11 @@ func (s *moduleSchema) moduleSourceWithSourceSubpath(
 		Path string
 	},
 ) (*core.ModuleSource, error) {
+	if args.Path == "" {
+		return src, nil
+	}
 	if !filepath.IsLocal(args.Path) {
-		return nil, fmt.Errorf("source subdir path escapes parent dir: %s", args.Path)
+		return nil, fmt.Errorf("source subdir path escapes parent dir: %q", args.Path)
 	}
 	src = src.Clone()
 	src.WithSourceSubpath = args.Path
@@ -475,36 +461,9 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 		return inst, fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	srcName, err := src.ModuleName(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module name: %w", err)
-	}
-	depName, err := depSrc.Self.ModuleName(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module name: %w", err)
-	}
-	slog.Debug("MODULESOURCERESOLVEDEPENDENCY",
-		"srcName", srcName,
-		"srcRootSubpath", srcRootSubpath,
-		"depName", depName,
-		"depRootSubpath", depRootSubpath,
-	)
-
 	// This dep is a local path relative to a src, need to find the src's root
 	// and return a source that points to the full path to this dep
 	if contextDir.Self == nil {
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		debug.PrintStack()
-
 		return inst, fmt.Errorf("cannot resolve dependency for module source with no context directory")
 	}
 
@@ -633,24 +592,32 @@ func (s *moduleSchema) moduleSourceResolveContextPathFromCaller(
 	src *core.ModuleSource,
 	args struct{},
 ) (string, error) {
+	contextAbsPath, _, err := s.resolveContextPathFromCaller(ctx, src)
+	return contextAbsPath, err
+}
+
+func (s *moduleSchema) resolveContextPathFromCaller(
+	ctx context.Context,
+	src *core.ModuleSource,
+) (contextRootAbsPath, sourceRootAbsPath string, _ error) {
 	if src.Kind != core.ModuleSourceKindLocal {
-		return "", fmt.Errorf("cannot resolve non-local module source from caller")
+		return "", "", fmt.Errorf("cannot resolve non-local module source from caller")
 	}
 
 	rootSubpath, err := src.SourceRootSubpath()
 	if err != nil {
-		return "", fmt.Errorf("failed to get source root subpath: %w", err)
+		return "", "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
 	sourceRootStat, err := src.Query.Buildkit.StatCallerHostPath(ctx, rootSubpath, true)
 	if err != nil {
-		return "", fmt.Errorf("failed to stat source root: %w", err)
+		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}
-	sourceRootAbsPath := sourceRootStat.Path
+	sourceRootAbsPath = sourceRootStat.Path
 
 	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, src.Query.Buildkit, sourceRootAbsPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to find up root: %w", err)
+		return "", "", fmt.Errorf("failed to find up root: %w", err)
 	}
 
 	if !contextFound {
@@ -658,7 +625,7 @@ func (s *moduleSchema) moduleSourceResolveContextPathFromCaller(
 		contextAbsPath = sourceRootAbsPath
 	}
 
-	return contextAbsPath, nil
+	return contextAbsPath, sourceRootAbsPath, nil
 }
 
 func (s *moduleSchema) moduleSourceResolveFromCaller(
@@ -666,47 +633,15 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	src *core.ModuleSource,
 	args struct{},
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
-	// TODO: de-dupe with code above
-	if src.Kind != core.ModuleSourceKindLocal {
-		return inst, fmt.Errorf("cannot resolve non-local module source from caller")
-	}
-
-	rootSubpath, err := src.SourceRootSubpath()
+	contextAbsPath, sourceRootAbsPath, err := s.resolveContextPathFromCaller(ctx, src)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get source root subpath: %w", err)
-	}
-
-	sourceRootStat, err := src.Query.Buildkit.StatCallerHostPath(ctx, rootSubpath, true)
-	if err != nil {
-		return inst, fmt.Errorf("failed to stat source root: %w", err)
-	}
-	sourceRootAbsPath := sourceRootStat.Path
-
-	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, src.Query.Buildkit, sourceRootAbsPath)
-	if err != nil {
-		return inst, fmt.Errorf("failed to find up root: %w", err)
-	}
-
-	if !contextFound {
-		// default to restricting to the source root dir, make it abs though for consistency
-		contextAbsPath = sourceRootAbsPath
+		return inst, err
 	}
 
 	sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source root relative path: %s", err)
 	}
-
-	// TODO:
-	// TODO:
-	// TODO:
-	slog.Debug("moduleLocalSourceResolveFromCaller",
-		"contextAbsPath", contextAbsPath,
-		"sourceRootAbsPath", sourceRootAbsPath,
-		"sourceRootRelPath", sourceRootRelPath,
-		"callerRootPath", fmt.Sprintf("%q", rootSubpath),
-		"contextFound", contextFound,
-	)
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
 	if err := s.collectCallerLocalDeps(ctx, src.Query, contextAbsPath, sourceRootAbsPath, true, src, collectedDeps); err != nil {
@@ -800,6 +735,18 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			return inst, fmt.Errorf("local module source path %q escapes context %q", sourceRelSubpath, contextAbsPath)
 		}
 		includeSet[sourceRelSubpath+"/**/*"] = struct{}{}
+
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		slog.Debug("moduleSourceResolveFromCaller",
+			"rootPath", rootPath,
+			"sourceAbsSubpath", sourceAbsSubpath,
+			"configRelPath", configRelPath,
+			"sourceRelSubpath", sourceRelSubpath,
+		)
 	}
 
 	for _, sdk := range sdkSet {
@@ -824,19 +771,6 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		excludes = append(excludes, exclude)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	slog.Debug("moduleLocalSourceResolveFromCaller",
-		"contextAbsPath", contextAbsPath,
-		"sourceRootAbsPath", sourceRootAbsPath,
-		"sourceRootRelPath", sourceRootRelPath,
-		"callerRootPath", fmt.Sprintf("%q", rootSubpath),
-		"contextFound", contextFound,
-		"includes", includes,
-		"excludes", excludes,
-	)
-
 	pipelineName := fmt.Sprintf("load local module context %s", contextAbsPath)
 	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 	_, desc, err := src.Query.Buildkit.LocalImport(
@@ -853,6 +787,18 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		return inst, fmt.Errorf("failed to load local module source: %w", err)
 	}
 
+	return s.normalizeCallerLoadedSource(ctx, src, sourceRootRelPath, loadedDir)
+}
+
+// get an instance of ModuleSource with the context resolved from the caller that doesn't
+// encode any instructions to actually reload from the caller if the ID is loaded later, which
+// is possible due to blob-ifying the local import.
+func (s *moduleSchema) normalizeCallerLoadedSource(
+	ctx context.Context,
+	src *core.ModuleSource,
+	sourceRootRelPath string,
+	loadedDir dagql.Instance[*core.Directory],
+) (inst dagql.Instance[*core.ModuleSource], err error) {
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
 			Field: "moduleSource",
@@ -978,8 +924,12 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		if topLevel {
-			modCfg.Name = src.WithName
-			modCfg.SDK = src.WithSDK
+			if src.WithName != "" {
+				modCfg.Name = src.WithName
+			}
+			if src.WithSDK != "" {
+				modCfg.SDK = src.WithSDK
+			}
 			for _, dep := range src.WithDependencies {
 				refString, err := dep.Self.Source.Self.RefString()
 				if err != nil {
@@ -1003,14 +953,6 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				continue
 			}
 			depAbsPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			slog.Debug("collectCallerLocalDeps", "dep", parsed.modPath, "depAbsPath", depAbsPath, "sourceRootAbsPath", sourceRootAbsPath)
-
 			err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, depAbsPath, false, src, collectedDeps)
 			if err != nil {
 				return nil, fmt.Errorf("failed to collect local module source dep: %w", err)
@@ -1032,6 +974,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
 				sdkPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
+
 				err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, sdkPath, false, src, collectedDeps)
 				if err != nil {
 					return nil, fmt.Errorf("failed to collect local sdk: %w", err)
@@ -1115,12 +1058,4 @@ func callerHostFindUpContext(
 		return "", false, nil
 	}
 	return callerHostFindUpContext(ctx, bk, filepath.Dir(curDirPath))
-}
-
-func pathEscapes(parentAbsPath, childAbsPath string) bool {
-	relPath, err := filepath.Rel(parentAbsPath, childAbsPath)
-	if err != nil {
-		return true
-	}
-	return !filepath.IsLocal(relPath)
 }

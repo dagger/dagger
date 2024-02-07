@@ -25,7 +25,7 @@ type ModuleConfig struct {
 	// The modules this module depends on.
 	Dependencies []*ModuleConfigDependency `json:"dependencies,omitempty"`
 
-	// TODO:
+	// The path, relative to this config file, to the subdir containing the module's implementation source code.
 	Source string `json:"source,omitempty"`
 }
 
