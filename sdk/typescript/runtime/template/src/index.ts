@@ -1,12 +1,12 @@
 import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class QuickStart {
   /**
    * example usage: "dagger call container-echo --string-arg yo"
    */
-  @func
+  @func()
   containerEcho(stringArg: string): Container {
     return dag.container().from("alpine:latest").withExec(["echo", stringArg])
   }
@@ -14,7 +14,7 @@ class QuickStart {
   /**
    * example usage: "dagger call grep-dir --directory-arg . --pattern GrepDir"
    */
-  @func
+  @func()
   async grepDir(directoryArg: Directory, pattern: string): Promise<string> {
     return dag
       .container()

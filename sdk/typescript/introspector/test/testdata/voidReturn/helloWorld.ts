@@ -3,14 +3,14 @@ import { func, object } from '../../../decorators/decorators.js'
 /**
  * HelloWorld class
  */
-@object
+@object()
 export class HelloWorld {
-    @func
+    @func()
     helloWorld(name: string): void {
         console.log(`hello ${name}`)
     }
 
-    @func
+    @func()
     async asyncHelloWorld(name?: string): Promise<void> {
         console.log(`async hello ${name}`)
     }

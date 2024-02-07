@@ -80,7 +80,7 @@ def get_doc(obj: Any) -> str | None:
             None,
         )
     if inspect.getmodule(obj) != builtins and (
-        inspect.isclass(obj) or inspect.isfunction(obj)
+        inspect.isclass(obj) or inspect.isroutine(obj)
     ):
         doc = inspect.getdoc(obj)
         # By default, a dataclass's __doc__ will be the signature of the class,
@@ -115,7 +115,7 @@ def is_union(th: TypeHint) -> bool:
     return isinstance(th, UnionTypeHint)
 
 
-def is_optional(th: TypeHint) -> bool:
+def is_nullable(th: TypeHint) -> bool:
     """Returns True if the annotation is SomeType | None.
 
     Does not support Annotated types. Use only on types that have been
@@ -124,7 +124,7 @@ def is_optional(th: TypeHint) -> bool:
     return th.is_bearable(None)
 
 
-def non_optional(th: TypeHint) -> TypeHint:
+def non_null(th: TypeHint) -> TypeHint:
     """Removes None from a union.
 
     Does not support Annotated types. Use only on types that have been

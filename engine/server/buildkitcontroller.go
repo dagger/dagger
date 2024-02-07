@@ -173,7 +173,8 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	}()
 
 	conn, closeCh, hijackmd := grpchijack.Hijack(stream)
-	defer conn.Close()
+	// TODO: this blocks if opts.RegisterClient and an error happens
+	// TODO: ? defer conn.Close()
 	go func() {
 		<-closeCh
 		cancel()
@@ -205,7 +206,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Debug("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
 		bklog.G(ctx).WithError(err).Debug("session manager handle conn done")
-		return fmt.Errorf("handleConn: %w", err)
+		if err != nil {
+			return fmt.Errorf("handleConn: %w", err)
+		}
+		return nil
 	})
 
 	// NOTE: the perServerMu here is used to ensure that we hold a lock

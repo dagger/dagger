@@ -1,24 +1,24 @@
 import { Directory, object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 class Minimal {
-  @func
+  @func()
   async read(dir: Directory): Promise<string> {
     return dir.file("foo").contents()
   }
 
 
-  @func
+  @func()
   async readSlice(dir: Directory[]): Promise<string> {
     return dir[0].file("foo").contents()
   }
 
-  @func
+  @func()
   async readVariadic(...dir: Directory[]): Promise<string> {
     return dir[0].file("foo").contents()
   }
 
-  @func
+  @func()
   async readOptional(dir?: Directory): Promise<string> {
     if (!dir) {
       return ""

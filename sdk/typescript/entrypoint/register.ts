@@ -32,7 +32,7 @@ export async function register(
   }
 
   // For each class scanned, register its type, method and properties in the module.
-  Object.values(scanResult.classes).map((modClass) => {
+  Object.values(scanResult.classes).forEach((modClass) => {
     // Register the class Typedef object in Dagger
     let typeDef = dag.typeDef().withObject(modClass.name, {
       description: modClass.description,
@@ -46,9 +46,13 @@ export async function register(
     // Register all fields that belong to this object
     Object.values(modClass.fields).forEach((field) => {
       if (field.isExposed) {
-        typeDef = typeDef.withField(field.name, addTypeDef(field.typeDef), {
-          description: field.description,
-        })
+        typeDef = typeDef.withField(
+          field.alias ?? field.name,
+          addTypeDef(field.typeDef),
+          {
+            description: field.description,
+          }
+        )
       }
     })
 
@@ -81,7 +85,7 @@ function addConstructor(
  */
 function addFunction(fct: FunctionTypedef): Function_ {
   return dag
-    .function_(fct.name, addTypeDef(fct.returnType))
+    .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType))
     .withDescription(fct.description)
     .with(addArg(fct.args))
 }

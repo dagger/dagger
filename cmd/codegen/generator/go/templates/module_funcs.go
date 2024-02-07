@@ -109,8 +109,8 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDescription").Call(Lit(strings.TrimSpace(spec.doc)))
 	}
 
-	for i, argSpec := range spec.argSpecs {
-		if i == 0 && argSpec.paramType.String() == contextTypename {
+	for _, argSpec := range spec.argSpecs {
+		if argSpec.isContext {
 			// ignore ctx arg
 			continue
 		}
@@ -181,13 +181,8 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 	specs := make([]paramSpec, 0, params.Len())
 
 	i := 0
-	if params.At(i).Type().String() == contextTypename {
-		spec, err := ps.parseParamSpecVar(params.At(i), "", "")
-		if err != nil {
-			return nil, err
-		}
+	if spec, err := ps.parseParamSpecVar(params.At(i), "", ""); err == nil && spec.isContext {
 		specs = append(specs, spec)
-
 		i++
 	}
 
@@ -218,6 +213,9 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 				if err != nil {
 					return nil, err
 				}
+				if spec.isContext {
+					return nil, fmt.Errorf("unexpected context type in inline field %s", spec.name)
+				}
 				spec.parent = parent
 				specs = append(specs, spec)
 			}
@@ -233,6 +231,9 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 		spec, err := ps.parseParamSpecVar(params.At(i), docComment.Text(), lineComment.Text())
 		if err != nil {
 			return nil, err
+		}
+		if spec.isContext {
+			return nil, fmt.Errorf("unexpected context type for arg %s", spec.name)
 		}
 		if sig.Variadic() && i == params.Len()-1 {
 			spec.variadic = true

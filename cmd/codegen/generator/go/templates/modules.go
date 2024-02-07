@@ -126,7 +126,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			obj := named.Obj()
 			if obj.Pkg() != funcs.modulePkg.Types {
 				// the type must be created in the target package
-				continue
+				return "", fmt.Errorf("cannot code-generate for foreign type %s", obj.Name())
 			}
 			if !obj.Exported() {
 				// the type must be exported
@@ -509,8 +509,8 @@ func (ps *parseState) fillObjectFunctionCase(
 	}
 
 	vars := map[string]struct{}{}
-	for i, spec := range paramSpecs {
-		if i == 0 && spec.paramType.String() == contextTypename {
+	for _, spec := range paramSpecs {
+		if spec.isContext {
 			fnCallArgs = append(fnCallArgs, Id("ctx"))
 			continue
 		}

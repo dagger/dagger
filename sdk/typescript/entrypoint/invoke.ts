@@ -1,5 +1,7 @@
+import { TypeDefKind } from "../api/client.gen.js"
 import { Args, registry } from "../introspector/registry/registry.js"
 import { ScanResult } from "../introspector/scanner/scan.js"
+import { TypeDef } from "../introspector/scanner/typeDefs.js"
 import {
   loadArgOrder,
   loadArg,
@@ -7,6 +9,7 @@ import {
   loadPropertyType,
   loadResult,
   isArgVariadic,
+  loadName,
 } from "./load.js"
 
 export type InvokeCtx = {
@@ -53,15 +56,30 @@ Promise<any> {
 
   // Load parent state
   for (const [key, value] of Object.entries(parentArgs)) {
-    parentArgs[key] = await loadArg(
+    parentArgs[loadName(scanResult, parentName, key, "field")] = await loadArg(
       value,
       loadPropertyType(scanResult, parentName, key)
     )
   }
 
-  let result = await registry.getResult(parentName, fnName, parentArgs, args)
+  let result = await registry.getResult(
+    loadName(scanResult, parentName, parentName, "object"),
+    loadName(scanResult, parentName, fnName, "function"),
+    parentArgs,
+    args
+  )
+
   if (result) {
-    result = await loadResult(result)
+    // Handle alias serialization by getting the return type to load
+    // if the function called isn't a constructor.
+    if (fnName !== "") {
+      const retType = scanResult.classes[parentName].methods[fnName].returnType
+      if (retType.kind === TypeDefKind.ObjectKind) {
+        parentName = (retType as TypeDef<TypeDefKind.ObjectKind>).name
+      }
+    }
+
+    result = await loadResult(result, scanResult, parentName)
   }
 
   return result

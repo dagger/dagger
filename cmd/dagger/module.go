@@ -40,6 +40,9 @@ var (
 
 	installName string
 
+	developName string
+	developSDK  string
+
 	force bool
 )
 
@@ -51,7 +54,6 @@ func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
 	moduleFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands")
 
-	moduleCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
@@ -59,26 +61,80 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
-	moduleInitCmd.MarkFlagsRequiredTogether("sdk", "name")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
+	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
+	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
-	moduleCmd.AddCommand(moduleInitCmd)
-	moduleCmd.AddCommand(moduleInstallCmd)
-	moduleCmd.AddCommand(moduleSyncCmd)
-	moduleCmd.AddCommand(modulePublishCmd)
+	moduleDevelopCmd.PersistentFlags().StringVar(&developName, "name", "", "New name for the module")
+	moduleDevelopCmd.PersistentFlags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
+	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
+
+	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	configCmd.AddCommand(oldInitCmd, oldInstallCmd, oldSyncCmd)
+	configCmd.AddGroup(moduleGroup)
 }
 
-var moduleCmd = &cobra.Command{
-	Use:     "module",
+var oldInitCmd = &cobra.Command{
+	Use:                "init",
+	Short:              "Initialize a new Dagger module",
+	Hidden:             true,
+	SilenceUsage:       true,
+	DisableFlagParsing: true,
+	Args: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf(`"dagger mod init" has been replaced by "dagger init"`)
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		// do nothing
+	},
+}
+
+var oldInstallCmd = &cobra.Command{
+	Use:                "install",
+	Short:              "Add a new dependency to a Dagger module",
+	Hidden:             true,
+	SilenceUsage:       true,
+	DisableFlagParsing: true,
+	GroupID:            moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
+	Args: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf(`"dagger mod install" has been replaced by "dagger install"`)
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		// do nothing
+	},
+}
+
+var oldSyncCmd = &cobra.Command{
+	Use:          "sync",
+	Short:        "Setup or update all the resources needed to develop on a module locally",
+	Hidden:       true,
+	SilenceUsage: true,
+	GroupID:      moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
+	DisableFlagParsing: true,
+	Args: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf(`"dagger mod sync" has been replaced by "dagger develop"`)
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		// do nothing
+	},
+}
+
+var configCmd = &cobra.Command{
+	Use:     "config",
 	Aliases: []string{"mod"},
-	Short:   "Manage Dagger modules",
-	Long:    "Manage Dagger modules. By default, print the configuration of the specified module in json format.",
+	Short:   "Get or set the configuration of a Dagger module",
+	Long:    "Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.",
 	Example: strings.TrimSpace(`
-dagger mod -m /path/to/some/dir
-dagger mod -m github.com/dagger/hello-dagger
+dagger config -m /path/to/some/dir
+dagger config -m github.com/dagger/hello-dagger
 `,
 	),
 	GroupID: moduleGroup.ID,
@@ -89,6 +145,8 @@ dagger mod -m github.com/dagger/hello-dagger
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			cmd.SetContext(ctx)
+
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), "")
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)
@@ -105,18 +163,6 @@ dagger mod -m github.com/dagger/hello-dagger
 			sdk, err := mod.SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
-			}
-			depMods, err := mod.Dependencies(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module dependencies: %w", err)
-			}
-			var depModNames []string
-			for _, depMod := range depMods {
-				depModName, err := depMod.Name(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module name: %w", err)
-				}
-				depModNames = append(depModNames, depModName)
 			}
 
 			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
@@ -136,10 +182,6 @@ dagger mod -m github.com/dagger/hello-dagger
 				"Source Directory:",
 				modConf.LocalSourcePath,
 			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Dependencies:",
-				strings.Join(depModNames, ", "),
-			)
 
 			return tw.Flush()
 		})
@@ -147,23 +189,32 @@ dagger mod -m github.com/dagger/hello-dagger
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:     "init [--sdk string --name string]",
+	Use:     "init [--sdk string --name string] [PATH]",
 	Short:   "Initialize a new Dagger module",
 	Long:    "Initialize a new Dagger module in a local directory.",
 	Example: "dagger mod init --name=hello --sdk=python",
-	RunE: func(cmd *cobra.Command, _ []string) (rerr error) {
+	GroupID: moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			// default the module root to the current working directory if it doesn't exist yet
+			// default the module source root to the current working directory if it doesn't exist yet
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
+			srcRootPath := cwd
+			if len(extraArgs) > 0 {
+				srcRootPath = extraArgs[0]
+			}
 
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, cwd)
+			modConf, err := getModuleConfigurationForSourceRef(ctx, dag, srcRootPath, cwd)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -173,6 +224,11 @@ var moduleInitCmd = &cobra.Command{
 			}
 			if modConf.ModuleSourceConfigExists {
 				return fmt.Errorf("module already exists")
+			}
+
+			// default module name to directory of source root
+			if moduleName == "" {
+				moduleName = filepath.Base(modConf.LocalSourcePath)
 			}
 
 			_, err = modConf.Mod.
@@ -200,7 +256,11 @@ var moduleInstallCmd = &cobra.Command{
 	Long:    "Add a Dagger module as a dependency of a local module.",
 	// TODO: use example from a reference module, using a tag instead of commit
 	Example: "dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473",
-	Args:    cobra.ExactArgs(1),
+	GroupID: moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -309,18 +369,24 @@ var moduleInstallCmd = &cobra.Command{
 	},
 }
 
-var moduleSyncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Synchronize a Dagger module",
-	Long: `Synchronize a Dagger module with the latest version of its extensions.
-
-:::note
-This is only required for IDE auto-completion/LSP purposes.
-:::
+var moduleDevelopCmd = &cobra.Command{
+	Use:   "develop [--name string --sdk string]",
+	Short: "Setup or update all the resources needed to develop on a module locally",
+	Long: `Setup or update all the resources needed to develop on a module locally.
 
 This command re-regerates the module's generated code based on dependencies
 and the current state of the module's source code.
+
+If --name and --sdk are set, the config file and generated code will be updated with those values reflected.
+
+:::note
+If not updating name or SDK, this is only required for IDE auto-completion/LSP purposes.
+:::
 `,
+	GroupID: moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -333,7 +399,15 @@ and the current state of the module's source code.
 				return fmt.Errorf("module must be local")
 			}
 
-			_, err = modConf.Mod.GeneratedSourceRootDirectory().Export(ctx, modConf.LocalRootPath)
+			mod := modConf.Mod
+			if developName != "" {
+				mod = mod.WithName(developName)
+			}
+			if developSDK != "" {
+				mod = mod.WithSDK(developSDK)
+			}
+
+			_, err = mod.GeneratedSourceRootDirectory().Export(ctx, modConf.LocalRootPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
@@ -356,6 +430,10 @@ forced), to avoid mistakingly depending on uncommitted files.
 `,
 		daDaggerverse,
 	),
+	GroupID: moduleGroup.ID,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -591,7 +669,7 @@ func getModuleConfigurationForSourceRef(
 			// finish up the case above where we default old dagger.jsons that didn't
 			// have root-for to using the source dir. We know now that the source config
 			// file actually existed, so the root exists too. It will be updated in the engine
-			// when calling functions (and exported back to the client if they sync/install)
+			// when calling functions (and exported back to the client if they develop/install)
 			conf.ModuleRootConfigExists = true
 		}
 

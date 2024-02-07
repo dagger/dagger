@@ -1,7 +1,7 @@
-defmodule Dagger.EngineConn do
+defmodule Dagger.Core.EngineConn do
   @moduledoc false
 
-  alias Dagger.Internal.Engine.Downloader
+  alias Dagger.Core.Engine.Downloader
 
   defstruct [:port, :token, :session_pid]
 

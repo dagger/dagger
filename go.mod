@@ -30,10 +30,10 @@ require (
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/gofrs/flock v0.8.1
 	github.com/gogo/protobuf v1.3.2
-	github.com/google/go-containerregistry v0.15.2
+	github.com/google/go-containerregistry v0.19.0
 	github.com/google/go-github/v50 v50.2.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
-	github.com/google/uuid v1.5.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/iancoleman/strcase v0.3.0
@@ -101,7 +101,11 @@ require (
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
 
-require github.com/muesli/reflow v0.3.0
+require (
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/muesli/reflow v0.3.0
+)
 
 require (
 	cdr.dev/slog v1.4.2 // indirect
@@ -161,7 +165,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect

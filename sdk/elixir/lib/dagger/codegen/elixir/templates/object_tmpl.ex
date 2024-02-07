@@ -144,7 +144,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       defmodule unquote(mod_name) do
         @moduledoc unquote(desc)
 
-        use Dagger.QueryBuilder
+        use Dagger.Core.QueryBuilder
 
         @type t() :: %__MODULE__{}
 
@@ -265,7 +265,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
         {:ok,
          data
          |> Enum.map(fn value ->
-           elem_selection = Dagger.QueryBuilder.Selection.query()
+           elem_selection = Dagger.Core.QueryBuilder.Selection.query()
            elem_selection = select(elem_selection, unquote(loader))
            elem_selection = arg(elem_selection, "id", value["id"])
 
