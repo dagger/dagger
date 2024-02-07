@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,6 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/tui"
 	"github.com/mattn/go-isatty"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 )
 
 var silent bool
@@ -72,9 +74,38 @@ func withEngineAndTUI(
 		return interactiveTUI(ctx, params, fn)
 	}
 	if useLegacyTUI {
-		return legacyTUI(ctx, params, fn)
+		if progress == "auto" && autoTTY || progress == "tty" {
+			return legacyTUI(ctx, params, fn)
+		} else {
+			return plainConsole(ctx, params, fn)
+		}
 	}
 	return runWithFrontend(ctx, params, fn)
+}
+
+// TODO remove when legacy TUI is no longer supported; this has been
+// assimilated into idtui.Frontend
+func plainConsole(ctx context.Context, params client.Params, fn runClientCallback) error {
+	opts := []console.WriterOpt{
+		console.ShowInternal(debug),
+	}
+	if debug {
+		opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+	}
+	progW := console.NewWriter(os.Stderr, opts...)
+	params.ProgrockWriter = progW
+	params.EngineNameCallback = func(name string) {
+		fmt.Fprintln(os.Stderr, "Connected to engine", name)
+	}
+	params.CloudURLCallback = func(cloudURL string) {
+		fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
+	}
+	engineClient, ctx, err := client.Connect(ctx, params)
+	if err != nil {
+		return err
+	}
+	defer engineClient.Close()
+	return fn(ctx, engineClient)
 }
 
 func runWithFrontend(
