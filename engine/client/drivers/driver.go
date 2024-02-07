@@ -9,13 +9,19 @@ import (
 	"github.com/vito/progrock"
 )
 
-// Driver allows dialing to a dagger backend.
-//
-// It's slightly similar to the docker connhelpers, however, the function
-// signatures are slightly different.
 type Driver interface {
-	// Connect creates a buildkit client to a dagger instance from the given URL
-	Connect(ctx context.Context, rec *progrock.VertexRecorder, url *url.URL, opts *DriverOpts) (net.Conn, error)
+	// Provision creates any underlying resources for a driver, and returns a
+	// Connector that can connect to it.
+	Provision(ctx context.Context, rec *progrock.VertexRecorder, url *url.URL, opts *DriverOpts) (Connector, error)
+}
+
+type Connector interface {
+	// Connect creates a connection to a dagger instance.
+	//
+	// Connect can be called multiple times during attempts to establish a
+	// connection - but a connector can choose to block this call until
+	// previously returned connections have been closed.
+	Connect(ctx context.Context) (net.Conn, error)
 }
 
 type DriverOpts struct {

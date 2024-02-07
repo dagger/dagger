@@ -30,23 +30,25 @@ type dialDriver struct {
 	fn func(*url.URL) (*connh.ConnectionHelper, error)
 }
 
-func (d *dialDriver) Connect(ctx context.Context, rec *progrock.VertexRecorder, target *url.URL, _ *DriverOpts) (c net.Conn, rerr error) {
-	startTask := rec.Task("starting engine")
-	defer startTask.Done(rerr)
-
-	return d.dial(ctx, target)
+func (d *dialDriver) Provision(ctx context.Context, _ *progrock.VertexRecorder, target *url.URL, _ *DriverOpts) (Connector, error) {
+	return dialConnector{dialDriver: d, target: target}, nil
 }
 
-func (d *dialDriver) dial(ctx context.Context, target *url.URL) (net.Conn, error) {
+type dialConnector struct {
+	*dialDriver
+	target *url.URL
+}
+
+func (d dialConnector) Connect(ctx context.Context) (_ net.Conn, rerr error) {
 	if d.fn == nil {
-		return defaultDialer(ctx, target.String())
+		return defaultDialer(ctx, d.target.String())
 	}
 
-	helper, err := d.fn(target)
+	helper, err := d.fn(d.target)
 	if err != nil {
 		return nil, err
 	}
-	return helper.ContextDialer(ctx, target.String())
+	return helper.ContextDialer(ctx, d.target.String())
 }
 
 func defaultDialer(ctx context.Context, address string) (net.Conn, error) {

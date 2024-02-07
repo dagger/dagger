@@ -28,14 +28,21 @@ func init() {
 // dockerDriver creates and manages a container, then connects to it
 type dockerDriver struct{}
 
-func (d *dockerDriver) Connect(ctx context.Context, rec *progrock.VertexRecorder, target *url.URL, opts *DriverOpts) (net.Conn, error) {
-	imageRef := target.Host + target.Path
-
-	helper, err := d.create(ctx, rec, imageRef, opts)
+func (d *dockerDriver) Provision(ctx context.Context, rec *progrock.VertexRecorder, target *url.URL, opts *DriverOpts) (Connector, error) {
+	helper, err := d.create(ctx, rec, target.Host+target.Path, opts)
 	if err != nil {
 		return nil, err
 	}
-	return helper.ContextDialer(ctx, target.String())
+	return dockerConnector{helper: helper, target: target}, nil
+}
+
+type dockerConnector struct {
+	helper *connh.ConnectionHelper
+	target *url.URL
+}
+
+func (d dockerConnector) Connect(ctx context.Context) (net.Conn, error) {
+	return d.helper.ContextDialer(ctx, d.target.String())
 }
 
 const (
