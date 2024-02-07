@@ -439,13 +439,13 @@ export type CurrentModuleID = string & { __CurrentModuleID: never }
 
 export type DirectoryAsModuleOpts = {
   /**
-   * An optional subpath of the directory which contains the module's source code.
+   * An optional subpath of the directory which contains the module's configuration file.
    *
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
    * If not set, the module source code is loaded from the root of the directory.
    */
-  sourceSubpath?: string
+  sourceRootPath?: string
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -2714,7 +2714,7 @@ export class Directory extends BaseClient {
 
   /**
    * Load the directory as a Dagger module
-   * @param opts.sourceSubpath An optional subpath of the directory which contains the module's source code.
+   * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
    *
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *

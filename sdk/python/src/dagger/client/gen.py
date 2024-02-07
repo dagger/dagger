@@ -1969,15 +1969,15 @@ class Directory(Type):
     def as_module(
         self,
         *,
-        source_subpath: str | None = ".",
+        source_root_path: str | None = ".",
     ) -> "Module":
         """Load the directory as a Dagger module
 
         Parameters
         ----------
-        source_subpath:
+        source_root_path:
             An optional subpath of the directory which contains the module's
-            source code.
+            configuration file.
             This is needed when the module code is in a subdirectory but
             requires parent directories to be loaded in order to execute. For
             example, the module source code may need a go.mod, project.toml,
@@ -1986,7 +1986,7 @@ class Directory(Type):
             directory.
         """
         _args = [
-            Arg("sourceSubpath", source_subpath, "."),
+            Arg("sourceRootPath", source_root_path, "."),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)

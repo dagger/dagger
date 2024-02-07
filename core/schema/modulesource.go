@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -735,6 +734,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			return inst, fmt.Errorf("local module source path %q escapes context %q", sourceRelSubpath, contextAbsPath)
 		}
 		includeSet[sourceRelSubpath+"/**/*"] = struct{}{}
+	}
 
 	for _, sdk := range sdkSet {
 		// NOTE: required paths are currently **-style globs that apply to the whole context subtree
@@ -865,7 +865,7 @@ type callerLocalDep struct {
 	sourceRootAbsPath string
 	modCfg            *modules.ModuleConfig
 	sdk               core.SDK
-	// sdkKey is a unique identifer for the SDK, slightly different
+	// sdkKey is a unique identifier for the SDK, slightly different
 	// from the module ref for the SDK because custom local SDKs
 	// use their local path for sdkKey, which allows us to de-dupe
 	// loading them across the dag of local deps.

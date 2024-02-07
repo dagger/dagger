@@ -143,16 +143,17 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 
 
 ```
-dagger develop [--name string --sdk string] [flags]
+dagger develop [--name string --sdk string] [--source string] [flags]
 ```
 
 ### Options
 
 ```
-      --focus         Only show output for focused commands (default true)
-  -m, --mod string    Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --name string   New name for the module
-      --sdk string    New SDK for the module
+      --focus           Only show output for focused commands (default true)
+  -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --name string     New name for the module
+      --sdk string      New SDK for the module
+      --source string   Directory to store the module implementation source code in
 ```
 
 ### Options inherited from parent commands

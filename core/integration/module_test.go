@@ -4478,9 +4478,6 @@ func modInit(ctx context.Context, t *testing.T, c *dagger.Client, sdk, contents 
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=test", "--sdk="+sdk)).
 		With(sdkSource(sdk, contents))
-	if sdk == "go" {
-		logGen(ctx, t, modGen.Directory("."))
-	}
 	return modGen
 }
 

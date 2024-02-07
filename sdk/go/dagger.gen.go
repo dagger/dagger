@@ -1855,21 +1855,21 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 // DirectoryAsModuleOpts contains options for Directory.AsModule
 type DirectoryAsModuleOpts struct {
-	// An optional subpath of the directory which contains the module's source code.
+	// An optional subpath of the directory which contains the module's configuration file.
 	//
 	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
 	//
 	// If not set, the module source code is loaded from the root of the directory.
-	SourceSubpath string
+	SourceRootPath string
 }
 
 // Load the directory as a Dagger module
 func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 	q := r.q.Select("asModule")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceSubpath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceSubpath) {
-			q = q.Arg("sourceSubpath", opts[i].SourceSubpath)
+		// `sourceRootPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
+			q = q.Arg("sourceRootPath", opts[i].SourceRootPath)
 		}
 	}
 

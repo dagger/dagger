@@ -2461,11 +2461,11 @@ pub struct Directory {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
-    /// An optional subpath of the directory which contains the module's source code.
+    /// An optional subpath of the directory which contains the module's configuration file.
     /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
     /// If not set, the module source code is loaded from the root of the directory.
     #[builder(setter(into, strip_option), default)]
-    pub source_subpath: Option<&'a str>,
+    pub source_root_path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryDockerBuildOpts<'a> {
@@ -2549,8 +2549,8 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module_opts<'a>(&self, opts: DirectoryAsModuleOpts<'a>) -> Module {
         let mut query = self.selection.select("asModule");
-        if let Some(source_subpath) = opts.source_subpath {
-            query = query.arg("sourceSubpath", source_subpath);
+        if let Some(source_root_path) = opts.source_root_path {
+            query = query.arg("sourceRootPath", source_root_path);
         }
         return Module {
             proc: self.proc.clone(),

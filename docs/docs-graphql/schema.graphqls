@@ -880,7 +880,7 @@ type Directory {
   """Load the directory as a Dagger module"""
   asModule(
     """
-    An optional subpath of the directory which contains the module's source code.
+    An optional subpath of the directory which contains the module's configuration file.
     
     This is needed when the module code is in a subdirectory but requires parent
     directories to be loaded in order to execute. For example, the module source
@@ -888,7 +888,7 @@ type Directory {
     
     If not set, the module source code is loaded from the root of the directory.
     """
-    sourceSubpath: String = "."
+    sourceRootPath: String = "."
   ): Module!
 
   """Gets the difference between this directory and an another directory."""
