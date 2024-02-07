@@ -100,7 +100,7 @@ describe("TypeScript SDK api", function () {
         .withExec(["echo", "foo bar"])
         .stdout()
 
-      assert.strictEqual(image, `foo  bar`)
+      assert.strictEqual(image, `foo bar\n`)
     })
   })
 
@@ -116,7 +116,7 @@ describe("TypeScript SDK api", function () {
         .withExec(["echo", "foo bar"])
         .stdout()
 
-      assert.strictEqual(image, `foo  bar`)
+      assert.strictEqual(image, `foo bar\n`)
     })
   })
 
