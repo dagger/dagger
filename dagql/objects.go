@@ -868,3 +868,14 @@ func assign(field reflect.Value, val any) error {
 		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
 	}
 }
+
+func appendAssign(slice reflect.Value, val any) error {
+	if reflect.TypeOf(val).AssignableTo(slice.Type().Elem()) {
+		slice.Set(reflect.Append(slice, reflect.ValueOf(val)))
+		return nil
+	} else if setter, ok := val.(Setter); ok {
+		return setter.SetField(slice)
+	} else {
+		return fmt.Errorf("cannot assign %T to %s", val, slice.Type())
+	}
+}
