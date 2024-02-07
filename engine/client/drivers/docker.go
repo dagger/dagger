@@ -1,9 +1,10 @@
-package client
+package drivers
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -13,18 +14,31 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/pkg/errors"
 	"github.com/vito/progrock"
+
+	connh "github.com/moby/buildkit/client/connhelper"
+	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
 )
 
+func init() {
+	register("docker-image", &dockerDriver{})
+}
+
+// dockerDriver creates and manages a container, then connects to it
+type dockerDriver struct{}
+
+func (d *dockerDriver) Connect(ctx context.Context, rec *progrock.VertexRecorder, target *url.URL, opts *DriverOpts) (net.Conn, error) {
+	imageRef := target.Host + target.Path
+
+	helper, err := d.create(ctx, rec, imageRef, opts)
+	if err != nil {
+		return nil, err
+	}
+	return helper.ContextDialer(ctx, target.String())
+}
+
 const (
-	DockerImageProvider = "docker-image"
-
-	DaggerCloudCacheToken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
-	DaggerCloudToken      = "DAGGER_CLOUD_TOKEN"
-	GPUSupportEnvName     = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
-
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
 	containerNamePrefix = "dagger-engine-"
@@ -35,9 +49,7 @@ const (
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, runnerHost *url.URL, userAgent string) (bkcl *bkclient.Client, rerr error) {
-	imageRef := runnerHost.Host + runnerHost.Path
-
+func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
 	fallbackToLeftoverEngine := false
@@ -45,14 +57,14 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing image reference")
 	}
-	if d, ok := ref.(name.Digest); ok {
+	if digest, ok := ref.(name.Digest); ok {
 		// We already have the digest as part of the image ref
-		id = d.DigestStr()
+		id = digest.DigestStr()
 	} else {
 		// We only have a tag in the image ref, so resolve it to a digest. The default
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
-		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(userAgent)); err != nil {
+		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent)); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to resolve image digest: %v\n", err)
 			if strings.Contains(err.Error(), "DENIED") {
 				fmt.Fprintf(os.Stderr, "check your docker ghcr creds, it might be incorrect or expired\n")
@@ -88,7 +100,7 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 
 		garbageCollectEngines(ctx, leftoverEngines[1:])
 
-		return buildkitConnectDefault(ctx, rec, &url.URL{
+		return connhDocker.Helper(&url.URL{
 			Scheme: "docker-container",
 			Host:   firstEngine,
 		})
@@ -99,13 +111,6 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 		return nil, errors.Errorf("invalid image reference %q", imageRef)
 	}
 	id = id[:hashLen]
-
-	// add DAGGER_CLOUD_TOKEN in backwards compat way.
-	// TODO: deprecate in a future release
-	cloudToken := DaggerCloudCacheToken
-	if _, ok := os.LookupEnv(DaggerCloudToken); ok {
-		cloudToken = DaggerCloudToken
-	}
 
 	// run the container using that id in the name
 	containerName := containerNamePrefix + id
@@ -121,14 +126,12 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
 			garbageCollectEngines(ctx, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
-			return buildkitConnectDefault(ctx, rec, &url.URL{
+			return connhDocker.Helper(&url.URL{
 				Scheme: "docker-container",
 				Host:   containerName,
 			})
 		}
 	}
-
-	gpuIsEnabled := os.Getenv(GPUSupportEnvName) != ""
 
 	// ensure the image is pulled
 	if err := exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef).Run(); err != nil {
@@ -140,24 +143,29 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 		pullTask.Done(nil)
 	}
 
-	runArgs := []string{
+	cmd := exec.CommandContext(ctx,
+		"docker",
 		"run",
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
-		"-e", cloudToken,
-		"-e", GPUSupportEnvName,
 		"-v", distconsts.EngineDefaultStateDir,
 		"--privileged",
+	)
+	if opts.DaggerCloudToken != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, opts.DaggerCloudToken))
+		cmd.Args = append(cmd.Args, "-e", EnvDaggerCloudToken)
 	}
-	if gpuIsEnabled {
-		runArgs = append(runArgs, "--gpus", "all")
+	if opts.GPUSupport != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvGPUSupport, opts.GPUSupport))
+		cmd.Args = append(cmd.Args, "-e", EnvGPUSupport, "--gpus", "all")
 	}
-	runArgs = append(runArgs, imageRef, "--debug")
+
+	cmd.Args = append(cmd.Args, imageRef, "--debug")
 
 	startTask := rec.Task("starting engine")
 	defer startTask.Done(rerr)
-	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
 		if !isContainerAlreadyInUseOutput(string(output)) {
 			return nil, errors.Wrapf(err, "failed to run container: %s", output)
 		}
@@ -168,7 +176,7 @@ func buildkitConnectDocker(ctx context.Context, rec *progrock.VertexRecorder, ru
 	// version
 	garbageCollectEngines(ctx, leftoverEngines)
 
-	return buildkitConnectDefault(ctx, rec, &url.URL{
+	return connhDocker.Helper(&url.URL{
 		Scheme: "docker-container",
 		Host:   containerName,
 	})
