@@ -6,7 +6,7 @@ import (
 )
 
 func CollectSteps(db *DB) []*Step {
-	var steps []*Step // nolint:prealloc
+	var steps []*Step //nolint:prealloc
 	for vID := range db.Vertices {
 		step, ok := db.Step(vID)
 		if !ok {

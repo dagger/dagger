@@ -30,7 +30,7 @@ func (step *Step) HasStarted() bool {
 
 func (step *Step) FirstVertex() bool {
 	ivals := step.db.Intervals[step.Digest]
-	if ivals == nil || len(ivals) == 0 {
+	if len(ivals) == 0 {
 		return false
 	}
 	for _, vtx := range ivals {
@@ -43,7 +43,7 @@ func (step *Step) FirstVertex() bool {
 
 func (step *Step) IsRunning() bool {
 	ivals := step.db.Intervals[step.Digest]
-	if ivals == nil || len(ivals) == 0 {
+	if len(ivals) == 0 {
 		return false
 	}
 	for _, vtx := range ivals {
@@ -119,12 +119,12 @@ func (step *Step) FirstCompleted() *time.Time {
 	return completed
 }
 
-func (s *Step) StartTime() time.Time {
-	ivals := s.db.Intervals[s.Digest]
-	if ivals == nil || len(ivals) == 0 {
+func (step *Step) StartTime() time.Time {
+	ivals := step.db.Intervals[step.Digest]
+	if len(ivals) == 0 {
 		return time.Time{}
 	}
-	var lowest time.Time = time.Now()
+	lowest := time.Now()
 	for started := range ivals {
 		if started.Before(lowest) {
 			lowest = started
@@ -133,13 +133,13 @@ func (s *Step) StartTime() time.Time {
 	return lowest
 }
 
-func (s *Step) EndTime() time.Time {
+func (step *Step) EndTime() time.Time {
 	now := time.Now()
-	ivals := s.db.Intervals[s.Digest]
-	if ivals == nil || len(ivals) == 0 {
+	ivals := step.db.Intervals[step.Digest]
+	if len(ivals) == 0 {
 		return now
 	}
-	var highest time.Time = time.Time{}
+	var highest time.Time
 	for _, vtx := range ivals {
 		if vtx.Completed == nil {
 			highest = now
@@ -150,28 +150,28 @@ func (s *Step) EndTime() time.Time {
 	return highest
 }
 
-func (s *Step) IsBefore(other *Step) bool {
-	as, bs := s.StartTime(), other.StartTime()
+func (step *Step) IsBefore(other *Step) bool {
+	as, bs := step.StartTime(), other.StartTime()
 	switch {
 	case as.Before(bs):
 		return true
 	case bs.Before(as):
 		return false
-	case s.EndTime().Before(other.EndTime()):
+	case step.EndTime().Before(other.EndTime()):
 		return true
-	case other.EndTime().Before(s.EndTime()):
+	case other.EndTime().Before(step.EndTime()):
 		return false
 	default:
 		// equal start + end time; maybe a cache hit. break ties by seeing if one
 		// depends on the other.
-		return s.db.IsTransitiveDependency(other.Digest, s.Digest)
+		return step.db.IsTransitiveDependency(other.Digest, step.Digest)
 	}
 }
 
-func (s *Step) Children() []*Step {
+func (step *Step) Children() []*Step {
 	children := []*Step{}
-	for out := range s.db.Children[s.Digest] {
-		child, ok := s.db.Step(out)
+	for out := range step.db.Children[step.Digest] {
+		child, ok := step.db.Step(out)
 		if !ok {
 			continue
 		}
@@ -195,7 +195,7 @@ func (step *Step) Spans() (spans []Span) {
 	end := step.db.End
 
 	ivals := step.db.Intervals[step.Digest]
-	if ivals == nil {
+	if len(ivals) == 0 {
 		return
 	}
 

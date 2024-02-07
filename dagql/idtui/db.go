@@ -45,8 +45,7 @@ var _ progrock.Writer = (*DB)(nil)
 func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 	// collect IDs
 	for _, meta := range status.Metas {
-		switch meta.Name {
-		case "id":
+		if meta.Name == "id" {
 			var id idproto.ID
 			if err := meta.Data.UnmarshalTo(&id); err != nil {
 				return fmt.Errorf("unmarshal payload: %w", err)
