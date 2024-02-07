@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"sync/atomic"
 	"time"
 
 	"github.com/dagger/dagger/engine"
@@ -22,7 +21,7 @@ const (
 	envDaggerCloudCachetoken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 )
 
-func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote *url.URL, userAgent string) (*bkclient.Client, *bkclient.Info, error) {
+func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote *url.URL, userAgent string) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
 	driver, err := drivers.GetDriver(remote.Scheme)
 	if err != nil {
 		return nil, nil, err
@@ -35,7 +34,7 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 		cloudToken = v
 	}
 
-	conn, err := driver.Connect(ctx, rec, remote, &drivers.DriverOpts{
+	connector, err := driver.Provision(ctx, rec, remote, &drivers.DriverOpts{
 		UserAgent:        userAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
@@ -47,12 +46,8 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 	opts := []bkclient.ClientOpt{
 		bkclient.WithTracerProvider(otel.GetTracerProvider()),
 	}
-	var counter int64
 	opts = append(opts, bkclient.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-		if atomic.AddInt64(&counter, 1) > 1 {
-			return nil, net.ErrClosed
-		}
-		return conn, nil
+		return connector.Connect(ctx)
 	}))
 
 	exp, _, err := detect.Exporter()
@@ -63,6 +58,9 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 	} else {
 		fmt.Fprintln(rec.Stdout(), "failed to detect opentelemetry exporter: ", err)
 	}
+
+	startTask := rec.Task("starting engine")
+	defer startTask.Done(rerr)
 
 	c, err := bkclient.New(ctx, remote.String(), opts...)
 	if err != nil {
