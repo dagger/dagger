@@ -4149,6 +4149,16 @@ func (r *Module) GeneratedContextDiff() *Directory {
 	}
 }
 
+// The module source's context plus any configuration and source files created by codegen.
+func (r *Module) GeneratedContextDirectory() *Directory {
+	q := r.q.Select("generatedContextDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A unique identifier for this Module.
 func (r *Module) ID(ctx context.Context) (ModuleID, error) {
 	if r.id != nil {

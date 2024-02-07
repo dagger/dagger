@@ -49,6 +49,8 @@ var (
 
 const (
 	moduleURLDefault = "."
+
+	defaultModuleSourceDirName = "dagger"
 )
 
 func init() {
@@ -61,7 +63,7 @@ func init() {
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", ".", "Directory to store the module implementation source code in")
+	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
@@ -206,6 +208,10 @@ var moduleInitCmd = &cobra.Command{
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
+			cwd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current working directory: %w", err)
+			}
 			srcRootPath := cwd
 			if len(extraArgs) > 0 {
 				srcRootPath = extraArgs[0]
@@ -226,6 +232,11 @@ var moduleInitCmd = &cobra.Command{
 			// default module name to directory of source root
 			if moduleName == "" {
 				moduleName = filepath.Base(modConf.LocalSourcePath)
+			}
+
+			// default source dir
+			if moduleSourcePath == "" && sdk != "" {
+				moduleSourcePath = filepath.Join(defaultModuleSourceDirName, sdk)
 			}
 
 			_, err = modConf.Source.
@@ -299,9 +310,11 @@ var moduleInstallCmd = &cobra.Command{
 				Name: installName,
 			})
 
-			_, err = modConf.Source.
+			modSrc := modConf.Source.
 				WithDependencies([]*dagger.ModuleDependency{dep}).
-				ResolveFromCaller().
+				ResolveFromCaller()
+
+			_, err = modSrc.
 				AsModule().
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
@@ -309,7 +322,7 @@ var moduleInstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			depSrc = modConf.Source.ResolveDependency(depSrc)
+			depSrc = modSrc.ResolveDependency(depSrc)
 
 			name, err := depSrc.ModuleName(ctx)
 			if err != nil {

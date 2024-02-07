@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -456,29 +457,6 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 		return inst, fmt.Errorf("failed to decode module source: %w", err)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	/*
-		srcName, err := src.ModuleName(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get module name: %w", err)
-		}
-		depName, err := depSrc.Self.ModuleName(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get module name: %w", err)
-		}
-		slog.Debug("MODULESOURCERESOLVEDEPENDENCY",
-			"srcName", srcName,
-			"srcRootSubpath", src.RootSubpath,
-			"depName", depName,
-			"depRootSubpath", depSrc.Self.RootSubpath,
-		)
-	*/
-
 	if depSrc.Self.Kind == core.ModuleSourceKindGit {
 		// git deps stand on their own, no special handling needed
 		return depSrc, nil
@@ -497,9 +475,36 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 		return inst, fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	srcName, err := src.ModuleName(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module name: %w", err)
+	}
+	depName, err := depSrc.Self.ModuleName(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module name: %w", err)
+	}
+	slog.Debug("MODULESOURCERESOLVEDEPENDENCY",
+		"srcName", srcName,
+		"srcRootSubpath", srcRootSubpath,
+		"depName", depName,
+		"depRootSubpath", depRootSubpath,
+	)
+
 	// This dep is a local path relative to a src, need to find the src's root
 	// and return a source that points to the full path to this dep
 	if contextDir.Self == nil {
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		debug.PrintStack()
+
 		return inst, fmt.Errorf("cannot resolve dependency for module source with no context directory")
 	}
 
@@ -548,9 +553,6 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 				Args: []dagql.NamedInput{
 					{Name: "refString", Value: dagql.String(depSubpath)},
 				},
-			},
-			dagql.Selector{
-				Field: "asLocalSource",
 			},
 			dagql.Selector{
 				Field: "withContextDirectory",

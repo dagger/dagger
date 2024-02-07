@@ -277,31 +277,24 @@ func TestModuleConfigs(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=go"))
 
-		t.Run("no root for", func(t *testing.T) {
+		t.Run("source points out of root", func(t *testing.T) {
 			t.Parallel()
 
 			base := base.
-				With(configFile("/work/dep", &modules.ModuleConfig{
-					Name: "dep",
-					SDK:  "go",
+				With(configFile(".", &modules.ModuleConfig{
+					Name:   "evil",
+					SDK:    "go",
+					Source: "..",
 				}))
 
-			out, err := base.With(daggerCallAt("dep", "get-source", "entries")).Stdout(ctx)
-			require.NoError(t, err)
-			// shouldn't default the root dir to /work just because we called it from there,
-			// it should default to just using dep's source dir in this case
-			ents := strings.Fields(strings.TrimSpace(out))
-			require.Equal(t, []string{
-				".gitattributes",
-				"LICENSE",
-				"dagger.gen.go",
-				"dagger.json",
-				"go.mod",
-				"go.sum",
-				"main.go",
-				"querybuilder",
-				// no "dep" dir
-			}, ents)
+			_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
+			require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
+
+			_, err = base.With(daggerExec("mod", "sync")).Sync(ctx)
+			require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
+
+			_, err = base.With(daggerExec("mod", "install", "./dep")).Sync(ctx)
+			require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
 		})
 
 		t.Run("dep points out of root", func(t *testing.T) {
@@ -551,6 +544,47 @@ func TestModuleDaggerInit(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "coolmod", strings.TrimSpace(out))
 	})
+
+	t.Run("source dir default", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work")
+
+		for _, tc := range []struct {
+			sdk          string
+			sourceDirEnt string
+		}{
+			{
+				sdk:          "go",
+				sourceDirEnt: "main.go",
+			},
+			{
+				sdk:          "python",
+				sourceDirEnt: "src",
+			},
+			{
+				sdk:          "typescript",
+				sourceDirEnt: "src",
+			},
+		} {
+			tc := tc
+			t.Run(tc.sdk, func(t *testing.T) {
+				t.Parallel()
+				srcRootDir := ctr.
+					With(daggerExec("mod", "init", "--name=test", "--sdk="+tc.sdk)).
+					Directory(".")
+				srcRootEnts, err := srcRootDir.Entries(ctx)
+				require.NoError(t, err)
+				require.Contains(t, srcRootEnts, "dagger.json")
+				require.NotContains(t, srcRootEnts, tc.sourceDirEnt)
+				srcDirEnts, err := srcRootDir.Directory("dagger/" + tc.sdk).Entries(ctx)
+				require.NoError(t, err)
+				require.Contains(t, srcDirEnts, tc.sourceDirEnt)
+			})
+		}
+	})
 }
 
 func TestModuleDaggerDevelop(t *testing.T) {
@@ -699,7 +733,7 @@ func (m *Coolsdk) ModuleRuntime(modSource *ModuleSource, introspectionJson strin
 }
 
 func (m *Coolsdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
-	return dag.GeneratedCode(modSource.WithSDK("go").ContextDirectory())
+	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 
 func (m *Coolsdk) RequiredPaths() []string {
@@ -788,4 +822,72 @@ func (m *Coolsdk) RequiredPaths() []string {
 			require.Equal(t, "", strings.TrimSpace(out))
 		})
 	}
+}
+
+// verify that if there is no local .git in parent dirs then the context defaults to the source root
+func TestModuleContextDefaultsToSourceRoot(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/coolsdk").
+		With(daggerExec("mod", "init", "--name=cool-sdk", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type CoolSdk struct {}
+
+func (m *CoolSdk) ModuleRuntime(modSource *ModuleSource, introspectionJson string) *Container {
+	return modSource.WithSDK("go").AsModule().Runtime().
+		WithMountedDirectory("/da-context", modSource.ContextDirectory())
+}
+
+func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
+	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
+}
+
+func (m *CoolSdk) RequiredPaths() []string {
+	return []string{
+		"**/go.mod",
+		"**/go.sum",
+		"**/go.work",
+		"**/go.work.sum",
+		"**/vendor/",
+		"**/*.go",
+	}
+}
+`,
+		}).
+		WithWorkdir("/work").
+		WithNewFile("random-file").
+		With(daggerExec("mod", "init", "--name=test", "--sdk=coolsdk")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "os"
+
+type Test struct {}
+
+func (m *Test) Fn() ([]string, error) {
+	ents, err := os.ReadDir("/da-context")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, ent := range ents {
+		names = append(names, ent.Name())
+	}
+	return names, nil
+}
+`,
+		})
+
+	out, err := ctr.
+		With(daggerCall("fn")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "random-file")
 }

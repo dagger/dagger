@@ -89,7 +89,7 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir.WithoutDirectory("runtime")).
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory("./template")).
 		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc}).
-		WithMountedDirectory(ModSourceDirPath, modSource.BaseContextDirectory()).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,

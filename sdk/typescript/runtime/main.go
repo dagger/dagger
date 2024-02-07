@@ -100,7 +100,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Add template directory
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
 		// Mount users' module
-		WithMountedDirectory(ModSourceDirPath, modSource.BaseContextDirectory()).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,

@@ -490,11 +490,16 @@ func (s *moduleSchema) currentModuleSource(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], err error) {
-	err = s.dag.Select(ctx, curMod.Module.Source, &inst,
+	srcSubpath, err := curMod.Module.Source.Self.SourceSubpath(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module source subpath: %w", err)
+	}
+
+	err = s.dag.Select(ctx, curMod.Module.GeneratedContextDirectory, &inst,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(".")},
+				{Name: "path", Value: dagql.String(srcSubpath)},
 			},
 		},
 	)
@@ -876,23 +881,54 @@ func (s *moduleSchema) updateDaggerConfig(
 	modCfg.Name = mod.OriginalName
 	modCfg.SDK = mod.SDKConfig
 
+	sourceRootSubpath, err := src.Self.SourceRootSubpath()
+	if err != nil {
+		return fmt.Errorf("failed to get source root subpath: %w", err)
+	}
 	sourceSubpath, err := src.Self.SourceSubpath(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get source subpath: %w", err)
 	}
-	if sourceSubpath != "." {
-		modCfg.Source = sourceSubpath
+	sourceRelSubpath, err := filepath.Rel(sourceRootSubpath, sourceSubpath)
+	if err != nil {
+		return fmt.Errorf("failed to get relative source subpath: %w", err)
+	}
+	if sourceRelSubpath != "." {
+		modCfg.Source = sourceRelSubpath
 	}
 
 	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(mod.DependencyConfig))
 	for i, dep := range mod.DependencyConfig {
-		refStr, err := dep.Source.Self.RefString()
-		if err != nil {
-			return fmt.Errorf("failed to get dependency ref string: %w", err)
+		var srcStr string
+		switch dep.Source.Self.Kind {
+		case core.ModuleSourceKindLocal:
+			// make it relative to this module's source root
+			depRootSubpath, err := dep.Source.Self.SourceRootSubpath()
+			if err != nil {
+				return fmt.Errorf("failed to get source root subpath: %w", err)
+			}
+			depRelPath, err := filepath.Rel(sourceRootSubpath, depRootSubpath)
+			if err != nil {
+				return fmt.Errorf("failed to get relative path to dep: %w", err)
+			}
+			srcStr = depRelPath
+
+		case core.ModuleSourceKindGit:
+			srcStr = dep.Source.Self.AsGitSource.Value.RefString()
+
+		default:
+			return fmt.Errorf("unsupported dependency source kind: %s", dep.Source.Self.Kind)
 		}
+
+		depName := dep.Name
+		if dep.Name == "" {
+			// fill in default dep names if missing with the name of the module
+			depName = mod.DependenciesField[i].Self.Name()
+		}
+
 		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{
-			Name:   dep.Name,
-			Source: refStr,
+			Name:   depName,
+			Source: srcStr,
 		}
 	}
 
