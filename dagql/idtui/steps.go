@@ -274,16 +274,3 @@ func fmtDuration(d time.Duration) string {
 		return fmt.Sprintf("%dd%dh%dm%.1fs", days, hours, minutes, seconds)
 	}
 }
-
-var fadeout = []string{"●", "◕", "◑", "◔", "○"}
-
-func fadeFrame(left time.Duration) string {
-	if left < 0 {
-		return " "
-	}
-	fade := int(left / (GCThreshold / 5))
-	if fade > 4 {
-		fade = 4
-	}
-	return fadeout[fade]
-}

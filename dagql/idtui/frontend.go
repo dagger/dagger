@@ -711,7 +711,7 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 			symbol = ui.IconSkipped
 			color = termenv.ANSIBrightBlack
 		default:
-			symbol = fadeFrame(time.Since(vtx.Completed.AsTime())) // ui.IconSuccess
+			symbol = ui.IconSuccess
 			color = termenv.ANSIGreen
 		}
 	} else {
@@ -726,12 +726,12 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 
 func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
 	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(vtx.Duration())).Faint()
-	// if vtx.Completed != nil {
-	// 	duration = duration.Faint()
-	// } else {
-	// 	duration = duration.Foreground(termenv.ANSIYellow)
-	// }
+	duration := out.String(fmtDuration(vtx.Duration()))
+	if vtx.Completed != nil {
+		duration = duration.Faint()
+	} else {
+		duration = duration.Foreground(termenv.ANSIYellow)
+	}
 	fmt.Fprint(out, duration)
 }
 
