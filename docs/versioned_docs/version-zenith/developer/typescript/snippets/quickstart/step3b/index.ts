@@ -1,11 +1,11 @@
 import {  object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class PotatoMessage {
-	@field
+	@field()
 	message: string
 
-	@field
+	@field()
 	from: string
 
 	constructor(message: string, from: string) {
@@ -14,7 +14,7 @@ class PotatoMessage {
 	}
 }
 
-@object
+@object()
 class Potato {
 	@func
 	helloWorld(message: string): PotatoMessage {

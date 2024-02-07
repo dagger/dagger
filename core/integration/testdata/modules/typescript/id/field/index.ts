@@ -1,16 +1,16 @@
 import { object, func, field } from "@dagger.io/dagger"
 
-@object
+@object()
 class Test {
-  @func
+  @func()
   fn(): CustomObject {
     return new CustomObject("NOOOO!!!!")
   }
 }
 
-@object
+@object()
 class CustomObject {
-  @field
+  @field()
   ID: string
 
   constructor(id: string) {

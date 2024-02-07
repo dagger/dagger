@@ -1,14 +1,14 @@
 import { Directory, object, func, field} from "@dagger.io/dagger"
 
-@object
+@object()
 class Minimal {
-    @field
+    @field()
     src?: Directory
 
-    @field
+    @field()
     name?: string
 
-    @func
+    @func()
     isEmpty(): boolean {
         if (this.src !== undefined) {
             throw new Error(`src should be undefined but is ${this.src}`)
@@ -21,7 +21,7 @@ class Minimal {
         return true
     }
 
-    @func
+    @func()
     foo(x?: string): string {
         if (x !== undefined) {
             throw new Error("uh oh")

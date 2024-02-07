@@ -29,6 +29,7 @@ describe("scan static TypeScript", function () {
           methods: {
             helloWorld: {
               name: "helloWorld",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.StringKind,
               },
@@ -84,6 +85,7 @@ describe("scan static TypeScript", function () {
           methods: {
             exec: {
               name: "exec",
+              alias: undefined,
               description: "Execute the command and return its result",
               returnType: { kind: TypeDefKind.StringKind },
               args: {
@@ -112,6 +114,7 @@ describe("scan static TypeScript", function () {
           methods: {
             bar: {
               name: "bar",
+              alias: undefined,
               description: "Return Bar object",
               returnType: {
                 kind: TypeDefKind.ObjectKind,
@@ -145,6 +148,7 @@ describe("scan static TypeScript", function () {
           methods: {
             greeting: {
               name: "greeting",
+              alias: undefined,
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: {
@@ -160,6 +164,7 @@ describe("scan static TypeScript", function () {
             },
             helloWorld: {
               name: "helloWorld",
+              alias: undefined,
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: {
@@ -199,6 +204,7 @@ describe("scan static TypeScript", function () {
           fields: {
             packages: {
               name: "packages",
+              alias: undefined,
               typeDef: {
                 kind: TypeDefKind.ListKind,
                 typeDef: {
@@ -210,6 +216,7 @@ describe("scan static TypeScript", function () {
             },
             ctr: {
               name: "ctr",
+              alias: undefined,
               typeDef: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Container",
@@ -219,12 +226,14 @@ describe("scan static TypeScript", function () {
             },
             version: {
               name: "version",
+              alias: undefined,
               typeDef: { kind: TypeDefKind.StringKind },
               description: "",
               isExposed: false,
             },
             user: {
               name: "user",
+              alias: undefined,
               typeDef: { kind: TypeDefKind.StringKind },
               description: "",
               isExposed: false,
@@ -233,6 +242,7 @@ describe("scan static TypeScript", function () {
           methods: {
             base: {
               name: "base",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Alpine",
@@ -251,6 +261,7 @@ describe("scan static TypeScript", function () {
             },
             install: {
               name: "install",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.ObjectKind,
                 name: "Alpine",
@@ -274,6 +285,7 @@ describe("scan static TypeScript", function () {
             },
             exec: {
               name: "exec",
+              alias: undefined,
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: {
@@ -318,6 +330,7 @@ describe("scan static TypeScript", function () {
           methods: {
             helloWorld: {
               name: "helloWorld",
+              alias: undefined,
               returnType: { kind: TypeDefKind.StringKind },
               description: "",
               args: {
@@ -333,6 +346,7 @@ describe("scan static TypeScript", function () {
             },
             isTrue: {
               name: "isTrue",
+              alias: undefined,
               returnType: { kind: TypeDefKind.BooleanKind },
               description: "",
               args: {
@@ -348,6 +362,7 @@ describe("scan static TypeScript", function () {
             },
             add: {
               name: "add",
+              alias: undefined,
               returnType: { kind: TypeDefKind.IntegerKind },
               description: "",
               args: {
@@ -371,6 +386,7 @@ describe("scan static TypeScript", function () {
             },
             sayBool: {
               name: "sayBool",
+              alias: undefined,
               returnType: { kind: TypeDefKind.BooleanKind },
               description: "",
               args: {
@@ -410,6 +426,7 @@ describe("scan static TypeScript", function () {
           methods: {
             helloWorld: {
               name: "helloWorld",
+              alias: undefined,
               returnType: { kind: TypeDefKind.VoidKind },
               description: "",
               args: {
@@ -425,6 +442,7 @@ describe("scan static TypeScript", function () {
             },
             asyncHelloWorld: {
               name: "asyncHelloWorld",
+              alias: undefined,
               returnType: { kind: TypeDefKind.VoidKind },
               description: "",
               args: {
@@ -464,6 +482,7 @@ describe("scan static TypeScript", function () {
               description: "",
               isExposed: false,
               name: "name",
+              alias: undefined,
               typeDef: {
                 kind: TypeDefKind.StringKind,
               },
@@ -484,6 +503,7 @@ describe("scan static TypeScript", function () {
           methods: {
             sayHello: {
               name: "sayHello",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.StringKind,
               },
@@ -525,6 +545,7 @@ describe("scan static TypeScript", function () {
           methods: {
             fullVariadicStr: {
               name: "fullVariadicStr",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.StringKind,
               },
@@ -545,6 +566,7 @@ describe("scan static TypeScript", function () {
             },
             semiVariadicStr: {
               name: "semiVariadicStr",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.StringKind,
               },
@@ -573,6 +595,7 @@ describe("scan static TypeScript", function () {
             },
             fullVariadicNum: {
               name: "fullVariadicNum",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.IntegerKind,
               },
@@ -593,6 +616,7 @@ describe("scan static TypeScript", function () {
             },
             semiVariadicNum: {
               name: "semiVariadicNum",
+              alias: undefined,
               returnType: {
                 kind: TypeDefKind.IntegerKind,
               },
@@ -618,6 +642,136 @@ describe("scan static TypeScript", function () {
                   isVariadic: true,
                 },
               },
+            },
+          },
+        },
+      },
+      functions: {},
+    }
+
+    assert.deepEqual(result, expected)
+  })
+
+  it("Should correctly scan alias", async function () {
+    const files = await listFiles(`${rootDirectory}/alias`)
+
+    const result = scan(files, "HelloWorld")
+    const expected: ScanResult = {
+      module: {
+        description: undefined,
+      },
+      classes: {
+        HelloWorld: {
+          name: "HelloWorld",
+          description: "",
+          fields: {},
+          constructor: undefined,
+          methods: {
+            testBar: {
+              name: "bar",
+              alias: "testBar",
+              returnType: {
+                kind: TypeDefKind.ObjectKind,
+                name: "Bar",
+              },
+              description: "",
+              args: {},
+            },
+            bar: {
+              name: "customBar",
+              alias: "bar",
+              returnType: {
+                kind: TypeDefKind.ObjectKind,
+                name: "Bar",
+              },
+              description: "",
+              args: {
+                baz: {
+                  name: "baz",
+                  typeDef: { kind: TypeDefKind.StringKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                foo: {
+                  name: "foo",
+                  typeDef: { kind: TypeDefKind.IntegerKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+              },
+            },
+            greet: {
+              name: "helloWorld",
+              alias: "greet",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {
+                name: {
+                  name: "name",
+                  typeDef: { kind: TypeDefKind.StringKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+              },
+            },
+          },
+        },
+        Bar: {
+          name: "Bar",
+          description: "",
+          fields: {
+            bar: {
+              name: "baz",
+              alias: "bar",
+              typeDef: { kind: TypeDefKind.StringKind },
+              description: "",
+              isExposed: true,
+            },
+            oof: {
+              name: "foo",
+              alias: "oof",
+              typeDef: { kind: TypeDefKind.IntegerKind },
+              description: "",
+              isExposed: true,
+            },
+          },
+          constructor: {
+            args: {
+              baz: {
+                name: "baz",
+                typeDef: { kind: TypeDefKind.StringKind },
+                description: "",
+                defaultValue: '"baz"',
+                optional: true,
+                isVariadic: false,
+              },
+              foo: {
+                name: "foo",
+                typeDef: { kind: TypeDefKind.IntegerKind },
+                description: "",
+                defaultValue: "4",
+                optional: true,
+                isVariadic: false,
+              },
+            },
+          },
+          methods: {
+            zoo: {
+              name: "za",
+              alias: "zoo",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {},
             },
           },
         },

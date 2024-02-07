@@ -245,4 +245,30 @@ describe("Invoke typescript function", function () {
       })
     }
   })
+
+  describe("Should correctly handle aliases", async function () {
+    this.timeout(60000)
+
+    // Mocking the fetch from the dagger API
+    it("Should correctly invoke hello world", async function () {
+      const files = await listFiles(`${rootDirectory}/alias`)
+
+      // Load function
+      await load(files)
+
+      const scanResult = scan(files)
+
+      // Mocking the fetch from the dagger API
+      const input = {
+        parentName: "HelloWorld", // HelloWorld
+        fnName: "greet", // helloWorld
+        parentArgs: {},
+        fnArgs: { name: "Dagger" },
+      }
+
+      const result = await invoke(scanResult, input)
+
+      assert.equal("hello Dagger", result)
+    })
+  })
 })

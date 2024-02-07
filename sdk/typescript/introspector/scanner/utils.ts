@@ -4,15 +4,19 @@ import { TypeDefKind } from "../../api/client.gen.js"
 import { TypeDef } from "./typeDefs.js"
 
 /**
- * Return true if the given class declaration has the decorator @obj on
+ * Return true if the given class declaration has the decorator @obj() on
  * top of its declaration.
  * @param object
  */
 export function isObject(object: ts.ClassDeclaration): boolean {
   return (
-    ts
-      .getDecorators(object)
-      ?.find((d) => d.expression.getText() === "object") !== undefined
+    ts.getDecorators(object)?.find((d) => {
+      if (ts.isCallExpression(d.expression)) {
+        return d.expression.expression.getText() === "object"
+      }
+
+      return false
+    }) !== undefined
   )
 }
 
@@ -49,16 +53,66 @@ export function isMainObject(className: string, moduleName: string): boolean {
 }
 
 /**
- * Return true if the given method has the decorator @fct on top
+ * Return true if the given method has the decorator @fct() on top
  * of its declaration.
  *
  * @param method The method to check
  */
 export function isFunction(method: ts.MethodDeclaration): boolean {
   return (
-    ts.getDecorators(method)?.find((d) => d.expression.getText() === "func") !==
-    undefined
+    ts.getDecorators(method)?.find((d) => {
+      if (ts.isCallExpression(d.expression)) {
+        return d.expression.expression.getText() === "func"
+      }
+
+      return false
+    }) !== undefined
   )
+}
+
+/**
+ * Return true if the given property has the decorator @field() on top
+ * of its declaration.
+ *
+ * @param property The property to check
+ */
+export function isField(property: ts.PropertyDeclaration): boolean {
+  return (
+    ts.getDecorators(property)?.find((d) => {
+      if (ts.isCallExpression(d.expression)) {
+        return d.expression.expression.getText() === "field"
+      }
+
+      return false
+    }) !== undefined
+  )
+}
+
+export function getAlias(
+  elem: ts.HasDecorators,
+  kind: "field" | "func"
+): string | undefined {
+  const decorator = ts.getDecorators(elem)?.find((d) => {
+    if (ts.isCallExpression(d.expression)) {
+      return d.expression.expression.getText() === kind
+    }
+
+    return false
+  })
+
+  if (!decorator) {
+    return undefined
+  }
+
+  const expression = decorator.expression as ts.CallExpression
+  const args = expression.arguments
+
+  const alias = args[0]?.getText()
+  if (alias) {
+    return JSON.parse(alias.replace(/'/g, '"'))
+  }
+
+  return undefined
 }
 
 /**
@@ -86,14 +140,7 @@ export function isFunction(method: ts.MethodDeclaration): boolean {
  * @param property The property to check on.
  */
 export function isPublicProperty(property: ts.PropertyDeclaration): boolean {
-  const decorators = ts.getDecorators(property)
-  if (!decorators) {
-    return false
-  }
-
-  if (
-    decorators.find((d) => d.expression.getText() === "field") === undefined
-  ) {
+  if (!isField(property)) {
     return false
   }
 

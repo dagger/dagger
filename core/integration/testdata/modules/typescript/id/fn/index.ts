@@ -1,8 +1,8 @@
 import { object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 class Test {
-  @func
+  @func()
   id(): string {
     return "NOOOO!!!!"
   }

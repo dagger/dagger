@@ -149,6 +149,115 @@ export function loadPropertyType(
 }
 
 /**
+ * Load the true name from the scan result
+ *
+ * @param scanResult Result of the scan
+ * @param parentName Class called
+ * @param alias exposed name
+ * @param kind location of the alias
+ */
+export function loadName(
+  scanResult: ScanResult,
+  parentName: string,
+  alias: string,
+  kind: "field" | "function" | "object"
+): string {
+  const classTypeDef = scanResult.classes[parentName]
+  if (!classTypeDef) {
+    throw new Error(`could not find class ${parentName}`)
+  }
+
+  switch (kind) {
+    case "object": {
+      return classTypeDef.name
+    }
+    case "function": {
+      // Handle constructor
+      if (alias === "") {
+        return ""
+      }
+
+      const methodTypeDef = classTypeDef.methods[alias]
+      if (!methodTypeDef) {
+        throw new Error(`could not find method ${alias} type`)
+      }
+
+      return methodTypeDef.name
+    }
+    case "field": {
+      const propertyTypeDef = classTypeDef.fields[alias]
+      if (!propertyTypeDef) {
+        throw new Error(`could not find property ${alias}`)
+      }
+
+      return propertyTypeDef.name
+    }
+  }
+}
+
+/**
+ * Load the alias from the true property name.
+ * If not found, return the original alias because it's not
+ * a registered field.
+ *
+ * @param scanResult Result of the scan
+ * @param parentName Class called
+ * @param alias exposed name
+ */
+export function loadResultAlias(
+  scanResult: ScanResult,
+  parentName: string,
+  alias: string
+): string {
+  const classTypeDef = scanResult.classes[parentName]
+  if (!classTypeDef) {
+    return alias
+  }
+
+  const fieldTypeDef = Object.values(classTypeDef.fields).find(
+    (field) => field.name === alias
+  )
+  if (!fieldTypeDef) {
+    return alias
+  }
+
+  return fieldTypeDef.alias ?? fieldTypeDef.name
+}
+
+/**
+ * Return the eventual parent name of a field if its return type is a
+ * registered object.
+ * If not found, return the original parent name.
+ *
+ * @param scanResult The result of the scan.
+ * @param parentName Original parent name
+ * @param alias The field alias
+ */
+export function loadAliasParentName(
+  scanResult: ScanResult,
+  parentName: string,
+  alias: string
+): string {
+  const classTypeDef = scanResult.classes[parentName]
+  if (!classTypeDef) {
+    return parentName
+  }
+
+  const fieldTypeDef = Object.values(classTypeDef.fields).find(
+    (field) => field.name === alias
+  )
+  if (!fieldTypeDef) {
+    return parentName
+  }
+
+  if (fieldTypeDef.typeDef.kind === TypeDefKind.ObjectKind) {
+    return (fieldTypeDef.typeDef as TypeDef<TypeDefKind.ObjectKind>).name
+  }
+
+  return parentName
+}
+
+/**
  * This function load the argument as a Dagger type.
  *
  * Note: The JSON.parse() is required to remove extra quotes
@@ -200,16 +309,26 @@ export async function loadArg(
  * Load subfields of the result and IDable object.
  *
  * @param result The result of the invocation.
+ * @param scanResult The result of the scan.
+ * @param parentName The name of the parent object.
  * @returns Loaded result.
  */
-export async function loadResult(result: any): Promise<any> {
+export async function loadResult(
+  result: any,
+  scanResult: ScanResult,
+  parentName: string
+): Promise<any> {
   if (result && typeof result?.id === "function") {
     result = await result.id()
   }
 
   if (typeof result === "object") {
     for (const [key, value] of Object.entries(result)) {
-      result[key] = await loadResult(value)
+      result[loadResultAlias(scanResult, parentName, key)] = await loadResult(
+        value,
+        scanResult,
+        loadAliasParentName(scanResult, parentName, key)
+      )
     }
   }
 

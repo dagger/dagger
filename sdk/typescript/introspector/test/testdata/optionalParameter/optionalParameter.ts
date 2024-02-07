@@ -3,24 +3,24 @@ import { func, object } from '../../../decorators/decorators.js'
 /**
  * HelloWorld class
  */
-@object
+@object()
 export class HelloWorld {
-    @func
+    @func()
     helloWorld(name?: string): string {
         return `hello world ${name}`
     }
 
-    @func
+    @func()
     isTrue(value: boolean): boolean {
         return value
     }
 
-    @func
+    @func()
     add(a = 0, b = 0): number {
         return a + b
     }
 
-    @func
+    @func()
     sayBool(value = false): boolean {
         return value
     }

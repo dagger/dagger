@@ -40,45 +40,51 @@ export class Registry {
    * class module that must be exposed to the Dagger API.
    *
    */
-  object = <T extends Class>(constructor: T): T => {
-    const methods: string[] = []
+  object = (): (<T extends Class>(constructor: T) => T) => {
+    return <T extends Class>(constructor: T): T => {
+      const methods: string[] = []
 
-    // Create a dummy instance of the constructor to loop through its properties
-    // We only register user's method and ignore TypeScript default method
-    let proto = new constructor()
-    while (proto && proto !== Object.prototype) {
-      const ownMethods = Object.getOwnPropertyNames(proto).filter((name) => {
-        const descriptor = Object.getOwnPropertyDescriptor(proto, name)
+      // Create a dummy instance of the constructor to loop through its properties
+      // We only register user's method and ignore TypeScript default method
+      let proto = new constructor()
+      while (proto && proto !== Object.prototype) {
+        const ownMethods = Object.getOwnPropertyNames(proto).filter((name) => {
+          const descriptor = Object.getOwnPropertyDescriptor(proto, name)
 
-        // Check if the descriptor exist, then if it's a function and finally
-        // if the function is owned by the class.
-        return (
-          descriptor &&
-          typeof descriptor.value === "function" &&
-          Object.prototype.hasOwnProperty.call(proto, name)
-        )
-      })
+          // Check if the descriptor exist, then if it's a function and finally
+          // if the function is owned by the class.
+          return (
+            descriptor &&
+            typeof descriptor.value === "function" &&
+            Object.prototype.hasOwnProperty.call(proto, name)
+          )
+        })
 
-      methods.push(...ownMethods)
+        methods.push(...ownMethods)
 
-      proto = Object.getPrototypeOf(proto)
+        proto = Object.getPrototypeOf(proto)
+      }
+
+      Reflect.defineMetadata(
+        constructor.name,
+        { class_: constructor, methods },
+        this
+      )
+
+      return constructor
     }
-
-    Reflect.defineMetadata(
-      constructor.name,
-      { class_: constructor, methods },
-      this
-    )
-
-    return constructor
   }
 
   /**
    * The definition of @field decorator that should be on top of any
    * class' property that must be exposed to the Dagger API.
+   *
+   * @param alias The alias to use for the field when exposed on the API.
    */
-  field = (target: object, propertyKey: string) => {
-    // A placeholder to declare fields
+  field = (alias?: string): ((target: object, propertyKey: string) => void) => {
+    return (target: object, propertyKey: string) => {
+      // A placeholder to declare field in the registry.
+    }
   }
 
   /**
@@ -86,13 +92,21 @@ export class Registry {
    * class' method that must be exposed to the Dagger API.
    */
   func = (
+    alias?: string
+  ): ((
     target: object,
     propertyKey: string | symbol,
     descriptor: PropertyDescriptor
-  ) => {
-    // The logic is done in the object constructor since it's not possible to
-    // access the class parent's name from a method constructor without calling
-    // the method itself
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor: PropertyDescriptor
+    ) => {
+      // The logic is done in the object constructor since it's not possible to
+      // access the class parent's name from a method constructor without calling
+      // the method itself
+    }
   }
 
   /**
