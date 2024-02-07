@@ -4109,10 +4109,11 @@ func (p *Playground) DoThing(ctx context.Context) error {
 
 func TestModuleCurrentModuleAPI(t *testing.T) {
 	t.Parallel()
-	c, ctx := connect(t)
 
 	t.Run("name", func(t *testing.T) {
 		t.Parallel()
+
+		c, ctx := connect(t)
 
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4138,6 +4139,8 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 
 	t.Run("source", func(t *testing.T) {
 		t.Parallel()
+
+		c, ctx := connect(t)
 
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4169,6 +4172,9 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 
 		t.Run("dir", func(t *testing.T) {
 			t.Parallel()
+
+			c, ctx := connect(t)
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -4202,6 +4208,9 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 
 		t.Run("file", func(t *testing.T) {
 			t.Parallel()
+
+			c, ctx := connect(t)
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -4235,6 +4244,9 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 
 		t.Run("error on escape", func(t *testing.T) {
 			t.Parallel()
+
+			c, ctx := connect(t)
+
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
