@@ -30,6 +30,9 @@ type Module struct {
 	// Different than NameField when a different name was specified for the module via a dependency.
 	OriginalName string
 
+	// The origin sdk of the module set in its configuration file (or first configured via withSDK).
+	OriginalSDK string
+
 	// The doc string of the module, if any
 	Description string `field:"true" doc:"The doc string of the module, if any"`
 
@@ -140,6 +143,10 @@ func (mod *Module) WithSDK(ctx context.Context, sdk string) (*Module, error) {
 
 	mod = mod.Clone()
 	mod.SDKConfig = sdk
+	if mod.OriginalSDK == "" {
+		mod.OriginalSDK = sdk
+	}
+
 	return mod, nil
 }
 

@@ -625,6 +625,7 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	mod.NameField = modCfg.Name
 	mod.OriginalName = modCfg.Name
 	mod.SDKConfig = modCfg.SDK
+	mod.OriginalSDK = modCfg.SDK
 	mod.GeneratedSourceRootDirectory = rootDir
 	mod.GeneratedSourceSubpath = sourceSubpath
 	mod.DirectoryIncludeConfig = modCfg.Include
@@ -759,6 +760,19 @@ func (s *moduleSchema) moduleGeneratedSourceRootDirectory(
 	mod *core.Module,
 	args struct{},
 ) (*core.Directory, error) {
+	// cannot (yet) change name/sdk if it's already set
+	// NOTE: this is only enforced here right now because we actually do support internally renaming
+	// *dependency* modules. We only want to enforce that an already named module cannot be renamed
+	// and then exported back to the client. In the future, even this restriction can be lifted (via
+	// support for automatically renaming objects in existing SDK code), at which time this check can
+	// be rm'd.
+	if mod.NameField != mod.OriginalName {
+		return nil, fmt.Errorf("cannot update module name that has already been set to %q", mod.OriginalName)
+	}
+	if mod.SDKConfig != mod.OriginalSDK {
+		return nil, fmt.Errorf("cannot update module sdk that has already been set to %q", mod.OriginalSDK)
+	}
+
 	// update dagger.json in case there were changes
 	mod, err := s.updateModuleConfig(ctx, mod)
 	if err != nil {
