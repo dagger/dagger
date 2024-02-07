@@ -7,7 +7,15 @@ import (
 	"math/rand"
 )
 
-type MyModule struct{}
+type MyModule struct {
+	Source *Directory
+}
+
+func New(source *Directory) *MyModule {
+	return &MyModule{
+		Source: source,
+	}
+}
 
 // publish an image
 func (m *MyModule) Publish(ctx context.Context) (string, error) {
@@ -24,7 +32,7 @@ func (m *MyModule) Package() *Container {
 
 // create a production build
 func (m *MyModule) Build() *Directory {
-	return m.buildBaseImage().
+	return dag.Node().WithContainer(m.buildBaseImage()).
 		Build().
 		Container().
 		Directory("./dist")
@@ -32,16 +40,17 @@ func (m *MyModule) Build() *Directory {
 
 // run unit tests
 func (m *MyModule) Test(ctx context.Context) (string, error) {
-	return m.buildBaseImage().
+	return dag.Node().WithContainer(m.buildBaseImage()).
 		Run([]string{"run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 
 // build base image
-func (m *MyModule) buildBaseImage() *Node {
+func (m *MyModule) buildBaseImage() *Container {
 	return dag.Node().
 		WithVersion("21").
 		WithNpm().
-		WithSource(dag.CurrentModule().Source()).
-		Install(nil)
+		WithSource(m.Source).
+		Install(nil).
+		Container()
 }

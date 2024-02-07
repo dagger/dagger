@@ -65,7 +65,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		// https://github.com/graphql/graphql-spec/blob/main/spec/Section%202%20--%20Language.md#string-value
 		var buf bytes.Buffer
 		gqlgen.MarshalString(v.String()).MarshalGQL(&buf)
-		return buf.String(), nil //nolint:gosimple,staticcheck
+		return buf.String(), nil
 	case reflect.Pointer, reflect.Interface:
 		if v.IsNil() {
 			return "null", nil
