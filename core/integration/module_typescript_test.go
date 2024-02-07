@@ -647,7 +647,7 @@ func TestModuleTypescriptAliases(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=alias", "--sdk=typescript")).
+			With(daggerExec("init", "--name=alias", "--sdk=typescript")).
 			With(sdkSource("typescript", `
 import { object, func } from "@dagger.io/dagger"
 
@@ -673,7 +673,7 @@ class Alias {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=alias", "--sdk=typescript")).
+			With(daggerExec("init", "--name=alias", "--sdk=typescript")).
 			With(sdkSource("typescript", `
 import { object, func } from "@dagger.io/dagger"
 
@@ -715,7 +715,7 @@ class Alias {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("mod", "init", "--name=alias", "--sdk=typescript")).
+			With(daggerExec("init", "--name=alias", "--sdk=typescript")).
 			With(sdkSource("typescript", `
 import { object, func, field } from "@dagger.io/dagger"
 
