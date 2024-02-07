@@ -75,6 +75,10 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 	createMod := Qual("dag", "Module").Call()
 
+	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
+		createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
+	}
+
 	objs := []types.Object{}
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
@@ -640,6 +644,29 @@ type parseState struct {
 
 func (ps *parseState) isMainModuleObject(name string) bool {
 	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
+}
+
+// pkgDoc returns the package level documentation comment, if any.
+//
+// When there's multiple files with comments above the package declaration,
+// this returns the first one found, excluding from the generated file.
+func (ps *parseState) pkgDoc() string {
+	for _, syntax := range ps.pkg.Syntax {
+		for _, comment := range syntax.Comments {
+			// Skip comments that are below the package declaration.
+			if comment.Pos() > syntax.Package {
+				continue
+			}
+			// Skip comments that are in the generated file.
+			tokenFile := ps.fset.File(comment.Pos())
+			if filepath.Base(tokenFile.Name()) == daggerGenFilename {
+				continue
+			}
+			// Return the first comment found.
+			return comment.Text()
+		}
+	}
+	return ""
 }
 
 type method struct {

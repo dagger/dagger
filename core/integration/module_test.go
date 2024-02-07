@@ -1256,40 +1256,57 @@ func TestModuleDescription(t *testing.T) {
 		source string
 	}{
 		{
+			sdk: "go",
+			source: `
+                // Test module, short description
+                //
+                // Long description, with full sentences.
+
+                package main
+
+                // Test object, short description
+                type Test struct {
+                    // +default=foo
+                    Foo string
+                }
+                `,
+		},
+		{
 			sdk: "python",
-			source: `"""Test module, short description
+			source: `
+                """Test module, short description
 
-Long description, with full sentences.
-"""
+                Long description, with full sentences.
+                """
 
-from dagger import field, function, object_type
+                from dagger import field, function, object_type
 
-@object_type
-class Test:
-    """Test object, short description"""
+                @object_type
+                class Test:
+                    """Test object, short description"""
 
-    foo: str = field(default="foo")
-`,
+                    foo: str = field(default="foo")
+                `,
 		},
 		{
 			sdk: "typescript",
 			source: `
-/**
- * Test module, short description
- *
- * Long description, with full sentences.
- */
-import { object, field } from '@dagger.io/dagger'
+                /**
+                 * Test module, short description
+                 *
+                 * Long description, with full sentences.
+                 */
+                import { object, field } from '@dagger.io/dagger'
 
-/**
-* Test object, short description
-*/
-@object()
-class Test {
-	@field()
-	foo: string = "foo"
-}
-`,
+                /**
+                * Test object, short description
+                */
+                @object()
+                class Test {
+                    @field()
+                    foo: string = "foo"
+                }
+                `,
 		},
 	} {
 		tc := tc
