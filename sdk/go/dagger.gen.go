@@ -72,8 +72,11 @@ func getCustomError(err error) error {
 			}
 			e.Cmd = cmd
 		}
-		if output, ok := ext["combinedOutput"].(string); ok {
-			e.CombinedOutput = output
+		if stdout, ok := ext["stdout"].(string); ok {
+			e.Stdout = stdout
+		}
+		if stderr, ok := ext["stderr"].(string); ok {
+			e.Stderr = stderr
 		}
 		return e
 	}
@@ -83,23 +86,24 @@ func getCustomError(err error) error {
 
 // ExecError is an API error from an exec operation.
 type ExecError struct {
-	original       error
-	Cmd            []string
-	ExitCode       int
-	CombinedOutput string
+	original error
+	Cmd      []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
 func (e *ExecError) Error() string {
-	if strings.TrimSpace(e.CombinedOutput) == "" {
-		return e.Message()
-	}
 	// As a default when just printing the error, include the stdout
 	// and stderr for visibility
-	return fmt.Sprintf(
-		"%s\nOutput:\n%s\n",
-		e.Message(),
-		e.CombinedOutput,
-	)
+	msg := e.Message()
+	if strings.TrimSpace(e.Stdout) != "" {
+		msg += "\nStdout:\n" + e.Stdout
+	}
+	if strings.TrimSpace(e.Stderr) != "" {
+		msg += "\nStderr:\n" + e.Stderr
+	}
+	return msg
 }
 
 func (e *ExecError) Message() string {

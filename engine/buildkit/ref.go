@@ -303,7 +303,11 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 		return errors.Join(err, baseErr)
 	}
 
-	combinedOutputBytes, err := getExecMetaFile(ctx, mntable, "combined")
+	stdoutBytes, err := getExecMetaFile(ctx, mntable, "stdout")
+	if err != nil {
+		return errors.Join(err, baseErr)
+	}
+	stderrBytes, err := getExecMetaFile(ctx, mntable, "stderr")
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
@@ -321,10 +325,11 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 	}
 
 	return &ExecError{
-		original:       baseErr,
-		Cmd:            execOp.Exec.Meta.Args,
-		CombinedOutput: strings.TrimSpace(string(combinedOutputBytes)),
-		ExitCode:       exitCode,
+		original: baseErr,
+		Cmd:      execOp.Exec.Meta.Args,
+		ExitCode: exitCode,
+		Stdout:   strings.TrimSpace(string(stdoutBytes)),
+		Stderr:   strings.TrimSpace(string(stderrBytes)),
 	}
 }
 

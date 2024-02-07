@@ -44,10 +44,9 @@ const (
 )
 
 var (
-	stdoutPath   = metaMountPath + "/stdout"
-	stderrPath   = metaMountPath + "/stderr"
-	combinedPath = metaMountPath + "/combined"
-	pipeWg       sync.WaitGroup
+	stdoutPath = metaMountPath + "/stdout"
+	stderrPath = metaMountPath + "/stderr"
+	pipeWg     sync.WaitGroup
 )
 
 /*
@@ -243,14 +242,8 @@ func shim() (returnExitCode int) {
 			stderrRedirect = stderrRedirectFile
 		}
 
-		combinedFile, err := os.Create(combinedPath)
-		if err != nil {
-			panic(err)
-		}
-		defer combinedFile.Close()
-
-		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, combinedFile, os.Stdout)
-		errWriter := io.MultiWriter(stderrFile, stderrRedirect, combinedFile, os.Stderr)
+		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
+		errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
 
 		if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 			cmd.Stdout = outWriter
