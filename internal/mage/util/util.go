@@ -61,9 +61,6 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// go source
 			"**/*.go",
 
-			// git since we need the vcs buildinfo
-			".git",
-
 			// modules
 			"**/go.mod",
 			"**/go.sum",
@@ -252,7 +249,9 @@ func DevelVersionInfo(ctx context.Context, c *dagger.Client) (*VersionInfo, erro
 	base := c.Container().
 		From(fmt.Sprintf("alpine:%s", alpineVersion)).
 		WithExec([]string{"apk", "add", "git"}).
-		WithMountedDirectory("/app", Repository(c)).
+		WithMountedDirectory("/app", c.Host().Directory(".", dagger.HostDirectoryOpts{
+			Include: []string{".git"},
+		})).
 		WithWorkdir("/app")
 
 	info := &VersionInfo{}
