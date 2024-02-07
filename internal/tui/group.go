@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/dagql/idtui"
 )
 
 type groupModel interface {
@@ -92,10 +93,8 @@ func (g *Group) Open() tea.Cmd {
 	return openEditor(subDir)
 }
 
-const RootVertex = "[root-vtx]"
-
 func (g *Group) Add(e TreeEntry) {
-	if e.ID() == RootVertex {
+	if e.ID() == idtui.PrimaryVertex {
 		g.name = e.Name()
 		g.groupModel = e
 		return

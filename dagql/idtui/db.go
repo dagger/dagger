@@ -2,7 +2,6 @@ package idtui
 
 import (
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -15,8 +14,6 @@ func init() {
 }
 
 type DB struct {
-	l *slog.Logger
-
 	Epoch, End time.Time
 
 	IDs       map[string]*idproto.ID
@@ -28,14 +25,8 @@ type DB struct {
 	Intervals map[string]map[time.Time]*progrock.Vertex
 }
 
-func NewDB(log *slog.Logger) *DB {
-	if log == nil {
-		log = slog.Default()
-	}
-
+func NewDB() *DB {
 	return &DB{
-		l: log,
-
 		Epoch: time.Now(),  // replaced at runtime
 		End:   time.Time{}, // replaced at runtime
 
@@ -152,16 +143,12 @@ func (db *DB) Step(dig string) (*Step, bool) {
 	outID := db.IDs[dig]
 	switch {
 	case outID != nil && outID.Field == "id":
-		db.l.Info("ignoring id selection")
 		return nil, false
 	case outID == nil && step.IsInternal():
-		db.l.Info("ignoring internal vertex", "name", step.Name(), "id", step.Digest)
 		return nil, false
 	case outID != nil && !step.HasStarted():
-		db.l.Warn("missing step vertex", "digest", dig, "id", outID.DisplaySelf())
 		return nil, false
 	case outID == nil && !step.HasStarted():
-		db.l.Warn("missing all step info", "digest", dig)
 		return nil, false
 	}
 	if outID != nil {
@@ -169,7 +156,6 @@ func (db *DB) Step(dig string) (*Step, bool) {
 		if outID.Base != nil {
 			step.Base, ok = db.HighLevelStep(outID.Base)
 			if !ok {
-				db.l.Warn("missing base", "step", outID.Display(), "digest", dig)
 				return nil, false
 			}
 		}
@@ -180,7 +166,6 @@ func (db *DB) Step(dig string) (*Step, bool) {
 func (db *DB) HighLevelStep(id *idproto.ID) (*Step, bool) {
 	parentDig, err := id.Digest()
 	if err != nil {
-		db.l.Warn("digest parent: %w", err)
 		return nil, false
 	}
 	return db.Step(db.Simplify(parentDig.String()))
@@ -267,7 +252,6 @@ func (db *DB) Simplify(dig string) string {
 	if smallestCreator != nil {
 		smallestDig, err := smallestCreator.Digest()
 		if err != nil {
-			db.l.Warn("digest id: %w", err)
 			return dig
 		}
 		return db.Simplify(smallestDig.String())

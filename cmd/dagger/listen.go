@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
@@ -36,14 +37,14 @@ func init() {
 	listenCmd.Flags().BoolVar(&allowCORS, "allow-cors", false, "allow Cross-Origin Resource Sharing (CORS) requests")
 }
 
-func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, _ []string) error {
+func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, _ []string) error {
 	rec := progrock.FromContext(ctx)
 
 	var stderr io.Writer
 	if silent {
 		stderr = os.Stderr
 	} else {
-		vtx := rec.Vertex("listen", "listen")
+		vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
 		stderr = vtx.Stderr()
 	}
 

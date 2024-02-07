@@ -5,11 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
@@ -17,13 +15,25 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 	"github.com/vito/progrock/ui"
 	"golang.org/x/term"
 )
 
+const PrimaryVertex = "primary"
+
+var consoleSink = os.Stderr
+
 type Frontend struct {
 	// Debug tells the frontend to show everything and do one big final render.
 	Debug bool
+
+	// Plain tells the frontend to render plain console output instead of using a
+	// TUI. This will be automatically set to true if a TTY is not found.
+	Plain bool
+
+	// Silent tells the frontend to not display progress at all.
+	Silent bool
 
 	// updated by Run
 	program   *tea.Program
@@ -40,6 +50,14 @@ type Frontend struct {
 	eof   bool
 	steps []*Step
 	rows  []*TraceRow
+
+	// primaryVtx is the primary vertex whose output is printed directly to
+	// stdout/stderr on exit after cleaning up the TUI.
+	primaryVtx  *progrock.Vertex
+	primaryLogs []*progrock.VertexLog
+
+	// plainConsole is the writer to forward events to when in plain mode.
+	plainConsole progrock.Writer
 
 	// TUI state/config
 	fps         float64 // frames per second
@@ -64,13 +82,9 @@ func New() *Frontend {
 	spin := ui.NewRave()
 	spin.Frames = ui.MiniDotFrames
 	return &Frontend{
-		// TODO need to silence logging so it doesn't break the TUI. would be better
-		// to hook into progrock logs.
-		db: NewDB(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		db: NewDB(),
 
-		// sane default, fine-tune if needed
-
-		fps:     30,
+		fps:     30, // sane default, fine-tune if needed
 		profile: ui.ColorProfile(),
 		spin:    spin,
 		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -80,42 +94,72 @@ func New() *Frontend {
 	}
 }
 
+// Run starts the TUI, calls the run function, stops the TUI, and finally
+// prints the primary output to the appropriate stdout/stderr streams.
 func (f *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
 	tty, isTTY := findTTY()
+	if !isTTY {
+		// Simplify logic elsewhere by just setting Plain to true.
+		f.Plain = true
+	}
 
+	var runErr error
+	if f.Plain || f.Silent {
+		// no TTY found; default to console
+		runErr = f.runWithoutTUI(ctx, tty, run)
+	} else {
+		// run the TUI until it exits and cleans up the TTY
+		runErr = f.runWithTUI(ctx, tty, run)
+	}
+
+	// print the final output display to stderr
+	if renderErr := f.finalRender(); renderErr != nil {
+		return renderErr
+	}
+
+	// return original err
+	return runErr
+}
+
+func (f *Frontend) ConnectedToEngine(name string) {
+	if !f.Silent && f.Plain {
+		fmt.Fprintln(consoleSink, "Connected to engine", name)
+	}
+}
+
+func (f *Frontend) ConnectedToCloud(cloudURL string) {
+	if !f.Silent && f.Plain {
+		fmt.Fprintln(consoleSink, "Dagger Cloud URL:", cloudURL)
+	}
+}
+
+func (f *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
 	// NOTE: establish color cache before we start consuming stdin
 	f.out = ui.NewOutput(tty, termenv.WithProfile(f.profile), termenv.WithColorCache(true))
 
-	var inR io.Reader
-	if isTTY {
-		// in order to allow the TUI to receive user input but _also_ allow an
-		// interactive terminal to receive keyboard input, we pipe the user input
-		// to an io.Writer that can have its destination swapped between the TUI
-		// and the remote terminal.
-		var inW io.Writer
-		inR, inW = io.Pipe()
-		f.in = &swappableWriter{original: inW}
+	// in order to allow the TUI to receive user input but _also_ allow an
+	// interactive terminal to receive keyboard input, we pipe the user input
+	// to an io.Writer that can have its destination swapped between the TUI
+	// and the remote terminal.
+	inR, inW := io.Pipe()
+	f.in = &swappableWriter{original: inW}
 
-		// Bubbletea will just receive an `io.Reader` for its input rather than the
-		// raw TTY *os.File, so we need to set up the TTY ourselves.
-		ttyFd := int(tty.Fd())
-		oldState, err := term.MakeRaw(ttyFd)
-		if err != nil {
-			return err
-		}
-		defer term.Restore(ttyFd, oldState) // nolint: errcheck
-
-		// start piping from the TTY to our swappable writer.
-		go io.Copy(f.in, tty) // nolint: errcheck
-
-		// TODO: support scrollable viewport?
-		// f.out.EnableMouseCellMotion()
-	} else {
-		// no TTY found, so no input can be sent to the TUI
-		inR = nil
+	// Bubbletea will just receive an `io.Reader` for its input rather than the
+	// raw TTY *os.File, so we need to set up the TTY ourselves.
+	ttyFd := int(tty.Fd())
+	oldState, err := term.MakeRaw(ttyFd)
+	if err != nil {
+		return err
 	}
+	defer term.Restore(ttyFd, oldState) // nolint: errcheck
+
+	// start piping from the TTY to our swappable writer.
+	go io.Copy(f.in, tty) // nolint: errcheck
+
+	// TODO: support scrollable viewport?
+	// f.out.EnableMouseCellMotion()
 
 	f.run = run
 	f.runCtx, f.interrupt = context.WithCancel(ctx)
@@ -126,8 +170,7 @@ func (f *Frontend) Run(ctx context.Context, run func(context.Context) error) err
 		// counter-productive.
 		tea.WithoutCatchPanics(),
 	)
-	_, err := f.program.Run()
-	if err != nil {
+	if _, err := f.program.Run(); err != nil {
 		return err
 	}
 	if f.runCtx.Err() != nil {
@@ -136,7 +179,66 @@ func (f *Frontend) Run(ctx context.Context, run func(context.Context) error) err
 	return f.err
 }
 
-func (f *Frontend) directStdin(st *zoomState) {
+func (f *Frontend) runWithoutTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
+	if !f.Silent {
+		opts := []console.WriterOpt{
+			console.ShowInternal(f.Debug),
+		}
+		if f.Debug {
+			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+		}
+		f.plainConsole = console.NewWriter(consoleSink, opts...)
+	}
+	return run(ctx)
+}
+
+// finalRender is called after the program has finished running and prints the
+// final output after the TUI has exited.
+func (f *Frontend) finalRender() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := termenv.NewOutput(os.Stderr)
+
+	if f.Debug || f.err != nil {
+		renderedAny, err := f.renderProgress(out)
+		if err != nil {
+			return err
+		}
+		if renderedAny {
+			fmt.Fprintln(out)
+		}
+	}
+
+	if zoom := f.currentZoom; zoom != nil {
+		renderedAny, err := f.renderZoomed(out, zoom)
+		if err != nil {
+			return err
+		}
+		if renderedAny {
+			fmt.Fprintln(out)
+		}
+	}
+
+	return f.renderPrimaryOutput()
+}
+
+func (f *Frontend) renderPrimaryOutput() error {
+	for _, l := range f.primaryLogs {
+		switch l.Stream {
+		case progrock.LogStream_STDOUT:
+			if _, err := os.Stdout.Write(l.Data); err != nil {
+				return err
+			}
+		case progrock.LogStream_STDERR:
+			if _, err := os.Stderr.Write(l.Data); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (f *Frontend) redirectStdin(st *zoomState) {
 	if st == nil {
 		f.in.Restore()
 		// TODO: support scrollable viewport?
@@ -195,6 +297,11 @@ func (f *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
 	if err := f.db.WriteStatus(update); err != nil {
 		return err
 	}
+	if f.plainConsole != nil {
+		if err := f.plainConsole.WriteStatus(update); err != nil {
+			return err
+		}
+	}
 	for _, v := range update.Vertexes {
 		_, isZoomed := f.zoomed[v.Id]
 		if v.Zoomed && !isZoomed {
@@ -202,8 +309,14 @@ func (f *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
 		} else if isZoomed {
 			f.releaseZoom(v)
 		}
+		if v.Id == PrimaryVertex {
+			f.primaryVtx = v
+		}
 	}
 	for _, l := range update.Logs {
+		if l.Vertex == PrimaryVertex {
+			f.primaryLogs = append(f.primaryLogs, l)
+		}
 		var w io.Writer
 		if t, found := f.zoomed[l.Vertex]; found {
 			w = t.Output
@@ -268,7 +381,6 @@ func (f *Frontend) initZoom(v *progrock.Vertex) {
 	} else {
 		vt = midterm.NewTerminal(f.window.Height, f.window.Width)
 	}
-	// vt := NewVterm()
 	w := setupTerm(v.Id, vt)
 	st := &zoomState{
 		Output: vt,
@@ -276,7 +388,7 @@ func (f *Frontend) initZoom(v *progrock.Vertex) {
 	}
 	f.zoomed[v.Id] = st
 	f.currentZoom = st
-	f.directStdin(st)
+	f.redirectStdin(st)
 }
 
 func (tape *Frontend) releaseZoom(vtx *progrock.Vertex) {
@@ -286,39 +398,55 @@ func (tape *Frontend) releaseZoom(vtx *progrock.Vertex) {
 type eofMsg struct{}
 
 func (f *Frontend) Close() error {
-	f.program.Send(eofMsg{})
-	return nil
-}
-
-func (f *Frontend) Render(w io.Writer) error {
-	out := ui.NewOutput(w, termenv.WithProfile(f.profile))
-
-	zoomSt := f.currentZoom
-
-	// if we're zoomed, render the zoomed terminal and nothing else, but only
-	// after we've actually seen output from it.
-	if zoomSt != nil && zoomSt.Output.UsedHeight() > 0 {
-		return f.renderZoomed(out, zoomSt)
-	}
-
-	for _, row := range f.rows {
-		if f.Debug || row.IsInteresting() {
-			if err := f.renderRow(out, row); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (f *Frontend) renderZoomed(out *termenv.Output, st *zoomState) error {
-	for i := 0; i < st.Output.UsedHeight(); i++ {
-		if err := st.Output.RenderLine(out, i); err != nil {
+	if f.program != nil {
+		f.program.Send(eofMsg{})
+	} else if f.plainConsole != nil {
+		if err := f.plainConsole.Close(); err != nil {
 			return err
 		}
+		fmt.Fprintln(consoleSink)
 	}
 	return nil
+}
+
+func (f *Frontend) Render(out *termenv.Output) error {
+	// if we're zoomed, render the zoomed terminal and nothing else, but only
+	// after we've actually seen output from it.
+	if f.currentZoom != nil && f.currentZoom.Output.UsedHeight() > 0 {
+		_, err := f.renderZoomed(out, f.currentZoom)
+		return err
+	} else {
+		_, err := f.renderProgress(out)
+		return err
+	}
+}
+
+func (f *Frontend) renderProgress(out *termenv.Output) (bool, error) {
+	var renderedAny bool
+	for _, row := range f.rows {
+		if row.Step.Digest == PrimaryVertex && f.done {
+			// primary vertex is displayed below the fold instead
+			continue
+		}
+		if f.Debug || row.IsInteresting() {
+			if err := f.renderRow(out, row); err != nil {
+				return renderedAny, err
+			}
+			renderedAny = true
+		}
+	}
+	return renderedAny, nil
+}
+
+func (f *Frontend) renderZoomed(out *termenv.Output, st *zoomState) (bool, error) {
+	var renderedAny bool
+	for i := 0; i < st.Output.UsedHeight(); i++ {
+		if err := st.Output.RenderLine(out, i); err != nil {
+			return renderedAny, err
+		}
+		renderedAny = true
+	}
+	return renderedAny, nil
 }
 
 var _ tea.Model = (*Frontend)(nil)
@@ -390,7 +518,7 @@ func (m *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (f *Frontend) render() {
 	f.mu.Lock()
 	f.view.Reset()
-	f.Render(f.view)
+	f.Render(ui.NewOutput(f.view, termenv.WithProfile(f.profile)))
 	f.mu.Unlock()
 }
 
@@ -398,38 +526,11 @@ func (f *Frontend) View() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	view := f.view.String()
-	if f.err != nil {
-		// include line separator for the trailing error message
-		return view + "\n"
-	}
 	if f.done && f.eof {
-		// print nothing; make way for the pristine output
+		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
 	return view
-}
-
-// FinalOutput is called after the program has finished running. It returns the
-// full output that should be printed. We can't do this with View because
-// Bubbletea's renderer cuts off the top part that goes offscreen.
-func (f *Frontend) FinalOutput() string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if zoom := f.currentZoom; zoom != nil {
-		// show the zoomed output on last render
-		return f.zoomedOutput(zoom)
-	}
-	if f.Debug {
-		// include line separator preceding further output
-		return f.view.String() + "\n"
-	}
-	return ""
-}
-
-func (fe *Frontend) zoomedOutput(st *zoomState) string {
-	buf := new(strings.Builder)
-	fe.renderZoomed(termenv.NewOutput(buf), st)
-	return buf.String()
 }
 
 // DumpID is exposed for troubleshooting.

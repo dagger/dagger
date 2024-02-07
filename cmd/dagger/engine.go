@@ -1,23 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tui"
 	"github.com/mattn/go-isatty"
 	"github.com/vito/progrock"
-	"github.com/vito/progrock/console"
 )
 
 var silent bool
@@ -57,6 +51,8 @@ var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
 type runClientCallback func(context.Context, *client.Client) error
 
+var useLegacyTUI = os.Getenv("_EXPERIMENTAL_DAGGER_LEGACY_TUI") != ""
+
 func withEngineAndTUI(
 	ctx context.Context,
 	params client.Params,
@@ -72,38 +68,77 @@ func withEngineAndTUI(
 		params.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
-	if !silent {
-		if progress == "auto" && autoTTY || progress == "tty" {
-			if interactive {
-				return interactiveTUI(ctx, params, fn)
-			}
+	if interactive {
+		return interactiveTUI(ctx, params, fn)
+	}
+	if useLegacyTUI {
+		return legacyTUI(ctx, params, fn)
+	}
+	return runWithFrontend(ctx, params, fn)
+}
 
-			return inlineTUI(ctx, params, fn)
+func runWithFrontend(
+	ctx context.Context,
+	params client.Params,
+	fn runClientCallback,
+) error {
+	frontend := idtui.New()
+	frontend.Debug = debug
+	frontend.Plain = progress == "plain"
+	frontend.Silent = silent
+	params.ProgrockWriter = frontend
+	params.EngineNameCallback = frontend.ConnectedToEngine
+	params.CloudURLCallback = frontend.ConnectedToCloud
+	return frontend.Run(ctx, func(ctx context.Context) error {
+		sess, ctx, err := client.Connect(ctx, params)
+		if err != nil {
+			return err
 		}
+		defer sess.Close()
+		return fn(ctx, sess)
+	})
+}
 
-		opts := []console.WriterOpt{
-			console.ShowInternal(debug),
-		}
-		if debug {
-			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
-		}
+func legacyTUI(
+	ctx context.Context,
+	params client.Params,
+	fn runClientCallback,
+) error {
+	tape := progrock.NewTape()
+	tape.ShowInternal(debug)
+	tape.Focus(focus)
+	tape.RevealErrored(revealErrored)
 
-		progW := console.NewWriter(os.Stderr, opts...)
-		params.ProgrockWriter = progW
-		params.EngineNameCallback = func(name string) {
-			fmt.Fprintln(os.Stderr, "Connected to engine", name)
-		}
+	if debug {
+		tape.MessageLevel(progrock.MessageLevel_DEBUG)
+	}
+
+	params.ProgrockWriter = tape
+
+	return progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) error {
 		params.CloudURLCallback = func(cloudURL string) {
-			fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
+			ui.SetStatusInfo(progrock.StatusInfo{
+				Name:  "Cloud URL",
+				Value: cloudURL,
+				Order: 1,
+			})
 		}
-	}
 
-	engineClient, ctx, err := client.Connect(ctx, params)
-	if err != nil {
-		return err
-	}
-	defer engineClient.Close()
-	return fn(ctx, engineClient)
+		params.EngineNameCallback = func(name string) {
+			ui.SetStatusInfo(progrock.StatusInfo{
+				Name:  "Engine",
+				Value: name,
+				Order: 2,
+			})
+		}
+
+		sess, ctx, err := client.Connect(ctx, params)
+		if err != nil {
+			return err
+		}
+		defer sess.Close()
+		return fn(ctx, sess)
+	})
 }
 
 func interactiveTUI(
@@ -137,61 +172,4 @@ func interactiveTUI(
 
 	tuiErr := <-tuiDone
 	return errors.Join(tuiErr, closeErr, err)
-}
-
-func inlineTUI(
-	ctx context.Context,
-	params client.Params,
-	fn runClientCallback,
-) error {
-	frontend := idtui.New()
-	frontend.Debug = debug
-	params.ProgrockWriter = frontend
-	outBuf := new(bytes.Buffer)
-	ctx = ioctx.WithStdout(ctx, outBuf)
-	errBuf := new(bytes.Buffer)
-	ctx = ioctx.WithStderr(ctx, errBuf)
-	err := frontend.Run(ctx, func(ctx context.Context) error {
-		sess, ctx, err := client.Connect(ctx, params)
-		if err != nil {
-			return err
-		}
-		defer sess.Close()
-		return fn(ctx, sess)
-	})
-	if out := frontend.FinalOutput(); out != "" {
-		fmt.Fprint(os.Stderr, out)
-	}
-	// TODO: replay logs sent to a vertex instead of printing one stream and then
-	// the other.
-	fmt.Fprint(os.Stdout, outBuf.String())
-	fmt.Fprint(os.Stderr, errBuf.String())
-	return err
-}
-
-func newProgrockWriter(dest string) (progrock.Writer, error) {
-	f, err := os.Create(dest)
-	if err != nil {
-		return nil, err
-	}
-
-	return progrockFileWriter{
-		enc: json.NewEncoder(f),
-		c:   f,
-	}, nil
-}
-
-type progrockFileWriter struct {
-	enc *json.Encoder
-	c   io.Closer
-}
-
-var _ progrock.Writer = progrockFileWriter{}
-
-func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
-	return p.enc.Encode(update)
-}
-
-func (p progrockFileWriter) Close() error {
-	return p.c.Close()
 }

@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
@@ -520,10 +521,9 @@ forced), to avoid mistakingly depending on uncommitted files.
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.FromContext(ctx)
 
-			vtx := rec.Vertex("publish", strings.Join(os.Args, " "), progrock.Focused())
+			vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
-			cmd.SetOut(vtx.Stdout())
-			cmd.SetErr(vtx.Stderr())
+			setCmdOutput(cmd, vtx)
 
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
@@ -805,10 +805,6 @@ func optionalModCmdWrapper(
 		return withEngineAndTUI(cmd.Context(), client.Params{
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			rec := progrock.FromContext(ctx)
-			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
-			defer func() { vtx.Done(err) }()
-
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
@@ -816,14 +812,11 @@ func optionalModCmdWrapper(
 			var loadedMod *dagger.Module
 			if modConf.FullyInitialized() {
 				loadedMod = modConf.Source.AsModule().Initialize()
-				load := vtx.Task("loading module")
 				_, err := loadedMod.Serve(ctx)
-				load.Done(err)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
 				}
 			}
-
 			return fn(ctx, engineClient, loadedMod, cmd, cmdArgs)
 		})
 	}
