@@ -18,7 +18,6 @@ class TypescriptSdkDev {
   project: Container
 
   constructor(source: Directory) {
-    this.project = dag.node().container()
     // Extract package.json and yarn.lock to a temporary directory
     const dependencyFiles = dag
       .directory()
@@ -52,7 +51,7 @@ class TypescriptSdkDev {
   /**
    * Execute the TypeScript SDK unit tests.
    *
-   * Example usage: `dagger call test`
+   * Example usage: `dagger call test stdout`
    */
   @func()
   test(): Container {
