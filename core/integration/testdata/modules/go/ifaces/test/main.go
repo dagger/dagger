@@ -23,7 +23,6 @@ type CustomIface interface {
 
 	Str(ctx context.Context) (string, error)
 	WithStr(ctx context.Context, strArg string) CustomIface
-	WithOptionalTypeStr(ctx context.Context, strArg Optional[string]) CustomIface
 	WithOptionalPragmaStr(
 		ctx context.Context,
 		// +optional
@@ -44,7 +43,6 @@ type CustomIface interface {
 
 	Obj() *Directory
 	WithObj(objArg *Directory) CustomIface
-	WithOptionalTypeObj(objArg Optional[*Directory]) CustomIface
 	WithOptionalPragmaObj(
 		// +optional
 		objArg *Directory,
@@ -80,10 +78,6 @@ func (m *Test) Str(ctx context.Context, ifaceArg CustomIface) (string, error) {
 
 func (m *Test) WithStr(ctx context.Context, ifaceArg CustomIface, strArg string) CustomIface {
 	return ifaceArg.WithStr(ctx, strArg)
-}
-
-func (m *Test) WithOptionalTypeStr(ctx context.Context, ifaceArg CustomIface, strArg Optional[string]) CustomIface {
-	return ifaceArg.WithOptionalTypeStr(ctx, strArg)
 }
 
 func (m *Test) WithOptionalPragmaStr(
@@ -141,10 +135,6 @@ func (m *Test) Obj(ifaceArg CustomIface) *Directory {
 
 func (m *Test) WithObj(ifaceArg CustomIface, objArg *Directory) CustomIface {
 	return ifaceArg.WithObj(objArg)
-}
-
-func (m *Test) WithOptionalTypeObj(ifaceArg CustomIface, objArg Optional[*Directory]) CustomIface {
-	return ifaceArg.WithOptionalTypeObj(objArg)
 }
 
 func (m *Test) WithOptionalPragmaObj(
@@ -216,13 +206,6 @@ func (m *Test) IfaceListArgs(ctx context.Context, ifaces []CustomIface, otherIfa
 
 func (m *Test) WithIface(iface CustomIface) *Test {
 	m.IfaceField = iface
-	return m
-}
-
-func (m *Test) WithOptionalTypeIface(iface Optional[CustomIface]) *Test {
-	if iface, ok := iface.Get(); ok {
-		m.IfaceField = iface
-	}
 	return m
 }
 

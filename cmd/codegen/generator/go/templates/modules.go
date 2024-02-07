@@ -870,22 +870,6 @@ func (ps *parseState) isDaggerGenerated(obj types.Object) bool {
 	return filepath.Base(tokenFile.Name()) == daggerGenFilename
 }
 
-// returns whether the given type is an Optional and, if so, the wrapped type
-func (ps *parseState) isOptionalWrapper(typ types.Type) (types.Type, bool, error) {
-	named, ok := typ.(*types.Named)
-	if !ok {
-		return nil, false, nil
-	}
-	if named.Obj().Name() != "Optional" || !ps.isDaggerGenerated(named.Obj()) {
-		return nil, false, nil
-	}
-	typeArgs := named.TypeArgs()
-	if typeArgs.Len() != 1 {
-		return nil, false, fmt.Errorf("optional type must have exactly one type argument")
-	}
-	return typeArgs.At(0), true, nil
-}
-
 /*
 functionCallArgCode takes a type and code for providing an arg of that type (just
 the name of the arg variable as a base) and returns the type that should be used
@@ -895,7 +879,7 @@ variable to a function call
 This is needed to handle various special cases:
 * Function args that are various degrees of pointeriness (i.e. *string, **int, etc.)
 * Concrete structs implementing an interface that will be provided as an arg
-* Slices and Optional wrappers of the above
+* Slices wrappers of the above
 */
 func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (types.Type, *Statement, bool, error) {
 	switch t := t.(type) {
@@ -916,32 +900,6 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 		}
 		return nil, nil, false, nil
 	case *types.Named:
-		wrappedType, isOptionalType, err := ps.isOptionalWrapper(t)
-		if err != nil {
-			return nil, nil, false, err
-		}
-		if isOptionalType {
-			// Check if this is an Optional of an interface
-			wrappedNamed, ok := wrappedType.(*types.Named)
-			if !ok {
-				return t, access, true, nil
-			}
-			_, ok = wrappedNamed.Underlying().(*types.Interface)
-			if !ok {
-				return t, access, true, nil
-			}
-
-			/*
-				Need to convert concrete impl struct wrapped by Optional to interface wrapped
-				by Optional. e.g.:
-					convertOptionalVal(access, (*ifaceImpl).toIface)
-			*/
-			return t, Id("convertOptionalVal").Call(
-				access,
-				Parens(Op("*").Id(formatIfaceImplName(wrappedNamed.Obj().Name()))).Dot("toIface"),
-			), true, nil
-		}
-
 		if _, ok := t.Underlying().(*types.Interface); ok {
 			/*
 				Need to convert concrete impl struct interface. e.g.:

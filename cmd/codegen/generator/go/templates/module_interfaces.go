@@ -411,9 +411,6 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate arg type code: %w", err)
 		}
-		if argSpec.hasOptionalWrapper {
-			argTypeCode = Id("Optional").Types(argTypeCode.Clone())
-		}
 		methodArgs = append(methodArgs, Id(argSpec.name).Add(argTypeCode))
 	}
 
@@ -449,14 +446,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 				}
 				gqlArgName := strcase.ToLowerCamel(argSpec.name)
 				setCode := Id("q").Op("=").Id("q").Dot("Arg").Call(Lit(gqlArgName), Id(argSpec.name))
-				if argSpec.hasOptionalWrapper {
-					g.If(
-						List(Id(argSpec.name), Id("ok")).Op(":=").Id(argSpec.name).Dot("Get").Call(),
-						Id("ok"),
-					).Block(setCode)
-				} else {
-					g.Add(setCode).Line()
-				}
+				g.Add(setCode).Line()
 			}
 
 			g.Add(executeQueryCode)
