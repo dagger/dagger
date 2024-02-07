@@ -47,23 +47,23 @@ type TraceRow struct {
 
 const (
 	TooFastThreshold = 100 * time.Millisecond
-	GCThreshold      = time.Second
+	GCThreshold      = 1 * time.Second
 )
 
 func (row *TraceRow) IsInteresting() bool {
-	vtx := row.Step.FirstVertex()
-	if vtx.Error != nil {
+	step := row.Step
+	if step.Err() != nil {
 		// show errors always (TODO: make sure encapsulation is possible)
 		return true
 	}
-	if vtx.Internal &&
+	if step.IsInternal() &&
 		// TODO: ID vertices are marked internal for compatibility with Cloud,
 		// otherwise they'd be all over the place
-		row.Step.ID() == nil {
+		step.ID() == nil {
 		// internal steps are, by definition, not interesting
 		return false
 	}
-	if vtx.Duration() < TooFastThreshold {
+	if step.Duration() < TooFastThreshold {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}
@@ -71,7 +71,7 @@ func (row *TraceRow) IsInteresting() bool {
 		// show things once they've been running for a while
 		return true
 	}
-	if vtx.Completed != nil && time.Since(vtx.Completed.AsTime()) < GCThreshold {
+	if completed := step.FirstCompleted(); completed != nil && time.Since(*completed) < GCThreshold {
 		// show things that just completed, to reduce flicker
 		return true
 	}

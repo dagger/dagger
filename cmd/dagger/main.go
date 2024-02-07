@@ -43,7 +43,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Show more information for debugging")
 
-	for _, fl := range []string{"workdir", "cpuprofile", "pprof"} {
+	for _, fl := range []string{"workdir"} {
 		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {
 			fmt.Println("Error hiding flag: "+fl, err)
 			os.Exit(1)

@@ -315,6 +315,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	cmd.SetErr(ioctx.Stderr(ctx))
 
 	defer func() {
+		if ctx.Err() != nil {
+			rerr = ctx.Err()
+		}
 		if rerr != nil {
 			cmd.PrintErrln("Error:", rerr.Error())
 
@@ -364,6 +367,9 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	defer func() {
 		if cmd == nil {
 			cmd = c
+		}
+		if ctx.Err() != nil {
+			rerr = ctx.Err()
 		}
 		if rerr != nil {
 			cmd.PrintErrln("Error:", rerr.Error())

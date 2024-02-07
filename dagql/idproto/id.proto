@@ -58,7 +58,20 @@ message ID {
   //
   // The actual usage of this ID is opaque to the protocol. In Dagger this is
   // the module ID providing the implementation of the field.
-  ID module = 8;
+  Module module = 8;
+}
+
+// Module represents a self-contained logical module that can be dynamically
+// loaded to evaluate an ID that uses it. The details of this task are not
+// defined at the protocol layer.
+message Module {
+  // The ID that provides the module.
+  ID id = 1;
+  // The name of the module.
+  string name = 2;
+  // A human-readable ref which may be interpreted by an external system to
+  // yield the same module.
+  string ref = 3;
 }
 
 // A named value passed to a GraphQL field or contained in an input object.

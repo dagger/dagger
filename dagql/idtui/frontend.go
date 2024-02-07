@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
@@ -398,16 +399,31 @@ func (f *Frontend) View() string {
 	defer f.mu.Unlock()
 	view := f.view.String()
 	if f.err != nil {
-		return view
+		// include line separator for the trailing error message
+		return view + "\n"
 	}
 	if f.done && f.eof {
-		if zoom := f.currentZoom; zoom != nil {
-			// show the zoomed output on last render
-			return f.zoomedOutput(zoom)
-		}
+		// print nothing; make way for the pristine output
 		return ""
 	}
 	return view
+}
+
+// FinalOutput is called after the program has finished running. It returns the
+// full output that should be printed. We can't do this with View because
+// Bubbletea's renderer cuts off the top part that goes offscreen.
+func (f *Frontend) FinalOutput() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if zoom := f.currentZoom; zoom != nil {
+		// show the zoomed output on last render
+		return f.zoomedOutput(zoom)
+	}
+	if f.Debug {
+		// include line separator preceding further output
+		return f.view.String() + "\n"
+	}
+	return ""
 }
 
 func (fe *Frontend) zoomedOutput(st *zoomState) string {
@@ -441,7 +457,7 @@ func (f *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
 
 func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error {
 	id := step.ID()
-	vtx := step.FirstVertex()
+	vtx := step.db.PrimaryVertex(step.Digest)
 	if id != nil {
 		if err := fe.renderID(out, vtx, id, depth, false); err != nil {
 			return err
@@ -507,6 +523,30 @@ func (fe *Frontend) renderIDPath(out *termenv.Output, id *idproto.ID) error {
 	return nil
 }
 
+const (
+	kwColor     = termenv.ANSICyan
+	parentColor = termenv.ANSIWhite
+	moduleColor = termenv.ANSIMagenta
+)
+
+func (fe *Frontend) renderIDRef(out *termenv.Output, id *idproto.ID) error {
+	// dig, err := id.Base.Digest()
+	// if err != nil {
+	// 	return err
+	// }
+	typeName := id.Type.ToAST().Name()
+	// hash := network.HostHashStr(dig.String())
+
+	parent := out.String(typeName)
+	if id.Module != nil {
+		parent = parent.Foreground(moduleColor)
+	}
+	fmt.Fprint(out, parent.String())
+	// fmt.Fprint(out, out.String("@").Foreground(termenv.ANSIWhite))
+	// fmt.Fprint(out, out.String(hash).Foreground(termenv.ANSIMagenta))
+	return nil
+}
+
 func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
 	if !inline {
 		indent(out, depth)
@@ -516,15 +556,22 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 		fe.renderStatus(out, vtx)
 	}
 
+	// 	if id.Module != nil {
+	// 		fmt.Fprint(out, out.String(id.Module.Name).Foreground(termenv.ANSIMagenta).Bold())
+	// 		fmt.Fprint(out, " ")
+	// 	}
+
 	if id.Base != nil {
-		if err := fe.renderIDPath(out, id.Base); err != nil {
+		if err := fe.renderIDRef(out, id.Base); err != nil {
 			return err
 		}
+		fmt.Fprint(out, ".")
+		// if err := fe.renderIDPath(out, id.Base); err != nil {
+		// 	return err
+		// }
 	}
 
 	fmt.Fprint(out, out.String(id.Field).Bold())
-
-	kwColor := termenv.ANSIBlue
 
 	if len(id.Args) > 0 {
 		fmt.Fprint(out, "(")
@@ -559,7 +606,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 						return err
 					}
 				default:
-					renderLiteral(out, arg.Value)
+					fe.renderLiteral(out, arg.Value)
 					fmt.Fprintln(out)
 				}
 			}
@@ -572,14 +619,19 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 					fmt.Fprint(out, ", ")
 				}
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
-				renderLiteral(out, arg.Value)
+				fe.renderLiteral(out, arg.Value)
 			}
 		}
 		fmt.Fprint(out, ")")
 	}
 
-	typeStr := out.String(": " + id.Type.ToAST().String()).Foreground(termenv.ANSIBrightBlack)
+	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
 	fmt.Fprint(out, typeStr)
+
+	// fmt.Fprint(out, out.String(" => ").Foreground(termenv.ANSIBrightBlack))
+	// if err := fe.renderIDRef(out, id); err != nil {
+	// 	return err
+	// }
 
 	if vtx != nil {
 		fe.renderDuration(out, vtx)
@@ -600,20 +652,18 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 	return nil
 }
 
-var maxLen = len("ETOOBIG:") + len(digest.FromString(""))
-
-func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
+func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 	var color termenv.Color
 	switch val := lit.GetValue().(type) {
 	case *idproto.Literal_Bool:
-		color = termenv.ANSIBrightRed
+		color = termenv.ANSIRed
 	case *idproto.Literal_Int:
 		color = termenv.ANSIRed
 	case *idproto.Literal_Float:
 		color = termenv.ANSIRed
 	case *idproto.Literal_String_:
 		color = termenv.ANSIYellow
-		if len(val.String_) > maxLen {
+		if fe.window.Width != -1 && len(val.String_) > fe.window.Width {
 			display := string(digest.FromString(val.String_))
 			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(color))
 			return
@@ -630,7 +680,7 @@ func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
-			renderLiteral(out, item)
+			fe.renderLiteral(out, item)
 		}
 		fmt.Fprint(out, "]")
 		return
@@ -641,7 +691,7 @@ func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 				fmt.Fprint(out, ", ")
 			}
 			fmt.Fprintf(out, "%s: ", item.GetName())
-			renderLiteral(out, item.Value)
+			fe.renderLiteral(out, item.Value)
 		}
 		fmt.Fprint(out, "}")
 		return
@@ -661,7 +711,7 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 			symbol = ui.IconSkipped
 			color = termenv.ANSIBrightBlack
 		default:
-			symbol = ui.IconSuccess
+			symbol = fadeFrame(time.Since(vtx.Completed.AsTime())) // ui.IconSuccess
 			color = termenv.ANSIGreen
 		}
 	} else {
@@ -676,12 +726,12 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 
 func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
 	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(vtx.Duration()))
-	if vtx.Completed != nil {
-		duration = duration.Foreground(termenv.ANSIBrightBlack)
-	} else {
-		duration = duration.Foreground(termenv.ANSIYellow)
-	}
+	duration := out.String(fmtDuration(vtx.Duration())).Faint()
+	// if vtx.Completed != nil {
+	// 	duration = duration.Faint()
+	// } else {
+	// 	duration = duration.Foreground(termenv.ANSIYellow)
+	// }
 	fmt.Fprint(out, duration)
 }
 

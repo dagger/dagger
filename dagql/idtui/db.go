@@ -3,6 +3,7 @@ package idtui
 import (
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,29 +144,25 @@ func (db *DB) recordTask(t *progrock.VertexTask) {
 // - We DO show internal ID vertices, since they're currently marked internal
 // just to hide them from the old TUI.
 func (db *DB) Step(dig string) (*Step, bool) {
-	outVtx := db.FirstVertex(dig)
+	step := &Step{
+		Digest: dig,
+		db:     db,
+	}
+
 	outID := db.IDs[dig]
 	switch {
 	case outID != nil && outID.Field == "id":
 		db.l.Info("ignoring id selection")
 		return nil, false
-	case outID == nil && outVtx != nil && outVtx.Internal:
-		db.l.Info("ignoring internal vertex", "name", outVtx.Name, "id", outVtx.Id)
+	case outID == nil && step.IsInternal():
+		db.l.Info("ignoring internal vertex", "name", step.Name(), "id", step.Digest)
 		return nil, false
-	case outID != nil && outVtx != nil:
-	case outID == nil && outVtx != nil:
-		db.l.Warn("missing step ID", "digest", dig, "vertex", outVtx.Name)
-		// return Step{}, false
-	case outID != nil && outVtx == nil:
+	case outID != nil && !step.HasStarted():
 		db.l.Warn("missing step vertex", "digest", dig, "id", outID.DisplaySelf())
 		return nil, false
-	case outID == nil && outVtx == nil:
+	case outID == nil && !step.HasStarted():
 		db.l.Warn("missing all step info", "digest", dig)
 		return nil, false
-	}
-	step := &Step{
-		Digest: dig,
-		db:     db,
 	}
 	if outID != nil {
 		var ok bool
@@ -189,23 +186,33 @@ func (db *DB) HighLevelStep(id *idproto.ID) (*Step, bool) {
 	return db.Step(db.Simplify(parentDig.String()))
 }
 
-func (db *DB) FirstVertex(dig string) *progrock.Vertex {
+func (db *DB) PrimaryVertex(dig string) *progrock.Vertex {
 	var earliest *progrock.Vertex
-	for start, vtx := range db.Intervals[dig] {
+	vs := make([]*progrock.Vertex, 0, len(db.Intervals[dig]))
+	for _, vtx := range db.Intervals[dig] {
+		vs = append(vs, vtx)
+	}
+	sort.Slice(vs, func(i, j int) bool {
+		return vs[i].Started.AsTime().Before(vs[j].Started.AsTime())
+	})
+	for _, vtx := range db.Intervals[dig] {
+		if vtx.Cached {
+			continue
+		}
 		if earliest == nil {
 			earliest = vtx
 			continue
 		}
-		if vtx.Completed == nil && earliest.Completed != nil {
-			// prioritize actively running vertex over a completed one
-			earliest = vtx
-			continue
-		}
-		if earliest.Completed == nil && vtx.Completed != nil {
-			// never override a completed vertex with an incomplete one
-			continue
-		}
-		if start.Before(earliest.Started.AsTime()) {
+		// if vtx.Completed == nil && earliest.Completed != nil {
+		// 	// prioritize actively running vertex over a completed one
+		// 	earliest = vtx
+		// 	continue
+		// }
+		// if earliest.Completed == nil && vtx.Completed != nil {
+		// 	// never replace a running vertex with a completed one
+		// 	continue
+		// }
+		if vtx.Started.AsTime().Before(earliest.Started.AsTime()) {
 			earliest = vtx
 		}
 	}
@@ -213,17 +220,17 @@ func (db *DB) FirstVertex(dig string) *progrock.Vertex {
 }
 
 func (db *DB) IsTransitiveDependency(dig, depDig string) bool {
-	v := db.FirstVertex(dig)
-	if v == nil {
+	for _, v := range db.Intervals[dig] {
+		for _, dig := range v.Inputs {
+			if dig == depDig {
+				return true
+			}
+			if db.IsTransitiveDependency(dig, depDig) {
+				return true
+			}
+		}
+		// assume they all have the same inputs
 		return false
-	}
-	for _, dig := range v.Inputs {
-		if dig == depDig {
-			return true
-		}
-		if db.IsTransitiveDependency(dig, depDig) {
-			return true
-		}
 	}
 	return false
 }

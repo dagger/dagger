@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -89,6 +90,9 @@ type ExecError struct {
 }
 
 func (e *ExecError) Error() string {
+	if strings.TrimSpace(e.CombinedOutput) == "" {
+		return e.Message()
+	}
 	// As a default when just printing the error, include the stdout
 	// and stderr for visibility
 	return fmt.Sprintf(

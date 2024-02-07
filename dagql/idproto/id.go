@@ -68,8 +68,8 @@ func (lit *Literal) Inputs() ([]digest.Digest, error) {
 	}
 }
 
-func (id *ID) Modules() []*ID {
-	allMods := []*ID{}
+func (id *ID) Modules() []*Module {
+	allMods := []*Module{}
 	for id != nil {
 		if id.Module != nil {
 			allMods = append(allMods, id.Module)
@@ -80,9 +80,9 @@ func (id *ID) Modules() []*ID {
 		id = id.Base
 	}
 	seen := map[digest.Digest]struct{}{}
-	deduped := []*ID{}
+	deduped := []*Module{}
 	for _, mod := range allMods {
-		dig, err := mod.Digest()
+		dig, err := mod.Id.Digest()
 		if err != nil {
 			panic(err)
 		}

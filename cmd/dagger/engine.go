@@ -159,6 +159,11 @@ func inlineTUI(
 		defer sess.Close()
 		return fn(ctx, sess)
 	})
+	if out := frontend.FinalOutput(); out != "" {
+		fmt.Fprint(os.Stderr, out)
+	}
+	// TODO: replay logs sent to a vertex instead of printing one stream and then
+	// the other.
 	fmt.Fprint(os.Stdout, outBuf.String())
 	fmt.Fprint(os.Stderr, errBuf.String())
 	return err

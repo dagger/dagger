@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -23,13 +24,12 @@ func (step *Step) ID() *idproto.ID {
 	return step.db.IDs[step.Digest]
 }
 
-func (step *Step) FirstVertex() *progrock.Vertex {
-	// TODO cache?
-	return step.db.FirstVertex(step.Digest)
+func (step *Step) HasStarted() bool {
+	return len(step.db.Intervals[step.Digest]) > 0
 }
 
-func (s *Step) IsRunning() bool {
-	ivals := s.db.Intervals[s.Digest]
+func (step *Step) FirstVertex() bool {
+	ivals := step.db.Intervals[step.Digest]
 	if ivals == nil || len(ivals) == 0 {
 		return false
 	}
@@ -39,6 +39,84 @@ func (s *Step) IsRunning() bool {
 		}
 	}
 	return false
+}
+
+func (step *Step) IsRunning() bool {
+	ivals := step.db.Intervals[step.Digest]
+	if ivals == nil || len(ivals) == 0 {
+		return false
+	}
+	for _, vtx := range ivals {
+		if vtx.Completed == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (step *Step) Name() string {
+	for _, vtx := range step.db.Intervals[step.Digest] {
+		return vtx.Name // assume all names are equal
+	}
+	if step.ID() != nil {
+		return step.ID().DisplaySelf()
+	}
+	return "<unnamed>"
+}
+
+func (step *Step) Inputs() []string {
+	for _, vtx := range step.db.Intervals[step.Digest] {
+		return vtx.Inputs // assume all names are equal
+	}
+	if step.ID() != nil {
+		// TODO: in principle this could return arg ID digests, but not needed
+		return nil
+	}
+	return nil
+}
+
+func (step *Step) Err() error {
+	for _, vtx := range step.db.Intervals[step.Digest] {
+		if vtx.Error != nil {
+			return errors.New(vtx.GetError())
+		}
+	}
+	return nil
+}
+
+func (step *Step) IsInternal() bool {
+	for _, vtx := range step.db.Intervals[step.Digest] {
+		if vtx.Internal {
+			return true
+		}
+	}
+	return false
+}
+
+func (step *Step) Duration() time.Duration {
+	var d time.Duration
+	for _, vtx := range step.db.Intervals[step.Digest] {
+		d += vtx.Duration()
+	}
+	return d
+}
+
+func (step *Step) FirstCompleted() *time.Time {
+	var completed *time.Time
+	for _, vtx := range step.db.Intervals[step.Digest] {
+		if vtx.Completed == nil {
+			continue
+		}
+		cmp := vtx.Completed.AsTime()
+		if completed == nil {
+			completed = &cmp
+			continue
+		}
+		if cmp.Before(*completed) {
+			completed = &cmp
+		}
+	}
+	return completed
 }
 
 func (s *Step) StartTime() time.Time {
@@ -195,4 +273,17 @@ func fmtDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%dd%dh%dm%.1fs", days, hours, minutes, seconds)
 	}
+}
+
+var fadeout = []string{"●", "◕", "◑", "◔", "○"}
+
+func fadeFrame(left time.Duration) string {
+	if left < 0 {
+		return " "
+	}
+	fade := int(left / (GCThreshold / 5))
+	if fade > 4 {
+		fade = 4
+	}
+	return fadeout[fade]
 }
