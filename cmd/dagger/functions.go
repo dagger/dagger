@@ -122,9 +122,6 @@ func (fcs FuncCommands) All() []*cobra.Command {
 }
 
 func setCmdOutput(cmd *cobra.Command, vtx *progrock.VertexRecorder) {
-	if silent {
-		return
-	}
 	cmd.SetOut(vtx.Stdout())
 	cmd.SetErr(vtx.Stderr())
 }
