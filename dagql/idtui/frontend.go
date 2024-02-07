@@ -51,6 +51,10 @@ type Frontend struct {
 	steps []*Step
 	rows  []*TraceRow
 
+	// progrock logging
+	messages  *Vterm
+	messagesW *termenv.Output
+
 	// primaryVtx is the primary vertex whose output is printed directly to
 	// stdout/stderr on exit after cleaning up the TUI.
 	primaryVtx  *progrock.Vertex
@@ -62,7 +66,6 @@ type Frontend struct {
 	// TUI state/config
 	fps         float64 // frames per second
 	profile     termenv.Profile
-	spin        tea.Model             // da spin zone
 	window      tea.WindowSizeMsg     // set by BubbleTea
 	view        *bytes.Buffer         // rendered async
 	logs        map[string]*Vterm     // vertex logs
@@ -79,18 +82,19 @@ type zoomState struct {
 }
 
 func New() *Frontend {
-	spin := ui.NewRave()
-	spin.Frames = ui.MiniDotFrames
+	logs := NewVterm()
+	profile := ui.ColorProfile()
 	return &Frontend{
 		db: NewDB(),
 
-		fps:     30, // sane default, fine-tune if needed
-		profile: ui.ColorProfile(),
-		spin:    spin,
-		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:    new(bytes.Buffer),
-		logs:    make(map[string]*Vterm),
-		zoomed:  make(map[string]*zoomState),
+		fps:       30, // sane default, fine-tune if needed
+		profile:   profile,
+		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		view:      new(bytes.Buffer),
+		logs:      make(map[string]*Vterm),
+		zoomed:    make(map[string]*zoomState),
+		messages:  logs,
+		messagesW: ui.NewOutput(logs, termenv.WithProfile(profile)),
 	}
 }
 
@@ -200,26 +204,41 @@ func (fe *Frontend) finalRender() error {
 	out := termenv.NewOutput(os.Stderr)
 
 	if fe.Debug || fe.err != nil {
-		renderedAny, err := fe.renderProgress(out)
-		if err != nil {
+		if renderedAny, err := fe.renderProgress(out); err != nil {
 			return err
-		}
-		if renderedAny {
+		} else if renderedAny {
 			fmt.Fprintln(out)
 		}
 	}
 
 	if zoom := fe.currentZoom; zoom != nil {
-		renderedAny, err := fe.renderZoomed(out, zoom)
-		if err != nil {
+		if renderedAny, err := fe.renderZoomed(out, zoom); err != nil {
 			return err
-		}
-		if renderedAny {
+		} else if renderedAny {
 			fmt.Fprintln(out)
 		}
 	}
 
+	if renderedAny, err := fe.renderMessages(out, true); err != nil {
+		return err
+	} else if renderedAny {
+		fmt.Fprintln(out)
+	}
+
 	return fe.renderPrimaryOutput()
+}
+
+func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error) {
+	if fe.messages.UsedHeight() == 0 {
+		return false, nil
+	}
+	if full {
+		fe.messages.SetHeight(fe.messages.UsedHeight())
+	} else {
+		fe.messages.SetHeight(10)
+	}
+	_, err := fmt.Fprint(out, fe.messages.View())
+	return true, err
 }
 
 func (fe *Frontend) renderPrimaryOutput() error {
@@ -328,6 +347,11 @@ func (fe *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
 			return fmt.Errorf("write logs: %w", err)
 		}
 	}
+	for _, msg := range update.Messages {
+		if fe.Debug || msg.Level > progrock.MessageLevel_DEBUG {
+			progrock.WriteMessage(fe.messagesW, msg)
+		}
+	}
 	if len(update.Vertexes) > 0 {
 		fe.steps = CollectSteps(fe.db)
 		fe.rows = CollectRows(fe.steps)
@@ -415,10 +439,14 @@ func (fe *Frontend) Render(out *termenv.Output) error {
 	if fe.currentZoom != nil && fe.currentZoom.Output.UsedHeight() > 0 {
 		_, err := fe.renderZoomed(out, fe.currentZoom)
 		return err
-	} else {
-		_, err := fe.renderProgress(out)
+	}
+	if _, err := fe.renderProgress(out); err != nil {
 		return err
 	}
+	if _, err := fe.renderMessages(out, false); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
@@ -453,7 +481,6 @@ var _ tea.Model = (*Frontend)(nil)
 
 func (fe *Frontend) Init() tea.Cmd {
 	return tea.Batch(
-		fe.spin.Init(),
 		ui.Frame(fe.fps),
 		fe.spawn,
 	)
@@ -501,6 +528,7 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, vt := range fe.logs {
 			vt.SetWidth(msg.Width)
 		}
+		fe.messages.SetWidth(msg.Width)
 		return fe, nil
 
 	case ui.FrameMsg:
@@ -755,7 +783,7 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 			color = termenv.ANSIGreen
 		}
 	} else {
-		symbol = ui.DotFilled // fe.spin.View()
+		symbol = ui.DotFilled
 		color = termenv.ANSIYellow
 	}
 
