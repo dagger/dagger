@@ -579,7 +579,7 @@ func TestModuleDaggerInit(t *testing.T) {
 				require.NoError(t, err)
 				require.Contains(t, srcRootEnts, "dagger.json")
 				require.NotContains(t, srcRootEnts, tc.sourceDirEnt)
-				srcDirEnts, err := srcRootDir.Directory("dagger/" + tc.sdk).Entries(ctx)
+				srcDirEnts, err := srcRootDir.Directory("dagger").Entries(ctx)
 				require.NoError(t, err)
 				require.Contains(t, srcDirEnts, tc.sourceDirEnt)
 			})
@@ -774,7 +774,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 
 			if tc.customSDKSource != "" {
 				// TODO: hardcoding that underlying sdk is go right now, could be generalized
-				ctr = ctr.WithNewFile("dagger/"+tc.sdk+"/main.go", dagger.ContainerWithNewFileOpts{
+				ctr = ctr.WithNewFile("dagger/main.go", dagger.ContainerWithNewFileOpts{
 					Contents: tc.mainSource,
 				})
 			} else {
@@ -786,11 +786,11 @@ func (m *Coolsdk) RequiredPaths() []string {
 				With(configFile(".", &modules.ModuleConfig{
 					Name:    "test",
 					SDK:     tc.sdk,
-					Include: []string{"dagger/" + tc.sdk + "/subdir/keepdir"},
-					Exclude: []string{"dagger/" + tc.sdk + "/subdir/keepdir/rmdir"},
-					Source:  "dagger/" + tc.sdk,
+					Include: []string{"dagger/subdir/keepdir"},
+					Exclude: []string{"dagger/subdir/keepdir/rmdir"},
+					Source:  "dagger",
 				})).
-				WithDirectory("dagger/"+tc.sdk+"/subdir/keepdir/rmdir", c.Directory())
+				WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory())
 
 			// call should work even though dagger.json and main source files weren't
 			// explicitly included

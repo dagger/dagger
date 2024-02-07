@@ -244,7 +244,7 @@ var moduleInitCmd = &cobra.Command{
 
 			// default source dir
 			if moduleSourcePath == "" && sdk != "" {
-				moduleSourcePath = filepath.Join(defaultModuleSourceDirName, sdk)
+				moduleSourcePath = defaultModuleSourceDirName
 			}
 
 			_, err = modConf.Source.

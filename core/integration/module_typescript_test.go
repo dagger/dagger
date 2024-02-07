@@ -128,7 +128,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("Add dagger paths to the existing tsconfig.json", func(t *testing.T) {
-			tsConfig, err := modGen.File("/work/dagger/typescript/tsconfig.json").Contents(ctx)
+			tsConfig, err := modGen.File("/work/dagger/tsconfig.json").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, tsConfig, `"@dagger.io/dagger":`)
 		})

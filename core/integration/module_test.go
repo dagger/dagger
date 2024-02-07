@@ -109,7 +109,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"beneathGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("names Go module after Dagger module", func(t *testing.T) {
-			generated, err := modGen.Directory("dagger/go").File("go.mod").Contents(ctx)
+			generated, err := modGen.Directory("dagger").File("go.mod").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "module main")
 		})
@@ -626,7 +626,7 @@ func TestModuleGoSignaturesBuiltinTypes(t *testing.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=minimal", "--sdk=go")).
-		WithNewFile("dagger/go/main.go", dagger.ContainerWithNewFileOpts{
+		WithNewFile("dagger/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
 import "context"
@@ -4443,11 +4443,11 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 		var sourcePath string
 		switch sdk {
 		case "go":
-			sourcePath = "dagger/go/main.go"
+			sourcePath = "dagger/main.go"
 		case "python":
-			sourcePath = "dagger/python/src/main.py"
+			sourcePath = "dagger/src/main.py"
 		case "typescript":
-			sourcePath = "dagger/typescript/src/index.ts"
+			sourcePath = "dagger/src/index.ts"
 		default:
 			return c
 		}
@@ -4461,11 +4461,11 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	t.Helper()
 	switch sdk {
 	case "go":
-		return "dagger/go/dagger.gen.go"
+		return "dagger/dagger.gen.go"
 	case "python":
-		return "dagger/python/sdk/src/dagger/client/gen.py"
+		return "dagger/sdk/src/dagger/client/gen.py"
 	case "typescript":
-		return "dagger/typescript/sdk/api/client.gen.ts"
+		return "dagger/sdk/api/client.gen.ts"
 	default:
 		return ""
 	}
