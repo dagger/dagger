@@ -89,10 +89,10 @@ type Test struct {
 
 		tty := console.Tty()
 
-		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 22})
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 80})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "--progress=plain", "ctr", "as-service", "up", "--random")
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--random")
 		cmd.Stdin = nil
 		cmd.Stdout = tty
 		cmd.Stderr = tty
