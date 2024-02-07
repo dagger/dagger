@@ -38,7 +38,7 @@ This means that the build succeeded, and a `Container` type representing the bui
 
 ### Start an interactive terminal session with the container
 
-One of the most interesting `Container` functions is `Shell()`, which can be used to open an interactive terminal session with the container. This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
+One of the most interesting `Container` functions is `Terminal()`, which can be used to open an interactive terminal session with the container. This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
 
 To see this in action, call the previous function again, this time chaining an additional function call to `Shell()` on the returned `Container`:
 
