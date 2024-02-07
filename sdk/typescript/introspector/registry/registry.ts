@@ -17,7 +17,6 @@ export type Args = Record<string, unknown>
  */
 type RegistryClass = {
   class_: Class
-  methods: string[]
 }
 
 /**
@@ -42,34 +41,7 @@ export class Registry {
    */
   object = (): (<T extends Class>(constructor: T) => T) => {
     return <T extends Class>(constructor: T): T => {
-      const methods: string[] = []
-
-      // Create a dummy instance of the constructor to loop through its properties
-      // We only register user's method and ignore TypeScript default method
-      let proto = new constructor()
-      while (proto && proto !== Object.prototype) {
-        const ownMethods = Object.getOwnPropertyNames(proto).filter((name) => {
-          const descriptor = Object.getOwnPropertyDescriptor(proto, name)
-
-          // Check if the descriptor exist, then if it's a function and finally
-          // if the function is owned by the class.
-          return (
-            descriptor &&
-            typeof descriptor.value === "function" &&
-            Object.prototype.hasOwnProperty.call(proto, name)
-          )
-        })
-
-        methods.push(...ownMethods)
-
-        proto = Object.getPrototypeOf(proto)
-      }
-
-      Reflect.defineMetadata(
-        constructor.name,
-        { class_: constructor, methods },
-        this
-      )
+      Reflect.defineMetadata(constructor.name, { class_: constructor }, this)
 
       return constructor
     }
@@ -140,17 +112,17 @@ export class Registry {
       return new resolver.class_(...Object.values(inputs))
     }
 
+    // Instantiate the class without calling the constructor
+    let r = Object.create(resolver.class_.prototype)
+
     // Safety check to make sure the method called exist in the class
     // to avoid the app to crash brutally.
-    if (!resolver.methods.find((m) => m === method)) {
+    if (!r[method]) {
       throw new UnknownDaggerError(
         `${method} is not registered in the resolver ${object}`,
         {}
       )
     }
-
-    // Instantiate the class
-    let r = new resolver.class_() as any
 
     // Apply state to the class
     r = Object.assign(r, state)

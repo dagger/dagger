@@ -6,13 +6,5 @@
       "name": "node",
       "source": "node"
     }
-  ],
-  "root-for": [
-    {
-      "source": "."
-    },
-    {
-      "source": "."
-    }
   ]
 }

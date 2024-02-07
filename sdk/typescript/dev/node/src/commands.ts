@@ -1,6 +1,6 @@
 import { Container, object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 export class Commands {
   // Container to apply commands on
   ctr: Container
@@ -9,22 +9,22 @@ export class Commands {
     this.ctr = ctr
   }
 
-  @func
+  @func()
   run(args: string[]): Container {
     return this.ctr.withExec(["run", ...args])
   }
 
-  @func
-  async lint(): Promise<string> {
-    return await this.run(["lint"]).stdout()
+  @func()
+  lint(): Container {
+    return this.run(["lint"])
   }
 
-  @func
-  async test(): Promise<string> {
-    return await this.run(["test"]).stdout()
+  @func()
+  test(): Container {
+    return this.run(["test"])
   }
 
-  @func
+  @func()
   build(): Container {
     return this.run(["build"])
   }
