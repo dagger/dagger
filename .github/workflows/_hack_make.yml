@@ -41,6 +41,8 @@ jobs:
 
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
           fi
+          cat /proc/self/mounts
+          lsblk -a
           ./hack/make engine:connect
       - name: ${{ inputs.mage-targets }}
         run: |
@@ -73,7 +75,11 @@ jobs:
           fi
 
           echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
+          
+          cat /proc/self/mounts
 
+          lsblk -a
+          
           ./hack/make engine:connect
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
