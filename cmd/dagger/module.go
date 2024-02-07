@@ -152,6 +152,10 @@ dagger config -m github.com/dagger/hello-dagger
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			cmd.SetContext(ctx)
 
+			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			defer func() { vtx.Done(err) }()
+			setCmdOutput(cmd, vtx)
+
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)
@@ -219,6 +223,11 @@ The "--source" flag allows controlling the directory in which the actual module 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
+			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			defer func() { vtx.Done(err) }()
+			setCmdOutput(cmd, vtx)
+
+			// default the module source root to the current working directory if it doesn't exist yet
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
@@ -282,6 +291,8 @@ The "--source" flag allows controlling the directory in which the actual module 
 			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
 				return err
 			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootPath)
 
 			return nil
 		})
