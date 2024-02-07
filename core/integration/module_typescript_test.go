@@ -154,7 +154,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
 				  }
 				}
-					
+
 				`,
 			}).
 			With(daggerExec("init", "--name=existingSource", "--sdk=typescript"))
@@ -373,15 +373,11 @@ func TestModuleTypescriptSignatureUnexported(t *testing.T) {
 		With(daggerExec("init", "--name=minimal", "--sdk=typescript")).
 		With(sdkSource("typescript", tsSignaturesUnexported))
 
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	objs := gjson.Get(out, "host.directory.asModule.initialize.objects")
+	objs := inspectModuleObjects(ctx, t, modGen)
 
 	require.Equal(t, 2, len(objs.Array()))
-	minimal := objs.Get(`1.asObject`)
-	require.Equal(t, "Minimal", minimal.Get("name").String())
-	foo := objs.Get(`0.asObject`)
-	require.Equal(t, "MinimalFoo", foo.Get("name").String())
+	require.Equal(t, "Minimal", objs.Get("1.name").String())
+	require.Equal(t, "MinimalFoo", objs.Get("0.name").String())
 }
 
 func TestModuleTypescriptDocs(t *testing.T) {
@@ -395,9 +391,7 @@ func TestModuleTypescriptDocs(t *testing.T) {
 		With(daggerExec("init", "--name=minimal", "--sdk=typescript")).
 		With(sdkSource("typescript", tsSignatures))
 
-	out, err := modGen.With(inspectModule).Stdout(ctx)
-	require.NoError(t, err)
-	obj := gjson.Get(out, "host.directory.asModule.initialize.objects.0.asObject")
+	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
 	require.Equal(t, "Minimal", obj.Get("name").String())
 	require.Equal(t, "This is the Minimal object", obj.Get("description").String())
 
@@ -496,7 +490,7 @@ class Foo {}
 		t.Run("direct", func(t *testing.T) {
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
-			
+
 			@object()
 			class Test {
 			  @func()
@@ -517,7 +511,7 @@ class Foo {}
 		t.Run("list", func(t *testing.T) {
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
-			
+
 			@object()
 			class Test {
 			  @func()
@@ -540,12 +534,12 @@ class Foo {}
 		t.Run("direct", func(t *testing.T) {
 			_, err := ctr.With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
-			
+
 @object()
 class Test {
   @func()
   fn(obj: DepObj): void {}
-}			
+}
 			`)).
 				With(daggerFunctions()).
 				Stdout(ctx)
@@ -560,7 +554,7 @@ class Test {
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
-			
+
 @object()
 class Test {
   @func()
@@ -582,7 +576,7 @@ class Test {
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
-			
+
 @object()
 class Test {
   @func()
@@ -610,7 +604,7 @@ class Obj {
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
-			
+
 @object()
 class Test {
   @func()

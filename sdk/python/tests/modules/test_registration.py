@@ -1,7 +1,10 @@
+from typing import cast
+
 import pytest
 
 from dagger.mod import Module
 from dagger.mod._exceptions import NameConflictError, UserError
+from dagger.mod._resolver import FunctionResolver
 
 
 def get_resolver(mod: Module, parent_name: str, resolver_name: str):
@@ -121,4 +124,16 @@ def test_func_doc():
 
     r = get_resolver(mod, "Foo", "fn_with_doc")
 
-    assert r.doc == "Foo."
+    assert cast(FunctionResolver, r).func_doc == "Foo."
+
+
+@pytest.mark.anyio()
+async def test_nullable_no_default():
+    mod = Module()
+
+    @mod.function
+    def echo(msg: str | None) -> str:
+        return "hello" if msg is None else msg
+
+    with pytest.raises(TypeError, match="must have a default value"):
+        await mod._register(mod.get_resolvers("foo"), "foo")
