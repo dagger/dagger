@@ -241,7 +241,7 @@ func devEngineContainer(ctx context.Context, c *dagger.Client, arch string, vers
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
 		}).
-		WithFile(engineShimPath, shimBin(c, arch)).
+		WithFile(engineShimPath, shimBin(c, arch, version)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
 		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
@@ -290,7 +290,7 @@ func devEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arc
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
 		}).
-		WithFile(engineShimPath, shimBin(c, arch)).
+		WithFile(engineShimPath, shimBin(c, arch, version)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
 		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
 		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
@@ -522,14 +522,14 @@ func runcBin(c *dagger.Client, arch string) *dagger.File {
 		File("runc")
 }
 
-func shimBin(c *dagger.Client, arch string) *dagger.File {
+func shimBin(c *dagger.Client, arch string, version string) *dagger.File {
 	return goBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
 		WithExec([]string{
 			"go", "build",
 			"-o", "./bin/" + filepath.Base(engineShimPath),
-			"-ldflags", "-s -w",
+			"-ldflags", "-s -w -X github.com/dagger/dagger/engine.Version=" + version,
 			"/app/cmd/shim",
 		}).
 		File("./bin/" + filepath.Base(engineShimPath))

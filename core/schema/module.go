@@ -178,9 +178,6 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
 
-		dagql.Func("withEngineVersion", s.moduleWithEngineVersion).
-			Doc(`Updated the module configuration with the version of this engine.`),
-
 		dagql.NodeFunc("serve", s.moduleServe).
 			Impure(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
@@ -614,13 +611,6 @@ func (s *moduleSchema) moduleInitialize(
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
 	}
 	return mod, nil
-}
-
-func (s *moduleSchema) moduleWithEngineVersion(ctx context.Context, mod *core.Module, args struct {
-	// No args yet, version is always set to the version of this engine.
-	// In future, can add optional arg for explicitly configuring if desired.
-}) (*core.Module, error) {
-	return mod.WithEngineVersion(ctx, engine.Version)
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {

@@ -3989,12 +3989,11 @@ type Module struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	description   *string
-	engineVersion *string
-	id            *ModuleID
-	name          *string
-	sdk           *string
-	serve         *Void
+	description *string
+	id          *ModuleID
+	name        *string
+	sdk         *string
+	serve       *Void
 }
 type WithModuleFunc func(r *Module) *Module
 
@@ -4079,19 +4078,6 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 		return *r.description, nil
 	}
 	q := r.q.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// The engine version this module was developed with.
-func (r *Module) EngineVersion(ctx context.Context) (string, error) {
-	if r.engineVersion != nil {
-		return *r.engineVersion, nil
-	}
-	q := r.q.Select("engineVersion")
 
 	var response string
 
@@ -4302,16 +4288,6 @@ func (r *Module) Source() *ModuleSource {
 func (r *Module) WithDescription(description string) *Module {
 	q := r.q.Select("withDescription")
 	q = q.Arg("description", description)
-
-	return &Module{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Updated the module configuration with the version of this engine.
-func (r *Module) WithEngineVersion() *Module {
-	q := r.q.Select("withEngineVersion")
 
 	return &Module{
 		q: q,

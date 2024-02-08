@@ -37,8 +37,6 @@ type Module struct {
 
 	GeneratedContextDirectory dagql.Instance[*Directory] `field:"true" name:"generatedContextDirectory" doc:"The module source's context plus any configuration and source files created by codegen."`
 
-	EngineVersion string `field:"true" doc:"The engine version this module was developed with."`
-
 	// Dependencies as configured by the module
 	DependencyConfig []*ModuleDependency `field:"true" doc:"The dependencies as configured by the module."`
 
@@ -122,15 +120,6 @@ func (mod *Module) IDModule() *idproto.Module {
 		Name: mod.Name(),
 		Ref:  ref,
 	}
-}
-func (mod *Module) WithEngineVersion(ctx context.Context, version string) (*Module, error) {
-	if mod.InstanceID != nil {
-		return nil, fmt.Errorf("cannot update engine version on initialized module")
-	}
-
-	mod = mod.Clone()
-	mod.EngineVersion = version
-	return mod, nil
 }
 
 func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Module], newID *idproto.ID) (*Module, error) {

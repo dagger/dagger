@@ -41,15 +41,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The engine version this module was developed with.
-     */
-    public function engineVersion(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('engineVersion');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'engineVersion');
-    }
-
-    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDiff(): Directory
@@ -157,15 +148,6 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
         $innerQueryBuilder->setArgument('description', $description);
-        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Updated the module configuration with the version of this engine.
-     */
-    public function withEngineVersion(): Module
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEngineVersion');
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

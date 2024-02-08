@@ -3957,11 +3957,6 @@ impl Module {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The engine version this module was developed with.
-    pub async fn engine_version(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("engineVersion");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_diff(&self) -> Directory {
         let query = self.selection.select("generatedContextDiff");
@@ -4054,15 +4049,6 @@ impl Module {
     pub fn with_description(&self, description: impl Into<String>) -> Module {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
-        return Module {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Updated the module configuration with the version of this engine.
-    pub fn with_engine_version(&self) -> Module {
-        let query = self.selection.select("withEngineVersion");
         return Module {
             proc: self.proc.clone(),
             selection: query,

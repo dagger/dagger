@@ -282,7 +282,6 @@ The "--source" flag allows controlling the directory in which the actual module 
 				WithSourceSubpath(moduleSourcePath).
 				ResolveFromCaller().
 				AsModule().
-				// WithEngineVersion(). // TODO: move to ModuleSource
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -356,7 +355,6 @@ var moduleInstallCmd = &cobra.Command{
 
 			_, err = modSrc.
 				AsModule().
-				// WithEngineVersion(). // TODO: move to ModuleSource
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -504,7 +502,6 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 
 			_, err = src.ResolveFromCaller().
 				AsModule().
-				// WithEngineVersion(). // TODO: move to ModuleSource
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
