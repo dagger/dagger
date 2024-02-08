@@ -38,56 +38,6 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-// Optional is a helper type to represent optional values. Any method arguments
-// that use this wrapper type will be set as optional in the generated API.
-//
-// To construct an Optional from within a module, use the Opt helper function.
-type Optional[T any] struct {
-	value T
-	isSet bool
-}
-
-// Opt is a helper function to construct an Optional with the given value set.
-func Opt[T any](v T) Optional[T] {
-	return Optional[T]{value: v, isSet: true}
-}
-
-// OptEmpty is a helper function to construct an empty Optional.
-func OptEmpty[T any]() Optional[T] {
-	return Optional[T]{}
-}
-
-// Get returns the internal value of the optional and a boolean indicating if
-// the value was set explicitly by the caller.
-func (o *Optional[T]) Get() (T, bool) {
-	if o == nil {
-		var empty T
-		return empty, false
-	}
-	return o.value, o.isSet
-}
-
-// GetOr returns the internal value of the optional or the given default value
-// if the value was not explicitly set by the caller.
-func (o *Optional[T]) GetOr(defaultValue T) T {
-	if o == nil {
-		return defaultValue
-	}
-	if o.isSet {
-		return o.value
-	}
-	return defaultValue
-}
-
-func (o *Optional[T]) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&o.value)
-}
-
-func (o *Optional[T]) UnmarshalJSON(dt []byte) error {
-	o.isSet = true
-	return json.Unmarshal(dt, &o.value)
-}
-
 type DaggerObject querybuilder.GraphQLMarshaller
 
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
@@ -96,13 +46,6 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
     out[i] = f(v)
   }
   return out
-}
-
-func convertOptionalVal[I any, O any](opt Optional[I], f func(I) O) Optional[O] {
-	if !opt.isSet {
-		return Optional[O]{}
-	}
-	return Optional[O]{value: f(opt.value), isSet: true}
 }
 
 // getCustomError parses a GraphQL error into a more specific error type.

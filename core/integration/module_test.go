@@ -649,10 +649,12 @@ func (m *Minimal) ReadVariadic(ctx context.Context, dir ...Directory) (string, e
 	return dir[0].File("foo").Contents(ctx)
 }
 
-func (m *Minimal) ReadOptional(ctx context.Context, dir Optional[Directory]) (string, error) {
-	d, ok := dir.Get()
-	if ok {
-		return d.File("foo").Contents(ctx)
+func (m *Minimal) ReadOptional(
+	ctx context.Context,
+	dir *Directory, // +optional
+) (string, error) {
+	if dir != nil {
+		return dir.File("foo").Contents(ctx)
 	}
 	return "", nil
 }
@@ -1146,65 +1148,6 @@ func (m *Minimal) HelloOpts(opts struct{
 		out, err := modGen.With(daggerQuery(`{minimal{%s(string: "")}}`, name)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": "hello"}}`, name), out)
-	}
-}
-
-func TestModuleGoOptionalMustBeNil(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
-
-type Minimal struct {}
-
-func (m *Minimal) Foo(x *Optional[*string]) string {
-	if v, _ := x.Get(); v != nil {
-		panic("uh oh")
-	}
-	return ""
-}
-
-func (m *Minimal) Bar(opts struct {
-	x *Optional[*string]
-}) string {
-	if v, _ := opts.x.Get(); v != nil {
-		panic("uh oh")
-	}
-	return ""
-}
-
-func (m *Minimal) Baz(
-	// +optional
-	x *string,
-) string {
-	if x != nil {
-		panic("uh oh")
-	}
-	return ""
-}
-
-func (m *Minimal) Qux(opts struct {
-	// +optional
-	x *string
-}) string {
-	if opts.x != nil {
-		panic("uh oh")
-	}
-	return ""
-}
-`,
-		})
-
-	for _, name := range []string{"foo", "bar", "baz", "qux"} {
-		out, err := modGen.With(daggerQuery(`{minimal{%s}}`, name)).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, fmt.Sprintf(`{"minimal": {"%s": ""}}`, name), out)
 	}
 }
 
@@ -3103,13 +3046,17 @@ import (
 func New(
 	ctx context.Context,
 	foo string,
-	bar Optional[int],
+	bar *int, // +optional
 	baz []string,
 	dir *Directory,
 ) *Test {
+	bar2 := 42
+	if bar != nil {
+		bar2 = *bar
+	}
 	return &Test{
 		Foo: foo,
-		Bar: bar.GetOr(42),
+		Bar: bar2,
 		Baz: baz,
 		Dir: dir,
 	}

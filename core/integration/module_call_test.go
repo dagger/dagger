@@ -205,8 +205,14 @@ func (m *Test) Fn(dir *Directory) *Directory {
 					Contents: `package main
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
-	return dir.Directory(subpath.GetOr("."))
+func (m *Test) Fn(
+	dir *Directory,
+	subpath string, // +optional
+) *Directory {
+	if subpath == "" {
+		subpath = "."
+	}
+	return dir.Directory(subpath)
 }
 	`,
 				})
