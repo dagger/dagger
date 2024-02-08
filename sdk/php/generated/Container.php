@@ -548,6 +548,23 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container plus the contents of the given files copied to the given path.
+     */
+    public function withFiles(string $path, array $sources, ?int $permissions = null, ?string $owner = ''): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sources', $sources);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        if (null !== $owner) {
+        $innerQueryBuilder->setArgument('owner', $owner);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Indicate that subsequent operations should be featured more prominently in the UI.
      */
     public function withFocus(): Container

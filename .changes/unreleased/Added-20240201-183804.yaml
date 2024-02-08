@@ -1,0 +1,6 @@
+kind: Added
+body: add `Directory.WithFiles` and `Container.WithFiles`
+time: 2024-02-01T18:38:04.314455612+01:00
+custom:
+  Author: tomasmota
+  PR: "6556"

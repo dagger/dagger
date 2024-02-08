@@ -45,6 +45,11 @@ func (s *directorySchema) Install() {
 			ArgDoc("path", `Location of the copied file (e.g., "/file.txt").`).
 			ArgDoc("source", `Identifier of the file to copy.`).
 			ArgDoc("permissions", `Permission given to the copied file (e.g., 0600).`),
+		dagql.Func("withFiles", s.withFiles).
+			Doc(`Retrieves this directory plus the contents of the given files copied to the given path.`).
+			ArgDoc("path", `Location where copied files should be placed (e.g., "/src").`).
+			ArgDoc("sources", `Identifiers of the files to copy.`).
+			ArgDoc("permissions", `Permission given to the copied files (e.g., 0600).`),
 		dagql.Func("withNewFile", s.withNewFile).
 			Doc(`Retrieves this directory plus a new file written at the given path.`).
 			ArgDoc("path", `Location of the written file (e.g., "/file.txt").`).
@@ -210,6 +215,25 @@ func (s *directorySchema) withFile(ctx context.Context, parent *core.Directory, 
 	}
 
 	return parent.WithFile(ctx, args.Path, file.Self, args.Permissions, nil)
+}
+
+type WithFilesArgs struct {
+	Path        string
+	Sources     []core.FileID
+	Permissions *int
+}
+
+func (s *directorySchema) withFiles(ctx context.Context, parent *core.Directory, args WithFilesArgs) (*core.Directory, error) {
+	files := []*core.File{}
+	for _, id := range args.Sources {
+		file, err := id.Load(ctx, s.srv)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, file.Self)
+	}
+
+	return parent.WithFiles(ctx, args.Path, files, args.Permissions, nil)
 }
 
 type withoutDirectoryArgs struct {

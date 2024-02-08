@@ -503,6 +503,33 @@ func (dir *Directory) WithFile(
 	return dir, nil
 }
 
+// TODO: address https://github.com/dagger/dagger/pull/6556/files#r1482830091
+func (dir *Directory) WithFiles(
+	ctx context.Context,
+	destDir string,
+	src []*File,
+	permissions *int,
+	owner *Ownership,
+) (*Directory, error) {
+	dir = dir.Clone()
+
+	var err error
+	for _, file := range src {
+		dir, err = dir.WithFile(
+			ctx,
+			path.Join(destDir, path.Base(file.File)),
+			file,
+			permissions,
+			owner,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return dir, nil
+}
+
 type mergeStateInput struct {
 	Dest         llb.State
 	DestDir      string

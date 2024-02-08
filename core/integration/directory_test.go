@@ -397,6 +397,64 @@ func TestDirectoryWithFile(t *testing.T) {
 	})
 }
 
+func TestDirectoryWithFiles(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	file1 := c.Directory().
+		WithNewFile("first-file", "file1 content").
+		File("first-file")
+	file2 := c.Directory().
+		WithNewFile("second-file", "file2 content").
+		File("second-file")
+	files := []*dagger.File{file1, file2}
+	dir := c.Directory().
+		WithFiles("/", files)
+
+	// check file1 contents
+	content, err := dir.File("/first-file").Contents(ctx)
+	require.Equal(t, "file1 content", content)
+	require.NoError(t, err)
+
+	// check file2 contents
+	content, err = dir.File("/second-file").Contents(ctx)
+	require.Equal(t, "file2 content", content)
+	require.NoError(t, err)
+
+	_, err = dir.File("/some-other-file").Contents(ctx)
+	require.Error(t, err)
+
+	// test sub directory
+	subDir := c.Directory().
+		WithFiles("/a/b/c", files)
+	content, err = subDir.File("/a/b/c/first-file").Contents(ctx)
+	require.Equal(t, "file1 content", content)
+	require.NoError(t, err)
+
+	t.Run("respects permissions", func(t *testing.T) {
+		file1 := c.Directory().
+			WithNewFile("file-set-permissions", "this should have rwxrwxrwx permissions", dagger.DirectoryWithNewFileOpts{Permissions: 0o777}).
+			File("file-set-permissions")
+		file2 := c.Directory().
+			WithNewFile("file-default-permissions", "this should have rw-r--r-- permissions").
+			File("file-default-permissions")
+		files := []*dagger.File{file1, file2}
+		dir := c.Directory().
+			WithFiles("/", files)
+
+		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+
+		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-set-permissions"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stdout, "rwxrwxrwx")
+
+		ctr2 := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-default-permissions"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stdout2, "rw-r--r--")
+	})
+}
+
 func TestDirectoryWithTimestamps(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
