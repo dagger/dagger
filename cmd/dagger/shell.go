@@ -78,7 +78,12 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 		for {
 			_, buff, err := wsconn.ReadMessage()
 			if err != nil {
-				errCh <- fmt.Errorf("read: %w", err)
+				wsCloseErr := &websocket.CloseError{}
+				if errors.As(err, &wsCloseErr) && wsCloseErr.Code == websocket.CloseNormalClosure {
+					break
+				} else {
+					errCh <- fmt.Errorf("read: %w", err)
+				}
 				return
 			}
 			switch {
@@ -116,12 +121,9 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	}()
 
 	if err := <-errCh; err != nil {
-		wsCloseErr := &websocket.CloseError{}
-		if errors.As(err, &wsCloseErr) && wsCloseErr.Code == websocket.CloseNormalClosure {
-			return nil
-		}
-		return fmt.Errorf("websocket close: %w", err)
+		return fmt.Errorf("websocket error: %w", err)
 	}
+
 	if exitCode != 0 {
 		return fmt.Errorf("exited with code %d", exitCode)
 	}
