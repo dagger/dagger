@@ -29,6 +29,30 @@ type ModuleConfig struct {
 	Source string `json:"source,omitempty"`
 }
 
+func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
+	if modCfg == nil {
+		return fmt.Errorf("cannot unmarshal into nil ModuleConfig")
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	type alias ModuleConfig // lets us use the default json unmashaler
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
+
+	// Detect the case where SDK is set but Source isn't, which should only happen when loading an older config.
+	// For those cases, the Source was implicitly ".", so set it to that.
+	if tmp.SDK != "" && tmp.Source == "" {
+		tmp.Source = "."
+	}
+
+	*modCfg = ModuleConfig(tmp)
+	return nil
+}
+
 func (modCfg *ModuleConfig) DependencyByName(name string) (*ModuleConfigDependency, bool) {
 	for _, dep := range modCfg.Dependencies {
 		if dep.Name == name {

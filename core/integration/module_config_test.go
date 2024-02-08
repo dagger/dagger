@@ -48,6 +48,7 @@ func TestModuleConfigs(t *testing.T) {
 				Name:   "dep",
 				Source: "foo",
 			}},
+			Source: ".",
 		}
 		expectedConfBytes, err := json.Marshal(expectedConf)
 		require.NoError(t, err)
