@@ -110,6 +110,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 		if caller, err := mod.Query.CurrentModule(ctx); err == nil {
 			props["caller_type"] = "module"
 			moduleAnalyticsProps(caller, "caller_", props)
+		} else if analytics.IsInternal(ctx) {
+			props["caller_type"] = "internal"
 		} else {
 			props["caller_type"] = "direct"
 		}
