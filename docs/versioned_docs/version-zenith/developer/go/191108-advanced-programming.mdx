@@ -104,6 +104,10 @@ The result will be:
 Hello, Foo!
 ```
 
+:::note
+If you plan to use constructor fields in other module functions, ensure that they are declared as public. This is because Dagger stores fields using JSON marshalling and private fields are omitted during the marshalling process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
+:::
+
 ## Miscellanea
 
 - The context and error return are optional in the module's function signature; remove them if you don't need them.
