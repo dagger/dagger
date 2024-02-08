@@ -98,39 +98,59 @@ dagger install github.com/quartz-technology/daggerverse/node/typescript
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Next, update the generated `main.go` file with the following code:
+Next, update the generated `dagger/main.go` file with the following code:
 
 ```go file=./snippets/create-app-ci-module/base/go/main.go
 ```
 
+This function does the following:
+
+  - It calls the `node` module's `WithVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+  - It calls the `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+  - It calls the `Node.WithSource()` function, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
+    - The `Node.WithSource()` function accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
+    - Since this directory path will be required by multiple functions, it's convenient to specify it once as a field (`source`) in the module constructor and then access its value from other functions.
+  - It calls the `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+  - It calls the `Node.Container()` function, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
+
 </TabItem>
 <TabItem value="Python">
 
-Next, update the generated `src/main.py` file with the following code:
+Next, update the generated `dagger/src/main.py` file with the following code:
 
 ```python file=./snippets/create-app-ci-module/base/python/main.py
 ```
 
+This function does the following:
+
+  - It calls the `node` module's `with_version()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+  - It calls the `Node.with_npm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+  - It calls the `Node.with_source()` function, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
+    - The `Node.with_source()` function accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
+    - Since this directory path will be required by multiple functions, it's convenient to specify it once as a field (`source`) in the module constructor and then access its value from other functions.
+  - It calls the `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+  - It calls the `Node.container()` function, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
+
 </TabItem>
 <TabItem value="TypeScript">
 
-Next, update the generated `src/index.ts` file with the following code:
+Next, update the generated `dagger/src/index.ts` file with the following code:
 
 ```typescript file=./snippets/create-app-ci-module/base/typescript/index.ts
 ```
 
-</TabItem>
-</Tabs>
-
 This function does the following:
 
-  - It calls the `node` module's `WithVersion()` API via the `dag` client. This API method returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
-  - It calls the `Node.WithNpm()` API, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
-  - It calls the `Node.WithSource()` API, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
-    - The `Node.WithSource()` API accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
+  - It calls the `node` module's `withVersion()` function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+  - It calls the `Node.withNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+  - It calls the `Node.withSource()` function, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
+    - The `Node.withSource()` function accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
     - Since this directory path will be required by multiple functions, it's convenient to specify it once as a field (`source`) in the module constructor and then access its value from other functions.
-  - It calls the `Node.Install()` API, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
-  - It calls the `Node.Container()` API, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
+  - It calls the `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
+  - It calls the `Node.container()` function, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
+
+</TabItem>
+</Tabs>
 
 :::note
 `dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
@@ -148,11 +168,23 @@ Add a new function that runs tests for the example application, by executing the
 ```go file=./snippets/create-app-ci-module/test/go/main.go
 ```
 
+This function does the following:
+
+- It calls the `node` module's `WithContainer()` function via the `dag` client and passes it the container returned by the `BuildBaseImage()` function. The `Node.WithContainer()` function returns a `Node` object.
+- It calls the `Node.Run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
+- It uses the `Container.Stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/create-app-ci-module/test/python/main.py
 ```
+
+This function does the following:
+
+- It calls the `node` module's `with_container()` function via the `dag` client and passes it the container returned by the `build_base_image()` function. The `Node.with_container()` function returns a `Node` object.
+- It calls the `Node.run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
+- It uses the `Container.stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -160,19 +192,19 @@ Add a new function that runs tests for the example application, by executing the
 ```typescript file=./snippets/create-app-ci-module/test/typescript/index.ts
 ```
 
-</TabItem>
-</Tabs>
-
 This function does the following:
 
-- It calls the `node` module's `WithContainer()` API via the `dag` client and passes it the container returned by the `BuildBaseImage()` API. The `Node.WithContainer()` API returns a `Node` object.
-- It calls the `Node.Run()` API, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
-- It uses the `Container.Stdout()` API to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+- It calls the `node` module's `withContainer()` function via the `dag` client and passes it the container returned by the `buildBaseImage()` function. The `Node.withContainer()` function returns a `Node` object.
+- It calls the `Node.run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
+- It uses the `Container.stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+
+</TabItem>
+</Tabs>
 
 Try the function by running it as below:
 
 ```shell
-dagger -m ci call --source=. test
+dagger -m ci call --source . test
 ```
 
 :::note
@@ -209,11 +241,23 @@ Add a new function that creates a production build of the example application:
 ```go file=./snippets/create-app-ci-module/build/go/main.go
 ```
 
+This function does the following:
+
+- It calls the `node` module's `WithContainer()` function via the `dag` client and passes it the container returned by the `BuildBaseImage()` function. The `Node.WithContainer()` function returns a `Node` object.
+- It calls the `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It obtains a reference to the `dist/` directory in the container with the `Container.Directory()` function. This function returns a `Directory` object.
+
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/create-app-ci-module/build/python/main.py
 ```
+
+This function does the following:
+
+- It calls the `node` module's `with_container()` function via the `dag` client and passes it the container returned by the `build_base_image()` function. The `Node.with_container()` function returns a `Node` object.
+- It calls the `Node.build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It obtains a reference to the `dist/` directory in the container with the `Container.directory()` function. This function returns a `Directory` object.
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -221,14 +265,14 @@ Add a new function that creates a production build of the example application:
 ```typescript file=./snippets/create-app-ci-module/build/typescript/index.ts
 ```
 
-</TabItem>
-</Tabs>
-
 This function does the following:
 
-- It calls the `node` module's `WithContainer()` API via the `dag` client and passes it the container returned by the `BuildBaseImage()` module API. The `Node.WithContainer()` API returns a `Node` object.
-- It calls the `Node.Build()` API, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
-- It obtains a reference to the `dist/` directory in the container with the `Container.Directory()` API. This function returns a `Directory` object.
+- It calls the `node` module's `withContainer()` function via the `dag` client and passes it the container returned by the `buildBaseImage()` function. The `Node.withContainer()` function returns a `Node` object.
+- It calls the `Node.build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It obtains a reference to the `dist/` directory in the container with the `Container.directory()` function. This function returns a `Directory` object.
+
+</TabItem>
+</Tabs>
 
 :::note
 The `npm run build` command is appropriate for the example Vue application used in this guide, but other applications may use different commands. Modify your function code accordingly.
@@ -237,7 +281,7 @@ The `npm run build` command is appropriate for the example Vue application used 
 Try the function by running it as below. Note the additional chained call to `Directory.Entries()` on the function's `Directory` return value, to display a file listing for the build directory.
 
 ```shell
-dagger -m ci call --source=. build entries
+dagger -m ci call --source . build entries
 ```
 
 Here's an example of the output you will see:
@@ -261,11 +305,25 @@ Update the module and add new functions to copy the built application into an NG
 ```go file=./snippets/create-app-ci-module/publish/go/main.go
 ```
 
+This code listing adds two functions:
+
+- The `Package()` function calls the `Container.From()` function to initialize a new container from a base image - here, the `nginx:1.25-alpine` image.The `From()` function returns a new `Container` object with the result.
+    - It uses the `Container.WithDirectory()` function to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+    - It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+- The `Publish()` function calls the `Package()` function to obtain the container image and then calls the built-in `Container.Publish()` function to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/create-app-ci-module/publish/python/main.py
 ```
+
+This code listing adds two functions:
+
+- The `package()` function calls the `Container.from_()` function to initialize a new container from a base image - here, the `nginx:1.25-alpine` image.The `from_()` function returns a new `Container` object with the result.
+    - It uses the `Container.with_directory()` function to write the `Directory` returned by the `build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+    - It uses the `Container.with_exposed_port()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+- The `publish()` function calls the `package()` function to obtain the container image and then calls the built-in `Container.publish()` method to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -273,20 +331,20 @@ Update the module and add new functions to copy the built application into an NG
 ```typescript file=./snippets/create-app-ci-module/publish/typescript/index.ts
 ```
 
-</TabItem>
-</Tabs>
-
 This code listing adds two functions:
 
-- The `Package()` API calls the `Container().From()` API to initialize a new container from a base image - here, the `nginx:1.25-alpine` image.The `From()` API returns a new `Container` object with the result.
-    - It uses the `Container.WithDirectory()` API to write the `Directory` returned by the `Build()` API to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
-    - It uses the `Container.WithExposedPort()` API to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
-- The `Publish()` API calls the `Package()` API to obtain the container image and then calls the built-in `Container.Publish()` API to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+- The `package()` function calls the `Container.from()` function to initialize a new container from a base image - here, the `nginx:1.25-alpine` image. The `Container.from()` function returns a new `Container` object with the result.
+    - It uses the `Container.withDirectory()` function to write the `Directory` returned by the `build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+    - It uses the `Container.withExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+- The `publish()` function calls the `package()` function to obtain the container image and then calls the built-in `Container.publish()` function to publish it to the [ttl.sh](https://ttl.sh) registry and return the image identifier.
+
+</TabItem>
+</Tabs>
 
 Try the function by running the command below:
 
 ```shell
-dagger -m ci call --source=. publish
+dagger -m ci call --source . publish
 ```
 
 Here's an example of the output you will see:
@@ -308,11 +366,15 @@ In order for this to work, the container image used by the service must have one
 ```go file=./snippets/create-app-ci-module/serve/go/main.go
 ```
 
+This function simply calls the `Package()` function created earlier to obtain the container image and then returns it as a service using the `Container.AsService()` function.
+
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/create-app-ci-module/serve/python/main.py
 ```
+
+This function simply calls the `package()` function created earlier to obtain the container image and then returns it as a service using the `Container.as_service()` function.
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -320,15 +382,16 @@ In order for this to work, the container image used by the service must have one
 ```typescript file=./snippets/create-app-ci-module/serve/typescript/index.ts
 ```
 
+This function simply calls the `package()` function created earlier to obtain the container image and then returns it as a service using the `Container.asService()` function.
+
 </TabItem>
 </Tabs>
 
-This function simply calls the `Package()` API created earlier to obtain the container image and then returns it as a service using the `Container.AsService()` API.
 
 Try the function by running the command below:
 
 ```shell
-dagger -m ci call --source=. serve up --ports 8080:80
+dagger -m ci call --source . serve up --ports 8080:80
 ```
 
 You should now be able to access the application by browsing to http://localhost:8080 on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
