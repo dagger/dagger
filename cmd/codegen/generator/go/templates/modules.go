@@ -103,13 +103,17 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			continue
 		}
 
-		if ps.isMainModuleObject(obj.Name()) || ps.isDaggerGenerated(obj) {
+		if ps.checkMainModuleObject(obj) || ps.isDaggerGenerated(obj) {
 			tps = append(tps, obj.Type())
 		}
 	}
 
 	if ps.daggerObjectIfaceType == nil {
 		return "", fmt.Errorf("cannot find default codegen %s interface", daggerObjectIfaceName)
+	}
+
+	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
+		createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
 	}
 
 	added := map[string]struct{}{}
@@ -383,6 +387,14 @@ func checkErrStatement(label string) *Statement {
 	)
 }
 
+func (ps *parseState) checkMainModuleObject(obj types.Object) bool {
+	if !ps.isMainModuleObject(obj.Name()) {
+		return false
+	}
+	ps.mainModuleObject = obj
+	return true
+}
+
 func (ps *parseState) checkConstructor(obj types.Object) bool {
 	fn, isFn := obj.(*types.Func)
 	if !isFn {
@@ -634,12 +646,37 @@ type parseState struct {
 	// If it exists, constructor is the New func that returns the main module object
 	constructor *types.Func
 
+	// the main module object struct
+	mainModuleObject types.Object
+
 	// the DaggerObject interface type, used to check that user defined interfaces embed it
 	daggerObjectIfaceType *types.Interface
 }
 
 func (ps *parseState) isMainModuleObject(name string) bool {
 	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
+}
+
+// pkgDoc returns the package level documentation comment, if any,
+// in the file that contains the main module object struct.
+func (ps *parseState) pkgDoc() string {
+	if ps.mainModuleObject == nil {
+		// just ignore, will fail elsewhere
+		return ""
+	}
+	tokenFile := ps.fset.File(ps.mainModuleObject.Pos())
+	for _, syntax := range ps.pkg.Syntax {
+		for _, comment := range syntax.Comments {
+			// Skip comments that are below the package declaration.
+			if comment.Pos() > syntax.Package {
+				continue
+			}
+			if ps.fset.File(comment.Pos()) == tokenFile {
+				return comment.Text()
+			}
+		}
+	}
+	return ""
 }
 
 type method struct {

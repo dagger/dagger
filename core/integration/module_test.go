@@ -1194,18 +1194,80 @@ func (m *Minimal) IsEmpty() bool {
 func TestModuleDescription(t *testing.T) {
 	t.Parallel()
 
+	type source struct {
+		file     string
+		contents string
+	}
+
 	for _, tc := range []struct {
-		sdk    string
-		source string
+		sdk     string
+		sources []source
 	}{
 		{
+			sdk: "go",
+			sources: []source{
+				{
+					file: "main.go",
+					contents: `
+// Test module, short description
+//
+// Long description, with full sentences.
+
+package main
+
+// Test object, short description
+type Test struct {
+	// +default=foo
+	Foo string
+}
+`,
+				},
+			},
+		},
+		{
+			sdk: "go",
+			sources: []source{
+				{
+					file: "a.go",
+					contents: `
+// First, but not main
+package main
+
+type Foo struct {}
+`,
+				},
+				{
+					file: "z.go",
+					contents: `
+// Test module, short description
+//
+// Long description, with full sentences.
+
+package main
+
+// Test object, short description
+	type Test struct {
+}
+
+func (*Test) Foo() Foo {
+	return Foo{}
+}
+`,
+				},
+			},
+		},
+		{
 			sdk: "python",
-			source: `"""Test module, short description
+			sources: []source{
+				{
+					file: "src/main.py",
+					contents: `
+"""Test module, short description
 
 Long description, with full sentences.
 """
 
-from dagger import field, function, object_type
+from dagger import field, object_type
 
 @object_type
 class Test:
@@ -1213,10 +1275,51 @@ class Test:
 
     foo: str = field(default="foo")
 `,
+				},
+			},
+		},
+		{
+			sdk: "python",
+			sources: []source{
+				{
+					file: "src/main/foo.py",
+					contents: `
+"""Not the main file"""
+
+from dagger import field, object_type
+
+@object_type
+class Foo:
+    bar: str = field(default="bar")
+`,
+				},
+				{
+					file: "src/main/__init__.py",
+					contents: `
+"""Test module, short description
+
+Long description, with full sentences.
+"""
+
+from dagger import function, object_type
+
+from .foo import Foo
+
+@object_type
+class Test:
+    """Test object, short description"""
+
+    foo = function(Foo)
+`,
+				},
+			},
 		},
 		{
 			sdk: "typescript",
-			source: `
+			sources: []source{
+				{
+					file: "src/index.ts",
+					contents: `
 /**
  * Test module, short description
  *
@@ -1225,23 +1328,80 @@ class Test:
 import { object, field } from '@dagger.io/dagger'
 
 /**
-* Test object, short description
-*/
+ * Test object, short description
+ */
 @object()
 class Test {
-	@field()
-	foo: string = "foo"
+    @field()
+    foo: string = "foo"
 }
 `,
+				},
+			},
+		},
+		{
+			sdk: "typescript",
+			sources: []source{
+				{
+					file: "src/foo.ts",
+					contents: `
+/**
+ * Not the main file
+ */
+import { object, field } from '@dagger.io/dagger'
+
+@object()
+export class Foo {
+    @field()
+    bar = "bar"
+}
+`,
+				},
+				{
+					file: "src/index.ts",
+					contents: `
+/**
+ * Test module, short description
+ *
+ * Long description, with full sentences.
+ */
+import { object, field } from '@dagger.io/dagger'
+import { Foo } from "./foo"
+
+/**
+ * Test object, short description
+ */
+@object()
+class Test {
+    @func()
+    foo(): Foo {
+        return new Foo()
+    }
+}
+`,
+				},
+			},
 		},
 	} {
 		tc := tc
 
-		t.Run(tc.sdk, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s with %d files", tc.sdk, len(tc.sources)), func(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			mod := inspectModule(ctx, t, modInit(ctx, t, c, tc.sdk, tc.source))
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work")
+
+			for _, src := range tc.sources {
+				src := src
+				modGen = modGen.WithNewFile(src.file, dagger.ContainerWithNewFileOpts{
+					Contents: heredoc.Doc(src.contents),
+				})
+			}
+
+			mod := inspectModule(ctx, t,
+				modGen.With(daggerExec("init", "--source=.", "--name=test", "--sdk="+tc.sdk)))
 
 			require.Equal(t,
 				"Test module, short description\n\nLong description, with full sentences.",
@@ -1249,7 +1409,7 @@ class Test {
 			)
 			require.Equal(t,
 				"Test object, short description",
-				mod.Get("objects.0.asObject.description").String(),
+				mod.Get("objects.#.asObject|#(name=Test).description").String(),
 			)
 		})
 	}
@@ -4387,20 +4547,26 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 
 func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		var sourcePath string
-		switch sdk {
-		case "go":
-			sourcePath = "dagger/main.go"
-		case "python":
-			sourcePath = "dagger/src/main.py"
-		case "typescript":
-			sourcePath = "dagger/src/index.ts"
-		default:
+		sourcePath := sdkSourceFile(sdk)
+		if sourcePath == "" {
 			return c
 		}
 		return c.WithNewFile(sourcePath, dagger.ContainerWithNewFileOpts{
 			Contents: heredoc.Doc(contents),
 		})
+	}
+}
+
+func sdkSourceFile(sdk string) string {
+	switch sdk {
+	case "go":
+		return "dagger/main.go"
+	case "python":
+		return "dagger/src/main.py"
+	case "typescript":
+		return "dagger/src/index.ts"
+	default:
+		return ""
 	}
 }
 
