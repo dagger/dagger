@@ -121,6 +121,7 @@ type upArgs struct {
 func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service], args upArgs) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 
+	useNative := !args.Random && len(args.Ports) == 0
 	var hostSvc dagql.Instance[*core.Service]
 	err := s.srv.Select(ctx, s.srv.Root(), &hostSvc,
 		dagql.Selector{
@@ -131,7 +132,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 			Args: []dagql.NamedInput{
 				{Name: "service", Value: dagql.NewID[*core.Service](svc.ID())},
 				{Name: "ports", Value: dagql.ArrayInput[dagql.InputObject[core.PortForward]](args.Ports)},
-				{Name: "native", Value: dagql.Boolean(!args.Random)},
+				{Name: "native", Value: dagql.Boolean(useNative)},
 			},
 		},
 	)
