@@ -202,20 +202,32 @@ func (id *ID) Canonical() *ID {
 	return canon
 }
 
-var digests = new(sync.Map)
+var digestCache *sync.Map
+
+// EnableDigestCache enables caching of digests for IDs.
+//
+// This is not thread-safe and should be called before any IDs are created, or
+// at least digested.
+func EnableDigestCache() {
+	digestCache = new(sync.Map)
+}
 
 // Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
 // first.
 func (id *ID) Digest() (digest.Digest, error) {
-	if d, ok := digests.Load(id); ok {
-		return d.(digest.Digest), nil
+	if digestCache != nil {
+		if d, ok := digestCache.Load(id); ok {
+			return d.(digest.Digest), nil
+		}
 	}
 	bytes, err := proto.Marshal(id)
 	if err != nil {
 		return "", err
 	}
 	d := digest.FromBytes(bytes)
-	digests.Store(id, d)
+	if digestCache != nil {
+		digestCache.Store(id, d)
+	}
 	return d, nil
 }
 

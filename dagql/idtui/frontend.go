@@ -84,6 +84,7 @@ type zoomState struct {
 func New() *Frontend {
 	logs := NewVterm()
 	profile := ui.ColorProfile()
+	idproto.EnableDigestCache()
 	return &Frontend{
 		db: NewDB(),
 
