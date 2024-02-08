@@ -233,7 +233,7 @@ func (s *moduleSchema) moduleSourceWithSourceSubpath(
 		return src, nil
 	}
 	if !filepath.IsLocal(args.Path) {
-		return nil, fmt.Errorf("source subdir path escapes parent dir: %q", args.Path)
+		return nil, fmt.Errorf("source subdir path %q escapes context", args.Path)
 	}
 	src = src.Clone()
 	src.WithSourceSubpath = args.Path

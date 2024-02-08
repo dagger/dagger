@@ -411,7 +411,7 @@ func (sdk *goSDK) baseWithCodegen(
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get context directory for go module sdk codegen: %w", err)
 	}
-	srcSubpath, err := src.Self.SourceSubpath(ctx)
+	srcSubpath, err := src.Self.SourceSubpathWithDefault(ctx)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get subpath for go module sdk codegen: %w", err)
 	}

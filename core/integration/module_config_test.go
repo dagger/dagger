@@ -84,7 +84,7 @@ func TestModuleConfigs(t *testing.T) {
 			`,
 			}).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go", "test")).
+			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
 			With(daggerExec("install", "-m=test", "./subdir/dep")).
 			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
@@ -142,7 +142,7 @@ func TestModuleConfigs(t *testing.T) {
 		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go", "subdir/dep")).
+			With(daggerExec("init", "--source=subdir/dep", "--name=dep", "--sdk=go", "subdir/dep")).
 			WithNewFile("/work/subdir/dep/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -153,7 +153,7 @@ func TestModuleConfigs(t *testing.T) {
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
 			`,
 			}).
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go", "test")).
+			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
 			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -526,7 +526,7 @@ func TestModuleDaggerInit(t *testing.T) {
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--sdk=go", "coolmod")).
+			With(daggerExec("init", "--source=coolmod", "--sdk=go", "coolmod")).
 			WithNewFile("/work/coolmod/main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -585,10 +585,28 @@ func TestModuleDaggerInit(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("source is made rel to source root by engine", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+
+		ctr := goGitBase(t, c).
+			WithWorkdir("/var").
+			With(daggerExec("init", "--source=../work/some/subdir", "--name=test", "--sdk=go", "../work")).
+			With(daggerCallAt("../work", "container-echo", "--string-arg", "yo", "stdout"))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo", strings.TrimSpace(out))
+
+		ents, err := ctr.Directory("/work/some/subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, ents, "main.go")
+	})
 }
 
 func TestModuleDaggerDevelop(t *testing.T) {
 	t.Parallel()
+
 	t.Run("name and sdk", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
@@ -653,6 +671,56 @@ func TestModuleDaggerDevelop(t *testing.T) {
 
 		_, err = ctr.With(daggerExec("develop", "--source", "blahblahblaha/blah")).Sync(ctx)
 		require.ErrorContains(t, err, `cannot update module source path that has already been set to "cool/subdir"`)
+	})
+
+	t.Run("source is made rel to source root by engine", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+
+		ctr := goGitBase(t, c).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) Fn(ctx context.Context) string { 
+				return "hi from dep"
+			}
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			With(daggerExec("install", "./dep")).
+			WithWorkdir("/var").
+			With(daggerExec("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
+			WithNewFile("/work/some/subdir/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type Work struct {}
+
+			func (m *Work) Fn(ctx context.Context) (string, error) {
+				depStr, err := dag.Dep().Fn(ctx)
+				if err != nil {
+					return "", err
+				}
+				return "hi from work " + depStr, nil
+			}
+			`,
+			})
+
+		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
+
+		ents, err := ctr.Directory("/work/some/subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, ents, "main.go")
 	})
 }
 

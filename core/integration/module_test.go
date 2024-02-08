@@ -188,7 +188,7 @@ func TestModuleGoInit(t *testing.T) {
 			WithWorkdir("/work/child").
 			WithExec([]string{"go", "mod", "init", "my-mod"}).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=child", "--sdk=go", "./child")).
+			With(daggerExec("init", "--source=./child", "--name=child", "--sdk=go", "./child")).
 			WithWorkdir("/work/child").
 			// explicitly develop to see whether it makes a go.mod
 			With(daggerExec("develop")).
@@ -294,7 +294,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=bare", "--sdk=go", "--source=some/subdir"))
+			With(daggerExec("init", "--name=bare", "--sdk=go", "--source=some/subdir"))
 
 		out, err := modGen.
 			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -2475,7 +2475,7 @@ func (m *D) Fn(foo int) Obj {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=c", "--sdk=go", "c")).
+		With(daggerExec("init", "--source=c", "--name=c", "--sdk=go", "c")).
 		WithWorkdir("/work/c").
 		With(daggerExec("install", "../dstr")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
@@ -2495,7 +2495,7 @@ func (m *C) Fn(ctx context.Context, foo string) (string, error) {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=b", "--sdk=go", "b")).
+		With(daggerExec("init", "--source=b", "--name=b", "--sdk=go", "b")).
 		With(daggerExec("install", "-m=b", "./dint")).
 		WithNewFile("/work/b/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
@@ -2514,7 +2514,7 @@ func (m *B) Fn(ctx context.Context, foo int) (int, error) {
 
 	ctr = ctr.
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=a", "--sdk=go", "a")).
+		With(daggerExec("init", "--source=a", "--name=a", "--sdk=go", "a")).
 		WithWorkdir("/work/a").
 		With(daggerExec("install", "../b")).
 		With(daggerExec("install", "../c")).
@@ -2620,7 +2620,7 @@ func (m *Dep) Fn() Obj {
 `,
 		}).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go", "test")).
+		With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
 		With(daggerExec("install", "-m=test", "./dep")).
 		WithWorkdir("/work/test")
 

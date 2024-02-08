@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
@@ -495,7 +496,7 @@ func (s *moduleSchema) currentModuleSource(
 	curMod *core.CurrentModule,
 	args struct{},
 ) (inst dagql.Instance[*core.Directory], err error) {
-	srcSubpath, err := curMod.Module.Source.Self.SourceSubpath(ctx)
+	srcSubpath, err := curMod.Module.Source.Self.SourceSubpathWithDefault(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module source subpath: %w", err)
 	}
@@ -635,6 +636,28 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module SDK: %w", err)
 	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	rootSubpath, err := src.Self.SourceRootSubpath()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+	srcSubpath, err := src.Self.SourceSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source subpath: %w", err)
+	}
+	slog.Debug("moduleWithSource",
+		"mod.NameField", mod.NameField,
+		"mod.OriginalName", mod.OriginalName,
+		"mod.SDKConfig", mod.SDKConfig,
+		"rootSubpath", rootSubpath,
+		"srcSubpath", srcSubpath,
+	)
 
 	if err := s.updateDeps(ctx, mod, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
@@ -894,7 +917,7 @@ func (s *moduleSchema) updateDaggerConfig(
 	if err != nil {
 		return fmt.Errorf("failed to get source root subpath: %w", err)
 	}
-	sourceSubpath, err := src.Self.SourceSubpath(ctx)
+	sourceSubpath, err := src.Self.SourceSubpathWithDefault(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get source subpath: %w", err)
 	}

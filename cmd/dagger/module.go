@@ -186,7 +186,7 @@ dagger config -m github.com/dagger/hello-dagger
 			)
 			fmt.Fprintf(tw, "%s\t%s\n",
 				"Source Directory:",
-				modConf.LocalSourcePath,
+				modConf.LocalRootSourcePath,
 			)
 
 			return tw.Flush()
@@ -239,12 +239,23 @@ var moduleInitCmd = &cobra.Command{
 
 			// default module name to directory of source root
 			if moduleName == "" {
-				moduleName = filepath.Base(modConf.LocalSourcePath)
+				moduleName = filepath.Base(modConf.LocalRootSourcePath)
 			}
 
-			// default source dir
-			if moduleSourcePath == "" && sdk != "" {
-				moduleSourcePath = defaultModuleSourceDirName
+			// only bother setting source path if there's an sdk at this time
+			if sdk != "" {
+				if moduleSourcePath == "" {
+					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+				}
+				// ensure source path is relative to the source root
+				sourceAbsPath, err := filepath.Abs(moduleSourcePath)
+				if err != nil {
+					return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
+				}
+				moduleSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
+				if err != nil {
+					return fmt.Errorf("failed to get relative source path: %w", err)
+				}
 			}
 
 			_, err = modConf.Source.
@@ -259,7 +270,7 @@ var moduleInitCmd = &cobra.Command{
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			if err := findOrCreateLicense(ctx, modConf.LocalSourcePath); err != nil {
+			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
 				return err
 			}
 
@@ -307,7 +318,7 @@ var moduleInstallCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to get dep absolute path for %s: %w", depRefStr, err)
 				}
-				depRelPath, err := filepath.Rel(modConf.LocalSourcePath, depAbsPath)
+				depRelPath, err := filepath.Rel(modConf.LocalRootSourcePath, depAbsPath)
 				if err != nil {
 					return fmt.Errorf("failed to get dep relative path: %w", err)
 				}
@@ -409,7 +420,7 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, false)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -418,11 +429,13 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 			}
 
 			src := modConf.Source
+			modConf.Source = modConf.Source.ResolveFromCaller()
 			if developName != "" {
 				existingName, err := modConf.Source.ModuleName(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to get module name: %w", err)
 				}
+
 				if existingName != "" && existingName != developName {
 					return fmt.Errorf("cannot update module name that has already been set to %q", existingName)
 				}
@@ -439,24 +452,34 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 				src = src.WithSDK(developSDK)
 			}
 			if developSourcePath != "" {
+				developSourcePath = filepath.Clean(developSourcePath)
+
 				existingSourcePath, err := modConf.Source.SourceSubpath(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to get module source subpath: %w", err)
 				}
 
-				// source path of uninitialized module is the source root
-				sourceRootRelPath, err := filepath.Rel(modConf.LocalContextPath, modConf.LocalSourcePath)
-				if err != nil {
-					return fmt.Errorf("failed to get source root relative path: %w", err)
-				}
-
-				if existingSourcePath != sourceRootRelPath && existingSourcePath != developSourcePath {
+				if existingSourcePath != "" && existingSourcePath != developSourcePath {
 					return fmt.Errorf("cannot update module source path that has already been set to %q", existingSourcePath)
 				}
+
+				if developSourcePath == "" {
+					developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+				}
+				// ensure source path is relative to the source root
+				sourceAbsPath, err := filepath.Abs(developSourcePath)
+				if err != nil {
+					return fmt.Errorf("failed to get absolute source path for %s: %w", developSourcePath, err)
+				}
+				developSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
+				if err != nil {
+					return fmt.Errorf("failed to get relative source path: %w", err)
+				}
+
 				src = src.WithSourceSubpath(developSourcePath)
 			}
 
-			_, err = src.AsModule().GeneratedContextDiff().Export(ctx, modConf.LocalContextPath)
+			_, err = src.ResolveFromCaller().AsModule().GeneratedContextDiff().Export(ctx, modConf.LocalContextPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
@@ -504,7 +527,7 @@ forced), to avoid mistakingly depending on uncommitted files.
 			if !modConf.FullyInitialized() {
 				return fmt.Errorf("module must be fully initialized")
 			}
-			repo, err := git.PlainOpenWithOptions(modConf.LocalSourcePath, &git.PlainOpenOptions{
+			repo, err := git.PlainOpenWithOptions(modConf.LocalRootSourcePath, &git.PlainOpenOptions{
 				DetectDotGit: true,
 			})
 			if err != nil {
@@ -537,7 +560,7 @@ forced), to avoid mistakingly depending on uncommitted files.
 
 			// calculate path relative to repo root
 			gitRoot := wt.Filesystem.Root()
-			pathFromRoot, err := filepath.Rel(gitRoot, modConf.LocalSourcePath)
+			pathFromRoot, err := filepath.Rel(gitRoot, modConf.LocalRootSourcePath)
 			if err != nil {
 				return fmt.Errorf("failed to get path from git root: %w", err)
 			}
@@ -610,8 +633,8 @@ type configuredModule struct {
 	Source     *dagger.ModuleSource
 	SourceKind dagger.ModuleSourceKind
 
-	LocalContextPath string
-	LocalSourcePath  string
+	LocalContextPath    string
+	LocalRootSourcePath string
 
 	// whether the dagger.json in the module source dir exists yet
 	ModuleSourceConfigExists bool
@@ -690,7 +713,7 @@ func getModuleConfigurationForSourceRef(
 			}
 		}
 
-		conf.LocalSourcePath, err = filepath.Abs(srcRefStr)
+		conf.LocalRootSourcePath, err = filepath.Abs(srcRefStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
 		}
@@ -710,7 +733,7 @@ func getModuleConfigurationForSourceRef(
 		if err != nil {
 			return nil, fmt.Errorf("failed to get local root path: %w", err)
 		}
-		_, err = os.Lstat(filepath.Join(conf.LocalSourcePath, modules.Filename))
+		_, err = os.Lstat(filepath.Join(conf.LocalRootSourcePath, modules.Filename))
 		conf.ModuleSourceConfigExists = err == nil
 
 		if resolveFromCaller {

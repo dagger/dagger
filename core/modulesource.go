@@ -151,11 +151,25 @@ func (src *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("module config: %w", err)
 	}
 	if !ok {
-		// default to the root subpath for unintialized modules
-		return rootSubpath, nil
+		return "", nil
+	}
+	if cfg.Source == "" {
+		return "", nil
 	}
 
 	return filepath.Join(rootSubpath, cfg.Source), nil
+}
+
+// SourceSubpathWithDefault is the same as SourceSubpath, but it will default to the root subpath if the module has no configuration.
+func (src *ModuleSource) SourceSubpathWithDefault(ctx context.Context) (string, error) {
+	sourceSubpath, err := src.SourceSubpath(ctx)
+	if err != nil {
+		return "", fmt.Errorf("source subpath: %w", err)
+	}
+	if sourceSubpath == "" {
+		return src.SourceRootSubpath()
+	}
+	return sourceSubpath, nil
 }
 
 func (src *ModuleSource) ModuleName(ctx context.Context) (string, error) {

@@ -388,7 +388,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !modConf.FullyInitialized() {
-		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalSourcePath)
+		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
 	}
 	mod := modConf.Source.AsModule().Initialize()
 	_, err = mod.Serve(ctx)

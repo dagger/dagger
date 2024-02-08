@@ -36,7 +36,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=bare", "--sdk=typescript", "child"))
