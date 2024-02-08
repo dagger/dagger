@@ -62,9 +62,9 @@ func init() {
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
 
-	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "SDK name or image ref to use for the module")
-	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in")
+	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
+	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
+	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \"dagger/ if \"--sdk\" is provided)")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
@@ -195,10 +195,20 @@ dagger config -m github.com/dagger/hello-dagger
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:     "init [--sdk string --name string] [--source string] [PATH]",
-	Short:   "Initialize a new Dagger module",
-	Long:    "Initialize a new Dagger module in a local directory.",
-	Example: "dagger mod init --name=hello --sdk=python",
+	Use:   "init [flags] [PATH]",
+	Short: "Initialize a new Dagger module",
+	Long: `Initialize a new Dagger module in a local directory.
+By default, create a new dagger.json configuration in the current working directory. If the positional argument PATH is provided, create the module in that directory instead.
+
+The configuration will default the name of the module to the parent directory name, unless specified with --name.
+
+Any module can be installed to via "dagger install".
+
+A module can only be called once it has been initialized with an SDK though. The "--sdk" flag can be provided to init here, but if it's not the configuration can be updated later via "dagger develop".
+
+The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger". 
+`,
+	Example: "dagger mod init --name=hello --sdk=python --source=some/subdir",
 	GroupID: moduleGroup.ID,
 	Annotations: map[string]string{
 		"experimental": "true",
@@ -221,7 +231,7 @@ var moduleInitCmd = &cobra.Command{
 			if filepath.IsAbs(srcRootPath) {
 				srcRootPath, err = filepath.Rel(cwd, srcRootPath)
 				if err != nil {
-					return fmt.Errorf("failed to get absolute path: %w", err)
+					return fmt.Errorf("failed to get relative path: %w", err)
 				}
 			}
 
@@ -399,7 +409,7 @@ var moduleInstallCmd = &cobra.Command{
 }
 
 var moduleDevelopCmd = &cobra.Command{
-	Use:   "develop [--name string --sdk string] [--source string]",
+	Use:   "develop",
 	Short: "Setup or update all the resources needed to develop on a module locally",
 	Long: `Setup or update all the resources needed to develop on a module locally.
 
@@ -407,6 +417,8 @@ This command re-regerates the module's generated code based on dependencies
 and the current state of the module's source code.
 
 If --name and --sdk are set, the config file and generated code will be updated with those values reflected.
+
+--source allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
 
 :::note
 If not updating name or SDK, this is only required for IDE auto-completion/LSP purposes.
