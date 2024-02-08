@@ -325,7 +325,7 @@ import (
 
 type %s struct {}
 
-// example usage: "dagger call container-echo --string-arg yo"
+// example usage: "dagger call container-echo --string-arg yo stdout"
 func (m *%s) ContainerEcho(stringArg string) *Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }

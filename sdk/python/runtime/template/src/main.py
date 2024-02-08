@@ -4,7 +4,7 @@ from dagger import dag, function
 
 @function
 def container_echo(string_arg: str) -> dagger.Container:
-    # Example usage: "dagger call container-echo --string-arg hello"
+    # Example usage: "dagger call container-echo --string-arg hello stdout"
     return dag.container().from_("alpine:latest").with_exec(["echo", string_arg])
 
 
