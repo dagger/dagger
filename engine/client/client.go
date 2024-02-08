@@ -231,7 +231,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	sessionTask := loader.Task("starting session")
 
-	sharedKey := c.ServerID // share a session across servers
+	sharedKey := ""
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new s: %w", err)

@@ -19,6 +19,7 @@ const (
 func Repository(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(".", dagger.HostDirectoryOpts{
 		Exclude: []string{
+			".git",
 			"bin",
 			"**/.DS_Store",
 
@@ -249,9 +250,7 @@ func DevelVersionInfo(ctx context.Context, c *dagger.Client) (*VersionInfo, erro
 	base := c.Container().
 		From(fmt.Sprintf("alpine:%s", alpineVersion)).
 		WithExec([]string{"apk", "add", "git"}).
-		WithMountedDirectory("/app", c.Host().Directory(".", dagger.HostDirectoryOpts{
-			Include: []string{".git"},
-		})).
+		WithMountedDirectory("/app/.git", c.Host().Directory(".git")).
 		WithWorkdir("/app")
 
 	info := &VersionInfo{}
