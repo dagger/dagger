@@ -152,6 +152,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 	ctx = progrock.ToContext(ctx, c.Recorder)
 
+	defer func() {
+		if rerr != nil {
+			c.Recorder.Close()
+		}
+	}()
+
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
@@ -180,7 +186,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		connectDigest = digest.FromString("_root") // arbitrary
 	}
 
-	loader := c.Recorder.Vertex(connectDigest, "connect")
+	loader := c.Recorder.Vertex(connectDigest, "connect", progrock.Internal())
 	defer func() {
 		loader.Done(rerr)
 	}()
@@ -310,7 +316,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}}
 
 	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = 100 * time.Millisecond
+	bo.InitialInterval = 10 * time.Millisecond
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {

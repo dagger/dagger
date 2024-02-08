@@ -326,7 +326,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
-			gqlOp.Error(ctx, err)
 			gqlErr := &gqlerror.Error{
 				Err:     err,
 				Message: err.Error(),
@@ -343,7 +342,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		data, err := json.Marshal(results)
 		if err != nil {
-			gqlOp.Error(ctx, err)
 			return graphql.ErrorResponse(ctx, "marshal: %s", err)
 		}
 
@@ -423,8 +421,8 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	var base Object
 	var err error
-	if id.Parent != nil {
-		base, err = s.Load(ctx, id.Parent)
+	if id.Base != nil {
+		base, err = s.Load(ctx, id.Base)
 		if err != nil {
 			return nil, err
 		}
@@ -658,8 +656,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 		// object loaded from its ID.
 		return sel, nil
 	}
-
-	class, ok := s.objects[val.Type().Name()]
+	class, ok := s.ObjectType(val.Type().Name())
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 	}

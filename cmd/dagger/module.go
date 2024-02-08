@@ -14,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
@@ -151,6 +152,10 @@ dagger config -m github.com/dagger/hello-dagger
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			cmd.SetContext(ctx)
 
+			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			defer func() { vtx.Done(err) }()
+			setCmdOutput(cmd, vtx)
+
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)
@@ -218,6 +223,11 @@ The "--source" flag allows controlling the directory in which the actual module 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
+			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			defer func() { vtx.Done(err) }()
+			setCmdOutput(cmd, vtx)
+
+			// default the module source root to the current working directory if it doesn't exist yet
 			cwd, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
@@ -281,6 +291,8 @@ The "--source" flag allows controlling the directory in which the actual module 
 			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
 				return err
 			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootPath)
 
 			return nil
 		})
@@ -520,10 +532,9 @@ forced), to avoid mistakingly depending on uncommitted files.
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.FromContext(ctx)
 
-			vtx := rec.Vertex("publish", strings.Join(os.Args, " "), progrock.Focused())
+			vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
-			cmd.SetOut(vtx.Stdout())
-			cmd.SetErr(vtx.Stderr())
+			setCmdOutput(cmd, vtx)
 
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
@@ -805,10 +816,6 @@ func optionalModCmdWrapper(
 		return withEngineAndTUI(cmd.Context(), client.Params{
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			rec := progrock.FromContext(ctx)
-			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
-			defer func() { vtx.Done(err) }()
-
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
@@ -816,14 +823,11 @@ func optionalModCmdWrapper(
 			var loadedMod *dagger.Module
 			if modConf.FullyInitialized() {
 				loadedMod = modConf.Source.AsModule().Initialize()
-				load := vtx.Task("loading module")
 				_, err := loadedMod.Serve(ctx)
-				load.Done(err)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
 				}
 			}
-
 			return fn(ctx, engineClient, loadedMod, cmd, cmdArgs)
 		})
 	}

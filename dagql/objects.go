@@ -378,7 +378,7 @@ type FieldSpec struct {
 	// DeprecatedReason deprecates the field and provides a reason.
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
-	Module *idproto.ID
+	Module *idproto.Module
 }
 
 func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {

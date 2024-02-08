@@ -103,6 +103,7 @@ require (
 
 require (
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
+	github.com/a-h/templ v0.2.543
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/muesli/reflow v0.3.0
 )

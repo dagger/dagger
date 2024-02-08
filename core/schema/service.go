@@ -8,9 +8,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/ioctx"
-	"github.com/moby/buildkit/identity"
-	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock"
 )
 
 type serviceSchema struct {
@@ -147,10 +144,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 		return void, fmt.Errorf("failed to start host service: %w", err)
 	}
 
-	rec := progrock.FromContext(ctx)
-	vtx := rec.Vertex(digest.Digest(identity.NewID()), "", progrock.Focused())
-	defer vtx.Done(nil)
-	ioctxOut := ioctx.Stdout(ctx) // TODO: consolidate to just this once new UI is up and running
+	ioctxOut := ioctx.Stdout(ctx)
 
 	for _, port := range runningSvc.Ports {
 		portStr := fmt.Sprintf("%d/%s", port.Port, port.Protocol)
@@ -158,11 +152,11 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 			portStr += ": " + *port.Description
 		}
 		portStr += "\n"
-
-		vtx.Stdout().Write([]byte(portStr))
 		ioctxOut.Write([]byte(portStr))
 	}
 
+	// wait for the request to be canceled
 	<-ctx.Done()
+
 	return void, nil
 }

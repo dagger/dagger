@@ -108,6 +108,20 @@ func (mod *Module) Dependencies() []Mod {
 	return mods
 }
 
+func (mod *Module) IDModule() *idproto.Module {
+	ref, err := mod.Source.Self.RefString()
+	if err != nil {
+		// TODO: this should be impossible by not, right? doesn't seem worth
+		// propagating error
+		panic(err)
+	}
+	return &idproto.Module{
+		Id:   mod.InstanceID,
+		Name: mod.Name(),
+		Ref:  ref,
+	}
+}
+
 func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Module], newID *idproto.ID) (*Module, error) {
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and

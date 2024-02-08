@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,6 +53,8 @@ var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
 type runClientCallback func(context.Context, *client.Client) error
 
+var useLegacyTUI = os.Getenv("_EXPERIMENTAL_DAGGER_LEGACY_TUI") != ""
+
 func withEngineAndTUI(
 	ctx context.Context,
 	params client.Params,
@@ -70,39 +70,36 @@ func withEngineAndTUI(
 		params.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
-	if !silent {
+	if interactive {
+		return interactiveTUI(ctx, params, fn)
+	}
+	if useLegacyTUI {
 		if progress == "auto" && autoTTY || progress == "tty" {
-			if interactive {
-				return interactiveTUI(ctx, params, fn)
-			}
-
-			return inlineTUI(ctx, params, fn)
-		}
-
-		opts := []console.WriterOpt{
-			console.ShowInternal(debug),
-		}
-		if debug {
-			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
-		}
-
-		progW := console.NewWriter(os.Stderr, opts...)
-		progW, engineErr := progrockTee(progW)
-		if engineErr != nil {
-			return engineErr
-		}
-
-		params.ProgrockWriter = progW
-
-		params.EngineNameCallback = func(name string) {
-			fmt.Fprintln(os.Stderr, "Connected to engine", name)
-		}
-
-		params.CloudURLCallback = func(cloudURL string) {
-			fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
+			return legacyTUI(ctx, params, fn)
+		} else {
+			return plainConsole(ctx, params, fn)
 		}
 	}
+	return runWithFrontend(ctx, params, fn)
+}
 
+// TODO remove when legacy TUI is no longer supported; this has been
+// assimilated into idtui.Frontend
+func plainConsole(ctx context.Context, params client.Params, fn runClientCallback) error {
+	opts := []console.WriterOpt{
+		console.ShowInternal(debug),
+	}
+	if debug {
+		opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+	}
+	progW := console.NewWriter(os.Stderr, opts...)
+	params.ProgrockWriter = progW
+	params.EngineNameCallback = func(name string) {
+		fmt.Fprintln(os.Stderr, "Connected to engine", name)
+	}
+	params.CloudURLCallback = func(cloudURL string) {
+		fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
+	}
 	engineClient, ctx, err := client.Connect(ctx, params)
 	if err != nil {
 		return err
@@ -111,58 +108,29 @@ func withEngineAndTUI(
 	return fn(ctx, engineClient)
 }
 
-func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
-	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
-		fileW, err := newProgrockWriter(log)
-		if err != nil {
-			return nil, fmt.Errorf("open progrock log: %w", err)
-		}
-
-		return progrock.MultiWriter{progW, fileW}, nil
-	}
-
-	return progW, nil
-}
-
-func interactiveTUI(
+func runWithFrontend(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
 ) error {
-	progR, progW := progrock.Pipe()
-	progW, err := progrockTee(progW)
-	if err != nil {
-		return err
-	}
-
-	params.ProgrockWriter = progW
-
-	ctx, quit := context.WithCancel(ctx)
-	defer quit()
-
-	program := tea.NewProgram(tui.New(quit, progR), tea.WithAltScreen())
-
-	tuiDone := make(chan error, 1)
-	go func() {
-		_, err := program.Run()
-		tuiDone <- err
-	}()
-
-	sess, ctx, err := client.Connect(ctx, params)
-	if err != nil {
-		tuiErr := <-tuiDone
-		return errors.Join(tuiErr, err)
-	}
-
-	err = fn(ctx, sess)
-
-	closeErr := sess.Close()
-
-	tuiErr := <-tuiDone
-	return errors.Join(tuiErr, closeErr, err)
+	frontend := idtui.New()
+	frontend.Debug = debug
+	frontend.Plain = progress == "plain"
+	frontend.Silent = silent
+	params.ProgrockWriter = frontend
+	params.EngineNameCallback = frontend.ConnectedToEngine
+	params.CloudURLCallback = frontend.ConnectedToCloud
+	return frontend.Run(ctx, func(ctx context.Context) error {
+		sess, ctx, err := client.Connect(ctx, params)
+		if err != nil {
+			return err
+		}
+		defer sess.Close()
+		return fn(ctx, sess)
+	})
 }
 
-func inlineTUI(
+func legacyTUI(
 	ctx context.Context,
 	params client.Params,
 	fn runClientCallback,
@@ -172,20 +140,11 @@ func inlineTUI(
 	tape.Focus(focus)
 	tape.RevealErrored(revealErrored)
 
-	if os.Getenv("IDS") != "" {
-		tape.SetFrontend(idtui.New())
-	}
-
 	if debug {
 		tape.MessageLevel(progrock.MessageLevel_DEBUG)
 	}
 
-	progW, engineErr := progrockTee(tape)
-	if engineErr != nil {
-		return engineErr
-	}
-
-	params.ProgrockWriter = progW
+	params.ProgrockWriter = tape
 
 	return progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) error {
 		params.CloudURLCallback = func(cloudURL string) {
@@ -213,29 +172,35 @@ func inlineTUI(
 	})
 }
 
-func newProgrockWriter(dest string) (progrock.Writer, error) {
-	f, err := os.Create(dest)
+func interactiveTUI(
+	ctx context.Context,
+	params client.Params,
+	fn runClientCallback,
+) error {
+	progR, progW := progrock.Pipe()
+	params.ProgrockWriter = progW
+
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
+
+	program := tea.NewProgram(tui.New(quit, progR), tea.WithAltScreen())
+
+	tuiDone := make(chan error, 1)
+	go func() {
+		_, err := program.Run()
+		tuiDone <- err
+	}()
+
+	sess, ctx, err := client.Connect(ctx, params)
 	if err != nil {
-		return nil, err
+		tuiErr := <-tuiDone
+		return errors.Join(tuiErr, err)
 	}
 
-	return progrockFileWriter{
-		enc: json.NewEncoder(f),
-		c:   f,
-	}, nil
-}
+	err = fn(ctx, sess)
 
-type progrockFileWriter struct {
-	enc *json.Encoder
-	c   io.Closer
-}
+	closeErr := sess.Close()
 
-var _ progrock.Writer = progrockFileWriter{}
-
-func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
-	return p.enc.Encode(update)
-}
-
-func (p progrockFileWriter) Close() error {
-	return p.c.Close()
+	tuiErr := <-tuiDone
+	return errors.Join(tuiErr, closeErr, err)
 }

@@ -293,7 +293,7 @@ func (q *Query) IDDeps(ctx context.Context, id *idproto.ID) (*ModDeps, error) {
 	}
 	deps := q.DefaultDeps
 	for _, modID := range id.Modules() {
-		mod, err := dagql.NewID[*Module](modID).Load(ctx, bootstrap)
+		mod, err := dagql.NewID[*Module](modID.Id).Load(ctx, bootstrap)
 		if err != nil {
 			return nil, fmt.Errorf("load source mod: %w", err)
 		}

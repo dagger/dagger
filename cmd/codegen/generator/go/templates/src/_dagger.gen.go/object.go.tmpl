@@ -158,10 +158,10 @@ func (r *{{ $.Name | FormatName }}) XXX_GraphQLIDType() string {
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
 func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, error) {
-    id, err := r.ID(ctx)
-    if err != nil {
-        return "", err
-    }
+  id, err := r.ID(ctx)
+  if err != nil {
+    return "", err
+  }
 	return string(id), nil
 }
 
