@@ -880,7 +880,7 @@ type Directory {
   """Load the directory as a Dagger module"""
   asModule(
     """
-    An optional subpath of the directory which contains the module's source code.
+    An optional subpath of the directory which contains the module's configuration file.
     
     This is needed when the module code is in a subdirectory but requires parent
     directories to be loaded in order to execute. For example, the module source
@@ -888,7 +888,7 @@ type Directory {
     
     If not set, the module source code is loaded from the root of the directory.
     """
-    sourceSubpath: String = "/"
+    sourceRootPath: String = "."
   ): Module!
 
   """Gets the difference between this directory and an another directory."""
@@ -1309,6 +1309,11 @@ type GitModuleSource {
   """The resolved commit of the git repo this source points to."""
   commit: String!
 
+  """
+  The directory containing everything needed to load load and use the module.
+  """
+  contextDirectory: Directory!
+
   """The URL to the source's git repo in a web browser"""
   htmlURL: String!
 
@@ -1316,9 +1321,11 @@ type GitModuleSource {
   id: GitModuleSourceID!
 
   """
-  The path to the module source code dir specified by this source relative to the source's root directory.
+  The path to the root of the module source under the context directory. This
+  directory contains its configuration file. It also contains its source code
+  (possibly as a subdirectory).
   """
-  sourceSubpath: String!
+  rootSubpath: String!
 
   """The specified version of the git repo this source points to."""
   version: String!
@@ -1585,11 +1592,20 @@ scalar ListTypeDefID
 Module source that that originates from a path locally relative to an arbitrary directory.
 """
 type LocalModuleSource {
+  """
+  The directory containing everything needed to load load and use the module.
+  """
+  contextDirectory: Directory!
+
   """A unique identifier for this LocalModuleSource."""
   id: LocalModuleSourceID!
 
-  """The path to the module source code dir specified by this source."""
-  sourceSubpath: String!
+  """
+  The path to the root of the module source under the context directory. This
+  directory contains its configuration file. It also contains its source code
+  (possibly as a subdirectory).
+  """
+  rootSubpath: String!
 }
 
 """
@@ -1609,12 +1625,14 @@ type Module {
   description: String!
 
   """
-  The module's root directory containing the config file for it and its source
-  (possibly as a subdir). It includes any generated code or updated config files
-  created after initial load, but not any files/directories that were unchanged
-  after sdk codegen was run.
+  The generated files and directories made on top of the module source's context directory.
   """
-  generatedSourceRootDirectory: Directory!
+  generatedContextDiff: Directory!
+
+  """
+  The module source's context plus any configuration and source files created by codegen.
+  """
+  generatedContextDirectory: Directory!
 
   """A unique identifier for this Module."""
   id: ModuleID!
@@ -1653,12 +1671,6 @@ type Module {
   """The source for the module."""
   source: ModuleSource!
 
-  """Update the module configuration to use the given dependencies."""
-  withDependencies(
-    """The dependency modules to install."""
-    dependencies: [ModuleDependencyID!]!
-  ): Module!
-
   """Retrieves the module with the given description"""
   withDescription(
     """The description to set"""
@@ -1668,20 +1680,8 @@ type Module {
   """This module plus the given Interface type and associated functions"""
   withInterface(iface: TypeDefID!): Module!
 
-  """Update the module configuration to use the given name."""
-  withName(
-    """The name to use."""
-    name: String!
-  ): Module!
-
   """This module plus the given Object type and associated functions."""
   withObject(object: TypeDefID!): Module!
-
-  """Update the module configuration to use the given SDK."""
-  withSDK(
-    """The SDK to use."""
-    sdk: String!
-  ): Module!
 
   """Retrieves the module with basic configuration loaded if present."""
   withSource(
@@ -1731,8 +1731,22 @@ type ModuleSource {
   """A human readable ref string representation of this module source."""
   asString: String!
 
+  """Returns whether the module source has a configuration file."""
+  configExists: Boolean!
+
   """
-  The directory containing the actual module's source code, as determined from the root directory and subpath.
+  The directory containing everything needed to load load and use the module.
+  """
+  contextDirectory: Directory!
+
+  """
+  The dependencies of the module source. Includes dependencies from the
+  configuration and any extras from withDependencies calls.
+  """
+  dependencies: [ModuleDependency!]!
+
+  """
+  The directory containing the module configuration and source code (source code may be in a subdir).
   """
   directory(
     """The path from the source directory to select."""
@@ -1745,8 +1759,20 @@ type ModuleSource {
   """The kind of source (e.g. local, git, etc.)"""
   kind: ModuleSourceKind!
 
-  """If set, the name of the module this source references"""
+  """
+  If set, the name of the module this source references, including any overrides at runtime by callers.
+  """
   moduleName: String!
+
+  """
+  The original name of the module this source references, as defined in the module configuration.
+  """
+  moduleOriginalName: String!
+
+  """
+  The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+  """
+  resolveContextPathFromCaller: String!
 
   """
   Resolve the provided module source arg as a dependency relative to this module source.
@@ -1757,15 +1783,54 @@ type ModuleSource {
   ): ModuleSource!
 
   """
-  The root directory of the module source that contains its configuration and
-  source code (which may be in a subdirectory of this root).
+  Load the source from its path on the caller's filesystem, including only
+  needed+configured files and directories. Only valid for local sources.
   """
-  rootDirectory: Directory!
+  resolveFromCaller: ModuleSource!
 
   """
-  The path to the module subdirectory containing the actual module's source code.
+  The path relative to context of the root of the module source, which contains
+  dagger.json. It also contains the module implementation source code, but that
+  may or may not being a subdir of this root.
   """
-  subpath: String!
+  sourceRootSubpath: String!
+
+  """The path relative to context of the module implementation source code."""
+  sourceSubpath: String!
+
+  """
+  Update the module source with a new context directory. Only valid for local sources.
+  """
+  withContextDirectory(
+    """The directory to set as the context directory."""
+    dir: DirectoryID!
+  ): ModuleSource!
+
+  """
+  Append the provided dependencies to the module source's dependency list.
+  """
+  withDependencies(
+    """The dependencies to append."""
+    dependencies: [ModuleDependencyID!]!
+  ): ModuleSource!
+
+  """Update the module source with a new name."""
+  withName(
+    """The name to set."""
+    name: String!
+  ): ModuleSource!
+
+  """Update the module source with a new SDK."""
+  withSDK(
+    """The SDK to set."""
+    sdk: String!
+  ): ModuleSource!
+
+  """Update the module source with a new source subpath."""
+  withSourceSubpath(
+    """The path to set as the source subpath."""
+    path: String!
+  ): ModuleSource!
 }
 
 """
@@ -2105,13 +2170,6 @@ type Query {
   moduleSource(
     """The string ref representation of the module source"""
     refString: String!
-
-    """
-    An explicitly set root directory for the module source. This is required to
-    load local sources as modules; other source types implicitly encode the root
-    directory and do not require this.
-    """
-    rootDirectory: DirectoryID
 
     """
     If true, enforce that the source is a stable version for source kinds that support versioning.

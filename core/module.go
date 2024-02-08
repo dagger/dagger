@@ -4,17 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/sync/errgroup"
 )
 
 type Module struct {
@@ -39,15 +35,7 @@ type Module struct {
 	// The module's SDKConfig, as set in the module config file
 	SDKConfig string `field:"true" name:"sdk" doc:"The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."`
 
-	// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load.
-	GeneratedSourceRootDirectory dagql.Instance[*Directory]
-
-	// The subpath of the GeneratedSourceDirectory that contains the actual source code of the module (which may be a subdir when dagger.json is a parent dir).
-	// This is not always equal to Source.SourceSubpath in the case where the Source is a directory containing
-	// dagger.json as a subdir.
-	// E.g. if the module is in a git repo where dagger.json is at /foo/dagger.json and then module source code is at
-	// /foo/mymod/, then GeneratedSourceSubpath will be "mymod".
-	GeneratedSourceSubpath string
+	GeneratedContextDirectory dagql.Instance[*Directory] `field:"true" name:"generatedContextDirectory" doc:"The module source's context plus any configuration and source files created by codegen."`
 
 	// Dependencies as configured by the module
 	DependencyConfig []*ModuleDependency `field:"true" doc:"The dependencies as configured by the module."`
@@ -57,9 +45,6 @@ type Module struct {
 
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
-
-	DirectoryIncludeConfig []string
-	DirectoryExcludeConfig []string
 
 	// Runtime is the container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 	Runtime *Container `field:"true" name:"runtime" doc:"The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."`
@@ -121,200 +106,6 @@ func (mod *Module) Dependencies() []Mod {
 		mods[i] = dep.Self
 	}
 	return mods
-}
-
-func (mod *Module) WithName(ctx context.Context, name string) (*Module, error) {
-	if mod.InstanceID != nil {
-		return nil, fmt.Errorf("cannot update name on initialized module")
-	}
-
-	mod = mod.Clone()
-	mod.NameField = name
-	if mod.OriginalName == "" {
-		mod.OriginalName = name
-	}
-	return mod, nil
-}
-
-func (mod *Module) WithSDK(ctx context.Context, sdk string) (*Module, error) {
-	if mod.InstanceID != nil {
-		return nil, fmt.Errorf("cannot update sdk on initialized module")
-	}
-
-	mod = mod.Clone()
-	mod.SDKConfig = sdk
-	if mod.OriginalSDK == "" {
-		mod.OriginalSDK = sdk
-	}
-
-	return mod, nil
-}
-
-func (mod *Module) WithDependencies(
-	ctx context.Context,
-	srv *dagql.Server,
-	dependencies []*ModuleDependency,
-) (*Module, error) {
-	if mod.InstanceID != nil {
-		return nil, fmt.Errorf("cannot update dependencies on initialized module")
-	}
-	if mod.Source.Self == nil {
-		return nil, fmt.Errorf("cannot update dependencies on module without source")
-	}
-
-	mod = mod.Clone()
-
-	clonedDependencies := make([]*ModuleDependency, len(dependencies))
-	for i, dep := range dependencies {
-		clonedDependencies[i] = dep.Clone()
-	}
-
-	// resolve the dependency relative to this module's source
-	var eg errgroup.Group
-	for i, dep := range dependencies {
-		if dep.Source.Self == nil {
-			return nil, fmt.Errorf("dependency %d has no source", i)
-		}
-		i, dep := i, dep
-
-		eg.Go(func() error {
-			err := srv.Select(ctx, mod.Source, &clonedDependencies[i].Source,
-				dagql.Selector{
-					Field: "resolveDependency",
-					Args: []dagql.NamedInput{
-						{Name: "dep", Value: dagql.NewID[*ModuleSource](dep.Source.ID())},
-					},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dependency module: %w", err)
-			}
-
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return nil, err
-	}
-
-	// figure out the set of deps, keyed by their symbolic ref string, which de-dupes
-	// equivalent sources at different versions, preferring the version provided
-	// in the dependencies arg here
-	depSet := make(map[string]*ModuleDependency)
-	for _, dep := range mod.DependencyConfig {
-		symbolic, err := dep.Source.Self.Symbolic()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get symbolic source ref: %w", err)
-		}
-		depSet[symbolic] = dep
-	}
-	for _, newDep := range clonedDependencies {
-		symbolic, err := newDep.Source.Self.Symbolic()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get symbolic source ref: %w", err)
-		}
-		depSet[symbolic] = newDep
-	}
-
-	mod.DependencyConfig = make([]*ModuleDependency, 0, len(depSet))
-	for _, dep := range depSet {
-		mod.DependencyConfig = append(mod.DependencyConfig, dep)
-	}
-
-	refStrs := make([]string, 0, len(mod.DependencyConfig))
-	for _, dep := range mod.DependencyConfig {
-		refStr, err := dep.Source.Self.RefString()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
-		}
-		refStrs = append(refStrs, refStr)
-	}
-	sort.Slice(mod.DependencyConfig, func(i, j int) bool {
-		return refStrs[i] < refStrs[j]
-	})
-
-	mod.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependencyConfig))
-	eg = errgroup.Group{}
-	for i, depCfg := range mod.DependencyConfig {
-		i, depCfg := i, depCfg
-		eg.Go(func() error {
-			err := srv.Select(ctx, depCfg.Source, &mod.DependenciesField[i],
-				dagql.Selector{
-					Field: "asModule",
-				},
-				dagql.Selector{
-					Field: "withName",
-					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.NewString(depCfg.Name)},
-					},
-				},
-				dagql.Selector{
-					Field: "initialize",
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to initialize dependency module: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		if errors.Is(err, dagql.ErrCacheMapRecursiveCall) {
-			err = fmt.Errorf("module %s has a circular dependency: %w", mod.NameField, err)
-		}
-		return nil, fmt.Errorf("failed to load updated dependencies: %w", err)
-	}
-	// fill in any missing names if needed
-	for i, dep := range mod.DependencyConfig {
-		if dep.Name == "" {
-			dep.Name = mod.DependenciesField[i].Self.Name()
-		}
-	}
-
-	// Check for loops by walking the DAG of deps, seeing if we ever encounter this mod.
-	// Modules are identified here by their *Source's ID*, which is relatively stable and
-	// unique to the module.
-	// Note that this is ultimately best effort, subtle differences in IDs that don't actually
-	// impact the final module will still result in us considering the two modules different.
-	// E.g. if you initialize a module from a source directory that had a no-op file change
-	// made to it, the ID used here will still change.
-	selfDgst, err := mod.Source.ID().Digest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get digest of module source: %w", err)
-	}
-	memo := make(map[digest.Digest]struct{}) // set of id digests
-	var visit func(dagql.Instance[*Module]) error
-	visit = func(inst dagql.Instance[*Module]) error {
-		instDgst, err := inst.Self.Source.ID().Digest()
-		if err != nil {
-			return fmt.Errorf("failed to get digest of module source: %w", err)
-		}
-		if instDgst == selfDgst {
-			return fmt.Errorf("module %s has a circular dependency", mod.NameField)
-		}
-
-		if _, ok := memo[instDgst]; ok {
-			return nil
-		}
-		memo[instDgst] = struct{}{}
-
-		for _, dep := range inst.Self.DependenciesField {
-			if err := visit(dep); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	for _, dep := range mod.DependenciesField {
-		if err := visit(dep); err != nil {
-			return nil, err
-		}
-	}
-
-	mod.Deps = NewModDeps(mod.Query, mod.Dependencies()).
-		Append(mod.Query.DefaultDeps.Mods...)
-
-	return mod, nil
 }
 
 func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Module], newID *idproto.ID) (*Module, error) {
@@ -779,21 +570,25 @@ type SDK interface {
 
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Codegen(context.Context, *Module, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
+	Codegen(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
 
 	/* Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
 
 	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Runtime(context.Context, *Module, dagql.Instance[*ModuleSource]) (*Container, error)
+	Runtime(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Container, error)
+
+	// Paths that should always be loaded from module sources using this SDK. Ensures that e.g. main.go
+	// in the Go SDK is always loaded even if dagger.json has include settings that don't include it.
+	RequiredPaths(context.Context) ([]string, error)
 }
 
 var _ HasPBDefinitions = (*Module)(nil)
 
 func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
-	if mod.GeneratedSourceRootDirectory.Self != nil {
-		dirDefs, err := mod.GeneratedSourceRootDirectory.Self.PBDefinitions(ctx)
+	if mod.Source.Self != nil {
+		dirDefs, err := mod.Source.Self.PBDefinitions(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -809,10 +604,6 @@ func (mod Module) Clone() *Module {
 		cp.Source.Self = mod.Source.Self.Clone()
 	}
 
-	if mod.GeneratedSourceRootDirectory.Self != nil {
-		cp.GeneratedSourceRootDirectory.Self = mod.GeneratedSourceRootDirectory.Self.Clone()
-	}
-
 	cp.DependencyConfig = make([]*ModuleDependency, len(mod.DependencyConfig))
 	for i, dep := range mod.DependencyConfig {
 		cp.DependencyConfig[i] = dep.Clone()
@@ -821,15 +612,6 @@ func (mod Module) Clone() *Module {
 	cp.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependenciesField))
 	for i, dep := range mod.DependenciesField {
 		cp.DependenciesField[i].Self = dep.Self.Clone()
-	}
-
-	if len(mod.DirectoryIncludeConfig) > 0 {
-		cp.DirectoryIncludeConfig = make([]string, len(mod.DirectoryIncludeConfig))
-		copy(cp.DirectoryIncludeConfig, mod.DirectoryIncludeConfig)
-	}
-	if len(mod.DirectoryExcludeConfig) > 0 {
-		cp.DirectoryExcludeConfig = make([]string, len(mod.DirectoryExcludeConfig))
-		copy(cp.DirectoryExcludeConfig, mod.DirectoryExcludeConfig)
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))

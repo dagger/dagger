@@ -14,11 +14,17 @@ func New(
 ) *TypeScriptSdk {
 	return &TypeScriptSdk{
 		SDKSourceDir: sdkSourceDir,
+		RequiredPaths: []string{
+			"**/package.json",
+			"**/package-lock.json",
+			"**/tsconfig.json",
+		},
 	}
 }
 
 type TypeScriptSdk struct {
-	SDKSourceDir *Directory
+	SDKSourceDir  *Directory
+	RequiredPaths []string
 }
 
 const (
@@ -39,7 +45,7 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, err
 	}
 
-	subPath, err := modSource.Subpath(ctx)
+	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
@@ -76,12 +82,12 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 // and the user's code with a generated API based on what he did.
 func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
 	// Load module name for the template class
-	name, err := modSource.ModuleName(ctx)
+	name, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
 
-	subPath, err := modSource.Subpath(ctx)
+	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
@@ -94,7 +100,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Add template directory
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
 		// Mount users' module
-		WithMountedDirectory(ModSourceDirPath, modSource.RootDirectory()).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
@@ -103,7 +109,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		WithExec([]string{
 			codegenBinPath,
 			"--lang", "typescript",
-			"--module-source-root", ModSourceDirPath,
+			"--module-context", ModSourceDirPath,
 			"--output", genPath,
 			"--module-name", name,
 			"--introspection-json-path", schemaPath,

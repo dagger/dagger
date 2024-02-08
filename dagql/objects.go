@@ -605,8 +605,7 @@ func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
 	return field
 }
 
-// Impure marks the field as "impure", meaning its result may change over time,
-// or it has side effects.
+// Meta indicates that the field has no impact on the field's result.
 func (field Field[T]) Meta() Field[T] {
 	field.Spec.Meta = true
 	return field
@@ -867,5 +866,16 @@ func assign(field reflect.Value, val any) error {
 		return setter.SetField(field)
 	} else {
 		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
+	}
+}
+
+func appendAssign(slice reflect.Value, val any) error {
+	if reflect.TypeOf(val).AssignableTo(slice.Type().Elem()) {
+		slice.Set(reflect.Append(slice, reflect.ValueOf(val)))
+		return nil
+	} else if setter, ok := val.(Setter); ok {
+		return setter.SetField(slice)
+	} else {
+		return fmt.Errorf("cannot assign %T to %s", val, slice.Type())
 	}
 }

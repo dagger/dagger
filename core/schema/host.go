@@ -51,7 +51,7 @@ func (s *hostSchema) Install() {
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal blob source: %s", err)
 			}
-			return core.NewDirectory(parent, blobDef.ToPB(), "", parent.Platform, nil), nil
+			return core.NewDirectory(parent, blobDef.ToPB(), "/", parent.Platform, nil), nil
 		}).Doc("Retrieves a content-addressed blob."),
 	}.Install(s.srv)
 

@@ -439,13 +439,13 @@ export type CurrentModuleID = string & { __CurrentModuleID: never }
 
 export type DirectoryAsModuleOpts = {
   /**
-   * An optional subpath of the directory which contains the module's source code.
+   * An optional subpath of the directory which contains the module's configuration file.
    *
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
    * If not set, the module source code is loaded from the root of the directory.
    */
-  sourceSubpath?: string
+  sourceRootPath?: string
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -852,11 +852,6 @@ export type ClientModuleDependencyOpts = {
 }
 
 export type ClientModuleSourceOpts = {
-  /**
-   * An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
-   */
-  rootDirectory?: Directory
-
   /**
    * If true, enforce that the source is a stable version for source kinds that support versioning.
    */
@@ -2719,7 +2714,7 @@ export class Directory extends BaseClient {
 
   /**
    * Load the directory as a Dagger module
-   * @param opts.sourceSubpath An optional subpath of the directory which contains the module's source code.
+   * @param opts.sourceRootPath An optional subpath of the directory which contains the module's configuration file.
    *
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
@@ -4167,7 +4162,7 @@ export class GitModuleSource extends BaseClient {
   private readonly _cloneURL?: string = undefined
   private readonly _commit?: string = undefined
   private readonly _htmlURL?: string = undefined
-  private readonly _sourceSubpath?: string = undefined
+  private readonly _rootSubpath?: string = undefined
   private readonly _version?: string = undefined
 
   /**
@@ -4179,7 +4174,7 @@ export class GitModuleSource extends BaseClient {
     _cloneURL?: string,
     _commit?: string,
     _htmlURL?: string,
-    _sourceSubpath?: string,
+    _rootSubpath?: string,
     _version?: string
   ) {
     super(parent)
@@ -4188,7 +4183,7 @@ export class GitModuleSource extends BaseClient {
     this._cloneURL = _cloneURL
     this._commit = _commit
     this._htmlURL = _htmlURL
-    this._sourceSubpath = _sourceSubpath
+    this._rootSubpath = _rootSubpath
     this._version = _version
   }
 
@@ -4256,6 +4251,21 @@ export class GitModuleSource extends BaseClient {
   }
 
   /**
+   * The directory containing everything needed to load load and use the module.
+   */
+  contextDirectory = (): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "contextDirectory",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * The URL to the source's git repo in a web browser
    */
   htmlURL = async (): Promise<string> => {
@@ -4277,18 +4287,18 @@ export class GitModuleSource extends BaseClient {
   }
 
   /**
-   * The path to the module source code dir specified by this source relative to the source's root directory.
+   * The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
    */
-  sourceSubpath = async (): Promise<string> => {
-    if (this._sourceSubpath) {
-      return this._sourceSubpath
+  rootSubpath = async (): Promise<string> => {
+    if (this._rootSubpath) {
+      return this._rootSubpath
     }
 
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "sourceSubpath",
+          operation: "rootSubpath",
         },
       ],
       await this._ctx.connection()
@@ -5074,7 +5084,7 @@ export class ListTypeDef extends BaseClient {
  */
 export class LocalModuleSource extends BaseClient {
   private readonly _id?: LocalModuleSourceID = undefined
-  private readonly _sourceSubpath?: string = undefined
+  private readonly _rootSubpath?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5082,12 +5092,12 @@ export class LocalModuleSource extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: LocalModuleSourceID,
-    _sourceSubpath?: string
+    _rootSubpath?: string
   ) {
     super(parent)
 
     this._id = _id
-    this._sourceSubpath = _sourceSubpath
+    this._rootSubpath = _rootSubpath
   }
 
   /**
@@ -5112,18 +5122,33 @@ export class LocalModuleSource extends BaseClient {
   }
 
   /**
-   * The path to the module source code dir specified by this source.
+   * The directory containing everything needed to load load and use the module.
    */
-  sourceSubpath = async (): Promise<string> => {
-    if (this._sourceSubpath) {
-      return this._sourceSubpath
+  contextDirectory = (): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "contextDirectory",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
+   */
+  rootSubpath = async (): Promise<string> => {
+    if (this._rootSubpath) {
+      return this._rootSubpath
     }
 
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "sourceSubpath",
+          operation: "rootSubpath",
         },
       ],
       await this._ctx.connection()
@@ -5282,14 +5307,29 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
+   * The generated files and directories made on top of the module source's context directory.
    */
-  generatedSourceRootDirectory = (): Directory => {
+  generatedContextDiff = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "generatedSourceRootDirectory",
+          operation: "generatedContextDiff",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The module source's context plus any configuration and source files created by codegen.
+   */
+  generatedContextDirectory = (): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "generatedContextDirectory",
         },
       ],
       ctx: this._ctx,
@@ -5483,23 +5523,6 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * Update the module configuration to use the given dependencies.
-   * @param dependencies The dependency modules to install.
-   */
-  withDependencies = (dependencies: ModuleDependency[]): Module_ => {
-    return new Module_({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withDependencies",
-          args: { dependencies },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Retrieves the module with the given description
    * @param description The description to set
    */
@@ -5533,23 +5556,6 @@ export class Module_ extends BaseClient {
   }
 
   /**
-   * Update the module configuration to use the given name.
-   * @param name The name to use.
-   */
-  withName = (name: string): Module_ => {
-    return new Module_({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withName",
-          args: { name },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * This module plus the given Object type and associated functions.
    */
   withObject = (object: TypeDef): Module_ => {
@@ -5559,23 +5565,6 @@ export class Module_ extends BaseClient {
         {
           operation: "withObject",
           args: { object },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Update the module configuration to use the given SDK.
-   * @param sdk The SDK to use.
-   */
-  withSDK = (sdk: string): Module_ => {
-    return new Module_({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withSDK",
-          args: { sdk },
         },
       ],
       ctx: this._ctx,
@@ -5694,9 +5683,13 @@ export class ModuleDependency extends BaseClient {
 export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
+  private readonly _configExists?: boolean = undefined
   private readonly _kind?: ModuleSourceKind = undefined
   private readonly _moduleName?: string = undefined
-  private readonly _subpath?: string = undefined
+  private readonly _moduleOriginalName?: string = undefined
+  private readonly _resolveContextPathFromCaller?: string = undefined
+  private readonly _sourceRootSubpath?: string = undefined
+  private readonly _sourceSubpath?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -5705,17 +5698,25 @@ export class ModuleSource extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ModuleSourceID,
     _asString?: string,
+    _configExists?: boolean,
     _kind?: ModuleSourceKind,
     _moduleName?: string,
-    _subpath?: string
+    _moduleOriginalName?: string,
+    _resolveContextPathFromCaller?: string,
+    _sourceRootSubpath?: string,
+    _sourceSubpath?: string
   ) {
     super(parent)
 
     this._id = _id
     this._asString = _asString
+    this._configExists = _configExists
     this._kind = _kind
     this._moduleName = _moduleName
-    this._subpath = _subpath
+    this._moduleOriginalName = _moduleOriginalName
+    this._resolveContextPathFromCaller = _resolveContextPathFromCaller
+    this._sourceRootSubpath = _sourceRootSubpath
+    this._sourceSubpath = _sourceSubpath
   }
 
   /**
@@ -5806,7 +5807,81 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The directory containing the actual module's source code, as determined from the root directory and subpath.
+   * Returns whether the module source has a configuration file.
+   */
+  configExists = async (): Promise<boolean> => {
+    if (this._configExists) {
+      return this._configExists
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "configExists",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * The directory containing everything needed to load load and use the module.
+   */
+  contextDirectory = (): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "contextDirectory",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
+   */
+  dependencies = async (): Promise<ModuleDependency[]> => {
+    type dependencies = {
+      id: ModuleDependencyID
+    }
+
+    const response: Awaited<dependencies[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "dependencies",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response.map(
+      (r) =>
+        new ModuleDependency(
+          {
+            queryTree: [
+              {
+                operation: "loadModuleDependencyFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id
+        )
+    )
+  }
+
+  /**
+   * The directory containing the module configuration and source code (source code may be in a subdir).
    * @param path The path from the source directory to select.
    */
   directory = (path: string): Directory => {
@@ -5844,7 +5919,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * If set, the name of the module this source references
+   * If set, the name of the module this source references, including any overrides at runtime by callers.
    */
   moduleName = async (): Promise<string> => {
     if (this._moduleName) {
@@ -5856,6 +5931,48 @@ export class ModuleSource extends BaseClient {
         ...this._queryTree,
         {
           operation: "moduleName",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * The original name of the module this source references, as defined in the module configuration.
+   */
+  moduleOriginalName = async (): Promise<string> => {
+    if (this._moduleOriginalName) {
+      return this._moduleOriginalName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "moduleOriginalName",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+   */
+  resolveContextPathFromCaller = async (): Promise<string> => {
+    if (this._resolveContextPathFromCaller) {
+      return this._resolveContextPathFromCaller
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "resolveContextPathFromCaller",
         },
       ],
       await this._ctx.connection()
@@ -5882,14 +5999,14 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
+   * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
    */
-  rootDirectory = (): Directory => {
-    return new Directory({
+  resolveFromCaller = (): ModuleSource => {
+    return new ModuleSource({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "rootDirectory",
+          operation: "resolveFromCaller",
         },
       ],
       ctx: this._ctx,
@@ -5897,24 +6014,130 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The path to the module subdirectory containing the actual module's source code.
+   * The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
    */
-  subpath = async (): Promise<string> => {
-    if (this._subpath) {
-      return this._subpath
+  sourceRootSubpath = async (): Promise<string> => {
+    if (this._sourceRootSubpath) {
+      return this._sourceRootSubpath
     }
 
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "subpath",
+          operation: "sourceRootSubpath",
         },
       ],
       await this._ctx.connection()
     )
 
     return response
+  }
+
+  /**
+   * The path relative to context of the module implementation source code.
+   */
+  sourceSubpath = async (): Promise<string> => {
+    if (this._sourceSubpath) {
+      return this._sourceSubpath
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceSubpath",
+        },
+      ],
+      await this._ctx.connection()
+    )
+
+    return response
+  }
+
+  /**
+   * Update the module source with a new context directory. Only valid for local sources.
+   * @param dir The directory to set as the context directory.
+   */
+  withContextDirectory = (dir: Directory): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withContextDirectory",
+          args: { dir },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Append the provided dependencies to the module source's dependency list.
+   * @param dependencies The dependencies to append.
+   */
+  withDependencies = (dependencies: ModuleDependency[]): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDependencies",
+          args: { dependencies },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Update the module source with a new name.
+   * @param name The name to set.
+   */
+  withName = (name: string): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Update the module source with a new SDK.
+   * @param sdk The SDK to set.
+   */
+  withSDK = (sdk: string): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withSDK",
+          args: { sdk },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Update the module source with a new source subpath.
+   * @param path The path to set as the source subpath.
+   */
+  withSourceSubpath = (path: string): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withSourceSubpath",
+          args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -7119,7 +7342,6 @@ export class Client extends BaseClient {
   /**
    * Create a new module source instance from a source ref string.
    * @param refString The string ref representation of the module source
-   * @param opts.rootDirectory An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
    * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
    */
   moduleSource = (

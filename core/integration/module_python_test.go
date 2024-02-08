@@ -95,7 +95,7 @@ func TestModulePythonInit(t *testing.T) {
                         return "Hello, world!"
                 `),
 			}).
-			With(daggerExec("init", "--name=hasMainPy", "--sdk=python")).
+			With(daggerExec("init", "--source=.", "--name=hasMainPy", "--sdk=python")).
 			With(daggerQuery(`{hasMainPy{hello}}`)).
 			Stdout(ctx)
 
@@ -622,7 +622,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	ctr := c.Container().From(golangImage).
+	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=python")).
@@ -801,7 +801,7 @@ func TestModulePythonPackageDescription(t *testing.T) {
                     foo: str = field(default="foo")
             `),
 		}).
-		With(daggerExec("init", "--name=test", "--sdk=python"))
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=python"))
 
 	mod := inspectModule(ctx, t, modGen)
 

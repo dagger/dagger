@@ -8,6 +8,12 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+type CacheMap[K comparable, T any] interface {
+	GetOrInitialize(context.Context, K, func(context.Context) (T, error)) (T, error)
+	Get(context.Context, K) (T, error)
+	Keys() []K
+}
+
 type cacheMap[K comparable, T any] struct {
 	l     sync.Mutex
 	calls map[K]*cache[T]
@@ -23,6 +29,10 @@ type cache[T any] struct {
 // multiple Servers.
 func NewCache() Cache {
 	return newCacheMap[digest.Digest, Typed]()
+}
+
+func NewCacheMap[K comparable, T any]() CacheMap[K, T] {
+	return newCacheMap[K, T]()
 }
 
 func newCacheMap[K comparable, T any]() *cacheMap[K, T] {
@@ -100,4 +110,14 @@ func (m *cacheMap[K, T]) Get(ctx context.Context, key K) (T, error) {
 
 	var zero T
 	return zero, fmt.Errorf("key not found")
+}
+
+func (m *cacheMap[K, T]) Keys() []K {
+	m.l.Lock()
+	keys := make([]K, 0, len(m.calls))
+	for k := range m.calls {
+		keys = append(keys, k)
+	}
+	m.l.Unlock()
+	return keys
 }

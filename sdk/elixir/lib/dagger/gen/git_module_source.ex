@@ -24,6 +24,15 @@ defmodule Dagger.GitModuleSource do
   )
 
   (
+    @doc "The directory containing everything needed to load load and use the module."
+    @spec context_directory(t()) :: Dagger.Directory.t()
+    def context_directory(%__MODULE__{} = git_module_source) do
+      selection = select(git_module_source.selection, "contextDirectory")
+      %Dagger.Directory{selection: selection, client: git_module_source.client}
+    end
+  )
+
+  (
     @doc "The URL to the source's git repo in a web browser"
     @spec html_url(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def html_url(%__MODULE__{} = git_module_source) do
@@ -42,10 +51,10 @@ defmodule Dagger.GitModuleSource do
   )
 
   (
-    @doc "The path to the module source code dir specified by this source relative to the source's root directory."
-    @spec source_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def source_subpath(%__MODULE__{} = git_module_source) do
-      selection = select(git_module_source.selection, "sourceSubpath")
+    @doc "The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."
+    @spec root_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def root_subpath(%__MODULE__{} = git_module_source) do
+      selection = select(git_module_source.selection, "rootSubpath")
       execute(selection, git_module_source.client)
     end
   )

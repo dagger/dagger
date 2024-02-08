@@ -36,7 +36,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=bare", "--sdk=typescript", "child"))
@@ -86,7 +86,7 @@ func TestModuleTypescriptInit(t *testing.T) {
   "license": "MIT"
 	}`,
 			}).
-			With(daggerExec("init", "--name=hasPkgJson", "--sdk=typescript"))
+			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -128,7 +128,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("Add dagger paths to the existing tsconfig.json", func(t *testing.T) {
-			tsConfig, err := modGen.File("/work/tsconfig.json").Contents(ctx)
+			tsConfig, err := modGen.File("/work/dagger/tsconfig.json").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, tsConfig, `"@dagger.io/dagger":`)
 		})
@@ -157,13 +157,38 @@ func TestModuleTypescriptInit(t *testing.T) {
 
 				`,
 			}).
-			With(daggerExec("init", "--name=existingSource", "--sdk=typescript"))
+			With(daggerExec("init", "--source=.", "--name=existingSource", "--sdk=typescript"))
 
 		out, err := modGen.
 			With(daggerQuery(`{existingSource{helloWorld(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("with source", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=typescript", "--source=some/subdir"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		sourceSubdirEnts, err := modGen.Directory("/work/some/subdir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, sourceSubdirEnts, "src")
+
+		sourceRootEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, sourceRootEnts, "src")
 	})
 }
 
@@ -453,7 +478,7 @@ func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	ctr := c.Container().From(golangImage).
+	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=typescript")).
