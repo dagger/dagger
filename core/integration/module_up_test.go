@@ -89,7 +89,7 @@ type Test struct {
 
 		tty := console.Tty()
 
-		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 80})
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 28})
 		require.NoError(t, err)
 
 		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--random")
