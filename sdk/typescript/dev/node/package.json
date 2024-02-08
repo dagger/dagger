@@ -3,6 +3,6 @@
     "typescript": "^5.3.2"
   },
   "devDependencies": {
-    "@dagger.io/dagger": "./sdk"
+    "@dagger.io/dagger": "file:sdk"
   }
 }

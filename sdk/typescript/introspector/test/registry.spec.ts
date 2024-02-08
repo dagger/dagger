@@ -103,8 +103,9 @@ describe("Registry", function () {
     const result = await registry.getResult(
       "HelloWorld",
       "greeting",
-      {},
-
+      {
+        prefix: "Hello",
+      },
       {
         name: "world",
       }

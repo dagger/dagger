@@ -1,0 +1,11 @@
+{
+  "name": "typescript-sdk-dev",
+  "sdk": "typescript",
+  "dependencies": [
+    {
+      "name": "node",
+      "source": "node"
+    }
+  ],
+  "source": "."
+}
