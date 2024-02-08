@@ -109,7 +109,6 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 }
 
 type LocalImportOpts struct {
-	OwnerClientID      string   `json:"owner_client_id"`
 	Path               string   `json:"path"`
 	IncludePatterns    []string `json:"include_patterns"`
 	ExcludePatterns    []string `json:"exclude_patterns"`
@@ -171,7 +170,6 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 }
 
 type LocalExportOpts struct {
-	DestClientID       string      `json:"dest_client_id"`
 	Path               string      `json:"path"`
 	IsFileStream       bool        `json:"is_file_stream"`
 	FileOriginalName   string      `json:"file_original_name"`
