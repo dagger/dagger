@@ -20,7 +20,6 @@ type Step struct {
 }
 
 func (step *Step) ID() *idproto.ID {
-	// TODO cache?
 	return step.db.IDs[step.Digest]
 }
 
