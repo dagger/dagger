@@ -6,20 +6,16 @@ from dagger import dag, object_type, field, function
 class MyModule:
     source: dagger.Directory = field()
 
-    @classmethod
-    def create(cls, source: dagger.Directory):
-        return cls(source=source)
-
-    # publish an image
     @function
     async def publish(self) -> str:
+        """Publish an image"""
         return await (
             self.package()
             .publish(f"ttl.sh/myapp-{random.randrange(10 ** 8)}")
         )
 
-    # create a production image
     def package(self) -> dagger.Container:
+        """Create a production image"""
         return (
             dag.container()
             .from_("nginx:1.25-alpine")
@@ -27,9 +23,9 @@ class MyModule:
             .with_exposed_port(80)
         )
 
-    # create a production build
     @function
     def build(self) -> dagger.Directory:
+        """Create a production build"""
         return (
             dag.node().with_container(self.build_base_image())
             .build()
@@ -37,17 +33,17 @@ class MyModule:
             .directory("./dist")
         )
 
-    # run unit tests
     @function
     async def test(self) -> str:
+        """Run unit tests"""
         return await (
             dag.node().with_container(self.build_base_image())
             .run(["run", "test:unit", "run"])
             .stdout()
         )
 
-    # build base image
     def build_base_image(self) -> dagger.Container:
+        """Build base image"""
         return (
             dag.node()
             .with_version("21")
