@@ -41,7 +41,6 @@ var (
 
 	installName string
 
-	developName       string
 	developSDK        string
 	developSourcePath string
 
@@ -73,7 +72,6 @@ func init() {
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
-	moduleDevelopCmd.Flags().StringVar(&developName, "name", "", "New name for the module")
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -416,12 +414,12 @@ var moduleDevelopCmd = &cobra.Command{
 This command re-regerates the module's generated code based on dependencies
 and the current state of the module's source code.
 
-If --name and --sdk are set, the config file and generated code will be updated with those values reflected.
+If --sdk is set, the config file and generated code will be updated with those values reflected. It currently can only be used to set the SDK of a module that does not have one already.
 
 --source allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
 
 :::note
-If not updating name or SDK, this is only required for IDE auto-completion/LSP purposes.
+If not updating source or SDK, this is only required for IDE auto-completion/LSP purposes.
 :::
 `,
 	GroupID: moduleGroup.ID,
@@ -441,43 +439,37 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 			}
 
 			src := modConf.Source
+			// use this one to read sdk/source path since they require the host filesystem be loaded.
+			// this is kind of inefficient, could update the engine to support these APIs without a full
+			// ResolveFromCaller call first
 			modConf.Source = modConf.Source.ResolveFromCaller()
-			if developName != "" {
-				existingName, err := modConf.Source.ModuleName(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module name: %w", err)
-				}
 
-				if existingName != "" && existingName != developName {
-					return fmt.Errorf("cannot update module name that has already been set to %q", existingName)
-				}
-				src = src.WithName(developName)
+			modSDK, err := modConf.Source.AsModule().SDK(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
 			if developSDK != "" {
-				existingSDK, err := modConf.Source.AsModule().SDK(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module SDK: %w", err)
+				if modSDK != "" && modSDK != developSDK {
+					return fmt.Errorf("cannot update module SDK that has already been set to %q", modSDK)
 				}
-				if existingSDK != "" && existingSDK != developSDK {
-					return fmt.Errorf("cannot update module SDK that has already been set to %q", existingSDK)
-				}
-				src = src.WithSDK(developSDK)
+				modSDK = developSDK
+				src = src.WithSDK(modSDK)
+			}
+
+			modSourcePath, err := modConf.Source.SourceSubpath(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get module source subpath: %w", err)
+			}
+			// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
+			if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
+				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+			}
+			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
+			// error out rather than silently doing nothing.
+			if modSDK == "" && developSourcePath == "" {
+				return fmt.Errorf("dagger develop on a module without an SDK requires either --sdk or --source")
 			}
 			if developSourcePath != "" {
-				developSourcePath = filepath.Clean(developSourcePath)
-
-				existingSourcePath, err := modConf.Source.SourceSubpath(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to get module source subpath: %w", err)
-				}
-
-				if existingSourcePath != "" && existingSourcePath != developSourcePath {
-					return fmt.Errorf("cannot update module source path that has already been set to %q", existingSourcePath)
-				}
-
-				if developSourcePath == "" {
-					developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
-				}
 				// ensure source path is relative to the source root
 				sourceAbsPath, err := filepath.Abs(developSourcePath)
 				if err != nil {
@@ -488,7 +480,12 @@ If not updating name or SDK, this is only required for IDE auto-completion/LSP p
 					return fmt.Errorf("failed to get relative source path: %w", err)
 				}
 
-				src = src.WithSourceSubpath(developSourcePath)
+				if modSourcePath != "" && modSourcePath != developSourcePath {
+					return fmt.Errorf("cannot update module source path that has already been set to %q", modSourcePath)
+				}
+
+				modSourcePath = developSourcePath
+				src = src.WithSourceSubpath(modSourcePath)
 			}
 
 			_, err = src.ResolveFromCaller().AsModule().GeneratedContextDiff().Export(ctx, modConf.LocalContextPath)

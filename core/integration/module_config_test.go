@@ -663,9 +663,6 @@ func TestModuleDaggerDevelop(t *testing.T) {
 
 		// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
 
-		_, err = ctr.With(daggerExec("develop", "--name", "foo")).Sync(ctx)
-		require.ErrorContains(t, err, `cannot update module name that has already been set to "work"`)
-
 		_, err = ctr.With(daggerExec("develop", "--sdk", "python")).Sync(ctx)
 		require.ErrorContains(t, err, `cannot update module SDK that has already been set to "go"`)
 

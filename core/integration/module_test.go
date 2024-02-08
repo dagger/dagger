@@ -1462,7 +1462,7 @@ func TestModuleGoBadCtx(t *testing.T) {
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--name=foo", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
