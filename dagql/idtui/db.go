@@ -201,21 +201,21 @@ func (db *DB) PrimaryVertex(dig string) *progrock.Vertex {
 	return earliest
 }
 
-func (db *DB) IsTransitiveDependency(dig, depDig string) bool {
-	for _, v := range db.Intervals[dig] {
-		for _, dig := range v.Inputs {
-			if dig == depDig {
-				return true
-			}
-			if db.IsTransitiveDependency(dig, depDig) {
-				return true
-			}
-		}
-		// assume they all have the same inputs
-		return false
-	}
-	return false
-}
+// func (db *DB) IsTransitiveDependency(dig, depDig string) bool {
+// 	for _, v := range db.Intervals[dig] {
+// 		for _, dig := range v.Inputs {
+// 			if dig == depDig {
+// 				return true
+// 			}
+// 			if db.IsTransitiveDependency(dig, depDig) {
+// 				return true
+// 			}
+// 		}
+// 		// assume they all have the same inputs
+// 		return false
+// 	}
+// 	return false
+// }
 
 func (*DB) Close() error {
 	return nil

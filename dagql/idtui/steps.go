@@ -163,7 +163,10 @@ func (step *Step) IsBefore(other *Step) bool {
 	default:
 		// equal start + end time; maybe a cache hit. break ties by seeing if one
 		// depends on the other.
-		return step.db.IsTransitiveDependency(other.Digest, step.Digest)
+		// TODO: this isn't needed for the current TUI since we don't even show
+		// cached steps
+		// return step.db.IsTransitiveDependency(other.Digest, step.Digest)
+		return false
 	}
 }
 
