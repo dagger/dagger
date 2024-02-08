@@ -47,34 +47,34 @@ Within your application directory, create a new `ci/` directory:
 mkdir ci && cd ci
 ```
 
-Run `dagger mod init` in the `ci` directory to bootstrap a new module:
+Run `dagger init` in the `ci` directory to bootstrap a new module:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
 ```sh
-dagger mod init --name=my-module --sdk=go
+dagger init --name=my-module --sdk=go
 ```
 
-This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
+This will generate a `dagger.json` module file, an initial `dagger/main.go` source file, as well as a generated `dagger/dagger.gen.go` and `dagger/querybuilder` directory for the generated module code.
 
 </TabItem>
 <TabItem value="Python">
 
 ```sh
-dagger mod init --name=my-module --sdk=python
+dagger init --name=my-module --sdk=python
 ```
 
-This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
+This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
 
 </TabItem>
 <TabItem value="TypeScript">
 
 ```sh
-dagger mod init --name=my-module --sdk=typescript
+dagger init --name=my-module --sdk=typescript
 ```
 
-This will generate a `dagger.json` module file, initial `src/index.ts`, `package.json` and `tsconfig.json` files, as well as a generated `sdk` folder for local development.
+This will generate a `dagger.json` module file, initial `dagger/src/index.ts`, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
 
 </TabItem>
 </Tabs>
@@ -92,7 +92,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 First, add the `node` module as a dependency:
 
 ```shell
-dagger mod install github.com/quartz-technology/daggerverse/node/typescript
+dagger install github.com/quartz-technology/daggerverse/node/typescript
 ```
 
 <Tabs groupId="language">
