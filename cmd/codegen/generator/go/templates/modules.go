@@ -75,10 +75,6 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 	createMod := Qual("dag", "Module").Call()
 
-	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
-		createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
-	}
-
 	objs := []types.Object{}
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
@@ -107,13 +103,17 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 			continue
 		}
 
-		if ps.isMainModuleObject(obj.Name()) || ps.isDaggerGenerated(obj) {
+		if ps.checkMainModuleObject(obj) || ps.isDaggerGenerated(obj) {
 			tps = append(tps, obj.Type())
 		}
 	}
 
 	if ps.daggerObjectIfaceType == nil {
 		return "", fmt.Errorf("cannot find default codegen %s interface", daggerObjectIfaceName)
+	}
+
+	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
+		createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
 	}
 
 	added := map[string]struct{}{}
@@ -387,6 +387,14 @@ func checkErrStatement(label string) *Statement {
 	)
 }
 
+func (ps *parseState) checkMainModuleObject(obj types.Object) bool {
+	if !ps.isMainModuleObject(obj.Name()) {
+		return false
+	}
+	ps.mainModuleObject = obj
+	return true
+}
+
 func (ps *parseState) checkConstructor(obj types.Object) bool {
 	fn, isFn := obj.(*types.Func)
 	if !isFn {
@@ -638,6 +646,9 @@ type parseState struct {
 	// If it exists, constructor is the New func that returns the main module object
 	constructor *types.Func
 
+	// the main module object struct
+	mainModuleObject types.Object
+
 	// the DaggerObject interface type, used to check that user defined interfaces embed it
 	daggerObjectIfaceType *types.Interface
 }
@@ -646,24 +657,23 @@ func (ps *parseState) isMainModuleObject(name string) bool {
 	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
 }
 
-// pkgDoc returns the package level documentation comment, if any.
-//
-// When there's multiple files with comments above the package declaration,
-// this returns the first one found, excluding from the generated file.
+// pkgDoc returns the package level documentation comment, if any,
+// in the file that contains the main module object struct.
 func (ps *parseState) pkgDoc() string {
+	if ps.mainModuleObject == nil {
+		// just ignore, will fail elsewhere
+		return ""
+	}
+	tokenFile := ps.fset.File(ps.mainModuleObject.Pos())
 	for _, syntax := range ps.pkg.Syntax {
 		for _, comment := range syntax.Comments {
 			// Skip comments that are below the package declaration.
 			if comment.Pos() > syntax.Package {
 				continue
 			}
-			// Skip comments that are in the generated file.
-			tokenFile := ps.fset.File(comment.Pos())
-			if filepath.Base(tokenFile.Name()) == daggerGenFilename {
-				continue
+			if ps.fset.File(comment.Pos()) == tokenFile {
+				return comment.Text()
 			}
-			// Return the first comment found.
-			return comment.Text()
 		}
 	}
 	return ""

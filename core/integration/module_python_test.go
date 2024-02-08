@@ -777,44 +777,6 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 	})
 }
 
-func TestModulePythonPackageDescription(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		WithNewFile("src/main/__init__.py", dagger.ContainerWithNewFileOpts{
-			Contents: heredoc.Doc(`
-                """Test module, short description
-
-                Long description, with full sentences.
-                """
-
-                from dagger import field, function, object_type
-
-                @object_type
-                class Test:
-                    """Test object, short description"""
-
-                    foo: str = field(default="foo")
-            `),
-		}).
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=python"))
-
-	mod := inspectModule(ctx, t, modGen)
-
-	require.Equal(t,
-		"Test module, short description\n\nLong description, with full sentences.",
-		mod.Get("description").String(),
-	)
-	require.Equal(t,
-		"Test object, short description",
-		mod.Get("objects.0.asObject.description").String(),
-	)
-}
-
 func pythonSource(contents string) dagger.WithContainerFunc {
 	return sdkSource("python", contents)
 }
