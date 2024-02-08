@@ -6,10 +6,6 @@ from dagger import dag, object_type, field, function
 class MyModule:
     source: dagger.Directory = field()
 
-    @classmethod
-    def create(cls, source: dagger.Directory):
-        return cls(source=source)
-
     # build base image
     def build_base_image(self) -> dagger.Container:
         return (
