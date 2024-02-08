@@ -1266,18 +1266,18 @@ func TestModuleDescription(t *testing.T) {
 				{
 					file: "main.go",
 					contents: `
-                        // Test module, short description
-                        //
-                        // Long description, with full sentences.
+// Test module, short description
+//
+// Long description, with full sentences.
 
-                        package main
+package main
 
-                        // Test object, short description
-                        type Test struct {
-                            // +default=foo
-                            Foo string
-                        }
-                        `,
+// Test object, short description
+type Test struct {
+	// +default=foo
+	Foo string
+}
+`,
 				},
 			},
 		},
@@ -1287,29 +1287,29 @@ func TestModuleDescription(t *testing.T) {
 				{
 					file: "a.go",
 					contents: `
-                        // First, but not main
-                        package main
+// First, but not main
+package main
 
-                        type Foo struct {}
-                        `,
+type Foo struct {}
+`,
 				},
 				{
 					file: "z.go",
 					contents: `
-                        // Test module, short description
-                        //
-                        // Long description, with full sentences.
+// Test module, short description
+//
+// Long description, with full sentences.
 
-                        package main
+package main
 
-                        // Test object, short description
-                        type Test struct {
-                        }
+// Test object, short description
+	type Test struct {
+}
 
-                        func (*Test) Foo() Foo {
-                            return Foo{}
-                        }
-                        `,
+func (*Test) Foo() Foo {
+	return Foo{}
+}
+`,
 				},
 			},
 		},
@@ -1319,19 +1319,19 @@ func TestModuleDescription(t *testing.T) {
 				{
 					file: "src/main.py",
 					contents: `
-                        """Test module, short description
+"""Test module, short description
 
-                        Long description, with full sentences.
-                        """
+Long description, with full sentences.
+"""
 
-                        from dagger import field, object_type
+from dagger import field, object_type
 
-                        @object_type
-                        class Test:
-                            """Test object, short description"""
+@object_type
+class Test:
+    """Test object, short description"""
 
-                            foo: str = field(default="foo")
-                        `,
+    foo: str = field(default="foo")
+`,
 				},
 			},
 		},
@@ -1341,33 +1341,33 @@ func TestModuleDescription(t *testing.T) {
 				{
 					file: "src/main/foo.py",
 					contents: `
-                        """Not the main file"""
+"""Not the main file"""
 
-                        from dagger import field, object_type
+from dagger import field, object_type
 
-                        @object_type
-                        class Foo:
-                            bar: str = field(default="bar")
-                        `,
+@object_type
+class Foo:
+    bar: str = field(default="bar")
+`,
 				},
 				{
 					file: "src/main/__init__.py",
 					contents: `
-                        """Test module, short description
+"""Test module, short description
 
-                        Long description, with full sentences.
-                        """
+Long description, with full sentences.
+"""
 
-                        from dagger import function, object_type
+from dagger import function, object_type
 
-                        from .foo import Foo
+from .foo import Foo
 
-                        @object_type
-                        class Test:
-                            """Test object, short description"""
+@object_type
+class Test:
+    """Test object, short description"""
 
-                            foo = function(Foo)
-                        `,
+    foo = function(Foo)
+`,
 				},
 			},
 		},
@@ -1377,22 +1377,22 @@ func TestModuleDescription(t *testing.T) {
 				{
 					file: "src/index.ts",
 					contents: `
-                        /**
-                         * Test module, short description
-                         *
-                         * Long description, with full sentences.
-                         */
-                        import { object, field } from '@dagger.io/dagger'
+/**
+ * Test module, short description
+ *
+ * Long description, with full sentences.
+ */
+import { object, field } from '@dagger.io/dagger'
 
-                        /**
-                         * Test object, short description
-                         */
-                        @object()
-                        class Test {
-                            @field()
-                            foo: string = "foo"
-                        }
-                        `,
+/**
+ * Test object, short description
+ */
+@object()
+class Test {
+    @field()
+    foo: string = "foo"
+}
+`,
 				},
 			},
 		},
@@ -1402,40 +1402,40 @@ func TestModuleDescription(t *testing.T) {
 				{
 					file: "src/foo.ts",
 					contents: `
-                        /**
-                         * Not the main file
-                         */
-                        import { object, field } from '@dagger.io/dagger'
+/**
+ * Not the main file
+ */
+import { object, field } from '@dagger.io/dagger'
 
-                        @object()
-                        export class Foo {
-                            @field()
-                            bar = "bar"
-                        }
-                        `,
+@object()
+export class Foo {
+    @field()
+    bar = "bar"
+}
+`,
 				},
 				{
 					file: "src/index.ts",
 					contents: `
-                        /**
-                         * Test module, short description
-                         *
-                         * Long description, with full sentences.
-                         */
-                        import { object, field } from '@dagger.io/dagger'
-                        import { Foo } from "./foo"
+/**
+ * Test module, short description
+ *
+ * Long description, with full sentences.
+ */
+import { object, field } from '@dagger.io/dagger'
+import { Foo } from "./foo"
 
-                        /**
-                         * Test object, short description
-                         */
-                        @object()
-                        class Test {
-                            @func()
-                            foo(): Foo {
-                                return new Foo()
-                            }
-                        }
-                        `,
+/**
+ * Test object, short description
+ */
+@object()
+class Test {
+    @func()
+    foo(): Foo {
+        return new Foo()
+    }
+}
+`,
 				},
 			},
 		},
