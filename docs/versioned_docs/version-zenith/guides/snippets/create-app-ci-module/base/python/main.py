@@ -6,8 +6,8 @@ from dagger import dag, object_type, field, function
 class MyModule:
     source: dagger.Directory = field()
 
-    # build base image
     def build_base_image(self) -> dagger.Container:
+        """Build base image"""
         return (
             dag.node()
             .with_version("21")
