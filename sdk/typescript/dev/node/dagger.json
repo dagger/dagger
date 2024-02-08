@@ -1,9 +1,5 @@
 {
   "name": "node",
   "sdk": "typescript",
-  "root-for": [
-    {
-      "source": "."
-    }
-  ]
+  "source": "."
 }

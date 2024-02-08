@@ -11,8 +11,9 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class TypescriptSdkDev {
   /**
-   * Project dev environment.
-   * Open a shell in with: `dagger call --source=. project terminal --cmd=/bin/sh`
+   * Project dev environment container.
+   *
+   * Open a shell in with: `dagger call --source=. project terminal`
    */
   @field()
   project: Container
@@ -41,24 +42,28 @@ class TypescriptSdkDev {
     // Install dependencies and add source code.
     this.project = dag
       .node()
-      .withPkgManager("yarn")
+      .withYarn()
       .withSource(dependencyFiles)
       .install() // Install dependencies prior to adding source to improve caching
       .withSource(sourceCode)
       .container()
+      .withDefaultTerminalCmd(["/bin/sh"])
   }
 
   /**
    * Execute the TypeScript SDK unit tests.
    *
    * Example usage: `dagger call test stdout`
+   * Trigger a specific test: `dagger call test --args="-f","<test>" stdout`
+   *
+   * @param args Arguments to pass to the test command.
    */
   @func()
-  test(): Container {
+  test(...args: string[]): Container {
     // We cannot use node module here because the tests
     // need access to experimental dagger.
     // TODO: fix provisioning tests (that will be outdated with 0.10??)
-    return this.project.withExec(["test"], {
+    return this.project.withExec(["test", ...args], {
       experimentalPrivilegedNesting: true,
     })
   }
@@ -76,7 +81,7 @@ class TypescriptSdkDev {
   /**
    * Build the TypeScript SDK.
    *
-   * Example usage `dagger call -o ./dist build directory --path dist`
+   * Example usage `dagger call build directory --path dist -o ./dist `
    */
   @func()
   build(): Container {

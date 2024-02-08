@@ -46,7 +46,7 @@ Promise<any> {
       // If the argument is variadic, we need to load each args independently
       // so it's correctly propagated when it's sent to the function.
       // Note: variadic args are always last in the list of args.
-      for (const [i, arg] of loadedArg.entries()) {
+      for (const [i, arg] of (loadedArg ?? []).entries()) {
         args[`${argName}${i}`] = arg
       }
     } else {

@@ -18,13 +18,18 @@ export function serializeSignature(
 ): SignatureMetadata {
   return {
     params: signature.parameters.map((param) => {
-      const { optional, defaultValue } = isOptional(param)
+      // eslint-disable-next-line prefer-const
+      let { optional, defaultValue } = isOptional(param)
+      const variadic = isVariadic(param)
+      if (variadic) {
+        optional = true
+      }
 
       return {
         ...serializeSymbol(checker, param),
         optional,
         defaultValue,
-        isVariadic: isVariadic(param),
+        isVariadic: variadic,
       }
     }),
     returnType: serializeType(checker, signature.getReturnType()),

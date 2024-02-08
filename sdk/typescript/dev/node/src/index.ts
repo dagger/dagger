@@ -9,7 +9,6 @@ import {
 } from "@dagger.io/dagger"
 
 import { Commands } from "./commands"
-import { withNpm, withPnpm, withYarn } from "./pkgManager"
 
 @object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -29,7 +28,7 @@ class Node {
    * Add source to the module container.
    *
    * @param source The source directory to mount in the container.
-   * @param cacheKey The cache key to use for the node_modules cache (default to "node-modules").
+   * @param cache The cache to use for the node_modules cache (default to "node-modules").
    */
   @func()
   withSource(source: Directory, cache?: CacheVolume): Node {
@@ -47,29 +46,56 @@ class Node {
   }
 
   /**
-   * Setup a package manager in the container and set entrypoint to it.
+   * Add yarn as package manager in the container.
    *
-   * @param pkgManager The package manager to use ("yarn", "npm", "pnpm").
-   * @param cacheKey The cache key prefix to use for the downloaded packages (default to `node-module-${pkgManager}`).
+   * This also update the container entrypoint to "yarn".
+   * @param cache The cache to use for the downloaded packages (default to "node-module-yarn").
    */
   @func()
-  withPkgManager(pkgManager: string, cacheKey = "node-module"): Node {
-    switch (pkgManager) {
-      case "yarn": {
-        this.container = this.container.with(withYarn(cacheKey))
-        break
-      }
-      case "npm": {
-        this.container = this.container.with(withNpm(cacheKey))
-        break
-      }
-      case "pnpm": {
-        this.container = this.container.with(withPnpm(cacheKey))
-        break
-      }
-      default:
-        throw new Error(`Unknown package manager: ${pkgManager}`)
-    }
+  withYarn(cache?: CacheVolume): Node {
+    this.container = this.container
+      .withEntrypoint(["yarn"])
+      .withMountedCache(
+        "/usr/local/share/.cache/yarn",
+        cache ?? dag.cacheVolume(`node-module-yarn`)
+      )
+
+    return this
+  }
+
+  /**
+   * Add npm as package manager in the container.
+   *
+   * This also update the container entrypoint to "npm".
+   * @param cache The cache to use for the downloaded packages (default to "node-module-npm").
+   */
+  @func()
+  withNpm(cache?: CacheVolume): Node {
+    this.container = this.container
+      .withEntrypoint(["npm"])
+      .withMountedCache(
+        "/root/.npm",
+        cache ?? dag.cacheVolume(`node-module-npm`)
+      )
+
+    return this
+  }
+
+  /**
+   * Add pnpm as package manager in the container.
+   *
+   * This also update the container entrypoint to "pnpm".
+   * @param cache The cache to use for the downloaded packages (default to "node-module-pnpm").
+   */
+  @func()
+  withPnpm(cache?: CacheVolume): Node {
+    this.container = this.container
+      .withExec(["npm", "install", "-g", "pnpm"])
+      .withEntrypoint(["pnpm"])
+      .withMountedCache(
+        "/pnpm/store",
+        cache ?? dag.cacheVolume(`node-module-pnpm`)
+      )
 
     return this
   }

@@ -6,5 +6,6 @@
       "name": "node",
       "source": "node"
     }
-  ]
+  ],
+  "source": "."
 }
