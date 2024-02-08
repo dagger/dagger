@@ -152,6 +152,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 	ctx = progrock.ToContext(ctx, c.Recorder)
 
+	defer func() {
+		if rerr != nil {
+			c.Recorder.Close()
+		}
+	}()
+
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
