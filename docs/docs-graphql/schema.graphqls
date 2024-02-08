@@ -1623,6 +1623,8 @@ type Module {
 
   """The doc string of the module, if any"""
   description: String!
+
+  """The engine version this module was developed with."""
   engineVersion: String!
 
   """
