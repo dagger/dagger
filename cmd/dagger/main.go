@@ -98,6 +98,7 @@ var rootCmd = &cobra.Command{
 			}
 
 			pprof.StartCPUProfile(profF)
+			cobra.OnFinalize(pprof.StopCPUProfile)
 
 			tracePath := cpuprofile + ".trace"
 
@@ -109,6 +110,7 @@ var rootCmd = &cobra.Command{
 			if err := trace.Start(traceF); err != nil {
 				return fmt.Errorf("start trace: %w", err)
 			}
+			cobra.OnFinalize(trace.Stop)
 		}
 
 		if pprofAddr != "" {
@@ -127,6 +129,9 @@ var rootCmd = &cobra.Command{
 
 		t := analytics.New(analytics.DefaultConfig())
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
+		cobra.OnFinalize(func() {
+			t.Close()
+		})
 
 		if cmdName := commandName(cmd); cmdName != "session" {
 			t.Capture(cmd.Context(), "cli_command", map[string]string{
@@ -135,11 +140,6 @@ var rootCmd = &cobra.Command{
 		}
 
 		return nil
-	},
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		pprof.StopCPUProfile()
-		trace.Stop()
-		analytics.Ctx(cmd.Context()).Close()
 	},
 }
 
