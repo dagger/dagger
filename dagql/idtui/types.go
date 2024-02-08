@@ -40,7 +40,7 @@ type TraceRow struct {
 	Parent *TraceRow
 
 	IsRunning bool
-	ByParent  bool
+	Chained   bool
 
 	Children []*TraceRow
 }
@@ -104,8 +104,8 @@ func WalkSteps(steps []*Step, f func(*TraceRow)) {
 			Step:   step,
 			Parent: parent,
 		}
-		if step.Base != nil {
-			row.ByParent = step.Base.Digest == lastSeen
+		if step.Base != "" {
+			row.Chained = step.Base == lastSeen
 		}
 		if step.IsRunning() {
 			row.setRunning()

@@ -13,7 +13,7 @@ import (
 )
 
 type Step struct {
-	Base   *Step
+	Base   string
 	Digest string
 
 	db *DB

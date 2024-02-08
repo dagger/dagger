@@ -150,14 +150,12 @@ func (db *DB) Step(dig string) (*Step, bool) {
 	case outID == nil && !step.HasStarted():
 		return nil, false
 	}
-	if outID != nil {
-		var ok bool
-		if outID.Base != nil {
-			step.Base, ok = db.HighLevelStep(outID.Base)
-			if !ok {
-				return nil, false
-			}
+	if outID != nil && outID.Base != nil {
+		parentDig, err := outID.Base.Digest()
+		if err != nil {
+			return nil, false
 		}
+		step.Base = db.Simplify(parentDig.String())
 	}
 	return step, true
 }
