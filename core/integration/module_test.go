@@ -1385,12 +1385,55 @@ func TestModuleDescription(t *testing.T) {
                         import { object, field } from '@dagger.io/dagger'
 
                         /**
-                        * Test object, short description
-                        */
+                         * Test object, short description
+                         */
                         @object()
                         class Test {
                             @field()
                             foo: string = "foo"
+                        }
+                        `,
+				},
+			},
+		},
+		{
+			sdk: "typescript",
+			sources: []source{
+				{
+					file: "src/foo.ts",
+					contents: `
+                        /**
+                         * Not the main file
+                         */
+                        import { object, field } from '@dagger.io/dagger'
+
+                        @object()
+                        export class Foo {
+                            @field()
+                            bar = "bar"
+                        }
+                        `,
+				},
+				{
+					file: "src/index.ts",
+					contents: `
+                        /**
+                         * Test module, short description
+                         *
+                         * Long description, with full sentences.
+                         */
+                        import { object, field } from '@dagger.io/dagger'
+                        import { Foo } from "./foo"
+
+                        /**
+                         * Test object, short description
+                         */
+                        @object()
+                        class Test {
+                            @func()
+                            foo(): Foo {
+                                return new Foo()
+                            }
                         }
                         `,
 				},
