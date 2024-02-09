@@ -206,17 +206,17 @@ func (c *censor) Reset() {
 // Why not an off-the-shelf implementation? Well, most of those don't allow
 // navigating character-by-character through the tree, like we do with Step.
 type Trie struct {
-	Children []*Trie
-	Direct   []byte
+	children []*Trie
+	direct   []byte
 	value    []byte
 }
 
 func (t *Trie) Insert(key []byte, value []byte) {
 	node := t
 	for i, ch := range key {
-		if node.Children == nil {
-			if len(node.Direct) == 0 {
-				node.Direct = key[i:]
+		if node.children == nil {
+			if len(node.direct) == 0 {
+				node.direct = key[i:]
 				break
 			}
 
@@ -225,29 +225,29 @@ func (t *Trie) Insert(key []byte, value []byte) {
 			// doing so on a map is *much* slower - since this is in the
 			// hotpath, it makes sense to waste the memory here (and since the
 			// trie is compressed, it doesn't seem to be that much in practice)
-			node.Children = make([]*Trie, 256)
-			node.Children[node.Direct[0]] = &Trie{
-				Direct: node.Direct[1:],
+			node.children = make([]*Trie, 256)
+			node.children[node.direct[0]] = &Trie{
+				direct: node.direct[1:],
 				value:  node.value,
 			}
-			node.Direct = nil
+			node.direct = nil
 			node.value = nil
 		}
-		if node.Children[ch] == nil {
-			node.Children[ch] = &Trie{}
+		if node.children[ch] == nil {
+			node.children[ch] = &Trie{}
 		}
-		node = node.Children[ch]
+		node = node.children[ch]
 	}
 	node.value = value
 }
 
 func (t *Trie) Step(ch byte) *Trie {
-	if t.Children != nil {
-		return t.Children[ch]
+	if t.children != nil {
+		return t.children[ch]
 	}
-	if len(t.Direct) > 0 && t.Direct[0] == ch {
+	if len(t.direct) > 0 && t.direct[0] == ch {
 		return &Trie{
-			Direct: t.Direct[1:],
+			direct: t.direct[1:],
 			value:  t.value,
 		}
 	}
@@ -255,7 +255,7 @@ func (t *Trie) Step(ch byte) *Trie {
 }
 
 func (t *Trie) Value() []byte {
-	if len(t.Direct) == 0 {
+	if len(t.direct) == 0 {
 		return t.value
 	}
 	return nil
