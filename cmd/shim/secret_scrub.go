@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
@@ -221,7 +222,7 @@ func (t *Trie) Insert(key []byte, value []byte) {
 	node := t
 	for i, ch := range key {
 		if node.children == nil {
-			if node.direct == nil {
+			if node.direct == nil || bytes.Equal(node.direct, key[i:]) {
 				node.direct = key[i:]
 				node.value = value
 				return

@@ -582,3 +582,20 @@ func TestTrieExtend(t *testing.T) {
 	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
 	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
 }
+
+func TestTrieReinsert(t *testing.T) {
+	trie := Trie{}
+
+	trie.Insert([]byte("foo"), []byte("bar"))
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
+	before := trie.String()
+
+	trie.Insert([]byte("foo"), []byte("bar"))
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
+	after := trie.String()
+
+	require.Equal(t, before, after)
+
+	trie.Insert([]byte("foo"), []byte("baz"))
+	require.Equal(t, []byte("baz"), trie.Step('f').Step('o').Step('o').Value())
+}
