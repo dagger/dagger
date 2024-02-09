@@ -299,7 +299,7 @@ This revised pipeline now uses a cache volume for the application dependencies.
 Next, trigger your CI workflow by pushing a commit or opening a pull request.
 
 :::info
-If you've configured cache volumes for the first time in a local development environment, run your pipeline via the Dagger CLI and then run the command `docker container stop "$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"`. This step ensures your new cache volumes populate to Dagger Cloud. You only need to do this the first time you use Dagger Cloud locally with cache volumes or when you add new cache volumes in your Dagger pipeline.
+If you've configured cache volumes for the first time in a local development environment, run your pipeline via the Dagger CLI and then run the command `docker container stop -t 300 "$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"`. This step ensures your new cache volumes populate to Dagger Cloud. You only need to do this the first time you use Dagger Cloud locally with cache volumes or when you add new cache volumes in your Dagger pipeline.
 :::
 
 To see your cache volumes, browse to the *Organization Settings* page of Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
