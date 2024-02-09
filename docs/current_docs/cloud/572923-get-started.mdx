@@ -30,7 +30,7 @@ Dagger Cloud includes plans for both individuals and teams. [See more informatio
 
 ## Step 1: Sign up for Dagger Cloud
 
-:::note
+:::info
 At the end of this step, you will have signed up for Dagger Cloud and obtained a Dagger Cloud token. If you already have a Dagger Cloud account and token, you may skip this step.
 :::
 
@@ -214,7 +214,7 @@ Learn more about [using Dagger with Argo Workflows](../guides/324301-argo-workfl
 
 ## Step 3: Visualize your pipeline runs with Dagger Cloud
 
-:::note
+:::info
 At the end of this step, you will have data from one or more CI or local runs available for inspection and debugging in Dagger Cloud.
 :::
 
@@ -275,11 +275,11 @@ Learn more about the [Dagger Cloud user interface](./reference/741031-user-inter
 ## Step 4: Use cache volumes with the experimental Dagger Cloud cache
 
 :::info
-Dagger Cloud's distributed caching feature is only available under the *Team* plan.
+At the end of this step, you will have integrated Dagger Cloud's experimental distributed cache with your workflows.
 :::
 
-:::note
-At the end of this step, you will have integrated Dagger Cloud's experimental distributed cache with your workflows.
+:::info
+Dagger Cloud's distributed caching feature is only available under the *Team* plan.
 :::
 
 One of Dagger's most powerful features is its ability to [cache data across pipeline runs](../quickstart/635927-caching.mdx). This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every pipeline run is inefficient and time-consuming.
