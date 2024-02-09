@@ -39,20 +39,17 @@ func TestModuleConfigs(t *testing.T) {
 		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
 		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		expectedConf := modules.ModuleConfig{
-			Name:    "test",
-			SDK:     "go",
-			Include: []string{"foo"},
-			Exclude: []string{"blah"},
-			Dependencies: []*modules.ModuleConfigDependency{{
-				Name:   "dep",
-				Source: "foo",
-			}},
-			Source: ".",
-		}
-		expectedConfBytes, err := json.Marshal(expectedConf)
-		require.NoError(t, err)
-		require.JSONEq(t, strings.TrimSpace(string(expectedConfBytes)), confContents)
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
+		require.Equal(t, "test", modCfg.Name)
+		require.Equal(t, "go", modCfg.SDK)
+		require.Equal(t, []string{"foo"}, modCfg.Include)
+		require.Equal(t, []string{"blah"}, modCfg.Exclude)
+		require.Len(t, modCfg.Dependencies, 1)
+		require.Equal(t, "foo", modCfg.Dependencies[0].Source)
+		require.Equal(t, "dep", modCfg.Dependencies[0].Name)
+		require.Equal(t, ".", modCfg.Source)
+		require.NotEmpty(t, modCfg.EngineVersion) // version changes with any engine change
 
 		// verify develop didn't overwrite main.go
 		out, err := baseWithNewConfig.With(daggerCall("fn")).Stdout(ctx)

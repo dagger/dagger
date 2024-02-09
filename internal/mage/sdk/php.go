@@ -66,7 +66,7 @@ func (t PHP) Generate(ctx context.Context) error {
 	ok, err := phpBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		With(util.ShellCmds(
 			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),

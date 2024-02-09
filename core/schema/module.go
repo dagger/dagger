@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -889,6 +890,7 @@ func (s *moduleSchema) updateDaggerConfig(
 
 	modCfg.Name = mod.OriginalName
 	modCfg.SDK = mod.SDKConfig
+	modCfg.EngineVersion = engine.Version
 
 	sourceRootSubpath, err := src.Self.SourceRootSubpath()
 	if err != nil {

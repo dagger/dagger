@@ -30,7 +30,13 @@ jobs:
           cache-dependency-path: "internal/mage/go.sum"
       - name: "Publish Engine & CLI"
         run: |
-          ./hack/make dagger:publish ${{ github.ref_name }}
+          if [ $GITHUB_REF_NAME == 'main' ]; then
+            # this is a push to the main branch, publish to the commit we're at
+            ./hack/make dagger:publish ${{ github.sha }}
+          else
+            # this is a tag push, publish to that tag
+            ./hack/make dagger:publish ${{ github.ref_name }}
+          fi
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -71,7 +77,7 @@ jobs:
     steps:
       - uses: aquasecurity/trivy-action@0.11.2
         with:
-          image-ref: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main
+          image-ref: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${{ github.sha }}
           format: "json"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
@@ -97,7 +103,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_darwin_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_darwin_amd64.tar.gz"
@@ -178,7 +184,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
@@ -222,7 +228,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
@@ -269,7 +275,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"

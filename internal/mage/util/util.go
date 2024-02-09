@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,9 +62,6 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// go source
 			"**/*.go",
 
-			// git since we need the vcs buildinfo
-			".git",
-
 			// modules
 			"**/go.mod",
 			"**/go.sum",
@@ -83,6 +81,9 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 
 			// Go SDK runtime codegen
 			"**/dagger.json",
+		},
+		Exclude: []string{
+			".git",
 		},
 	})
 }
@@ -120,7 +121,7 @@ func GoBase(c *dagger.Client) *dagger.Container {
 	return goBase(c)
 }
 
-func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.File {
+func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string, version string) *dagger.File {
 	base := goBase(c)
 	if goos != "" {
 		base = base.WithEnvVariable("GOOS", goos)
@@ -131,25 +132,44 @@ func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.
 	if goarm != "" {
 		base = base.WithEnvVariable("GOARM", goarm)
 	}
+
+	ldflags := []string{
+		"-s", "-w",
+		"-X", "github.com/dagger/dagger/engine.Version=" + version,
+	}
 	return base.
 		WithExec(
-			[]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"},
+			[]string{
+				"go", "build",
+				"-o", "./bin/dagger",
+				"-ldflags", strings.Join(ldflags, " "),
+				"./cmd/dagger",
+			},
 		).
 		File("./bin/dagger")
 }
 
 // DaggerBinary returns a compiled dagger binary
-func DaggerBinary(c *dagger.Client) *dagger.File {
-	return PlatformDaggerBinary(c, "", "", "")
+func DaggerBinary(c *dagger.Client, version string) *dagger.File {
+	return PlatformDaggerBinary(c, "", "", "", version)
+}
+
+// DevelDaggerBinary returns a compiled dagger binary with the devel version
+func DevelDaggerBinary(ctx context.Context, c *dagger.Client) *dagger.File {
+	info, err := DevelVersionInfo(ctx, c)
+	if err != nil {
+		panic(err)
+	}
+	return PlatformDaggerBinary(c, "", "", "", info.EngineVersion())
 }
 
 // HostDaggerBinary returns a dagger binary compiled to target the host's OS+arch
-func HostDaggerBinary(c *dagger.Client) *dagger.File {
+func HostDaggerBinary(c *dagger.Client, version string) *dagger.File {
 	var goarm string
 	if runtime.GOARCH == "arm" {
 		goarm = "7" // not always correct but not sure of better way right now
 	}
-	return PlatformDaggerBinary(c, runtime.GOOS, runtime.GOARCH, goarm)
+	return PlatformDaggerBinary(c, runtime.GOOS, runtime.GOARCH, goarm, version)
 }
 
 // CodegenBinary returns a binary for generating the Go and TypeScript SDKs.
@@ -208,4 +228,43 @@ func ShellCmd(cmd string) dagger.WithContainerFunc {
 
 func ShellCmds(cmds ...string) dagger.WithContainerFunc {
 	return ShellCmd(strings.Join(cmds, " && "))
+}
+
+type VersionInfo struct {
+	Tag      string
+	Commit   string
+	TreeHash string
+}
+
+func (info VersionInfo) EngineVersion() string {
+	if info.Tag != "" {
+		return info.Tag
+	}
+	if info.Commit != "" {
+		return info.Commit
+	}
+	return info.TreeHash
+}
+
+func DevelVersionInfo(ctx context.Context, c *dagger.Client) (*VersionInfo, error) {
+	base := c.Container().
+		From(fmt.Sprintf("alpine:%s", alpineVersion)).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/app/.git", c.Host().Directory(".git")).
+		WithWorkdir("/app")
+
+	info := &VersionInfo{}
+
+	// use git write-tree to get a content hash of the current state of the repo
+	var err error
+	info.TreeHash, err = base.
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "write-tree"}).
+		Stdout(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get tree hash: %w", err)
+	}
+	info.TreeHash = strings.TrimSpace(info.TreeHash)
+
+	return info, nil
 }

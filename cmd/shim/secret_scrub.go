@@ -215,7 +215,7 @@ func (t *Trie) Insert(key []byte, value []byte) {
 	node := t
 	for i, ch := range key {
 		if node.Children == nil {
-			if node.Direct == nil {
+			if len(node.Direct) == 0 {
 				node.Direct = key[i:]
 				break
 			}

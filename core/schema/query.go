@@ -79,7 +79,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	recorder := progrock.FromContext(ctx)
 
 	// Skip development version
-	if strings.Contains(engine.Version, "devel") {
+	if _, err := semver.Parse(engine.Version); err != nil {
 		recorder.Debug("Using development engine; skipping version compatibility check.")
 		return true, nil
 	}

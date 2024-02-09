@@ -162,4 +162,37 @@ type Test struct {
 			break
 		}
 	})
+
+	t.Run("port map with same front+back", func(t *testing.T) {
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--ports", "23457:23457")
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err = cmd.Start()
+		require.NoError(t, err)
+		defer cmd.Process.Kill()
+
+		for {
+			select {
+			case <-ctx.Done():
+				require.FailNow(t, "timed out waiting for container to start")
+			default:
+			}
+
+			resp, err := http.Get("http://127.0.0.1:23457")
+			if err != nil {
+				t.Logf("waiting for container to start: %s", err)
+				time.Sleep(time.Second)
+				continue
+			}
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, "hey there", string(body))
+			break
+		}
+	})
 }

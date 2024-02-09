@@ -90,7 +90,7 @@ func (t TypeScript) Test(ctx context.Context) error {
 	_, err = nodeJsBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"yarn", "test"}).
 		Sync(ctx)
@@ -116,7 +116,7 @@ func (t TypeScript) Generate(ctx context.Context) error {
 	generated, err := nodeJsBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithMountedFile("/usr/local/bin/codegen", util.CodegenBinary(c)).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"codegen", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).

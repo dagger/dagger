@@ -26,7 +26,7 @@ public class DaggerCLIUtils {
 
   public static InputStream query(InputStream query, String binPath) {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    FluentProcess.start(binPath, "query")
+    FluentProcess.start(binPath, "query", "--silent")
         .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
         .inputStream(query)
         .writeToOutputStream(out);

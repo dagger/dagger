@@ -79,7 +79,7 @@ func (r Rust) Generate(ctx context.Context) error {
 	generated := r.rustBase(ctx, c.Pipeline(rustDockerStable), rustDockerStable).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
@@ -202,7 +202,7 @@ func (r Rust) Test(ctx context.Context) error {
 	_, err = r.rustBase(ctx, c.Pipeline(rustDockerStable), rustDockerStable).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"rustc", "--version"}).
 		WithExec([]string{"cargo", "test", "--release", "--all"}).
