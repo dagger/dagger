@@ -10,9 +10,11 @@ Dagger Cloud lets you visualize your Dagger pipelines in two ways: runs and chan
 
 
 
-A run is an invocation of a Dagger pipeline. When you run Dagger in CI, each call aligns with one run in Dagger Cloud. If you have many CI jobs configured to run for every pull/merge request or commit, you may see several runs for a single commit or single pull/merge request.
+A run is an invocation of a Dagger pipeline. When you run Dagger in CI, each call aligns with one run in Dagger Cloud. If you have many CI jobs configured to run for every pull/merge request, you may see several runs for a single commit.
 
-For instance, if 4 GitHub Actions workflows each call Dagger to run a pipeline for pull requessts, you will see four distinct runs in the Dagger Cloud UI. You may also see multiple runs if one GitHub workflow has multiple jobs defined with distinct calls to Dagger to run your pipelines. 
+For instance, if 4 GitHub Actions workflows each call Dagger to run a pipeline for pull requessts, you will see four distinct runs in the Dagger Cloud UI. You may also see multiple runs if one GitHub workflow has multiple jobs defined with distinct calls to Dagger to run your pipelines. As you Daggerize your pipelines, you will likely have fewer distinct CI workflows. 
+
+Because Dagger Cloud understands the Dagger engine's data model, it gives you visibility into the steps of your pipeline's Directed Acyclic Graph (DAG), including detailed logs for each step.
 
 :::note 
 The Dagger team is working on a new user experience to group your Dagger runs by the pull or merge request (group commits by PR/MR).
