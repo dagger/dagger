@@ -1,0 +1,22 @@
+name: 'ci'
+
+on:
+  push:
+    branches:
+    - master
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Install Dagger CLI
+        run: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      -
+        name: Call Dagger Function
+        run: dagger -m ci call deploy --soource . --address us-central1-docker.pkg.dev/vikram-experiments/vikram-test/myapp --credential env:GOOGLE_CREDENTIALS --service projects/vikram-experiments/locations/us-central1/services/myapp
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}

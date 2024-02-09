@@ -1,1 +1,24 @@
-TODO
+The next step is to create a repository in Google Artifact Registry. This repository will host the built container image of the application.
+
+1. From the navigation menu, select the `CI/CD` -> `Artifact Registry` product.
+1. Select the `Repositories` category.
+1. Select the `Create Repository` option.
+1. Configure the repository with the following inputs, modifying them as needed:
+
+    - Format: `Docker`
+    - Mode: `Standard`
+    - Location type: `Region`
+    - Encryption: `Google-managed encryption key`
+    - Cleanup policy: `Delete artifacts`
+
+    ![Create Artifact Registry repository](/img/versioned_docs/version-zenith/common/guides/create-gcloud-repository.png)
+
+1. Click `Create` to create the repository.
+
+The new repository is created. The Google Cloud Console displays the repository in the repository index page. Click the repository name to view details, including its public URL, as shown below:
+
+![View Artifact Registry repository URL](/img/versioned_docs/version-zenith/common/guides/view-gcloud-repository.png)
+
+:::note
+For a project named `myproject` and a repository named `myrepository` in the `us-central1` region, the repository URL will be `us-central1-docker.pkg.dev/myproject/myrepository`. This repository URL is  used as an argument to the Dagger functions in this guide; remember to update it based on the inputs you provided when creating the repository.
+:::

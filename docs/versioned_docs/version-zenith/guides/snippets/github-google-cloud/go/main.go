@@ -12,7 +12,7 @@ import (
 
 type MyModule struct{}
 
-// create a build
+// build a container
 func (m *MyModule) Build(source *Directory) *Container {
 	return dag.Container().
 		From("node:21").
@@ -25,8 +25,7 @@ func (m *MyModule) Build(source *Directory) *Container {
 }
 
 // publish an image
-// export GC_TOKEN_NOT_BASE64=`cat /home/vikram/public/credentials/vikram-experiments-69a5e0f9f523.json`
-// dagger call publish --registry us-central1-docker.pkg.dev/vikram-experiments/vikram-test/myapp --credential env:GC_TOKEN_NOT_BASE64
+// example: dagger call publish --source . --registry REGISTRY/myapp --credential env:GOOGLE_JSON
 func (m *MyModule) Publish(ctx context.Context, source *Directory, registry string, credential *Secret) (string, error) {
 	split := strings.Split(registry, "/")
 	return m.Build(source).
@@ -34,9 +33,11 @@ func (m *MyModule) Publish(ctx context.Context, source *Directory, registry stri
 		Publish(ctx, registry)
 }
 
-// dagger call deploy --registry us-central1-docker.pkg.dev/vikram-experiments/vikram-test/myapp --credential env:GC_TOKEN_NOT_BASE64 --service projects/vikram-experiments/locations/us-central1/services/myapp
+// deploy an image to Google Cloud Run
+// example: dagger call publish --source . --registry REGISTRY/myapp --service SERVICE --credential env:GOOGLE_JSON
 func (m *MyModule) Deploy(ctx context.Context, source *Directory, service string, registry string, credential *Secret) (string, error) {
 
+	// get JSON secret
 	json, err := credential.Plaintext(ctx)
 	b := []byte(json)
 	gcrClient, err := run.NewServicesClient(ctx, option.WithCredentialsJSON(b))
@@ -45,6 +46,7 @@ func (m *MyModule) Deploy(ctx context.Context, source *Directory, service string
 	}
 	defer gcrClient.Close()
 
+	// publish image
 	addr, err := m.Publish(ctx, source, registry, credential)
 	if err != nil {
 		panic(err)
@@ -81,5 +83,7 @@ func (m *MyModule) Deploy(ctx context.Context, source *Directory, service string
 	if err != nil {
 		panic(err)
 	}
+
+	// return service URL
 	return gcrResponse.Uri, err
 }

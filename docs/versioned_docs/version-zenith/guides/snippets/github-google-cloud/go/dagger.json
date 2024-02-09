@@ -1,0 +1,9 @@
+{
+  "name": "my-module",
+  "sdk": "go",
+  "root-for": [
+    {
+      "source": "."
+    }
+  ]
+}
