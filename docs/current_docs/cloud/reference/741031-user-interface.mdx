@@ -8,8 +8,6 @@ Dagger Cloud lets you visualize your Dagger pipelines in two ways: runs and chan
 
 ## Runs
 
-
-
 A run is an invocation of a Dagger pipeline. When you run Dagger in CI, each call aligns with one run in Dagger Cloud. If you have many CI jobs configured to run for every pull/merge request, you may see several runs for a single commit.
 
 For instance, if 4 GitHub Actions workflows each call Dagger to run a pipeline for pull requessts, you will see four distinct runs in the Dagger Cloud UI. You may also see multiple runs if one GitHub workflow has multiple jobs defined with distinct calls to Dagger to run your pipelines. As you Daggerize your pipelines, you will likely have fewer distinct CI workflows. 
@@ -57,8 +55,6 @@ The *Run Details* page includes detailed status and duration metadata about the 
 Clicking into a specific step will open a drawer with several elements that can help you debug why your pipeline is failing and help you identify why a step might not have been cached. 
 
 ![View step details](/img/current_docs/cloud/reference/user-interface/step-details.png)
-
-
 
 
 ## Changes
