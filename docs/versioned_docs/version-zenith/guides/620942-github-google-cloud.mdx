@@ -128,8 +128,7 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 1. In the application directory, create a new sub-directory named `ci`. Within the `ci` directory, create a new Dagger module.
 
     ```shell
-    mkdir ci && cd ci
-    dagger mod init --name=my-module --sdk=python
+    dagger init --name=my-module --sdk=go ci
     ```
 
 1. Install the Google Cloud Run client libraries for Python.
