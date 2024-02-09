@@ -13,16 +13,16 @@ Dagger Cloud provides pipeline visualization, operational insights, and distribu
 
 This guide helps you get started with Dagger Cloud. Here are the steps you'll follow:
 
-- Sign up for Dagger Cloud
-- Connect Dagger Cloud with your CI provider or CI tool
-- Visualize CI runs with Dagger Cloud
-- Improve CI performance with Dagger Cloud's distributed caching
+- [Sign up for Dagger Cloud](#step-1-sign-up-for-dagger-cloud)
+- [Send telemetry to Dagger Cloud](#step-2-send-telemetry-to-dagger-cloud)
+- [Visualize pipeline runs with Dagger Cloud](#step-3-visualize-your-pipeline-runs-with-dagger-cloud)
+- [Synchronize cache volumes with the Dagger Cloud experimental distributed cache (available on the Team plan)](#step-4-use-cache-volumes-with-the-experimental-dagger-cloud-cache-team-plan)
 
-The next sections will walk you through these steps in detail.
+:::note Dagger Cloud plans
+Dagger Cloud includes plans for both individuals and teams. [See more information about the plans](https://www.dagger.io/pricing). 
+:::
 
 ## Prerequisites
-
-This guide assumes that:
 
 - You have an understanding of how Dagger works. If not, [read the Dagger Quickstart](../quickstart/index.mdx).
 - You have a GitHub account (required for Dagger Cloud identity verification). If not, [register for a free GitHub account](https://github.com/signup).
@@ -36,58 +36,65 @@ At the end of this step, you will have signed up for Dagger Cloud and obtained a
 
 Follow the steps below to sign up for Dagger Cloud, create an organization and obtain a Dagger Cloud token.
 
-1. Browse to the [Dagger Cloud website](https://dagger.cloud/signup). Click *Continue with GitHub* to log in with your GitHub account.
+1. Sign up for Dagger Cloud by selecting a plan on the [Dagger website](https://www.dagger.io/pricing). Click *Continue with GitHub* to log in with your GitHub account.
 
-    ![Authenticate with GitHub](/img/current_docs/cloud/get-started/connect-github.png)
+1. After authorizing Dagger Cloud for your GitHub account, you'll create your organization.
 
-1. On the GitHub authorization screen, confirm the Dagger Cloud connection for authentication. Once authorized, you will be redirected to a welcome page and prompted to create a new Dagger Cloud organization. Enter a name for your organization in the *Organization Name* field. Click *Next* to proceed.
-
-    :::info
-    The organization name can only contain alphanumeric characters and dashes and is unique across Dagger Cloud.
+    :::info Naming your organization
+    Organization names may contain alphanumeric characters and dashes and are unique across Dagger Cloud. We recommend using your company name or team name for your organization.
     :::
 
-    ![Create Dagger Cloud organization](/img/current_docs/cloud/get-started/create-organization.png)
-
 1. Review the available Dagger Cloud subscription plans. Choose a plan by clicking *Select*.
-1. If you selected the *Team* plan, you will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in individual plans. Enter one or more email addresses as required. Click *Next* to proceed.
 
-    ![Select plan](/img/current_docs/cloud/get-started/invite-team.png)
+1. If you selected the *Team* plan:
 
-1. Enter the required payment details. Click *Sign up* to proceed.
+    1. You will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in the Individual plan.
+    
+    1. You will then enter your payment information. After your free 14 day trial completes, you will be automatically subscribed to the Dagger Cloud Team plan.
 
-    ![Add payment method](/img/current_docs/cloud/get-started/add-payment.png)
+1. Click *Go to dashboard*. Your dashboard will initially be blank. The next step walks you through how to send telemetry to Dagger Cloud.
 
-1. Your payment information will now be verified. If all is well, your new organization will be created and you will be redirected to a success page confirming that your Dagger Cloud account and organization have been created.
-
-    ![Create organization](/img/current_docs/cloud/get-started/create-organization-success.png)
-
-1. Click *Go to dashboard* to visit the Dagger Cloud dashboard, which allows you to manage your Dagger Cloud organization and account.
-
-    ![View dashboard](/img/current_docs/cloud/get-started/connect-cloud.png)
-
-The Dagger Cloud dashboard will not display any data until you connect your Dagger Cloud account with a CI provider or CI tool. The next step describes how to do this.
-
-## Step 2: Connect Dagger Cloud with your CI
+## Step 2: Send telemetry to Dagger Cloud
 
 :::info
-At the end of this step, you will have connected Dagger Cloud with your CI provider or CI tool using your Dagger Cloud token. If you have already connected Dagger Cloud with your CI provider/tool, you may skip this step.
+At the end of this step, you will have connected Dagger Cloud with your CI provider or CI tool using your Dagger Cloud token. If you have already connected Dagger Cloud with your CI provider/tool and don't see data yet in your dashboard, skip to the next step.
 :::
 
-To connect your Dagger Cloud account with a CI provider or CI tool, you must first obtain a Dagger Cloud token.
+You can use Dagger Cloud with your CI and for your local development workflows. You instruct your Dagger Engine to connect to Dagger Cloud by referencing your unique Dagger Cloud token. Dagger Cloud creates this token automatically when you sign up.
 
-Browse to the *Organizations Settings* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface). Select your organization and navigate to the *Configuration* tab. Note the Dagger Cloud token carefully.
+To find your token, browse to the *Organization Settings* page, by clicking your profile photo in the left sidebar and then clicking Organization Settings. Select the *Configuration* tab. You can also use this URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=configuration`
 
     ![Get token](/img/current_docs/cloud/get-started/get-token.png)
 
-Once you have a token, the general procedure to connect Dagger Cloud with a CI provider/CI tool is:
+  :::warning
+  If you regenerate your token, you must replace the token wherever you've referenced it. To reduce operational interruptions, only regenerate your token if it has been leaked. 
+  :::
 
-- Store the token as a secret with your CI provider/in your CI tool.
-- Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
-- For *Team* plan subscribers with ephemeral CI runners only: Adjust the Docker configuration to wait longer  before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache
+Once you have your token, you can now use it to send telemetry from your CI and development machines.
 
-:::danger
-You must store the Dagger Cloud token as a secret (not plaintext) with your CI provider and reference it in your CI’s workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project.
+### Local development
+You can visualize and debug your local Dagger pipeline runs with Dagger Cloud to identify issues before pushing them to CI.
+
+To configure local development, set your Dagger Cloud token as an environment variable. For example: `export DAGGER_CLOUD_TOKEN={your token}`
+
+:::info BEST PRACTICES FOR VISUALIZING LOCAL RUNS IN DAGGER CLOUD
+Dagger Cloud uses metadata from your version control system (VCS), such as git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned git repository.
 :::
+
+
+### In CI
+The general procedure to connect Dagger Cloud with a CI provider/CI tool is:
+
+- Add your Dagger Cloud token to your CI workflows.
+  - Store the Dagger Cloud token as a secret with your CI.
+    :::danger Keep your Dagger Cloud token private
+    You must store the Dagger Cloud token as a secret (not plaintext) with your CI provider and reference it in your CI’s workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
+    :::
+  - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
+- For *Team* plan subscribers with ephemeral CI runners only: Add a wait step for the Docker configuration to allow the Dagger Engine to push cache volumes to the experimental Dagger Cloud distributed cache. Subscribers on the *Individual* plan do not have access to the experimental distributed cache and do not need to add this step.
+- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub Check to your pull requests and links to the run status and pipeline visualization for the commit in Dagger Cloud.
+
+You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
 
 :::danger
 When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a common source of unexpected network charges. It's advisable to setup an Amazon S3 Gateway for these cases. Refer to the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) for detailed information on how to do this.
@@ -205,16 +212,42 @@ Learn more about [using Dagger with Argo Workflows](../guides/324301-argo-workfl
 </TabItem>
 </Tabs>
 
-:::tip
-Do you also want to see local runs in Dagger Cloud? Create and export a new local environment variable named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Your local run data will now appear in Dagger Cloud.
-:::
-
-## Step 3: Visualize a CI run with Dagger Cloud
+## Step 3: Visualize your pipeline runs with Dagger Cloud
 
 :::info
-At the end of this step, you will have data from one or more CI runs available for inspection and analysis in Dagger Cloud.
+At the end of this step, you will have data from one or more CI or local runs available for inspection and debugging in Dagger Cloud.
 :::
 
+### Local development
+:::info Best practices for visualizing local runs in Dagger Cloud
+Dagger Cloud uses metadata from your version control system (VCS), such as git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned git repository.
+:::
+
+Before completing these steps, ensure you've [added your Dagger Cloud token as an environment variable](#local-development). 
+
+1. In your terminal, run your Dagger pipeline. If your environment variable is properly defined, you will see a Dagger Cloud URL printed in the terminal. 
+1. Click on the URL to view your pipeline run in Dagger Cloud.
+
+Here's an example running a Dagger NodeJS pipeline named index.mjs locally after committing a change with git.
+
+```shell
+  git commit -s -m "Updated quickstart link in README"
+  dagger run node index.mjs
+  ```
+
+Because we ran this in a git context, the Dagger Cloud UI shows the VCS git metadata associated with the commit. 
+
+(ADD SCREENSHOT OF LOCAL RUN)
+
+If you run outside of a git context, Dagger Cloud will show the same detailed steps. However, the top-level metadata will not be populated. 
+
+(ADD SCREENSHOT OF LOCAL RUN)
+
+:::info Multiple Dagger Cloud organizations
+To use Dagger Cloud locally with multiple organizations, you must set distinct environment variables for each organization’s Dagger Cloud token. You can find the unique token for an organization in the *Organization Settings* page.
+:::
+
+### In CI
 Once your CI provider/tool is connected with Dagger Cloud, it’s time to test the integration.
 
 To do this, trigger your CI workflow and Dagger pipeline by pushing a commit or opening a pull request. If you are using the starter application and pipeline from Appendix A, use the following commands:
@@ -239,13 +272,13 @@ The *Run Details* page includes detailed status and duration metadata about the 
 
 Learn more about the [Dagger Cloud user interface](./reference/741031-user-interface.mdx).
 
-## Step 4: Integrate the Dagger Cloud cache
+## Step 4: Use cache volumes with the experimental Dagger Cloud cache
 
 :::info
-At the end of this step, you will have integrated Dagger Cloud's distributed cache with your CI pipeline.
+At the end of this step, you will have integrated Dagger Cloud's experimental distributed cache with your workflows.
 :::
 
-:::note
+:::info
 Dagger Cloud's distributed caching feature is only available under the *Team* plan.
 :::
 
@@ -253,7 +286,7 @@ One of Dagger's most powerful features is its ability to [cache data across pipe
 
 Dagger comes with built-in support to define one or more such directories as cache volumes and persist their contents across runs. Dagger Cloud enhances caching support significantly and allows cross-host synchronization of cache volumes. This allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
-Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a CI run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
+Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
 
 ```javascript file=./snippets/get-started/step4/index.mjs
 ```
@@ -263,7 +296,17 @@ This revised pipeline now uses a cache volume for the application dependencies.
 - It uses the client's `cacheVolume()` method to initialize a new cache volume named `node`.
 - It uses the `Container.withMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
 
-Next, trigger your CI workflow by pushing a commit or opening a pull request. Once your CI workflow begins, browse to the *Organizations Settings* -> *Organization* page of the Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
+Next, trigger your CI workflow by pushing a commit or opening a pull request.
+
+:::info
+If you've configured cache volumes for the first time in a local development environment, run your pipeline via the Dagger CLI and then run the command `docker container stop -t 300 "$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"`. This step ensures your new cache volumes populate to Dagger Cloud. You only need to do this the first time you use Dagger Cloud locally with cache volumes or when you add new cache volumes in your Dagger pipeline.
+:::
+
+To see your cache volumes, browse to the *Organization Settings* page of Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the *Configuration* tab. You should see the newly-created volume listed and enabled.
+
+:::note
+Your cache volumes will appear in the UI within a few minutes after your pipeline run has completed. If you don't see them in the UI, ensure you've referenced the volumes in your Dagger code and that you've set up your CI or local development workflows to push the cache volumes to Dagger Cloud.
+:::
 
 ![Manage volumes](/img/current_docs/cloud/get-started/manage-volumes.png)
 
