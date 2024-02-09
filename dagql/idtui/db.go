@@ -221,11 +221,34 @@ func (*DB) Close() error {
 	return nil
 }
 
+func litSize(lit *idproto.Literal) int {
+	switch x := lit.Value.(type) {
+	case *idproto.Literal_Id:
+		return idSize(x.Id)
+	case *idproto.Literal_List:
+		size := 0
+		for _, lit := range x.List.Values {
+			size += litSize(lit)
+		}
+		return size
+	case *idproto.Literal_Object:
+		size := 0
+		for _, field := range x.Object.Values {
+			size += litSize(field.Value)
+		}
+		return size
+	}
+	return 1
+}
+
 func idSize(id *idproto.ID) int {
 	size := 0
 	for id := id; id != nil; id = id.Base {
 		size++
 		size += len(id.Args)
+		for _, arg := range id.Args {
+			size += litSize(arg.Value)
+		}
 	}
 	return size
 }
@@ -235,19 +258,21 @@ func (db *DB) Simplify(dig string) string {
 	if !ok {
 		return dig
 	}
-	var smallestCreator *idproto.ID
-	var smallestSize int
-	for creator := range creators {
-		id, ok := db.IDs[creator]
+	var smallest = db.IDs[dig]
+	var smallestSize = idSize(smallest)
+	var simplified bool
+	for creatorDig := range creators {
+		creator, ok := db.IDs[creatorDig]
 		if ok {
-			if size := idSize(id); smallestCreator == nil || size < smallestSize {
-				smallestCreator = id
+			if size := idSize(creator); smallest == nil || size < smallestSize {
+				smallest = creator
 				smallestSize = size
+				simplified = true
 			}
 		}
 	}
-	if smallestCreator != nil {
-		smallestDig, err := smallestCreator.Digest()
+	if simplified {
+		smallestDig, err := smallest.Digest()
 		if err != nil {
 			return dig
 		}
