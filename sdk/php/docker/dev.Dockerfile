@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine3.19 AS golang-base
+FROM golang:1.22-alpine3.19 AS golang-base
 FROM php:8.2-zts-bookworm AS php-base
 FROM composer/composer:2-bin AS composer_upstream
 FROM docker:20.10.17-cli-alpine3.16 AS docker-cli
@@ -32,10 +32,10 @@ RUN apt-get update && \
 
 RUN set -eux; \
     install-php-extensions \
-        apcu \
-		intl \
-		opcache \
-		zip \
+    apcu \
+    intl \
+    opcache \
+    zip \
     ;
 
 ARG UID=1000

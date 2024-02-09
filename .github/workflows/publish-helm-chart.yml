@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: "1.21"
+          go-version: "1.22"
 
       - name: "Publish Helm Chart"
         run: ./hack/make helm:publish ${{ github.ref_name }}

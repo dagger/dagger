@@ -14,7 +14,7 @@ connect(async (client) => {
 
   for (let i = 0; i < platforms.length; i++) {
     const build = client.container({platform: platforms[i]})
-    .from("golang:1.21.3-bullseye")
+    .from("golang:1.22.0-bullseye")
     .withDirectory("/src", project)
     .withWorkdir("/src")
     .withMountedCache("/cache", cache)

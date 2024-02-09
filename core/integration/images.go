@@ -2,7 +2,7 @@ package core
 
 const (
 	alpineImage = "alpine:3.18.2"
-	golangImage = "golang:1.21.3-alpine"
+	golangImage = "golang:1.22.0-alpine"
 
 	// TODO: use these
 	// registryImage   = "registry:2"

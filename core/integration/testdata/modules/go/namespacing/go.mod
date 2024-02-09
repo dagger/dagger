@@ -1,6 +1,6 @@
 module test
 
-go 1.21.2
+go 1.22.0
 
 require (
 	github.com/99designs/gqlgen v0.17.31

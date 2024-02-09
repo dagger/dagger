@@ -1,6 +1,6 @@
 module basic
 
-go 1.21.0
+go 1.22.0
 
 require (
 	github.com/99designs/gqlgen v0.17.37
