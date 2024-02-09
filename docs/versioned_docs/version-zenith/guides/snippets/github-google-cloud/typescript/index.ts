@@ -5,39 +5,44 @@ import { ServicesClient } from "@google-cloud/run"
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class MyModule {
 
+  source: Directory
+
+  // constructor
+  constructor (source: Directory) {
+    this.source = source
+  }
+
   // build a container
   @func
-  build(source: Directory): Container {
+  build(): Container {
     return dag.container().from("node:21")
-      .withDirectory("/src", source)
-      .withWorkdir("/src")
-      .withExec(["cp", "-R", ".", "/home/node"])
-      .withWorkdir("/home/node")
-      .withExec(["npm", "install"])
-      .withEntrypoint(["npm", "start"])
+    .withDirectory("/home/node", this.source)
+    .withWorkdir("/home/node")
+    .withExec(["npm", "install"])
+    .withEntrypoint(["npm", "start"])
   }
 
   // publish an image
-  // example: dagger call publish --source . --registry REGISTRY/myapp --credential env:GOOGLE_JSON
+  // example: dagger call --source . publish --registry REGISTRY/myapp --credential env:GOOGLE_JSON
   @func
-  async publish(source: Directory, registry: string, credential: Secret): Promise<string> {
+  async publish(registry: string, credential: Secret): Promise<string> {
     const split = registry.split("/")
-    return await this.build(source)
+    return await this.build()
       .withRegistryAuth(split[0], "_json_key", credential)
       .publish(registry)
   }
 
   // deploy an image to Google Cloud Run
-  // example: dagger call publish --source . --registry REGISTRY/myapp --service SERVICE --credential env:GOOGLE_JSON
+  // example: dagger call --source . publish --registry REGISTRY/myapp --service SERVICE --credential env:GOOGLE_JSON
   @func
-  async deploy(source: Directory, service: string, registry: string, credential: Secret): Promise<string> {
+  async deploy(service: string, registry: string, credential: Secret): Promise<string> {
 
     // get JSON secret
     const json = JSON.parse(await credential.plaintext())
     const gcrClient = new ServicesClient({credentials: json})
 
     // publish image
-    const gcrContainerPublishResponse = await this.publish(source, registry, credential)
+    const gcrContainerPublishResponse = await this.publish(registry, credential)
 
     // define service request
     const gcrServiceUpdateRequest = {

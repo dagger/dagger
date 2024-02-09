@@ -1,41 +1,42 @@
 import dagger
 from dagger import dag, object_type, field, function
+from google.cloud import run_v2
 
 @object_type
 class MyModule:
 
+    source: dagger.Directory = field()
+
     @function
-    def build(source: dagger.Directory) -> dagger.Container:
+    def build(self) -> dagger.Container:
         '''Build an image'''
         return (
             dag.container()
             .from_("node:21")
-            .with_directory("/src", source)
-            .with_workdir("/src")
-            .with_exec(["cp", "-R", ".", "/home/node"])
+            .with_directory("/home/node", self.source)
             .with_workdir("/home/node")
             .with_exec(["npm", "install"])
             .with_entrypoint(["npm", "start"])
         )
 
     @function
-    async def publish(self, source: dagger.Directory, registry: str, credential: dagger.Secret) -> str:
+    async def publish(self, registry: str, credential: dagger.Secret) -> str:
         '''Publish an image'''
         split = registry.split("/")
         return await (
-            self.build(source)
+            self.build()
             .with_registry_auth(split[0], "_json_key", credential)
             .publish(registry)
         )
 
     @function
-    async def deploy(self, source: dagger.Directory, registry: str, service: str, credential: dagger.Secret) -> str:
+    async def deploy(self, registry: str, service: str, credential: dagger.Secret) -> str:
         '''Deploy an image to Google Cloud Run'''
 
         json = await credential.plaintext()
         gcr_client = run_v2.ServicesAsyncClient(json)
 
-        addr = self.publish(source, registry, credential)
+        addr = self.publish(registry, credential)
 
         gcr_request = run_v2.UpdateServiceRequest(
             service=run_v2.Service(

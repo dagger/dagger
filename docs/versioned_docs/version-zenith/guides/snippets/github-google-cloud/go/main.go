@@ -10,32 +10,39 @@ import (
 	"google.golang.org/api/option"
 )
 
-type MyModule struct{}
+type MyModule struct {
+	Source *Directory
+}
+
+// constructor
+func New(source *Directory) *MyModule {
+	return &MyModule{
+		Source: source,
+	}
+}
 
 // build a container
-func (m *MyModule) Build(source *Directory) *Container {
+func (m *MyModule) Build() *Container {
 	return dag.Container().
 		From("node:21").
-		WithDirectory("/src", source).
-		WithWorkdir("/src").
-		WithExec([]string{"cp", "-R", ".", "/home/node"}).
+		WithDirectory("/home/node", m.Source).
 		WithWorkdir("/home/node").
 		WithExec([]string{"npm", "install"}).
 		WithEntrypoint([]string{"npm", "start"})
 }
 
 // publish an image
-// example: dagger call publish --source . --registry REGISTRY/myapp --credential env:GOOGLE_JSON
-func (m *MyModule) Publish(ctx context.Context, source *Directory, registry string, credential *Secret) (string, error) {
+// example: dagger call --source . publish --registry REGISTRY/myapp --credential env:GOOGLE_JSON
+func (m *MyModule) Publish(ctx context.Context, registry string, credential *Secret) (string, error) {
 	split := strings.Split(registry, "/")
-	return m.Build(source).
+	return m.Build().
 		WithRegistryAuth(split[0], "_json_key", credential).
 		Publish(ctx, registry)
 }
 
 // deploy an image to Google Cloud Run
-// example: dagger call publish --source . --registry REGISTRY/myapp --service SERVICE --credential env:GOOGLE_JSON
-func (m *MyModule) Deploy(ctx context.Context, source *Directory, service string, registry string, credential *Secret) (string, error) {
+// example: dagger call --source . publish --registry REGISTRY/myapp --service SERVICE --credential env:GOOGLE_JSON
+func (m *MyModule) Deploy(ctx context.Context, service string, registry string, credential *Secret) (string, error) {
 
 	// get JSON secret
 	json, err := credential.Plaintext(ctx)
@@ -47,7 +54,7 @@ func (m *MyModule) Deploy(ctx context.Context, source *Directory, service string
 	defer gcrClient.Close()
 
 	// publish image
-	addr, err := m.Publish(ctx, source, registry, credential)
+	addr, err := m.Publish(ctx, registry, credential)
 	if err != nil {
 		panic(err)
 	}
