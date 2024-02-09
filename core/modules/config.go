@@ -27,6 +27,9 @@ type ModuleConfig struct {
 
 	// The path, relative to this config file, to the subdir containing the module's implementation source code.
 	Source string `json:"source,omitempty"`
+
+	// The version of the engine this module was last updated with.
+	EngineVersion string `json:"engineVersion,omitempty"`
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {

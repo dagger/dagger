@@ -21,8 +21,15 @@ type Cli mg.Namespace
 
 // Publish publishes dagger CLI using GoReleaser
 func (cl Cli) Publish(ctx context.Context, version string) error {
-	// if this isn't an official semver version, do a dev release
-	devRelease := !semver.IsValid(version)
+	if version == "" {
+		return fmt.Errorf("version tag must be specified")
+	}
+	var versionInfo *util.VersionInfo
+	if semver.IsValid(version) {
+		versionInfo = &util.VersionInfo{Tag: version}
+	} else {
+		versionInfo = &util.VersionInfo{Commit: version}
+	}
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -31,15 +38,14 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 	defer c.Close()
 
 	args := []string{"release", "--clean", "--skip-validate", "--debug"}
-	if devRelease {
+	if versionInfo.Tag != "" {
+		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", versionInfo.Tag))
+	} else {
+		// if this isn't an official semver version, do a dev release
 		args = append(args,
 			"--nightly",
 			"--config", ".goreleaser.nightly.yml",
 		)
-	}
-
-	if !devRelease {
-		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", version))
 	}
 
 	ctr, err := publishEnv(ctx, c)
@@ -58,8 +64,9 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		With(util.HostSecretVar(c, "AWS_REGION")).
 		With(util.HostSecretVar(c, "AWS_BUCKET")).
 		With(util.HostSecretVar(c, "ARTEFACTS_FQDN")).
+		WithEnvVariable("ENGINE_VERSION", versionInfo.EngineVersion()).
 		With(func(ctr *dagger.Container) *dagger.Container {
-			if devRelease {
+			if versionInfo.Tag == "" {
 				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
 				return ctr.WithExec([]string{"git", "tag", "0.0.0"})
 			}
@@ -83,6 +90,11 @@ func (cl Cli) TestPublish(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	versionInfo, err := util.DevelVersionInfo(ctx, c)
+	if err != nil {
+		return err
+	}
+
 	oses := []string{"linux", "windows", "darwin"}
 	arches := []string{"amd64", "arm64", "arm"}
 
@@ -99,7 +111,9 @@ func (cl Cli) TestPublish(ctx context.Context) error {
 			os := os
 			arch := arch
 			eg.Go(func() error {
-				_, err := util.PlatformDaggerBinary(c, os, arch, goarm).Export(ctx, "./bin/dagger-"+os+"-"+arch)
+				_, err := util.
+					PlatformDaggerBinary(c, os, arch, goarm, versionInfo.EngineVersion()).
+					Export(ctx, "./bin/dagger-"+os+"-"+arch)
 				return err
 			})
 		}

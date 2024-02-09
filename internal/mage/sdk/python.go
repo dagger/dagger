@@ -93,7 +93,7 @@ func (t Python) Test(ctx context.Context) error {
 			_, err := base.
 				WithServiceBinding("dagger-engine", devEngine).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+				WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 				WithExec([]string{"pytest", "-Wd", "--exitfirst"}).
 				Sync(gctx)
@@ -145,7 +145,7 @@ func (t Python) Generate(ctx context.Context) error {
 	generated, err := pythonBase(c, pythonDefaultVersion).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("/").
 		WithExec([]string{cliBinPath, "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
