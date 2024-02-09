@@ -26,24 +26,27 @@ This guide assumes that:
 
 ## Use modules in other modules
 
-Modules can call each other. To add a dependency to your module, you can use `dagger mod install`, as in the following example:
+Modules can call each other. To add a dependency to your module, you can use `dagger install`, as in the following example:
 
 ```sh
-dagger mod install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
+dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
 ```
 
 This module will be added to your `dagger.json`:
 
 ```json
 "dependencies": [
-  "github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990"
+  {
+    "name": "helloWorld",
+    "source": "github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990"
+  }
 ]
 ```
 
 You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
 
 ```sh
-dagger mod install ./path/to/module
+dagger install ./path/to/module
 ```
 
 The dependent module will be added to your code-generation routines, so you can access it from your own module's code, as shown below:
