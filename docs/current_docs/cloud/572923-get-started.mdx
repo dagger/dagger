@@ -91,7 +91,7 @@ The general procedure to connect Dagger Cloud with a CI provider/CI tool is:
     You must store the Dagger Cloud token as a secret (not plaintext) with your CI provider and reference it in your CI’s workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
     :::
   - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
-- For **Team** plan subscribers with ephemeral CI runners only: Add a wait step for the Docker configuration to allow the Dagger Engine to push cache volumes to the experimental Dagger Cloud distributed cache. Subscribers on the **Individual** plan do not have access to the experimental distributed cache and do not need to add this step.
+- For **Team** plan subscribers with ephemeral CI runners only: Add a wait step (example below) for the Docker configuration to allow the Dagger Engine to push cache volumes to the experimental Dagger Cloud distributed cache. Subscribers on the **Individual** plan do not have access to the experimental distributed cache and do not need to add this step.
 - If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub Check to your pull requests and links to the run status and pipeline visualization for the commit in Dagger Cloud.
 
 You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
@@ -107,7 +107,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
-1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitHub Actions workflow and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
+1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitHub Actions workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
 
@@ -127,7 +127,7 @@ You can use this file with the starter application and Dagger pipeline in [Appen
 
 1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
 
-1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
+1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
 Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighted:
 
@@ -139,7 +139,7 @@ Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighte
 
 1. Create a new environment variable in your CircleCI project named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the CircleCI documentation on [creating environment variables for a project](https://circleci.com/docs/set-environment-variable/#set-an-environment-variable-in-a-project).
 
-1. For **Team** plan subscribers with ephemeral CI runners only: Update your CircleCI workflow and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
+1. For **Team** plan subscribers with ephemeral CI runners only: Update your CircleCI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
 1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following pipeline values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
 
