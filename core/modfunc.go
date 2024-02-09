@@ -91,6 +91,26 @@ type CallInput struct {
 	Value dagql.Typed
 }
 
+func (fn *ModuleFunction) recordCall(ctx context.Context) {
+	mod := fn.mod
+	if fn.metadata.Name == "" {
+		return
+	}
+	props := map[string]string{
+		"target_function": fn.metadata.Name,
+	}
+	moduleAnalyticsProps(mod, "target_", props)
+	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
+		props["caller_type"] = "module"
+		moduleAnalyticsProps(caller, "caller_", props)
+	} else if analytics.IsInternal(ctx) {
+		props["caller_type"] = "internal"
+	} else {
+		props["caller_type"] = "direct"
+	}
+	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
+}
+
 func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *CallOpts) (t dagql.Typed, rerr error) {
 	mod := fn.mod
 
@@ -102,21 +122,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 
 	// Capture analytics for the function call.
 	// Calls without function name are internal and excluded.
-	if fn.metadata.Name != "" {
-		props := map[string]string{
-			"target_function": fn.metadata.Name,
-		}
-		moduleAnalyticsProps(mod, "target_", props)
-		if caller, err := mod.Query.CurrentModule(ctx); err == nil {
-			props["caller_type"] = "module"
-			moduleAnalyticsProps(caller, "caller_", props)
-		} else if analytics.IsInternal(ctx) {
-			props["caller_type"] = "internal"
-		} else {
-			props["caller_type"] = "direct"
-		}
-		analytics.Ctx(ctx).Capture(ctx, "module_call", props)
-	}
+	fn.recordCall(ctx)
 
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
