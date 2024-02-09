@@ -17,7 +17,7 @@ import (
 const (
 	elixirSDKPath            = "sdk/elixir"
 	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
-	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/engine_conn.ex"
+	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/engine_conn.ex"
 )
 
 // https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
