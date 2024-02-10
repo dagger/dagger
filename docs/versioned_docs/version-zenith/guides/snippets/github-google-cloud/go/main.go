@@ -6,7 +6,6 @@ import (
 
 	run "cloud.google.com/go/run/apiv2"
 	runpb "cloud.google.com/go/run/apiv2/runpb"
-	"dagger.io/dagger/dag"
 	"google.golang.org/api/option"
 )
 
