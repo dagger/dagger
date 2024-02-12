@@ -10,7 +10,7 @@ connect(
       .stdout()
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 function mounts(client: Client) {

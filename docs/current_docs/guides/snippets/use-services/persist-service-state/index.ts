@@ -24,5 +24,5 @@ connect(
     const val = await redisCLI.withExec(["get", "foo"]).stdout()
     console.log(val)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

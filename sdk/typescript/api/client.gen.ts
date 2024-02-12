@@ -2025,7 +2025,7 @@ export class Container extends BaseClient {
   withFiles = (
     path: string,
     sources: File[],
-    opts?: ContainerWithFilesOpts
+    opts?: ContainerWithFilesOpts,
   ): Container => {
     return new Container({
       queryTree: [
@@ -3011,7 +3011,7 @@ export class Directory extends BaseClient {
   withFiles = (
     path: string,
     sources: File[],
-    opts?: DirectoryWithFilesOpts
+    opts?: DirectoryWithFilesOpts,
   ): Directory => {
     return new Directory({
       queryTree: [

@@ -19,5 +19,5 @@ connect(
 
     console.log(contents.toString())
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

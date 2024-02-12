@@ -17,5 +17,5 @@ connect(
       .entries()
     console.log(entries)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

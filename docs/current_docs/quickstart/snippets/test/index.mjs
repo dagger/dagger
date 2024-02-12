@@ -12,7 +12,7 @@ connect(
         "/src",
         client
           .host()
-          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] })
+          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] }),
       )
 
     // set the working directory in the container
@@ -25,5 +25,5 @@ connect(
       .stderr()
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

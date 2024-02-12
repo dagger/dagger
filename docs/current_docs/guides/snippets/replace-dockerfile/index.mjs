@@ -17,7 +17,7 @@ connect(
       .withEnvVariable("MEMCACHED_VERSION", "1.6.17")
       .withEnvVariable(
         "MEMCACHED_SHA1",
-        "e25639473e15f1bd9516b915fb7e03ab8209030f"
+        "e25639473e15f1bd9516b915fb7e03ab8209030f",
       )
 
     // add dependencies to the container
@@ -33,7 +33,7 @@ connect(
     memcached = memcached
       .withFile(
         "/usr/local/bin/docker-entrypoint.sh",
-        client.host().directory(".").file("docker-entrypoint.sh")
+        client.host().directory(".").file("docker-entrypoint.sh"),
       )
       .withExec([
         "ln",
@@ -50,7 +50,7 @@ connect(
 
     console.log(`Published to ${addr}`)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 function setDependencies(container) {

@@ -8,7 +8,7 @@ connect(
     const secretPlaintext = await getVaultSecret(
       "MOUNT-PATH",
       "SECRET-ID",
-      "SECRET-KEY"
+      "SECRET-KEY",
     )
 
     // load secret into Dagger
@@ -30,7 +30,7 @@ connect(
     // print result
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 async function getVaultSecret(mountPath, secretID, secretKey) {

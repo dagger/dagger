@@ -30,5 +30,5 @@ connect(
       console.log(`Published at: ${addr}`)
     }
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
