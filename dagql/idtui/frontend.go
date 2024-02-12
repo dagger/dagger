@@ -1,7 +1,6 @@
 package idtui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -67,7 +66,7 @@ type Frontend struct {
 	fps         float64 // frames per second
 	profile     termenv.Profile
 	window      tea.WindowSizeMsg     // set by BubbleTea
-	view        *bytes.Buffer         // rendered async
+	view        *strings.Builder      // rendered async
 	logs        map[string]*Vterm     // vertex logs
 	zoomed      map[string]*zoomState // interactive zoomed terminals
 	currentZoom *zoomState            // current zoomed terminal
@@ -91,7 +90,7 @@ func New() *Frontend {
 		fps:       30, // sane default, fine-tune if needed
 		profile:   profile,
 		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:      new(bytes.Buffer),
+		view:      new(strings.Builder),
 		logs:      make(map[string]*Vterm),
 		zoomed:    make(map[string]*zoomState),
 		messages:  logs,
