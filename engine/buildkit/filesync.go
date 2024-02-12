@@ -118,7 +118,6 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	}
 
 	ctx = engine.LocalImportOpts{
-		OwnerClientID:      clientMetadata.ClientID,
 		Path:               path,
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
@@ -154,7 +153,6 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 	}
 
 	ctx = engine.LocalImportOpts{
-		OwnerClientID:     clientMetadata.ClientID,
 		Path:              path,
 		StatPathOnly:      true,
 		StatReturnAbsPath: returnAbsPath,
@@ -228,8 +226,7 @@ func (c *Client) LocalDirExport(
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID: clientMetadata.ClientID,
-		Path:         destPath,
+		Path: destPath,
 	}.AppendToOutgoingContext(ctx)
 
 	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
@@ -313,7 +310,6 @@ func (c *Client) LocalFileExport(
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID:       clientMetadata.ClientID,
 		Path:               destPath,
 		IsFileStream:       true,
 		FileOriginalName:   filepath.Base(filePath),
@@ -383,7 +379,6 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID:     clientMetadata.ClientID,
 		Path:             destPath,
 		IsFileStream:     true,
 		FileOriginalName: filepath.Base(destPath),

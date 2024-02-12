@@ -104,7 +104,6 @@ func (c *Client) ExportContainerImage(
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID: clientMetadata.ClientID,
 		Path:         destPath,
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
@@ -160,7 +159,6 @@ func (c *Client) ContainerImageToTarball(
 	destPath := path.Join(tmpDir, fileName)
 
 	ctx = engine.LocalExportOpts{
-		DestClientID: c.ID(),
 		Path:         destPath,
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
