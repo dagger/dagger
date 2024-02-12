@@ -1191,6 +1191,40 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 }
 
+// ContainerWithFilesOpts contains options for Container.WithFiles
+type ContainerWithFilesOpts struct {
+	// Permission given to the copied files (e.g., 0600).
+	Permissions int
+	// A user:group to set for the files.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
+// Retrieves this container plus the contents of the given files copied to the given path.
+func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWithFilesOpts) *Container {
+	q := r.q.Select("withFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Indicate that subsequent operations should be featured more prominently in the UI.
 func (r *Container) WithFocus() *Container {
 	q := r.q.Select("withFocus")
@@ -2079,6 +2113,30 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// DirectoryWithFilesOpts contains options for Directory.WithFiles
+type DirectoryWithFilesOpts struct {
+	// Permission given to the copied files (e.g., 0600).
+	Permissions int
+}
+
+// Retrieves this directory plus the contents of the given files copied to the given path.
+func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWithFilesOpts) *Directory {
+	q := r.q.Select("withFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
 
 	return &Directory{
 		q: q,

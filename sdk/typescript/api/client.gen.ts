@@ -306,6 +306,22 @@ export type ContainerWithFileOpts = {
   owner?: string
 }
 
+export type ContainerWithFilesOpts = {
+  /**
+   * Permission given to the copied files (e.g., 0600).
+   */
+  permissions?: number
+
+  /**
+   * A user:group to set for the files.
+   *
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  owner?: string
+}
+
 export type ContainerWithMountedCacheOpts = {
   /**
    * Identifier of the directory to use as the cache volume's root.
@@ -511,6 +527,13 @@ export type DirectoryWithDirectoryOpts = {
 export type DirectoryWithFileOpts = {
   /**
    * Permission given to the copied file (e.g., 0600).
+   */
+  permissions?: number
+}
+
+export type DirectoryWithFilesOpts = {
+  /**
+   * Permission given to the copied files (e.g., 0600).
    */
   permissions?: number
 }
@@ -1989,6 +2012,34 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container plus the contents of the given files copied to the given path.
+   * @param path Location where copied files should be placed (e.g., "/src").
+   * @param sources Identifiers of the files to copy.
+   * @param opts.permissions Permission given to the copied files (e.g., 0600).
+   * @param opts.owner A user:group to set for the files.
+   *
+   * The user and group can either be an ID (1000:1000) or a name (foo:bar).
+   *
+   * If the group is omitted, it defaults to the same as the user.
+   */
+  withFiles = (
+    path: string,
+    sources: File[],
+    opts?: ContainerWithFilesOpts
+  ): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFiles",
+          args: { path, sources, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Indicate that subsequent operations should be featured more prominently in the UI.
    */
   withFocus = (): Container => {
@@ -2945,6 +2996,29 @@ export class Directory extends BaseClient {
         {
           operation: "withFile",
           args: { path, source, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this directory plus the contents of the given files copied to the given path.
+   * @param path Location where copied files should be placed (e.g., "/src").
+   * @param sources Identifiers of the files to copy.
+   * @param opts.permissions Permission given to the copied files (e.g., 0600).
+   */
+  withFiles = (
+    path: string,
+    sources: File[],
+    opts?: DirectoryWithFilesOpts
+  ): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFiles",
+          args: { path, sources, ...opts },
         },
       ],
       ctx: this._ctx,

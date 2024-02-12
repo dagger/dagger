@@ -774,6 +774,17 @@ pub struct ContainerWithFileOpts<'a> {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithFilesOpts<'a> {
+    /// A user:group to set for the files.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
+    /// Permission given to the copied files (e.g., 0600).
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts<'a> {
     /// A user:group to set for the mounted cache directory.
     /// Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
@@ -1693,6 +1704,51 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Retrieves this container plus the contents of the given files copied to the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location where copied files should be placed (e.g., "/src").
+    /// * `sources` - Identifiers of the files to copy.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_files(&self, path: impl Into<String>, sources: Vec<FileId>) -> Container {
+        let mut query = self.selection.select("withFiles");
+        query = query.arg("path", path.into());
+        query = query.arg("sources", sources);
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container plus the contents of the given files copied to the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location where copied files should be placed (e.g., "/src").
+    /// * `sources` - Identifiers of the files to copy.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_files_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        sources: Vec<FileId>,
+        opts: ContainerWithFilesOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withFiles");
+        query = query.arg("path", path.into());
+        query = query.arg("sources", sources);
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Indicate that subsequent operations should be featured more prominently in the UI.
     pub fn with_focus(&self) -> Container {
         let query = self.selection.select("withFocus");
@@ -2517,6 +2573,12 @@ pub struct DirectoryWithFileOpts {
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithFilesOpts {
+    /// Permission given to the copied files (e.g., 0600).
+    #[builder(setter(into, strip_option), default)]
+    pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewDirectoryOpts {
     /// Permission granted to the created directory (e.g., 0777).
     #[builder(setter(into, strip_option), default)]
@@ -2843,6 +2905,48 @@ impl Directory {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
+        }
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this directory plus the contents of the given files copied to the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location where copied files should be placed (e.g., "/src").
+    /// * `sources` - Identifiers of the files to copy.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_files(&self, path: impl Into<String>, sources: Vec<FileId>) -> Directory {
+        let mut query = self.selection.select("withFiles");
+        query = query.arg("path", path.into());
+        query = query.arg("sources", sources);
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this directory plus the contents of the given files copied to the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location where copied files should be placed (e.g., "/src").
+    /// * `sources` - Identifiers of the files to copy.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_files_opts(
+        &self,
+        path: impl Into<String>,
+        sources: Vec<FileId>,
+        opts: DirectoryWithFilesOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("withFiles");
+        query = query.arg("path", path.into());
+        query = query.arg("sources", sources);
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }

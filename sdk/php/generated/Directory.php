@@ -188,6 +188,20 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this directory plus the contents of the given files copied to the given path.
+     */
+    public function withFiles(string $path, array $sources, ?int $permissions = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sources', $sources);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this directory plus a new directory created at the given path.
      */
     public function withNewDirectory(string $path, ?int $permissions = 420): Directory

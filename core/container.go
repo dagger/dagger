@@ -494,6 +494,19 @@ func (container *Container) WithFile(ctx context.Context, destPath string, src *
 	})
 }
 
+func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {
+	container = container.Clone()
+
+	return container.writeToPath(ctx, path.Dir(destDir), func(dir *Directory) (*Directory, error) {
+		ownership, err := container.ownership(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithFiles(ctx, destDir, src, permissions, ownership)
+	})
+}
+
 func (container *Container) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	container = container.Clone()
 
