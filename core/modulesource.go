@@ -344,8 +344,9 @@ func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition
 
 func (src *GitModuleSource) RefString() string {
 	refPath := src.URLParent
-	if src.RootSubpath != "/" {
-		refPath += src.RootSubpath
+	subPath := filepath.Join("/", src.RootSubpath)
+	if subPath != "/" {
+		refPath += subPath
 	}
 	return fmt.Sprintf("%s@%s", refPath, src.Commit)
 }
