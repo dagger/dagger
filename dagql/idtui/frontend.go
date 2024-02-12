@@ -127,12 +127,15 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 	return runErr
 }
 
+// ConnectedToEngine is called when the CLI connects to an engine.
 func (fe *Frontend) ConnectedToEngine(name string) {
 	if !fe.Silent && fe.Plain {
 		fmt.Fprintln(consoleSink, "Connected to engine", name)
 	}
 }
 
+// ConnectedToCloud is called when the CLI has started emitting events to
+// The Cloud.
 func (fe *Frontend) ConnectedToCloud(cloudURL string) {
 	if !fe.Silent && fe.Plain {
 		fmt.Fprintln(consoleSink, "Dagger Cloud URL:", cloudURL)
@@ -162,11 +165,15 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 	// start piping from the TTY to our swappable writer.
 	go io.Copy(fe.in, tty) //nolint: errcheck
 
-	// TODO: support scrollable viewport?
-	// f.out.EnableMouseCellMotion()
+	// support scrollable viewport
+	// fe.out.EnableMouseCellMotion()
 
+	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
+	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancel(ctx)
+
+	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
 		tea.WithInput(inR),
 		tea.WithOutput(fe.out),
@@ -174,12 +181,19 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 		// counter-productive.
 		tea.WithoutCatchPanics(),
 	)
+
+	// run the program, which starts the callback async
 	if _, err := fe.program.Run(); err != nil {
 		return err
 	}
+
+	// if the ctx was canceled, we don't need to return whatever random garbage
+	// error string we got back; just return the ctx err.
 	if fe.runCtx.Err() != nil {
 		return fe.runCtx.Err()
 	}
+
+	// return the run err result
 	return fe.err
 }
 
@@ -260,15 +274,13 @@ func (fe *Frontend) renderPrimaryOutput() error {
 func (fe *Frontend) redirectStdin(st *zoomState) {
 	if st == nil {
 		fe.in.Restore()
-		// TODO: support scrollable viewport?
 		// restore scrolling as we transition back to the DAG UI, since an app
 		// may have disabled it
-		// f.out.EnableMouseCellMotion()
+		// fe.out.EnableMouseCellMotion()
 	} else {
-		// TODO: support scrollable viewport?
 		// disable mouse events, can't assume zoomed input wants it (might be
 		// regular shell like sh)
-		// f.out.DisableMouseCellMotion()
+		// fe.out.DisableMouseCellMotion()
 		fe.in.SetOverride(st.Input)
 	}
 }
@@ -405,6 +417,7 @@ func (fe *Frontend) initZoom(v *progrock.Vertex) {
 	} else {
 		vt = midterm.NewTerminal(fe.window.Height, fe.window.Width)
 	}
+	vt.Raw = true
 	w := setupTerm(v.Id, vt)
 	st := &zoomState{
 		Output: vt,
@@ -469,6 +482,9 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 func (fe *Frontend) renderZoomed(out *termenv.Output, st *zoomState) (bool, error) {
 	var renderedAny bool
 	for i := 0; i < st.Output.UsedHeight(); i++ {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
 		if err := st.Output.RenderLine(out, i); err != nil {
 			return renderedAny, err
 		}
@@ -586,7 +602,7 @@ func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
 
 func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error {
 	id := step.ID()
-	vtx := step.db.PrimaryVertex(step.Digest)
+	vtx := step.db.MostInterestingVertex(step.Digest)
 	if id != nil {
 		if err := fe.renderID(out, vtx, id, depth, false); err != nil {
 			return err
