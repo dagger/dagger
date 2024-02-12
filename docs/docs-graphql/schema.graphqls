@@ -515,6 +515,29 @@ type Container {
   ): Container!
 
   """
+  Retrieves this container plus the contents of the given files copied to the given path.
+  """
+  withFiles(
+    """
+    A user:group to set for the files.
+    
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String = ""
+
+    """Location where copied files should be placed (e.g., "/src")."""
+    path: String!
+
+    """Permission given to the copied files (e.g., 0600)."""
+    permissions: Int
+
+    """Identifiers of the files to copy."""
+    sources: [FileID!]!
+  ): Container!
+
+  """
   Indicate that subsequent operations should be featured more prominently in the UI.
   """
   withFocus: Container!
@@ -998,6 +1021,20 @@ type Directory {
 
     """Identifier of the file to copy."""
     source: FileID!
+  ): Directory!
+
+  """
+  Retrieves this directory plus the contents of the given files copied to the given path.
+  """
+  withFiles(
+    """Location where copied files should be placed (e.g., "/src")."""
+    path: String!
+
+    """Permission given to the copied files (e.g., 0600)."""
+    permissions: Int
+
+    """Identifiers of the files to copy."""
+    sources: [FileID!]!
   ): Directory!
 
   """

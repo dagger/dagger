@@ -119,11 +119,12 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		}
 		src.AsGitSource.Value.Commit = gitCommit
 
+		subPath = filepath.Clean(subPath)
 		if !filepath.IsAbs(subPath) && !filepath.IsLocal(subPath) {
 			return nil, fmt.Errorf("git module source subpath points out of root: %q", subPath)
 		}
-		if !filepath.IsAbs(subPath) {
-			subPath = filepath.Join("/", subPath)
+		if filepath.IsAbs(subPath) {
+			subPath = strings.TrimPrefix(subPath, "/")
 		}
 
 		// TODO:(sipsma) support sparse loading of git repos similar to how local dirs are loaded.

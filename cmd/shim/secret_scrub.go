@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
@@ -206,57 +207,103 @@ func (c *censor) Reset() {
 // Why not an off-the-shelf implementation? Well, most of those don't allow
 // navigating character-by-character through the tree, like we do with Step.
 type Trie struct {
-	Children []*Trie
-	Direct   []byte
-	value    []byte
+	// value is the value stored in this trie node
+	value []byte
+
+	// children is a byte-indexed slice of child nodes
+	children []*Trie
+	// direct is an alternative shortcut for a list of children that helps save
+	// us some memory (note, it currently only appears in leaf nodes, and
+	// contains suffixes)
+	direct []byte
 }
 
 func (t *Trie) Insert(key []byte, value []byte) {
 	node := t
 	for i, ch := range key {
-		if node.Children == nil {
-			if len(node.Direct) == 0 {
-				node.Direct = key[i:]
-				break
+		if node.children == nil {
+			if node.direct == nil || bytes.Equal(node.direct, key[i:]) {
+				node.direct = key[i:]
+				node.value = value
+				return
 			}
-
-			// why a slice instead of a map? surely it uses more space?
-			// well, doing a lookup on a slice like this is *super* quick, but
-			// doing so on a map is *much* slower - since this is in the
-			// hotpath, it makes sense to waste the memory here (and since the
-			// trie is compressed, it doesn't seem to be that much in practice)
-			node.Children = make([]*Trie, 256)
-			node.Children[node.Direct[0]] = &Trie{
-				Direct: node.Direct[1:],
-				value:  node.value,
-			}
-			node.Direct = nil
-			node.value = nil
+			node.branch()
 		}
-		if node.Children[ch] == nil {
-			node.Children[ch] = &Trie{}
+		if node.children[ch] == nil {
+			node.children[ch] = &Trie{}
 		}
-		node = node.Children[ch]
+		node = node.children[ch]
+	}
+	if node.direct != nil {
+		node.branch()
 	}
 	node.value = value
 }
 
-func (t *Trie) Step(ch byte) *Trie {
-	if t.Children != nil {
-		return t.Children[ch]
+// branch takes a node in the trie and converts it from a leaf node into a
+// branch node.
+func (t *Trie) branch() {
+	if t.children != nil {
+		return
 	}
-	if len(t.Direct) > 0 && t.Direct[0] == ch {
+
+	// why a slice instead of a map? surely it uses more space?
+	// well, doing a lookup on a slice like this is *super* quick, but
+	// doing so on a map is *much* slower - since this is in the
+	// hotpath, it makes sense to waste the memory here (and since the
+	// trie is compressed, it doesn't seem to be that much in practice)
+	t.children = make([]*Trie, 256)
+
+	// since we potentially create children here, we have to re-insert the
+	// direct shortcuts to preserve internally consistency
+	if len(t.direct) > 0 {
+		t.children[t.direct[0]] = &Trie{
+			direct: t.direct[1:],
+			value:  t.value,
+		}
+		t.value = nil
+	}
+	t.direct = nil
+}
+
+// Step selects a node that was previously inserted.
+func (t *Trie) Step(ch byte) *Trie {
+	if t.children != nil {
+		return t.children[ch]
+	}
+	if len(t.direct) > 0 && t.direct[0] == ch {
+		// this is a "virtual node" - it doesn't actually exist in the trie,
+		// but can still used for traversal
 		return &Trie{
-			Direct: t.Direct[1:],
+			direct: t.direct[1:],
 			value:  t.value,
 		}
 	}
 	return nil
 }
 
+// Value gets the value previously inserted at this node.
 func (t *Trie) Value() []byte {
-	if len(t.Direct) == 0 {
+	if len(t.direct) == 0 {
 		return t.value
 	}
 	return nil
+}
+
+// String prints a debuggable representation of the trie.
+func (t Trie) String() string {
+	lines := ""
+	if t.value != nil {
+		lines += fmt.Sprintf("%s (%s)\n", t.direct, t.value)
+	}
+
+	for ch, child := range t.children {
+		if child != nil {
+			lines += fmt.Sprintf("%c\n", ch)
+			for _, line := range strings.Split(child.String(), "\n") {
+				lines += "  " + line + "\n"
+			}
+		}
+	}
+	return strings.TrimSpace(lines)
 }

@@ -1293,6 +1293,41 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def with_files(
+        self,
+        path: str,
+        sources: Sequence["File"],
+        *,
+        permissions: int | None = None,
+        owner: str | None = "",
+    ) -> "Container":
+        """Retrieves this container plus the contents of the given files copied
+        to the given path.
+
+        Parameters
+        ----------
+        path:
+            Location where copied files should be placed (e.g., "/src").
+        sources:
+            Identifiers of the files to copy.
+        permissions:
+            Permission given to the copied files (e.g., 0600).
+        owner:
+            A user:group to set for the files.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sources", sources),
+            Arg("permissions", permissions, None),
+            Arg("owner", owner, ""),
+        ]
+        _ctx = self._select("withFiles", _args)
+        return Container(_ctx)
+
+    @typecheck
     def with_focus(self) -> "Container":
         """Indicate that subsequent operations should be featured more
         prominently in the UI.
@@ -2290,6 +2325,34 @@ class Directory(Type):
             Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withFile", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def with_files(
+        self,
+        path: str,
+        sources: Sequence["File"],
+        *,
+        permissions: int | None = None,
+    ) -> "Directory":
+        """Retrieves this directory plus the contents of the given files copied
+        to the given path.
+
+        Parameters
+        ----------
+        path:
+            Location where copied files should be placed (e.g., "/src").
+        sources:
+            Identifiers of the files to copy.
+        permissions:
+            Permission given to the copied files (e.g., 0600).
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sources", sources),
+            Arg("permissions", permissions, None),
+        ]
+        _ctx = self._select("withFiles", _args)
         return Directory(_ctx)
 
     @typecheck

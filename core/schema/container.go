@@ -245,6 +245,16 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`),
 
+		dagql.Func("withFiles", s.withFiles).
+			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
+			ArgDoc("path", `Location where copied files should be placed (e.g., "/src").`).
+			ArgDoc("sources", `Identifiers of the files to copy.`).
+			ArgDoc("permissions", `Permission given to the copied files (e.g., 0600).`).
+			ArgDoc("owner",
+				`A user:group to set for the files.`,
+				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
+				`If the group is omitted, it defaults to the same as the user.`),
+
 		dagql.Func("withNewFile", s.withNewFile).
 			Doc(`Retrieves this container plus a new file written at the given path.`).
 			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
@@ -1060,6 +1070,24 @@ func (s *containerSchema) withFile(ctx context.Context, parent *core.Container, 
 		return nil, err
 	}
 	return parent.WithFile(ctx, args.Path, file.Self, args.Permissions, args.Owner)
+}
+
+type containerWithFilesArgs struct {
+	WithFilesArgs
+	Owner string `default:""`
+}
+
+func (s *containerSchema) withFiles(ctx context.Context, parent *core.Container, args containerWithFilesArgs) (*core.Container, error) {
+	files := []*core.File{}
+	for _, id := range args.Sources {
+		file, err := id.Load(ctx, s.srv)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, file.Self)
+	}
+
+	return parent.WithFiles(ctx, args.Path, files, args.Permissions, args.Owner)
 }
 
 type containerWithNewFileArgs struct {

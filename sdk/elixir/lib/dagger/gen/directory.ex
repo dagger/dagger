@@ -245,6 +245,26 @@ defmodule Dagger.Directory do
   )
 
   (
+    @doc "Retrieves this directory plus the contents of the given files copied to the given path.\n\n## Required Arguments\n\n* `path` - Location where copied files should be placed (e.g., \"/src\").\n* `sources` - Identifiers of the files to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied files (e.g., 0600)."
+    @spec with_files(t(), Dagger.String.t(), [Dagger.FileID.t()], keyword()) ::
+            Dagger.Directory.t()
+    def with_files(%__MODULE__{} = directory, path, sources, optional_args \\ []) do
+      selection = select(directory.selection, "withFiles")
+      selection = arg(selection, "path", path)
+      selection = arg(selection, "sources", sources)
+
+      selection =
+        if is_nil(optional_args[:permissions]) do
+          selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
+        end
+
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
+
+  (
     @doc "Retrieves this directory plus a new directory created at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory created (e.g., \"/logs\").\n\n## Optional Arguments\n\n* `permissions` - Permission granted to the created directory (e.g., 0777)."
     @spec with_new_directory(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
     def with_new_directory(%__MODULE__{} = directory, path, optional_args \\ []) do

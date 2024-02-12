@@ -516,8 +516,9 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 const daDaggerverse = "https://daggerverse.dev"
 
 var modulePublishCmd = &cobra.Command{
-	Use:   "publish",
-	Short: "Publish a Dagger module to the Daggerverse",
+	Use:    "publish",
+	Hidden: true, // Hide while we finalize publishing workflow
+	Short:  "Publish a Dagger module to the Daggerverse",
 	Long: fmt.Sprintf(`Publish a local module to the Daggerverse (%s).
 
 The module needs to be committed to a git repository and have a remote

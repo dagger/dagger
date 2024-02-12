@@ -696,6 +696,33 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Retrieves this container plus the contents of the given files copied to the given path.\n\n## Required Arguments\n\n* `path` - Location where copied files should be placed (e.g., \"/src\").\n* `sources` - Identifiers of the files to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied files (e.g., 0600).\n* `owner` - A user:group to set for the files.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
+    @spec with_files(t(), Dagger.String.t(), [Dagger.FileID.t()], keyword()) ::
+            Dagger.Container.t()
+    def with_files(%__MODULE__{} = container, path, sources, optional_args \\ []) do
+      selection = select(container.selection, "withFiles")
+      selection = arg(selection, "path", path)
+      selection = arg(selection, "sources", sources)
+
+      selection =
+        if is_nil(optional_args[:permissions]) do
+          selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
+        end
+
+      selection =
+        if is_nil(optional_args[:owner]) do
+          selection
+        else
+          arg(selection, "owner", optional_args[:owner])
+        end
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Indicate that subsequent operations should be featured more prominently in the UI."
     @spec with_focus(t()) :: Dagger.Container.t()
     def with_focus(%__MODULE__{} = container) do
