@@ -340,6 +340,7 @@ func (container *Container) Build(
 	container.Services.Merge(contextDir.Services)
 
 	for _, secret := range secrets {
+		// ??? what - how does this work?
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secret.Name),
@@ -1076,7 +1077,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Name)}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Scope + "/" + secret.Secret.Name)}
 
 		var secretDest string
 		switch {

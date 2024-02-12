@@ -14,6 +14,8 @@ type Secret struct {
 	Query *Query
 	// Name specifies the name of the secret.
 	Name string `json:"name,omitempty"`
+	// Scope specifes the origin of the secret.
+	Scope string `json:"scope,omitempty"`
 }
 
 func (*Secret) Type() *ast.Type {
@@ -32,10 +34,6 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-func (secret *Secret) Plaintext(ctx context.Context) ([]byte, error) {
-	return secret.Query.Secrets.GetSecret(ctx, secret.Name)
-}
-
 func NewSecretStore() *SecretStore {
 	return &SecretStore{
 		secrets: map[string][]byte{},
@@ -49,12 +47,14 @@ type SecretStore struct {
 	secrets map[string][]byte
 }
 
+// XXX: add secret scoping util
+
 // AddSecret adds the secret identified by user defined name with its plaintext
 // value to the secret store.
-func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []byte) error {
+func (store *SecretStore) AddSecret(ctx context.Context, scope string, name string, plaintext []byte) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.secrets[name] = plaintext
+	store.secrets[scope+"/"+name] = plaintext
 	return nil
 }
 

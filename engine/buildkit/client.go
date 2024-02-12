@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -59,6 +60,7 @@ type Opts struct {
 	// not any nested clients (may change in future).
 	MainClientCaller bksession.Caller
 	DNSConfig        *oci.DNSConfig
+	Frontends        map[string]bkfrontend.Frontend
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -69,6 +71,7 @@ type Client struct {
 	session     *bksession.Session
 	job         *bksolver.Job
 	llbBridge   bkfrontend.FrontendLLBBridge
+	llbExec     executor.Executor
 	bk2progrock BK2Progrock
 
 	clientMu              sync.RWMutex
@@ -120,8 +123,14 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	}
 	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
-	gw := &recordingGateway{llbBridge: client.LLBSolver.Bridge(client.job)}
+	// TODO: Bridge should return an executor
+	br := client.LLBSolver.Bridge(client.job).(interface {
+		bkfrontend.FrontendLLBBridge
+		executor.Executor
+	})
+	gw := &recordingGateway{llbBridge: br}
 	client.llbBridge = gw
+	client.llbExec = br
 	client.bk2progrock = gw
 
 	client.dialer = &net.Dialer{}
@@ -234,6 +243,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	req.CacheImports = c.UpstreamCacheImports
 
 	// include exec metadata that isn't included in the cache key
+	var llbRes *bkfrontend.Result
 	if req.Definition != nil && req.Definition.Def != nil {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
@@ -287,12 +297,38 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return nil, err
 		}
 		req.Definition = newDef
+
+		llbRes, err = c.llbBridge.Solve(ctx, req, c.ID())
+		if err != nil {
+			return nil, wrapError(ctx, err, c.ID())
+		}
+	} else if req.Frontend != "" {
+		// HACK: don't look this up, write custom frontend wrappers (for
+		// dockerfile.v0 and gateway.v0) that read from ctx to replace the
+		// llbBridge it knows about
+
+		f, ok := c.Frontends[req.Frontend]
+		if !ok {
+			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
+		}
+
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		gw := &filteringGateway{
+			FrontendLLBBridge: c.llbBridge,
+			secretPrefix:      clientMetadata.ClientID + "/",
+		}
+		llbRes, err = f.Solve(ctx, gw, c.llbExec, req.FrontendOpt, req.FrontendInputs, c.ID(), c.SessionManager)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("invalid request")
 	}
 
-	llbRes, err := c.llbBridge.Solve(ctx, req, c.ID())
-	if err != nil {
-		return nil, wrapError(ctx, err, c.ID())
-	}
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
 		return newRef(rp, c), nil
 	})
@@ -761,4 +797,53 @@ func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+type filteringGateway struct {
+	bkfrontend.FrontendLLBBridge
+	secretPrefix string
+}
+
+func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
+	if req.Definition != nil && req.Definition.Def != nil {
+		dag, err := DefToDAG(req.Definition)
+		if err != nil {
+			return nil, err
+		}
+		if err := dag.Walk(func(dag *OpDAG) error {
+			execOp, ok := dag.AsExec()
+			if !ok {
+				return nil
+			}
+
+			for _, secret := range execOp.ExecOp.GetSecretenv() {
+				dt, _ := json.MarshalIndent(secret, "", "  ")
+				fmt.Println(string(dt))
+
+				secret.ID = gw.secretPrefix + secret.ID
+			}
+			for _, mount := range execOp.ExecOp.GetMounts() {
+				if mount.MountType != bksolverpb.MountType_SECRET {
+					continue
+				}
+				secret := mount.SecretOpt
+
+				dt, _ := json.MarshalIndent(secret, "", "  ")
+				fmt.Println(string(dt))
+
+				secret.ID = gw.secretPrefix + secret.ID
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+
+		newDef, err := dag.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		req.Definition = newDef
+	}
+
+	return gw.FrontendLLBBridge.Solve(ctx, req, sid)
 }

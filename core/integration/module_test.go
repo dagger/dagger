@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -4868,6 +4869,93 @@ func TestModuleDaggerListen(t *testing.T) {
 			t.Fatalf("failed to call query: %s err: %v", string(out), err)
 		})
 	})
+}
+
+func TestModuleSecretNested(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/toplevel/leaker").
+		With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Leaker struct {}
+
+func (l *Leaker) Leak(ctx context.Context) error {
+	secret, _ := dag.Secret("mysecret").Plaintext(ctx)
+	fmt.Println("trying to read secret:", secret)
+	return nil
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/toplevel/leaker-build").
+		With(daggerExec("init", "--name=leaker-build", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type LeakerBuild struct {}
+
+func (l *LeakerBuild) Leak(ctx context.Context) error {
+	_, err := dag.Directory().
+		WithNewFile("Dockerfile", "FROM alpine\nRUN --mount=type=secret,id=mysecret cat /run/secrets/mysecret || true").
+		DockerBuild().
+		Sync(ctx)
+	return err
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/toplevel").
+		With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+		With(daggerExec("install", "./leaker")).
+		With(daggerExec("install", "./leaker-build")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Toplevel struct {}
+
+func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
+	// get the id of a secret to force the engine to eval it
+	_, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = dag.Leaker().Leak(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = dag.LeakerBuild().Leak(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+`,
+		})
+
+	_, err := ctr.With(daggerQuery(`{toplevel{attempt(uniq: %q)}}`, identity.NewID())).Stdout(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
+	require.NotContains(t, logs.String(), "asdfasdf")
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {

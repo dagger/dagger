@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 type secretSchema struct {
@@ -24,6 +25,7 @@ func (s *secretSchema) Install() {
 			ArgSensitive("plaintext"),
 
 		dagql.Func("secret", s.secret).
+			Impure("A secret is scoped to the client that created it.").
 			Doc(`Reference a secret by name.`),
 	}.Install(s.srv)
 
@@ -39,7 +41,11 @@ type secretArgs struct {
 }
 
 func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
-	return parent.NewSecret(args.Name), nil
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return parent.NewSecret(args.Name, clientMetadata.ClientID), nil
 }
 
 type setSecretArgs struct {
@@ -49,7 +55,13 @@ type setSecretArgs struct {
 
 func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (dagql.Instance[*core.Secret], error) {
 	var inst dagql.Instance[*core.Secret]
-	if err := parent.Secrets.AddSecret(ctx, args.Name, []byte(args.Plaintext)); err != nil {
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	if err := parent.Secrets.AddSecret(ctx, clientMetadata.ClientID, args.Name, []byte(args.Plaintext)); err != nil {
 		return inst, err
 	}
 	// NB: to avoid putting the plaintext value in the graph, return a freshly
@@ -65,8 +77,8 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	return inst, nil
 }
 
-func (s *secretSchema) plaintext(ctx context.Context, parent *core.Secret, args struct{}) (dagql.String, error) {
-	bytes, err := parent.Plaintext(ctx)
+func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
+	bytes, err := secret.Query.Secrets.GetSecret(ctx, secret.Scope+"/"+secret.Name)
 	if err != nil {
 		return "", err
 	}

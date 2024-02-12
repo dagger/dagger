@@ -1200,7 +1200,7 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	secretBytes, err := parent.Query.Secrets.GetSecret(ctx, secret.Self.Name)
+	secretBytes, err := parent.Query.Secrets.GetSecret(ctx, secret.Self.Scope+"/"+secret.Self.Name)
 	if err != nil {
 		return nil, err
 	}

@@ -240,10 +240,11 @@ func (q *Query) NewContainer(platform Platform) *Container {
 	}
 }
 
-func (q *Query) NewSecret(name string) *Secret {
+func (q *Query) NewSecret(name string, scope string) *Secret {
 	return &Secret{
 		Query: q,
 		Name:  name,
+		Scope: scope,
 	}
 }
 
