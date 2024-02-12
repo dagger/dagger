@@ -170,7 +170,7 @@ describe("Invoke typescript function", function () {
         // In that case, we verify it's not failing and that it returned a value
         assert.notEqual("", result)
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
   })
 

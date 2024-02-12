@@ -64,16 +64,16 @@ export class Registry {
    * class' method that must be exposed to the Dagger API.
    */
   func = (
-    alias?: string
+    alias?: string,
   ): ((
     target: object,
     propertyKey: string | symbol,
-    descriptor: PropertyDescriptor
+    descriptor: PropertyDescriptor,
   ) => void) => {
     return (
       target: object,
       propertyKey: string | symbol,
-      descriptor: PropertyDescriptor
+      descriptor: PropertyDescriptor,
     ) => {
       // The logic is done in the object constructor since it's not possible to
       // access the class parent's name from a method constructor without calling
@@ -96,14 +96,14 @@ export class Registry {
     object: string,
     method: string,
     state: State,
-    inputs: Args
+    inputs: Args,
   ): Promise<any> {
     // Retrieve the resolver class from its key
     const resolver = Reflect.getMetadata(object, this) as RegistryClass
     if (!resolver) {
       throw new UnknownDaggerError(
         `${object} is not register as a resolver`,
-        {}
+        {},
       )
     }
 
@@ -120,7 +120,7 @@ export class Registry {
     if (!r[method]) {
       throw new UnknownDaggerError(
         `${method} is not registered in the resolver ${object}`,
-        {}
+        {},
       )
     }
 

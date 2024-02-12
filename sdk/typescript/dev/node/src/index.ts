@@ -39,7 +39,7 @@ class Node {
       .withDirectory(workdir, source)
       .withMountedCache(
         `${workdir}/node_modules`,
-        cache ?? dag.cacheVolume("node-modules")
+        cache ?? dag.cacheVolume("node-modules"),
       )
 
     return this
@@ -57,7 +57,7 @@ class Node {
       .withEntrypoint(["yarn"])
       .withMountedCache(
         "/usr/local/share/.cache/yarn",
-        cache ?? dag.cacheVolume(`node-module-yarn`)
+        cache ?? dag.cacheVolume(`node-module-yarn`),
       )
 
     return this
@@ -75,7 +75,7 @@ class Node {
       .withEntrypoint(["npm"])
       .withMountedCache(
         "/root/.npm",
-        cache ?? dag.cacheVolume(`node-module-npm`)
+        cache ?? dag.cacheVolume(`node-module-npm`),
       )
 
     return this
@@ -94,7 +94,7 @@ class Node {
       .withEntrypoint(["pnpm"])
       .withMountedCache(
         "/pnpm/store",
-        cache ?? dag.cacheVolume(`node-module-pnpm`)
+        cache ?? dag.cacheVolume(`node-module-pnpm`),
       )
 
     return this

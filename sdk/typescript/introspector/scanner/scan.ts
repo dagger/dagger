@@ -89,7 +89,7 @@ export function scan(files: string[], moduleName = ""): ScanResult {
  */
 function introspectClass(
   checker: ts.TypeChecker,
-  node: ts.ClassDeclaration
+  node: ts.ClassDeclaration,
 ): ClassTypeDef {
   // Throw error if node.name is undefined because we cannot scan its symbol.
   if (!node.name) {
@@ -101,7 +101,7 @@ function introspectClass(
   if (!classSymbol) {
     throw new UnknownDaggerError(
       `could not get class symbol: ${node.name.getText()}`,
-      {}
+      {},
     )
   }
 
@@ -152,19 +152,19 @@ function introspectClass(
  */
 function introspectProperty(
   checker: ts.TypeChecker,
-  property: ts.PropertyDeclaration
+  property: ts.PropertyDeclaration,
 ): FieldTypeDef {
   const propertySymbol = checker.getSymbolAtLocation(property.name)
   if (!propertySymbol) {
     throw new UnknownDaggerError(
       `could not get property symbol: ${property.name.getText()}`,
-      {}
+      {},
     )
   }
 
   const { name, typeName, description } = serializeSymbol(
     checker,
-    propertySymbol
+    propertySymbol,
   )
 
   return {
@@ -181,7 +181,7 @@ function introspectProperty(
  */
 function introspectConstructor(
   checker: ts.TypeChecker,
-  constructor: ts.ConstructorDeclaration
+  constructor: ts.ConstructorDeclaration,
 ): ConstructorTypeDef {
   const args = constructor.parameters.reduce(
     (acc: { [name: string]: FunctionArg }, param) => {
@@ -189,13 +189,13 @@ function introspectConstructor(
       if (!paramSymbol) {
         throw new UnknownDaggerError(
           `could not get constructor param: ${param.name.getText()}`,
-          {}
+          {},
         )
       }
 
       const { name, typeName, description } = serializeSymbol(
         checker,
-        paramSymbol
+        paramSymbol,
       )
       const { optional, defaultValue } = isOptional(paramSymbol)
 
@@ -210,7 +210,7 @@ function introspectConstructor(
 
       return acc
     },
-    {}
+    {},
   )
 
   return { args }
@@ -229,13 +229,13 @@ function introspectConstructor(
  */
 function introspectMethod(
   checker: ts.TypeChecker,
-  method: ts.MethodDeclaration
+  method: ts.MethodDeclaration,
 ): FunctionTypedef {
   const methodSymbol = checker.getSymbolAtLocation(method.name)
   if (!methodSymbol) {
     throw new UnknownDaggerError(
       `could not get method symbol: ${method.name.getText()}`,
-      {}
+      {},
     )
   }
 
@@ -251,7 +251,7 @@ function introspectMethod(
     args: methodSignature.params.reduce(
       (
         acc: { [name: string]: FunctionArg },
-        { name, typeName, description, optional, defaultValue, isVariadic }
+        { name, typeName, description, optional, defaultValue, isVariadic },
       ) => {
         acc[name] = {
           name,
@@ -264,7 +264,7 @@ function introspectMethod(
 
         return acc
       },
-      {}
+      {},
     ),
     returnType: typeNameToTypedef(methodSignature.returnType),
   }
@@ -283,7 +283,7 @@ function introspectTopLevelComment(file: ts.SourceFile): string | undefined {
 
   const commentRanges = ts.getLeadingCommentRanges(
     file.getFullText(),
-    firstStatement.pos
+    firstStatement.pos,
   )
   if (!commentRanges || commentRanges.length === 0) {
     return undefined
