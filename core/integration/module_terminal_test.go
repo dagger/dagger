@@ -73,7 +73,7 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "/coolworkdir #")
+		_, err = console.ExpectString("/coolworkdir #")
 		require.NoError(t, err)
 
 		_, err = console.SendLine("echo $COOLENV")
@@ -82,7 +82,7 @@ type Test struct {
 		err = console.ExpectLineRegex(ctx, "woo")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "/coolworkdir #")
+		_, err = console.ExpectString("/coolworkdir #")
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -140,13 +140,13 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, ">>> ")
+		_, err = console.ExpectString(">>> ")
 		require.NoError(t, err)
 
 		_, err = console.SendLine("import os")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, ">>> ")
+		_, err = console.ExpectString(">>> ")
 		require.NoError(t, err)
 
 		_, err = console.SendLine("os.environ['COOLENV']")
