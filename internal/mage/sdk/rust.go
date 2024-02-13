@@ -18,8 +18,10 @@ import (
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
 	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
+
 	// https://hub.docker.com/_/rust
 	rustDockerStable = "rust:1.71-bookworm"
+	cargoChefVersion = "0.1.62"
 )
 
 var _ SDK = Rust{}
@@ -235,7 +237,7 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 		// combine into one layer so there's no assumptions on state of cache volume across steps
 		With(util.ShellCmds(
 			"rustup component add rustfmt",
-			"cargo install cargo-chef",
+			"cargo install --locked cargo-chef@"+cargoChefVersion,
 			"cargo chef prepare --recipe-path /tmp/recipe.json",
 			"cargo chef cook --release --workspace --recipe-path /tmp/recipe.json",
 		)).
