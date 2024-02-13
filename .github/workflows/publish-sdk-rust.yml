@@ -16,3 +16,10 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           CARGO_PUBLISH_DRYRUN: "false"
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+  notify:
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "⚙️ Rust SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

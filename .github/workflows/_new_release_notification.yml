@@ -1,0 +1,24 @@
+name: "New Release Notification"
+
+on:
+  workflow_call:
+    inputs:
+      message:
+        type: string
+        required: true
+
+jobs:
+  discord:
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+    steps:
+      - name: Notify Discord
+        run: |
+          export TESTED_WITH_DAGGER_VERSION=0.9.10
+
+          curl --fail --silent --show-error https://dl.dagger.io/dagger/install.sh \
+          | DAGGER_VERSION=$TESTED_WITH_DAGGER_VERSION sh
+
+          ./bin/dagger call --mod github.com/gerhard/daggerverse/notify@2024-02-13 \
+            discord --webhook-url env:DISCORD_WEBHOOK --message '${{ inputs.message }}'

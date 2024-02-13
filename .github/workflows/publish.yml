@@ -68,10 +68,17 @@ jobs:
           branch: bump-engine
           draft: true
 
+  notify:
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
   scan-engine:
     runs-on: ubuntu-latest
     name: "Scan Engine Image for Vulnerabilities"
-    needs: [publish]
+    needs: publish
     # only run this on push events, not in PRs (since we only publish images during pushes)
     if: github.event_name == 'push' && github.repository == 'dagger/dagger'
     steps:
@@ -88,7 +95,7 @@ jobs:
     # has to be skipped, AND after every push to main/tags, in which case publish
     # must run first. This is unfortunately quite annoying to express in yaml...
     # https://github.com/actions/runner/issues/491#issuecomment-850884422
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -168,7 +175,7 @@ jobs:
 
   test-provision-go-linux:
     name: "Test SDK Provision / go / linux"
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -212,7 +219,7 @@ jobs:
 
   test-provision-python-linux:
     name: "Test SDK Provision / python / linux"
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -259,7 +266,7 @@ jobs:
 
   test-provision-typescript-linux:
     name: "Test SDK Provision / TypeScript / linux"
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
