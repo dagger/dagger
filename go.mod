@@ -5,10 +5,12 @@ go 1.21
 replace dagger.io/dagger => ./sdk/go
 
 require (
-	dagger.io/dagger v0.9.7
+	dagger.io/dagger v0.9.10
 	github.com/99designs/gqlgen v0.17.41
 	github.com/Khan/genqlient v0.6.0
+	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
+	github.com/a-h/templ v0.2.543
 	github.com/adrg/xdg v0.4.0
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.2.1
@@ -23,6 +25,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.18
 	github.com/dave/jennifer v1.7.0
+	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/docker/cli v25.0.1+incompatible
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/docker/docker v25.0.1+incompatible
@@ -47,6 +50,7 @@ require (
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.3
+	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.15.2
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/go-digest v1.0.0
@@ -99,13 +103,6 @@ require (
 	gotest.tools/v3 v3.5.1
 	oss.terrastruct.com/d2 v0.6.1
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
-)
-
-require (
-	github.com/MakeNowJust/heredoc/v2 v2.0.1
-	github.com/a-h/templ v0.2.543
-	github.com/denisbrodbeck/machineid v1.0.1
-	github.com/muesli/reflow v0.3.0
 )
 
 require (
