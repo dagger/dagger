@@ -211,7 +211,7 @@ A module can only be called once it has been initialized with an SDK though. The
 
 The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger". 
 `,
-	Example: "dagger mod init --name=hello --sdk=python --source=some/subdir",
+	Example: "dagger init --name=hello --sdk=python --source=some/subdir",
 	GroupID: moduleGroup.ID,
 	Annotations: map[string]string{
 		"experimental": "true",
