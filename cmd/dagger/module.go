@@ -305,7 +305,7 @@ var moduleInstallCmd = &cobra.Command{
 	Short:   "Add a new dependency to a Dagger module",
 	Long:    "Add a Dagger module as a dependency of a local module.",
 	// TODO: use example from a reference module, using a tag instead of commit
-	Example: "dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473",
+	Example: "dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473",
 	GroupID: moduleGroup.ID,
 	Annotations: map[string]string{
 		"experimental": "true",
