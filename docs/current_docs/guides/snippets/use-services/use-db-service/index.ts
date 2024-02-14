@@ -39,5 +39,5 @@ connect(
     // print ref
     console.log(test)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

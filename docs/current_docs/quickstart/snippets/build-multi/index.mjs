@@ -12,7 +12,7 @@ connect(
         "/src",
         client
           .host()
-          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] })
+          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] }),
       )
 
     // set the working directory in the container
@@ -37,5 +37,5 @@ connect(
       .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000))
     console.log(`Published image to: ${imageRef}`)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

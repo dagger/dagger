@@ -25,7 +25,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") } }`
+      `{ container { from (address: "alpine:3.16.2") } }`,
     )
   })
 
@@ -34,14 +34,14 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") } }`
+      `{ container { from (address: "alpine:3.16.2") } }`,
     )
 
     const tree2 = new Client().git("fake_url", { keepGitDir: true })
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree2.queryTree)),
-      `{ git (url: "fake_url",keepGitDir: true) }`
+      `{ git (url: "fake_url",keepGitDir: true) }`,
     )
 
     const tree3 = [
@@ -59,7 +59,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree3)),
-      `{ test_types (id: 1,platform: ["string","string2"],boolean: true,object: {}) }`
+      `{ test_types (id: 1,platform: ["string","string2"],boolean: true,object: {}) }`,
     )
   })
 
@@ -71,7 +71,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) }} }`,
     )
   })
 
@@ -81,7 +81,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) }} }`,
     )
   })
 
@@ -128,7 +128,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`,
     )
   })
 
@@ -137,12 +137,12 @@ describe("TypeScript SDK api", function () {
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
       querySanitizer(buildQuery(a.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) }} }`,
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
       querySanitizer(buildQuery(b.queryTree)),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) }} }`,
     )
   })
 
@@ -170,7 +170,7 @@ describe("TypeScript SDK api", function () {
         "Dockerfile",
         `
             FROM alpine
-        `
+        `,
       )
 
       const builder = client
@@ -209,7 +209,7 @@ describe("TypeScript SDK api", function () {
 
     assert.deepStrictEqual(
       queryFlatten(tree),
-      "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz"
+      "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
     )
   })
 
@@ -242,7 +242,7 @@ describe("TypeScript SDK api", function () {
           client
             .directory()
             .withNewFile("testout", stdout)
-            .withNewFile("testerr", stderr)
+            .withNewFile("testerr", stderr),
         )
         .withExec(args)
 
@@ -274,7 +274,7 @@ describe("TypeScript SDK api", function () {
       // short circuit
       assert.rejects(
         () => base.withExec(["foobar"]).sync(),
-        GraphQLRequestError
+        GraphQLRequestError,
       )
 
       // chaining
@@ -313,7 +313,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { build (context: {"_queryTree":[],"_ctx":{}},buildArgs: [{value:"foo",name:"test"}]) } }`
+      `{ container { build (context: {"_queryTree":[],"_ctx":{}},buildArgs: [{value:"foo",name:"test"}]) } }`,
     )
   })
 
@@ -366,7 +366,7 @@ describe("TypeScript SDK api", function () {
         await fs.unlinkSync(exportID)
         assert.strictEqual(isSuccess, true)
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
   })
 
@@ -405,7 +405,7 @@ describe("TypeScript SDK api", function () {
         assert.strictEqual(await envs[2].name(), "BAR")
         assert.strictEqual(await envs[2].value(), "BOOL")
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
   })
 

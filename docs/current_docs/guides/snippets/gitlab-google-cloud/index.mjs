@@ -29,9 +29,8 @@ connect(
       .withEntrypoint(["/bin/myapp"])
 
     // publish container to Google Container Registry
-    const gcrContainerPublishResponse = await prodImage.publish(
-      GCR_PUBLISH_ADDRESS
-    )
+    const gcrContainerPublishResponse =
+      await prodImage.publish(GCR_PUBLISH_ADDRESS)
 
     // print ref
     console.log(`Published at: ${gcrContainerPublishResponse}`)
@@ -61,7 +60,7 @@ connect(
 
     // update service
     const [gcrServiceUpdateOperation] = await gcrClient.updateService(
-      gcrServiceUpdateRequest
+      gcrServiceUpdateRequest,
     )
 
     // wait for service request completion
@@ -69,8 +68,8 @@ connect(
 
     // print ref
     console.log(
-      `Deployment for image ${gcrContainerPublishResponse} now available at ${gcrServiceUpdateResponse.uri}`
+      `Deployment for image ${gcrContainerPublishResponse} now available at ${gcrServiceUpdateResponse.uri}`,
     )
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

@@ -12,7 +12,7 @@ connect(
         "/src",
         client.host().directory(".", {
           exclude: ["node_modules/", "ci/", "build/", ".git/"],
-        })
+        }),
       )
 
     // set the working directory in the container
@@ -21,7 +21,7 @@ connect(
       .withWorkdir("/src")
       .withMountedCache(
         "/src/node_modules",
-        client.cacheVolume("node_module_cache")
+        client.cacheVolume("node_module_cache"),
       )
       .withExec(["npm", "install"])
 
@@ -44,10 +44,10 @@ connect(
       .from("nginx:1.23-alpine")
       .withDirectory(
         "/usr/share/nginx/html",
-        client.host().directory("./build")
+        client.host().directory("./build"),
       )
       .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000))
     console.log(`Published image to: ${imageRef}`)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

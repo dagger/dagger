@@ -21,7 +21,7 @@ import {
  */
 export async function register(
   files: string[],
-  scanResult: ScanResult
+  scanResult: ScanResult,
 ): Promise<ModuleID> {
   // Get a new module that we will fill in with all the types
   let mod = dag.module_()
@@ -51,14 +51,14 @@ export async function register(
           addTypeDef(field.typeDef),
           {
             description: field.description,
-          }
+          },
         )
       }
     })
 
     if (modClass.constructor) {
       typeDef = typeDef.withConstructor(
-        addConstructor(modClass.constructor, typeDef)
+        addConstructor(modClass.constructor, typeDef),
       )
     }
 
@@ -75,7 +75,7 @@ export async function register(
  */
 function addConstructor(
   constructor: ConstructorTypeDef,
-  owner: TypeDef
+  owner: TypeDef,
 ): Function_ {
   return dag.function_("", owner).with(addArg(constructor.args))
 }

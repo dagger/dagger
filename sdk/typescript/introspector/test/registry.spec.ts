@@ -23,7 +23,7 @@ describe("Registry", function () {
       {},
       {
         name: "world",
-      }
+      },
     )
     assert.equal(result, "Hello world")
   })
@@ -45,7 +45,7 @@ describe("Registry", function () {
       {},
       {
         name: "world",
-      }
+      },
     )
     assert.equal(result, "Hello world")
   })
@@ -72,7 +72,7 @@ describe("Registry", function () {
       {},
       {
         name: "world",
-      }
+      },
     )
     assert.equal(resultAsyncGreeting, "Hello world")
 
@@ -82,7 +82,7 @@ describe("Registry", function () {
       {},
       {
         name: "world",
-      }
+      },
     )
     assert.equal(resultGreeting, "Hello world")
   })
@@ -108,7 +108,7 @@ describe("Registry", function () {
       },
       {
         name: "world",
-      }
+      },
     )
     assert.equal(result, "Hello world")
   })
@@ -135,7 +135,7 @@ describe("Registry", function () {
       },
       {
         name: "world",
-      }
+      },
     )
 
     assert.equal(result, "Hey world")
@@ -194,7 +194,7 @@ describe("Registry", function () {
       {},
       {
         ctr: ctr,
-      }
+      },
     )
 
     assert.deepEqual(result, { ctr: { id: "1" } })
@@ -220,7 +220,7 @@ describe("Registry", function () {
         a: 1,
         b: 2,
         c: 3,
-      }
+      },
     )
 
     assert.equal(result, 5)
@@ -295,7 +295,7 @@ describe("Registry", function () {
       {},
       {
         msg: "Dagger",
-      }
+      },
     )
     assert.deepEqual(constructorResult, { msg: "Dagger" })
 
@@ -303,7 +303,7 @@ describe("Registry", function () {
       "HelloWorld",
       "sayHi",
       constructorResult,
-      {}
+      {},
     )
     assert.deepEqual(result, "Hello Dagger")
   })
@@ -325,7 +325,7 @@ describe("Registry", function () {
       "HelloWorld",
       "sayHi",
       {},
-      {}
+      {},
     )
     assert.deepEqual(defaultResult, "foobar")
 
@@ -335,7 +335,7 @@ describe("Registry", function () {
       {},
       {
         msg: ["hello", "there"],
-      }
+      },
     )
     assert.deepEqual(result, "hello there")
   })

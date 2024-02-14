@@ -11,5 +11,5 @@ connect(
       .hostname()
     console.log(val)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

@@ -27,5 +27,5 @@ connect(
       .export("./build")
     // highlight-end
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

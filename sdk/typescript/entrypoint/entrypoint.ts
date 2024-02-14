@@ -70,6 +70,6 @@ export async function entrypoint() {
       // Send the result to Dagger
       await fnCall.returnValue(result as string & { __JSON: never })
     },
-    { LogOutput: process.stdout }
+    { LogOutput: process.stdout },
   )
 }

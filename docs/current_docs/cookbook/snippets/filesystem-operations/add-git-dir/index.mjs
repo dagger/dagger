@@ -21,5 +21,5 @@ connect(
 
     console.log(contents)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
