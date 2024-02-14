@@ -308,7 +308,9 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 		return nil, nil, fmt.Errorf("no packages found in %s", dir)
 	case 1:
 		if pkgs[0].Name == "" {
-			// this happens when loading an empty dir within an existing Go module
+			// this can happen when:
+			// - loading an empty dir within an existing Go module
+			// - loading a dir that is not included in a parent go.work
 			return nil, nil, fmt.Errorf("package name is empty")
 		}
 		return pkgs[0], fset, nil
