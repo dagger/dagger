@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -72,11 +71,12 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent)); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to resolve image digest: %v\n", err)
+			msg := "falling back to leftover engine"
+			msg += fmt.Sprintf("\nfailed to resolve image digest: %v", err)
 			if strings.Contains(err.Error(), "DENIED") {
-				fmt.Fprintf(os.Stderr, "check your docker ghcr creds, it might be incorrect or expired\n")
+				msg += "\n(check your docker ghcr creds, it might be incorrect or expired)"
 			}
-			fmt.Fprintf(os.Stderr, "falling back to leftover engine\n")
+			rec.Recorder.Warn(msg)
 			fallbackToLeftoverEngine = true
 		} else {
 			id = img.Digest.String()
@@ -87,7 +87,7 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 	// And check if we are in a fallback case then perform fallback to most recent engine
 	leftoverEngines, err := collectLeftoverEngines(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list containers: %s\n", err)
+		rec.Recorder.Warn(fmt.Sprintf("failed to list containers: %s\n", err))
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
@@ -105,7 +105,7 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 			return nil, errors.Wrapf(err, "failed to start container: %s", output)
 		}
 
-		garbageCollectEngines(ctx, leftoverEngines[1:])
+		garbageCollectEngines(ctx, rec, leftoverEngines[1:])
 
 		return connhDocker.Helper(&url.URL{
 			Scheme: "docker-container",
@@ -132,7 +132,7 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
-			garbageCollectEngines(ctx, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			garbageCollectEngines(ctx, rec, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
 			return connhDocker.Helper(&url.URL{
 				Scheme: "docker-container",
 				Host:   containerName,
@@ -181,7 +181,7 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	garbageCollectEngines(ctx, leftoverEngines)
+	garbageCollectEngines(ctx, rec, leftoverEngines)
 
 	return connhDocker.Helper(&url.URL{
 		Scheme: "docker-container",
@@ -189,7 +189,7 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 	})
 }
 
-func garbageCollectEngines(ctx context.Context, engines []string) {
+func garbageCollectEngines(ctx context.Context, rec *progrock.VertexRecorder, engines []string) {
 	for _, engine := range engines {
 		if engine == "" {
 			continue
@@ -198,7 +198,7 @@ func garbageCollectEngines(ctx context.Context, engines []string) {
 			"docker", "rm", "-fv", engine,
 		).CombinedOutput(); err != nil {
 			if !strings.Contains(string(output), "already in progress") {
-				fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s\n", engine, output)
+				rec.Recorder.Warn(fmt.Sprintf("failed to remove old container %s: %s\n", engine, output))
 			}
 		}
 	}
