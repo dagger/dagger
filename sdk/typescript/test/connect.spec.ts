@@ -80,7 +80,7 @@ describe("TypeScript default client", function () {
 
         assert.equal(out, "hello world\n")
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
 
     // Check if the connection has been correctly reset
@@ -98,18 +98,18 @@ describe("TypeScript sdk Connect", function () {
     await connect(
       async (client) => {
         const authorization = JSON.stringify(
-          client["_ctx"]["_client"]?.requestConfig.headers
+          client["_ctx"]["_client"]?.requestConfig.headers,
         )
 
         assert.equal(
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
           client["_ctx"]["_client"]["url"],
-          "http://127.0.0.1:1234/query"
+          "http://127.0.0.1:1234/query",
         )
         assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
 
     delete process.env["DAGGER_SESSION_PORT"]
@@ -128,7 +128,7 @@ describe("TypeScript sdk Connect", function () {
           .withExec(["curl", "https://dagger.io/"])
           .sync()
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
   })
 
@@ -174,7 +174,7 @@ describe("TypeScript sdk Connect", function () {
         const checksumsUrl = process.env._INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL
         if (!checksumsUrl) {
           throw new Error(
-            "Missing override checksums URL when overriding CLI URL"
+            "Missing override checksums URL when overriding CLI URL",
           )
         }
         bin._overrideCLIChecksumsURL(checksumsUrl)
@@ -196,7 +196,7 @@ describe("TypeScript sdk Connect", function () {
             file: tempArchivePath,
             sync: true,
           },
-          ["dagger"]
+          ["dagger"],
         )
 
         const archiveName = `dagger_v${CLI_VERSION}_${normalizedOS()}_${normalizedArch()}.tar.gz`
@@ -221,7 +221,7 @@ describe("TypeScript sdk Connect", function () {
               res.writeHead(404)
               res.end()
             }
-          }
+          },
         )
 
         await new Promise<void>((resolve) => {
@@ -229,10 +229,10 @@ describe("TypeScript sdk Connect", function () {
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
               bin._overrideCLIURL(
-                `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`
+                `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`,
               )
               bin._overrideCLIChecksumsURL(
-                `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`
+                `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`,
               )
               resolve()
             })
@@ -244,7 +244,7 @@ describe("TypeScript sdk Connect", function () {
         async (client) => {
           await client.defaultPlatform()
         },
-        { LogOutput: process.stderr }
+        { LogOutput: process.stderr },
       )
     })
 

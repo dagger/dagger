@@ -12,5 +12,5 @@ connect(
     // call pipeline method
     console.log(await pipeline.version())
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

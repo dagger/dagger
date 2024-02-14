@@ -18,17 +18,17 @@ connect(
       .file("myapp.asc")
       .export("myapp.asc")
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 async function mountedSecretDirectory(
   client: Client,
   targetPath: string,
-  sourcePath: string
+  sourcePath: string,
 ): Promise<(c: Container) => Container> {
   sourcePath = path.resolve(
     process.env.HOME || process.env.USERPROFILE || "",
-    sourcePath.substring(2)
+    sourcePath.substring(2),
   )
   const globFiles = glob.sync(`${sourcePath}/**/*`, { nodir: true })
   const files = globFiles.filter((file) => fs.statSync(file).isFile())
@@ -39,7 +39,7 @@ async function mountedSecretDirectory(
       const secret = client.host().setSecretFile(relative, file)
       container = container.withMountedSecret(
         path.join(targetPath, relative),
-        secret
+        secret,
       )
     }
 

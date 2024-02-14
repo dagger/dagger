@@ -8,5 +8,5 @@ connect(
   async (client: Client) => {
     console.log(await alpine.version(client))
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

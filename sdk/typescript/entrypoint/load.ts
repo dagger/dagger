@@ -25,7 +25,7 @@ export async function load(files: string[]): Promise<void> {
 export function loadArgOrder(
   scanResult: ScanResult,
   parentName: string,
-  fnName: string
+  fnName: string,
 ): string[] {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -59,7 +59,7 @@ export function isArgVariadic(
   scanResult: ScanResult,
   parentName: string,
   fnName: string,
-  argName: string
+  argName: string,
 ): boolean {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -92,7 +92,7 @@ export function loadArgType(
   scanResult: ScanResult,
   parentName: string,
   fnName: string,
-  argName: string
+  argName: string,
 ): TypeDef<TypeDefKind> {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -133,7 +133,7 @@ export function loadArgType(
 export function loadPropertyType(
   scanResult: ScanResult,
   parentName: string,
-  propertyName: string
+  propertyName: string,
 ): TypeDef<TypeDefKind> {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -160,7 +160,7 @@ export function loadName(
   scanResult: ScanResult,
   parentName: string,
   alias: string,
-  kind: "field" | "function" | "object"
+  kind: "field" | "function" | "object",
 ): string {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -207,7 +207,7 @@ export function loadName(
 export function loadResultAlias(
   scanResult: ScanResult,
   parentName: string,
-  alias: string
+  alias: string,
 ): string {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -215,7 +215,7 @@ export function loadResultAlias(
   }
 
   const fieldTypeDef = Object.values(classTypeDef.fields).find(
-    (field) => field.name === alias
+    (field) => field.name === alias,
   )
   if (!fieldTypeDef) {
     return alias
@@ -236,7 +236,7 @@ export function loadResultAlias(
 export function loadAliasParentName(
   scanResult: ScanResult,
   parentName: string,
-  alias: string
+  alias: string,
 ): string {
   const classTypeDef = scanResult.classes[parentName]
   if (!classTypeDef) {
@@ -244,7 +244,7 @@ export function loadAliasParentName(
   }
 
   const fieldTypeDef = Object.values(classTypeDef.fields).find(
-    (field) => field.name === alias
+    (field) => field.name === alias,
   )
   if (!fieldTypeDef) {
     return parentName
@@ -264,7 +264,7 @@ export function loadAliasParentName(
  */
 export async function loadArg(
   value: any,
-  type: TypeDef<TypeDefKind>
+  type: TypeDef<TypeDefKind>,
 ): Promise<any> {
   // If value is undefinied, return it directly.
   if (value === undefined) {
@@ -276,8 +276,8 @@ export async function loadArg(
       return Promise.all(
         value.map(
           async (v: any) =>
-            await loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef)
-        )
+            await loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
+        ),
       )
     case TypeDefKind.ObjectKind: {
       const objectType = (type as TypeDef<TypeDefKind.ObjectKind>).name
@@ -316,7 +316,7 @@ export async function loadArg(
 export async function loadResult(
   result: any,
   scanResult: ScanResult,
-  parentName: string
+  parentName: string,
 ): Promise<any> {
   if (result && typeof result?.id === "function") {
     result = await result.id()
@@ -327,7 +327,7 @@ export async function loadResult(
       result[loadResultAlias(scanResult, parentName, key)] = await loadResult(
         value,
         scanResult,
-        loadAliasParentName(scanResult, parentName, key)
+        loadAliasParentName(scanResult, parentName, key),
       )
     }
   }

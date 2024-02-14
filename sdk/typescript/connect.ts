@@ -24,7 +24,7 @@ export type CallbackFct = (client: Client) => Promise<void>
  */
 export async function connection(
   fct: () => Promise<void>,
-  cfg: ConnectOpts = {}
+  cfg: ConnectOpts = {},
 ) {
   await defaultContext.connection(cfg)
 
@@ -45,7 +45,7 @@ export function close() {
  */
 export async function connect(
   cb: CallbackFct,
-  config: ConnectOpts = {}
+  config: ConnectOpts = {},
 ): Promise<void> {
   const ctx = new Context()
   const client = new Client({ ctx: ctx })

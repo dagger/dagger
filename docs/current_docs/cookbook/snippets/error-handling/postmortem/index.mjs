@@ -25,7 +25,7 @@ connect(
       process.exit(1)
     }
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 async function test(client) {

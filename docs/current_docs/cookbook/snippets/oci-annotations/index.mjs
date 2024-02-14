@@ -12,7 +12,7 @@ connect(
       .withLabel("org.opencontainers.image.created", new Date())
       .WithLabel(
         "org.opencontainers.image.source",
-        "https://github.com/alpinelinux/docker-alpine"
+        "https://github.com/alpinelinux/docker-alpine",
       )
       .WithLabel("org.opencontainers.image.licenses", "MIT")
 
@@ -26,5 +26,5 @@ connect(
 
     console.log(addr)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

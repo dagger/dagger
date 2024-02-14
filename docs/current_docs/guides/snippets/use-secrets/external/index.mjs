@@ -7,7 +7,7 @@ connect(
     // get secret from Google Cloud Secret Manager
     const secretPlaintext = await gcpGetSecretPlaintext(
       "PROJECT-ID",
-      "SECRET-ID"
+      "SECRET-ID",
     )
 
     // load secret into Dagger
@@ -29,7 +29,7 @@ connect(
     // print result
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 async function gcpGetSecretPlaintext(projectID, secretID) {

@@ -14,7 +14,7 @@ describe("ListFiles", function () {
 
     assert.deepEqual(
       files.map((f) => path.basename(f)),
-      ["helloWorld.ts"]
+      ["helloWorld.ts"],
     )
   })
 })

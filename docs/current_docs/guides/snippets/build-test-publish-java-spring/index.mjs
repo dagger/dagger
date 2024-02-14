@@ -15,7 +15,7 @@ connect(
     // set registry password as secret for Dagger pipeline
     const password = client.setSecret(
       "password",
-      process.env.DOCKERHUB_PASSWORD
+      process.env.DOCKERHUB_PASSWORD,
     )
 
     // create a cache volume for Maven downloads
@@ -53,7 +53,7 @@ connect(
       .withServiceBinding("db", mariadb)
       .withEnvVariable(
         "MYSQL_URL",
-        "jdbc:mysql://petclinic:petclinic@db/petclinic"
+        "jdbc:mysql://petclinic:petclinic@db/petclinic",
       )
       .withExec(["mvn", "-Dspring.profiles.active=mysql", "clean", "package"])
 
@@ -79,5 +79,5 @@ connect(
     // print image address
     console.log(`Image published at: ${address}`)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

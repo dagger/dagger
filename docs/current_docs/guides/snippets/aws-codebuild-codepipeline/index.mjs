@@ -45,10 +45,10 @@ connect(
       .withRegistryAuth(
         process.env.REGISTRY_ADDRESS,
         process.env.REGISTRY_USERNAME,
-        secret
+        secret,
       )
       .publish(`${process.env.REGISTRY_USERNAME}/myapp`)
     console.log(`Published image to: ${address}`)
   },
-  { LogOutput: process.stdout }
+  { LogOutput: process.stdout },
 )

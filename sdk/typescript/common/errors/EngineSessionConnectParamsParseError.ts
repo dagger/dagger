@@ -23,7 +23,7 @@ export class EngineSessionConnectParamsParseError extends DaggerSDKError {
    */
   constructor(
     message: string,
-    options: EngineSessionConnectParamsParseErrorOptions
+    options: EngineSessionConnectParamsParseErrorOptions,
   ) {
     super(message, options)
     this.parsedLine = options.parsedLine

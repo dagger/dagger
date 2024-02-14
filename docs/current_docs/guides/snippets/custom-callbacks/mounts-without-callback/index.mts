@@ -10,7 +10,7 @@ connect(
     const out = await ctr.withExec(["ls"]).stdout()
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 function addMounts(ctr: Container, client: Client): Container {

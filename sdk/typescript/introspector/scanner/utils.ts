@@ -90,7 +90,7 @@ export function isField(property: ts.PropertyDeclaration): boolean {
 
 export function getAlias(
   elem: ts.HasDecorators,
-  kind: "field" | "func"
+  kind: "field" | "func",
 ): string | undefined {
   const decorator = ts.getDecorators(elem)?.find((d) => {
     if (ts.isCallExpression(d.expression)) {
@@ -152,7 +152,7 @@ export function isPublicProperty(property: ts.PropertyDeclaration): boolean {
   return !modifiers.some(
     (modifier) =>
       modifier.kind === ts.SyntaxKind.PrivateKeyword ||
-      modifier.kind === ts.SyntaxKind.ProtectedKeyword
+      modifier.kind === ts.SyntaxKind.ProtectedKeyword,
   )
 }
 
@@ -188,7 +188,7 @@ export function isOptional(param: ts.Symbol): OptionalValue {
 
       if (parameterDeclaration.initializer !== undefined) {
         result.defaultValue = formatDefaultValue(
-          parameterDeclaration.initializer.getText()
+          parameterDeclaration.initializer.getText(),
         )
       }
     }
