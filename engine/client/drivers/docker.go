@@ -71,12 +71,10 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent)); err != nil {
-			msg := "falling back to leftover engine"
-			msg += fmt.Sprintf("\nfailed to resolve image digest: %v", err)
+			rec.Recorder.Warn("failed to resolve image; falling back to leftover engine", progrock.ErrorLabel(err))
 			if strings.Contains(err.Error(), "DENIED") {
-				msg += "\n(check your docker ghcr creds, it might be incorrect or expired)"
+				rec.Recorder.Warn("check your docker registry auth; it might be incorrect or expired")
 			}
-			rec.Recorder.Warn(msg)
 			fallbackToLeftoverEngine = true
 		} else {
 			id = img.Digest.String()
@@ -87,7 +85,7 @@ func (d *dockerDriver) create(ctx context.Context, rec *progrock.VertexRecorder,
 	// And check if we are in a fallback case then perform fallback to most recent engine
 	leftoverEngines, err := collectLeftoverEngines(ctx)
 	if err != nil {
-		rec.Recorder.Warn(fmt.Sprintf("failed to list containers: %s\n", err))
+		rec.Recorder.Warn("failed to list containers", progrock.ErrorLabel(err))
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
@@ -198,7 +196,7 @@ func garbageCollectEngines(ctx context.Context, rec *progrock.VertexRecorder, en
 			"docker", "rm", "-fv", engine,
 		).CombinedOutput(); err != nil {
 			if !strings.Contains(string(output), "already in progress") {
-				rec.Recorder.Warn(fmt.Sprintf("failed to remove old container %s: %s\n", engine, output))
+				rec.Recorder.Warn("failed to remove old container", progrock.ErrorLabel(err), progrock.Labelf("container", engine))
 			}
 		}
 	}
