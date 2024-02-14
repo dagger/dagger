@@ -139,6 +139,64 @@ func TestModuleGoInit(t *testing.T) {
 		})
 	})
 
+	t.Run("respects existing go.work", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "work", "init"}).
+			WithExec([]string{"go", "work", "use", "."}).
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
+
+		out, err := modGen.
+			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("go.work is edited", func(t *testing.T) {
+			generated, err := modGen.File("go.work").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, generated, "\t.\n")
+			require.Contains(t, generated, "\t./dagger\n")
+		})
+	})
+
+	t.Run("ignores go.work for subdir", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "work", "init"}).
+			WithExec([]string{"go", "work", "use", "."}).
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "subdir"))
+
+		// we can't write to the go.work at the top-level so it should remain
+		// unedited, but we should still be able to execute the module as
+		// expected
+
+		out, err := modGen.
+			WithWorkdir("./subdir").
+			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("go.work is unedited", func(t *testing.T) {
+			generated, err := modGen.File("go.work").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, generated, "use .\n")
+		})
+	})
+
 	t.Run("respects parent go.mod if root points to it", func(t *testing.T) {
 		t.Parallel()
 

@@ -55,6 +55,10 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			exec.Command("go", "mod", "tidy"),
 		},
 	}
+	if _, err := os.Stat("go.work"); err != nil {
+		// run "go work use ." after generating if we had a go.work at the root
+		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
+	}
 
 	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs)
 	if err != nil {
