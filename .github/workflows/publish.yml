@@ -69,6 +69,7 @@ jobs:
           draft: true
 
   notify:
+    if: github.ref_type == 'tag'
     needs: publish
     uses: ./.github/workflows/_new_release_notification.yml
     secrets: inherit
