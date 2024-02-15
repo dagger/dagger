@@ -2,11 +2,7 @@ package main
 
 import (
 	"context"
-	"strings"
-
-	run "cloud.google.com/go/run/apiv2"
-	runpb "cloud.google.com/go/run/apiv2/runpb"
-	"google.golang.org/api/option"
+	"fmt"
 )
 
 type MyModule struct {
@@ -31,65 +27,24 @@ func (m *MyModule) Build() *Container {
 }
 
 // publish an image
-// example: dagger call --source . publish --registry REGISTRY/myapp --credential env:GOOGLE_JSON
-func (m *MyModule) Publish(ctx context.Context, registry string, credential *Secret) (string, error) {
-	split := strings.Split(registry, "/")
+// example: dagger call --source . publish --project PROJECT --location LOCATION --repository REPOSITORY/APPNAME --credential env:GOOGLE_JSON
+func (m *MyModule) Publish(ctx context.Context, project string, location string, repository string, credential *Secret) (string, error) {
+	registry := fmt.Sprintf("%s-docker.pkg.dev/%s/%s", location, project, repository)
 	return m.Build().
-		WithRegistryAuth(split[0], "_json_key", credential).
+		WithRegistryAuth(fmt.Sprintf("%s-docker.pkg.dev", location), "_json_key", credential).
 		Publish(ctx, registry)
 }
 
 // deploy an image to Google Cloud Run
-// example: dagger call --source . publish --registry REGISTRY/myapp --service SERVICE --credential env:GOOGLE_JSON
-func (m *MyModule) Deploy(ctx context.Context, service string, registry string, credential *Secret) (string, error) {
-
-	// get JSON secret
-	json, err := credential.Plaintext(ctx)
-	b := []byte(json)
-	gcrClient, err := run.NewServicesClient(ctx, option.WithCredentialsJSON(b))
-	if err != nil {
-		panic(err)
-	}
-	defer gcrClient.Close()
+// example: dagger call --source . deploy --project PROJECT --registry-location LOCATION --repository REPOSITORY/APPNAME --service-location LOCATION --service SERVICE  --credential env:GOOGLE_JSON
+func (m *MyModule) Deploy(ctx context.Context, project string, registryLocation string, repository string, serviceLocation string, service string, credential *Secret) (string, error) {
 
 	// publish image
-	addr, err := m.Publish(ctx, registry, credential)
+	addr, err := m.Publish(ctx, project, registryLocation, repository, credential)
 	if err != nil {
 		panic(err)
 	}
 
-	// define service request
-	gcrRequest := &runpb.UpdateServiceRequest{
-		Service: &runpb.Service{
-			Name: service,
-			Template: &runpb.RevisionTemplate{
-				Containers: []*runpb.Container{
-					{
-						Image: addr,
-						Ports: []*runpb.ContainerPort{
-							{
-								Name:          "http1",
-								ContainerPort: 1323,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// update service
-	gcrOperation, err := gcrClient.UpdateService(ctx, gcrRequest)
-	if err != nil {
-		panic(err)
-	}
-
-	// wait for service request completion
-	gcrResponse, err := gcrOperation.Wait(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// return service URL
-	return gcrResponse.Uri, err
+	// update service with new image
+	return dag.GoogleCloudRun().UpdateService(ctx, project, serviceLocation, service, addr, 3000, credential)
 }

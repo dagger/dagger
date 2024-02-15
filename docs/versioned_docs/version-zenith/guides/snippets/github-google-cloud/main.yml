@@ -17,6 +17,6 @@ jobs:
         run: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
       -
         name: Call Dagger Function
-        run: dagger -m ci call deploy --soource . --address us-central1-docker.pkg.dev/vikram-experiments/vikram-test/myapp --credential env:GOOGLE_CREDENTIALS --service projects/vikram-experiments/locations/us-central1/services/myapp
+        run: dagger -m ci call --source . deploy --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
