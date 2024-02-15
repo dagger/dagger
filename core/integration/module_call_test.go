@@ -24,7 +24,7 @@ func TestModuleDaggerCallArgTypes(t *testing.T) {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
 import (
@@ -63,7 +63,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
 import (
@@ -115,7 +115,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=minimal", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
 			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
 				Contents: "bar",
 			}).
@@ -167,7 +167,7 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("/dir/subdir/foo.txt", dagger.ContainerWithNewFileOpts{
 					Contents: "foo",
 				}).
@@ -200,13 +200,19 @@ func (m *Test) Fn(dir *Directory) *Directory {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
-	return dir.Directory(subpath.GetOr("."))
+func (m *Test) Fn(
+	dir *Directory,
+	subpath string, // +optional
+) *Directory {
+	if subpath == "" {
+		subpath = "."
+	}
+	return dir.Directory(subpath)
 }
 	`,
 				})
@@ -259,7 +265,7 @@ func (m *Test) Fn(dir *Directory, subpath Optional[string]) *Directory {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -340,7 +346,7 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -381,7 +387,7 @@ func TestModuleDaggerCallReturnTypes(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=minimal", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 type Minimal struct {}
@@ -434,7 +440,7 @@ func (m *Minimal) Fn() []*Foo {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -478,7 +484,7 @@ type Test struct {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -531,7 +537,7 @@ type Test struct {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -576,7 +582,7 @@ type Test struct {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -607,7 +613,7 @@ func TestModuleDaggerCallCoreChaining(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -643,7 +649,7 @@ type Test struct {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -681,7 +687,7 @@ type Test struct {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -723,7 +729,7 @@ func TestModuleDaggerCallSaveOutput(t *testing.T) {
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
@@ -827,7 +833,7 @@ func TestModuleCallByName(t *testing.T) {
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/mod-a").
-		With(daggerExec("init", "--name=mod-a", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
 		WithNewFile("/work/mod-a/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
@@ -841,7 +847,7 @@ func TestModuleCallByName(t *testing.T) {
 			`,
 		}).
 		WithWorkdir("/work/mod-b").
-		With(daggerExec("init", "--name=mod-b", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--name=mod-b", "--sdk=go")).
 		WithNewFile("/work/mod-b/main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 

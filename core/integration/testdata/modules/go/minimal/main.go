@@ -12,7 +12,7 @@ func (m *Minimal) Hello() string {
 }
 
 func (m *Minimal) Echo(msg string) string {
-	return m.EchoOpts(msg, Opt("..."), Opt(3))
+	return m.EchoOpts(msg, "...", 3)
 }
 
 func (m *Minimal) EchoPointer(msg *string) *string {
@@ -26,25 +26,34 @@ func (m *Minimal) EchoPointerPointer(msg **string) **string {
 	return &v2
 }
 
-func (m *Minimal) EchoOptional(msg Optional[string]) string {
-	v, ok := msg.Get()
-	if !ok {
-		v = "default"
+func (m *Minimal) EchoOptional(
+	// +optional
+	msg string,
+) string {
+	if msg == "" {
+		return m.Echo("default")
 	}
-	return m.Echo(v)
+	return m.Echo(msg)
 }
 
-func (m *Minimal) EchoOptionalPointer(msg **Optional[**string]) string {
-	v, ok := (*msg).Get()
-	if !ok {
-		v = ptr(ptr("default"))
+func (m *Minimal) EchoOptionalPointer(
+	// +optional
+	msg *string,
+) string {
+	if msg == nil {
+		return m.Echo("default")
 	}
-	return m.Echo(**v)
+	return m.Echo(*msg)
 }
 
-func (m *Minimal) EchoOptionalSlice(msg Optional[[]string]) string {
-	v := msg.GetOr([]string{"foobar"})
-	return m.Echo(strings.Join(v, "+"))
+func (m *Minimal) EchoOptionalSlice(
+	// +optional
+	msg []string,
+) string {
+	if msg == nil {
+		msg = []string{"foobar"}
+	}
+	return m.Echo(strings.Join(msg, "+"))
 }
 
 func (m *Minimal) Echoes(msgs []string) []string {
@@ -78,12 +87,17 @@ func (m *Minimal) EchoOpts(
 	msg string, // the message to echo
 
 	// String to append to the echoed message
-	suffix Optional[string],
+	// +optional
+	suffix string,
 	// Number of times to repeat the message
-	times Optional[int],
+	// +optional
+	times int,
 ) string {
-	msg += suffix.GetOr("")
-	return strings.Repeat(msg, times.GetOr(1))
+	msg += suffix
+	if times == 0 {
+		times = 1
+	}
+	return strings.Repeat(msg, times)
 }
 
 // EchoOptsInline does some opts things
@@ -91,9 +105,11 @@ func (m *Minimal) EchoOptsInline(opts struct {
 	Msg string // the message to echo
 
 	// String to append to the echoed message
-	Suffix Optional[string]
+	// +optional
+	Suffix string
 	// Number of times to repeat the message
-	Times Optional[int]
+	// +optional
+	Times int
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
 }
@@ -102,9 +118,11 @@ func (m *Minimal) EchoOptsInlinePointer(opts *struct {
 	Msg string
 
 	// String to append to the echoed message
-	Suffix Optional[string]
+	// +optional
+	Suffix string
 	// Number of times to repeat the message
-	Times Optional[int]
+	// +optional
+	Times int
 }) string {
 	return m.EchoOptsInline(*opts)
 }
@@ -113,9 +131,11 @@ func (m *Minimal) EchoOptsInlineCtx(ctx context.Context, opts struct {
 	Msg string
 
 	// String to append to the echoed message
-	Suffix Optional[string]
+	// +optional
+	Suffix string
 	// Number of times to repeat the message
-	Times Optional[int]
+	// +optional
+	Times int
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
 }
@@ -124,9 +144,11 @@ func (m *Minimal) EchoOptsInlineTags(ctx context.Context, opts struct {
 	Msg string
 
 	// String to append to the echoed message
-	Suffix Optional[string] `tag:"hello"`
+	// +optional
+	Suffix string `tag:"hello"`
 	// Number of times to repeat the message
-	Times Optional[int] `tag:"hello again"`
+	// +optional
+	Times int `tag:"hello again"`
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
 }

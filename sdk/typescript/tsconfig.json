@@ -6,7 +6,8 @@
     "./**/*.spec.ts",
     "./dist/**/*",
     "./**/testdata/*",
-    "./runtime/"
+    "./runtime/",
+    "./dev"
   ],
   "compilerOptions": {
     "target": "ES2022",

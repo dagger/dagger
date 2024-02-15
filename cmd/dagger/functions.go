@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
 	"sort"
 	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
@@ -123,27 +122,8 @@ func (fcs FuncCommands) All() []*cobra.Command {
 }
 
 func setCmdOutput(cmd *cobra.Command, vtx *progrock.VertexRecorder) {
-	if silent {
-		return
-	}
-
-	var stdout io.Writer
-	var stderr io.Writer
-
-	if stdoutIsTTY {
-		stdout = vtx.Stdout()
-	} else {
-		stdout = os.Stdout
-	}
-
-	if stderrIsTTY {
-		stderr = vtx.Stderr()
-	} else {
-		stderr = os.Stderr
-	}
-
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
+	cmd.SetOut(vtx.Stdout())
+	cmd.SetErr(vtx.Stderr())
 }
 
 // FuncCommand is a config object used to create a dynamic set of commands
@@ -298,33 +278,56 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
 	rec := progrock.FromContext(ctx)
 
-	// NB: Don't print full os.Args in Vertex name because we don't know which
-	// flags hold a secret value yet and don't want to risk exposing them.
-	// We'll print just the command path when we have the leaf command.
-	loader := rec.Vertex("cmd-func-loader", "load "+c.Name())
-	setCmdOutput(c, loader)
+	var primaryVtx *progrock.VertexRecorder
+	var cmd *cobra.Command
 
-	cmd, flags, err := fc.load(c, a, loader)
-	loader.Done(err)
-	if err != nil {
-		return err
-	}
-
-	vtx := rec.Vertex("cmd-func-exec", cmd.CommandPath(), progrock.Focused())
-	setCmdOutput(c, vtx)
-
+	// The following is a little complicated because it needs to handle the case
+	// where we fail to load the modules or parse the CLI.
+	//
+	// In the happy path we want to initialize the PrimaryVertex with the parsed
+	// command string, but we can't have that until we load the command.
+	//
+	// So we just detect if we failed before getting to that point and fall back
+	// to the outer command.
 	defer func() {
-		if rerr != nil {
+		if cmd == nil { // errored during loading
+			cmd = c
+		}
+		if primaryVtx == nil { // errored during loading
+			primaryVtx = rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			defer func() { primaryVtx.Done(rerr) }()
+			setCmdOutput(cmd, primaryVtx)
+		}
+		if ctx.Err() != nil {
+			cmd.PrintErrln("Canceled")
+		} else if rerr != nil {
 			cmd.PrintErrln("Error:", rerr.Error())
+
+			if fc.showHelp {
+				// Explicitly show the help here while still returning the error.
+				// This handles the case of `dagger call --help` run on a broken module; in that case
+				// we want to error out since we can't actually load the module and show all subcommands
+				// and flags in the help output, but we still want to show the user *something*
+				cmd.Help()
+			}
 
 			if fc.showUsage {
 				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
 			}
 		}
-		vtx.Done(rerr)
 	}()
 
-	// TODO: Move help output out of progrock?
+	// Load the command, which may fail if modules are broken.
+	cmd, flags, err := fc.load(c, a)
+	if err != nil {
+		return err
+	}
+
+	// Ok, we've loaded the command, now we can initialize the PrimaryVertex.
+	primaryVtx = rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+	defer func() { primaryVtx.Done(rerr) }()
+	setCmdOutput(cmd, primaryVtx)
+
 	if fc.showHelp {
 		// Hide aliases for sub-commands. They just allow using the SDK's
 		// casing for functions but there's no need to advertise.
@@ -356,50 +359,24 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	return nil
 }
 
-func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRecorder) (cmd *cobra.Command, _ []string, rerr error) {
+func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _ []string, rerr error) {
 	ctx := c.Context()
 	dag := fc.c.Dagger()
 
-	// Print error in current vertex, before completing it.
-	defer func() {
-		if cmd == nil {
-			cmd = c
-		}
-		if rerr != nil {
-			cmd.PrintErrln("Error:", rerr.Error())
-
-			if fc.showHelp {
-				// Explicitly show the help here while still returning the error.
-				// This handles the case of `dagger call --help` run on a broken module; in that case
-				// we want to error out since we can't actually load the module and show all subcommands
-				// and flags in the help output, but we still want to show the user *something*
-				cmd.Help()
-			}
-
-			if fc.showUsage {
-				cmd.PrintErrf("Run '%v --help' for usage.\n", cmd.CommandPath())
-			}
-		}
-	}()
-
-	load := vtx.Task("loading module")
-	modConf, err := getDefaultModuleConfiguration(ctx, dag, "")
+	modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !modConf.FullyInitialized() {
-		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalSourcePath)
+		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
 	}
-	mod := modConf.Mod.Initialize()
+	mod := modConf.Source.AsModule().Initialize()
 	_, err = mod.Serve(ctx)
-	load.Done(err)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	load = vtx.Task("loading objects")
 	modDef, err := loadModTypeDefs(ctx, dag, mod)
-	load.Done(err)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -413,7 +390,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 
 	if fc.Execute != nil {
 		// if `Execute` is set, there's no need for sub-commands.
-		return nil, nil, nil
+		return c, nil, nil
 	}
 
 	if obj.Constructor != nil {
@@ -430,13 +407,10 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string, vtx *progrock.VertexRe
 	fc.addSubCommands(c, dag, obj)
 
 	if fc.showHelp {
-		return nil, nil, nil
+		return c, nil, nil
 	}
 
-	traverse := vtx.Task("traversing arguments")
 	cmd, flags, err := fc.traverse(c)
-	defer func() { traverse.Done(rerr) }()
-
 	if err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
 			fc.showHelp = true

@@ -154,7 +154,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 			if err != nil {
 				return nil, false, fmt.Errorf("get absolute path: %w", err)
 			}
-			rootDir := g.Config.ModuleSourceRootPath
+			rootDir := g.Config.ModuleContextPath
 			subdirRelPath, err := filepath.Rel(rootDir, outDir)
 			if err != nil {
 				return nil, false, fmt.Errorf("failed to get output dir rel path: %w", err)
@@ -325,7 +325,7 @@ import (
 
 type %s struct {}
 
-// example usage: "dagger call container-echo --string-arg yo"
+// example usage: "dagger call container-echo --string-arg yo stdout"
 func (m *%s) ContainerEcho(stringArg string) *Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }

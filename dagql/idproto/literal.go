@@ -12,18 +12,18 @@ type Literate interface {
 	ToLiteral() *Literal
 }
 
-func (lit *Literal) Modules() []*ID {
+func (lit *Literal) Modules() []*Module {
 	switch v := lit.Value.(type) {
 	case *Literal_Id:
 		return v.Id.Modules()
 	case *Literal_List:
-		mods := []*ID{}
+		mods := []*Module{}
 		for _, val := range v.List.Values {
 			mods = append(mods, val.Modules()...)
 		}
 		return mods
 	case *Literal_Object:
-		mods := []*ID{}
+		mods := []*Module{}
 		for _, arg := range v.Object.Values {
 			mods = append(mods, arg.Value.Modules()...)
 		}

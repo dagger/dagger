@@ -120,7 +120,11 @@ describe("Invoke typescript function", function () {
         const inputBase = {
           parentName: "Alpine",
           fnName: "base",
-          parentArgs: {},
+          parentArgs: {
+            version: "3.16.2",
+            user: "root",
+            packages: [],
+          },
           fnArgs: { version: "3.16.0" },
         }
 
@@ -166,7 +170,7 @@ describe("Invoke typescript function", function () {
         // In that case, we verify it's not failing and that it returned a value
         assert.notEqual("", result)
       },
-      { LogOutput: process.stderr }
+      { LogOutput: process.stderr },
     )
   })
 

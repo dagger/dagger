@@ -21,6 +21,7 @@ import (
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	fsutiltypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
 )
 
@@ -117,7 +118,6 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	}
 
 	ctx = engine.LocalImportOpts{
-		OwnerClientID:      clientMetadata.ClientID,
 		Path:               path,
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
@@ -138,6 +138,41 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 		return nil, fmt.Errorf("failed to receive file bytes message: %s", err)
 	}
 	return msg.Data, nil
+}
+
+func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
+	}
+
+	ctx = engine.LocalImportOpts{
+		Path:              path,
+		StatPathOnly:      true,
+		StatReturnAbsPath: returnAbsPath,
+	}.AppendToOutgoingContext(ctx)
+
+	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester session: %s", err)
+	}
+	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create diff copy client: %s", err)
+	}
+	defer diffCopyClient.CloseSend()
+	msg := fsutiltypes.Stat{}
+	err = diffCopyClient.RecvMsg(&msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to receive file bytes message: %s", err)
+	}
+	return &msg, nil
 }
 
 func (c *Client) LocalDirExport(
@@ -191,8 +226,7 @@ func (c *Client) LocalDirExport(
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID: clientMetadata.ClientID,
-		Path:         destPath,
+		Path: destPath,
 	}.AppendToOutgoingContext(ctx)
 
 	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
@@ -276,7 +310,6 @@ func (c *Client) LocalFileExport(
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID:       clientMetadata.ClientID,
 		Path:               destPath,
 		IsFileStream:       true,
 		FileOriginalName:   filepath.Base(filePath),
@@ -346,7 +379,6 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 	}
 
 	ctx = engine.LocalExportOpts{
-		DestClientID:     clientMetadata.ClientID,
 		Path:             destPath,
 		IsFileStream:     true,
 		FileOriginalName: filepath.Base(destPath),

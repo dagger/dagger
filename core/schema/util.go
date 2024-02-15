@@ -42,14 +42,14 @@ func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {
 	return ts
 }
 
-func collectIDObjects[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]T, error) {
-	ts := make([]T, len(ids))
+func collectIDInstances[T dagql.Typed](ctx context.Context, srv *dagql.Server, ids []dagql.ID[T]) ([]dagql.Instance[T], error) {
+	ts := make([]dagql.Instance[T], len(ids))
 	for i, id := range ids {
 		inst, err := id.Load(ctx, srv)
 		if err != nil {
 			return nil, err
 		}
-		ts[i] = inst.Self
+		ts[i] = inst
 	}
 	return ts, nil
 }

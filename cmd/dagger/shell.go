@@ -11,9 +11,11 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
+	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock"
 )
@@ -45,9 +47,10 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 
 	shellStdinR, shellStdinW := io.Pipe()
 
-	vtx := rec.Vertex("shell", "shell",
-		progrock.Focused(),
-		progrock.Zoomed(func(term *midterm.Terminal) io.Writer {
+	// NB: this is not idtui.PrimaryVertex because instead of spitting out the
+	// raw TTY output, we want to render the post-processed vterm.
+	vtx := rec.Vertex(digest.FromString(shellEndpoint), "terminal",
+		idtui.Zoomed(func(term *midterm.Terminal) io.Writer {
 			term.ForwardRequests = os.Stderr
 			term.ForwardResponses = shellStdinW
 			term.CursorVisible = true
@@ -57,12 +60,14 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				// best effort
 				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
 			})
-
 			return shellStdinW
 		}))
 	defer func() {
 		vtx.Done(rerr)
 	}()
+
+	stdout := vtx.Stdout()
+	stderr := vtx.Stderr()
 
 	// Handle incoming messages
 	errCh := make(chan error)
@@ -73,14 +78,19 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 		for {
 			_, buff, err := wsconn.ReadMessage()
 			if err != nil {
-				errCh <- fmt.Errorf("read: %w", err)
+				wsCloseErr := &websocket.CloseError{}
+				if errors.As(err, &wsCloseErr) && wsCloseErr.Code == websocket.CloseNormalClosure {
+					break
+				} else {
+					errCh <- fmt.Errorf("read: %w", err)
+				}
 				return
 			}
 			switch {
 			case bytes.HasPrefix(buff, []byte(engine.StdoutPrefix)):
-				vtx.Stdout().Write(bytes.TrimPrefix(buff, []byte(engine.StdoutPrefix)))
+				stdout.Write(bytes.TrimPrefix(buff, []byte(engine.StdoutPrefix)))
 			case bytes.HasPrefix(buff, []byte(engine.StderrPrefix)):
-				vtx.Stderr().Write(bytes.TrimPrefix(buff, []byte(engine.StderrPrefix)))
+				stderr.Write(bytes.TrimPrefix(buff, []byte(engine.StderrPrefix)))
 			case bytes.HasPrefix(buff, []byte(engine.ExitPrefix)):
 				code, err := strconv.Atoi(string(bytes.TrimPrefix(buff, []byte(engine.ExitPrefix))))
 				if err == nil {
@@ -111,12 +121,9 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	}()
 
 	if err := <-errCh; err != nil {
-		wsCloseErr := &websocket.CloseError{}
-		if errors.As(err, &wsCloseErr) && wsCloseErr.Code == websocket.CloseNormalClosure {
-			return nil
-		}
-		return fmt.Errorf("websocket close: %w", err)
+		return fmt.Errorf("websocket error: %w", err)
 	}
+
 	if exitCode != 0 {
 		return fmt.Errorf("exited with code %d", exitCode)
 	}

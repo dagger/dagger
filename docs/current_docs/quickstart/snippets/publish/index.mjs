@@ -12,7 +12,7 @@ connect(
         "/src",
         client
           .host()
-          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] })
+          .directory(".", { exclude: ["node_modules/", "ci/", "build/"] }),
       )
 
     // set the working directory in the container
@@ -39,11 +39,11 @@ connect(
       .from("nginx:1.23-alpine")
       .withDirectory(
         "/usr/share/nginx/html",
-        client.host().directory("./build")
+        client.host().directory("./build"),
       )
       .publish("ttl.sh/hello-dagger-" + Math.floor(Math.random() * 10000000))
     console.log(`Published image to: ${imageRef}`)
     // highlight-end
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

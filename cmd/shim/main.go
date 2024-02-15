@@ -461,13 +461,6 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
-			// mount dagger CLI
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/bin/dagger",
-				Type:        "bind",
-				Options:     []string{"rbind", "ro"},
-				Source:      "/usr/local/bin/dagger",
-			})
 			// also need the progsock path for forwarding progress
 			if execMetadata.ProgSockPath == "" {
 				fmt.Fprintln(os.Stderr, "missing progsock path")

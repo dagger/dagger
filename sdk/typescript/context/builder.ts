@@ -9,7 +9,7 @@ import { Context } from "./context.js"
  * Initialize a default client context from environment.
  */
 export async function initDefaultContext(
-  cfg: ConnectOpts = {}
+  cfg: ConnectOpts = {},
 ): Promise<Context> {
   let ctx = new Context()
 
@@ -19,13 +19,13 @@ export async function initDefaultContext(
     const sessionToken = process.env["DAGGER_SESSION_TOKEN"]
     if (!sessionToken) {
       throw new Error(
-        "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
+        "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT",
       )
     }
 
     if (cfg.Workdir && cfg.Workdir !== "") {
       throw new Error(
-        "cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)"
+        "cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)",
       )
     }
 

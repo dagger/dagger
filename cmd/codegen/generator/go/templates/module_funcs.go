@@ -260,27 +260,6 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		baseType = ptr.Elem()
 	}
 
-	optional := false
-	defaultValue := ""
-
-	wrappedType, isOptionalType, err := ps.isOptionalWrapper(baseType)
-	if err != nil {
-		return paramSpec{}, fmt.Errorf("failed to check if type is optional: %w", err)
-	}
-	if isOptionalType {
-		optional = true
-		baseType = wrappedType
-		isPtr = false
-		for {
-			ptr, ok := baseType.(*types.Pointer)
-			if !ok {
-				break
-			}
-			isPtr = true
-			baseType = ptr.Elem()
-		}
-	}
-
 	docPragmas, docComment := parsePragmaComment(docComment)
 	linePragmas, lineComment := parsePragmaComment(lineComment)
 	comment := strings.TrimSpace(docComment)
@@ -291,9 +270,11 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	pragmas := make(map[string]string)
 	maps.Copy(pragmas, docPragmas)
 	maps.Copy(pragmas, linePragmas)
+	defaultValue := ""
 	if v, ok := pragmas["default"]; ok {
 		defaultValue = v
 	}
+	optional := false
 	if v, ok := pragmas["optional"]; ok {
 		if v == "" {
 			optional = true
@@ -320,14 +301,13 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 	}
 
 	return paramSpec{
-		name:               name,
-		paramType:          paramType,
-		typeSpec:           typeSpec,
-		optional:           optional,
-		hasOptionalWrapper: isOptionalType,
-		isContext:          isContext,
-		defaultValue:       defaultValue,
-		description:        comment,
+		name:         name,
+		paramType:    paramType,
+		typeSpec:     typeSpec,
+		optional:     optional,
+		isContext:    isContext,
+		defaultValue: defaultValue,
+		description:  comment,
 	}, nil
 }
 
@@ -337,18 +317,16 @@ type paramSpec struct {
 
 	optional bool
 	variadic bool
-	// hasOptionalWrapper is true if the type is wrapped in the Optional generic type
-	hasOptionalWrapper bool
 	// isContext is true if the type is context.Context
 	isContext bool
 
 	defaultValue string
 
 	// paramType is the full type declared in the function signature, which may
-	// include pointer types, Optional, etc
+	// include pointer types, etc
 	paramType types.Type
 	// typeSpec is the parsed TypeSpec of the argument's "base type", which doesn't
-	// include pointers, Optional, etc
+	// include pointers, etc
 	typeSpec ParsedType
 
 	// parent is set if this paramSpec is nested inside a parent inline struct,

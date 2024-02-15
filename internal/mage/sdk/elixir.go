@@ -17,7 +17,7 @@ import (
 const (
 	elixirSDKPath            = "sdk/elixir"
 	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
-	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/engine_conn.ex"
+	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/engine_conn.ex"
 )
 
 // https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
@@ -56,7 +56,7 @@ func (Elixir) Lint(ctx context.Context) error {
 	_, err = elixirBase(c, elixirVersions[1]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "lint"}).
 		Sync(ctx)
@@ -92,7 +92,7 @@ func (Elixir) Test(ctx context.Context) error {
 		_, err := elixirBase(c.Pipeline(elixirVersion), elixirVersion).
 			WithServiceBinding("dagger-engine", devEngine).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-			WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+			WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithExec([]string{"mix", "test"}).
 			Sync(ctx)
@@ -127,7 +127,7 @@ func (Elixir) Generate(ctx context.Context) error {
 	generated := elixirBase(c, elixirVersions[1]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "dagger.gen"})
 

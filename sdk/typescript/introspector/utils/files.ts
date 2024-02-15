@@ -31,7 +31,7 @@ export async function listFiles(dir = "."): Promise<string[]> {
       }
 
       return []
-    })
+    }),
   )
 
   return res.reduce((p, c) => [...c, ...p], [])

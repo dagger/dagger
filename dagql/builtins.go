@@ -105,6 +105,19 @@ func (d DynamicArrayOutput) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.Values)
 }
 
+func (d DynamicArrayOutput) SetField(val reflect.Value) error {
+	if val.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice, got %v", val.Kind())
+	}
+	val.Set(reflect.MakeSlice(val.Type(), len(d.Values), len(d.Values)))
+	for i, elem := range d.Values {
+		if err := assign(val.Index(i), elem); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func builtinOrInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case Input:

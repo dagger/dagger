@@ -44,5 +44,5 @@ connect(
     // write build artifacts to host
     await outputs.export(".")
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

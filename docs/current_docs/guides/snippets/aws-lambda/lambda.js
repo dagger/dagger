@@ -10,7 +10,7 @@ async function handler(event) {
     "https://api.github.com/repos/dagger/dagger/issues",
     {
       headers: headers,
-    }
+    },
   )
   const data = await response.json()
   return data

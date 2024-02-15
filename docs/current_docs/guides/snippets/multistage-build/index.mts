@@ -24,5 +24,5 @@ connect(
 
     console.log(addr)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

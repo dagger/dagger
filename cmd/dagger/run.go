@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/internal/tui"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock"
@@ -96,6 +96,7 @@ func run(ctx context.Context, args []string) error {
 	sessionToken := u.String()
 
 	focus = runFocus
+	useLegacyTUI = true
 	return withEngineAndTUI(ctx, client.Params{
 		SecretToken: sessionToken,
 	}, func(ctx context.Context, engineClient *client.Client) error {
@@ -126,7 +127,7 @@ func run(ctx context.Context, args []string) error {
 			rec := progrock.FromContext(ctx)
 
 			cmdline := strings.Join(subCmd.Args, " ")
-			cmdVtx := rec.Vertex(tui.RootVertex, cmdline)
+			cmdVtx := rec.Vertex(idtui.PrimaryVertex, cmdline)
 
 			if stdoutIsTTY {
 				subCmd.Stdout = cmdVtx.Stdout()

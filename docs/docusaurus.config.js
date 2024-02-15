@@ -72,7 +72,6 @@ const config = {
   plugins: [
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
-    path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
     path.resolve(__dirname, "plugins/docusaurus-plugin-guides"),
     [
       "posthog-docusaurus",
@@ -176,9 +175,6 @@ const config = {
         apiKey: "bffda1490c07dcce81a26a144115cc02",
         indexName: "dagger",
         appId: "XEIYPBWGOI",
-      },
-      hotjar: {
-        siteId: "2541514",
       },
       colorMode: {
         defaultMode: "light",

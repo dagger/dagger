@@ -114,9 +114,6 @@ dagger call lint stdout
 		if silent || !(progress == "auto" && autoTTY || progress == "tty") {
 			return fmt.Errorf("running shell without the TUI is not supported")
 		}
-		if debug {
-			return fmt.Errorf("running shell with --debug is not supported")
-		}
 		if outputPath != "" {
 			return fmt.Errorf("running shell with --output is not supported")
 		}

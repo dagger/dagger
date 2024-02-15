@@ -30,7 +30,7 @@ export type InvokeCtx = {
  */
 export async function invoke(
   scanResult: ScanResult,
-  { parentName, fnName, parentArgs, fnArgs }: InvokeCtx
+  { parentName, fnName, parentArgs, fnArgs }: InvokeCtx,
 ): // eslint-disable-next-line @typescript-eslint/no-explicit-any
 Promise<any> {
   const args: Args = {}
@@ -39,14 +39,14 @@ Promise<any> {
   for (const argName of loadArgOrder(scanResult, parentName, fnName)) {
     const loadedArg = await loadArg(
       fnArgs[argName],
-      loadArgType(scanResult, parentName, fnName, argName)
+      loadArgType(scanResult, parentName, fnName, argName),
     )
 
     if (isArgVariadic(scanResult, parentName, fnName, argName)) {
       // If the argument is variadic, we need to load each args independently
       // so it's correctly propagated when it's sent to the function.
       // Note: variadic args are always last in the list of args.
-      for (const [i, arg] of loadedArg.entries()) {
+      for (const [i, arg] of (loadedArg ?? []).entries()) {
         args[`${argName}${i}`] = arg
       }
     } else {
@@ -58,7 +58,7 @@ Promise<any> {
   for (const [key, value] of Object.entries(parentArgs)) {
     parentArgs[loadName(scanResult, parentName, key, "field")] = await loadArg(
       value,
-      loadPropertyType(scanResult, parentName, key)
+      loadPropertyType(scanResult, parentName, key),
     )
   }
 
@@ -66,7 +66,7 @@ Promise<any> {
     loadName(scanResult, parentName, parentName, "object"),
     loadName(scanResult, parentName, fnName, "function"),
     parentArgs,
-    args
+    args,
   )
 
   if (result) {

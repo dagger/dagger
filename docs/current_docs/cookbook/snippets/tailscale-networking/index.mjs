@@ -15,7 +15,7 @@ connect(
     // create Tailscale authentication key as secret
     const authKeySecret = client.setSecret(
       "tailscaleAuthkey",
-      process.env.TAILSCALE_AUTHKEY
+      process.env.TAILSCALE_AUTHKEY,
     )
 
     const tailscaleServiceURL = process.env.TAILSCALE_SERVICE_URL
@@ -44,5 +44,5 @@ connect(
 
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

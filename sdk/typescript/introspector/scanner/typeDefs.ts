@@ -34,8 +34,8 @@ export type TypeDef<T extends BaseTypeDef["kind"]> =
   T extends TypeDefKind.ObjectKind
     ? ObjectTypeDef
     : T extends TypeDefKind.ListKind
-    ? ListTypeDef
-    : BaseTypeDef
+      ? ListTypeDef
+      : BaseTypeDef
 
 /**
  * The type of field in a class

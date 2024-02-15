@@ -152,6 +152,12 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 	ctx = progrock.ToContext(ctx, c.Recorder)
 
+	defer func() {
+		if rerr != nil {
+			c.Recorder.Close()
+		}
+	}()
+
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
@@ -180,7 +186,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		connectDigest = digest.FromString("_root") // arbitrary
 	}
 
-	loader := c.Recorder.Vertex(connectDigest, "connect")
+	loader := c.Recorder.Vertex(connectDigest, "connect", progrock.Internal())
 	defer func() {
 		loader.Done(rerr)
 	}()
@@ -225,7 +231,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	sessionTask := loader.Task("starting session")
 
-	sharedKey := c.ServerID // share a session across servers
+	sharedKey := ""
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new s: %w", err)
@@ -310,7 +316,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}}
 
 	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = 100 * time.Millisecond
+	bo.InitialInterval = 10 * time.Millisecond
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
@@ -704,6 +710,20 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 			return fmt.Errorf("file contents too large: %d > %d", len(fileContents), opts.MaxFileSize)
 		}
 		return stream.SendMsg(&filesync.BytesMessage{Data: fileContents})
+	}
+
+	if opts.StatPathOnly {
+		stat, err := fsutil.Stat(opts.Path)
+		if err != nil {
+			return fmt.Errorf("stat path: %w", err)
+		}
+		if opts.StatReturnAbsPath {
+			stat.Path, err = filepath.Abs(opts.Path)
+			if err != nil {
+				return fmt.Errorf("get abs path: %w", err)
+			}
+		}
+		return stream.SendMsg(stat)
 	}
 
 	// otherwise, do the whole directory sync back to the caller

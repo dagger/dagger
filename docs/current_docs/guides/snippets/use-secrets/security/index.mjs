@@ -6,7 +6,7 @@ connect(
     const secretEnv = client.setSecret("my-secret-env", "secret value here")
     const secretFile = client.setSecret(
       "my-secret-file",
-      "secret file content here"
+      "secret file content here",
     )
 
     // dump secrets to console
@@ -24,5 +24,5 @@ connect(
 
     console.log(out)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

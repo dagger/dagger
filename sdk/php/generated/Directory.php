@@ -16,11 +16,11 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Load the directory as a Dagger module
      */
-    public function asModule(?string $sourceSubpath = '/'): Module
+    public function asModule(?string $sourceRootPath = '.'): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
-        if (null !== $sourceSubpath) {
-        $innerQueryBuilder->setArgument('sourceSubpath', $sourceSubpath);
+        if (null !== $sourceRootPath) {
+        $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
         }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -181,6 +181,20 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $permissions) {
+        $innerQueryBuilder->setArgument('permissions', $permissions);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this directory plus the contents of the given files copied to the given path.
+     */
+    public function withFiles(string $path, array $sources, ?int $permissions = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFiles');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('sources', $sources);
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }

@@ -326,7 +326,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
-			gqlOp.Error(ctx, err)
 			gqlErr := &gqlerror.Error{
 				Err:     err,
 				Message: err.Error(),
@@ -343,7 +342,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		data, err := json.Marshal(results)
 		if err != nil {
-			gqlOp.Error(ctx, err)
 			return graphql.ErrorResponse(ctx, "marshal: %s", err)
 		}
 
@@ -423,8 +421,8 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	var base Object
 	var err error
-	if id.Parent != nil {
-		base, err = s.Load(ctx, id.Parent)
+	if id.Base != nil {
+		base, err = s.Load(ctx, id.Base)
 		if err != nil {
 			return nil, err
 		}
@@ -457,18 +455,74 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	return s.toSelectable(id, res)
 }
 
+// Select evaluates a series of chained field selections starting from the
+// given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
-	for _, sel := range sels {
-		res, id, err := s.cachedSelect(ctx, self, sel)
+	var res Typed = self
+	var id *idproto.ID
+	var err error
+	for i, sel := range sels {
+		res, id, err = s.cachedSelect(ctx, self, sel)
 		if err != nil {
 			return err
 		}
-		self, err = s.toSelectable(id, res)
-		if err != nil {
-			return err
+
+		if _, ok := s.ObjectType(res.Type().Name()); ok {
+			enum, isEnum := res.(Enumerable)
+			if sel.Nth != 0 {
+				if !isEnum {
+					return fmt.Errorf("nth used on non enumerable %s", res.Type())
+				}
+				res, err = enum.Nth(sel.Nth)
+				if err != nil {
+					return fmt.Errorf("selector nth %d: %w", sel.Nth, err)
+				}
+			} else if isEnum {
+				// HACK: list of objects must be the last selection right now unless nth used in Selector.
+				if i+1 < len(sels) {
+					return fmt.Errorf("cannot sub-select enum of %s", res.Type())
+				}
+				for nth := 1; nth <= enum.Len(); nth++ {
+					val, err := enum.Nth(nth)
+					if err != nil {
+						return fmt.Errorf("nth %d: %w", nth, err)
+					}
+					if wrapped, ok := val.(Derefable); ok {
+						val, ok = wrapped.Deref()
+						if !ok {
+							if err := appendAssign(reflect.ValueOf(dest).Elem(), nil); err != nil {
+								return err
+							}
+							continue
+						}
+					}
+					nthID := id.Clone()
+					nthID.SelectNth(nth)
+					obj, err := s.toSelectable(nthID, val)
+					if err != nil {
+						return fmt.Errorf("select %dth array element: %w", nth, err)
+					}
+					if err := appendAssign(reflect.ValueOf(dest).Elem(), obj); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+
+			// if the result is an Object, set it as the next selection target, and
+			// assign res to the "hydrated" Object
+			self, err = s.toSelectable(id, res)
+			if err != nil {
+				return err
+			}
+			res = self
+		} else if i+1 < len(sels) {
+			// if the result is not an object and there are further selections,
+			// that's a logic error.
+			return fmt.Errorf("cannot sub-select %s", res.Type())
 		}
 	}
-	return assign(reflect.ValueOf(dest).Elem(), self)
+	return assign(reflect.ValueOf(dest).Elem(), res)
 }
 
 func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error) {
@@ -602,8 +656,7 @@ func (s *Server) toSelectable(chainedID *idproto.ID, val Typed) (Object, error) 
 		// object loaded from its ID.
 		return sel, nil
 	}
-
-	class, ok := s.objects[val.Type().Name()]
+	class, ok := s.ObjectType(val.Type().Name())
 	if !ok {
 		return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
 	}

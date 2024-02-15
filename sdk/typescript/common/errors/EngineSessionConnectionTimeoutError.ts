@@ -23,7 +23,7 @@ export class EngineSessionConnectionTimeoutError extends DaggerSDKError {
    */
   constructor(
     message: string,
-    options: EngineSessionConnectionTimeoutErrorOptions
+    options: EngineSessionConnectionTimeoutErrorOptions,
   ) {
     super(message, options)
     this.timeOutDuration = options.timeOutDuration

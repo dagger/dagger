@@ -1,225 +1,651 @@
 package idtui
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
-	"time"
+	"sync"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/midterm"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 	"github.com/vito/progrock/ui"
+	"golang.org/x/term"
 )
 
+const PrimaryVertex = "primary"
+
+var consoleSink = os.Stderr
+
 type Frontend struct {
-	allIDs  map[string]*idproto.ID
-	leafIDs map[string]*idproto.ID
+	// Debug tells the frontend to show everything and do one big final render.
+	Debug bool
+
+	// Plain tells the frontend to render plain console output instead of using a
+	// TUI. This will be automatically set to true if a TTY is not found.
+	Plain bool
+
+	// Silent tells the frontend to not display progress at all.
+	Silent bool
+
+	// updated by Run
+	program   *tea.Program
+	in        *swappableWriter
+	out       *termenv.Output
+	run       func(context.Context) error
+	runCtx    context.Context
+	interrupt func()
+	done      bool
+	err       error
+
+	// updated via progrock.Writer interface
+	db    *DB
+	eof   bool
+	steps []*Step
+	rows  []*TraceRow
+
+	// progrock logging
+	messages  *Vterm
+	messagesW *termenv.Output
+
+	// primaryVtx is the primary vertex whose output is printed directly to
+	// stdout/stderr on exit after cleaning up the TUI.
+	primaryVtx  *progrock.Vertex
+	primaryLogs []*progrock.VertexLog
+
+	// plainConsole is the writer to forward events to when in plain mode.
+	plainConsole progrock.Writer
+
+	// TUI state/config
+	fps         float64 // frames per second
+	profile     termenv.Profile
+	window      tea.WindowSizeMsg     // set by BubbleTea
+	view        *bytes.Buffer         // rendered async
+	logs        map[string]*Vterm     // vertex logs
+	zoomed      map[string]*zoomState // interactive zoomed terminals
+	currentZoom *zoomState            // current zoomed terminal
+
+	// held to synchronize tea.Model and progrock.Writer
+	mu sync.Mutex
 }
 
-func New() progrock.Frontend {
+type zoomState struct {
+	Input  io.Writer
+	Output *midterm.Terminal
+}
+
+func New() *Frontend {
+	logs := NewVterm()
+	profile := ui.ColorProfile()
+	idproto.EnableDigestCache()
 	return &Frontend{
-		allIDs: make(map[string]*idproto.ID),
+		db: NewDB(),
+
+		fps:       30, // sane default, fine-tune if needed
+		profile:   profile,
+		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		view:      new(bytes.Buffer),
+		logs:      make(map[string]*Vterm),
+		zoomed:    make(map[string]*zoomState),
+		messages:  logs,
+		messagesW: ui.NewOutput(logs, termenv.WithProfile(profile)),
 	}
+}
+
+// Run starts the TUI, calls the run function, stops the TUI, and finally
+// prints the primary output to the appropriate stdout/stderr streams.
+func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
+	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
+	// can show the TUI on stderr.
+	tty, isTTY := findTTY()
+	if !isTTY {
+		// Simplify logic elsewhere by just setting Plain to true.
+		fe.Plain = true
+	}
+
+	var runErr error
+	if fe.Plain || fe.Silent {
+		// no TTY found; default to console
+		runErr = fe.runWithoutTUI(ctx, tty, run)
+	} else {
+		// run the TUI until it exits and cleans up the TTY
+		runErr = fe.runWithTUI(ctx, tty, run)
+	}
+
+	// print the final output display to stderr
+	if renderErr := fe.finalRender(); renderErr != nil {
+		return renderErr
+	}
+
+	// return original err
+	return runErr
+}
+
+func (fe *Frontend) ConnectedToEngine(name string) {
+	if !fe.Silent && fe.Plain {
+		fmt.Fprintln(consoleSink, "Connected to engine", name)
+	}
+}
+
+func (fe *Frontend) ConnectedToCloud(cloudURL string) {
+	if !fe.Silent && fe.Plain {
+		fmt.Fprintln(consoleSink, "Dagger Cloud URL:", cloudURL)
+	}
+}
+
+func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
+	// NOTE: establish color cache before we start consuming stdin
+	fe.out = ui.NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
+
+	// in order to allow the TUI to receive user input but _also_ allow an
+	// interactive terminal to receive keyboard input, we pipe the user input
+	// to an io.Writer that can have its destination swapped between the TUI
+	// and the remote terminal.
+	inR, inW := io.Pipe()
+	fe.in = &swappableWriter{original: inW}
+
+	// Bubbletea will just receive an `io.Reader` for its input rather than the
+	// raw TTY *os.File, so we need to set up the TTY ourselves.
+	ttyFd := int(tty.Fd())
+	oldState, err := term.MakeRaw(ttyFd)
+	if err != nil {
+		return err
+	}
+	defer term.Restore(ttyFd, oldState) //nolint: errcheck
+
+	// start piping from the TTY to our swappable writer.
+	go io.Copy(fe.in, tty) //nolint: errcheck
+
+	// TODO: support scrollable viewport?
+	// f.out.EnableMouseCellMotion()
+
+	fe.run = run
+	fe.runCtx, fe.interrupt = context.WithCancel(ctx)
+	fe.program = tea.NewProgram(fe,
+		tea.WithInput(inR),
+		tea.WithOutput(fe.out),
+		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
+		// counter-productive.
+		tea.WithoutCatchPanics(),
+	)
+	if _, err := fe.program.Run(); err != nil {
+		return err
+	}
+	if fe.runCtx.Err() != nil {
+		return fe.runCtx.Err()
+	}
+	return fe.err
+}
+
+func (fe *Frontend) runWithoutTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
+	if !fe.Silent {
+		opts := []console.WriterOpt{
+			console.ShowInternal(fe.Debug),
+		}
+		if fe.Debug {
+			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
+		}
+		fe.plainConsole = console.NewWriter(consoleSink, opts...)
+	}
+	return run(ctx)
+}
+
+// finalRender is called after the program has finished running and prints the
+// final output after the TUI has exited.
+func (fe *Frontend) finalRender() error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	out := termenv.NewOutput(os.Stderr)
+
+	if fe.Debug || fe.err != nil {
+		if renderedAny, err := fe.renderProgress(out); err != nil {
+			return err
+		} else if renderedAny {
+			fmt.Fprintln(out)
+		}
+	}
+
+	if zoom := fe.currentZoom; zoom != nil {
+		if renderedAny, err := fe.renderZoomed(out, zoom); err != nil {
+			return err
+		} else if renderedAny {
+			fmt.Fprintln(out)
+		}
+	}
+
+	if renderedAny, err := fe.renderMessages(out, true); err != nil {
+		return err
+	} else if renderedAny {
+		fmt.Fprintln(out)
+	}
+
+	return fe.renderPrimaryOutput()
+}
+
+func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error) {
+	if fe.messages.UsedHeight() == 0 {
+		return false, nil
+	}
+	if full {
+		fe.messages.SetHeight(fe.messages.UsedHeight())
+	} else {
+		fe.messages.SetHeight(10)
+	}
+	_, err := fmt.Fprint(out, fe.messages.View())
+	return true, err
+}
+
+func (fe *Frontend) renderPrimaryOutput() error {
+	for _, l := range fe.primaryLogs {
+		switch l.Stream {
+		case progrock.LogStream_STDOUT:
+			if _, err := os.Stdout.Write(l.Data); err != nil {
+				return err
+			}
+		case progrock.LogStream_STDERR:
+			if _, err := os.Stderr.Write(l.Data); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (fe *Frontend) redirectStdin(st *zoomState) {
+	if st == nil {
+		fe.in.Restore()
+		// TODO: support scrollable viewport?
+		// restore scrolling as we transition back to the DAG UI, since an app
+		// may have disabled it
+		// f.out.EnableMouseCellMotion()
+	} else {
+		// TODO: support scrollable viewport?
+		// disable mouse events, can't assume zoomed input wants it (might be
+		// regular shell like sh)
+		// f.out.DisableMouseCellMotion()
+		fe.in.SetOverride(st.Input)
+	}
+}
+
+func findTTY() (*os.File, bool) {
+	// some of these may be redirected
+	for _, f := range []*os.File{os.Stderr, os.Stdout, os.Stdin} {
+		if term.IsTerminal(int(f.Fd())) {
+			return f, true
+		}
+	}
+	return nil, false
+}
+
+type swappableWriter struct {
+	original io.Writer
+	override io.Writer
+	sync.Mutex
+}
+
+func (w *swappableWriter) SetOverride(to io.Writer) {
+	w.Lock()
+	w.override = to
+	w.Unlock()
+}
+
+func (w *swappableWriter) Restore() {
+	w.SetOverride(nil)
+}
+
+func (w *swappableWriter) Write(p []byte) (int, error) {
+	w.Lock()
+	defer w.Unlock()
+	if w.override != nil {
+		return w.override.Write(p)
+	}
+	return w.original.Write(p)
 }
 
 var _ progrock.Writer = (*Frontend)(nil)
 
-func (f *Frontend) WriteStatus(status *progrock.StatusUpdate) error {
-	for _, v := range status.Metas {
-		var id idproto.ID
-		if err := v.Data.UnmarshalTo(&id); err != nil {
-			return fmt.Errorf("unmarshal payload: %w", err)
-		}
-		dig, err := id.Digest()
-		if err != nil {
-			return fmt.Errorf("digest payload: %w", err)
-		}
-		f.allIDs[dig.String()] = &id
-	}
-	if len(status.Metas) > 0 {
-		f.leafIDs = make(map[string]*idproto.ID)
-		for vid, id := range f.allIDs {
-			f.leafIDs[vid] = id
-		}
-
-		for _, idp := range f.allIDs {
-			for parent := idp.Parent; parent != nil; parent = parent.Parent {
-				pdig, err := parent.Digest()
-				if err != nil {
-					return fmt.Errorf("digest parent: %w", err)
-				}
-				delete(f.leafIDs, pdig.String())
-			}
-			for _, arg := range idp.Args {
-				switch x := arg.Value.GetValue().(type) {
-				case *idproto.Literal_Id:
-					adig, err := x.Id.Digest()
-					if err != nil {
-						return fmt.Errorf("digest parent: %w", err)
-					}
-					delete(f.leafIDs, adig.String())
-				default:
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (*Frontend) Close() error {
-	return nil
-}
-
-var _ progrock.Frontend = (*Frontend)(nil)
-
-func (f *Frontend) Render(tape *progrock.Tape, w io.Writer, u *progrock.UI) error {
-	var ids []vertexAndID //nolint:prealloc
-	for vid, id := range f.leafIDs {
-		vtx := tape.Vertices[vid]
-		if vtx == nil {
-			continue
-		}
-		vtxAndID := vertexAndID{
-			vtx: vtx,
-			id:  id,
-		}
-		if id.Field == "id" {
-			// skip selecting ID since that means it'll show up somewhere else that's
-			// more interesting
-			continue
-		}
-		if vtxAndID.totalDuration(tape) < 100*time.Millisecond {
-			continue
-		}
-		ids = append(ids, vtxAndID)
-	}
-	sort.Slice(ids, func(i, j int) bool {
-		vi := ids[i].vtx
-		vj := ids[j].vtx
-		return vi.Started.AsTime().Before(vj.Started.AsTime())
-	})
-	out := ui.NewOutput(w, termenv.WithProfile(tape.ColorProfile))
-	for _, id := range ids {
-		if err := renderID(tape, out, u, id.vtx, id.id, 0); err != nil {
-			return err
-		}
-		fmt.Fprintln(out)
-	}
-
-	return nil
-}
-
-func DebugRenderID(out *termenv.Output, u *progrock.UI, id *idproto.ID, depth int) error {
-	if id.Parent != nil {
-		if err := DebugRenderID(out, u, id.Parent, depth); err != nil {
-			return err
-		}
-	}
-
-	indent := func() {
-		fmt.Fprint(out, strings.Repeat("  ", depth))
-	}
-
-	indent()
-
-	fmt.Fprint(out, id.Field)
-
-	kwColor := termenv.ANSIBlue
-
-	if len(id.Args) > 0 {
-		fmt.Fprint(out, "(")
-		var needIndent bool
-		for _, arg := range id.Args {
-			if _, ok := arg.Value.ToInput().(*idproto.ID); ok {
-				needIndent = true
-				break
-			}
-		}
-		if needIndent {
-			fmt.Fprintln(out)
-			depth++
-			for _, arg := range id.Args {
-				indent()
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
-				val := arg.Value.GetValue()
-				switch x := val.(type) {
-				case *idproto.Literal_Id:
-					argVertexID, err := x.Id.Digest()
-					if err != nil {
-						return err
-					}
-					fmt.Fprintln(out, " "+x.Id.Type.ToAST().Name()+"@"+argVertexID.String()+"{")
-					depth++
-					if err := DebugRenderID(out, u, x.Id, depth); err != nil {
-						return err
-					}
-					depth--
-					indent()
-					fmt.Fprintln(out, "}")
-				default:
-					fmt.Fprint(out, " ")
-					renderLiteral(out, arg.Value)
-					fmt.Fprintln(out)
-				}
-			}
-			depth--
-			indent()
-		} else {
-			for i, arg := range id.Args {
-				if i > 0 {
-					fmt.Fprint(out, ", ")
-				}
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
-				renderLiteral(out, arg.Value)
-			}
-		}
-		fmt.Fprint(out, ")")
-	}
-
-	typeStr := out.String(": " + id.Type.ToAST().String()).Foreground(termenv.ANSIBrightBlack)
-	fmt.Fprintln(out, typeStr)
-
-	return nil
-}
-
-func renderID(tape *progrock.Tape, out *termenv.Output, u *progrock.UI, vtx *progrock.Vertex, id *idproto.ID, depth int) error {
-	if id.Parent != nil {
-		parentVtxID, err := id.Parent.Digest()
-		if err != nil {
-			return err
-		}
-		parentVtx := tape.Vertices[parentVtxID.String()]
-		if err := renderID(tape, out, u, parentVtx, id.Parent, depth); err != nil {
-			return err
-		}
-	}
-
-	indent := func() {
-		fmt.Fprint(out, strings.Repeat("  ", depth))
-	}
-
-	indent()
-
-	dig, err := id.Digest()
-	if err != nil {
+func (fe *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	if err := fe.db.WriteStatus(update); err != nil {
 		return err
 	}
+	if fe.plainConsole != nil {
+		if err := fe.plainConsole.WriteStatus(update); err != nil {
+			return err
+		}
+	}
+	for _, v := range update.Vertexes {
+		_, isZoomed := fe.zoomed[v.Id]
+		if v.Zoomed && !isZoomed {
+			fe.initZoom(v)
+		} else if isZoomed {
+			fe.releaseZoom(v)
+		}
+		if v.Id == PrimaryVertex {
+			fe.primaryVtx = v
+		}
+	}
+	for _, l := range update.Logs {
+		if l.Vertex == PrimaryVertex {
+			fe.primaryLogs = append(fe.primaryLogs, l)
+		}
+		var w io.Writer
+		if t, found := fe.zoomed[l.Vertex]; found {
+			w = t.Output
+		} else {
+			w = fe.vertexLogs(l.Vertex)
+		}
+		_, err := w.Write(l.Data)
+		if err != nil {
+			return fmt.Errorf("write logs: %w", err)
+		}
+	}
+	for _, msg := range update.Messages {
+		if fe.Debug || msg.Level > progrock.MessageLevel_DEBUG {
+			progrock.WriteMessage(fe.messagesW, msg)
+		}
+	}
+	if len(update.Vertexes) > 0 {
+		fe.steps = CollectSteps(fe.db)
+		fe.rows = CollectRows(fe.steps)
+	}
+	return nil
+}
 
-	// if id.Parent == nil {
-	// 	fmt.Fprintln(out, out.String(dot+" id: "+dig.String()).Bold())
-	// 	indent()
-	// }
+func (fe *Frontend) vertexLogs(id string) *Vterm {
+	term, found := fe.logs[id]
+	if !found {
+		term = NewVterm()
+		if fe.window.Width != -1 {
+			term.SetWidth(fe.window.Width)
+		}
+		fe.logs[id] = term
+	}
+	return term
+}
 
-	if vtx != nil {
-		renderStatus(out, u, vtx)
+var (
+	// what's a little global state between friends?
+	termSetups  = map[string]progrock.TermSetupFunc{}
+	termSetupsL = new(sync.Mutex)
+)
+
+func setupTerm(vtxID string, vt *midterm.Terminal) io.Writer {
+	termSetupsL.Lock()
+	defer termSetupsL.Unlock()
+	setup, ok := termSetups[vtxID]
+	if ok && setup != nil {
+		return setup(vt)
+	}
+	return nil
+}
+
+// Zoomed marks the vertex as zoomed, indicating it should take up as much
+// screen space as possible.
+func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
+	return func(vertex *progrock.Vertex) {
+		termSetupsL.Lock()
+		termSetups[vertex.Id] = setup
+		termSetupsL.Unlock()
+		vertex.Zoomed = true
+	}
+}
+
+func (fe *Frontend) initZoom(v *progrock.Vertex) {
+	var vt *midterm.Terminal
+	if fe.window.Height == -1 || fe.window.Width == -1 {
+		vt = midterm.NewAutoResizingTerminal()
+	} else {
+		vt = midterm.NewTerminal(fe.window.Height, fe.window.Width)
+	}
+	w := setupTerm(v.Id, vt)
+	st := &zoomState{
+		Output: vt,
+		Input:  w,
+	}
+	fe.zoomed[v.Id] = st
+	fe.currentZoom = st
+	fe.redirectStdin(st)
+}
+
+func (fe *Frontend) releaseZoom(vtx *progrock.Vertex) {
+	delete(fe.zoomed, vtx.Id)
+}
+
+type eofMsg struct{}
+
+func (fe *Frontend) Close() error {
+	if fe.program != nil {
+		fe.program.Send(eofMsg{})
+	} else if fe.plainConsole != nil {
+		if err := fe.plainConsole.Close(); err != nil {
+			return err
+		}
+		fmt.Fprintln(consoleSink)
+	}
+	return nil
+}
+
+func (fe *Frontend) Render(out *termenv.Output) error {
+	// if we're zoomed, render the zoomed terminal and nothing else, but only
+	// after we've actually seen output from it.
+	if fe.currentZoom != nil && fe.currentZoom.Output.UsedHeight() > 0 {
+		_, err := fe.renderZoomed(out, fe.currentZoom)
+		return err
+	}
+	if _, err := fe.renderProgress(out); err != nil {
+		return err
+	}
+	if _, err := fe.renderMessages(out, false); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
+	var renderedAny bool
+	for _, row := range fe.rows {
+		if row.Step.Digest == PrimaryVertex && fe.done {
+			// primary vertex is displayed below the fold instead
+			continue
+		}
+		if fe.Debug || row.IsInteresting() {
+			if err := fe.renderRow(out, row); err != nil {
+				return renderedAny, err
+			}
+			renderedAny = true
+		}
+	}
+	return renderedAny, nil
+}
+
+func (fe *Frontend) renderZoomed(out *termenv.Output, st *zoomState) (bool, error) {
+	var renderedAny bool
+	for i := 0; i < st.Output.UsedHeight(); i++ {
+		if err := st.Output.RenderLine(out, i); err != nil {
+			return renderedAny, err
+		}
+		renderedAny = true
+	}
+	return renderedAny, nil
+}
+
+var _ tea.Model = (*Frontend)(nil)
+
+func (fe *Frontend) Init() tea.Cmd {
+	return tea.Batch(
+		ui.Frame(fe.fps),
+		fe.spawn,
+	)
+}
+
+type doneMsg struct {
+	err error
+}
+
+func (fe *Frontend) spawn() tea.Msg {
+	return doneMsg{fe.run(fe.runCtx)}
+}
+
+func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case doneMsg: // run finished
+		fe.done = true
+		fe.err = msg.err
+		if fe.eof {
+			return fe, tea.Quit
+		}
+		return fe, nil
+
+	case eofMsg: // received end of updates
+		fe.eof = true
+		if fe.done {
+			return fe, tea.Quit
+		}
+		return fe, nil
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "esc", "ctrl+c":
+			fe.interrupt()
+			return fe, nil // tea.Quit is deferred until we receive doneMsg
+		default:
+			return fe, nil
+		}
+
+	case tea.WindowSizeMsg:
+		fe.window = msg
+		for _, st := range fe.zoomed {
+			st.Output.Resize(msg.Height, msg.Width)
+		}
+		for _, vt := range fe.logs {
+			vt.SetWidth(msg.Width)
+		}
+		fe.messages.SetWidth(msg.Width)
+		return fe, nil
+
+	case ui.FrameMsg:
+		// NB: take care not to forward Frame downstream, since that will result
+		// in runaway ticks. instead inner components should send a SetFpsMsg to
+		// adjust the outermost layer.
+		fe.render()
+		return fe, ui.Frame(fe.fps)
+
+	default:
+		return fe, nil
+	}
+}
+
+func (fe *Frontend) render() {
+	fe.mu.Lock()
+	fe.view.Reset()
+	fe.Render(ui.NewOutput(fe.view, termenv.WithProfile(fe.profile)))
+	fe.mu.Unlock()
+}
+
+func (fe *Frontend) View() string {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	view := fe.view.String()
+	if fe.done && fe.eof {
+		// print nothing; make way for the pristine output in the final render
+		return ""
+	}
+	return view
+}
+
+// DumpID is exposed for troubleshooting.
+func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
+	if id.Base != nil {
+		if err := fe.DumpID(out, id.Base); err != nil {
+			return err
+		}
+	}
+	return fe.renderID(out, nil, id, 0, false)
+}
+
+func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
+	if fe.Debug || row.IsInteresting() {
+		fe.renderStep(out, row.Step, row.Depth())
+		fe.renderLogs(out, row)
+	}
+	for _, child := range row.Children {
+		if err := fe.renderRow(out, child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error {
+	id := step.ID()
+	vtx := step.db.PrimaryVertex(step.Digest)
+	if id != nil {
+		if err := fe.renderID(out, vtx, id, depth, false); err != nil {
+			return err
+		}
+	} else if vtx != nil {
+		if err := fe.renderVertex(out, vtx, depth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (fe *Frontend) renderLogs(out *termenv.Output, row *TraceRow) {
+	if logs, ok := fe.logs[row.Step.Digest]; ok {
+		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+		logs.SetPrefix(strings.Repeat("  ", row.Depth()) + pipe.String() + " ")
+		logs.SetHeight(fe.window.Height / 3)
+		fmt.Fprint(out, logs.View())
+	}
+}
+
+func indent(out io.Writer, depth int) {
+	fmt.Fprint(out, strings.Repeat("  ", depth))
+}
+
+const (
+	kwColor     = termenv.ANSICyan
+	parentColor = termenv.ANSIWhite
+	moduleColor = termenv.ANSIMagenta
+)
+
+func (fe *Frontend) renderIDBase(out *termenv.Output, id *idproto.ID) error {
+	typeName := id.Type.ToAST().Name()
+	parent := out.String(typeName)
+	if id.Module != nil {
+		parent = parent.Foreground(moduleColor)
+	}
+	fmt.Fprint(out, parent.String())
+	return nil
+}
+
+func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
+	if !inline {
+		indent(out, depth)
 	}
 
-	fmt.Fprint(out, id.Field)
+	if vtx != nil {
+		fe.renderStatus(out, vtx)
+	}
 
-	kwColor := termenv.ANSIBlue
+	if id.Base != nil {
+		if err := fe.renderIDBase(out, id.Base); err != nil {
+			return err
+		}
+		fmt.Fprint(out, ".")
+	}
+
+	fmt.Fprint(out, out.String(id.Field).Bold())
 
 	if len(id.Args) > 0 {
 		fmt.Fprint(out, "(")
@@ -235,137 +661,84 @@ func renderID(tape *progrock.Tape, out *termenv.Output, u *progrock.UI, vtx *pro
 			depth++
 			depth++
 			for _, arg := range id.Args {
-				indent()
+				indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
 				val := arg.Value.GetValue()
+				fmt.Fprint(out, " ")
 				switch x := val.(type) {
 				case *idproto.Literal_Id:
 					argVertexID, err := x.Id.Digest()
 					if err != nil {
 						return err
 					}
-					fmt.Fprintln(out, " "+x.Id.Type.ToAST().Name()+"@"+argVertexID.String()+"{")
-					depth++
-					argVtx := tape.Vertices[argVertexID.String()]
-					if err := renderID(tape, out, u, argVtx, x.Id, depth); err != nil {
+					argVtx := fe.db.Vertices[argVertexID.String()]
+					base := x.Id
+					if baseStep, ok := fe.db.HighLevelStep(x.Id); ok {
+						base = baseStep.ID()
+					}
+					if err := fe.renderID(out, argVtx, base, depth-1, true); err != nil {
 						return err
 					}
-					depth--
-					indent()
-					fmt.Fprintln(out, "}")
 				default:
-					fmt.Fprint(out, " ")
-					renderLiteral(out, arg.Value)
+					fe.renderLiteral(out, arg.Value)
 					fmt.Fprintln(out)
 				}
 			}
 			depth--
-			indent()
-			depth--
+			indent(out, depth)
+			depth-- //nolint:ineffassign
 		} else {
 			for i, arg := range id.Args {
 				if i > 0 {
 					fmt.Fprint(out, ", ")
 				}
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
-				renderLiteral(out, arg.Value)
+				fe.renderLiteral(out, arg.Value)
 			}
 		}
 		fmt.Fprint(out, ")")
 	}
 
-	typeStr := out.String(": " + id.Type.ToAST().String()).Foreground(termenv.ANSIBrightBlack)
-	fmt.Fprintln(out, typeStr)
+	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
+	fmt.Fprint(out, typeStr)
 
-	if vtx != nil && (tape.IsClosed || tape.ShowCompletedLogs || vtx.Completed == nil || vtx.Error != nil) {
-		renderVertexTasksAndLogs(out, u, tape, vtx, depth)
+	if vtx != nil {
+		fe.renderDuration(out, vtx)
 	}
 
-	if os.Getenv("SHOW_VERTICES") == "" {
-		return nil
-	}
-
-	children := collectTransitiveChildren(tape, dig.String())
-	sort.Slice(children, func(i, j int) bool {
-		vi := children[i]
-		vj := children[j]
-		if vi.Cached && vj.Cached {
-			return vi.Name < vj.Name
-		}
-		return vi.Started.AsTime().Before(vj.Started.AsTime())
-	})
-
-	depth++
-
-	for _, vtx := range children {
-		if vtx.Completed != nil && vtx.Error == nil {
-			continue
-		}
-
-		indent()
-		renderStatus(out, u, vtx)
-		if err := u.RenderVertexTree(out, vtx); err != nil {
-			return err
-		}
-		renderVertexTasksAndLogs(out, u, tape, vtx, depth)
-	}
+	fmt.Fprintln(out)
 
 	return nil
 }
 
-func collectTransitiveChildren(tape *progrock.Tape, groupID string) []*progrock.Vertex {
-	var children []*progrock.Vertex //nolint:prealloc
-	for id := range tape.GroupVertices[groupID] {
-		child := tape.Vertices[id]
-		if child == nil {
-			continue
-		}
-		children = append(children, child)
-	}
-	for sub := range tape.GroupChildren[groupID] {
-		children = append(children, collectTransitiveChildren(tape, sub)...)
-	}
-	return children
+func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, depth int) error {
+	indent(out, depth)
+	fe.renderStatus(out, vtx)
+	fmt.Fprint(out, vtx.Name)
+	fe.renderVertexTasks(out, vtx, depth)
+	fe.renderDuration(out, vtx)
+	fmt.Fprintln(out)
+	return nil
 }
 
-func rootOf(id *idproto.ID) *idproto.ID {
-	if id.Parent == nil {
-		return id
-	}
-	return rootOf(id.Parent)
-}
-
-type vertexAndID struct {
-	vtx *progrock.Vertex
-	id  *idproto.ID
-}
-
-func (vid vertexAndID) totalDuration(tape *progrock.Tape) time.Duration {
-	root := rootOf(vid.id)
-	rootVtxID, err := root.Digest()
-	if err != nil {
-		return 0
-	}
-	rootVtx := tape.Vertices[rootVtxID.String()]
-	if rootVtx == nil {
-		return 0
-	}
-	return progrock.Duration(rootVtx.Started, vid.vtx.Completed)
-}
-
-func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
+func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 	var color termenv.Color
-	switch lit.GetValue().(type) {
+	switch val := lit.GetValue().(type) {
 	case *idproto.Literal_Bool:
-		color = termenv.ANSIBrightRed
+		color = termenv.ANSIRed
 	case *idproto.Literal_Int:
 		color = termenv.ANSIRed
 	case *idproto.Literal_Float:
 		color = termenv.ANSIRed
 	case *idproto.Literal_String_:
 		color = termenv.ANSIYellow
+		if fe.window.Width != -1 && len(val.String_) > fe.window.Width {
+			display := string(digest.FromString(val.String_))
+			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(color))
+			return
+		}
 	case *idproto.Literal_Id:
-		color = termenv.ANSIYellow
+		color = termenv.ANSIMagenta
 	case *idproto.Literal_Enum:
 		color = termenv.ANSIYellow
 	case *idproto.Literal_Null:
@@ -376,7 +749,7 @@ func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
-			renderLiteral(out, item)
+			fe.renderLiteral(out, item)
 		}
 		fmt.Fprint(out, "]")
 		return
@@ -387,7 +760,7 @@ func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 				fmt.Fprint(out, ", ")
 			}
 			fmt.Fprintf(out, "%s: ", item.GetName())
-			renderLiteral(out, item.Value)
+			fe.renderLiteral(out, item.Value)
 		}
 		fmt.Fprint(out, "}")
 		return
@@ -395,7 +768,7 @@ func renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 	fmt.Fprint(out, out.String(lit.ToAST().String()).Foreground(color))
 }
 
-func renderStatus(out *termenv.Output, u *progrock.UI, vtx *progrock.Vertex) {
+func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 	var symbol string
 	var color termenv.Color
 	if vtx.Completed != nil {
@@ -411,45 +784,62 @@ func renderStatus(out *termenv.Output, u *progrock.UI, vtx *progrock.Vertex) {
 			color = termenv.ANSIGreen
 		}
 	} else {
-		symbol, _, _ = u.Spinner.ViewFrame(ui.DotFrames)
+		symbol = ui.DotFilled
 		color = termenv.ANSIYellow
 	}
 
 	symbol = out.String(symbol).Foreground(color).String()
 
-	fmt.Fprintf(out, "%s ", symbol) // NB: has to match indent level
+	fmt.Fprintf(out, "%s ", symbol)
 }
 
-func renderVertexTasksAndLogs(out *termenv.Output, u *progrock.UI, tape *progrock.Tape, vtx *progrock.Vertex, depth int) error {
-	indent := func() {
-		fmt.Fprint(out, strings.Repeat("  ", depth))
+func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
+	fmt.Fprint(out, " ")
+	duration := out.String(fmtDuration(vtx.Duration()))
+	if vtx.Completed != nil {
+		duration = duration.Faint()
+	} else {
+		duration = duration.Foreground(termenv.ANSIYellow)
 	}
+	fmt.Fprint(out, duration)
+}
 
-	tasks := tape.VertexTasks[vtx.Id]
+var (
+	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
+)
+
+func (fe *Frontend) renderVertexTasks(out *termenv.Output, vtx *progrock.Vertex, depth int) error {
+	tasks := fe.db.Tasks[vtx.Id]
+	if len(tasks) == 0 {
+		return nil
+	}
+	var spaced bool
 	for _, t := range tasks {
-		if t.Completed != nil {
+		var sym termenv.Style
+		if t.GetTotal() != 0 {
+			percent := int(100 * (float64(t.GetCurrent()) / float64(t.GetTotal())))
+			idx := (len(progChars) - 1) * percent / 100
+			chr := progChars[idx]
+			sym = out.String(chr)
+		} else {
+			// TODO: don't bother printing non-progress-bar tasks for now
+			// else if t.Completed != nil {
+			// sym = out.String(ui.IconSuccess)
+			// } else if t.Started != nil {
+			// sym = out.String(ui.DotFilled)
+			// }
 			continue
 		}
-		indent()
-		fmt.Fprint(out, ui.VertRightBar, " ")
-		if err := u.RenderTask(out, t); err != nil {
-			return err
+		if t.Completed != nil {
+			sym = sym.Foreground(termenv.ANSIGreen)
+		} else if t.Started != nil {
+			sym = sym.Foreground(termenv.ANSIYellow)
 		}
+		if !spaced {
+			fmt.Fprint(out, " ")
+			spaced = true
+		}
+		fmt.Fprint(out, sym)
 	}
-
-	term := tape.VertexLogs(vtx.Id)
-
-	if vtx.Error != nil {
-		term.SetHeight(term.UsedHeight())
-	} else {
-		term.SetHeight(tape.ReasonableTermHeight)
-	}
-
-	term.SetPrefix(strings.Repeat("  ", depth) + ui.VertBoldBar + " ")
-
-	if tape.IsClosed {
-		term.SetHeight(term.UsedHeight())
-	}
-
-	return u.RenderTerm(out, term)
+	return nil
 }

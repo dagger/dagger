@@ -52,7 +52,45 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "The directory containing the actual module's source code, as determined from the root directory and subpath.\n\n## Required Arguments\n\n* `path` - The path from the source directory to select."
+    @doc "Returns whether the module source has a configuration file."
+    @spec config_exists(t()) :: {:ok, Dagger.Boolean.t()} | {:error, term()}
+    def config_exists(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "configExists")
+      execute(selection, module_source.client)
+    end
+  )
+
+  (
+    @doc "The directory containing everything needed to load load and use the module."
+    @spec context_directory(t()) :: Dagger.Directory.t()
+    def context_directory(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "contextDirectory")
+      %Dagger.Directory{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls."
+    @spec dependencies(t()) :: {:ok, [Dagger.ModuleDependency.t()]} | {:error, term()}
+    def dependencies(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "dependencies")
+      selection = select(selection, "id name source")
+
+      with {:ok, data} <- execute(selection, module_source.client) do
+        {:ok,
+         data
+         |> Enum.map(fn value ->
+           elem_selection = Dagger.Core.QueryBuilder.Selection.query()
+           elem_selection = select(elem_selection, "loadModuleDependencyFromID")
+           elem_selection = arg(elem_selection, "id", value["id"])
+           %Dagger.ModuleDependency{selection: elem_selection, client: module_source.client}
+         end)}
+      end
+    end
+  )
+
+  (
+    @doc "The directory containing the module configuration and source code (source code may be in a subdir).\n\n## Required Arguments\n\n* `path` - The path from the source directory to select."
     @spec directory(t(), Dagger.String.t()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = module_source, path) do
       selection = select(module_source.selection, "directory")
@@ -80,10 +118,28 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "If set, the name of the module this source references"
+    @doc "If set, the name of the module this source references, including any overrides at runtime by callers."
     @spec module_name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def module_name(%__MODULE__{} = module_source) do
       selection = select(module_source.selection, "moduleName")
+      execute(selection, module_source.client)
+    end
+  )
+
+  (
+    @doc "The original name of the module this source references, as defined in the module configuration."
+    @spec module_original_name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def module_original_name(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "moduleOriginalName")
+      execute(selection, module_source.client)
+    end
+  )
+
+  (
+    @doc "The path to the module source's context directory on the caller's filesystem. Only valid for local sources."
+    @spec resolve_context_path_from_caller(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def resolve_context_path_from_caller(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "resolveContextPathFromCaller")
       execute(selection, module_source.client)
     end
   )
@@ -99,20 +155,84 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root)."
-    @spec root_directory(t()) :: Dagger.Directory.t()
-    def root_directory(%__MODULE__{} = module_source) do
-      selection = select(module_source.selection, "rootDirectory")
-      %Dagger.Directory{selection: selection, client: module_source.client}
+    @doc "Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources."
+    @spec resolve_from_caller(t()) :: Dagger.ModuleSource.t()
+    def resolve_from_caller(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "resolveFromCaller")
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
     end
   )
 
   (
-    @doc "The path to the module subdirectory containing the actual module's source code."
-    @spec subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def subpath(%__MODULE__{} = module_source) do
-      selection = select(module_source.selection, "subpath")
+    @doc "The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root."
+    @spec source_root_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def source_root_subpath(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "sourceRootSubpath")
       execute(selection, module_source.client)
+    end
+  )
+
+  (
+    @doc "The path relative to context of the module implementation source code."
+    @spec source_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def source_subpath(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "sourceSubpath")
+      execute(selection, module_source.client)
+    end
+  )
+
+  (
+    @doc "Update the module source with a new context directory. Only valid for local sources.\n\n## Required Arguments\n\n* `dir` - The directory to set as the context directory."
+    @spec with_context_directory(t(), Dagger.Directory.t()) :: Dagger.ModuleSource.t()
+    def with_context_directory(%__MODULE__{} = module_source, dir) do
+      selection = select(module_source.selection, "withContextDirectory")
+
+      (
+        {:ok, id} = Dagger.Directory.id(dir)
+        selection = arg(selection, "dir", id)
+      )
+
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "Append the provided dependencies to the module source's dependency list.\n\n## Required Arguments\n\n* `dependencies` - The dependencies to append."
+    @spec with_dependencies(t(), [Dagger.ModuleDependencyID.t()]) :: Dagger.ModuleSource.t()
+    def with_dependencies(%__MODULE__{} = module_source, dependencies) do
+      selection = select(module_source.selection, "withDependencies")
+      selection = arg(selection, "dependencies", dependencies)
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "Update the module source with a new name.\n\n## Required Arguments\n\n* `name` - The name to set."
+    @spec with_name(t(), Dagger.String.t()) :: Dagger.ModuleSource.t()
+    def with_name(%__MODULE__{} = module_source, name) do
+      selection = select(module_source.selection, "withName")
+      selection = arg(selection, "name", name)
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "Update the module source with a new SDK.\n\n## Required Arguments\n\n* `sdk` - The SDK to set."
+    @spec with_sdk(t(), Dagger.String.t()) :: Dagger.ModuleSource.t()
+    def with_sdk(%__MODULE__{} = module_source, sdk) do
+      selection = select(module_source.selection, "withSDK")
+      selection = arg(selection, "sdk", sdk)
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "Update the module source with a new source subpath.\n\n## Required Arguments\n\n* `path` - The path to set as the source subpath."
+    @spec with_source_subpath(t(), Dagger.String.t()) :: Dagger.ModuleSource.t()
+    def with_source_subpath(%__MODULE__{} = module_source, path) do
+      selection = select(module_source.selection, "withSourceSubpath")
+      selection = arg(selection, "path", path)
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
     end
   )
 end

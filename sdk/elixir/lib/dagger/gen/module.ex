@@ -14,7 +14,7 @@ defmodule Dagger.Module do
       selection =
         select(
           selection,
-          "dependencies dependencyConfig description generatedSourceRootDirectory id initialize interfaces name objects runtime sdk serve source withDependencies withDescription withInterface withName withObject withSDK withSource"
+          "dependencies dependencyConfig description generatedContextDiff generatedContextDirectory id initialize interfaces name objects runtime sdk serve source withDescription withInterface withObject withSource"
         )
 
       with {:ok, data} <- execute(selection, module.client) do
@@ -60,10 +60,19 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run."
-    @spec generated_source_root_directory(t()) :: Dagger.Directory.t()
-    def generated_source_root_directory(%__MODULE__{} = module) do
-      selection = select(module.selection, "generatedSourceRootDirectory")
+    @doc "The generated files and directories made on top of the module source's context directory."
+    @spec generated_context_diff(t()) :: Dagger.Directory.t()
+    def generated_context_diff(%__MODULE__{} = module) do
+      selection = select(module.selection, "generatedContextDiff")
+      %Dagger.Directory{selection: selection, client: module.client}
+    end
+  )
+
+  (
+    @doc "The module source's context plus any configuration and source files created by codegen."
+    @spec generated_context_directory(t()) :: Dagger.Directory.t()
+    def generated_context_directory(%__MODULE__{} = module) do
+      selection = select(module.selection, "generatedContextDirectory")
       %Dagger.Directory{selection: selection, client: module.client}
     end
   )
@@ -182,16 +191,6 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "Update the module configuration to use the given dependencies.\n\n## Required Arguments\n\n* `dependencies` - The dependency modules to install."
-    @spec with_dependencies(t(), [Dagger.ModuleDependencyID.t()]) :: Dagger.Module.t()
-    def with_dependencies(%__MODULE__{} = module, dependencies) do
-      selection = select(module.selection, "withDependencies")
-      selection = arg(selection, "dependencies", dependencies)
-      %Dagger.Module{selection: selection, client: module.client}
-    end
-  )
-
-  (
     @doc "Retrieves the module with the given description\n\n## Required Arguments\n\n* `description` - The description to set"
     @spec with_description(t(), Dagger.String.t()) :: Dagger.Module.t()
     def with_description(%__MODULE__{} = module, description) do
@@ -217,16 +216,6 @@ defmodule Dagger.Module do
   )
 
   (
-    @doc "Update the module configuration to use the given name.\n\n## Required Arguments\n\n* `name` - The name to use."
-    @spec with_name(t(), Dagger.String.t()) :: Dagger.Module.t()
-    def with_name(%__MODULE__{} = module, name) do
-      selection = select(module.selection, "withName")
-      selection = arg(selection, "name", name)
-      %Dagger.Module{selection: selection, client: module.client}
-    end
-  )
-
-  (
     @doc "This module plus the given Object type and associated functions.\n\n## Required Arguments\n\n* `object` -"
     @spec with_object(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
     def with_object(%__MODULE__{} = module, object) do
@@ -237,16 +226,6 @@ defmodule Dagger.Module do
         selection = arg(selection, "object", id)
       )
 
-      %Dagger.Module{selection: selection, client: module.client}
-    end
-  )
-
-  (
-    @doc "Update the module configuration to use the given SDK.\n\n## Required Arguments\n\n* `sdk` - The SDK to use."
-    @spec with_sdk(t(), Dagger.String.t()) :: Dagger.Module.t()
-    def with_sdk(%__MODULE__{} = module, sdk) do
-      selection = select(module.selection, "withSDK")
-      selection = arg(selection, "sdk", sdk)
       %Dagger.Module{selection: selection, client: module.client}
     end
   )

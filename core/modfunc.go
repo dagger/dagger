@@ -91,6 +91,26 @@ type CallInput struct {
 	Value dagql.Typed
 }
 
+func (fn *ModuleFunction) recordCall(ctx context.Context) {
+	mod := fn.mod
+	if fn.metadata.Name == "" {
+		return
+	}
+	props := map[string]string{
+		"target_function": fn.metadata.Name,
+	}
+	moduleAnalyticsProps(mod, "target_", props)
+	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
+		props["caller_type"] = "module"
+		moduleAnalyticsProps(caller, "caller_", props)
+	} else if analytics.IsInternal(ctx) {
+		props["caller_type"] = "internal"
+	} else {
+		props["caller_type"] = "direct"
+	}
+	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
+}
+
 func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *CallOpts) (t dagql.Typed, rerr error) {
 	mod := fn.mod
 
@@ -102,19 +122,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 
 	// Capture analytics for the function call.
 	// Calls without function name are internal and excluded.
-	if fn.metadata.Name != "" {
-		props := map[string]string{
-			"target_function": fn.metadata.Name,
-		}
-		moduleAnalyticsProps(mod, "target_", props)
-		if caller, err := mod.Query.CurrentModule(ctx); err == nil {
-			props["caller_type"] = "module"
-			moduleAnalyticsProps(caller, "caller_", props)
-		} else {
-			props["caller_type"] = "direct"
-		}
-		analytics.Ctx(ctx).Capture(ctx, "module_call", props)
-	}
+	fn.recordCall(ctx)
 
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
@@ -305,14 +313,15 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 	source := mod.Source.Self
 	switch source.Kind {
 	case ModuleSourceKindLocal:
+		local := source.AsLocalSource.Value
 		props[prefix+"source_kind"] = "local"
-		props[prefix+"local_subpath"] = source.AsLocalSource.Value.Subpath
+		props[prefix+"local_subpath"] = local.RootSubpath
 	case ModuleSourceKindGit:
 		git := source.AsGitSource.Value
 		props[prefix+"source_kind"] = "git"
 		props[prefix+"git_symbolic"] = git.Symbolic()
 		props[prefix+"git_clone_url"] = git.CloneURL()
-		props[prefix+"git_subpath"] = git.Subpath
+		props[prefix+"git_subpath"] = git.RootSubpath
 		props[prefix+"git_version"] = git.Version
 		props[prefix+"git_commit"] = git.Commit
 	}

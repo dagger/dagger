@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock"
@@ -51,11 +52,10 @@ EOF
 	},
 }
 
-func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _ *cobra.Command, args []string) (rerr error) {
+func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) (rerr error) {
 	rec := progrock.FromContext(ctx)
-	vtx := rec.Vertex("query", "query", progrock.Focused())
+	vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
 	defer func() { vtx.Done(rerr) }()
-
 	res, err := runQuery(ctx, engineClient, args)
 	if err != nil {
 		return err
@@ -64,16 +64,7 @@ func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, _
 	if err != nil {
 		return err
 	}
-
-	var out io.Writer
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		out = os.Stdout
-	} else {
-		out = vtx.Stdout()
-	}
-
-	fmt.Fprintf(out, "%s\n", result)
-
+	fmt.Fprintf(vtx.Stdout(), "%s\n", result)
 	return nil
 }
 

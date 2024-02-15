@@ -19,11 +19,11 @@ connect(
     // set AWS credentials as client secrets
     let awsAccessKeyId = client.setSecret(
       "awsAccessKeyId",
-      process.env["AWS_ACCESS_KEY_ID"]
+      process.env["AWS_ACCESS_KEY_ID"],
     )
     let awsSecretAccessKey = client.setSecret(
       "awsSecretAccessKey",
-      process.env["AWS_SECRET_ACCESS_KEY"]
+      process.env["AWS_SECRET_ACCESS_KEY"],
     )
 
     let awsRegion = process.env["AWS_DEFAULT_REGION"]
@@ -81,5 +81,5 @@ connect(
     let url = JSON.parse(response).FunctionUrl
     console.log(`Function updated at: ${url}`)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
