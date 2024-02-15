@@ -50,10 +50,6 @@
             {
               "type": "doc",
               "id": "developers/fundamentals/execution-environment"
-            },
-            {
-              "type": "doc",
-              "id": "developers/fundamentals/known-issues"
             }
           ]
         },
@@ -139,6 +135,10 @@
               "id": "reference/typescript/modules"
             }
           ]
+        },
+        {
+          "type": "doc",
+          "id": "developers/fundamentals/known-issues"
         }
       ]
     },
