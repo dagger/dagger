@@ -63,13 +63,15 @@ type Frontend struct {
 	plainConsole progrock.Writer
 
 	// TUI state/config
-	fps         float64 // frames per second
-	profile     termenv.Profile
-	window      tea.WindowSizeMsg     // set by BubbleTea
-	view        *strings.Builder      // rendered async
-	logs        map[string]*Vterm     // vertex logs
-	zoomed      map[string]*zoomState // interactive zoomed terminals
-	currentZoom *zoomState            // current zoomed terminal
+	fps               float64 // frames per second
+	profile           termenv.Profile
+	window            tea.WindowSizeMsg     // set by BubbleTea
+	view              *strings.Builder      // rendered async
+	logs              map[string]*Vterm     // vertex logs
+	zoomed            map[string]*zoomState // interactive zoomed terminals
+	currentZoom       *zoomState            // current zoomed terminal
+	scrollbackQueue   []tea.Cmd             // queue of tea.Printlns for scrollback
+	scrollbackQueueMu sync.Mutex            // need a separate lock for this
 
 	// held to synchronize tea.Model and progrock.Writer
 	mu sync.Mutex
@@ -410,6 +412,10 @@ func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
 	}
 }
 
+type scrollbackMsg struct {
+	Line string
+}
+
 func (fe *Frontend) initZoom(v *progrock.Vertex) {
 	var vt *midterm.Terminal
 	if fe.window.Height == -1 || fe.window.Width == -1 {
@@ -417,6 +423,11 @@ func (fe *Frontend) initZoom(v *progrock.Vertex) {
 	} else {
 		vt = midterm.NewTerminal(fe.window.Height, fe.window.Width)
 	}
+	vt.OnScrollback(func(line midterm.Line) {
+		fe.scrollbackQueueMu.Lock()
+		fe.scrollbackQueue = append(fe.scrollbackQueue, tea.Println(line.Display()))
+		fe.scrollbackQueueMu.Unlock()
+	})
 	vt.Raw = true
 	w := setupTerm(v.Id, vt)
 	st := &zoomState{
@@ -527,6 +538,9 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return fe, nil
 
+	case scrollbackMsg:
+		return fe, tea.Println(msg.Line)
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -548,11 +562,15 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return fe, nil
 
 	case ui.FrameMsg:
+		fe.render()
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
-		fe.render()
-		return fe, ui.Frame(fe.fps)
+		fe.scrollbackQueueMu.Lock()
+		queue := fe.scrollbackQueue
+		fe.scrollbackQueue = nil
+		fe.scrollbackQueueMu.Unlock()
+		return fe, tea.Sequence(append(queue, ui.Frame(fe.fps))...)
 
 	default:
 		return fe, nil
