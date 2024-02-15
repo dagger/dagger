@@ -1,6 +1,6 @@
-import { dag, Container, Directory, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, Directory, object } from "@dagger.io/dagger"
 
-@object
+@object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class MyModule {
 

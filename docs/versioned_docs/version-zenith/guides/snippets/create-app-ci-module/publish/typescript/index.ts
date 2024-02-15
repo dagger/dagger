@@ -1,6 +1,6 @@
-import { dag, Container, Directory, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class MyModule {
 
@@ -12,14 +12,14 @@ class MyModule {
   }
 
   // publish an image
-  @func
+  @func()
   async publish(): Promise<string> {
     return await this.package()
       .publish("ttl.sh/myapp-"+ Math.floor(Math.random() * 10000000))
   }
 
   // create a production image
-  @func
+  @func()
   package(): Container {
     return dag.container().from("nginx:1.25-alpine")
       .withDirectory("/usr/share/nginx/html", this.build())
@@ -27,7 +27,7 @@ class MyModule {
   }
 
   // create a production build
-  @func
+  @func()
   build(): Directory {
     return dag.node().withContainer(this.buildBaseImage())
       .build()
@@ -36,7 +36,7 @@ class MyModule {
   }
 
   // run unit tests
-  @func
+  @func()
   async test(): Promise<string> {
     return await dag.node().withContainer(this.buildBaseImage())
       .run(["run", "test:unit", "run"])
