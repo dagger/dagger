@@ -979,4 +979,25 @@ func TestModuleDaggerInstallGit(t *testing.T) {
 		With(daggerExec("install", "github.com/sagikazarmark/daggerverse/archivist@bedfa0c8bdba7192c65c21b5e88a48b600666fcc")).
 		Sync(ctx)
 	require.NoError(t, err)
+
+	c.ModuleSource("github.com/sagikazarmark/daggerverse/archivist@bedfa0c8bdba7192c65c21b5e88a48b600666fcc").
+		AsGitSource().
+		HTMLURL(ctx)
+}
+
+func TestModuleDaggerGitRefs(t *testing.T) {
+	/*
+		TODO: this is a stopgap test to get some basic coverage of installing modules
+		from git refs. Ideally it would rely on our own repo for of test fixtures but
+		those have not been setup yet: https://github.com/dagger/dagger/issues/6623
+	*/
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	htmlURL, err := c.ModuleSource("github.com/sagikazarmark/daggerverse/archivist@bedfa0c8bdba7192c65c21b5e88a48b600666fcc").
+		AsGitSource().
+		HTMLURL(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/sagikazarmark/daggerverse/tree/bedfa0c8bdba7192c65c21b5e88a48b600666fcc/archivist", htmlURL)
 }
