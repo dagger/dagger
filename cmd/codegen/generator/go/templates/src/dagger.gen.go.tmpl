@@ -2,58 +2,8 @@
 
 package {{.PackageName}}
 
-import (
-	"{{.PackageImport}}/dagger"
-)
-
-var dag = dagger.Connect()
-
-type DaggerObject = dagger.DaggerObject
-
-type ExecError = dagger.ExecError
-
-{{ range .Types }}
-{{ $name := .Name | FormatName }} 
-
-{{ .Description | Comment }}
-type {{ $name }} = dagger.{{ $name }}
-
-{{ if eq .Kind "OBJECT" }}
-{{ .Description | Comment }}
-{{- if . | IsSelfChainable }}
-type With{{ $name }}Func = dagger.With{{ $name }}Func
-{{ end }}
-{{ range $field := .Fields }}
-{{- if $field.Args.HasOptionals }}
-type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
-{{ end }}
-{{ end }}
-{{- end }}
-
-{{ if eq .Kind "ENUM" }}
-{{- $enumName := .Name }}
-const (
-	{{- range $index, $field := .EnumValues | SortEnumFields }}
-	{{ $field.Description | Comment }}
-	{{ $field.Name | FormatEnum }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum }}
-	{{ end }}
-)
-{{- end }}
-{{ end }}
-
-func convertSlice[I any, O any](in []I, f func(I) O) []O {
-  out := make([]O, len(in))
-  for i, v := range in {
-    out[i] = f(v)
-  }
-  return out
-}
-
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
-
 {{ if IsModuleCode }}
-{{ ModuleMainSrc }}
+{{ template "_dagger.gen.go/alias.go.tmpl" . }}
+{{ else }}
+{{ template "_dagger.gen.go/defs.go.tmpl" . }}
 {{ end }}
