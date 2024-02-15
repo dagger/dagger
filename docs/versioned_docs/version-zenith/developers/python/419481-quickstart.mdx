@@ -40,7 +40,7 @@ This quickstart assumes that:
 
     This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
 
-1. Test the module. Run the generated `main.py` with the `dagger call` command:
+1. Test the module with the `dagger call` command:
 
     ```sh
     dagger call container-echo --string-arg 'Hello daggernauts!' stdout
@@ -56,7 +56,7 @@ When using `dagger call`, all names (functions, arguments, struct fields, etc) a
 
 ## Step 2: Add a function
 
-Let's try changing the `src/main.py` file.
+Let's try changing the `dagger/src/main.py` file.
 
 1. Let's replace the auto-generated template with something simpler:
 
@@ -119,7 +119,7 @@ The example module in the previous sections was just that - an example. Next, le
     dagger init --name=trivy --sdk=python
     ```
 
-1. Replace the generated `src/main.py` file with the following code:
+1. Replace the generated `dagger/src/main.py` file with the following code:
 
     ```python file=./snippets/quickstart/trivy/main.py
     ```

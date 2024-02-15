@@ -360,5 +360,9 @@ func (src *GitModuleSource) CloneURL() string {
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	return "https://" + src.URLParent + "/tree/" + src.Commit + src.RootSubpath
+	u := "https://" + src.URLParent + "/tree/" + src.Commit
+	if subPath := src.RootSubpath; subPath != "" {
+		u += "/" + subPath
+	}
+	return u
 }
