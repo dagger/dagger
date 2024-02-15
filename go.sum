@@ -1483,6 +1483,10 @@ github.com/vishvananda/netns v0.0.4 h1:Oeaw1EM2JMxD51g9uhtC0D7erkIjgmj8+JZc26m1Y
 github.com/vishvananda/netns v0.0.4/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZlaprSwhNNJM=
 github.com/vito/midterm v0.1.4 h1:SALq5mQ+AgzeZxjL4loB6Uk5TZc9JMyX2ELA/NVH65c=
 github.com/vito/midterm v0.1.4/go.mod h1:Mm3u6lrpzo2EFSJbwksKOdottTJzYePK8c1KJy4aRbk=
+github.com/vito/midterm v0.1.5-0.20240212220713-e2ff440e4845 h1:3lvypfucQyV97noHe4WLFVUt3xEUiO0Dtk3h4RHyAXw=
+github.com/vito/midterm v0.1.5-0.20240212220713-e2ff440e4845/go.mod h1:2ujYuyOObdWrQtnXAzwSBcPRKhC5Q96ex0nsf2Dmfzk=
+github.com/vito/midterm v0.1.5-0.20240215023001-e649b2677bfa h1:2zKtb3ChJT0FBEt+AU64Rk3hT2kPjNf94QEyyDYaBaE=
+github.com/vito/midterm v0.1.5-0.20240215023001-e649b2677bfa/go.mod h1:2ujYuyOObdWrQtnXAzwSBcPRKhC5Q96ex0nsf2Dmfzk=
 github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291 h1:VcLECqiOXx4PTEzsV0QlWVubUeE+k0ZclAlKpUuejo8=
 github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=
