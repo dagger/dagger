@@ -215,7 +215,7 @@ Once credentials are configured, test the Dagger Functions by running the comman
 dagger -m ci call --source . deploy --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
 ```
 
-Dagger performs the operations defined in the `deploy()` Dagger Function, logging each operation to the console. At the end of the process, the built container is deployed to Google Cloud Run and the function returns the deployment URL. Browse to the deployment URL to see the running application.
+Dagger performs the operations defined in the Dagger Function, logging each operation to the console. At the end of the process, the built container is deployed to Google Cloud Run and the function returns the deployment URL. Browse to the deployment URL to see the running application.
 
 If you deployed the example application from [Appendix A](#appendix-a-create-a-github-repository-with-an-example-express-application), you should see a page similar to that shown below:
 
