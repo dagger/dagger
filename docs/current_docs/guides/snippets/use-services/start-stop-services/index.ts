@@ -42,5 +42,5 @@ connect(
 
     // service.stop() is available to explicitly stop the service if needed
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

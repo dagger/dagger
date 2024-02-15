@@ -14,17 +14,22 @@ import { isOptional, isVariadic } from "./utils.js"
  */
 export function serializeSignature(
   checker: ts.TypeChecker,
-  signature: ts.Signature
+  signature: ts.Signature,
 ): SignatureMetadata {
   return {
     params: signature.parameters.map((param) => {
-      const { optional, defaultValue } = isOptional(param)
+      // eslint-disable-next-line prefer-const
+      let { optional, defaultValue } = isOptional(param)
+      const variadic = isVariadic(param)
+      if (variadic) {
+        optional = true
+      }
 
       return {
         ...serializeSymbol(checker, param),
         optional,
         defaultValue,
-        isVariadic: isVariadic(param),
+        isVariadic: variadic,
       }
     }),
     returnType: serializeType(checker, signature.getReturnType()),
@@ -44,7 +49,7 @@ export function serializeSignature(
  */
 export function serializeSymbol(
   checker: ts.TypeChecker,
-  symbol: ts.Symbol
+  symbol: ts.Symbol,
 ): SymbolMetadata & { type: ts.Type } {
   if (!symbol.valueDeclaration) {
     throw new UnknownDaggerError("could not find symbol value declaration", {})
@@ -52,13 +57,13 @@ export function serializeSymbol(
 
   const type = checker.getTypeOfSymbolAtLocation(
     symbol,
-    symbol.valueDeclaration
+    symbol.valueDeclaration,
   )
 
   return {
     name: symbol.getName(),
     description: ts.displayPartsToString(
-      symbol.getDocumentationComment(checker)
+      symbol.getDocumentationComment(checker),
     ),
     typeName: serializeType(checker, type),
     type,

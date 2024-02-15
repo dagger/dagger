@@ -6,6 +6,15 @@ defmodule Dagger.LocalModuleSource do
   defstruct [:selection, :client]
 
   (
+    @doc "The directory containing everything needed to load load and use the module."
+    @spec context_directory(t()) :: Dagger.Directory.t()
+    def context_directory(%__MODULE__{} = local_module_source) do
+      selection = select(local_module_source.selection, "contextDirectory")
+      %Dagger.Directory{selection: selection, client: local_module_source.client}
+    end
+  )
+
+  (
     @doc "A unique identifier for this LocalModuleSource."
     @spec id(t()) :: {:ok, Dagger.LocalModuleSourceID.t()} | {:error, term()}
     def id(%__MODULE__{} = local_module_source) do
@@ -15,10 +24,10 @@ defmodule Dagger.LocalModuleSource do
   )
 
   (
-    @doc "The path to the module source code dir specified by this source."
-    @spec source_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def source_subpath(%__MODULE__{} = local_module_source) do
-      selection = select(local_module_source.selection, "sourceSubpath")
+    @doc "The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."
+    @spec root_subpath(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
+    def root_subpath(%__MODULE__{} = local_module_source) do
+      selection = select(local_module_source.selection, "rootSubpath")
       execute(selection, local_module_source.client)
     end
   )

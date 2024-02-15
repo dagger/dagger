@@ -8,7 +8,7 @@ connect(
       .from("python")
       .withDirectory(
         "/srv",
-        client.directory().withNewFile("index.html", "Hello, world!")
+        client.directory().withNewFile("index.html", "Hello, world!"),
       )
       .withWorkdir("/srv")
       .withExec(["python", "-m", "http.server", "8080"])
@@ -22,5 +22,5 @@ connect(
     val = await httpSrv.endpoint({ scheme: "http" })
     console.log(val)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

@@ -38,7 +38,7 @@ jobs:
     secrets: inherit
     with:
       mage-targets: engine:testimportant
-      size: dagger-runner-16c-64g
+      size: dagger-runner-docker-fix
       dev-engine: true
 
 

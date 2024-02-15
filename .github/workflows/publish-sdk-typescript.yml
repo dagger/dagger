@@ -14,3 +14,10 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+  notify:
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "⬢ TypeScript SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

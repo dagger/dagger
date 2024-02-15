@@ -30,7 +30,7 @@ connect(
     // set registry password as Dagger secret
     const secret = daggerClient.setSecret(
       "password",
-      process.env.DOCKERHUB_PASSWORD
+      process.env.DOCKERHUB_PASSWORD,
     )
 
     // get reference to the project directory
@@ -66,7 +66,7 @@ connect(
     // initialize Azure client
     const azureClient = new ContainerInstanceManagementClient(
       new DefaultAzureCredential(),
-      process.env.AZURE_SUBSCRIPTION_ID
+      process.env.AZURE_SUBSCRIPTION_ID,
     )
 
     // define deployment request
@@ -89,13 +89,13 @@ connect(
     const result = await azureClient.containerGroups.beginCreateOrUpdateAndWait(
       resourceGroupName,
       containerGroupName,
-      containerGroup
+      containerGroup,
     )
 
     // print ref
     console.log(
-      `Deployment for image ${address} now available at http://${result.ipAddress.ip}:${result.ipAddress.ports[0].port}`
+      `Deployment for image ${address} now available at http://${result.ipAddress.ip}:${result.ipAddress.ports[0].port}`,
     )
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

@@ -16,5 +16,5 @@ connect(
     // print output
     console.log("Hello from Dagger and Node " + version)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

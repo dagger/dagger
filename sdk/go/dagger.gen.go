@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -32,56 +33,6 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-// Optional is a helper type to represent optional values. Any method arguments
-// that use this wrapper type will be set as optional in the generated API.
-//
-// To construct an Optional from within a module, use the Opt helper function.
-type Optional[T any] struct {
-	value T
-	isSet bool
-}
-
-// Opt is a helper function to construct an Optional with the given value set.
-func Opt[T any](v T) Optional[T] {
-	return Optional[T]{value: v, isSet: true}
-}
-
-// OptEmpty is a helper function to construct an empty Optional.
-func OptEmpty[T any]() Optional[T] {
-	return Optional[T]{}
-}
-
-// Get returns the internal value of the optional and a boolean indicating if
-// the value was set explicitly by the caller.
-func (o *Optional[T]) Get() (T, bool) {
-	if o == nil {
-		var empty T
-		return empty, false
-	}
-	return o.value, o.isSet
-}
-
-// GetOr returns the internal value of the optional or the given default value
-// if the value was not explicitly set by the caller.
-func (o *Optional[T]) GetOr(defaultValue T) T {
-	if o == nil {
-		return defaultValue
-	}
-	if o.isSet {
-		return o.value
-	}
-	return defaultValue
-}
-
-func (o *Optional[T]) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&o.value)
-}
-
-func (o *Optional[T]) UnmarshalJSON(dt []byte) error {
-	o.isSet = true
-	return json.Unmarshal(dt, &o.value)
-}
-
 type DaggerObject querybuilder.GraphQLMarshaller
 
 func convertSlice[I any, O any](in []I, f func(I) O) []O {
@@ -90,13 +41,6 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 		out[i] = f(v)
 	}
 	return out
-}
-
-func convertOptionalVal[I any, O any](opt Optional[I], f func(I) O) Optional[O] {
-	if !opt.isSet {
-		return Optional[O]{}
-	}
-	return Optional[O]{value: f(opt.value), isSet: true}
 }
 
 // getCustomError parses a GraphQL error into a more specific error type.
@@ -152,12 +96,14 @@ type ExecError struct {
 func (e *ExecError) Error() string {
 	// As a default when just printing the error, include the stdout
 	// and stderr for visibility
-	return fmt.Sprintf(
-		"%s\nStdout:\n%s\nStderr:\n%s",
-		e.Message(),
-		e.Stdout,
-		e.Stderr,
-	)
+	msg := e.Message()
+	if strings.TrimSpace(e.Stdout) != "" {
+		msg += "\nStdout:\n" + e.Stdout
+	}
+	if strings.TrimSpace(e.Stderr) != "" {
+		msg += "\nStderr:\n" + e.Stderr
+	}
+	return msg
 }
 
 func (e *ExecError) Message() string {
@@ -1245,6 +1191,40 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 }
 
+// ContainerWithFilesOpts contains options for Container.WithFiles
+type ContainerWithFilesOpts struct {
+	// Permission given to the copied files (e.g., 0600).
+	Permissions int
+	// A user:group to set for the files.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
+// Retrieves this container plus the contents of the given files copied to the given path.
+func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWithFilesOpts) *Container {
+	q := r.q.Select("withFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+		// `owner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Indicate that subsequent operations should be featured more prominently in the UI.
 func (r *Container) WithFocus() *Container {
 	q := r.q.Select("withFocus")
@@ -1855,21 +1835,21 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 
 // DirectoryAsModuleOpts contains options for Directory.AsModule
 type DirectoryAsModuleOpts struct {
-	// An optional subpath of the directory which contains the module's source code.
+	// An optional subpath of the directory which contains the module's configuration file.
 	//
 	// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
 	//
 	// If not set, the module source code is loaded from the root of the directory.
-	SourceSubpath string
+	SourceRootPath string
 }
 
 // Load the directory as a Dagger module
 func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 	q := r.q.Select("asModule")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `sourceSubpath` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SourceSubpath) {
-			q = q.Arg("sourceSubpath", opts[i].SourceSubpath)
+		// `sourceRootPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
+			q = q.Arg("sourceRootPath", opts[i].SourceRootPath)
 		}
 	}
 
@@ -2133,6 +2113,30 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// DirectoryWithFilesOpts contains options for Directory.WithFiles
+type DirectoryWithFilesOpts struct {
+	// Permission given to the copied files (e.g., 0600).
+	Permissions int
+}
+
+// Retrieves this directory plus the contents of the given files copied to the given path.
+func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWithFilesOpts) *Directory {
+	q := r.q.Select("withFiles")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+		}
+	}
+	q = q.Arg("path", path)
+	q = q.Arg("sources", sources)
 
 	return &Directory{
 		q: q,
@@ -3130,12 +3134,12 @@ type GitModuleSource struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	cloneURL      *string
-	commit        *string
-	htmlURL       *string
-	id            *GitModuleSourceID
-	sourceSubpath *string
-	version       *string
+	cloneURL    *string
+	commit      *string
+	htmlURL     *string
+	id          *GitModuleSourceID
+	rootSubpath *string
+	version     *string
 }
 
 // The URL from which the source's git repo can be cloned.
@@ -3162,6 +3166,16 @@ func (r *GitModuleSource) Commit(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// The directory containing everything needed to load load and use the module.
+func (r *GitModuleSource) ContextDirectory() *Directory {
+	q := r.q.Select("contextDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // The URL to the source's git repo in a web browser
@@ -3217,12 +3231,12 @@ func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The path to the module source code dir specified by this source relative to the source's root directory.
-func (r *GitModuleSource) SourceSubpath(ctx context.Context) (string, error) {
-	if r.sourceSubpath != nil {
-		return *r.sourceSubpath, nil
+// The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
+func (r *GitModuleSource) RootSubpath(ctx context.Context) (string, error) {
+	if r.rootSubpath != nil {
+		return *r.rootSubpath, nil
 	}
-	q := r.q.Select("sourceSubpath")
+	q := r.q.Select("rootSubpath")
 
 	var response string
 
@@ -3961,8 +3975,18 @@ type LocalModuleSource struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id            *LocalModuleSourceID
-	sourceSubpath *string
+	id          *LocalModuleSourceID
+	rootSubpath *string
+}
+
+// The directory containing everything needed to load load and use the module.
+func (r *LocalModuleSource) ContextDirectory() *Directory {
+	q := r.q.Select("contextDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A unique identifier for this LocalModuleSource.
@@ -4005,12 +4029,12 @@ func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The path to the module source code dir specified by this source.
-func (r *LocalModuleSource) SourceSubpath(ctx context.Context) (string, error) {
-	if r.sourceSubpath != nil {
-		return *r.sourceSubpath, nil
+// The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
+func (r *LocalModuleSource) RootSubpath(ctx context.Context) (string, error) {
+	if r.rootSubpath != nil {
+		return *r.rootSubpath, nil
 	}
-	q := r.q.Select("sourceSubpath")
+	q := r.q.Select("rootSubpath")
 
 	var response string
 
@@ -4119,9 +4143,19 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The module's root directory containing the config file for it and its source (possibly as a subdir). It includes any generated code or updated config files created after initial load, but not any files/directories that were unchanged after sdk codegen was run.
-func (r *Module) GeneratedSourceRootDirectory() *Directory {
-	q := r.q.Select("generatedSourceRootDirectory")
+// The generated files and directories made on top of the module source's context directory.
+func (r *Module) GeneratedContextDiff() *Directory {
+	q := r.q.Select("generatedContextDiff")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The module source's context plus any configuration and source files created by codegen.
+func (r *Module) GeneratedContextDirectory() *Directory {
+	q := r.q.Select("generatedContextDirectory")
 
 	return &Directory{
 		q: q,
@@ -4308,17 +4342,6 @@ func (r *Module) Source() *ModuleSource {
 	}
 }
 
-// Update the module configuration to use the given dependencies.
-func (r *Module) WithDependencies(dependencies []*ModuleDependency) *Module {
-	q := r.q.Select("withDependencies")
-	q = q.Arg("dependencies", dependencies)
-
-	return &Module{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Retrieves the module with the given description
 func (r *Module) WithDescription(description string) *Module {
 	q := r.q.Select("withDescription")
@@ -4342,33 +4365,11 @@ func (r *Module) WithInterface(iface *TypeDef) *Module {
 	}
 }
 
-// Update the module configuration to use the given name.
-func (r *Module) WithName(name string) *Module {
-	q := r.q.Select("withName")
-	q = q.Arg("name", name)
-
-	return &Module{
-		q: q,
-		c: r.c,
-	}
-}
-
 // This module plus the given Object type and associated functions.
 func (r *Module) WithObject(object *TypeDef) *Module {
 	assertNotNil("object", object)
 	q := r.q.Select("withObject")
 	q = q.Arg("object", object)
-
-	return &Module{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Update the module configuration to use the given SDK.
-func (r *Module) WithSDK(sdk string) *Module {
-	q := r.q.Select("withSDK")
-	q = q.Arg("sdk", sdk)
 
 	return &Module{
 		q: q,
@@ -4465,11 +4466,15 @@ type ModuleSource struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	asString   *string
-	id         *ModuleSourceID
-	kind       *ModuleSourceKind
-	moduleName *string
-	subpath    *string
+	asString                     *string
+	configExists                 *bool
+	id                           *ModuleSourceID
+	kind                         *ModuleSourceKind
+	moduleName                   *string
+	moduleOriginalName           *string
+	resolveContextPathFromCaller *string
+	sourceRootSubpath            *string
+	sourceSubpath                *string
 }
 type WithModuleSourceFunc func(r *ModuleSource) *ModuleSource
 
@@ -4523,7 +4528,64 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The directory containing the actual module's source code, as determined from the root directory and subpath.
+// Returns whether the module source has a configuration file.
+func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
+	if r.configExists != nil {
+		return *r.configExists, nil
+	}
+	q := r.q.Select("configExists")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The directory containing everything needed to load load and use the module.
+func (r *ModuleSource) ContextDirectory() *Directory {
+	q := r.q.Select("contextDirectory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
+func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, error) {
+	q := r.q.Select("dependencies")
+
+	q = q.Select("id")
+
+	type dependencies struct {
+		Id ModuleDependencyID
+	}
+
+	convert := func(fields []dependencies) []ModuleDependency {
+		out := []ModuleDependency{}
+
+		for i := range fields {
+			val := ModuleDependency{id: &fields[i].Id}
+			val.q = querybuilder.Query().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
+			val.c = r.c
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []dependencies
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The directory containing the module configuration and source code (source code may be in a subdir).
 func (r *ModuleSource) Directory(path string) *Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
@@ -4587,12 +4649,38 @@ func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// If set, the name of the module this source references
+// If set, the name of the module this source references, including any overrides at runtime by callers.
 func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	if r.moduleName != nil {
 		return *r.moduleName, nil
 	}
 	q := r.q.Select("moduleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The original name of the module this source references, as defined in the module configuration.
+func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
+	if r.moduleOriginalName != nil {
+		return *r.moduleOriginalName, nil
+	}
+	q := r.q.Select("moduleOriginalName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
+func (r *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (string, error) {
+	if r.resolveContextPathFromCaller != nil {
+		return *r.resolveContextPathFromCaller, nil
+	}
+	q := r.q.Select("resolveContextPathFromCaller")
 
 	var response string
 
@@ -4612,27 +4700,96 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	}
 }
 
-// The root directory of the module source that contains its configuration and source code (which may be in a subdirectory of this root).
-func (r *ModuleSource) RootDirectory() *Directory {
-	q := r.q.Select("rootDirectory")
+// Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
+func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
+	q := r.q.Select("resolveFromCaller")
 
-	return &Directory{
+	return &ModuleSource{
 		q: q,
 		c: r.c,
 	}
 }
 
-// The path to the module subdirectory containing the actual module's source code.
-func (r *ModuleSource) Subpath(ctx context.Context) (string, error) {
-	if r.subpath != nil {
-		return *r.subpath, nil
+// The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
+func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
+	if r.sourceRootSubpath != nil {
+		return *r.sourceRootSubpath, nil
 	}
-	q := r.q.Select("subpath")
+	q := r.q.Select("sourceRootSubpath")
 
 	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// The path relative to context of the module implementation source code.
+func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
+	if r.sourceSubpath != nil {
+		return *r.sourceSubpath, nil
+	}
+	q := r.q.Select("sourceSubpath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Update the module source with a new context directory. Only valid for local sources.
+func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
+	assertNotNil("dir", dir)
+	q := r.q.Select("withContextDirectory")
+	q = q.Arg("dir", dir)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Append the provided dependencies to the module source's dependency list.
+func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *ModuleSource {
+	q := r.q.Select("withDependencies")
+	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Update the module source with a new name.
+func (r *ModuleSource) WithName(name string) *ModuleSource {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Update the module source with a new SDK.
+func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
+	q := r.q.Select("withSDK")
+	q = q.Arg("sdk", sdk)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Update the module source with a new source subpath.
+func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
+	q := r.q.Select("withSourceSubpath")
+	q = q.Arg("path", path)
+
+	return &ModuleSource{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A definition of a custom object defined in a Module.
@@ -5557,8 +5714,6 @@ func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependency
 
 // ModuleSourceOpts contains options for Client.ModuleSource
 type ModuleSourceOpts struct {
-	// An explicitly set root directory for the module source. This is required to load local sources as modules; other source types implicitly encode the root directory and do not require this.
-	RootDirectory *Directory
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
 }
@@ -5567,10 +5722,6 @@ type ModuleSourceOpts struct {
 func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.q.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `rootDirectory` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RootDirectory) {
-			q = q.Arg("rootDirectory", opts[i].RootDirectory)
-		}
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {
 			q = q.Arg("stable", opts[i].Stable)

@@ -18,5 +18,5 @@ connect(
       longTimeTask(client),
     ])
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

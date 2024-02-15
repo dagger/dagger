@@ -1293,6 +1293,41 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def with_files(
+        self,
+        path: str,
+        sources: Sequence["File"],
+        *,
+        permissions: int | None = None,
+        owner: str | None = "",
+    ) -> "Container":
+        """Retrieves this container plus the contents of the given files copied
+        to the given path.
+
+        Parameters
+        ----------
+        path:
+            Location where copied files should be placed (e.g., "/src").
+        sources:
+            Identifiers of the files to copy.
+        permissions:
+            Permission given to the copied files (e.g., 0600).
+        owner:
+            A user:group to set for the files.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sources", sources),
+            Arg("permissions", permissions, None),
+            Arg("owner", owner, ""),
+        ]
+        _ctx = self._select("withFiles", _args)
+        return Container(_ctx)
+
+    @typecheck
     def with_focus(self) -> "Container":
         """Indicate that subsequent operations should be featured more
         prominently in the UI.
@@ -1969,15 +2004,15 @@ class Directory(Type):
     def as_module(
         self,
         *,
-        source_subpath: str | None = "/",
+        source_root_path: str | None = ".",
     ) -> "Module":
         """Load the directory as a Dagger module
 
         Parameters
         ----------
-        source_subpath:
+        source_root_path:
             An optional subpath of the directory which contains the module's
-            source code.
+            configuration file.
             This is needed when the module code is in a subdirectory but
             requires parent directories to be loaded in order to execute. For
             example, the module source code may need a go.mod, project.toml,
@@ -1986,7 +2021,7 @@ class Directory(Type):
             directory.
         """
         _args = [
-            Arg("sourceSubpath", source_subpath, "/"),
+            Arg("sourceRootPath", source_root_path, "."),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -2290,6 +2325,34 @@ class Directory(Type):
             Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withFile", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def with_files(
+        self,
+        path: str,
+        sources: Sequence["File"],
+        *,
+        permissions: int | None = None,
+    ) -> "Directory":
+        """Retrieves this directory plus the contents of the given files copied
+        to the given path.
+
+        Parameters
+        ----------
+        path:
+            Location where copied files should be placed (e.g., "/src").
+        sources:
+            Identifiers of the files to copy.
+        permissions:
+            Permission given to the copied files (e.g., 0600).
+        """
+        _args = [
+            Arg("path", path),
+            Arg("sources", sources),
+            Arg("permissions", permissions, None),
+        ]
+        _ctx = self._select("withFiles", _args)
         return Directory(_ctx)
 
     @typecheck
@@ -3406,6 +3469,15 @@ class GitModuleSource(Type):
         return await _ctx.execute(str)
 
     @typecheck
+    def context_directory(self) -> Directory:
+        """The directory containing everything needed to load load and use the
+        module.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextDirectory", _args)
+        return Directory(_ctx)
+
+    @typecheck
     async def html_url(self) -> str:
         """The URL to the source's git repo in a web browser
 
@@ -3453,9 +3525,10 @@ class GitModuleSource(Type):
         return await _ctx.execute(GitModuleSourceID)
 
     @typecheck
-    async def source_subpath(self) -> str:
-        """The path to the module source code dir specified by this source
-        relative to the source's root directory.
+    async def root_subpath(self) -> str:
+        """The path to the root of the module source under the context directory.
+        This directory contains its configuration file. It also contains its
+        source code (possibly as a subdirectory).
 
         Returns
         -------
@@ -3472,7 +3545,7 @@ class GitModuleSource(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("sourceSubpath", _args)
+        _ctx = self._select("rootSubpath", _args)
         return await _ctx.execute(str)
 
     @typecheck
@@ -4135,6 +4208,15 @@ class LocalModuleSource(Type):
     an arbitrary directory."""
 
     @typecheck
+    def context_directory(self) -> Directory:
+        """The directory containing everything needed to load load and use the
+        module.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextDirectory", _args)
+        return Directory(_ctx)
+
+    @typecheck
     async def id(self) -> LocalModuleSourceID:
         """A unique identifier for this LocalModuleSource.
 
@@ -4160,8 +4242,10 @@ class LocalModuleSource(Type):
         return await _ctx.execute(LocalModuleSourceID)
 
     @typecheck
-    async def source_subpath(self) -> str:
-        """The path to the module source code dir specified by this source.
+    async def root_subpath(self) -> str:
+        """The path to the root of the module source under the context directory.
+        This directory contains its configuration file. It also contains its
+        source code (possibly as a subdirectory).
 
         Returns
         -------
@@ -4178,7 +4262,7 @@ class LocalModuleSource(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("sourceSubpath", _args)
+        _ctx = self._select("rootSubpath", _args)
         return await _ctx.execute(str)
 
 
@@ -4245,14 +4329,21 @@ class Module(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def generated_source_root_directory(self) -> Directory:
-        """The module's root directory containing the config file for it and its
-        source (possibly as a subdir). It includes any generated code or
-        updated config files created after initial load, but not any
-        files/directories that were unchanged after sdk codegen was run.
+    def generated_context_diff(self) -> Directory:
+        """The generated files and directories made on top of the module source's
+        context directory.
         """
         _args: list[Arg] = []
-        _ctx = self._select("generatedSourceRootDirectory", _args)
+        _ctx = self._select("generatedContextDiff", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def generated_context_directory(self) -> Directory:
+        """The module source's context plus any configuration and source files
+        created by codegen.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("generatedContextDirectory", _args)
         return Directory(_ctx)
 
     @typecheck
@@ -4401,24 +4492,6 @@ class Module(Type):
         return ModuleSource(_ctx)
 
     @typecheck
-    def with_dependencies(
-        self,
-        dependencies: Sequence["ModuleDependency"],
-    ) -> "Module":
-        """Update the module configuration to use the given dependencies.
-
-        Parameters
-        ----------
-        dependencies:
-            The dependency modules to install.
-        """
-        _args = [
-            Arg("dependencies", dependencies),
-        ]
-        _ctx = self._select("withDependencies", _args)
-        return Module(_ctx)
-
-    @typecheck
     def with_description(self, description: str) -> "Module":
         """Retrieves the module with the given description
 
@@ -4443,42 +4516,12 @@ class Module(Type):
         return Module(_ctx)
 
     @typecheck
-    def with_name(self, name: str) -> "Module":
-        """Update the module configuration to use the given name.
-
-        Parameters
-        ----------
-        name:
-            The name to use.
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("withName", _args)
-        return Module(_ctx)
-
-    @typecheck
     def with_object(self, object: "TypeDef") -> "Module":
         """This module plus the given Object type and associated functions."""
         _args = [
             Arg("object", object),
         ]
         _ctx = self._select("withObject", _args)
-        return Module(_ctx)
-
-    @typecheck
-    def with_sdk(self, sdk: str) -> "Module":
-        """Update the module configuration to use the given SDK.
-
-        Parameters
-        ----------
-        sdk:
-            The SDK to use.
-        """
-        _args = [
-            Arg("sdk", sdk),
-        ]
-        _ctx = self._select("withSDK", _args)
         return Module(_ctx)
 
     @typecheck
@@ -4618,9 +4661,50 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     @typecheck
+    async def config_exists(self) -> bool:
+        """Returns whether the module source has a configuration file.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("configExists", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
+    def context_directory(self) -> Directory:
+        """The directory containing everything needed to load load and use the
+        module.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("contextDirectory", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    async def dependencies(self) -> list[ModuleDependency]:
+        """The dependencies of the module source. Includes dependencies from the
+        configuration and any extras from withDependencies calls.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("dependencies", _args)
+        _ctx = ModuleDependency(_ctx)._select_multiple(
+            _name="name",
+        )
+        return await _ctx.execute(list[ModuleDependency])
+
+    @typecheck
     def directory(self, path: str) -> Directory:
-        """The directory containing the actual module's source code, as
-        determined from the root directory and subpath.
+        """The directory containing the module configuration and source code
+        (source code may be in a subdir).
 
         Parameters
         ----------
@@ -4680,7 +4764,8 @@ class ModuleSource(Type):
 
     @typecheck
     async def module_name(self) -> str:
-        """If set, the name of the module this source references
+        """If set, the name of the module this source references, including any
+        overrides at runtime by callers.
 
         Returns
         -------
@@ -4701,35 +4786,9 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     @typecheck
-    def resolve_dependency(self, dep: "ModuleSource") -> "ModuleSource":
-        """Resolve the provided module source arg as a dependency relative to
-        this module source.
-
-        Parameters
-        ----------
-        dep:
-            The dependency module source to resolve.
-        """
-        _args = [
-            Arg("dep", dep),
-        ]
-        _ctx = self._select("resolveDependency", _args)
-        return ModuleSource(_ctx)
-
-    @typecheck
-    def root_directory(self) -> Directory:
-        """The root directory of the module source that contains its
-        configuration and source code (which may be in a subdirectory of this
-        root).
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("rootDirectory", _args)
-        return Directory(_ctx)
-
-    @typecheck
-    async def subpath(self) -> str:
-        """The path to the module subdirectory containing the actual module's
-        source code.
+    async def module_original_name(self) -> str:
+        """The original name of the module this source references, as defined in
+        the module configuration.
 
         Returns
         -------
@@ -4746,8 +4805,183 @@ class ModuleSource(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("subpath", _args)
+        _ctx = self._select("moduleOriginalName", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    async def resolve_context_path_from_caller(self) -> str:
+        """The path to the module source's context directory on the caller's
+        filesystem. Only valid for local sources.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("resolveContextPathFromCaller", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def resolve_dependency(self, dep: "ModuleSource") -> "ModuleSource":
+        """Resolve the provided module source arg as a dependency relative to
+        this module source.
+
+        Parameters
+        ----------
+        dep:
+            The dependency module source to resolve.
+        """
+        _args = [
+            Arg("dep", dep),
+        ]
+        _ctx = self._select("resolveDependency", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    def resolve_from_caller(self) -> "ModuleSource":
+        """Load the source from its path on the caller's filesystem, including
+        only needed+configured files and directories. Only valid for local
+        sources.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("resolveFromCaller", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    async def source_root_subpath(self) -> str:
+        """The path relative to context of the root of the module source, which
+        contains dagger.json. It also contains the module implementation
+        source code, but that may or may not being a subdir of this root.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceRootSubpath", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def source_subpath(self) -> str:
+        """The path relative to context of the module implementation source code.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceSubpath", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def with_context_directory(self, dir: Directory) -> "ModuleSource":
+        """Update the module source with a new context directory. Only valid for
+        local sources.
+
+        Parameters
+        ----------
+        dir:
+            The directory to set as the context directory.
+        """
+        _args = [
+            Arg("dir", dir),
+        ]
+        _ctx = self._select("withContextDirectory", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    def with_dependencies(
+        self,
+        dependencies: Sequence[ModuleDependency],
+    ) -> "ModuleSource":
+        """Append the provided dependencies to the module source's dependency
+        list.
+
+        Parameters
+        ----------
+        dependencies:
+            The dependencies to append.
+        """
+        _args = [
+            Arg("dependencies", dependencies),
+        ]
+        _ctx = self._select("withDependencies", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    def with_name(self, name: str) -> "ModuleSource":
+        """Update the module source with a new name.
+
+        Parameters
+        ----------
+        name:
+            The name to set.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    def with_sdk(self, sdk: str) -> "ModuleSource":
+        """Update the module source with a new SDK.
+
+        Parameters
+        ----------
+        sdk:
+            The SDK to set.
+        """
+        _args = [
+            Arg("sdk", sdk),
+        ]
+        _ctx = self._select("withSDK", _args)
+        return ModuleSource(_ctx)
+
+    @typecheck
+    def with_source_subpath(self, path: str) -> "ModuleSource":
+        """Update the module source with a new source subpath.
+
+        Parameters
+        ----------
+        path:
+            The path to set as the source subpath.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withSourceSubpath", _args)
+        return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
         """Call the provided callable with current ModuleSource.
@@ -5627,7 +5861,6 @@ class Client(Root):
         self,
         ref_string: str,
         *,
-        root_directory: Directory | None = None,
         stable: bool | None = False,
     ) -> ModuleSource:
         """Create a new module source instance from a source ref string.
@@ -5636,17 +5869,12 @@ class Client(Root):
         ----------
         ref_string:
             The string ref representation of the module source
-        root_directory:
-            An explicitly set root directory for the module source. This is
-            required to load local sources as modules; other source types
-            implicitly encode the root directory and do not require this.
         stable:
             If true, enforce that the source is a stable version for source
             kinds that support versioning.
         """
         _args = [
             Arg("refString", ref_string),
-            Arg("rootDirectory", root_directory, None),
             Arg("stable", stable, False),
         ]
         _ctx = self._select("moduleSource", _args)

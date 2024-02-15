@@ -14,6 +14,15 @@ namespace Dagger;
 class LocalModuleSource extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * The directory containing everything needed to load load and use the module.
+     */
+    public function contextDirectory(): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('contextDirectory');
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this LocalModuleSource.
      */
     public function id(): LocalModuleSourceId
@@ -23,11 +32,11 @@ class LocalModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The path to the module source code dir specified by this source.
+     * The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
      */
-    public function sourceSubpath(): string
+    public function rootSubpath(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('rootSubpath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'rootSubpath');
     }
 }

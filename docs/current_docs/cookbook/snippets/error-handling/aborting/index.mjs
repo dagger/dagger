@@ -18,7 +18,7 @@ connect(
 
     console.log("Test passed!")
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
 
 async function test(client) {

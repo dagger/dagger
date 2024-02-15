@@ -58,14 +58,14 @@ connect(
 
     // update service
     const [gcrServiceUpdateOperation] = await gcrClient.updateService(
-      gcrServiceUpdateRequest
+      gcrServiceUpdateRequest,
     )
     const [gcrServiceUpdateResponse] = await gcrServiceUpdateOperation.promise()
 
     // print ref
     console.log(
-      `Deployment for image ${gcrContainerPublishResponse} now available at ${gcrServiceUpdateResponse.uri}`
+      `Deployment for image ${gcrContainerPublishResponse} now available at ${gcrServiceUpdateResponse.uri}`,
     )
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

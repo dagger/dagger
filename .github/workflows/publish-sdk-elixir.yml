@@ -16,3 +16,10 @@ jobs:
           GITHUB_PAT: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+  notify:
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "🧪 Elixir SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sort"
 
+	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/moby/buildkit/solver/pb"
@@ -208,7 +209,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Name: gqlFieldName(mod.Name()),
 				// Description: "TODO", // XXX(vito)
 				Type:   obj,
-				Module: obj.Module.InstanceID,
+				Module: obj.Module.IDModule(),
 			},
 			func(ctx context.Context, self dagql.Object, _ map[string]dagql.Input) (dagql.Typed, error) {
 				return &ModuleObject{
@@ -242,7 +243,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	spec.Name = gqlFieldName(mod.Name())
 	spec.ImpurityReason = "Module functions are currently always impure."
-	spec.Module = obj.Module.InstanceID
+	spec.Module = obj.Module.IDModule()
 
 	dag.Root().ObjectType().Extend(
 		spec,
@@ -291,7 +292,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			Name:        field.Name,
 			Description: field.Description,
 			Type:        field.TypeDef.ToTyped(),
-			Module:      mod.InstanceID,
+			Module:      mod.IDModule(),
 		},
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input) (dagql.Typed, error) {
 			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
@@ -328,13 +329,16 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 	if err != nil {
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
-	spec.Module = mod.InstanceID
+	spec.Module = mod.IDModule()
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input) (dagql.Typed, error) {
 			opts := &CallOpts{
 				ParentVal: obj.Self.Fields,
-				Cache:     false, // TODO
+				// TODO: there may be a more elegant way to do this, but the desired
+				// effect is to cache SDK module calls, which we used to do pre-DagQL.
+				// We should figure out how user modules can opt in to caching, too.
+				Cache: analytics.IsInternal(ctx),
 				// Pipeline:  _, // TODO
 				SkipSelfSchema: false, // TODO?
 			}

@@ -1,6 +1,5 @@
 name: Publish Helm Chart
 on:
-  workflow_dispatch:
   push:
     tags: ["helm/chart/v**"]
 
@@ -21,3 +20,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+  notify:
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "🎡 Helm Chart: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

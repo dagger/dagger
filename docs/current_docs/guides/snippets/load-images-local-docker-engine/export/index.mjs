@@ -19,5 +19,5 @@ connect(
     // print result
     console.log(`Exported image: ${result}`)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

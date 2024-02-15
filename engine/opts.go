@@ -109,13 +109,14 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 }
 
 type LocalImportOpts struct {
-	OwnerClientID      string   `json:"owner_client_id"`
 	Path               string   `json:"path"`
 	IncludePatterns    []string `json:"include_patterns"`
 	ExcludePatterns    []string `json:"exclude_patterns"`
 	FollowPaths        []string `json:"follow_paths"`
 	ReadSingleFileOnly bool     `json:"read_single_file_only"`
 	MaxFileSize        int64    `json:"max_file_size"`
+	StatPathOnly       bool     `json:"stat_path_only"`
+	StatReturnAbsPath  bool     `json:"stat_return_abs_path"`
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
@@ -169,7 +170,6 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 }
 
 type LocalExportOpts struct {
-	DestClientID       string      `json:"dest_client_id"`
 	Path               string      `json:"path"`
 	IsFileStream       bool        `json:"is_file_stream"`
 	FileOriginalName   string      `json:"file_original_name"`

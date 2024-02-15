@@ -15,3 +15,10 @@ jobs:
           PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
           PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+  notify:
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "🐍 Python SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

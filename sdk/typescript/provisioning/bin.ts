@@ -38,7 +38,7 @@ export class Bin implements EngineConn {
     `${
       process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache
     }`,
-    "dagger"
+    "dagger",
   )
 
   private readonly DAGGER_CLI_BIN_PREFIX = "dagger"
@@ -82,23 +82,23 @@ export class Bin implements EngineConn {
     // Create a temporary bin file path
     this.createCacheDir()
     const tmpBinDownloadDir = fs.mkdtempSync(
-      path.join(this.cacheDir, `temp-${this.getRandomId()}`)
+      path.join(this.cacheDir, `temp-${this.getRandomId()}`),
     )
     const tmpBinPath = this.buildOsExePath(
       tmpBinDownloadDir,
-      this.DAGGER_CLI_BIN_PREFIX
+      this.DAGGER_CLI_BIN_PREFIX,
     )
 
     try {
       // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
       const actualChecksum: string = await this.extractArchive(
         tmpBinDownloadDir,
-        this.normalizedOS()
+        this.normalizedOS(),
       )
       const expectedChecksum = await this.expectedChecksum()
       if (actualChecksum !== expectedChecksum) {
         throw new Error(
-          `checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`
+          `checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`,
         )
       }
       fs.chmodSync(tmpBinPath, 0o700)
@@ -108,7 +108,7 @@ export class Bin implements EngineConn {
       fs.rmSync(tmpBinDownloadDir, { recursive: true })
       throw new InitEngineSessionBinaryError(
         `failed to download dagger cli binary: ${e}`,
-        { cause: e as Error }
+        { cause: e as Error },
       )
     }
 
@@ -168,7 +168,7 @@ export class Bin implements EngineConn {
    */
   private async runEngineSession(
     binPath: string,
-    opts: ConnectOpts
+    opts: ConnectOpts,
   ): Promise<GraphQLClient> {
     const args = [binPath, "session"]
 
@@ -221,8 +221,8 @@ export class Bin implements EngineConn {
           reject(
             new EngineSessionConnectionTimeoutError(
               "Engine connection timeout",
-              { timeOutDuration }
-            )
+              { timeOutDuration },
+            ),
           )
         }, timeOutDuration).unref() // long timeout to account for extensions, though that should be optimized in future
       }),
@@ -236,7 +236,7 @@ export class Bin implements EngineConn {
   }
 
   private async readConnectParams(
-    stdoutReader: readline.Interface
+    stdoutReader: readline.Interface,
   ): Promise<ConnectParams | undefined> {
     for await (const line of stdoutReader) {
       // parse the the line as json-encoded connect params
@@ -246,7 +246,7 @@ export class Bin implements EngineConn {
       }
       throw new EngineSessionConnectParamsParseError(
         `invalid connect params: ${line}`,
-        { parsedLine: line }
+        { parsedLine: line },
       )
     }
 
@@ -293,7 +293,7 @@ export class Bin implements EngineConn {
   private buildBinPath(): string {
     return this.buildOsExePath(
       this.cacheDir,
-      `${this.DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`
+      `${this.DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`,
     )
   }
 
@@ -369,7 +369,7 @@ export class Bin implements EngineConn {
     const checksums = await fetch(this.cliChecksumURL())
     if (!checksums.ok) {
       throw new Error(
-        `failed to download checksums.txt from ${this.cliChecksumURL()}`
+        `failed to download checksums.txt from ${this.cliChecksumURL()}`,
       )
     }
     const checksumsText = await checksums.text()
@@ -387,7 +387,7 @@ export class Bin implements EngineConn {
     const expectedChecksum = checksumMap.get(this.cliArchiveName())
     if (!expectedChecksum) {
       throw new Error(
-        `failed to find checksum for ${this.cliArchiveName()} in checksums.txt`
+        `failed to find checksum for ${this.cliArchiveName()} in checksums.txt`,
       )
     }
     return expectedChecksum
@@ -398,7 +398,7 @@ export class Bin implements EngineConn {
     const archiveResp = await fetch(this.cliArchiveURL())
     if (!archiveResp.ok) {
       throw new Error(
-        `failed to download dagger cli archive from ${this.cliArchiveURL()}`
+        `failed to download dagger cli archive from ${this.cliArchiveURL()}`,
       )
     }
     if (!archiveResp.body) {
@@ -408,7 +408,7 @@ export class Bin implements EngineConn {
     // create a temporary file to store the archive
     const archivePath = path.join(
       destDir,
-      os === "windows" ? "dagger.zip" : "dagger.tar.gz"
+      os === "windows" ? "dagger.zip" : "dagger.tar.gz",
     )
     const archiveFile = fs.createWriteStream(archivePath)
     await new Promise((resolve, reject) => {

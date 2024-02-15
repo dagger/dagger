@@ -1766,6 +1766,34 @@ func TestContainerWithFile(t *testing.T) {
 	require.Equal(t, "some-content", contents)
 }
 
+func TestContainerWithFiles(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	file1 := c.Directory().
+		WithNewFile("first-file", "file1 content").
+		File("first-file")
+	file2 := c.Directory().
+		WithNewFile("second-file", "file2 content").
+		File("second-file")
+	files := []*dagger.File{file1, file2}
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithFiles("myfiles", files)
+
+	contents, err := ctr.WithExec([]string{"cat", "/myfiles/first-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "file1 content", contents)
+
+	contents, err = ctr.WithExec([]string{"cat", "/myfiles/second-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "file2 content", contents)
+}
+
 func TestContainerWithNewFile(t *testing.T) {
 	t.Parallel()
 

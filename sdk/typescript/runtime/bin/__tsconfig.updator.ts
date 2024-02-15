@@ -1,12 +1,9 @@
 import * as fs from "fs"
 
-const moduleProjectDirectory = `/src/`
-const tsConfigPath = `${moduleProjectDirectory}/tsconfig.json`
+const tsConfigPath = `./tsconfig.json`
 
 const daggerPathAlias = "@dagger.io/dagger"
 const daggerPath = "./sdk"
-
-console.log(tsConfigPath)
 
 // If the tsconfig.json file doesn't exist, create it with default config.
 if (!fs.existsSync(tsConfigPath)) {

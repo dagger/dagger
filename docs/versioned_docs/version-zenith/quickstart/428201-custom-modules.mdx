@@ -23,46 +23,46 @@ A better approach is to create a programmable Dagger module, which can then call
 
 To see this in action, create a custom Dagger module to build a Go binary, add it to a container image and publish the container image to a registry.
 
-1. Begin by creating a new directory for your Dagger module and running `dagger mod init` to bootstrap a new module:
+1. Begin by creating a new directory for your Dagger module and running `dagger init` to bootstrap a new module:
 
     <Tabs groupId="language">
     <TabItem value="Go">
 
     ```shell
     mkdir my-module
-    dagger mod init --name=my-module --sdk=go
+    dagger init --name=my-module --sdk=go
     ```
 
-    This will generate a `dagger.json` module file, an initial `main.go` source file, as well as a generated `dagger.gen.go` and `querybuilder` directory for the generated module code.
+    This will generate a `dagger.json` module file, an initial `dagger/main.go` source file, as well as a generated `dagger/dagger.gen.go` and `dagger/querybuilder` directory for the generated module code.
 
     </TabItem>
     <TabItem value="Python">
 
     ```shell
     mkdir my-module
-    dagger mod init --name=my-module --sdk=python
+    dagger init --name=my-module --sdk=python
     ```
 
-    This will generate a `dagger.json` module file, initial `src/main.py` and `pyproject.toml` files, as well as a generated `sdk` folder for local development.
+    This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
 
     </TabItem>
     <TabItem value="TypeScript">
 
     ```shell
     mkdir my-module
-    dagger mod init --name=my-module --sdk=typescript
+    dagger init --name=my-module --sdk=typescript
     ```
 
-    This will generate a `dagger.json` module file, initial `src/index.ts`, `package.json` and `tsconfig.json` files, as well as a generated `sdk` folder for local development.
+    This will generate a `dagger.json` module file, initial `dagger/src/index.ts`, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
 
     </TabItem>
     </Tabs>
 
-1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new module using `dagger mod install`:
+1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new module using `dagger install`:
 
     ```shell
-    dagger mod install github.com/kpenfound/dagger-modules/golang
-    dagger mod install github.com/shykes/daggerverse/wolfi
+    dagger install github.com/kpenfound/dagger-modules/golang
+    dagger install github.com/shykes/daggerverse/wolfi
     ```
 
 1. Update the generated module template:

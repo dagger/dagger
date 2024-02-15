@@ -40,17 +40,6 @@ func TestIface(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "c", str)
 	})
-	t.Run("withOptionalTypeStr", func(t *testing.T) {
-		t.Parallel()
-		str, err := test.WithOptionalTypeStr(impl.AsTestCustomIface(), TestWithOptionalTypeStrOpts{
-			StrArg: "d",
-		}).Str(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "d", str)
-		str, err = test.WithOptionalTypeStr(impl.AsTestCustomIface()).Str(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "a", str)
-	})
 	t.Run("withOptionalPragmaStr", func(t *testing.T) {
 		t.Parallel()
 		str, err := test.WithOptionalPragmaStr(impl.AsTestCustomIface(), TestWithOptionalPragmaStrOpts{
@@ -138,20 +127,6 @@ func TestIface(t *testing.T) {
 		dirEnts, err := dir.Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, dirEnts, "file2")
-	})
-	t.Run("withOptionalTypeObj", func(t *testing.T) {
-		t.Parallel()
-		obj := test.WithOptionalTypeObj(impl.AsTestCustomIface(), TestWithOptionalTypeObjOpts{
-			ObjArg: dag.Directory().WithNewFile("/file3", "file3"),
-		}).Obj()
-		dirEnts, err := obj.Entries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, dirEnts, "file3")
-
-		obj = test.WithOptionalTypeObj(impl.AsTestCustomIface()).Obj()
-		dirEnts, err = obj.Entries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, dirEnts, "file1")
 	})
 	t.Run("objList", func(t *testing.T) {
 		t.Parallel()
@@ -307,13 +282,6 @@ func TestIface(t *testing.T) {
 		t.Run("optionals", func(t *testing.T) {
 			t.Parallel()
 			strs, err := test.
-				WithOptionalTypeIface().
-				WithOptionalTypeIface(TestWithOptionalTypeIfaceOpts{Iface: impl.AsTestCustomIface()}).
-				WithOptionalTypeIface().
-				ParentIfaceFields(ctx)
-			require.NoError(t, err)
-			require.Equal(t, []string{"a"}, strs)
-			strs, err = test.
 				WithOptionalPragmaIface().
 				WithOptionalPragmaIface(TestWithOptionalPragmaIfaceOpts{Iface: impl.AsTestCustomIface()}).
 				WithOptionalPragmaIface().

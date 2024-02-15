@@ -7,16 +7,16 @@ defmodule Dagger.Directory do
   defstruct [:selection, :client]
 
   (
-    @doc "Load the directory as a Dagger module\n\n\n\n## Optional Arguments\n\n* `source_subpath` - An optional subpath of the directory which contains the module's source code.\n\nThis is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.\n\nIf not set, the module source code is loaded from the root of the directory."
+    @doc "Load the directory as a Dagger module\n\n\n\n## Optional Arguments\n\n* `source_root_path` - An optional subpath of the directory which contains the module's configuration file.\n\nThis is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.\n\nIf not set, the module source code is loaded from the root of the directory."
     @spec as_module(t(), keyword()) :: Dagger.Module.t()
     def as_module(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "asModule")
 
       selection =
-        if is_nil(optional_args[:source_subpath]) do
+        if is_nil(optional_args[:source_root_path]) do
           selection
         else
-          arg(selection, "sourceSubpath", optional_args[:source_subpath])
+          arg(selection, "sourceRootPath", optional_args[:source_root_path])
         end
 
       %Dagger.Module{selection: selection, client: directory.client}
@@ -232,6 +232,26 @@ defmodule Dagger.Directory do
         {:ok, id} = Dagger.File.id(source)
         selection = arg(selection, "source", id)
       )
+
+      selection =
+        if is_nil(optional_args[:permissions]) do
+          selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
+        end
+
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this directory plus the contents of the given files copied to the given path.\n\n## Required Arguments\n\n* `path` - Location where copied files should be placed (e.g., \"/src\").\n* `sources` - Identifiers of the files to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied files (e.g., 0600)."
+    @spec with_files(t(), Dagger.String.t(), [Dagger.FileID.t()], keyword()) ::
+            Dagger.Directory.t()
+    def with_files(%__MODULE__{} = directory, path, sources, optional_args \\ []) do
+      selection = select(directory.selection, "withFiles")
+      selection = arg(selection, "path", path)
+      selection = arg(selection, "sources", sources)
 
       selection =
         if is_nil(optional_args[:permissions]) do

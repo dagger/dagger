@@ -9,7 +9,7 @@ connect(
       .from("docker")
       .withUnixSocket(
         "/var/run/docker.sock",
-        client.host().unixSocket("/var/run/docker.sock")
+        client.host().unixSocket("/var/run/docker.sock"),
       )
       .withExec(["docker", "run", "--rm", "alpine", "uname", "-a"])
       .stdout()
@@ -17,5 +17,5 @@ connect(
     // print docker run
     console.log(await ctr.stdout())
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

@@ -30,7 +30,13 @@ jobs:
           cache-dependency-path: "internal/mage/go.sum"
       - name: "Publish Engine & CLI"
         run: |
-          ./hack/make dagger:publish ${{ github.ref_name }}
+          if [ $GITHUB_REF_NAME == 'main' ]; then
+            # this is a push to the main branch, publish to the commit we're at
+            ./hack/make dagger:publish ${{ github.sha }}
+          else
+            # this is a tag push, publish to that tag
+            ./hack/make dagger:publish ${{ github.ref_name }}
+          fi
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -62,16 +68,24 @@ jobs:
           branch: bump-engine
           draft: true
 
+  notify:
+    if: github.ref_type == 'tag'
+    needs: publish
+    uses: ./.github/workflows/_new_release_notification.yml
+    secrets: inherit
+    with:
+      message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
   scan-engine:
     runs-on: ubuntu-latest
     name: "Scan Engine Image for Vulnerabilities"
-    needs: [publish]
+    needs: publish
     # only run this on push events, not in PRs (since we only publish images during pushes)
     if: github.event_name == 'push' && github.repository == 'dagger/dagger'
     steps:
       - uses: aquasecurity/trivy-action@0.11.2
         with:
-          image-ref: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main
+          image-ref: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${{ github.sha }}
           format: "json"
           exit-code: "1"
           severity: "CRITICAL,HIGH"
@@ -82,7 +96,7 @@ jobs:
     # has to be skipped, AND after every push to main/tags, in which case publish
     # must run first. This is unfortunately quite annoying to express in yaml...
     # https://github.com/actions/runner/issues/491#issuecomment-850884422
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -97,7 +111,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_darwin_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_darwin_amd64.tar.gz"
@@ -162,7 +176,7 @@ jobs:
 
   test-provision-go-linux:
     name: "Test SDK Provision / go / linux"
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -178,7 +192,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
@@ -206,7 +220,7 @@ jobs:
 
   test-provision-python-linux:
     name: "Test SDK Provision / python / linux"
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -222,7 +236,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
@@ -253,7 +267,7 @@ jobs:
 
   test-provision-typescript-linux:
     name: "Test SDK Provision / TypeScript / linux"
-    needs: [publish]
+    needs: publish
     if: |
       always() &&
       github.repository == 'dagger/dagger' &&
@@ -269,7 +283,7 @@ jobs:
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"

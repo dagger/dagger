@@ -13,7 +13,7 @@ connect(
       .withWorkdir("/src")
       .withMountedCache(
         "/src/node_modules",
-        client.cacheVolume("node-18-myapp-myenv")
+        client.cacheVolume("node-18-myapp-myenv"),
       )
       .withMountedCache("/root/.npm", client.cacheVolume("node-18"))
 
@@ -21,5 +21,5 @@ connect(
     // install application dependencies
     await source.withExec(["npm", "install"]).sync()
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

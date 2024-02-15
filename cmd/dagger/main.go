@@ -21,6 +21,9 @@ import (
 )
 
 var (
+	cpuprofile = os.Getenv("CPUPROFILE")
+	pprofAddr  = os.Getenv("PPROF")
+
 	execGroup = &cobra.Group{
 		ID:    "exec",
 		Title: "Execution Commands",
@@ -28,9 +31,7 @@ var (
 
 	workdir string
 
-	cpuprofile string
-	pprofAddr  string
-	debug      bool
+	debug bool
 )
 
 func init() {
@@ -41,10 +42,8 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Show more information for debugging")
-	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
-	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
 
-	for _, fl := range []string{"workdir", "cpuprofile", "pprof"} {
+	for _, fl := range []string{"workdir"} {
 		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {
 			fmt.Println("Error hiding flag: "+fl, err)
 			os.Exit(1)
@@ -99,6 +98,7 @@ var rootCmd = &cobra.Command{
 			}
 
 			pprof.StartCPUProfile(profF)
+			cobra.OnFinalize(pprof.StopCPUProfile)
 
 			tracePath := cpuprofile + ".trace"
 
@@ -110,6 +110,7 @@ var rootCmd = &cobra.Command{
 			if err := trace.Start(traceF); err != nil {
 				return fmt.Errorf("start trace: %w", err)
 			}
+			cobra.OnFinalize(trace.Stop)
 		}
 
 		if pprofAddr != "" {
@@ -128,6 +129,9 @@ var rootCmd = &cobra.Command{
 
 		t := analytics.New(analytics.DefaultConfig())
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
+		cobra.OnFinalize(func() {
+			t.Close()
+		})
 
 		if cmdName := commandName(cmd); cmdName != "session" {
 			t.Capture(cmd.Context(), "cli_command", map[string]string{
@@ -136,11 +140,6 @@ var rootCmd = &cobra.Command{
 		}
 
 		return nil
-	},
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		pprof.StopCPUProfile()
-		trace.Stop()
-		analytics.Ctx(cmd.Context()).Close()
 	},
 }
 

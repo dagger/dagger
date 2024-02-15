@@ -5,5 +5,5 @@ connect(
     const entries = await client.host().directory(".").entries()
     console.log(entries)
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )

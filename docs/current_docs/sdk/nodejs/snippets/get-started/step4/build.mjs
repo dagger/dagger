@@ -37,5 +37,5 @@ connect(
     }
     // highlight-end
   },
-  { LogOutput: process.stderr }
+  { LogOutput: process.stderr },
 )
