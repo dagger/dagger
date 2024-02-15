@@ -2866,6 +2866,90 @@ func (m *Test) Fn() (*Obj, error) {
 	})
 }
 
+func TestModuleGoUseDaggerTypesDirect(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "main/dagger"
+
+type Minimal struct{}
+
+func (m *Minimal) Foo(dir *Directory) (*dagger.Directory) {
+	return dir.WithNewFile("foo", "xxx")
+}
+
+func (m *Minimal) Bar(dir *dagger.Directory) (*Directory) {
+	return dir.WithNewFile("bar", "yyy")
+}
+
+`,
+		})
+
+	out, err := modGen.With(daggerQuery(`{directory{id}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	dirID := gjson.Get(out, "directory.id").String()
+
+	out, err = modGen.With(daggerQuery(`{minimal{foo(dir: "%s"){file(path: "foo"){contents}}}}`, dirID)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal":{"foo":{"file":{"contents": "xxx"}}}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{minimal{bar(dir: "%s"){file(path: "bar"){contents}}}}`, dirID)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal":{"bar":{"file":{"contents": "yyy"}}}}`, out)
+}
+
+func TestModuleGoUtilsPkg(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(&logs))
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+			
+import (
+	"context"
+	"main/utils"
+)
+
+type Minimal struct{}
+
+func (m *Minimal) Hello(ctx context.Context) (string, error) {
+	return utils.Foo().File("foo").Contents(ctx)
+}
+
+`,
+		}).
+		WithNewFile("utils/util.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package utils
+
+import "main/dagger"
+
+func Foo() *dagger.Directory {
+	return dagger.Connect().Directory().WithNewFile("/foo", "hello world")
+}
+
+`,
+		})
+
+	out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal":{"hello":"hello world"}}`, out)
+}
+
 var useInner = `package main
 
 type Dep struct{}
