@@ -1,19 +1,20 @@
 type Client struct {
-	c graphql.Client
-	q *querybuilder.Selection
+	Client graphql.Client
+	Query *querybuilder.Selection
 }
 
-var dag = initDag()
+var dag *Client
 
-// initializing the var dag directly rather than using
-// an init func so that users can successfully use dag
-// in any global var initialization of their own code
-func initDag() *Client {
-  gqlClient, q := getClientParams()
-	return &Client{
-		c: gqlClient,
-		q: q,
+func init() {
+	gqlClient, q := getClientParams()
+	dag = &Client{
+		Client: gqlClient,
+		Query: q,
 	}
+}
+
+func Connect() *Client {
+	return dag
 }
 
 func getClientParams() (graphql.Client, *querybuilder.Selection) {
@@ -70,6 +71,3 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 	}
 	return nil
 }
-
-{{ ModuleMainSrc }}
-
