@@ -1,0 +1,30 @@
+---
+slug: /developers/829091/known-issues
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Known Issues"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+import PartialDeveloperTroubleshooting from '../../partials/_developer_troubleshooting.mdx';
+
+# Known Issues
+
+<PartialExperimentalDocs />
+
+This page describes known issues and how to debug problems you may encounter when developing Dagger Modules.
+
+## Known Issues
+
+- A module's public fields require a `json:"foo"` tag to be queriable.
+- When referencing another module as a local dependency, the dependent module
+  must be stored in a sub-directory of the parent module.
+- Custom struct types cannot currently be used as parameters.
+- Calls to functions across modules will be run exactly _once_ per-session --
+  after that, the result will be cached, but only until the next session (a new
+  `dagger call`, etc).
+  - At some point, we will add more fine-grained cache-control.
+
+## Troubleshooting
+
+<PartialDeveloperTroubleshooting />

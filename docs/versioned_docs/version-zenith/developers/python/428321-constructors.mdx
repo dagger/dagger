@@ -1,0 +1,24 @@
+---
+slug: /developers/python/428321/constructors
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Constructors"
+---
+
+# Constructors
+
+## Asynchronous module constructor functions
+
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, enable use of asynchronous calls while initializing the object.
+
+Here is an example module using the Python SDK with a custom asynchronous constructor, which must be named `create`:
+
+```python file=./snippets/advanced-programming/constructor/main.py
+
+```
+
+And here is an example call for this module:
+
+```console
+dagger call grep --pattern dagger
+```

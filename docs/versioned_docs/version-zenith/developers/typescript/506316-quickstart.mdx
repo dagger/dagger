@@ -1,0 +1,152 @@
+---
+slug: /developers/typescript/5063016/quickstart
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Quickstart"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+import PartialDeveloperTroubleshooting from '../../partials/_developer_troubleshooting.mdx';
+import PartialDeveloperQuickstartIntroduction from '../../partials/_developer_quickstart_introduction.mdx';
+import PartialDeveloperQuickstartTrivyTest from '../../partials/_developer_quickstart_trivy_test.mdx';
+import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quickstart_conclusion.mdx';
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Introduction
+
+<PartialDeveloperQuickstartIntroduction />
+
+## Requirements
+
+This quickstart assumes that:
+
+- You have a good understanding of the Dagger TypeScript SDK. If not, refer to the [TypeScript SDK reference](../reference/modules).
+- You have the Dagger CLI installed. If not, [install Dagger](../../329058-install.mdx).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+
+## Step 1: Initialize a new module
+
+1. Create a new directory on your filesystem and run `dagger init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
+
+    ```sh
+    mkdir potato/
+    cd potato/
+
+    # initialize Dagger module
+    dagger init --name=potato --sdk=typescript
+    ```
+
+    This will generate a `dagger.json` module file, initial `dagger/src/index.ts` and typescript basic setup with a `dagger/package.json`, a `dagger/tsconfig.json` and a `dagger/yarn.lock`, as well as a generated `dagger/sdk` folder for local development.
+
+2. Test the module. Run the generated `index.ts` with the `dagger call` command:
+
+    ```sh
+    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
+    ```
+
+    :::tip
+    When using `dagger call` to call module functions, do not explicitly use the name of the module.
+    :::
+
+:::note
+When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+:::
+
+## Step 2: Add a function
+
+Let's try changing the `src/index.ts` file.
+
+1. Let's replace the auto-generated template with something simpler:
+
+    ```typescript file=./snippets/quickstart/step2/index.ts
+    ```
+
+    The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
+
+2. Test the new function, once again using `dagger call`:
+
+    ```sh
+    dagger call hello-world
+    ```
+
+## Step 3: Use input parameters and return types
+
+Your module functions can accept and return multiple different types, not just basic built-in types.
+
+1. Update the function to accept multiple parameters (some of which are optional):
+
+    ```typescript file=./snippets/quickstart/step3a/index.ts
+    ```
+
+    You can use [jsDoc](https://jsdoc.app/) to document the parameter in the API.
+
+    Here's an example of calling the function with optional parameters:
+
+    ```sh
+    dagger call hello-world --count 10 --mashed
+    ```
+
+2. Update the function to return a custom `PotatoMessage` type:
+
+    ```typescript file=./snippets/quickstart/step3b/index.ts
+    ```
+
+    Test it using `dagger call`:
+
+    ```sh
+    dagger call hello-world --message "I am a potato" message
+    dagger call hello-world --message "I am a potato" from
+    ```
+
+    Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
+
+:::tip
+Use `dagger call --help` to get help on the commands and flags available.
+:::
+
+## Example: Write a vulnerability scanning module
+
+The example module in the previous sections was just that - an example. Next, let's put everything you've learnt to the test, by building a module with a real-world application: scanning a container image for vulnerabilities with [Trivy](https://trivy.dev/).
+
+1. Initialize a new module:
+
+    ```shell
+    mkdir trivy/
+
+    cd trivy/
+
+    dagger init --name=trivy --sdk=typescript
+    ```
+
+2. Replace the generated `index.ts` file with the following code:
+
+    ```typescript file=./snippets/quickstart/trivy/index.ts
+    ```
+
+    In this example, the `scanImage()` function accepts four parameters:
+      - A reference to the container image to be scanned (required);
+      - A severity filter (optional);
+      - The exit code to use if scanning finds vulnerabilities (optional);
+      - The reporting format (optional).
+
+    The function code performs the following operations:
+      - It uses the default `dagger` client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `withExec()` method returns a revised `Container` with the results of command execution.
+      - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
+
+3. Test the function using `dagger call`:
+
+    <PartialDeveloperQuickstartTrivyTest />
+
+## Conclusion
+
+<PartialDeveloperQuickstartConclusion />
+
+## Appendix A: Troubleshooting
+
+If you come across bugs, here are some simple troubleshooting suggestions.
+
+<PartialDeveloperTroubleshooting />
