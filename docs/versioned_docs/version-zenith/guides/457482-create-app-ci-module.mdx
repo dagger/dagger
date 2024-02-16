@@ -41,13 +41,7 @@ This guide assumes that:
 
 The example module used in this guide builds, tests and publishes a Node.js application.
 
-Within your application directory, create a new `ci/` directory:
-
-```shell
-mkdir ci && cd ci
-```
-
-Run `dagger init` in the `ci` directory to bootstrap a new module:
+Run `dagger init` in the application directory to bootstrap a new module:
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -92,7 +86,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 First, add the `node` module as a dependency:
 
 ```shell
-dagger install github.com/quartz-technology/daggerverse/node/typescript
+dagger install github.com/quartz-technology/daggerverse/node
 ```
 
 <Tabs groupId="language">
@@ -204,7 +198,7 @@ This function does the following:
 Try the function by running it as below:
 
 ```shell
-dagger -m ci call --source . test
+dagger call --source . test
 ```
 
 :::note
@@ -281,7 +275,7 @@ The `npm run build` command is appropriate for the example Vue application used 
 Try the function by running it as below. Note the additional chained call to `Directory.Entries()` on the function's `Directory` return value, to display a file listing for the build directory.
 
 ```shell
-dagger -m ci call --source . build entries
+dagger call --source . build entries
 ```
 
 Here's an example of the output you will see:
@@ -344,7 +338,7 @@ This code listing adds two functions:
 Try the function by running the command below:
 
 ```shell
-dagger -m ci call --source . publish
+dagger call --source . publish
 ```
 
 Here's an example of the output you will see:
@@ -391,7 +385,7 @@ This function simply calls the `package()` function created earlier to obtain th
 Try the function by running the command below:
 
 ```shell
-dagger -m ci call --source . serve up --ports 8080:80
+dagger call --source . serve up --ports 8080:80
 ```
 
 You should now be able to access the application by browsing to http://localhost:8080 on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
