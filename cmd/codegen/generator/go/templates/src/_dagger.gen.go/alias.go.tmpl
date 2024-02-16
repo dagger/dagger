@@ -15,12 +15,12 @@ type ExecError = dagger.ExecError
 type {{ $name }} = dagger.{{ $name }}
 
 {{ if eq .Kind "OBJECT" }}
-{{ .Description | Comment }}
 {{- if . | IsSelfChainable }}
 type With{{ $name }}Func = dagger.With{{ $name }}Func
 {{ end }}
 {{ range $field := .Fields }}
 {{- if $field.Args.HasOptionals }}
+// {{ $field | FieldOptionsStructName }} contains options for {{ $name }}.{{ $field.Name | FormatName }}
 type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStructName }}
 {{ end }}
 {{ end }}
