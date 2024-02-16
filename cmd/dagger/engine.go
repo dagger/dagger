@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/tui"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/mattn/go-isatty"
 	"github.com/vito/progrock"
 	"github.com/vito/progrock/console"
@@ -148,7 +149,7 @@ func legacyTUI(
 		tape.MessageLevel(progrock.MessageLevel_DEBUG)
 	}
 
-	params.ProgrockWriter = tape
+	params.ProgrockWriter = telemetry.NewLegacyIDInternalizer(tape)
 
 	return progrock.DefaultUI().Run(ctx, tape, func(ctx context.Context, ui progrock.UIClient) error {
 		params.CloudURLCallback = func(cloudURL string) {
@@ -182,7 +183,7 @@ func interactiveTUI(
 	fn runClientCallback,
 ) error {
 	progR, progW := progrock.Pipe()
-	params.ProgrockWriter = progW
+	params.ProgrockWriter = telemetry.NewLegacyIDInternalizer(progW)
 
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()

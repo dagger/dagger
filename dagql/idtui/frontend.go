@@ -414,12 +414,12 @@ func setupTerm(vtxID string, vt *midterm.Terminal) io.Writer {
 // Zoomed marks the vertex as zoomed, indicating it should take up as much
 // screen space as possible.
 func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
-	return func(vertex *progrock.Vertex) {
+	return progrock.VertexOptFunc(func(vertex *progrock.Vertex) {
 		termSetupsL.Lock()
 		termSetups[vertex.Id] = setup
 		termSetupsL.Unlock()
 		vertex.Zoomed = true
-	}
+	})
 }
 
 type scrollbackMsg struct {

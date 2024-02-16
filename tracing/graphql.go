@@ -68,12 +68,14 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		// 	slog.Warn("failed to digest inputs", "id", id.Display(), "err", err)
 		// 	return next(ctx)
 		// }
-		vtx := rec.Vertex(dig, id.Field,
-			// progrock.WithInputs(inputs...),
-			// TODO: these really shouldn't be internal, but for backwards
-			// compatibility we don't want to overwhelm the TUI with a bunch of
-			// vertices.
-			progrock.Internal())
+		opts := []progrock.VertexOpt{
+			// see telemetry/legacy.go LegacyIDInternalizer
+			progrock.WithLabels(progrock.Labelf("id", "true")),
+		}
+		if dagql.IsInternal(ctx) {
+			opts = append(opts, progrock.Internal())
+		}
+		vtx := rec.Vertex(dig, id.Field, opts...)
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 
