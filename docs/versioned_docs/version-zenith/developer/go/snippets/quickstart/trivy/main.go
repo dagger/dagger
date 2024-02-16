@@ -13,12 +13,12 @@ func (t *Trivy) ScanImage(
 	ctx context.Context,
 	imageRef string,
 	// +optional
-	// +default=UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+	// +default="UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
 	severity string,
 	// +optional
 	exitCode int,
 	// +optional
-	// +default=table
+	// +default="table"
 	format string,
 ) (string, error) {
 	return dag.

@@ -1217,7 +1217,7 @@ package main
 
 // Test object, short description
 type Test struct {
-	// +default=foo
+	// +default="foo"
 	Foo string
 }
 `,

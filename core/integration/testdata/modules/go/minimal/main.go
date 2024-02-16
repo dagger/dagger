@@ -158,7 +158,7 @@ func (m *Minimal) EchoOptsPragmas(
 
 	// String to append to the echoed message
 	// +optional=true
-	// +default=...
+	// +default="..."
 	suffix string,
 	// Number of times to repeat the message
 	// +optional
