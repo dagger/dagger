@@ -201,12 +201,12 @@ func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec)
 The struct definition for the concrete implementation of the interface. e.g.:
 
 	type customIfaceImpl struct {
-		Query	*querybuilder.Selection
-		Client	graphql.Client
-		id		*CustomIfaceID
-		str		*string
-		int		*int
-		bool	*bool
+		Query  *querybuilder.Selection
+		Client graphql.Client
+		id     *CustomIfaceID
+		str    *string
+		int    *int
+		bool   *bool
 	}
 */
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
@@ -235,7 +235,7 @@ The Load*FromID method attached to the top-level Client struct for this interfac
 		q := r.Query.Select("loadTestCustomIfaceFromID")
 		q = q.Arg("id", id)
 		return &customIfaceImpl{
-			Query: q,
+			Query:  q,
 			Client: r.Client,
 		}
 	}
@@ -505,8 +505,8 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			Just object type with chained query (no error). e.g.:
 
 				return &customIfaceImpl{
-					c: r.Client,
-					q: q,
+					Client: r.Client,
+					Query:  q,
 				}
 		*/
 
@@ -540,9 +540,8 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &Directory{
-							c:  r.Client,
-							id: &id,
-							q:  querybuilder.Query().Select("loadDirectoryFromID").Arg("id", id),
+							Query:  querybuilder.Query().Select("loadDirectoryFromID").Arg("id", id),
+							Client: r.Client,
 						})
 					}
 					return results, nil
