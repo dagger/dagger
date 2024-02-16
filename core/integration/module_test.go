@@ -4058,7 +4058,7 @@ func TestModuleNamespacing(t *testing.T) {
 		With(daggerQuery(`{test{fn(s:"yo")}}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"test":{"fn":["*main.Sub1Obj made 1:yo", "*main.Sub2Obj made 2:yo"]}}`, out)
+	require.JSONEq(t, `{"test":{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}}`, out)
 }
 
 func TestModuleLoops(t *testing.T) {
@@ -4658,7 +4658,9 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	t.Helper()
 	switch sdk {
 	case "go":
-		return "dagger/dagger.gen.go"
+		// FIXME: go codegen is split up into dagger/dagger.gen.go and
+		// dagger/dagger/dagger.gen.go
+		return "dagger/dagger/dagger.gen.go"
 	case "python":
 		return "dagger/sdk/src/dagger/client/gen.py"
 	case "typescript":
