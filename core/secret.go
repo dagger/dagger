@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/moby/buildkit/session/secrets"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -12,10 +13,22 @@ import (
 // Secret is a content-addressed secret.
 type Secret struct {
 	Query *Query
+
 	// Name specifies the name of the secret.
 	Name string `json:"name,omitempty"`
-	// Scope specifes the origin of the secret.
-	Scope string `json:"scope,omitempty"` // XXX: make sure this can't be accessed as part of the ID
+
+	// Accessor specifies the accessor key for the secret.
+	Accessor string `json:"accessor,omitempty"`
+}
+
+func NewSecretAccessor(name string, scope string) string {
+	// XXX: does the order matter? security perspective HMAC? (name <-> scope)
+	//      - yes, it does
+	// XXX: explain why this is safe actually
+	//      - we can't bundle the scope by itself - since then you could guess it
+	//      - so we combine the name and the scope
+
+	return digest.FromString(scope + "." + name).Hex()
 }
 
 func (*Secret) Type() *ast.Type {
@@ -47,14 +60,12 @@ type SecretStore struct {
 	secrets map[string][]byte
 }
 
-// XXX: add secret scoping util
-
 // AddSecret adds the secret identified by user defined name with its plaintext
 // value to the secret store.
-func (store *SecretStore) AddSecret(ctx context.Context, scope string, name string, plaintext []byte) error {
+func (store *SecretStore) AddSecret(ctx context.Context, name string, plaintext []byte) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.secrets[scope+"/"+name] = plaintext
+	store.secrets[name] = plaintext
 	return nil
 }
 

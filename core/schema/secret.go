@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -38,22 +37,21 @@ func (s *secretSchema) Install() {
 }
 
 type secretArgs struct {
-	Name  string
-	Scope dagql.Optional[dagql.String]
+	Name     string
+	Accessor dagql.Optional[dagql.String]
 }
 
 func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
-	scope := string(args.Scope.GetOr(""))
-	if scope == "" {
+	accessor := string(args.Accessor.GetOr(""))
+	if accessor == "" {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		scope = clientMetadata.ClientID
+		accessor = core.NewSecretAccessor(args.Name, clientMetadata.ClientID)
 	}
 
-	fmt.Printf("secret %q %q\n", scope, args.Name)
-	return parent.NewSecret(args.Name, scope), nil
+	return parent.NewSecret(accessor), nil
 }
 
 type setSecretArgs struct {
@@ -68,9 +66,9 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	if err != nil {
 		return inst, err
 	}
+	accessor := core.NewSecretAccessor(args.Name, clientMetadata.ClientID)
 
-	fmt.Printf("setSecret %q %q = %q\n", clientMetadata.ClientID, args.Name, args.Plaintext)
-	if err := parent.Secrets.AddSecret(ctx, clientMetadata.ClientID, args.Name, []byte(args.Plaintext)); err != nil {
+	if err := parent.Secrets.AddSecret(ctx, accessor, []byte(args.Plaintext)); err != nil {
 		return inst, err
 	}
 	// NB: to avoid putting the plaintext value in the graph, return a freshly
@@ -78,8 +76,14 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	if err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
 		Field: "secret",
 		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.NewString(args.Name)},
-			{Name: "scope", Value: dagql.Opt(dagql.NewString(clientMetadata.ClientID))},
+			{
+				Name:  "name",
+				Value: dagql.NewString(args.Name),
+			},
+			{
+				Name:  "accessor",
+				Value: dagql.Opt(dagql.NewString(accessor)),
+			},
 		},
 	}); err != nil {
 		return inst, err
@@ -88,10 +92,8 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
-	fmt.Printf("plaintext %q %q\n", secret.Scope, secret.Name)
-
 	// XXX: this shouldn't print the scope on error
-	bytes, err := secret.Query.Secrets.GetSecret(ctx, secret.Scope+"/"+secret.Name)
+	bytes, err := secret.Query.Secrets.GetSecret(ctx, secret.Accessor)
 	if err != nil {
 		return "", err
 	}

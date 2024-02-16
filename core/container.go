@@ -1077,7 +1077,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Scope + "/" + secret.Secret.Name)}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Accessor)}
 
 		var secretDest string
 		switch {
