@@ -91,6 +91,11 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	return c, nil
 }
 
+// GraphQLClient returns the underlying graphql.Client
+func (c *Client) GraphQLClient() graphql.Client {
+	return c.Client
+}
+
 // Close the engine connection
 func (c *Client) Close() error {
 	if c.conn != nil {
