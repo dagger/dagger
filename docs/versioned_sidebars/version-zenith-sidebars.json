@@ -26,14 +26,14 @@
     },
     {
       "type": "category",
-      "label": "Developers",
+      "label": "Developer Guide",
       "collapsible": true,
       "collapsed": true,
       "items": [
         {
           "type": "doc",
           "label": "Introduction",
-          "id": "developers/index"
+          "id": "developer-guide/index"
         },
         {
           "type": "category",
@@ -41,15 +41,15 @@
           "items": [
             {
               "type": "doc",
-              "id": "developers/fundamentals/modules-vs-functions"
+              "id": "developer-guide/fundamentals/modules-vs-functions"
             },
             {
               "type": "doc",
-              "id": "developers/fundamentals/architecture"
+              "id": "developer-guide/fundamentals/architecture"
             },
             {
               "type": "doc",
-              "id": "developers/fundamentals/execution-environment"
+              "id": "developer-guide/fundamentals/execution-environment"
             }
           ]
         },
@@ -59,7 +59,7 @@
           "items": [
             {
               "type": "doc",
-              "id": "developers/go/quickstart"
+              "id": "developer-guide/go/quickstart"
             },
             {
               "type": "link",
@@ -75,51 +75,51 @@
           "items": [
             {
               "type": "doc",
-              "id": "developers/python/quickstart"
+              "id": "developer-guide/python/quickstart"
             },
             {
               "type": "doc",
-              "id": "developers/python/arguments-return-values"
+              "id": "developer-guide/python/arguments-return-values"
             },
             {
               "type": "doc",
-              "id": "developers/python/constructors"
+              "id": "developer-guide/python/constructors"
             },
             {
               "type": "doc",
-              "id": "developers/python/secrets"
+              "id": "developer-guide/python/secrets"
             },
             {
               "type": "doc",
-              "id": "developers/python/services"
+              "id": "developer-guide/python/services"
             },
             {
               "type": "doc",
-              "id": "developers/python/custom-types"
+              "id": "developer-guide/python/custom-types"
             },
             {
               "type": "doc",
-              "id": "developers/python/dependencies"
+              "id": "developer-guide/python/dependencies"
             },
             {
               "type": "doc",
-              "id": "developers/python/error-handling"
+              "id": "developer-guide/python/error-handling"
             },
             {
               "type": "doc",
-              "id": "developers/python/debugging"
+              "id": "developer-guide/python/debugging"
             },
             {
               "type": "doc",
-              "id": "developers/python/conventions"
+              "id": "developer-guide/python/conventions"
             },
             {
               "type": "doc",
-              "id": "developers/python/ide-integration"
+              "id": "developer-guide/python/ide-integration"
             },
             {
               "type": "doc",
-              "id": "developers/python/best-practices"
+              "id": "developer-guide/python/best-practices"
             },
 
             {
@@ -135,7 +135,7 @@
           "items": [
             {
               "type": "doc",
-              "id": "developers/typescript/quickstart"
+              "id": "developer-guide/typescript/quickstart"
             },
             {
               "type": "doc",
@@ -146,7 +146,7 @@
         },
         {
           "type": "doc",
-          "id": "developers/fundamentals/known-issues"
+          "id": "developer-guide/fundamentals/known-issues"
         }
       ]
     },
