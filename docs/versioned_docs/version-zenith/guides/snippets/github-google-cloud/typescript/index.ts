@@ -14,9 +14,7 @@ class MyModule {
   @func()
   build(): Container {
     return dag.container().from("node:21")
-      .withDirectory("/src", this.source)
-      .withWorkdir("/src")
-      .withExec(["cp", "-R", ".", "/home/node"])
+      .withDirectory("/home/node", this.source)
       .withWorkdir("/home/node")
       .withExec(["npm", "install"])
       .withEntrypoint(["npm", "start"])

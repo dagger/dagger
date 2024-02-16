@@ -31,7 +31,7 @@ This guide teaches you how to create and use a custom Dagger Module to continuou
 This guide assumes that:
 
 - You have a basic understanding of GitHub Actions. If not, [learn about GitHub Actions](https://docs.github.com/en/actions).
-- You are familiar with programming in Go, Python or TypeScript and have the necessary development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [TypeScript](https://www.typescriptlang.org/download).
+- You are familiar with programming in Go, Python or TypeScript.
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../329058-install.mdx).
 - You have Docker (or an equivalent container runtime) installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Google Cloud account and a Google Cloud project with billing enabled. If not, [register for a Google Cloud account](https://cloud.google.com/), [create a Google Cloud project](https://console.cloud.google.com/project) and [enable billing](https://support.google.com/cloud/answer/6293499#enable-billing).
@@ -85,16 +85,15 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 <Tabs groupId="language">
 <TabItem value="Go">
 
-1. In the application directory, create a new Dagger module in a `ci` sub-directory.
+1. In the application directory, create a new Dagger Module.
 
     ```shell
-    dagger init --name=my-module --sdk=go ci
-    cd ci
+    dagger init --name=my-module --sdk=go
     ```
 
 1. Install the Google Cloud Run module.
 
-    ```
+    ```shell
     dagger install github.com/vvaswani/daggerverse/google-cloud-run
     ```
 
@@ -105,7 +104,7 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 
     This Dagger Module contains a constructor and three Dagger Functions. Let's look at each in detail.
 
-    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. This argument is available to all the Dagger Functions in the Dagger Module.
+    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. By convention, constructor arguments are available to all the functions in the object. Since this Dagger Module has only one object, all the Dagger Functions in the Dagger Module have access to this constructor argument.
 
     The `Build()` function takes care of building the application image.
       - It uses the client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
@@ -125,16 +124,15 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 </TabItem>
 <TabItem value="Python">
 
-1. In the application directory, create a new Dagger module in a `ci` sub-directory.
+1. In the application directory, create a new Dagger Module.
 
     ```shell
-    dagger init --name=my-module --sdk=python ci
-    cd ci
+    dagger init --name=my-module --sdk=python
     ```
 
 1. Install the Google Cloud Run module.
 
-    ```
+    ```shell
     dagger install github.com/vvaswani/daggerverse/google-cloud-run
     ```
 
@@ -145,7 +143,7 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 
     This Dagger Module contains a constructor and three Dagger Functions. Let's look at each in detail.
 
-    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. This argument is available to all the Dagger Functions in the Dagger Module.
+    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. By convention, constructor arguments are available to all the functions in the object. Since this Dagger Module has only one object, all the Dagger Functions in the Dagger Module have access to this constructor argument.
 
     The `build()` function takes care of building the application image.
       - It uses the client's `Container().from_()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
@@ -165,16 +163,15 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 </TabItem>
 <TabItem value="TypeScript">
 
-1. In the application directory, create a new Dagger module in a `ci` sub-directory.
+1. In the application directory, create a new Dagger Module.
 
     ```shell
-    dagger init --name=my-module --sdk=typescript ci
-    cd ci
+    dagger init --name=my-module --sdk=typescript
     ```
 
 1. Install the Google Cloud Run module.
 
-    ```
+    ```shell
     dagger install github.com/vvaswani/daggerverse/google-cloud-run
     ```
 
@@ -185,7 +182,7 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 
     This Dagger Module contains a constructor and three Dagger Functions. Let's look at each in detail.
 
-    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. This argument is available to all the Dagger Functions in the Dagger Module.
+    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. By convention, constructor arguments are available to all the functions in the object. Since this Dagger Module has only one object, all the Dagger Functions in the Dagger Module have access to this constructor argument.
 
     The `build()` function takes care of building the application image.
       - It uses the client's `Container().from()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
@@ -212,7 +209,7 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 Once credentials are configured, test the Dagger Functions by running the command below from the application directory. Remember to update the `registry-location`, `repository`, `service`, and `service-location` arguments if you specified different values when creating the various Google Cloud services in Step 3 and Step 4.
 
 ```shell
-dagger -m ci call --source . deploy --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
+dagger call --source . deploy --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
 ```
 
 Dagger performs the operations defined in the Dagger Function, logging each operation to the console. At the end of the process, the built container is deployed to Google Cloud Run and the function returns the deployment URL. Browse to the deployment URL to see the running application.
@@ -240,10 +237,9 @@ This also means that it's very easy to move the workflow you just encapsulated i
     ```yaml file=./snippets/github-google-cloud/main.yml
     ```
 
-    This workflow runs on every commit to the repository `master` branch. It consists of a single job with three steps, as below:
+    This workflow runs on every commit to the repository `master` branch. It consists of a single job with two steps, as below:
       - The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner.
-      - The second step downloads and installs the Dagger CLI.
-      - The third step calls the `deploy()` Dagger Function with the required arguments.
+      - The second step uses the [Dagger for GitHub action](https://github.com/dagger/dagger-for-github) to download and install the Dagger CLI and call the Dagger Function with the required arguments.
 
 One of the arguments to the Dagger Function is the Google Cloud JSON service account key, which is retrieved from a `GOOGLE_CREDENTIALS` environment variable. As shown in the GitHub Actions workflow above, this environment variable is itself populated from a GitHub Actions secret. Create this secret as follows:
 

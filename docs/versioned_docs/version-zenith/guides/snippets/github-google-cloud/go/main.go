@@ -42,7 +42,7 @@ func (m *MyModule) Deploy(ctx context.Context, project, registryLocation, reposi
 	// publish image
 	addr, err := m.Publish(ctx, project, registryLocation, repository, credential)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	// update service with new image
