@@ -18,6 +18,7 @@ const (
 	elixirSDKPath            = "sdk/elixir"
 	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
 	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/engine_conn.ex"
+	elixirSDKInstallDocPath  = "docs/current_docs/partials/_install-sdk-elixir.mdx"
 )
 
 // https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
@@ -202,7 +203,20 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 		return err
 	}
 	newContents := versionRe.ReplaceAll(contents, []byte(newVersion))
-	return os.WriteFile(elixirSDKVersionFilePath, newContents, 0o600)
+	if err := os.WriteFile(elixirSDKVersionFilePath, newContents, 0o600); err != nil {
+		return err
+	}
+
+	installDoc, err := os.ReadFile(elixirSDKInstallDocPath)
+
+	newVersion = fmt.Sprintf(`~> %s`, strings.TrimPrefix(engineVersion, "v"))
+	versionRe, err = regexp.Compile(`~> (\d+\.\d+\.\d+)`)
+	if err != nil {
+		return err
+	}
+
+	newDoc := versionRe.ReplaceAll(installDoc, []byte(newVersion))
+	return os.WriteFile(elixirSDKInstallDocPath, newDoc, 0o644)
 }
 
 func elixirBase(c *dagger.Client, elixirVersion string) *dagger.Container {
