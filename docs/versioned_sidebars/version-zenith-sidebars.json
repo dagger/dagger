@@ -50,6 +50,10 @@
             {
               "type": "doc",
               "id": "developer-guide/fundamentals/execution-environment"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/dependencies"
             }
           ]
         },
@@ -75,7 +79,7 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/python/quickstart"
+              "id": "developer-guide/python/first-steps"
             },
             {
               "type": "doc",
