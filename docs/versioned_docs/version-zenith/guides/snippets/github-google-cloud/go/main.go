@@ -37,7 +37,7 @@ func (m *MyModule) Publish(ctx context.Context, project string, location string,
 
 // deploy an image to Google Cloud Run
 // example: dagger call --source . deploy --project PROJECT --registry-location LOCATION --repository REPOSITORY/APPNAME --service-location LOCATION --service SERVICE  --credential env:GOOGLE_JSON
-func (m *MyModule) Deploy(ctx context.Context, project string, registryLocation string, repository string, serviceLocation string, service string, credential *Secret) (string, error) {
+func (m *MyModule) Deploy(ctx context.Context, project, registryLocation, repository, serviceLocation, service string, credential *Secret) (string, error) {
 
 	// publish image
 	addr, err := m.Publish(ctx, project, registryLocation, repository, credential)
