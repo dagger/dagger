@@ -4889,7 +4889,7 @@ import "context"
 
 type Secreter struct {}
 
-func (_ *Secreter) Make() (*Secret) {
+func (_ *Secreter) Make() *Secret {
 	return dag.SetSecret("FOO", "inner")
 }
 
@@ -5114,6 +5114,96 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 	_, err := ctr.With(daggerQuery(`{toplevel{attempt}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
+}
+
+func TestModuleSecretCaching(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/toplevel/secreter").
+		With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Secreter struct {}
+
+func (_ *Secreter) Make(uniq string) *Secret {
+	return dag.SetSecret("MY_SECRET", uniq)
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/toplevel").
+		With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+		With(daggerExec("install", "./secreter")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (_ *Toplevel) AttemptInternal(ctx context.Context) error {
+	return diffSecret(
+		ctx,
+		dag.SetSecret("MY_SECRET", "foo"),
+		dag.SetSecret("MY_SECRET", "bar"),
+	)
+}
+
+func (_ *Toplevel) AttemptExternal(ctx context.Context) error {
+	return diffSecret(
+		ctx,
+		dag.Secreter().Make("foo"),
+		dag.Secreter().Make("bar"),
+	)
+}
+
+func diffSecret(ctx context.Context, first, second *Secret) error {
+	firstOut, err := dag.Container().
+		From("alpine").
+		WithSecretVariable("VAR", first).
+		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+
+	secondOut, err := dag.Container().
+		From("alpine").
+		WithSecretVariable("VAR", second).
+		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	
+	if firstOut != secondOut {
+		return fmt.Errorf("%q != %q", firstOut, secondOut)
+	}
+	return nil
+}
+`,
+		})
+
+	t.Run("internal secrets cache", func(t *testing.T) {
+		_, err := ctr.With(daggerQuery(`{toplevel{attemptInternal}}`)).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("external secrets cache", func(t *testing.T) {
+		_, err := ctr.With(daggerQuery(`{toplevel{attemptExternal}}`)).Stdout(ctx)
+		require.NoError(t, err)
+	})
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
