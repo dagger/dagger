@@ -63,7 +63,51 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/go/quickstart"
+              "id": "developer-guide/go/first-steps"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/arguments-return-values"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/constructors"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/services"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/debugging"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/conventions"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/best-practices"
             },
             {
               "type": "link",
@@ -125,7 +169,6 @@
               "type": "doc",
               "id": "developer-guide/python/best-practices"
             },
-
             {
               "type": "link",
               "label": "Python SDK Reference",
@@ -139,7 +182,51 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/typescript/quickstart"
+              "id": "developer-guide/typescript/first-steps"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/arguments-return-values"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/constructors"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/services"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/debugging"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/conventions"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/best-practices"
             },
             {
               "type": "doc",
@@ -149,44 +236,20 @@
           ]
         },
         {
+          "type": "link",
+          "label": "API Reference",
+          "href": "https://docs.dagger.io/api/reference"
+        },
+        {
           "type": "doc",
           "id": "developer-guide/fundamentals/known-issues"
         }
       ]
     },
     {
-      "type": "category",
-      "label": "Reference",
-      "collapsible": true,
-      "collapsed": true,
-      "items": [
-        {
-          "type": "doc",
-          "label": "CLI Reference",
-          "id": "reference/cli"
-        },
-        {
-          "type": "link",
-          "label": "API Reference",
-          "href": "https://docs.dagger.io/api/reference"
-        },
-        {
-          "type": "link",
-          "label": "Go SDK Reference",
-          "href": "https://pkg.go.dev/dagger.io/dagger"
-        },
-        {
-          "type": "link",
-          "label": "Python SDK Reference",
-          "href": "https://dagger-io.readthedocs.org/"
-        },
-        {
-          "type": "doc",
-          "label": "TypeScript SDK Reference",
-          "id": "reference/typescript/modules"
-        }
-
-      ]
+      "type": "doc",
+      "label": "CLI Reference",
+      "id": "reference/cli"
     },
     {
       "type": "doc",
