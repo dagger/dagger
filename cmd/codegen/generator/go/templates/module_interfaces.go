@@ -135,6 +135,10 @@ func (spec *parsedIfaceType) Name() string {
 	return spec.name
 }
 
+func (spec *parsedIfaceType) ModuleName() string {
+	return spec.moduleName
+}
+
 // The code implementing the concrete struct that implements the interface and associated methods.
 func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
@@ -179,11 +183,6 @@ func (spec *parsedIfaceType) concreteStructName() string {
 
 func (spec *parsedIfaceType) idTypeName() string {
 	return spec.name + "ID"
-}
-
-func (spec *parsedIfaceType) loadFromIDGQLFieldName() string {
-	// NOTE: unfortunately we currently need to account for namespacing here
-	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.moduleName), spec.name)
 }
 
 func (spec *parsedIfaceType) loadFromIDMethodName() string {
@@ -247,7 +246,7 @@ func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 			Params(Id("r").Op("*").Id("Client"), Id("id").Id(spec.idTypeName())).
 			Params(Id(spec.name)).
 			BlockFunc(func(g *Group) {
-			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(spec.loadFromIDGQLFieldName()))
+			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
 			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
 			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
 				Id("Query"):  Id("q"),
@@ -551,7 +550,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 
 			// TODO: if iface is from this module then it needs namespacing...
 			idScalarName := fmt.Sprintf("%sID", strcase.ToCamel(underlyingReturnType.Name()))
-			loadFromIDQueryName := fmt.Sprintf("load%sFromID", strcase.ToCamel(underlyingReturnType.Name()))
+			loadFromIDQueryName := loadFromIDGQLFieldName(underlyingReturnType)
 
 			s.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("id")).Line()
 			s.Var().Id("idResults").Index().Struct(Id("Id").Id(idScalarName)).Line()
@@ -574,12 +573,10 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 				d := Dict{
 					Id("Query"):  Id("querybuilder").Dot("Query").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
 					Id("Client"): Id("r").Dot("Client"),
-				}
-				if strings.Contains(loadFromIDQueryName, "IfaceFromID") {
-					// XXX: do a better hack here
-					// ...but also, this *clearly* isn't right - it feels like
-					// schemas aren't being served back
-					d[Id("id")] = Op("&").Id("id")
+					// FIXME: this is a nice optimization, but we can't enable
+					// it since the private "id" field can only be accessed on
+					// local structs
+					// Id("id"): Op("&").Id("id"),
 				}
 				g.Id("results").Op("=").Append(Id("results"), Op("&").Add(underlyingImplTypeCode).Values(d))
 			}).Line()

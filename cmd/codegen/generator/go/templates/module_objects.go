@@ -15,7 +15,8 @@ import (
 
 func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parsedObjectType, error) {
 	spec := &parsedObjectType{
-		goType: t,
+		goType:     t,
+		moduleName: ps.moduleName,
 	}
 
 	if named == nil {
@@ -143,8 +144,9 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 }
 
 type parsedObjectType struct {
-	name string
-	doc  string
+	name       string
+	moduleName string
+	doc        string
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -233,6 +235,10 @@ func (spec *parsedObjectType) GoSubTypes() []types.Type {
 
 func (spec *parsedObjectType) Name() string {
 	return spec.name
+}
+
+func (spec *parsedObjectType) ModuleName() string {
+	return spec.moduleName
 }
 
 /*
