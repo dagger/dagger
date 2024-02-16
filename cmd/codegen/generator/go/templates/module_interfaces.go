@@ -139,15 +139,15 @@ func (spec *parsedIfaceType) Name() string {
 func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
 	code := Empty().
-		Add(spec.concreteStructDefCode()).Line().
-		Add(spec.idDefCode()).Line().
-		Add(spec.loadFromIDMethodCode()).Line().
-		Add(spec.graphqlTypeMethodCode()).Line().
-		Add(spec.graphqlIDTypeMethodCode()).Line().
-		Add(spec.graphqlIDMethodCode()).Line().
-		Add(spec.marshalJSONMethodCode()).Line().
-		Add(spec.unmarshalJSONMethodCode()).Line().
-		Add(spec.toIfaceMethodCode()).Line()
+		Add(spec.concreteStructDefCode()).Line().Line().
+		Add(spec.idDefCode()).Line().Line().
+		Add(spec.loadFromIDMethodCode()).Line().Line().
+		Add(spec.graphqlTypeMethodCode()).Line().Line().
+		Add(spec.graphqlIDTypeMethodCode()).Line().Line().
+		Add(spec.graphqlIDMethodCode()).Line().Line().
+		Add(spec.marshalJSONMethodCode()).Line().Line().
+		Add(spec.unmarshalJSONMethodCode()).Line().Line().
+		Add(spec.toIfaceMethodCode()).Line().Line()
 
 	// the ID method, which is not explicitly declared by the user but needed internally
 	idMethodCode, err := spec.concreteMethodCode(&funcTypeSpec{
@@ -159,7 +159,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ID method code: %w", err)
 	}
-	code.Add(idMethodCode).Line()
+	code.Add(idMethodCode).Line().Line()
 
 	// the implementations of the methods declared on the interface
 	for _, method := range spec.methods {
@@ -167,7 +167,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate method %s code: %w", method.name, err)
 		}
-		code.Add(methodCode).Line()
+		code.Add(methodCode).Line().Line()
 	}
 
 	return code, nil
@@ -628,7 +628,7 @@ e.g.:
 func (spec *parsedIfaceType) concreteMethodCheckCachedFieldCode(method *funcTypeSpec) *Statement {
 	structFieldName := spec.concreteStructCachedFieldName(method)
 
-	s := Empty()
+	s := Null()
 	if _, ok := method.returnSpec.(*parsedPrimitiveType); ok {
 		s.If(Id("r").Dot(structFieldName).Op("!=").Nil()).Block(
 			Return(Op("*").Id("r").Dot(structFieldName), Nil()),

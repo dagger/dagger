@@ -300,7 +300,8 @@ func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
 			}
 
 			g.Return(Nil())
-		}), nil
+		}).
+		Line(), nil
 }
 
 /*
