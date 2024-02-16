@@ -19,9 +19,9 @@ dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281a
 
 Dependent modules will be added to your code-generation routines, so you can access them from your own module's code, as shown below:
 
-```python
-@function
-async def hello_world() -> str:
-    return await dagger.hello_world().message()
+```typescript
+@func()
+async helloWorld(): Promise<string> {
+    return await dag.helloWorld().message()
 }
 ```
