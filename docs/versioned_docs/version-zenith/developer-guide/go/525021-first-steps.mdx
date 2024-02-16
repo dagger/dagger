@@ -2,7 +2,7 @@
 slug: /developer-guide/go/525021/first-steps
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "Quickstart"
+title: "First Steps"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -61,7 +61,7 @@ Let's try changing the `dagger/main.go` file.
 
 1. The module is named `potato`, so that means all methods on the `Potato` type are published as functions. Let's replace the auto-generated template with something simpler:
 
-    ```go file=./snippets/quickstart/step2/main.go
+    ```go file=./snippets/first-steps/step2/main.go
     ```
 
     Module functions are flexible in what parameters they can take. You can include
@@ -87,7 +87,7 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to accept multiple parameters (some of which are optional):
 
-    ```go file=./snippets/quickstart/step3a/main.go
+    ```go file=./snippets/first-steps/step3a/main.go
     ```
 
     The optional parameters are specified using the special `// +optional` comment, which dagger uses to set these as optional in the generated API. These comments must appear in the comment block before the parameter.
@@ -100,7 +100,7 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to return a custom `PotatoMessage` type:
 
-    ```go file=./snippets/quickstart/step3b/main.go
+    ```go file=./snippets/first-steps/step3b/main.go
     ```
 
     Test it using `dagger call`:
@@ -128,7 +128,7 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Replace the generated `dagger/main.go` file with the following code:
 
-    ```go file=./snippets/quickstart/trivy/main.go
+    ```go file=./snippets/first-steps/trivy/main.go
     ```
 
     In this example, the `ScanImage()` function accepts four parameters (apart from the context):

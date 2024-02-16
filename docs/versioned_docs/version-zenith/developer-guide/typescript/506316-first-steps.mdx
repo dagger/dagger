@@ -2,7 +2,7 @@
 slug: /developer-guide/typescript/506316/first-steps
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "Quickstart"
+title: "First Steps"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -61,7 +61,7 @@ Let's try changing the `dagger/src/index.ts` file.
 
 1. Let's replace the auto-generated template with something simpler:
 
-    ```typescript file=./snippets/quickstart/step2/index.ts
+    ```typescript file=./snippets/first-steps/step2/index.ts
     ```
 
     The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
@@ -78,7 +78,7 @@ Your module functions can accept and return multiple different types, not just b
 
 1. Update the function to accept multiple parameters (some of which are optional):
 
-    ```typescript file=./snippets/quickstart/step3a/index.ts
+    ```typescript file=./snippets/first-steps/step3a/index.ts
     ```
 
     You can use [jsDoc](https://jsdoc.app/) to document the parameter in the API.
@@ -91,7 +91,7 @@ Your module functions can accept and return multiple different types, not just b
 
 2. Update the function to return a custom `PotatoMessage` type:
 
-    ```typescript file=./snippets/quickstart/step3b/index.ts
+    ```typescript file=./snippets/first-steps/step3b/index.ts
     ```
 
     Test it using `dagger call`:
@@ -123,7 +123,7 @@ The example module in the previous sections was just that - an example. Next, le
 
 2. Replace the generated `dagger/src/index.ts` file with the following code:
 
-    ```typescript file=./snippets/quickstart/trivy/index.ts
+    ```typescript file=./snippets/first-steps/trivy/index.ts
     ```
 
     In this example, the `scanImage()` function accepts four parameters:

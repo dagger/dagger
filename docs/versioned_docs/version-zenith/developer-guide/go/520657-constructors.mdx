@@ -11,4 +11,26 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, be a simple way to accept module-wide configuration.
+
+Here is an example module using the Go SDK:
+
+```go file=./snippets/constructors/main.go
+
+```
+
+And here is an example call for this module:
+
+```console
+dagger call --name=Foo message
+```
+
+The result will be:
+
+```console
+Hello, Foo!
+```
+
+:::note
+If you plan to use constructor fields in other module functions, ensure that they are declared as public. This is because Dagger stores fields using JSON marshalling and private fields are omitted during the marshalling process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
+:::

@@ -75,6 +75,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/typescript/chaining"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/go/secrets"
             },
             {
@@ -88,6 +92,10 @@
             {
               "type": "doc",
               "id": "developer-guide/go/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/interfaces"
             },
             {
               "type": "doc",
@@ -132,6 +140,10 @@
             {
               "type": "doc",
               "id": "developer-guide/python/constructors"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/chaining"
             },
             {
               "type": "doc",
@@ -194,6 +206,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/typescript/chaining"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/typescript/secrets"
             },
             {
@@ -242,7 +258,7 @@
         },
         {
           "type": "doc",
-          "id": "developer-guide/fundamentals/known-issues"
+          "id": "developer-guide/known-issues"
         }
       ]
     },
