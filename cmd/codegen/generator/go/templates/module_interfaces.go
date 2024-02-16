@@ -241,11 +241,11 @@ The Load*FromID method attached to the top-level Client struct for this interfac
 	}
 */
 func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
-	return Func(). // Params(Id("r").Op("*").Id("Client")).
-			Id(spec.loadFromIDMethodName()).
-			Params(Id("r").Op("*").Id("Client"), Id("id").Id(spec.idTypeName())).
-			Params(Id(spec.name)).
-			BlockFunc(func(g *Group) {
+	return Func().
+		Id(spec.loadFromIDMethodName()).
+		Params(Id("r").Op("*").Id("Client"), Id("id").Id(spec.idTypeName())).
+		Params(Id(spec.name)).
+		BlockFunc(func(g *Group) {
 			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
 			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
 			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
@@ -358,7 +358,6 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Var().Id("id").Id(spec.idTypeName())
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
-			// g.Op("*").Id("r").Op("=").Op("*").Id("dag").Dot(spec.loadFromIDMethodName()).
 			g.Op("*").Id("r").Op("=").Op("*").Id(spec.loadFromIDMethodName()).
 				Call(Id("dag"), Id("id")).Assert(Id("*").Id(spec.concreteStructName()))
 			g.Return(Nil())
