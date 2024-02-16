@@ -15,7 +15,7 @@ type Secret struct {
 	// Name specifies the name of the secret.
 	Name string `json:"name,omitempty"`
 	// Scope specifes the origin of the secret.
-	Scope string `json:"scope,omitempty"`
+	Scope string `json:"scope,omitempty"` // XXX: make sure this can't be accessed as part of the ID
 }
 
 func (*Secret) Type() *ast.Type {

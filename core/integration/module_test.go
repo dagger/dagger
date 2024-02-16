@@ -4871,7 +4871,84 @@ func TestModuleDaggerListen(t *testing.T) {
 	})
 }
 
-func TestModuleSecretNested(t *testing.T) {
+func TestModuleSecretNestedPassing(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/toplevel/secreter").
+		With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Secreter struct {}
+
+func (_ *Secreter) Make() (*Secret) {
+	return dag.SetSecret("FOO", "inner")
+}
+
+func (_ *Secreter) Get(ctx context.Context, secret *Secret) (string, error) {
+	return secret.Plaintext(ctx)
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/toplevel").
+		With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+		With(daggerExec("install", "./secreter")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (t *Toplevel) TryReturn(ctx context.Context) error {
+	text, err := dag.Secreter().Make().Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if text != "inner" {
+		return fmt.Errorf("expected \"inner\", but got %q", text)
+	}
+	return nil
+}
+
+func (t *Toplevel) TryArg(ctx context.Context) error {
+	text, err := dag.Secreter().Get(ctx, dag.SetSecret("BAR", "outer"))
+	if err != nil {
+		return err
+	}
+	if text != "outer" {
+		return fmt.Errorf("expected \"outer\", but got %q", text)
+	}
+	return nil
+}
+`,
+		})
+
+	t.Run("can pass secrets", func(t *testing.T) {
+		_, err := ctr.With(daggerQuery(`{toplevel{tryArg}}`)).Stdout(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("can return secrets", func(t *testing.T) {
+		_, err := ctr.With(daggerQuery(`{toplevel{tryReturn}}`)).Stdout(ctx)
+		require.NoError(t, err)
+	})
+}
+
+func TestModuleSecretNestedLeak(t *testing.T) {
 	t.Parallel()
 
 	var logs safeBuffer
@@ -4956,6 +5033,87 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 	require.NoError(t, err)
 	require.NoError(t, c.Close())
 	require.NotContains(t, logs.String(), "asdfasdf")
+}
+
+// XXX: merge into above with t.Run
+func TestModuleSecretNestedMultiple(t *testing.T) {
+	t.Parallel()
+
+	var logs safeBuffer
+	c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/toplevel/maker").
+		With(daggerExec("init", "--name=maker", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Maker struct {}
+
+func (_ *Maker) MakeSecret(ctx context.Context) (*Secret, error) {
+	secret := dag.SetSecret("FOO", "inner")
+	_, err := secret.ID(ctx)  // force the secret into the store
+	if err != nil {
+		return nil, err
+	}
+	return secret, nil
+}
+`,
+		})
+
+	ctr = ctr.
+		WithWorkdir("/toplevel").
+		With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+		With(daggerExec("install", "./maker")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (t *Toplevel) Attempt(ctx context.Context) error {
+	secret := dag.SetSecret("FOO", "outer")
+	_, err := secret.ID(ctx)  // force the secret into the store
+	if err != nil {
+		return err
+	}
+
+	// this creates an inner secret "FOO", but it mustn't overwrite the outer one
+	secret2 := dag.Maker().MakeSecret()
+
+	plaintext, err := secret.Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "outer" {
+		return fmt.Errorf("expected \"outer\", but got %q", plaintext)
+	}
+
+	plaintext, err = secret2.Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "inner" {
+		return fmt.Errorf("expected \"inner\", but got %q", plaintext)
+	}
+
+	return nil
+}
+`,
+		})
+
+	_, err := ctr.With(daggerQuery(`{toplevel{attempt}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.NoError(t, c.Close())
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
