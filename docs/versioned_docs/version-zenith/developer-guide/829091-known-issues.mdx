@@ -13,8 +13,6 @@ import PartialExperimentalDocs from '../partials/_experimental.mdx';
 
 This page describes known issues and how to debug problems you may encounter when developing Dagger Modules.
 
-## Known Issues
-
 - A module's public fields require a `json:"foo"` tag to be queriable.
 - When referencing another module as a local dependency, the dependent module
   must be stored in a sub-directory of the parent module.
@@ -23,7 +21,3 @@ This page describes known issues and how to debug problems you may encounter whe
   after that, the result will be cached, but only until the next session (a new
   `dagger call`, etc).
   - At some point, we will add more fine-grained cache-control.
-
-## Troubleshooting
-
-<PartialDeveloperTroubleshooting />
