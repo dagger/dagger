@@ -3,7 +3,7 @@ import functools
 import inspect
 import typing
 from collections.abc import Callable, Coroutine, Sequence
-from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar, overload
+from typing import Annotated, Any, Concatenate, ParamSpec, TypeGuard, TypeVar, overload
 
 from beartype import beartype
 from beartype.door import TypeHint
@@ -44,6 +44,7 @@ def is_id_type_sequence(v: object) -> TypeGuard[IDTypeSeq]:
 
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
+_S = ParamSpec("_S")
 
 
 @overload
@@ -55,6 +56,20 @@ def typecheck(
 
 @overload
 def typecheck(func: Callable[_P, _T]) -> Callable[_P, _T]:
+    ...
+
+
+@overload
+def typecheck(
+    func: Callable[Concatenate[_S, _P], Coroutine[Any, Any, _T]]
+) -> Callable[Concatenate[_S, _P], Coroutine[Any, Any, _T]]:
+    ...
+
+
+@overload
+def typecheck(
+    func: Callable[Concatenate[_S, _P], _T]
+) -> Callable[Concatenate[_S, _P], _T]:
     ...
 
 
