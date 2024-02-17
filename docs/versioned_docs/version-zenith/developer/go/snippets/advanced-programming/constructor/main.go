@@ -8,10 +8,10 @@ import (
 
 func New(
 	// +optional
-	// +default=Hello
+	// +default="Hello"
 	greeting string,
 	// +optional
-	// +default=World
+	// +default="World"
 	name string,
 ) *HelloWorld {
 	return &HelloWorld{
