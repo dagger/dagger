@@ -168,7 +168,7 @@ func (db *DB) HighLevelStep(id *idproto.ID) (*Step, bool) {
 	return db.Step(db.Simplify(parentDig.String()))
 }
 
-func (db *DB) PrimaryVertex(dig string) *progrock.Vertex {
+func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
 	var earliest *progrock.Vertex
 	vs := make([]*progrock.Vertex, 0, len(db.Intervals[dig]))
 	for _, vtx := range db.Intervals[dig] {

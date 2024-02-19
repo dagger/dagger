@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix type hinting in PyCharm
+time: 2024-02-19T00:19:20.376967-01:00
+custom:
+  Author: jpnauta
+  PR: "6686"

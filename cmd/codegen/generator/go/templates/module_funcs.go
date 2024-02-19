@@ -128,17 +128,11 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 			argOptsCode = append(argOptsCode, Id("Description").Op(":").Lit(argSpec.description))
 		}
 		if argSpec.defaultValue != "" {
-			var jsonEnc string
-			if argSpec.typeSpec.GoType().String() == "string" {
-				enc, err := json.Marshal(argSpec.defaultValue)
-				if err != nil {
-					return nil, fmt.Errorf("failed to marshal default value: %w", err)
-				}
-				jsonEnc = string(enc)
-			} else {
-				jsonEnc = argSpec.defaultValue
+			var v any
+			if err := json.Unmarshal([]byte(argSpec.defaultValue), &v); err != nil {
+				return nil, fmt.Errorf("default value %q must be valid JSON: %w", argSpec.defaultValue, err)
 			}
-			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(jsonEnc)))
+			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(argSpec.defaultValue)))
 		}
 
 		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
