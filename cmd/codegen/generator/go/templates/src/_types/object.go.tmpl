@@ -1,8 +1,8 @@
 {{- if ne .Name "Query" }}
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query *querybuilder.Selection
+	Client graphql.Client
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
@@ -61,7 +61,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         return *r.{{ $field.Name }}, nil
     }
     {{- end }}
-	q := r.q.Select("{{ $field.Name }}")
+	q := r.Query.Select("{{ $field.Name }}")
 
 	{{- if $field.Args.HasOptionals }}
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -83,13 +83,13 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{- end }}
     {{ if $convertID }}
-	return r, q.Execute(ctx, r.c)
+	return r, q.Execute(ctx, r.Client)
 
 	{{- else if $field.TypeRef.IsObject }}
 	{{ $typeName := $field.TypeRef | FormatOutputType }}
 	return &{{ $field.TypeRef | FormatOutputType }} {
-		q: q,
-		c: r.c,
+		Query: q,
+		Client: r.Client,
 	}
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
@@ -109,8 +109,8 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.q = querybuilder.Query().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
-              val.c = r.c
+              val.Query = querybuilder.Query().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+              val.Client = r.Client
             {{- end }}
             out = append(out, val)
         }
@@ -130,14 +130,14 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- if ne $typeName "Client" }}
 	    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 	    return nil, err
 	}
 
 	return convert(response), nil
 	    {{- else }}
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 	    {{- end }}
 	{{- else }}
 	return response, q.Execute(ctx, r.gql)

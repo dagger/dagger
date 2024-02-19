@@ -28,20 +28,7 @@ func assertNotNil(argName string, value any) {
 	}
 }
 
-// ptr returns a pointer to the given value.
-func ptr[T any](v T) *T {
-	return &v
-}
-
 type DaggerObject querybuilder.GraphQLMarshaller
-
-func convertSlice[I any, O any](in []I, f func(I) O) []O {
-	out := make([]O, len(in))
-	for i, v := range in {
-		out[i] = f(v)
-	}
-	return out
-}
 
 // getCustomError parses a GraphQL error into a more specific error type.
 func getCustomError(err error) error {
@@ -252,8 +239,8 @@ type PortForward struct {
 
 // A directory whose contents persist across runs.
 type CacheVolume struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id *CacheVolumeID
 }
@@ -263,12 +250,12 @@ func (r *CacheVolume) ID(ctx context.Context) (CacheVolumeID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response CacheVolumeID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -300,8 +287,8 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 
 // An OCI-compatible container, also known as a Docker container.
 type Container struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	envVariable *string
 	export      *bool
@@ -329,11 +316,11 @@ func (r *Container) With(f WithContainerFunc) *Container {
 //
 // Be sure to set any exposed ports before this conversion.
 func (r *Container) AsService() *Service {
-	q := r.q.Select("asService")
+	q := r.Query.Select("asService")
 
 	return &Service{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -355,7 +342,7 @@ type ContainerAsTarballOpts struct {
 
 // Returns a File representing the container serialized to a tarball.
 func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
-	q := r.q.Select("asTarball")
+	q := r.Query.Select("asTarball")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platformVariants` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
@@ -372,8 +359,8 @@ func (r *Container) AsTarball(opts ...ContainerAsTarballOpts) *File {
 	}
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -396,7 +383,7 @@ type ContainerBuildOpts struct {
 // Initializes this container from a Dockerfile build.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	assertNotNil("context", context)
-	q := r.q.Select("build")
+	q := r.Query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `dockerfile` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
@@ -418,42 +405,42 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	q = q.Arg("context", context)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves default arguments for future commands.
 func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
-	q := r.q.Select("defaultArgs")
+	q := r.Query.Select("defaultArgs")
 
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves a directory at the given path.
 //
 // Mounts are included.
 func (r *Container) Directory(path string) *Directory {
-	q := r.q.Select("directory")
+	q := r.Query.Select("directory")
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves entrypoint to be prepended to the arguments of all commands.
 func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
-	q := r.q.Select("entrypoint")
+	q := r.Query.Select("entrypoint")
 
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves the value of the specified environment variable.
@@ -461,18 +448,18 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 	if r.envVariable != nil {
 		return *r.envVariable, nil
 	}
-	q := r.q.Select("envVariable")
+	q := r.Query.Select("envVariable")
 	q = q.Arg("name", name)
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves the list of environment variables passed to commands.
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
-	q := r.q.Select("envVariables")
+	q := r.Query.Select("envVariables")
 
 	q = q.Select("id")
 
@@ -485,8 +472,8 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 		for i := range fields {
 			val := EnvVariable{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -496,7 +483,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -510,11 +497,11 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 //
 // This currently works for Nvidia devices only.
 func (r *Container) ExperimentalWithAllGPUs() *Container {
-	q := r.q.Select("experimentalWithAllGPUs")
+	q := r.Query.Select("experimentalWithAllGPUs")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -524,12 +511,12 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 //
 // This currently works for Nvidia devices only.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
-	q := r.q.Select("experimentalWithGPU")
+	q := r.Query.Select("experimentalWithGPU")
 	q = q.Arg("devices", devices)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -558,7 +545,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	if r.export != nil {
 		return *r.export, nil
 	}
-	q := r.q.Select("export")
+	q := r.Query.Select("export")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platformVariants` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
@@ -578,14 +565,14 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves the list of exposed ports.
 //
 // This includes ports already exposed by the image, even if not explicitly added with dagger.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
-	q := r.q.Select("exposedPorts")
+	q := r.Query.Select("exposedPorts")
 
 	q = q.Select("id")
 
@@ -598,8 +585,8 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadPortFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -609,7 +596,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -621,23 +608,23 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 //
 // Mounts are included.
 func (r *Container) File(path string) *File {
-	q := r.q.Select("file")
+	q := r.Query.Select("file")
 	q = q.Arg("path", path)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Initializes this container from a pulled base image.
 func (r *Container) From(address string) *Container {
-	q := r.q.Select("from")
+	q := r.Query.Select("from")
 	q = q.Arg("address", address)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -646,12 +633,12 @@ func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ContainerID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -686,12 +673,12 @@ func (r *Container) ImageRef(ctx context.Context) (string, error) {
 	if r.imageRef != nil {
 		return *r.imageRef, nil
 	}
-	q := r.q.Select("imageRef")
+	q := r.Query.Select("imageRef")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // ContainerImportOpts contains options for Container.Import
@@ -703,7 +690,7 @@ type ContainerImportOpts struct {
 // Reads the container from an OCI tarball.
 func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
 	assertNotNil("source", source)
-	q := r.q.Select("import")
+	q := r.Query.Select("import")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `tag` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Tag) {
@@ -713,8 +700,8 @@ func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container
 	q = q.Arg("source", source)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -723,18 +710,18 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 	if r.label != nil {
 		return *r.label, nil
 	}
-	q := r.q.Select("label")
+	q := r.Query.Select("label")
 	q = q.Arg("name", name)
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves the list of labels passed to container.
 func (r *Container) Labels(ctx context.Context) ([]Label, error) {
-	q := r.q.Select("labels")
+	q := r.Query.Select("labels")
 
 	q = q.Select("id")
 
@@ -747,8 +734,8 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 		for i := range fields {
 			val := Label{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadLabelFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadLabelFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -758,7 +745,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -768,12 +755,12 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
-	q := r.q.Select("mounts")
+	q := r.Query.Select("mounts")
 
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // ContainerPipelineOpts contains options for Container.Pipeline
@@ -786,7 +773,7 @@ type ContainerPipelineOpts struct {
 
 // Creates a named sub-pipeline.
 func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
-	q := r.q.Select("pipeline")
+	q := r.Query.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -800,8 +787,8 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 	q = q.Arg("name", name)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -810,12 +797,12 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 	if r.platform != nil {
 		return *r.platform, nil
 	}
-	q := r.q.Select("platform")
+	q := r.Query.Select("platform")
 
 	var response Platform
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // ContainerPublishOpts contains options for Container.Publish
@@ -843,7 +830,7 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	if r.publish != nil {
 		return *r.publish, nil
 	}
-	q := r.q.Select("publish")
+	q := r.Query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platformVariants` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
@@ -863,16 +850,16 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves this container's root filesystem. Mounts are not included.
 func (r *Container) Rootfs() *Directory {
-	q := r.q.Select("rootfs")
+	q := r.Query.Select("rootfs")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -883,12 +870,12 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 	if r.stderr != nil {
 		return *r.stderr, nil
 	}
-	q := r.q.Select("stderr")
+	q := r.Query.Select("stderr")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The output stream of the last executed command.
@@ -898,21 +885,21 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 	if r.stdout != nil {
 		return *r.stdout, nil
 	}
-	q := r.q.Select("stdout")
+	q := r.Query.Select("stdout")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Forces evaluation of the pipeline in the engine.
 //
 // It doesn't run the default command if no exec has been set.
 func (r *Container) Sync(ctx context.Context) (*Container, error) {
-	q := r.q.Select("sync")
+	q := r.Query.Select("sync")
 
-	return r, q.Execute(ctx, r.c)
+	return r, q.Execute(ctx, r.Client)
 }
 
 // ContainerTerminalOpts contains options for Container.Terminal
@@ -923,7 +910,7 @@ type ContainerTerminalOpts struct {
 
 // Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
 func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
-	q := r.q.Select("terminal")
+	q := r.Query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `cmd` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Cmd) {
@@ -932,8 +919,8 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
 	}
 
 	return &Terminal{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -942,33 +929,33 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	if r.user != nil {
 		return *r.user, nil
 	}
-	q := r.q.Select("user")
+	q := r.Query.Select("user")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(args []string) *Container {
-	q := r.q.Select("withDefaultArgs")
+	q := r.Query.Select("withDefaultArgs")
 	q = q.Arg("args", args)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Set the default command to invoke for the container's terminal API.
 func (r *Container) WithDefaultTerminalCmd(args []string) *Container {
-	q := r.q.Select("withDefaultTerminalCmd")
+	q := r.Query.Select("withDefaultTerminalCmd")
 	q = q.Arg("args", args)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -989,7 +976,7 @@ type ContainerWithDirectoryOpts struct {
 // Retrieves this container plus a directory written at the given path.
 func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
 	assertNotNil("directory", directory)
-	q := r.q.Select("withDirectory")
+	q := r.Query.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -1008,8 +995,8 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	q = q.Arg("directory", directory)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1021,7 +1008,7 @@ type ContainerWithEntrypointOpts struct {
 
 // Retrieves this container but with a different command entrypoint.
 func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypointOpts) *Container {
-	q := r.q.Select("withEntrypoint")
+	q := r.Query.Select("withEntrypoint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepDefaultArgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepDefaultArgs) {
@@ -1031,8 +1018,8 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 	q = q.Arg("args", args)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1044,7 +1031,7 @@ type ContainerWithEnvVariableOpts struct {
 
 // Retrieves this container plus the given environment variable.
 func (r *Container) WithEnvVariable(name string, value string, opts ...ContainerWithEnvVariableOpts) *Container {
-	q := r.q.Select("withEnvVariable")
+	q := r.Query.Select("withEnvVariable")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -1055,8 +1042,8 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 	q = q.Arg("value", value)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1080,7 +1067,7 @@ type ContainerWithExecOpts struct {
 
 // Retrieves this container after executing the specified command inside it.
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
-	q := r.q.Select("withExec")
+	q := r.Query.Select("withExec")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
@@ -1110,8 +1097,8 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	q = q.Arg("args", args)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1133,7 +1120,7 @@ type ContainerWithExposedPortOpts struct {
 //
 // - For setting the EXPOSE OCI field when publishing the container
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
-	q := r.q.Select("withExposedPort")
+	q := r.Query.Select("withExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `protocol` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Protocol) {
@@ -1151,8 +1138,8 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 	q = q.Arg("port", port)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1171,7 +1158,7 @@ type ContainerWithFileOpts struct {
 // Retrieves this container plus the contents of the given file copied to the given path.
 func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
 	assertNotNil("source", source)
-	q := r.q.Select("withFile")
+	q := r.Query.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
@@ -1186,8 +1173,8 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	q = q.Arg("source", source)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1205,7 +1192,7 @@ type ContainerWithFilesOpts struct {
 
 // Retrieves this container plus the contents of the given files copied to the given path.
 func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWithFilesOpts) *Container {
-	q := r.q.Select("withFiles")
+	q := r.Query.Select("withFiles")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
@@ -1220,30 +1207,30 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	q = q.Arg("sources", sources)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Indicate that subsequent operations should be featured more prominently in the UI.
 func (r *Container) WithFocus() *Container {
-	q := r.q.Select("withFocus")
+	q := r.Query.Select("withFocus")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
-	q := r.q.Select("withLabel")
+	q := r.Query.Select("withLabel")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1266,7 +1253,7 @@ type ContainerWithMountedCacheOpts struct {
 // Retrieves this container plus a cache volume mounted at the given path.
 func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
 	assertNotNil("cache", cache)
-	q := r.q.Select("withMountedCache")
+	q := r.Query.Select("withMountedCache")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {
@@ -1285,8 +1272,8 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	q = q.Arg("cache", cache)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1303,7 +1290,7 @@ type ContainerWithMountedDirectoryOpts struct {
 // Retrieves this container plus a directory mounted at the given path.
 func (r *Container) WithMountedDirectory(path string, source *Directory, opts ...ContainerWithMountedDirectoryOpts) *Container {
 	assertNotNil("source", source)
-	q := r.q.Select("withMountedDirectory")
+	q := r.Query.Select("withMountedDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
@@ -1314,8 +1301,8 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 	q = q.Arg("source", source)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1332,7 +1319,7 @@ type ContainerWithMountedFileOpts struct {
 // Retrieves this container plus a file mounted at the given path.
 func (r *Container) WithMountedFile(path string, source *File, opts ...ContainerWithMountedFileOpts) *Container {
 	assertNotNil("source", source)
-	q := r.q.Select("withMountedFile")
+	q := r.Query.Select("withMountedFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
@@ -1343,8 +1330,8 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 	q = q.Arg("source", source)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1365,7 +1352,7 @@ type ContainerWithMountedSecretOpts struct {
 // Retrieves this container plus a secret mounted into a file at the given path.
 func (r *Container) WithMountedSecret(path string, source *Secret, opts ...ContainerWithMountedSecretOpts) *Container {
 	assertNotNil("source", source)
-	q := r.q.Select("withMountedSecret")
+	q := r.Query.Select("withMountedSecret")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
@@ -1380,19 +1367,19 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 	q = q.Arg("source", source)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container plus a temporary directory mounted at the given path.
 func (r *Container) WithMountedTemp(path string) *Container {
-	q := r.q.Select("withMountedTemp")
+	q := r.Query.Select("withMountedTemp")
 	q = q.Arg("path", path)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1412,7 +1399,7 @@ type ContainerWithNewFileOpts struct {
 
 // Retrieves this container plus a new file written at the given path.
 func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
-	q := r.q.Select("withNewFile")
+	q := r.Query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `contents` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Contents) {
@@ -1430,47 +1417,47 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	q = q.Arg("path", path)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container with a registry authentication for a given address.
 func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
 	assertNotNil("secret", secret)
-	q := r.q.Select("withRegistryAuth")
+	q := r.Query.Select("withRegistryAuth")
 	q = q.Arg("address", address)
 	q = q.Arg("username", username)
 	q = q.Arg("secret", secret)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves the container with the given directory mounted to /.
 func (r *Container) WithRootfs(directory *Directory) *Container {
 	assertNotNil("directory", directory)
-	q := r.q.Select("withRootfs")
+	q := r.Query.Select("withRootfs")
 	q = q.Arg("directory", directory)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container plus an env variable containing the given secret.
 func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	assertNotNil("secret", secret)
-	q := r.q.Select("withSecretVariable")
+	q := r.Query.Select("withSecretVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1483,13 +1470,13 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service dependency will also convey to any files or directories produced by the container.
 func (r *Container) WithServiceBinding(alias string, service *Service) *Container {
 	assertNotNil("service", service)
-	q := r.q.Select("withServiceBinding")
+	q := r.Query.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1506,7 +1493,7 @@ type ContainerWithUnixSocketOpts struct {
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket, opts ...ContainerWithUnixSocketOpts) *Container {
 	assertNotNil("source", source)
-	q := r.q.Select("withUnixSocket")
+	q := r.Query.Select("withUnixSocket")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
@@ -1517,40 +1504,40 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 	q = q.Arg("source", source)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container with a different command user.
 func (r *Container) WithUser(name string) *Container {
-	q := r.q.Select("withUser")
+	q := r.Query.Select("withUser")
 	q = q.Arg("name", name)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container with a different working directory.
 func (r *Container) WithWorkdir(path string) *Container {
-	q := r.q.Select("withWorkdir")
+	q := r.Query.Select("withWorkdir")
 	q = q.Arg("path", path)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container with unset default arguments for future commands.
 func (r *Container) WithoutDefaultArgs() *Container {
-	q := r.q.Select("withoutDefaultArgs")
+	q := r.Query.Select("withoutDefaultArgs")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1562,7 +1549,7 @@ type ContainerWithoutEntrypointOpts struct {
 
 // Retrieves this container with an unset command entrypoint.
 func (r *Container) WithoutEntrypoint(opts ...ContainerWithoutEntrypointOpts) *Container {
-	q := r.q.Select("withoutEntrypoint")
+	q := r.Query.Select("withoutEntrypoint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepDefaultArgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepDefaultArgs) {
@@ -1571,19 +1558,19 @@ func (r *Container) WithoutEntrypoint(opts ...ContainerWithoutEntrypointOpts) *C
 	}
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
-	q := r.q.Select("withoutEnvVariable")
+	q := r.Query.Select("withoutEnvVariable")
 	q = q.Arg("name", name)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1595,7 +1582,7 @@ type ContainerWithoutExposedPortOpts struct {
 
 // Unexpose a previously exposed port.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
-	q := r.q.Select("withoutExposedPort")
+	q := r.Query.Select("withoutExposedPort")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `protocol` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Protocol) {
@@ -1605,8 +1592,8 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 	q = q.Arg("port", port)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1614,55 +1601,55 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 //
 // This is the initial state of all containers.
 func (r *Container) WithoutFocus() *Container {
-	q := r.q.Select("withoutFocus")
+	q := r.Query.Select("withoutFocus")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container minus the given environment label.
 func (r *Container) WithoutLabel(name string) *Container {
-	q := r.q.Select("withoutLabel")
+	q := r.Query.Select("withoutLabel")
 	q = q.Arg("name", name)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container after unmounting everything at the given path.
 func (r *Container) WithoutMount(path string) *Container {
-	q := r.q.Select("withoutMount")
+	q := r.Query.Select("withoutMount")
 	q = q.Arg("path", path)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container without the registry authentication of a given address.
 func (r *Container) WithoutRegistryAuth(address string) *Container {
-	q := r.q.Select("withoutRegistryAuth")
+	q := r.Query.Select("withoutRegistryAuth")
 	q = q.Arg("address", address)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this container with a previously added Unix socket removed.
 func (r *Container) WithoutUnixSocket(path string) *Container {
-	q := r.q.Select("withoutUnixSocket")
+	q := r.Query.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1670,11 +1657,11 @@ func (r *Container) WithoutUnixSocket(path string) *Container {
 //
 // Should default to root.
 func (r *Container) WithoutUser() *Container {
-	q := r.q.Select("withoutUser")
+	q := r.Query.Select("withoutUser")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1682,11 +1669,11 @@ func (r *Container) WithoutUser() *Container {
 //
 // Should default to "/".
 func (r *Container) WithoutWorkdir() *Container {
-	q := r.q.Select("withoutWorkdir")
+	q := r.Query.Select("withoutWorkdir")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1695,18 +1682,18 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	if r.workdir != nil {
 		return *r.workdir, nil
 	}
-	q := r.q.Select("workdir")
+	q := r.Query.Select("workdir")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Reflective module API provided to functions at runtime.
 type CurrentModule struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id   *CurrentModuleID
 	name *string
@@ -1717,12 +1704,12 @@ func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response CurrentModuleID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -1757,21 +1744,21 @@ func (r *CurrentModule) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
 func (r *CurrentModule) Source() *Directory {
-	q := r.q.Select("source")
+	q := r.Query.Select("source")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1785,7 +1772,7 @@ type CurrentModuleWorkdirOpts struct {
 
 // Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
 func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *Directory {
-	q := r.q.Select("workdir")
+	q := r.Query.Select("workdir")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -1799,26 +1786,26 @@ func (r *CurrentModule) Workdir(path string, opts ...CurrentModuleWorkdirOpts) *
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
 func (r *CurrentModule) WorkdirFile(path string) *File {
-	q := r.q.Select("workdirFile")
+	q := r.Query.Select("workdirFile")
 	q = q.Arg("path", path)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // A directory.
 type Directory struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	export *bool
 	id     *DirectoryID
@@ -1845,7 +1832,7 @@ type DirectoryAsModuleOpts struct {
 
 // Load the directory as a Dagger module
 func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
-	q := r.q.Select("asModule")
+	q := r.Query.Select("asModule")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sourceRootPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
@@ -1854,31 +1841,31 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 	}
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Gets the difference between this directory and an another directory.
 func (r *Directory) Diff(other *Directory) *Directory {
 	assertNotNil("other", other)
-	q := r.q.Select("diff")
+	q := r.Query.Select("diff")
 	q = q.Arg("other", other)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves a directory at the given path.
 func (r *Directory) Directory(path string) *Directory {
-	q := r.q.Select("directory")
+	q := r.Query.Select("directory")
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1900,7 +1887,7 @@ type DirectoryDockerBuildOpts struct {
 
 // Builds a new Docker container from this directory.
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
-	q := r.q.Select("dockerBuild")
+	q := r.Query.Select("dockerBuild")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
@@ -1925,8 +1912,8 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	}
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -1938,7 +1925,7 @@ type DirectoryEntriesOpts struct {
 
 // Returns a list of files and directories at the given path.
 func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
-	q := r.q.Select("entries")
+	q := r.Query.Select("entries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `path` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Path) {
@@ -1949,7 +1936,7 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Writes the contents of the directory to a path on the host.
@@ -1957,35 +1944,35 @@ func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
-	q := r.q.Select("export")
+	q := r.Query.Select("export")
 	q = q.Arg("path", path)
 
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves a file at the given path.
 func (r *Directory) File(path string) *File {
-	q := r.q.Select("file")
+	q := r.Query.Select("file")
 	q = q.Arg("path", path)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Returns a list of files and directories that matche the given pattern.
 func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
-	q := r.q.Select("glob")
+	q := r.Query.Select("glob")
 	q = q.Arg("pattern", pattern)
 
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this Directory.
@@ -1993,12 +1980,12 @@ func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response DirectoryID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2038,7 +2025,7 @@ type DirectoryPipelineOpts struct {
 
 // Creates a named sub-pipeline.
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
-	q := r.q.Select("pipeline")
+	q := r.Query.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -2052,16 +2039,16 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 	q = q.Arg("name", name)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Force evaluation in the engine.
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
-	q := r.q.Select("sync")
+	q := r.Query.Select("sync")
 
-	return r, q.Execute(ctx, r.c)
+	return r, q.Execute(ctx, r.Client)
 }
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
@@ -2075,7 +2062,7 @@ type DirectoryWithDirectoryOpts struct {
 // Retrieves this directory plus a directory written at the given path.
 func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
 	assertNotNil("directory", directory)
-	q := r.q.Select("withDirectory")
+	q := r.Query.Select("withDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -2090,8 +2077,8 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 	q = q.Arg("directory", directory)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2104,7 +2091,7 @@ type DirectoryWithFileOpts struct {
 // Retrieves this directory plus the contents of the given file copied to the given path.
 func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
 	assertNotNil("source", source)
-	q := r.q.Select("withFile")
+	q := r.Query.Select("withFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
@@ -2115,8 +2102,8 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 	q = q.Arg("source", source)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2128,7 +2115,7 @@ type DirectoryWithFilesOpts struct {
 
 // Retrieves this directory plus the contents of the given files copied to the given path.
 func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWithFilesOpts) *Directory {
-	q := r.q.Select("withFiles")
+	q := r.Query.Select("withFiles")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
@@ -2139,8 +2126,8 @@ func (r *Directory) WithFiles(path string, sources []*File, opts ...DirectoryWit
 	q = q.Arg("sources", sources)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2152,7 +2139,7 @@ type DirectoryWithNewDirectoryOpts struct {
 
 // Retrieves this directory plus a new directory created at the given path.
 func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
-	q := r.q.Select("withNewDirectory")
+	q := r.Query.Select("withNewDirectory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
@@ -2162,8 +2149,8 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2175,7 +2162,7 @@ type DirectoryWithNewFileOpts struct {
 
 // Retrieves this directory plus a new file written at the given path.
 func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
-	q := r.q.Select("withNewFile")
+	q := r.Query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
@@ -2186,48 +2173,48 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	q = q.Arg("contents", contents)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this directory with all file/dir timestamps set to the given time.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
-	q := r.q.Select("withTimestamps")
+	q := r.Query.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this directory with the directory at the given path removed.
 func (r *Directory) WithoutDirectory(path string) *Directory {
-	q := r.q.Select("withoutDirectory")
+	q := r.Query.Select("withoutDirectory")
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves this directory with the file at the given path removed.
 func (r *Directory) WithoutFile(path string) *Directory {
-	q := r.q.Select("withoutFile")
+	q := r.Query.Select("withoutFile")
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // An environment variable name and value.
 type EnvVariable struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id    *EnvVariableID
 	name  *string
@@ -2239,12 +2226,12 @@ func (r *EnvVariable) ID(ctx context.Context) (EnvVariableID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response EnvVariableID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2279,12 +2266,12 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The environment variable value.
@@ -2292,20 +2279,20 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
 	}
-	q := r.q.Select("value")
+	q := r.Query.Select("value")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A definition of a field on a custom object defined in a Module.
 //
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
 type FieldTypeDef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	description *string
 	id          *FieldTypeDefID
@@ -2317,12 +2304,12 @@ func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this FieldTypeDef.
@@ -2330,12 +2317,12 @@ func (r *FieldTypeDef) ID(ctx context.Context) (FieldTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response FieldTypeDefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2370,28 +2357,28 @@ func (r *FieldTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The type of the field.
 func (r *FieldTypeDef) TypeDef() *TypeDef {
-	q := r.q.Select("typeDef")
+	q := r.Query.Select("typeDef")
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // A file.
 type File struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	contents *string
 	export   *bool
@@ -2414,12 +2401,12 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 	if r.contents != nil {
 		return *r.contents, nil
 	}
-	q := r.q.Select("contents")
+	q := r.Query.Select("contents")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // FileExportOpts contains options for File.Export
@@ -2433,7 +2420,7 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	if r.export != nil {
 		return *r.export, nil
 	}
-	q := r.q.Select("export")
+	q := r.Query.Select("export")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `allowParentDirPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AllowParentDirPath) {
@@ -2445,7 +2432,7 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this File.
@@ -2453,12 +2440,12 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response FileID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2493,12 +2480,12 @@ func (r *File) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves the size of the file, in bytes.
@@ -2506,29 +2493,29 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
 		return *r.size, nil
 	}
-	q := r.q.Select("size")
+	q := r.Query.Select("size")
 
 	var response int
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Force evaluation in the engine.
 func (r *File) Sync(ctx context.Context) (*File, error) {
-	q := r.q.Select("sync")
+	q := r.Query.Select("sync")
 
-	return r, q.Execute(ctx, r.c)
+	return r, q.Execute(ctx, r.Client)
 }
 
 // Retrieves this file with its created/modified timestamps set to the given time.
 func (r *File) WithTimestamps(timestamp int) *File {
-	q := r.q.Select("withTimestamps")
+	q := r.Query.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2536,8 +2523,8 @@ func (r *File) WithTimestamps(timestamp int) *File {
 //
 // A function always evaluates against a parent object and is given a set of named arguments.
 type Function struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	description *string
 	id          *FunctionID
@@ -2554,7 +2541,7 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 
 // Arguments accepted by the function, if any.
 func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
-	q := r.q.Select("args")
+	q := r.Query.Select("args")
 
 	q = q.Select("id")
 
@@ -2567,8 +2554,8 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 
 		for i := range fields {
 			val := FunctionArg{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -2578,7 +2565,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -2591,12 +2578,12 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this Function.
@@ -2604,12 +2591,12 @@ func (r *Function) ID(ctx context.Context) (FunctionID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response FunctionID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2644,21 +2631,21 @@ func (r *Function) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The type returned by the function.
 func (r *Function) ReturnType() *TypeDef {
-	q := r.q.Select("returnType")
+	q := r.Query.Select("returnType")
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2673,7 +2660,7 @@ type FunctionWithArgOpts struct {
 // Returns the function with the provided argument
 func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithArgOpts) *Function {
 	assertNotNil("typeDef", typeDef)
-	q := r.q.Select("withArg")
+	q := r.Query.Select("withArg")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -2688,19 +2675,19 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 	q = q.Arg("typeDef", typeDef)
 
 	return &Function{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Returns the function with the given doc string.
 func (r *Function) WithDescription(description string) *Function {
-	q := r.q.Select("withDescription")
+	q := r.Query.Select("withDescription")
 	q = q.Arg("description", description)
 
 	return &Function{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -2708,8 +2695,8 @@ func (r *Function) WithDescription(description string) *Function {
 //
 // This is a specification for an argument at function definition time, not an argument passed at function call time.
 type FunctionArg struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	defaultValue *JSON
 	description  *string
@@ -2722,12 +2709,12 @@ func (r *FunctionArg) DefaultValue(ctx context.Context) (JSON, error) {
 	if r.defaultValue != nil {
 		return *r.defaultValue, nil
 	}
-	q := r.q.Select("defaultValue")
+	q := r.Query.Select("defaultValue")
 
 	var response JSON
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A doc string for the argument, if any.
@@ -2735,12 +2722,12 @@ func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this FunctionArg.
@@ -2748,12 +2735,12 @@ func (r *FunctionArg) ID(ctx context.Context) (FunctionArgID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response FunctionArgID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2788,28 +2775,28 @@ func (r *FunctionArg) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The type of the argument.
 func (r *FunctionArg) TypeDef() *TypeDef {
-	q := r.q.Select("typeDef")
+	q := r.Query.Select("typeDef")
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // An active function call.
 type FunctionCall struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id          *FunctionCallID
 	name        *string
@@ -2823,12 +2810,12 @@ func (r *FunctionCall) ID(ctx context.Context) (FunctionCallID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response FunctionCallID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -2860,7 +2847,7 @@ func (r *FunctionCall) MarshalJSON() ([]byte, error) {
 
 // The argument values the function is being invoked with.
 func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, error) {
-	q := r.q.Select("inputArgs")
+	q := r.Query.Select("inputArgs")
 
 	q = q.Select("id")
 
@@ -2873,8 +2860,8 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 
 		for i := range fields {
 			val := FunctionCallArgValue{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadFunctionCallArgValueFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadFunctionCallArgValueFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -2884,7 +2871,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -2897,12 +2884,12 @@ func (r *FunctionCall) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object.
@@ -2910,12 +2897,12 @@ func (r *FunctionCall) Parent(ctx context.Context) (JSON, error) {
 	if r.parent != nil {
 		return *r.parent, nil
 	}
-	q := r.q.Select("parent")
+	q := r.Query.Select("parent")
 
 	var response JSON
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
@@ -2923,12 +2910,12 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 	if r.parentName != nil {
 		return *r.parentName, nil
 	}
-	q := r.q.Select("parentName")
+	q := r.Query.Select("parentName")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Set the return value of the function call to the provided value.
@@ -2936,19 +2923,19 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) (Void, error
 	if r.returnValue != nil {
 		return *r.returnValue, nil
 	}
-	q := r.q.Select("returnValue")
+	q := r.Query.Select("returnValue")
 	q = q.Arg("value", value)
 
 	var response Void
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A value passed as a named argument to a function call.
 type FunctionCallArgValue struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id    *FunctionCallArgValueID
 	name  *string
@@ -2960,12 +2947,12 @@ func (r *FunctionCallArgValue) ID(ctx context.Context) (FunctionCallArgValueID, 
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response FunctionCallArgValueID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3000,12 +2987,12 @@ func (r *FunctionCallArgValue) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The value of the argument represented as a JSON serialized string.
@@ -3013,18 +3000,18 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 	if r.value != nil {
 		return *r.value, nil
 	}
-	q := r.q.Select("value")
+	q := r.Query.Select("value")
 
 	var response JSON
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The result of running an SDK's codegen.
 type GeneratedCode struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id *GeneratedCodeID
 }
@@ -3039,11 +3026,11 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 
 // The directory containing the generated code.
 func (r *GeneratedCode) Code() *Directory {
-	q := r.q.Select("code")
+	q := r.Query.Select("code")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3052,12 +3039,12 @@ func (r *GeneratedCode) ID(ctx context.Context) (GeneratedCodeID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response GeneratedCodeID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3089,50 +3076,50 @@ func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
 
 // List of paths to mark generated in version control (i.e. .gitattributes).
 func (r *GeneratedCode) VcsGeneratedPaths(ctx context.Context) ([]string, error) {
-	q := r.q.Select("vcsGeneratedPaths")
+	q := r.Query.Select("vcsGeneratedPaths")
 
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // List of paths to ignore in version control (i.e. .gitignore).
 func (r *GeneratedCode) VcsIgnoredPaths(ctx context.Context) ([]string, error) {
-	q := r.q.Select("vcsIgnoredPaths")
+	q := r.Query.Select("vcsIgnoredPaths")
 
 	var response []string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Set the list of paths to mark generated in version control.
 func (r *GeneratedCode) WithVCSGeneratedPaths(paths []string) *GeneratedCode {
-	q := r.q.Select("withVCSGeneratedPaths")
+	q := r.Query.Select("withVCSGeneratedPaths")
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Set the list of paths to ignore in version control.
 func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
-	q := r.q.Select("withVCSIgnoredPaths")
+	q := r.Query.Select("withVCSIgnoredPaths")
 	q = q.Arg("paths", paths)
 
 	return &GeneratedCode{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Module source originating from a git repo.
 type GitModuleSource struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	cloneURL    *string
 	commit      *string
@@ -3147,12 +3134,12 @@ func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
 	if r.cloneURL != nil {
 		return *r.cloneURL, nil
 	}
-	q := r.q.Select("cloneURL")
+	q := r.Query.Select("cloneURL")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The resolved commit of the git repo this source points to.
@@ -3160,21 +3147,21 @@ func (r *GitModuleSource) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
 	}
-	q := r.q.Select("commit")
+	q := r.Query.Select("commit")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The directory containing everything needed to load load and use the module.
 func (r *GitModuleSource) ContextDirectory() *Directory {
-	q := r.q.Select("contextDirectory")
+	q := r.Query.Select("contextDirectory")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3183,12 +3170,12 @@ func (r *GitModuleSource) HTMLURL(ctx context.Context) (string, error) {
 	if r.htmlURL != nil {
 		return *r.htmlURL, nil
 	}
-	q := r.q.Select("htmlURL")
+	q := r.Query.Select("htmlURL")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this GitModuleSource.
@@ -3196,12 +3183,12 @@ func (r *GitModuleSource) ID(ctx context.Context) (GitModuleSourceID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response GitModuleSourceID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3236,12 +3223,12 @@ func (r *GitModuleSource) RootSubpath(ctx context.Context) (string, error) {
 	if r.rootSubpath != nil {
 		return *r.rootSubpath, nil
 	}
-	q := r.q.Select("rootSubpath")
+	q := r.Query.Select("rootSubpath")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The specified version of the git repo this source points to.
@@ -3249,18 +3236,18 @@ func (r *GitModuleSource) Version(ctx context.Context) (string, error) {
 	if r.version != nil {
 		return *r.version, nil
 	}
-	q := r.q.Select("version")
+	q := r.Query.Select("version")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A git ref (tag, branch, or commit).
 type GitRef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	commit *string
 	id     *GitRefID
@@ -3271,12 +3258,12 @@ func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
 	}
-	q := r.q.Select("commit")
+	q := r.Query.Select("commit")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this GitRef.
@@ -3284,12 +3271,12 @@ func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response GitRefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3329,7 +3316,7 @@ type GitRefTreeOpts struct {
 
 // The filesystem tree at this ref.
 func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
-	q := r.q.Select("tree")
+	q := r.Query.Select("tree")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `sshKnownHosts` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
@@ -3342,38 +3329,38 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // A git repository.
 type GitRepository struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id *GitRepositoryID
 }
 
 // Returns details of a branch.
 func (r *GitRepository) Branch(name string) *GitRef {
-	q := r.q.Select("branch")
+	q := r.Query.Select("branch")
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Returns details of a commit.
 func (r *GitRepository) Commit(id string) *GitRef {
-	q := r.q.Select("commit")
+	q := r.Query.Select("commit")
 	q = q.Arg("id", id)
 
 	return &GitRef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3382,12 +3369,12 @@ func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response GitRepositoryID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3419,30 +3406,30 @@ func (r *GitRepository) MarshalJSON() ([]byte, error) {
 
 // Returns details of a ref.
 func (r *GitRepository) Ref(name string) *GitRef {
-	q := r.q.Select("ref")
+	q := r.Query.Select("ref")
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Returns details of a tag.
 func (r *GitRepository) Tag(name string) *GitRef {
-	q := r.q.Select("tag")
+	q := r.Query.Select("tag")
 	q = q.Arg("name", name)
 
 	return &GitRef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Information about the host environment.
 type Host struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id *HostID
 }
@@ -3457,7 +3444,7 @@ type HostDirectoryOpts struct {
 
 // Accesses a directory on the host.
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
-	q := r.q.Select("directory")
+	q := r.Query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
@@ -3471,19 +3458,19 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Accesses a file on the host.
 func (r *Host) File(path string) *File {
-	q := r.q.Select("file")
+	q := r.Query.Select("file")
 	q = q.Arg("path", path)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3492,12 +3479,12 @@ func (r *Host) ID(ctx context.Context) (HostID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response HostID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3535,7 +3522,7 @@ type HostServiceOpts struct {
 
 // Creates a service that forwards traffic to a specified address via the host.
 func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
-	q := r.q.Select("service")
+	q := r.Query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `host` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Host) {
@@ -3545,8 +3532,8 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 	q = q.Arg("ports", ports)
 
 	return &Service{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3554,13 +3541,13 @@ func (r *Host) Service(ports []PortForward, opts ...HostServiceOpts) *Service {
 //
 // The file is limited to a size of 512000 bytes.
 func (r *Host) SetSecretFile(name string, path string) *Secret {
-	q := r.q.Select("setSecretFile")
+	q := r.Query.Select("setSecretFile")
 	q = q.Arg("name", name)
 	q = q.Arg("path", path)
 
 	return &Secret{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3583,7 +3570,7 @@ type HostTunnelOpts struct {
 // Creates a tunnel that forwards traffic from the host to a service.
 func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	assertNotNil("service", service)
-	q := r.q.Select("tunnel")
+	q := r.Query.Select("tunnel")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `ports` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ports) {
@@ -3597,19 +3584,19 @@ func (r *Host) Tunnel(service *Service, opts ...HostTunnelOpts) *Service {
 	q = q.Arg("service", service)
 
 	return &Service{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Accesses a Unix socket on the host.
 func (r *Host) UnixSocket(path string) *Socket {
-	q := r.q.Select("unixSocket")
+	q := r.Query.Select("unixSocket")
 	q = q.Arg("path", path)
 
 	return &Socket{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3618,8 +3605,8 @@ func (r *Host) UnixSocket(path string) *Socket {
 // in the core API. It is not used by user modules and shouldn't ever be as user
 // module accept input objects via their id rather than graphql input types.
 type InputTypeDef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id   *InputTypeDefID
 	name *string
@@ -3627,7 +3614,7 @@ type InputTypeDef struct {
 
 // Static fields defined on this input object, if any.
 func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
-	q := r.q.Select("fields")
+	q := r.Query.Select("fields")
 
 	q = q.Select("id")
 
@@ -3640,8 +3627,8 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -3651,7 +3638,7 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -3664,12 +3651,12 @@ func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response InputTypeDefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3704,18 +3691,18 @@ func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A definition of a custom interface defined in a Module.
 type InterfaceTypeDef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	description      *string
 	id               *InterfaceTypeDefID
@@ -3728,17 +3715,17 @@ func (r *InterfaceTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Functions defined on this interface, if any.
 func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
-	q := r.q.Select("functions")
+	q := r.Query.Select("functions")
 
 	q = q.Select("id")
 
@@ -3751,8 +3738,8 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 		for i := range fields {
 			val := Function{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -3762,7 +3749,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -3775,12 +3762,12 @@ func (r *InterfaceTypeDef) ID(ctx context.Context) (InterfaceTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response InterfaceTypeDefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3815,12 +3802,12 @@ func (r *InterfaceTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -3828,18 +3815,18 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 	if r.sourceModuleName != nil {
 		return *r.sourceModuleName, nil
 	}
-	q := r.q.Select("sourceModuleName")
+	q := r.Query.Select("sourceModuleName")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A simple key value object that represents a label.
 type Label struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id    *LabelID
 	name  *string
@@ -3851,12 +3838,12 @@ func (r *Label) ID(ctx context.Context) (LabelID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response LabelID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3891,12 +3878,12 @@ func (r *Label) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The label value.
@@ -3904,29 +3891,29 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
 	}
-	q := r.q.Select("value")
+	q := r.Query.Select("value")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A definition of a list type in a Module.
 type ListTypeDef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id *ListTypeDefID
 }
 
 // The type of the elements in the list.
 func (r *ListTypeDef) ElementTypeDef() *TypeDef {
-	q := r.q.Select("elementTypeDef")
+	q := r.Query.Select("elementTypeDef")
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3935,12 +3922,12 @@ func (r *ListTypeDef) ID(ctx context.Context) (ListTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ListTypeDefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -3972,8 +3959,8 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 
 // Module source that that originates from a path locally relative to an arbitrary directory.
 type LocalModuleSource struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id          *LocalModuleSourceID
 	rootSubpath *string
@@ -3981,11 +3968,11 @@ type LocalModuleSource struct {
 
 // The directory containing everything needed to load load and use the module.
 func (r *LocalModuleSource) ContextDirectory() *Directory {
-	q := r.q.Select("contextDirectory")
+	q := r.Query.Select("contextDirectory")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -3994,12 +3981,12 @@ func (r *LocalModuleSource) ID(ctx context.Context) (LocalModuleSourceID, error)
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response LocalModuleSourceID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4034,18 +4021,18 @@ func (r *LocalModuleSource) RootSubpath(ctx context.Context) (string, error) {
 	if r.rootSubpath != nil {
 		return *r.rootSubpath, nil
 	}
-	q := r.q.Select("rootSubpath")
+	q := r.Query.Select("rootSubpath")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A Dagger module.
 type Module struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	description *string
 	id          *ModuleID
@@ -4064,7 +4051,7 @@ func (r *Module) With(f WithModuleFunc) *Module {
 
 // Modules used by this module.
 func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
-	q := r.q.Select("dependencies")
+	q := r.Query.Select("dependencies")
 
 	q = q.Select("id")
 
@@ -4077,8 +4064,8 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 
 		for i := range fields {
 			val := Module{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadModuleFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadModuleFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4088,7 +4075,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4098,7 +4085,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 
 // The dependencies as configured by the module.
 func (r *Module) DependencyConfig(ctx context.Context) ([]ModuleDependency, error) {
-	q := r.q.Select("dependencyConfig")
+	q := r.Query.Select("dependencyConfig")
 
 	q = q.Select("id")
 
@@ -4111,8 +4098,8 @@ func (r *Module) DependencyConfig(ctx context.Context) ([]ModuleDependency, erro
 
 		for i := range fields {
 			val := ModuleDependency{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4122,7 +4109,7 @@ func (r *Module) DependencyConfig(ctx context.Context) ([]ModuleDependency, erro
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4135,31 +4122,31 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The generated files and directories made on top of the module source's context directory.
 func (r *Module) GeneratedContextDiff() *Directory {
-	q := r.q.Select("generatedContextDiff")
+	q := r.Query.Select("generatedContextDiff")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // The module source's context plus any configuration and source files created by codegen.
 func (r *Module) GeneratedContextDirectory() *Directory {
-	q := r.q.Select("generatedContextDirectory")
+	q := r.Query.Select("generatedContextDirectory")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -4168,12 +4155,12 @@ func (r *Module) ID(ctx context.Context) (ModuleID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ModuleID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4205,17 +4192,17 @@ func (r *Module) MarshalJSON() ([]byte, error) {
 
 // Retrieves the module with the objects loaded via its SDK.
 func (r *Module) Initialize() *Module {
-	q := r.q.Select("initialize")
+	q := r.Query.Select("initialize")
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Interfaces served by this module.
 func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
-	q := r.q.Select("interfaces")
+	q := r.Query.Select("interfaces")
 
 	q = q.Select("id")
 
@@ -4228,8 +4215,8 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4239,7 +4226,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4252,17 +4239,17 @@ func (r *Module) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Objects served by this module.
 func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
-	q := r.q.Select("objects")
+	q := r.Query.Select("objects")
 
 	q = q.Select("id")
 
@@ -4275,8 +4262,8 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4286,7 +4273,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4296,11 +4283,11 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 
 // The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
 func (r *Module) Runtime() *Container {
-	q := r.q.Select("runtime")
+	q := r.Query.Select("runtime")
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -4309,12 +4296,12 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
 	}
-	q := r.q.Select("sdk")
+	q := r.Query.Select("sdk")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Serve a module's API in the current session.
@@ -4324,75 +4311,75 @@ func (r *Module) Serve(ctx context.Context) (Void, error) {
 	if r.serve != nil {
 		return *r.serve, nil
 	}
-	q := r.q.Select("serve")
+	q := r.Query.Select("serve")
 
 	var response Void
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The source for the module.
 func (r *Module) Source() *ModuleSource {
-	q := r.q.Select("source")
+	q := r.Query.Select("source")
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves the module with the given description
 func (r *Module) WithDescription(description string) *Module {
-	q := r.q.Select("withDescription")
+	q := r.Query.Select("withDescription")
 	q = q.Arg("description", description)
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // This module plus the given Interface type and associated functions
 func (r *Module) WithInterface(iface *TypeDef) *Module {
 	assertNotNil("iface", iface)
-	q := r.q.Select("withInterface")
+	q := r.Query.Select("withInterface")
 	q = q.Arg("iface", iface)
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // This module plus the given Object type and associated functions.
 func (r *Module) WithObject(object *TypeDef) *Module {
 	assertNotNil("object", object)
-	q := r.q.Select("withObject")
+	q := r.Query.Select("withObject")
 	q = q.Arg("object", object)
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Retrieves the module with basic configuration loaded if present.
 func (r *Module) WithSource(source *ModuleSource) *Module {
 	assertNotNil("source", source)
-	q := r.q.Select("withSource")
+	q := r.Query.Select("withSource")
 	q = q.Arg("source", source)
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // The configuration of dependency of a module.
 type ModuleDependency struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id   *ModuleDependencyID
 	name *string
@@ -4403,12 +4390,12 @@ func (r *ModuleDependency) ID(ctx context.Context) (ModuleDependencyID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ModuleDependencyID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4443,28 +4430,28 @@ func (r *ModuleDependency) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The source for the dependency module.
 func (r *ModuleDependency) Source() *ModuleSource {
-	q := r.q.Select("source")
+	q := r.Query.Select("source")
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 type ModuleSource struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	asString                     *string
 	configExists                 *bool
@@ -4487,31 +4474,31 @@ func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
 
 // If the source is a of kind git, the git source representation of it.
 func (r *ModuleSource) AsGitSource() *GitModuleSource {
-	q := r.q.Select("asGitSource")
+	q := r.Query.Select("asGitSource")
 
 	return &GitModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // If the source is of kind local, the local source representation of it.
 func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
-	q := r.q.Select("asLocalSource")
+	q := r.Query.Select("asLocalSource")
 
 	return &LocalModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
 func (r *ModuleSource) AsModule() *Module {
-	q := r.q.Select("asModule")
+	q := r.Query.Select("asModule")
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -4520,12 +4507,12 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 	if r.asString != nil {
 		return *r.asString, nil
 	}
-	q := r.q.Select("asString")
+	q := r.Query.Select("asString")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Returns whether the module source has a configuration file.
@@ -4533,27 +4520,27 @@ func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	if r.configExists != nil {
 		return *r.configExists, nil
 	}
-	q := r.q.Select("configExists")
+	q := r.Query.Select("configExists")
 
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The directory containing everything needed to load load and use the module.
 func (r *ModuleSource) ContextDirectory() *Directory {
-	q := r.q.Select("contextDirectory")
+	q := r.Query.Select("contextDirectory")
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
 func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, error) {
-	q := r.q.Select("dependencies")
+	q := r.Query.Select("dependencies")
 
 	q = q.Select("id")
 
@@ -4566,8 +4553,8 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, er
 
 		for i := range fields {
 			val := ModuleDependency{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadModuleDependencyFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4577,7 +4564,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, er
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4587,12 +4574,12 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, er
 
 // The directory containing the module configuration and source code (source code may be in a subdir).
 func (r *ModuleSource) Directory(path string) *Directory {
-	q := r.q.Select("directory")
+	q := r.Query.Select("directory")
 	q = q.Arg("path", path)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -4601,12 +4588,12 @@ func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ModuleSourceID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4641,12 +4628,12 @@ func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
 	}
-	q := r.q.Select("kind")
+	q := r.Query.Select("kind")
 
 	var response ModuleSourceKind
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // If set, the name of the module this source references, including any overrides at runtime by callers.
@@ -4654,12 +4641,12 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	if r.moduleName != nil {
 		return *r.moduleName, nil
 	}
-	q := r.q.Select("moduleName")
+	q := r.Query.Select("moduleName")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The original name of the module this source references, as defined in the module configuration.
@@ -4667,12 +4654,12 @@ func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
 	}
-	q := r.q.Select("moduleOriginalName")
+	q := r.Query.Select("moduleOriginalName")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The path to the module source's context directory on the caller's filesystem. Only valid for local sources.
@@ -4680,33 +4667,33 @@ func (r *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (string
 	if r.resolveContextPathFromCaller != nil {
 		return *r.resolveContextPathFromCaller, nil
 	}
-	q := r.q.Select("resolveContextPathFromCaller")
+	q := r.Query.Select("resolveContextPathFromCaller")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Resolve the provided module source arg as a dependency relative to this module source.
 func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	assertNotNil("dep", dep)
-	q := r.q.Select("resolveDependency")
+	q := r.Query.Select("resolveDependency")
 	q = q.Arg("dep", dep)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
 func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
-	q := r.q.Select("resolveFromCaller")
+	q := r.Query.Select("resolveFromCaller")
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -4715,12 +4702,12 @@ func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
 	}
-	q := r.q.Select("sourceRootSubpath")
+	q := r.Query.Select("sourceRootSubpath")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The path relative to context of the module implementation source code.
@@ -4728,74 +4715,74 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	if r.sourceSubpath != nil {
 		return *r.sourceSubpath, nil
 	}
-	q := r.q.Select("sourceSubpath")
+	q := r.Query.Select("sourceSubpath")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Update the module source with a new context directory. Only valid for local sources.
 func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
 	assertNotNil("dir", dir)
-	q := r.q.Select("withContextDirectory")
+	q := r.Query.Select("withContextDirectory")
 	q = q.Arg("dir", dir)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Append the provided dependencies to the module source's dependency list.
 func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *ModuleSource {
-	q := r.q.Select("withDependencies")
+	q := r.Query.Select("withDependencies")
 	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Update the module source with a new name.
 func (r *ModuleSource) WithName(name string) *ModuleSource {
-	q := r.q.Select("withName")
+	q := r.Query.Select("withName")
 	q = q.Arg("name", name)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Update the module source with a new SDK.
 func (r *ModuleSource) WithSDK(sdk string) *ModuleSource {
-	q := r.q.Select("withSDK")
+	q := r.Query.Select("withSDK")
 	q = q.Arg("sdk", sdk)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Update the module source with a new source subpath.
 func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
-	q := r.q.Select("withSourceSubpath")
+	q := r.Query.Select("withSourceSubpath")
 	q = q.Arg("path", path)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	description      *string
 	id               *ObjectTypeDefID
@@ -4805,11 +4792,11 @@ type ObjectTypeDef struct {
 
 // The function used to construct new instances of this object, if any
 func (r *ObjectTypeDef) Constructor() *Function {
-	q := r.q.Select("constructor")
+	q := r.Query.Select("constructor")
 
 	return &Function{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -4818,17 +4805,17 @@ func (r *ObjectTypeDef) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Static fields defined on this object, if any.
 func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
-	q := r.q.Select("fields")
+	q := r.Query.Select("fields")
 
 	q = q.Select("id")
 
@@ -4841,8 +4828,8 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4852,7 +4839,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4862,7 +4849,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 // Functions defined on this object, if any.
 func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
-	q := r.q.Select("functions")
+	q := r.Query.Select("functions")
 
 	q = q.Select("id")
 
@@ -4875,8 +4862,8 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 		for i := range fields {
 			val := Function{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -4886,7 +4873,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -4899,12 +4886,12 @@ func (r *ObjectTypeDef) ID(ctx context.Context) (ObjectTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ObjectTypeDefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -4939,12 +4926,12 @@ func (r *ObjectTypeDef) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
-	q := r.q.Select("name")
+	q := r.Query.Select("name")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -4952,18 +4939,18 @@ func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	if r.sourceModuleName != nil {
 		return *r.sourceModuleName, nil
 	}
-	q := r.q.Select("sourceModuleName")
+	q := r.Query.Select("sourceModuleName")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A port exposed by a container.
 type Port struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	description                 *string
 	experimentalSkipHealthcheck *bool
@@ -4977,12 +4964,12 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
-	q := r.q.Select("description")
+	q := r.Query.Select("description")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Skip the health check when run as a service.
@@ -4990,12 +4977,12 @@ func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
 	if r.experimentalSkipHealthcheck != nil {
 		return *r.experimentalSkipHealthcheck, nil
 	}
-	q := r.q.Select("experimentalSkipHealthcheck")
+	q := r.Query.Select("experimentalSkipHealthcheck")
 
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this Port.
@@ -5003,12 +4990,12 @@ func (r *Port) ID(ctx context.Context) (PortID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response PortID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5043,12 +5030,12 @@ func (r *Port) Port(ctx context.Context) (int, error) {
 	if r.port != nil {
 		return *r.port, nil
 	}
-	q := r.q.Select("port")
+	q := r.Query.Select("port")
 
 	var response int
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // The transport layer protocol.
@@ -5056,12 +5043,12 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	if r.protocol != nil {
 		return *r.protocol, nil
 	}
-	q := r.q.Select("protocol")
+	q := r.Query.Select("protocol")
 
 	var response NetworkProtocol
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 type WithClientFunc func(r *Client) *Client
@@ -5075,38 +5062,38 @@ func (r *Client) With(f WithClientFunc) *Client {
 
 // Retrieves a content-addressed blob.
 func (r *Client) Blob(digest string, size int, mediaType string, uncompressed string) *Directory {
-	q := r.q.Select("blob")
+	q := r.Query.Select("blob")
 	q = q.Arg("digest", digest)
 	q = q.Arg("size", size)
 	q = q.Arg("mediaType", mediaType)
 	q = q.Arg("uncompressed", uncompressed)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Constructs a cache volume for a given cache key.
 func (r *Client) CacheVolume(key string) *CacheVolume {
-	q := r.q.Select("cacheVolume")
+	q := r.Query.Select("cacheVolume")
 	q = q.Arg("key", key)
 
 	return &CacheVolume{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Checks if the current Dagger Engine is compatible with an SDK's required version.
 func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
-	q := r.q.Select("checkVersionCompatibility")
+	q := r.Query.Select("checkVersionCompatibility")
 	q = q.Arg("version", version)
 
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // ContainerOpts contains options for Client.Container
@@ -5121,7 +5108,7 @@ type ContainerOpts struct {
 //
 // Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
 func (r *Client) Container(opts ...ContainerOpts) *Container {
-	q := r.q.Select("container")
+	q := r.Query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
@@ -5134,8 +5121,8 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5143,27 +5130,27 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 //
 // If the caller is not currently executing in a function, this will return an error.
 func (r *Client) CurrentFunctionCall() *FunctionCall {
-	q := r.q.Select("currentFunctionCall")
+	q := r.Query.Select("currentFunctionCall")
 
 	return &FunctionCall{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // The module currently being served in the session, if any.
 func (r *Client) CurrentModule() *CurrentModule {
-	q := r.q.Select("currentModule")
+	q := r.Query.Select("currentModule")
 
 	return &CurrentModule{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // The TypeDef representations of the objects currently being served in the session.
 func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
-	q := r.q.Select("currentTypeDefs")
+	q := r.Query.Select("currentTypeDefs")
 
 	q = q.Select("id")
 
@@ -5176,8 +5163,8 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -5187,7 +5174,7 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -5197,12 +5184,12 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 
 // The default platform of the engine.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
-	q := r.q.Select("defaultPlatform")
+	q := r.Query.Select("defaultPlatform")
 
 	var response Platform
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // DirectoryOpts contains options for Client.Directory
@@ -5213,7 +5200,7 @@ type DirectoryOpts struct {
 
 // Creates an empty directory.
 func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
-	q := r.q.Select("directory")
+	q := r.Query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
@@ -5222,44 +5209,44 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	}
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Deprecated: Use LoadFileFromID instead.
 func (r *Client) File(id FileID) *File {
-	q := r.q.Select("file")
+	q := r.Query.Select("file")
 	q = q.Arg("id", id)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Creates a function.
 func (r *Client) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
-	q := r.q.Select("function")
+	q := r.Query.Select("function")
 	q = q.Arg("name", name)
 	q = q.Arg("returnType", returnType)
 
 	return &Function{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Create a code generation result, given a directory containing the generated code.
 func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 	assertNotNil("code", code)
-	q := r.q.Select("generatedCode")
+	q := r.Query.Select("generatedCode")
 	q = q.Arg("code", code)
 
 	return &GeneratedCode{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5277,7 +5264,7 @@ type GitOpts struct {
 
 // Queries a Git repository.
 func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
-	q := r.q.Select("git")
+	q := r.Query.Select("git")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
@@ -5299,18 +5286,18 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	q = q.Arg("url", url)
 
 	return &GitRepository{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Queries the host environment.
 func (r *Client) Host() *Host {
-	q := r.q.Select("host")
+	q := r.Query.Select("host")
 
 	return &Host{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5322,7 +5309,7 @@ type HTTPOpts struct {
 
 // Returns a file containing an http remote url content.
 func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
-	q := r.q.Select("http")
+	q := r.Query.Select("http")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
@@ -5332,359 +5319,359 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q = q.Arg("url", url)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a CacheVolume from its ID.
 func (r *Client) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
-	q := r.q.Select("loadCacheVolumeFromID")
+	q := r.Query.Select("loadCacheVolumeFromID")
 	q = q.Arg("id", id)
 
 	return &CacheVolume{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Container from its ID.
 func (r *Client) LoadContainerFromID(id ContainerID) *Container {
-	q := r.q.Select("loadContainerFromID")
+	q := r.Query.Select("loadContainerFromID")
 	q = q.Arg("id", id)
 
 	return &Container{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a CurrentModule from its ID.
 func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
-	q := r.q.Select("loadCurrentModuleFromID")
+	q := r.Query.Select("loadCurrentModuleFromID")
 	q = q.Arg("id", id)
 
 	return &CurrentModule{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Directory from its ID.
 func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
-	q := r.q.Select("loadDirectoryFromID")
+	q := r.Query.Select("loadDirectoryFromID")
 	q = q.Arg("id", id)
 
 	return &Directory{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a EnvVariable from its ID.
 func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
-	q := r.q.Select("loadEnvVariableFromID")
+	q := r.Query.Select("loadEnvVariableFromID")
 	q = q.Arg("id", id)
 
 	return &EnvVariable{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a FieldTypeDef from its ID.
 func (r *Client) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
-	q := r.q.Select("loadFieldTypeDefFromID")
+	q := r.Query.Select("loadFieldTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &FieldTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a File from its ID.
 func (r *Client) LoadFileFromID(id FileID) *File {
-	q := r.q.Select("loadFileFromID")
+	q := r.Query.Select("loadFileFromID")
 	q = q.Arg("id", id)
 
 	return &File{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a FunctionArg from its ID.
 func (r *Client) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
-	q := r.q.Select("loadFunctionArgFromID")
+	q := r.Query.Select("loadFunctionArgFromID")
 	q = q.Arg("id", id)
 
 	return &FunctionArg{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a FunctionCallArgValue from its ID.
 func (r *Client) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
-	q := r.q.Select("loadFunctionCallArgValueFromID")
+	q := r.Query.Select("loadFunctionCallArgValueFromID")
 	q = q.Arg("id", id)
 
 	return &FunctionCallArgValue{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a FunctionCall from its ID.
 func (r *Client) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
-	q := r.q.Select("loadFunctionCallFromID")
+	q := r.Query.Select("loadFunctionCallFromID")
 	q = q.Arg("id", id)
 
 	return &FunctionCall{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Function from its ID.
 func (r *Client) LoadFunctionFromID(id FunctionID) *Function {
-	q := r.q.Select("loadFunctionFromID")
+	q := r.Query.Select("loadFunctionFromID")
 	q = q.Arg("id", id)
 
 	return &Function{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a GeneratedCode from its ID.
 func (r *Client) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
-	q := r.q.Select("loadGeneratedCodeFromID")
+	q := r.Query.Select("loadGeneratedCodeFromID")
 	q = q.Arg("id", id)
 
 	return &GeneratedCode{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a GitModuleSource from its ID.
 func (r *Client) LoadGitModuleSourceFromID(id GitModuleSourceID) *GitModuleSource {
-	q := r.q.Select("loadGitModuleSourceFromID")
+	q := r.Query.Select("loadGitModuleSourceFromID")
 	q = q.Arg("id", id)
 
 	return &GitModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a GitRef from its ID.
 func (r *Client) LoadGitRefFromID(id GitRefID) *GitRef {
-	q := r.q.Select("loadGitRefFromID")
+	q := r.Query.Select("loadGitRefFromID")
 	q = q.Arg("id", id)
 
 	return &GitRef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a GitRepository from its ID.
 func (r *Client) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
-	q := r.q.Select("loadGitRepositoryFromID")
+	q := r.Query.Select("loadGitRepositoryFromID")
 	q = q.Arg("id", id)
 
 	return &GitRepository{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Host from its ID.
 func (r *Client) LoadHostFromID(id HostID) *Host {
-	q := r.q.Select("loadHostFromID")
+	q := r.Query.Select("loadHostFromID")
 	q = q.Arg("id", id)
 
 	return &Host{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a InputTypeDef from its ID.
 func (r *Client) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
-	q := r.q.Select("loadInputTypeDefFromID")
+	q := r.Query.Select("loadInputTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &InputTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a InterfaceTypeDef from its ID.
 func (r *Client) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
-	q := r.q.Select("loadInterfaceTypeDefFromID")
+	q := r.Query.Select("loadInterfaceTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &InterfaceTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Label from its ID.
 func (r *Client) LoadLabelFromID(id LabelID) *Label {
-	q := r.q.Select("loadLabelFromID")
+	q := r.Query.Select("loadLabelFromID")
 	q = q.Arg("id", id)
 
 	return &Label{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a ListTypeDef from its ID.
 func (r *Client) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
-	q := r.q.Select("loadListTypeDefFromID")
+	q := r.Query.Select("loadListTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &ListTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a LocalModuleSource from its ID.
 func (r *Client) LoadLocalModuleSourceFromID(id LocalModuleSourceID) *LocalModuleSource {
-	q := r.q.Select("loadLocalModuleSourceFromID")
+	q := r.Query.Select("loadLocalModuleSourceFromID")
 	q = q.Arg("id", id)
 
 	return &LocalModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a ModuleDependency from its ID.
 func (r *Client) LoadModuleDependencyFromID(id ModuleDependencyID) *ModuleDependency {
-	q := r.q.Select("loadModuleDependencyFromID")
+	q := r.Query.Select("loadModuleDependencyFromID")
 	q = q.Arg("id", id)
 
 	return &ModuleDependency{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Module from its ID.
 func (r *Client) LoadModuleFromID(id ModuleID) *Module {
-	q := r.q.Select("loadModuleFromID")
+	q := r.Query.Select("loadModuleFromID")
 	q = q.Arg("id", id)
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a ModuleSource from its ID.
 func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
-	q := r.q.Select("loadModuleSourceFromID")
+	q := r.Query.Select("loadModuleSourceFromID")
 	q = q.Arg("id", id)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a ObjectTypeDef from its ID.
 func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
-	q := r.q.Select("loadObjectTypeDefFromID")
+	q := r.Query.Select("loadObjectTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &ObjectTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Port from its ID.
 func (r *Client) LoadPortFromID(id PortID) *Port {
-	q := r.q.Select("loadPortFromID")
+	q := r.Query.Select("loadPortFromID")
 	q = q.Arg("id", id)
 
 	return &Port{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Secret from its ID.
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
-	q := r.q.Select("loadSecretFromID")
+	q := r.Query.Select("loadSecretFromID")
 	q = q.Arg("id", id)
 
 	return &Secret{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Service from its ID.
 func (r *Client) LoadServiceFromID(id ServiceID) *Service {
-	q := r.q.Select("loadServiceFromID")
+	q := r.Query.Select("loadServiceFromID")
 	q = q.Arg("id", id)
 
 	return &Service{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Socket from its ID.
 func (r *Client) LoadSocketFromID(id SocketID) *Socket {
-	q := r.q.Select("loadSocketFromID")
+	q := r.Query.Select("loadSocketFromID")
 	q = q.Arg("id", id)
 
 	return &Socket{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a Terminal from its ID.
 func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
-	q := r.q.Select("loadTerminalFromID")
+	q := r.Query.Select("loadTerminalFromID")
 	q = q.Arg("id", id)
 
 	return &Terminal{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
-	q := r.q.Select("loadTypeDefFromID")
+	q := r.Query.Select("loadTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Create a new module.
 func (r *Client) Module() *Module {
-	q := r.q.Select("module")
+	q := r.Query.Select("module")
 
 	return &Module{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5697,7 +5684,7 @@ type ModuleDependencyOpts struct {
 // Create a new module dependency configuration from a module source and name
 func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependencyOpts) *ModuleDependency {
 	assertNotNil("source", source)
-	q := r.q.Select("moduleDependency")
+	q := r.Query.Select("moduleDependency")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `name` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Name) {
@@ -5707,8 +5694,8 @@ func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependency
 	q = q.Arg("source", source)
 
 	return &ModuleDependency{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5720,7 +5707,7 @@ type ModuleSourceOpts struct {
 
 // Create a new module source instance from a source ref string.
 func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
-	q := r.q.Select("moduleSource")
+	q := r.Query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {
@@ -5730,8 +5717,8 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 	q = q.Arg("refString", refString)
 
 	return &ModuleSource{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5745,7 +5732,7 @@ type PipelineOpts struct {
 
 // Creates a named sub-pipeline.
 func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
-	q := r.q.Select("pipeline")
+	q := r.Query.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -5759,19 +5746,19 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q = q.Arg("name", name)
 
 	return &Client{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Reference a secret by name.
 func (r *Client) Secret(name string) *Secret {
-	q := r.q.Select("secret")
+	q := r.Query.Select("secret")
 	q = q.Arg("name", name)
 
 	return &Secret{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5779,13 +5766,13 @@ func (r *Client) Secret(name string) *Secret {
 //
 // The plaintext value is limited to a size of 128000 bytes.
 func (r *Client) SetSecret(name string, plaintext string) *Secret {
-	q := r.q.Select("setSecret")
+	q := r.Query.Select("setSecret")
 	q = q.Arg("name", name)
 	q = q.Arg("plaintext", plaintext)
 
 	return &Secret{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -5793,29 +5780,29 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 //
 // Deprecated: Use LoadSocketFromID instead.
 func (r *Client) Socket(id SocketID) *Socket {
-	q := r.q.Select("socket")
+	q := r.Query.Select("socket")
 	q = q.Arg("id", id)
 
 	return &Socket{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Create a new TypeDef.
 func (r *Client) TypeDef() *TypeDef {
-	q := r.q.Select("typeDef")
+	q := r.Query.Select("typeDef")
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id        *SecretID
 	plaintext *string
@@ -5826,12 +5813,12 @@ func (r *Secret) ID(ctx context.Context) (SecretID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response SecretID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5866,18 +5853,18 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 	if r.plaintext != nil {
 		return *r.plaintext, nil
 	}
-	q := r.q.Select("plaintext")
+	q := r.Query.Select("plaintext")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A content-addressed service providing TCP connectivity.
 type Service struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	endpoint *string
 	hostname *string
@@ -5904,7 +5891,7 @@ func (r *Service) Endpoint(ctx context.Context, opts ...ServiceEndpointOpts) (st
 	if r.endpoint != nil {
 		return *r.endpoint, nil
 	}
-	q := r.q.Select("endpoint")
+	q := r.Query.Select("endpoint")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `port` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Port) {
@@ -5919,7 +5906,7 @@ func (r *Service) Endpoint(ctx context.Context, opts ...ServiceEndpointOpts) (st
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Retrieves a hostname which can be used by clients to reach this container.
@@ -5927,12 +5914,12 @@ func (r *Service) Hostname(ctx context.Context) (string, error) {
 	if r.hostname != nil {
 		return *r.hostname, nil
 	}
-	q := r.q.Select("hostname")
+	q := r.Query.Select("hostname")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A unique identifier for this Service.
@@ -5940,12 +5927,12 @@ func (r *Service) ID(ctx context.Context) (ServiceID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response ServiceID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -5977,7 +5964,7 @@ func (r *Service) MarshalJSON() ([]byte, error) {
 
 // Retrieves the list of ports provided by the service.
 func (r *Service) Ports(ctx context.Context) ([]Port, error) {
-	q := r.q.Select("ports")
+	q := r.Query.Select("ports")
 
 	q = q.Select("id")
 
@@ -5990,8 +5977,8 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{id: &fields[i].Id}
-			val.q = querybuilder.Query().Select("loadPortFromID").Arg("id", fields[i].Id)
-			val.c = r.c
+			val.Query = querybuilder.Query().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.Client = r.Client
 			out = append(out, val)
 		}
 
@@ -6001,7 +5988,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 
 	q = q.Bind(&response)
 
-	err := q.Execute(ctx, r.c)
+	err := q.Execute(ctx, r.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -6013,9 +6000,9 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 //
 // Services bound to a Container do not need to be manually started.
 func (r *Service) Start(ctx context.Context) (*Service, error) {
-	q := r.q.Select("start")
+	q := r.Query.Select("start")
 
-	return r, q.Execute(ctx, r.c)
+	return r, q.Execute(ctx, r.Client)
 }
 
 // ServiceStopOpts contains options for Service.Stop
@@ -6026,7 +6013,7 @@ type ServiceStopOpts struct {
 
 // Stop the service.
 func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, error) {
-	q := r.q.Select("stop")
+	q := r.Query.Select("stop")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `kill` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Kill) {
@@ -6034,7 +6021,7 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		}
 	}
 
-	return r, q.Execute(ctx, r.c)
+	return r, q.Execute(ctx, r.Client)
 }
 
 // ServiceUpOpts contains options for Service.Up
@@ -6052,7 +6039,7 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
 	if r.up != nil {
 		return *r.up, nil
 	}
-	q := r.q.Select("up")
+	q := r.Query.Select("up")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `ports` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Ports) {
@@ -6067,13 +6054,13 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
 	var response Void
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id *SocketID
 }
@@ -6083,12 +6070,12 @@ func (r *Socket) ID(ctx context.Context) (SocketID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response SocketID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -6120,8 +6107,8 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 
 // An interactive terminal that clients can connect to.
 type Terminal struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id                *TerminalID
 	websocketEndpoint *string
@@ -6132,12 +6119,12 @@ func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response TerminalID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -6172,18 +6159,18 @@ func (r *Terminal) WebsocketEndpoint(ctx context.Context) (string, error) {
 	if r.websocketEndpoint != nil {
 		return *r.websocketEndpoint, nil
 	}
-	q := r.q.Select("websocketEndpoint")
+	q := r.Query.Select("websocketEndpoint")
 
 	var response string
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
-	q *querybuilder.Selection
-	c graphql.Client
+	Query  *querybuilder.Selection
+	Client graphql.Client
 
 	id       *TypeDefID
 	kind     *TypeDefKind
@@ -6200,41 +6187,41 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 
 // If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
 func (r *TypeDef) AsInput() *InputTypeDef {
-	q := r.q.Select("asInput")
+	q := r.Query.Select("asInput")
 
 	return &InputTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
 func (r *TypeDef) AsInterface() *InterfaceTypeDef {
-	q := r.q.Select("asInterface")
+	q := r.Query.Select("asInterface")
 
 	return &InterfaceTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
 func (r *TypeDef) AsList() *ListTypeDef {
-	q := r.q.Select("asList")
+	q := r.Query.Select("asList")
 
 	return &ListTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
 func (r *TypeDef) AsObject() *ObjectTypeDef {
-	q := r.q.Select("asObject")
+	q := r.Query.Select("asObject")
 
 	return &ObjectTypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -6243,12 +6230,12 @@ func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.q.Select("id")
+	q := r.Query.Select("id")
 
 	var response TypeDefID
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
@@ -6283,12 +6270,12 @@ func (r *TypeDef) Kind(ctx context.Context) (TypeDefKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
 	}
-	q := r.q.Select("kind")
+	q := r.Query.Select("kind")
 
 	var response TypeDefKind
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Whether this type can be set to null. Defaults to false.
@@ -6296,23 +6283,23 @@ func (r *TypeDef) Optional(ctx context.Context) (bool, error) {
 	if r.optional != nil {
 		return *r.optional, nil
 	}
-	q := r.q.Select("optional")
+	q := r.Query.Select("optional")
 
 	var response bool
 
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, r.Client)
 }
 
 // Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
 func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	assertNotNil("function", function)
-	q := r.q.Select("withConstructor")
+	q := r.Query.Select("withConstructor")
 	q = q.Arg("function", function)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -6325,7 +6312,7 @@ type TypeDefWithFieldOpts struct {
 // Adds a static field for an Object TypeDef, failing if the type is not an object.
 func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFieldOpts) *TypeDef {
 	assertNotNil("typeDef", typeDef)
-	q := r.q.Select("withField")
+	q := r.Query.Select("withField")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -6336,20 +6323,20 @@ func (r *TypeDef) WithField(name string, typeDef *TypeDef, opts ...TypeDefWithFi
 	q = q.Arg("typeDef", typeDef)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
 func (r *TypeDef) WithFunction(function *Function) *TypeDef {
 	assertNotNil("function", function)
-	q := r.q.Select("withFunction")
+	q := r.Query.Select("withFunction")
 	q = q.Arg("function", function)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -6360,7 +6347,7 @@ type TypeDefWithInterfaceOpts struct {
 
 // Returns a TypeDef of kind Interface with the provided name.
 func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *TypeDef {
-	q := r.q.Select("withInterface")
+	q := r.Query.Select("withInterface")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -6370,31 +6357,31 @@ func (r *TypeDef) WithInterface(name string, opts ...TypeDefWithInterfaceOpts) *
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Sets the kind of the type.
 func (r *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
-	q := r.q.Select("withKind")
+	q := r.Query.Select("withKind")
 	q = q.Arg("kind", kind)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Returns a TypeDef of kind List with the provided type for its elements.
 func (r *TypeDef) WithListOf(elementType *TypeDef) *TypeDef {
 	assertNotNil("elementType", elementType)
-	q := r.q.Select("withListOf")
+	q := r.Query.Select("withListOf")
 	q = q.Arg("elementType", elementType)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
@@ -6407,7 +6394,7 @@ type TypeDefWithObjectOpts struct {
 //
 // Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
 func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDef {
-	q := r.q.Select("withObject")
+	q := r.Query.Select("withObject")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -6417,19 +6404,19 @@ func (r *TypeDef) WithObject(name string, opts ...TypeDefWithObjectOpts) *TypeDe
 	q = q.Arg("name", name)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 
 // Sets whether this type can be set to null.
 func (r *TypeDef) WithOptional(optional bool) *TypeDef {
-	q := r.q.Select("withOptional")
+	q := r.Query.Select("withOptional")
 	q = q.Arg("optional", optional)
 
 	return &TypeDef{
-		q: q,
-		c: r.c,
+		Query:  q,
+		Client: r.Client,
 	}
 }
 

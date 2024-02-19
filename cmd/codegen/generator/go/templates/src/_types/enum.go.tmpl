@@ -1,5 +1,5 @@
 {{- if IsEnum . }}
-	{{- $enumName := .Name }}
+{{- $enumName := .Name }}
 type {{ $enumName }} string
 
 func ({{ $enumName }}) IsEnum() {}
