@@ -76,7 +76,7 @@ require (
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/urfave/cli v1.22.14
 	github.com/vektah/gqlparser/v2 v2.5.10
-	github.com/vito/midterm v0.1.4
+	github.com/vito/midterm v0.1.5-0.20240215023001-e649b2677bfa
 	github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291
 	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 	github.com/zeebo/xxh3 v1.0.2

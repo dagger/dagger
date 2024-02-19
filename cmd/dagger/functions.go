@@ -299,7 +299,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 			setCmdOutput(cmd, primaryVtx)
 		}
 		if ctx.Err() != nil {
-			cmd.PrintErrln("Canceled")
+			cmd.PrintErrln("Canceled.")
 		} else if rerr != nil {
 			cmd.PrintErrln("Error:", rerr.Error())
 

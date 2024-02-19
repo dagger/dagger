@@ -171,6 +171,10 @@ func (term *Vterm) Render(w io.Writer, offset, height int) {
 			break
 		}
 
+		if lines > 0 {
+			fmt.Fprintln(w)
+		}
+
 		fmt.Fprint(w, term.Prefix)
 		term.vt.RenderLine(w, row)
 		lines++

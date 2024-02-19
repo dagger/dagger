@@ -1,11 +1,15 @@
 import contextlib
 import logging
+from typing import TYPE_CHECKING
 
 from dagger import Config
 
 from ._engine.conn import Engine, provision_engine
 from ._managers import ResourceManager
 from .client._session import SharedConnection
+
+if TYPE_CHECKING:
+    from dagger import Client
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,7 @@ class Connection(ResourceManager):
         super().__init__()
         self.cfg = config or Config()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "Client":
         logger.debug("Establishing connection with isolated client")
         async with self.get_stack() as stack:
             engine = await Engine(self.cfg, stack).provision()
