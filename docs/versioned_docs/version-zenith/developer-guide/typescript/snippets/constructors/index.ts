@@ -1,7 +1,6 @@
-import { dag, object, func, field } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class HelloWorld {
 
   greeting: string

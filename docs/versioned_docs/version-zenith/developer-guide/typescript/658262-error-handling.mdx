@@ -1,8 +1,8 @@
 ---
 slug: /developer-guide/typescript/658262/error-handling
-displayed_sidebar: "zenith"
+displayed_sidebar: 'zenith'
 toc_max_heading_level: 2
-title: "Error Handling"
+title: 'Error Handling'
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -11,4 +11,35 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+Module are handling error in the same way the language do. This allows you to support any kind of error handling your application requires.
+
+You can also use error handling to verify users' input.
+
+Here is an example module that expose a function `divide` and shall throw an error if the exposant is `0`:
+
+```typescript file=./snippets/error-handling/index.ts
+```
+
+And here an example call for this module:
+
+```shell
+dagger call divide --a 4 --b 2
+```
+
+The result will be:
+
+```shell
+2
+```
+
+But if you send 0 as exposant:
+
+```shell
+dagger call divide --a 4 --b 0
+```
+
+The result will be:
+
+```
+cannot divide by zero
+```
