@@ -3008,6 +3008,54 @@ func Foo() *dagger.Directory {
 	require.JSONEq(t, `{"minimal":{"hello":"hello world"}}`, out)
 }
 
+func TestModuleGoNameCase(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/toplevel/ssh").
+		With(daggerExec("init", "--name=ssh", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Ssh struct {}
+
+func (ssh *Ssh) SayHello() string {
+        return "hello!"
+}
+`,
+		})
+	out, err := ctr.With(daggerQuery(`{ssh{sayHello}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"ssh":{"sayHello":"hello!"}}`, out)
+
+	ctr = ctr.
+		WithWorkdir("/toplevel").
+		With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+		With(daggerExec("install", "./ssh")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import "context"
+
+type Toplevel struct {}
+
+func (t *Toplevel) SayHello(ctx context.Context) (string, error) {
+        return dag.SSH().SayHello(ctx)
+}
+`,
+		})
+	logGen(ctx, t, ctr.Directory("."))
+
+	out, err = ctr.With(daggerQuery(`{toplevel{sayHello}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"toplevel":{"sayHello":"hello!"}}`, out)
+}
+
 var useInner = `package main
 
 type Dep struct{}
