@@ -732,7 +732,12 @@ func getModuleConfigurationForSourceRef(
 				return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
 			}
 			if namedDep, ok := modCfg.DependencyByName(srcRefStr); ok {
-				if strings.HasPrefix(namedDep.Source, "github.com/") {
+				src := dag.ModuleSource(namedDep.Source)
+				kind, err := src.Kind(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if kind == dagger.GitSource {
 					return getModuleConfigurationForSourceRef(ctx, dag, namedDep.Source, resolveFromCaller)
 				}
 				depPath := filepath.Join(defaultConfigDir, namedDep.Source)
