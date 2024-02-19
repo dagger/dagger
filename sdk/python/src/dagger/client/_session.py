@@ -78,6 +78,10 @@ class ClientSession(ResourceManager):
         self.client = retrying_client(client, cfg.retry) if cfg.retry else client
         self._session: AsyncClientSession | None = None
 
+    async def __aenter__(self) -> Self:
+        await self.start()
+        return self
+
     async def start(self) -> AsyncClientSession:
         if self._session:
             return self._session
