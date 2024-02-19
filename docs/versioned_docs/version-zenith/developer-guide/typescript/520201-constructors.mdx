@@ -11,4 +11,21 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, be a simple way to accept module-wide configuration.
+
+Here is an example module:
+
+```go file=./snippets/constructors/main.go
+```
+
+And here is an example call for this module:
+
+```console
+dagger call --name=Foo message
+```
+
+The result will be:
+
+```console
+Hello, Foo!
+```
