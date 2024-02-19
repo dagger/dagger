@@ -6,7 +6,6 @@ title: "First Steps"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
-import PartialDeveloperTroubleshooting from '../../partials/_developer_troubleshooting.mdx';
 import PartialDeveloperQuickstartIntroduction from '../../partials/_developer_quickstart_introduction.mdx';
 import PartialDeveloperQuickstartTrivyTest from '../../partials/_developer_quickstart_trivy_test.mdx';
 import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quickstart_conclusion.mdx';
@@ -133,7 +132,7 @@ The example module in the previous sections was just that - an example. Next, le
       - The reporting format (optional).
 
     The function code performs the following operations:
-      - It uses the default `dagger` client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the default `dag` client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
       - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `withExec()` method returns a revised `Container` with the results of command execution.
       - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
 
@@ -144,9 +143,3 @@ The example module in the previous sections was just that - an example. Next, le
 ## Conclusion
 
 <PartialDeveloperQuickstartConclusion />
-
-## Appendix A: Troubleshooting
-
-If you come across bugs, here are some simple troubleshooting suggestions.
-
-<PartialDeveloperTroubleshooting />
