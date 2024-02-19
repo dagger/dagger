@@ -1001,3 +1001,25 @@ func TestModuleDaggerGitRefs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://github.com/sagikazarmark/daggerverse/tree/bedfa0c8bdba7192c65c21b5e88a48b600666fcc/archivist", htmlURL)
 }
+
+func TestModuleDaggerCallGit(t *testing.T) {
+	/*
+		TODO: this is a stopgap test to get some basic coverage of installing modules
+		from git refs. Ideally it would rely on our own repo for of test fixtures but
+		those have not been setup yet: https://github.com/dagger/dagger/issues/6623
+	*/
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	out, err := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(daggerExec("install", "github.com/jedevc/shykes-daggerverse/hello@06e224b789a9c339e10e9fc46833ba96397dcc63")).
+		With(daggerExec("-m", "hello", "functions")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello")
+	require.Contains(t, out, "Say hello to the world!")
+}
