@@ -4526,14 +4526,16 @@ func TestModuleCurrentModuleAPI(t *testing.T) {
 func TestModuleCustomSDK(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
+	t.Run("local", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
 
-	ctr := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/coolsdk").
-		With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/coolsdk").
+			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
 
 type CoolSdk struct {}
 
@@ -4556,11 +4558,11 @@ func (m *CoolSdk) RequiredPaths() []string {
 	}
 }
 `,
-		}).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
 
 import "os"
 
@@ -4570,14 +4572,44 @@ func (m *Test) Fn() string {
 	return os.Getenv("COOL")
 }
 `,
-		})
+			})
 
-	out, err := ctr.
-		With(daggerCall("fn")).
-		Stdout(ctx)
+		out, err := ctr.
+			With(daggerCall("fn")).
+			Stdout(ctx)
 
-	require.NoError(t, err)
-	require.Equal(t, "true", strings.TrimSpace(out))
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
+
+	t.Run("git", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef("cool-sdk"))).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import "os"
+
+type Test struct {}
+
+func (m *Test) Fn() string {
+	return os.Getenv("COOL")
+}
+`,
+			})
+
+		out, err := ctr.
+			With(daggerCall("fn")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "true", strings.TrimSpace(out))
+	})
 }
 
 // TestModuleHostError verifies the host api is not exposed to modules
