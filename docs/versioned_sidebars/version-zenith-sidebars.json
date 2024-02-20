@@ -54,6 +54,10 @@
             {
               "type": "doc",
               "id": "developer-guide/fundamentals/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/secrets"
             }
           ]
         },
