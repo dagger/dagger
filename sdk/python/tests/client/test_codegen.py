@@ -30,7 +30,6 @@ from dagger._codegen.generator import Scalar as ScalarHandler
 def ctx():
     return Context(
         ids=frozenset({}),
-        simple_objects_map={},
         remaining={"Secret"},
     )
 

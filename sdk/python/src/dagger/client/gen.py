@@ -519,11 +519,22 @@ class Container(Type):
         """Retrieves the list of environment variables passed to commands."""
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
-        _ctx = EnvVariable(_ctx)._select_multiple(
-            _name="name",
-            _value="value",
-        )
-        return await _ctx.execute(list[EnvVariable])
+        _ctx = EnvVariable(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: EnvVariableID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            EnvVariable(
+                Client.from_context(_ctx)._select(
+                    "loadEnvVariableFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     def experimental_with_all_gp_us(self) -> "Container":
@@ -626,13 +637,22 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
-        _ctx = Port(_ctx)._select_multiple(
-            _description="description",
-            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
-            _port="port",
-            _protocol="protocol",
-        )
-        return await _ctx.execute(list[Port])
+        _ctx = Port(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: PortID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            Port(
+                Client.from_context(_ctx)._select(
+                    "loadPortFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     def file(self, path: str) -> "File":
@@ -775,11 +795,22 @@ class Container(Type):
         """Retrieves the list of labels passed to container."""
         _args: list[Arg] = []
         _ctx = self._select("labels", _args)
-        _ctx = Label(_ctx)._select_multiple(
-            _name="name",
-            _value="value",
-        )
-        return await _ctx.execute(list[Label])
+        _ctx = Label(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: LabelID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            Label(
+                Client.from_context(_ctx)._select(
+                    "loadLabelFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def mounts(self) -> list[str]:
@@ -2464,14 +2495,6 @@ class Directory(Type):
 class EnvVariable(Type):
     """An environment variable name and value."""
 
-    __slots__ = (
-        "_name",
-        "_value",
-    )
-
-    _name: str | None
-    _value: str | None
-
     @typecheck
     async def id(self) -> EnvVariableID:
         """A unique identifier for this EnvVariable.
@@ -2515,8 +2538,6 @@ class EnvVariable(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -2539,8 +2560,6 @@ class EnvVariable(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_value"):
-            return self._value
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
         return await _ctx.execute(str)
@@ -2551,14 +2570,6 @@ class FieldTypeDef(Type):
     field on an object has a static value, as opposed to a function on an
     object whose value is computed by invoking code (and can accept
     arguments)."""
-
-    __slots__ = (
-        "_description",
-        "_name",
-    )
-
-    _description: str | None
-    _name: str | None
 
     @typecheck
     async def description(self) -> str:
@@ -2578,8 +2589,6 @@ class FieldTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_description"):
-            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
@@ -2627,8 +2636,6 @@ class FieldTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -2822,25 +2829,27 @@ class Function(Type):
     always evaluates against a parent object and is given a set of named
     arguments."""
 
-    __slots__ = (
-        "_description",
-        "_name",
-    )
-
-    _description: str | None
-    _name: str | None
-
     @typecheck
     async def args(self) -> list["FunctionArg"]:
         """Arguments accepted by the function, if any."""
         _args: list[Arg] = []
         _ctx = self._select("args", _args)
-        _ctx = FunctionArg(_ctx)._select_multiple(
-            _default_value="defaultValue",
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[FunctionArg])
+        _ctx = FunctionArg(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: FunctionArgID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            FunctionArg(
+                Client.from_context(_ctx)._select(
+                    "loadFunctionArgFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def description(self) -> str:
@@ -2860,8 +2869,6 @@ class Function(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_description"):
-            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
@@ -2909,8 +2916,6 @@ class Function(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -2982,16 +2987,6 @@ class FunctionArg(Type):
     argument at function definition time, not an argument passed at
     function call time."""
 
-    __slots__ = (
-        "_default_value",
-        "_description",
-        "_name",
-    )
-
-    _default_value: JSON | None
-    _description: str | None
-    _name: str | None
-
     @typecheck
     async def default_value(self) -> JSON:
         """A default value to use for this argument when not explicitly set by
@@ -3009,8 +3004,6 @@ class FunctionArg(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_default_value"):
-            return self._default_value
         _args: list[Arg] = []
         _ctx = self._select("defaultValue", _args)
         return await _ctx.execute(JSON)
@@ -3033,8 +3026,6 @@ class FunctionArg(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_description"):
-            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
@@ -3082,8 +3073,6 @@ class FunctionArg(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -3129,11 +3118,22 @@ class FunctionCall(Type):
         """The argument values the function is being invoked with."""
         _args: list[Arg] = []
         _ctx = self._select("inputArgs", _args)
-        _ctx = FunctionCallArgValue(_ctx)._select_multiple(
-            _name="name",
-            _value="value",
-        )
-        return await _ctx.execute(list[FunctionCallArgValue])
+        _ctx = FunctionCallArgValue(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: FunctionCallArgValueID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            FunctionCallArgValue(
+                Client.from_context(_ctx)._select(
+                    "loadFunctionCallArgValueFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def name(self) -> str:
@@ -3233,14 +3233,6 @@ class FunctionCall(Type):
 class FunctionCallArgValue(Type):
     """A value passed as a named argument to a function call."""
 
-    __slots__ = (
-        "_name",
-        "_value",
-    )
-
-    _name: str | None
-    _value: JSON | None
-
     @typecheck
     async def id(self) -> FunctionCallArgValueID:
         """A unique identifier for this FunctionCallArgValue.
@@ -3284,8 +3276,6 @@ class FunctionCallArgValue(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -3306,8 +3296,6 @@ class FunctionCallArgValue(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_value"):
-            return self._value
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
         return await _ctx.execute(JSON)
@@ -3921,11 +3909,22 @@ class InputTypeDef(Type):
         """Static fields defined on this input object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
-        _ctx = FieldTypeDef(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[FieldTypeDef])
+        _ctx = FieldTypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: FieldTypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            FieldTypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadFieldTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def id(self) -> InputTypeDefID:
@@ -4005,11 +4004,22 @@ class InterfaceTypeDef(Type):
         """Functions defined on this interface, if any."""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
-        _ctx = Function(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[Function])
+        _ctx = Function(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: FunctionID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            Function(
+                Client.from_context(_ctx)._select(
+                    "loadFunctionFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def id(self) -> InterfaceTypeDefID:
@@ -4085,14 +4095,6 @@ class InterfaceTypeDef(Type):
 class Label(Type):
     """A simple key value object that represents a label."""
 
-    __slots__ = (
-        "_name",
-        "_value",
-    )
-
-    _name: str | None
-    _value: str | None
-
     @typecheck
     async def id(self) -> LabelID:
         """A unique identifier for this Label.
@@ -4136,8 +4138,6 @@ class Label(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -4160,8 +4160,6 @@ class Label(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_value"):
-            return self._value
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
         return await _ctx.execute(str)
@@ -4269,40 +4267,49 @@ class LocalModuleSource(Type):
 class Module(Type):
     """A Dagger module."""
 
-    __slots__ = (
-        "_description",
-        "_name",
-        "_sdk",
-        "_serve",
-    )
-
-    _description: str | None
-    _name: str | None
-    _sdk: str | None
-    _serve: Void | None
-
     @typecheck
     async def dependencies(self) -> list["Module"]:
         """Modules used by this module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
-        _ctx = Module(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-            _sdk="sdk",
-            _serve="serve",
-        )
-        return await _ctx.execute(list[Module])
+        _ctx = Module(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: ModuleID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            Module(
+                Client.from_context(_ctx)._select(
+                    "loadModuleFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def dependency_config(self) -> list["ModuleDependency"]:
         """The dependencies as configured by the module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencyConfig", _args)
-        _ctx = ModuleDependency(_ctx)._select_multiple(
-            _name="name",
-        )
-        return await _ctx.execute(list[ModuleDependency])
+        _ctx = ModuleDependency(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: ModuleDependencyID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            ModuleDependency(
+                Client.from_context(_ctx)._select(
+                    "loadModuleDependencyFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def description(self) -> str:
@@ -4322,8 +4329,6 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_description"):
-            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
@@ -4383,11 +4388,22 @@ class Module(Type):
         """Interfaces served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("interfaces", _args)
-        _ctx = TypeDef(_ctx)._select_multiple(
-            _kind="kind",
-            _optional="optional",
-        )
-        return await _ctx.execute(list[TypeDef])
+        _ctx = TypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: TypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            TypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def name(self) -> str:
@@ -4407,8 +4423,6 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -4418,11 +4432,22 @@ class Module(Type):
         """Objects served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("objects", _args)
-        _ctx = TypeDef(_ctx)._select_multiple(
-            _kind="kind",
-            _optional="optional",
-        )
-        return await _ctx.execute(list[TypeDef])
+        _ctx = TypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: TypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            TypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     def runtime(self) -> Container:
@@ -4452,8 +4477,6 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_sdk"):
-            return self._sdk
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
         return await _ctx.execute(str)
@@ -4478,8 +4501,6 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_serve"):
-            return self._serve
         _args: list[Arg] = []
         _ctx = self._select("serve", _args)
         return await _ctx.execute(Void | None)
@@ -4550,10 +4571,6 @@ class Module(Type):
 class ModuleDependency(Type):
     """The configuration of dependency of a module."""
 
-    __slots__ = ("_name",)
-
-    _name: str | None
-
     @typecheck
     async def id(self) -> ModuleDependencyID:
         """A unique identifier for this ModuleDependency.
@@ -4597,8 +4614,6 @@ class ModuleDependency(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_name"):
-            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
@@ -4696,10 +4711,22 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
-        _ctx = ModuleDependency(_ctx)._select_multiple(
-            _name="name",
-        )
-        return await _ctx.execute(list[ModuleDependency])
+        _ctx = ModuleDependency(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: ModuleDependencyID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            ModuleDependency(
+                Client.from_context(_ctx)._select(
+                    "loadModuleDependencyFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     def directory(self, path: str) -> Directory:
@@ -5028,22 +5055,44 @@ class ObjectTypeDef(Type):
         """Static fields defined on this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
-        _ctx = FieldTypeDef(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[FieldTypeDef])
+        _ctx = FieldTypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: FieldTypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            FieldTypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadFieldTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def functions(self) -> list[Function]:
         """Functions defined on this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
-        _ctx = Function(_ctx)._select_multiple(
-            _description="description",
-            _name="name",
-        )
-        return await _ctx.execute(list[Function])
+        _ctx = Function(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: FunctionID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            Function(
+                Client.from_context(_ctx)._select(
+                    "loadFunctionFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def id(self) -> ObjectTypeDefID:
@@ -5119,18 +5168,6 @@ class ObjectTypeDef(Type):
 class Port(Type):
     """A port exposed by a container."""
 
-    __slots__ = (
-        "_description",
-        "_experimental_skip_healthcheck",
-        "_port",
-        "_protocol",
-    )
-
-    _description: str | None
-    _experimental_skip_healthcheck: bool | None
-    _port: int | None
-    _protocol: NetworkProtocol | None
-
     @typecheck
     async def description(self) -> str | None:
         """The port description.
@@ -5149,8 +5186,6 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_description"):
-            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return await _ctx.execute(str | None)
@@ -5171,8 +5206,6 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_experimental_skip_healthcheck"):
-            return self._experimental_skip_healthcheck
         _args: list[Arg] = []
         _ctx = self._select("experimentalSkipHealthcheck", _args)
         return await _ctx.execute(bool)
@@ -5220,8 +5253,6 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_port"):
-            return self._port
         _args: list[Arg] = []
         _ctx = self._select("port", _args)
         return await _ctx.execute(int)
@@ -5242,8 +5273,6 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_protocol"):
-            return self._protocol
         _args: list[Arg] = []
         _ctx = self._select("protocol", _args)
         return await _ctx.execute(NetworkProtocol)
@@ -5379,11 +5408,22 @@ class Client(Root):
         """
         _args: list[Arg] = []
         _ctx = self._select("currentTypeDefs", _args)
-        _ctx = TypeDef(_ctx)._select_multiple(
-            _kind="kind",
-            _optional="optional",
-        )
-        return await _ctx.execute(list[TypeDef])
+        _ctx = TypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: TypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            TypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def default_platform(self) -> Platform:
@@ -6121,13 +6161,22 @@ class Service(Type):
         """Retrieves the list of ports provided by the service."""
         _args: list[Arg] = []
         _ctx = self._select("ports", _args)
-        _ctx = Port(_ctx)._select_multiple(
-            _description="description",
-            _experimental_skip_healthcheck="experimentalSkipHealthcheck",
-            _port="port",
-            _protocol="protocol",
-        )
-        return await _ctx.execute(list[Port])
+        _ctx = Port(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: PortID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            Port(
+                Client.from_context(_ctx)._select(
+                    "loadPortFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     async def start(self) -> "Service":
@@ -6296,14 +6345,6 @@ class Terminal(Type):
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
-    __slots__ = (
-        "_kind",
-        "_optional",
-    )
-
-    _kind: TypeDefKind | None
-    _optional: bool | None
-
     @typecheck
     def as_input(self) -> InputTypeDef:
         """If kind is INPUT, the input-specific type definition. If kind is not
@@ -6381,8 +6422,6 @@ class TypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_kind"):
-            return self._kind
         _args: list[Arg] = []
         _ctx = self._select("kind", _args)
         return await _ctx.execute(TypeDefKind)
@@ -6403,8 +6442,6 @@ class TypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        if hasattr(self, "_optional"):
-            return self._optional
         _args: list[Arg] = []
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
