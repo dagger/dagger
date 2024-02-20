@@ -55,7 +55,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			exec.Command("go", "mod", "tidy"),
 		},
 	}
-	if _, err := os.Stat("go.work"); err != nil {
+	if _, err := os.Stat(filepath.Join(g.Config.ModuleContextPath, "go.work")); err == nil {
 		// run "go work use ." after generating if we had a go.work at the root
 		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
 	}

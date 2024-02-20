@@ -166,6 +166,31 @@ func TestModuleGoInit(t *testing.T) {
 		})
 	})
 
+	t.Run("respects existing go.work for top-level source", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "work", "init"}).
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
+
+		out, err := modGen.
+			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		t.Run("go.work is edited", func(t *testing.T) {
+			generated, err := modGen.File("go.work").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, generated, "use .\n")
+		})
+	})
+
 	t.Run("ignores go.work for subdir", func(t *testing.T) {
 		t.Parallel()
 
