@@ -490,7 +490,7 @@ func TestModuleGit(t *testing.T) {
 			require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 			t.Run("configures .gitattributes", func(t *testing.T) {
-				ignore, err := modGen.File(".gitattributes").Contents(ctx)
+				ignore, err := modGen.File("dagger/.gitattributes").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitGeneratedFiles {
 					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated\n", fileName))
@@ -498,7 +498,7 @@ func TestModuleGit(t *testing.T) {
 			})
 			if len(tc.gitIgnoredFiles) > 0 {
 				t.Run("configures .gitignore", func(t *testing.T) {
-					ignore, err := modGen.File(".gitignore").Contents(ctx)
+					ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
 					require.NoError(t, err)
 					for _, fileName := range tc.gitIgnoredFiles {
 						require.Contains(t, ignore, fileName)
