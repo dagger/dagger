@@ -329,15 +329,23 @@ func (m *manager) Export(ctx context.Context) error {
 func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, provider content.Provider) error {
 	bklog.G(ctx).Debugf("pushing layer %s", layerDesc.Digest)
 	pushLayerStart := time.Now()
+
+	var skipped bool
 	defer func() {
-		bklog.G(ctx).Debugf("finished pushing layer %s in %s", layerDesc.Digest, time.Since(pushLayerStart))
+		verbPrefix := "finished"
+		if skipped {
+			verbPrefix = "skipped"
+		}
+
+		bklog.G(ctx).Debugf("%s pushing layer %s in %s", verbPrefix, layerDesc.Digest, time.Since(pushLayerStart))
 	}()
 
 	getURLResp, err := m.cacheClient.GetLayerUploadURL(ctx, GetLayerUploadURLRequest{Digest: layerDesc.Digest})
 	if err != nil {
 		return err
 	}
-	if getURLResp.Skip {
+
+	if skipped = getURLResp.Skip; skipped {
 		return nil
 	}
 
