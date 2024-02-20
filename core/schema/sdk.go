@@ -49,14 +49,22 @@ func (s *moduleSchema) sdkForModule(
 		return nil, fmt.Errorf("failed to get sdk source for %s: %w", sdk, err)
 	}
 
-	var sdkMod dagql.Instance[*core.Module]
-	err = s.dag.Select(ctx, parentSrc, &sdkMod,
-		dagql.Selector{
-			Field: "resolveDependency",
-			Args: []dagql.NamedInput{
-				{Name: "dep", Value: dagql.NewID[*core.ModuleSource](sdkSource.ID())},
+	if sdkSource.Self.Kind == core.ModuleSourceKindLocal {
+		err = s.dag.Select(ctx, parentSrc, &sdkSource,
+			dagql.Selector{
+				Field: "resolveDependency",
+				Args: []dagql.NamedInput{
+					{Name: "dep", Value: dagql.NewID[*core.ModuleSource](sdkSource.ID())},
+				},
 			},
-		},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load sdk module %s: %w", sdk, err)
+		}
+	}
+
+	var sdkMod dagql.Instance[*core.Module]
+	err = s.dag.Select(ctx, sdkSource, &sdkMod,
 		dagql.Selector{
 			Field: "asModule",
 		},
