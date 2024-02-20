@@ -190,8 +190,12 @@ func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error)
 		return nil, fmt.Errorf("directory address cannot be empty")
 	}
 
+	parts := strings.Split(v.String(), ",")
+	dir := parts[0]
+	includePatterns := parts[1:]
+
 	// Try parsing as a Git URL
-	parsedGit, err := parseGit(v.String())
+	parsedGit, err := parseGit(dir)
 	if err == nil {
 		gitOpts := dagger.GitOpts{
 			KeepGitDir: true,
@@ -203,13 +207,19 @@ func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error)
 		if subdir := parsedGit.Fragment.Subdir; subdir != "" {
 			gitDir = gitDir.Directory(subdir)
 		}
+		if len(includePatterns) > 0 {
+			gitDir = dag.Directory().WithDirectory("/", gitDir, dagger.DirectoryWithDirectoryOpts{
+				Include: includePatterns,
+			})
+		}
 		return gitDir, nil
 	}
 
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
-	vStr := v.String()
-	vStr = strings.TrimPrefix(vStr, "file://")
-	return dag.Host().Directory(vStr), nil
+	dir = strings.TrimPrefix(dir, "file://")
+	return dag.Host().Directory(dir, dagger.HostDirectoryOpts{
+		Include: includePatterns,
+	}), nil
 }
 
 func parseGit(urlStr string) (*gitutil.GitURL, error) {
