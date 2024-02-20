@@ -45,7 +45,6 @@ from graphql import (
     GraphQLWrappingType,
     Undefined,
     assert_leaf_type,
-    assert_object_type,
     get_named_type,
     is_leaf_type,
 )
@@ -77,7 +76,6 @@ OutputTypeFormat: TypeAlias = str
 IDSet: TypeAlias = frozenset[IDName]
 
 SimpleFieldMap: TypeAlias = dict[FieldName, "SimpleField"]
-SimpleObjectsMap: TypeAlias = dict[TypeName, SimpleFieldMap]
 
 
 def joiner(func: Callable[T_ParamSpec, Iterator[str]]) -> Callable[T_ParamSpec, str]:
@@ -112,9 +110,6 @@ class Scalars(enum.Enum):
 @dataclass
 class Context:
     """Shared state during execution."""
-
-    simple_objects_map: SimpleObjectsMap
-    """Map of simple leaf fields for types that are returned in lists."""
 
     ids: frozenset[IDName] = field(default_factory=frozenset)
     """Set of ID scalar names."""
@@ -200,11 +195,10 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
     )
 
     # Pre-create handy maps to make handler code simpler.
-    simple_objects_map = create_simple_objects_map(schema.type_map)
     ids = frozenset(n for n, t in schema.type_map.items() if is_id_type(t))
 
     # shared state between all handler instances
-    ctx = Context(simple_objects_map=simple_objects_map, ids=ids)
+    ctx = Context(ids=ids)
 
     handlers: tuple[Handler, ...] = (
         Scalar(ctx),
@@ -257,35 +251,6 @@ class SimpleField:
 
     def __str__(self) -> str:
         return self.python_name
-
-
-def create_simple_objects_map(type_map: TypeMap) -> SimpleObjectsMap:
-    """Create a map of object type names that are returned in lists.
-
-    The values are maps of python attribute names to the simple leaf
-    GraphQL fields that they represent.
-
-    This is used to populate object types with pre-selected fields
-    when they are returned in lists because our simple chainable API
-    makes it hard to query a field that comes from a list (i.e., which
-    index in the list to get the result from?).
-    """
-
-    def _leaf_fields(named_type: GraphQLNamedType):
-        # Assertion for type checker. Already guaranteed by get_lists_of_object_types
-        object_type = assert_object_type(named_type)
-        for f_name, f in object_type.fields.items():
-            field_name = str(f_name)
-            # This strips all wrapping (e.g., List, NonNull) from the type.
-            named_field_type = get_named_type(f.type)
-            # Ignore id fields which have special meaning.
-            if field_name != "id" and is_leaf_type(named_field_type):
-                yield field_name, SimpleField(field_name, named_field_type)
-
-    return {
-        named_type.name: dict(_leaf_fields(type_map[named_type.name]))
-        for named_type in set(get_lists_of_object_types(type_map))
-    }
 
 
 def get_lists_of_object_types(type_map: TypeMap):
@@ -566,23 +531,10 @@ class _ObjectField:
         self.description = field.description
 
         self.is_leaf = is_output_leaf_type(field.type)
-        self.is_exec = self.is_leaf
+        self.is_list = is_list_of_objects_type(field.type)
+        self.is_exec = self.is_leaf or self.is_list
         self.type = format_output_type(field.type).replace("Query", "Client")
         self.parent_name = get_named_type(parent).name
-
-        # If this field returns a list of objects, get the type's fields
-        # for pre-selection.
-        self.sub_select_slots = ()
-        if is_list_of_objects_type(field.type):
-            self.is_exec = True
-            self.sub_select_slots = tuple(
-                ctx.simple_objects_map.get(self.named_type.name, {}).values()
-            )
-
-        # Slot fields are fields that can be prefilled from the result of a list.
-        self.slot_field = self.ctx.simple_objects_map.get(self.parent_name, {}).get(
-            name
-        )
 
         # Currently, `sync` is the only field where the error is all we
         # care about but more could be added later.
@@ -652,10 +604,6 @@ class _ObjectField:
                 """
             )
 
-        if self.slot_field:
-            yield f'if hasattr(self, "{self.slot_field.python_name}"):'
-            yield indent(f"return self.{self.slot_field.python_name}")
-
         if not self.args:
             yield "_args: list[Arg] = []"
         else:
@@ -665,26 +613,32 @@ class _ObjectField:
 
         yield f'_ctx = self._select("{self.graphql_name}", _args)'
 
-        if self.is_exec:
-            if self.convert_id:
-                if _field := self.id_query_field:
-                    yield f"_id = await _ctx.execute({self.named_type.name})"
-                    yield (
-                        f'_ctx = Client.from_context(_ctx)._select("{_field}",'
-                        ' [Arg("id", _id)])'
-                    )
-                    yield f"return {self.type}(_ctx)"
-                else:
-                    yield "await _ctx.execute()"
-                    yield "return self"
-            else:
-                if slots := self.sub_select_slots:
-                    target = self.named_type.name
-                    kwargs = ", ".join(s.as_kwarg() for s in slots)
-                    yield f"_ctx = {target}(_ctx)._select_multiple({kwargs},)"
-                yield f"return await _ctx.execute({self.type})"
-        else:
+        if not self.is_exec:
             yield f"return {self.type}(_ctx)"
+        elif self.convert_id:
+            if _field := self.id_query_field:
+                yield f"_id = await _ctx.execute({self.named_type.name})"
+                yield (
+                    f'_ctx = Client.from_context(_ctx)._select("{_field}",'
+                    ' [Arg("id", _id)])'
+                )
+                yield f"return {self.type}(_ctx)"
+            else:
+                yield "await _ctx.execute()"
+                yield "return self"
+        elif self.is_list:
+            _target = self.named_type.name
+            yield f'_ctx = {_target}(_ctx)._select("id", [])'
+            yield "@dataclass"
+            yield "class Response:"
+            yield f"    id: {self.named_type.name}ID"
+            yield "_ids = await _ctx.execute(list[Response])"
+            yield (
+                f"return [{_target}(Client.from_context(_ctx)._select("
+                f'"load{_target}FromID", [Arg("id", v.id)],)) for v in _ids]'
+            )
+        else:
+            yield f"return await _ctx.execute({self.type})"
 
     def func_doc(self) -> str:
         def _out():
@@ -806,12 +760,6 @@ class ObjectHandler(Handler[_O]):
     def render_body(self, t: _O) -> Iterator[str]:
         if body := super().render_body(t):
             yield body
-
-        if slots := self.ctx.simple_objects_map.get(t.name):
-            yield ""
-            yield f"__slots__ = ({', '.join(quote(str(s)) for s in slots.values())},)"
-            yield ""
-            yield from (s.as_attr() for s in slots.values())
 
         yield from (
             str(field)
