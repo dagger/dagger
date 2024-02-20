@@ -89,7 +89,7 @@ Most importantly, patch vs minor is **not** a technical decision. If you want
 to read more about this, see [this (private) Discord
 thread](https://discord.com/channels/707636530424053791/1101242942267601038/1101508879671623780).
 
-> **Note**
+> [!NOTE]
 >
 > Once you know what type of release we are producing - patch vs minor -
 > remember to edit the `?` in the Discord thread.
@@ -107,7 +107,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
       improvements looks like](https://github.com/dagger/dagger/pull/5056).
 - [ ] Update the date in the shields.io badge, first line in this file.
 
-> **Note**
+> [!NOTE]
 >
 > We believe in documentation first, automation second. Documenting a process
 > forces us to understand it well. Continuously editing this documentation
@@ -123,7 +123,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 
 ## 🚙 Engine + 🚗 CLI ⏱ `30mins`
 
-> **Warning**
+> [!WARNING]
 >
 > It is important to always do an Engine + CLI release prior to releasing any
 > SDK. This will ensure that all the APIs in the SDK are also available in the
@@ -132,7 +132,8 @@ and improve it. We want small, constant improvements which compound. Therefore:
 - [ ] Create e.g. `.changes/v0.9.11.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
-> **Note**
+> [!NOTE]
+>
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
@@ -277,7 +278,7 @@ dagger run ./hack/make engine:test
       this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
       The new version can take up to `60mins` to appear, it's OK to move on.
 
-> **Note**
+> [!NOTE]
 >
 > To upload the release notes, we need to have the [`gh`
 > CLI](https://cli.github.com/) installed, e.g. `brew install gh`
@@ -403,7 +404,7 @@ gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
 
 ## 📒 Documentation ⏱ `5mins`
 
-> **Warning**
+> [!WARNING]
 >
 > Merging a documentation PR does NOT automatically deploy the
 > new documentation to the production website.
@@ -448,7 +449,7 @@ production deployment via Netlify as follows:
 - [ ] If you are satisfied with the preview, click the "Publish deploy" button.
       This will publish the selected deployment on https://docs.dagger.io
 
-> **Note**
+> [!NOTE]
 >
 > There have been cases where Netlify builds have failed with errors,
 > but the same build succeeds when performed locally. In the past, one reason
