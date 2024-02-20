@@ -755,7 +755,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	}
 	mod.GeneratedContextDirectory = baseContext
 
-	rootSubpath, err := src.Self.SourceRootSubpath()
+	sourceSubpath, err := src.Self.SourceSubpathWithDefault(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get source root subpath: %w", err)
 	}
@@ -800,7 +800,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	// (linter thinks this chunk of code is too similar to the below, but not clear abstraction is worth it)
 	//nolint:dupl
 	if len(generatedCode.VCSGeneratedPaths) > 0 {
-		gitAttrsPath := filepath.Join(rootSubpath, ".gitattributes")
+		gitAttrsPath := filepath.Join(sourceSubpath, ".gitattributes")
 		var gitAttrsContents []byte
 		gitAttrsFile, err := baseContext.Self.File(ctx, gitAttrsPath)
 		if err == nil {
@@ -841,7 +841,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
 	//nolint:dupl
 	if len(generatedCode.VCSIgnoredPaths) > 0 {
-		gitIgnorePath := filepath.Join(rootSubpath, ".gitignore")
+		gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
 		gitIgnoreFile, err := baseContext.Self.File(ctx, gitIgnorePath)
 		if err == nil {
