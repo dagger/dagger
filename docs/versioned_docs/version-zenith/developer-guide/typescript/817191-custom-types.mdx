@@ -1,8 +1,8 @@
 ---
 slug: /developer-guide/typescript/817191/custom-types
-displayed_sidebar: "zenith"
+displayed_sidebar: 'zenith'
 toc_max_heading_level: 2
-title: "Custom Types"
+title: 'Custom Types'
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -11,7 +11,54 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TypeScript has multiple way to support complex data type, however, dagger supports it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords does not allow decorators.
+TypeScript has multiple ways to support complex data type. However, the Dagger TypeScript SDK only support it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords does not allows decorators.
 
-This allows you to define alias using the field decorator option.
+Here is an example of a module `HelloWorld` that has a function `daggerOrganisation` that returns a custom `GitHubOrganisation` type that has multiples fields exposed in it:
 
+```typescript file=./snippets/custom-types/index.ts
+```
+
+Note that `GitHubOrganisation` and `GitHubAccount` has no functions exposed but you could define if you need to.
+
+And here's an example of call to this module to get all members' url:
+
+```shell
+dagger call dagger-organisation members url
+```
+
+The result will be:
+
+```shell
+https://github.com/daggernaut
+https://github.com/johnDoe
+```
+
+But since we have complex data type, we may need to retrieve multiples fields at the same time, to do so, you can use `dagger query`.
+
+This query retrieves the organisation's url as well as its members' url and username:
+
+```shell
+echo '{helloWorld{daggerOrganisation{url,members{username,email}}}}' | dagger query
+```
+
+The result will be:
+
+```shell
+{
+    "helloWorld": {
+        "daggerOrganisation": {
+            "members": [
+                {
+                    "email": "daggertnaut@dagger.io",
+                    "username": "daggernaut"
+                },
+                {
+                    "email": "john.doe@acme.io",
+                    "username": "johnDoe"
+                }
+            ],
+            "url": "https://github.com/dagger"
+        }
+    }
+}
+```
