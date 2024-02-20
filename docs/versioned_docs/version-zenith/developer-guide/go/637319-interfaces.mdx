@@ -10,3 +10,34 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 # Interfaces
 
 <PartialExperimentalDocs />
+
+The Go SDK supports interfaces, which allow you to define Go-style interface
+definitions so that your module can accept arbitrary values from other modules
+without being tightly coupled to the concrete type underneath.
+
+To use an interface, define a Go interface that embeds `DaggerObject` and use
+it in a module function argument:
+
+```go
+type MyMod struct {}
+
+type Fooer interface {
+  DaggerObject
+  Foo(ctx context.Context, bar int) (string, error)
+}
+
+func (m *MyMod) Foo(ctx context.Context, fooer Fooer) (string, error) {
+  return fooer.Foo(ctx, 42)
+}
+```
+
+<!-- TODO verify the following with Erik -->
+
+Functions defined in interface definitions must match the client-side API
+signature style. If it returns a scalar value or an array it must accept a
+`context.Context` argument and return an `error` return value. If it returns a
+chainable object value, it must not return an error value, and it doesn't need
+to include a `context.Context` argument.
+
+Note that you must also provide argument names, since they directly translate
+to the GraphQL field argument names.

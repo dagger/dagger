@@ -4,7 +4,7 @@ import { object, func } from "@dagger.io/dagger"
 class HelloWorld {
   @func()
   divide(a: number, b: number): number {
-    if (b <= 0) {
+    if (b == 0) {
       throw new Error("cannot divide by zero")
     }
 
