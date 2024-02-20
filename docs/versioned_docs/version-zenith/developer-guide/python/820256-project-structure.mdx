@@ -9,7 +9,7 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 # Project structure
 
-import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+<PartialExperimentalDocs />
 
 It’s essential to understand a few things about Python modules and how they’re structured, in order to make it fit with your normal workflow.
 
@@ -20,7 +20,7 @@ Like in other SDKs, Python modules run in a container (called the *runtime conta
 ## Automatic SDK install
 
 The Python SDK is installed automatically, including dependencies, with a version that’s tied to the currently running Dagger Engine container[^1]:
-```console
+```shell
 # executed by the runtime container
 pip install -e /sdk
 ```
@@ -32,7 +32,7 @@ This is why the initial `pyproject.toml` file doesn’t include any dependencies
 ## Modules as Python libraries
 
 Dagger modules in Python are built to be installed, **like libraries**. The runtime container installs your code with:
-```console
+```shell
 # executed by the runtime container
 pip install .
 ```
@@ -47,7 +47,7 @@ Read more about this in the [Packaging Python Projects](https://packaging.python
 
 The module’s code isn’t executed directly like a script; it’s rather **imported** under the hardcoded name `main` (which will also be configurable in the future).
 
-This means that after `pip install .`, there should be a Python module (or package) called `main` in the virtual environment’s *site-packages* directory (`/opt/venv/lib/python-3.11/site-packages/main`) inside the runtime container.
+This means that after `pip install .`, there should be a Python module (or package) called `main` in the virtual environment’s *site-packages* directory inside the runtime container (`/opt/venv/lib/python-3.11/site-packages/main`).
 
 This is the most important requirement. The other conventions are flexible, as long as the above is verified.
 
@@ -62,7 +62,7 @@ dependencies = [
 ```
 
 Of course, for tools that support it, you can simply use the CLI:
-```console
+```shell
 poetry add infisical-python
 ```
 
@@ -116,7 +116,7 @@ It’s possible we’ll support installing from `requirements.txt` directly thro
 ## Multiple files
 
 You can split your Python module (`main.py`) into multiple files by turning it into a [package](https://realpython.com/python-modules-packages/):
-```console
+```shell
 mkdir src/main
 mv src/main.py src/main/__init__.py
 ```
@@ -188,7 +188,7 @@ If you place the virtual environment (`.venv`) inside the module, don't forget t
 :::
 
 When using [Poetry](https://python-poetry.org), instead of the above, just add `./sdk` as a development dependency:
-```console
+```shell
 poetry add -e --group=dev ./sdk
 ```
 

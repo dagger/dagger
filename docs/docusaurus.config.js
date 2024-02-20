@@ -136,7 +136,7 @@ const config = {
       sidebarCollapsed: false,
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
-        additionalLanguages: ["php", "rust", "elixir", "bash"],
+        additionalLanguages: ["php", "rust", "elixir", "bash", "toml"],
         theme: prismThemes.dracula,
       },
       navbar: {
