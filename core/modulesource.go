@@ -143,6 +143,9 @@ func (src *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	}
 
 	if src.WithSourceSubpath != "" {
+		if !filepath.IsLocal(src.WithSourceSubpath) {
+			return "", fmt.Errorf("source path %q contains parent directory components", src.WithSourceSubpath)
+		}
 		return filepath.Join(rootSubpath, src.WithSourceSubpath), nil
 	}
 
@@ -157,6 +160,9 @@ func (src *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 		return "", nil
 	}
 
+	if !filepath.IsLocal(cfg.Source) {
+		return "", fmt.Errorf("source path %q contains parent directory components", cfg.Source)
+	}
 	return filepath.Join(rootSubpath, cfg.Source), nil
 }
 
@@ -164,7 +170,7 @@ func (src *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 func (src *ModuleSource) SourceSubpathWithDefault(ctx context.Context) (string, error) {
 	sourceSubpath, err := src.SourceSubpath(ctx)
 	if err != nil {
-		return "", fmt.Errorf("source subpath: %w", err)
+		return "", err
 	}
 	if sourceSubpath == "" {
 		return src.SourceRootSubpath()

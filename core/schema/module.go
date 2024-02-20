@@ -689,6 +689,16 @@ func (s *moduleSchema) updateDeps(
 	}
 	mod.DependencyConfig = make([]*core.ModuleDependency, len(deps))
 	for i, dep := range deps {
+		// verify that the dependency config actually exists
+		_, cfgExists, err := dep.Self.Source.Self.ModuleConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load module %q dependency %q config: %w", mod.NameField, dep.Self.Name, err)
+		}
+		if !cfgExists {
+			// best effort for err message, ignore err
+			sourceRootPath, _ := dep.Self.Source.Self.SourceRootSubpath()
+			return fmt.Errorf("module %q dependency %q with source root path %q does not exist or does not have a configuration file", mod.NameField, dep.Self.Name, sourceRootPath)
+		}
 		mod.DependencyConfig[i] = dep.Self
 	}
 
