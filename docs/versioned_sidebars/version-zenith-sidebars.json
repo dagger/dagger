@@ -53,6 +53,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/fundamentals/arguments-return-values"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/fundamentals/dependencies"
             },
             {
