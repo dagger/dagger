@@ -343,7 +343,7 @@ func TestModulePythonDocs(t *testing.T) {
 		modGen := pythonModInit(ctx, t, c, `
             from typing import Annotated
 
-            from dagger.mod import Doc, function, object_type
+            from dagger import Doc, function, object_type
 
             @object_type
             class Test:
@@ -402,7 +402,7 @@ func TestModulePythonDocs(t *testing.T) {
             from dataclasses import field as datafield
             from typing import Annotated
 
-            from dagger.mod import Doc, function, object_type, field
+            from dagger import Doc, function, object_type, field
 
             @object_type
             class Test:
@@ -446,7 +446,7 @@ func TestModulePythonDocs(t *testing.T) {
 		modGen := pythonModInit(ctx, t, c, `
             from typing import Annotated, Self
 
-            from dagger.mod import Doc, function, object_type
+            from dagger import Doc, function, object_type
 
             @object_type
             class Test:
@@ -474,7 +474,7 @@ func TestModulePythonDocs(t *testing.T) {
 		modGen := pythonModInit(ctx, t, c, `
             from typing import Annotated, Self
 
-            from dagger.mod import Doc, function, object_type
+            from dagger import Doc, function, object_type
 
             @object_type
             class External:
@@ -514,7 +514,7 @@ func TestModulePythonDocs(t *testing.T) {
 		modGen := pythonModInit(ctx, t, c, `
             from typing import Annotated, Self
 
-            from dagger.mod import Doc, function, object_type
+            from dagger import Doc, function, object_type
 
             @object_type
             class External:
@@ -543,7 +543,7 @@ func TestModulePythonDocs(t *testing.T) {
 		modGen := pythonModInit(ctx, t, c, `
             from typing import Annotated, Self
 
-            from dagger.mod import Doc, function, object_type
+            from dagger import Doc, function, object_type
 
             class Base:
                 """What's the object-oriented way to become wealthy?"""
@@ -572,7 +572,7 @@ func TestModulePythonNameOverrides(t *testing.T) {
 	modGen := pythonModInit(ctx, t, c, `
         from typing import Annotated
 
-        from dagger.mod import Arg, Doc, field, function, object_type
+        from dagger import Arg, Doc, field, function, object_type
 
         @object_type
         class Test:
@@ -775,6 +775,48 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 			))
 		})
 	})
+}
+
+func TestModulePythonScalarKind(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	_, err := pythonModInit(ctx, t, c, `
+        import dagger
+        from dagger import dag, function, object_type
+
+        @object_type
+        class Test:
+            @function
+            def foo(self, platform: dagger.Platform) -> dagger.Container:
+                return dag.container(platform=platform)
+        `).
+		With(daggerCall("foo", "--platform", "linux/arm64")).
+		Sync(ctx)
+
+	require.ErrorContains(t, err, "not supported yet")
+}
+
+func TestModulePythonEnumKind(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	_, err := pythonModInit(ctx, t, c, `
+        import dagger
+        from dagger import dag, function, object_type
+
+        @object_type
+        class Test:
+            @function
+            def foo(self, protocol: dagger.NetworkProtocol) -> dagger.Container:
+                return dag.container().with_exposed_port(8000, protocol=protocol)
+        `).
+		With(daggerCall("foo", "--protocol", "UDP")).
+		Sync(ctx)
+
+	require.ErrorContains(t, err, "not supported yet")
 }
 
 func pythonSource(contents string) dagger.WithContainerFunc {
