@@ -1,0 +1,28 @@
+---
+slug: /developer-guide/typescript/406314/aliases
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Aliases"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Aliases
+
+<PartialExperimentalDocs />
+
+You can change the name of an exposed field or functions to make something more understable.  
+To do so, simply add the name of your alias as a parameter of your decorator.
+
+Here is an example of a module `HelloWorld` with the field `ctr` exposed as `container` and the function `displayVersion` exposed as `version`:
+
+```typescript file=./snippets/aliases/index.ts
+```
+
+You can see that field and functions are overidden when you call `dagger functions`:
+
+```shell
+Name        Description
+container   -
+version     -
+```

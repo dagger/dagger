@@ -32,33 +32,3 @@ The result will be:
 https://github.com/daggernaut
 https://github.com/johnDoe
 ```
-
-But since we have complex data type, we may need to retrieve multiples fields at the same time, to do so, you can use `dagger query`.
-
-This query retrieves the organisation's url as well as its members' url and username:
-
-```shell
-echo '{helloWorld{daggerOrganisation{url,members{username,email}}}}' | dagger query
-```
-
-The result will be:
-
-```shell
-{
-    "helloWorld": {
-        "daggerOrganisation": {
-            "members": [
-                {
-                    "email": "daggertnaut@dagger.io",
-                    "username": "daggernaut"
-                },
-                {
-                    "email": "john.doe@acme.io",
-                    "username": "johnDoe"
-                }
-            ],
-            "url": "https://github.com/dagger"
-        }
-    }
-}
-```

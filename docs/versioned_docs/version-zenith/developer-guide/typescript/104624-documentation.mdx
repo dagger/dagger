@@ -1,0 +1,75 @@
+---
+slug: /developer-guide/typescript/104624/documentation
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Documentation"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Aliases
+
+<PartialExperimentalDocs />
+
+To make your module as simple to use as possible for others, it's a good practise to document it.  
+There are multiple part of your module that you can document.
+
+## Module documentation
+
+The following code snippet shows how you can add a top level module documentation.  
+
+```typescript file=./snippets/documentation/module/index.ts
+```
+
+## Object documentation
+
+The following code snippet shows how you can add documentation for an object of your module.  
+
+```typescript file=./snippets/documentation/object/index.ts
+```
+
+## Function documentation
+
+The following code snippet shows how you can add document for a function in your object.
+
+```typescript file=./snippets/documentation/function/index.ts
+```
+
+The documentation will be displayed when you use the `--help` flag:
+
+```shell
+dagger call add --help
+```
+
+And the result will be:
+
+```shell
+Compute the sum of two numbers.
+
+Example usage: dagger call add --a 4 --b 5
+
+Usage:
+  dagger call add [flags]
+
+EXPERIMENTAL:
+  dagger call add is currently under development and may change in the future.
+
+Flags:
+      --a int   The first number to add (default 4)
+      --b int   The second number to add    
+```
+
+## Field documentation
+
+The following code snippet shows how you can add document for a field in your object.
+
+```typescript file=./snippets/documentation/field/index.ts
+```
+
+And you see the following result when you call `dagger functions`:
+
+```shell
+Name   Description
+age    The age of the person.
+name   The name of the person.
+```
