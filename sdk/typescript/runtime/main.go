@@ -50,9 +50,23 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
 
+	detectedRuntime, err := t.DetectRuntime(ctx, modSource, subPath)
+	if err != nil {
+		return nil, err
+	}
+
 	entrypointPath := path.Join(ModSourceDirPath, subPath, EntrypointExecutablePath)
 	tsConfigPath := path.Join(ModSourceDirPath, subPath, "tsconfig.json")
-	return ctr.
+
+	switch detectedRuntime {
+	case "bun":
+		return ctr.
+			// Install dependencies
+			WithExec([]string{"bun", "install"}).
+			WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
+			WithEntrypoint([]string{"bun", entrypointPath}), nil
+	case "node":
+		return ctr.
 		// Install dependencies
 		WithExec([]string{"npm", "install"}).
 		WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
@@ -61,6 +75,12 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
 		// not useful to display to the user.
 		WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", tsConfigPath, entrypointPath}), nil
+	default:
+		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
+	}
+
+	return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
+
 }
 
 // Codegen returns the generated API client based on user's module
@@ -95,9 +115,18 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("could not load module config: %v", err)
 	}
 
-	ctr := t.Base("").
-		// Add sdk directory without runtime nor codegen binary
-		WithMountedDirectory(sdkSrc, t.SDKSourceDir).
+	detectedRuntime, err := t.DetectRuntime(ctx, modSource, subPath)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := t.Base(detectedRuntime)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr = ctr. // Add sdk directory without runtime nor codegen binary
+			WithMountedDirectory(sdkSrc, t.SDKSourceDir).
 		// Add codegen binary into a special path
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Add template directory
@@ -120,8 +149,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			ExperimentalPrivilegedNesting: true,
 		})
 
-	// Add SDK src to the generated directory
-	return ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
+	base := ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
 		Exclude: []string{
 			"node_modules",
 			"dist",
@@ -129,17 +157,35 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			"**/test",
 			"runtime",
 		},
-	}).
-		// Add tsx to execute the entrypoint
-		WithExec([]string{"npm", "install", "-g", "tsx"}).
-		// Check if the project has existing source:
-		// if it does: add sdk as dev dependency
-		// if not: copy the template and replace QuickStart with the module name
-		WithExec([]string{"sh", "-c",
-			"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
-		},
-			ContainerWithExecOpts{SkipEntrypoint: true},
-		).
+	})
+
+	switch detectedRuntime {
+	case "bun":
+		base = base.
+			// Check if the project has existing source:
+			// if it does: add sdk as dev dependency
+			// if not: copy the template and replace QuickStart with the module name
+			WithExec([]string{"sh", "-c",
+				"if [ -f package.json ]; then  bun install ./sdk  --dev  && bun /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
+			},
+				ContainerWithExecOpts{SkipEntrypoint: true},
+			)
+	case "node":
+		base = base.
+			WithExec([]string{"npm", "install", "-g", "tsx"}).
+			// Check if the project has existing source:
+			// if it does: add sdk as dev dependency
+			// if not: copy the template and replace QuickStart with the module name
+			WithExec([]string{"sh", "-c",
+				"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
+			},
+				ContainerWithExecOpts{SkipEntrypoint: true},
+			)
+	default:
+		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
+	}
+
+	return base.
 		// Check if there's a src directory with .ts files in it.
 		// If not, add the template file and replace QuickStart with the module name
 		// This cover the case where there's a package.json but no src directory.
@@ -149,13 +195,39 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node container with cache setup for yarn
-func (t *TypeScriptSdk) Base(version string) *Container {
-	if version == "" {
-		version = "21.3-alpine"
+func (t *TypeScriptSdk) Base(runtime string) (*Container, error) {
+	switch runtime {
+	case "bun":
+		return dag.Container().
+			From("oven/bun:1.0.27").
+			WithMountedCache("~/.bun/install/cache", dag.CacheVolume("mod-bun-cache")).
+			WithoutEntrypoint(), nil
+	case "node":
+		return dag.Container().
+			From("node:21.3-alpine").
+			WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache")).
+			WithoutEntrypoint(), nil
+	default:
+		return nil, fmt.Errorf("unknown runtime: %v", runtime)
+	}
+}
+
+func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (string, error) {
+	detectedRuntime, err := dag.Container().
+		From("oven/bun:1.0.27").
+		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
+		WithExec([]string{"bun", "/opt/bin/__runtime.detection.ts"}).
+		Stdout(ctx)
+
+	if err != nil {
+		return "", fmt.Errorf("could not detect runtime: %v", err)
 	}
 
-	return dag.Container().
-		From(fmt.Sprintf("node:%s", version)).
-		WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache-"+version)).
-		WithoutEntrypoint()
+	if detectedRuntime != "bun" && detectedRuntime != "node" {
+		return "", fmt.Errorf("detected unknown runtime: %v", detectedRuntime)
+	}
+
+	return detectedRuntime, nil
 }
