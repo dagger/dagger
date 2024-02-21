@@ -323,7 +323,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
 		defer cancel()
 
-		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		// Make an introspection request, since those get ignored by telemetry and
+		// we don't want this to show up, since it's just a health check.
+		innerErr := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
 		if innerErr != nil {
 			// only show errors once the time between attempts exceeds this threshold, otherwise common
 			// cases of 1 or 2 retries become too noisy
