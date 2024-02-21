@@ -490,6 +490,9 @@ func (fe *Frontend) Render(out *termenv.Output) error {
 
 func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 	var renderedAny bool
+	if fe.logsView == nil {
+		return false, nil
+	}
 	if init := fe.logsView.Init; init != nil && (fe.Debug || init.IsInteresting()) {
 		if err := fe.renderRow(out, init); err != nil {
 			return renderedAny, err
