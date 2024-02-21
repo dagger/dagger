@@ -1012,9 +1012,8 @@ func (m *Test) Fn() ([]string, error) {
 }
 
 const (
-	// TODO: update to use repo in dagger org
-	gitTestRepoURL    = "github.com/sipsma/dagger-module-tests"
-	gitTestRepoCommit = "7ef471e24f56ff2dc902ca9feae24836b8f2e7e4"
+	gitTestRepoURL    = "github.com/dagger/dagger-test-modules"
+	gitTestRepoCommit = "d7299e935a195f3e1a29bc39537ed270f4f378d5"
 )
 
 func testGitModuleRef(subpath string) string {
