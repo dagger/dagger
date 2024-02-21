@@ -49,10 +49,9 @@ type Frontend struct {
 	err       error
 
 	// updated via progrock.Writer interface
-	db    *DB
-	eof   bool
-	steps []*Step
-	rows  []*TraceRow
+	db       *DB
+	eof      bool
+	logsView *LogsView
 
 	// progrock logging
 	messages  *Vterm
@@ -382,8 +381,9 @@ func (fe *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
 		}
 	}
 	if len(update.Vertexes) > 0 {
-		fe.steps = CollectSteps(fe.db)
-		fe.rows = CollectRows(fe.steps)
+		steps := CollectSteps(fe.db)
+		rows := CollectRows(steps)
+		fe.logsView = CollectLogsView(rows)
 	}
 	return nil
 }
@@ -490,17 +490,22 @@ func (fe *Frontend) Render(out *termenv.Output) error {
 
 func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 	var renderedAny bool
-	for _, row := range fe.rows {
-		if row.Step.Digest == PrimaryVertex && fe.done {
-			// primary vertex is displayed below the fold instead
-			continue
+	if init := fe.logsView.Init; init != nil && (fe.Debug || init.IsInteresting()) {
+		if err := fe.renderRow(out, init); err != nil {
+			return renderedAny, err
 		}
+	}
+	for _, row := range fe.logsView.Body {
 		if fe.Debug || row.IsInteresting() {
 			if err := fe.renderRow(out, row); err != nil {
 				return renderedAny, err
 			}
 			renderedAny = true
 		}
+	}
+	if fe.logsView.Primary != nil && !fe.done {
+		fe.renderLogs(out, fe.logsView.Primary.Digest, -1)
+		renderedAny = true
 	}
 	return renderedAny, nil
 }
@@ -629,11 +634,13 @@ func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
 func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
 	if fe.Debug || row.IsInteresting() {
 		fe.renderStep(out, row.Step, row.Depth())
-		fe.renderLogs(out, row)
+		fe.renderLogs(out, row.Step.Digest, row.Depth())
 	}
-	for _, child := range row.Children {
-		if err := fe.renderRow(out, child); err != nil {
-			return err
+	if !row.Collapsed {
+		for _, child := range row.Children {
+			if err := fe.renderRow(out, child); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -654,10 +661,12 @@ func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error
 	return nil
 }
 
-func (fe *Frontend) renderLogs(out *termenv.Output, row *TraceRow) {
-	if logs, ok := fe.logs[row.Step.Digest]; ok {
+func (fe *Frontend) renderLogs(out *termenv.Output, dig string, depth int) {
+	if logs, ok := fe.logs[dig]; ok {
 		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
-		logs.SetPrefix(strings.Repeat("  ", row.Depth()) + pipe.String() + " ")
+		if depth != -1 {
+			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
+		}
 		logs.SetHeight(fe.window.Height / 3)
 		fmt.Fprint(out, logs.View())
 	}

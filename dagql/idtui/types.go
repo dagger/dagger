@@ -40,7 +40,8 @@ type TraceRow struct {
 	IsRunning bool
 	Chained   bool
 
-	Children []*TraceRow
+	Children  []*TraceRow
+	Collapsed bool
 }
 
 type Pipeline []*TraceRow
@@ -72,19 +73,25 @@ type LogsView struct {
 
 func CollectLogsView(rows []*TraceRow) *LogsView {
 	view := &LogsView{}
-	for _, r := range rows {
+	for _, row := range rows {
 		switch {
-		case view.Primary == nil && r.Step.Digest == PrimaryVertex:
-			view.Primary = r.Step
-			view.Body = r.Children
-			for _, b := range view.Body {
-				b.Parent = nil
+		case view.Primary == nil && row.Step.Digest == PrimaryVertex:
+			// promote children of primary vertex to the top-level
+			for _, child := range row.Children {
+				child.Parent = nil
 			}
-		case view.Primary == nil && r.Step.Digest == InitVertex:
-			view.Init = r
+			view.Primary = row.Step
+			view.Body = row.Children
+		case view.Primary == nil && row.Step.Digest == InitVertex:
+			// collapse initialization steps by default
+			//
+			// TODO: I added this and immediately disliked it, but let's give it time
+			// and see what others think naturally
+			row.Collapsed = true
+			view.Init = row
 		default:
-			// make sure we reveal anything 'extra' by default (fail open)
-			view.Body = append(view.Body, r)
+			// reveal anything 'extra' by default (fail open)
+			view.Body = append(view.Body, row)
 		}
 	}
 	return view
