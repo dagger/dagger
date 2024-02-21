@@ -10,8 +10,11 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"text/template"
 
+	"github.com/blang/semver"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
@@ -182,6 +185,9 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 			newModName := "main" // use a safe default, not going to be a reserved word. User is free to modify
 
 			newMod.AddModuleStmt(newModName)
+			if v, err := semver.Parse(strings.TrimPrefix(runtime.Version(), "go")); err == nil {
+				newMod.AddGoStmt(v.String())
+			}
 			newMod.SetRequire(sdkMod.Require)
 
 			info.PackageImport = newModName
