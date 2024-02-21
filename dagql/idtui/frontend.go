@@ -632,10 +632,11 @@ func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
 }
 
 func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
-	if fe.Debug || row.IsInteresting() {
-		fe.renderStep(out, row.Step, row.Depth())
-		fe.renderLogs(out, row.Step.Digest, row.Depth())
+	if !row.IsInteresting() && !fe.Debug {
+		return nil
 	}
+	fe.renderStep(out, row.Step, row.Depth())
+	fe.renderLogs(out, row.Step.Digest, row.Depth())
 	if !row.Collapsed {
 		for _, child := range row.Children {
 			if err := fe.renderRow(out, child); err != nil {

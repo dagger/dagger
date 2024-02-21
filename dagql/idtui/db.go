@@ -178,6 +178,11 @@ func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
 		return vs[i].Started.AsTime().Before(vs[j].Started.AsTime())
 	})
 	for _, vtx := range db.Intervals[dig] {
+		// a running vertex is always most interesting, and these are already in
+		// order
+		if vtx.Completed == nil {
+			return vtx
+		}
 		switch {
 		case earliest == nil:
 			// always show _something_
@@ -192,15 +197,6 @@ func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
 			// prefer the earliest active interval
 			earliest = vtx
 		}
-		// if vtx.Completed == nil && earliest.Completed != nil {
-		// 	// prioritize actively running vertex over a completed one
-		// 	earliest = vtx
-		// 	continue
-		// }
-		// if earliest.Completed == nil && vtx.Completed != nil {
-		// 	// never replace a running vertex with a completed one
-		// 	continue
-		// }
 	}
 	return earliest
 }

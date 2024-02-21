@@ -105,13 +105,10 @@ const (
 func (row *TraceRow) IsInteresting() bool {
 	step := row.Step
 	if step.Err() != nil {
-		// show errors always (TODO: make sure encapsulation is possible)
+		// show errors always
 		return true
 	}
-	if step.IsInternal() &&
-		// TODO: ID vertices are marked internal for compatibility with Cloud,
-		// otherwise they'd be all over the place
-		step.ID() == nil {
+	if step.IsInternal() {
 		// internal steps are, by definition, not interesting
 		return false
 	}
