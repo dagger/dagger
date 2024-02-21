@@ -55,8 +55,6 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			return next(ctx)
 		}
 
-		rec := progrock.FromContext(ctx)
-
 		dig, err := id.Digest()
 		if err != nil {
 			slog.Warn("failed to digest id", "id", id.Display(), "err", err)
@@ -75,33 +73,30 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		if dagql.IsInternal(ctx) {
 			opts = append(opts, progrock.Internal())
 		}
-		vtx := rec.Vertex(dig, id.Field, opts...)
+
+		// group any self-calls or Buildkit vertices beneath this vertex
+		ctx, vtx := progrock.Span(ctx, dig.String(), id.Field, opts...)
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 
+		// send ID payload to the frontend
 		payload, err := anypb.New(id)
 		if err != nil {
 			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
 			return next(ctx)
 		}
-		// send ID payload to the frontend
 		vtx.Meta("id", payload)
 
 		// respect user-configured pipelines
-		if w, ok := self.(dagql.Wrapper); ok {
+		// TODO: remove if we have truly retired these
+		if w, ok := self.(dagql.Wrapper); ok { // unwrap dagql.Instance
 			if pl, ok := w.Unwrap().(pipeline.Pipelineable); ok {
-				rec = pl.PipelinePath().RecorderGroup(rec)
+				ctx = pl.PipelinePath().WithGroups(ctx)
 			}
 		}
 
-		// group any self-calls or Buildkit vertices beneath this vertex
-		rec = rec.WithParent(dig.String())
-
-		// call the resolver with progrock wired up
-		ctx = progrock.ToContext(ctx, rec)
-
+		// call the actual resolver
 		res, resolveErr := next(ctx)
-
 		if resolveErr != nil {
 			// NB: we do +id.Display() instead of setting it as a field to avoid
 			// dobule quoting

@@ -276,7 +276,6 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
-	rec := progrock.FromContext(ctx)
 
 	var primaryVtx *progrock.VertexRecorder
 	var cmd *cobra.Command
@@ -294,8 +293,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 			cmd = c
 		}
 		if primaryVtx == nil { // errored during loading
-			primaryVtx = rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, primaryVtx = progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { primaryVtx.Done(rerr) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, primaryVtx)
 		}
 		if ctx.Err() != nil {
@@ -324,8 +324,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	}
 
 	// Ok, we've loaded the command, now we can initialize the PrimaryVertex.
-	primaryVtx = rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+	ctx, primaryVtx = progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 	defer func() { primaryVtx.Done(rerr) }()
+	cmd.SetContext(ctx)
 	setCmdOutput(cmd, primaryVtx)
 
 	if fc.showHelp {
@@ -362,6 +363,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _ []string, rerr error) {
 	ctx := c.Context()
 	dag := fc.c.Dagger()
+
+	ctx, vtx := progrock.Span(ctx, idtui.InitVertex, "initialize")
+	defer func() { vtx.Done(rerr) }()
 
 	modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
 	if err != nil {

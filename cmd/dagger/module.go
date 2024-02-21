@@ -150,10 +150,9 @@ dagger config -m github.com/dagger/hello-dagger
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			cmd.SetContext(ctx)
-
-			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, vtx)
 
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
@@ -223,8 +222,9 @@ The "--source" flag allows controlling the directory in which the actual module 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, vtx)
 
 			// default the module source root to the current working directory if it doesn't exist yet
@@ -536,8 +536,9 @@ forced), to avoid mistakingly depending on uncommitted files.
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.FromContext(ctx)
 
-			vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, vtx)
 
 			dag := engineClient.Dagger()

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -61,10 +62,12 @@ func (g Path) String() string {
 const ProgrockDescriptionLabel = "dagger.io/pipeline.description"
 
 // RecorderGroup converts the path to a Progrock recorder for the group.
-func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
+func (g Path) WithGroups(ctx context.Context) context.Context {
 	if len(g) == 0 {
-		return rec
+		return ctx
 	}
+
+	rec := progrock.FromContext(ctx)
 
 	for _, p := range g {
 		var labels []*progrock.Label
@@ -98,5 +101,5 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 		rec = rec.WithGroup(p.Name, opts...)
 	}
 
-	return rec
+	return progrock.ToContext(ctx, rec)
 }

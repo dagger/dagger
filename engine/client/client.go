@@ -186,10 +186,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		connectDigest = digest.FromString("_root") // arbitrary
 	}
 
-	loader := c.Recorder.Vertex(connectDigest, "connect", progrock.Internal())
-	defer func() {
-		loader.Done(rerr)
-	}()
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", progrock.Internal())
+	defer func() { loader.Done(rerr) }()
 
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
@@ -950,6 +949,7 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
+		req.Header.Add("X-Progrock-Parent", progrock.FromContext(req.Context()).Parent)
 		req.SetBasicAuth(engineClient.SecretToken, "")
 		resp := httptest.NewRecorder()
 		engineClient.ServeHTTP(resp, req)

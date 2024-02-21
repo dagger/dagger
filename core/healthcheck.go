@@ -11,7 +11,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
 
@@ -30,8 +29,6 @@ func newHealth(bk *buildkit.Client, host string, ports []Port) *portHealthChecke
 }
 
 func (d *portHealthChecker) Check(ctx context.Context) (err error) {
-	rec := progrock.FromContext(ctx)
-
 	args := []string{"check", d.host}
 	allPortsSkipped := true
 	for _, port := range d.ports {
@@ -44,15 +41,9 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 		return nil
 	}
 
-	// show health-check logs in a --debug vertex
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		strings.Join(args, " "),
-		progrock.Internal(),
-	)
-	defer func() {
-		vtx.Done(err)
-	}()
+	// always show health checks
+	ctx, vtx := progrock.Span(ctx, identity.NewID(), strings.Join(args, " "))
+	defer func() { vtx.Done(err) }()
 
 	scratchDef, err := llb.Scratch().Marshal(ctx)
 	if err != nil {

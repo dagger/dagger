@@ -97,7 +97,9 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rec := progrock.FromContext(ctx)
-	if callContext.ProgrockParent != "" {
+	if header := r.Header.Get("X-Progrock-Parent"); header != "" {
+		rec = rec.WithParent(header)
+	} else if callContext.ProgrockParent != "" {
 		rec = rec.WithParent(callContext.ProgrockParent)
 	}
 	ctx = progrock.ToContext(ctx, rec)
