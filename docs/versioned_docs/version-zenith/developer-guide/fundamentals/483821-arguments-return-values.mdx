@@ -242,7 +242,71 @@ The result will look like this:
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/arguments-return-values/typescript/arguments-directory/index.ts
+```shell
+.
+├── LICENSE
+├── dagger
+│   ├── package.json
+│   ├── sdk
+│   │   ├── LICENSE
+│   │   ├── README.md
+│   │   ├── api
+│   │   │   ├── client.gen.ts
+│   │   │   └── utils.ts
+│   │   ├── common
+│   │   │   ├── errors
+│   │   │   │   ├── DaggerSDKError.ts
+│   │   │   │   ├── DockerImageRefValidationError.ts
+│   │   │   │   ├── EngineSessionConnectParamsParseError.ts
+│   │   │   │   ├── EngineSessionConnectionTimeoutError.ts
+│   │   │   │   ├── EngineSessionErrorOptions.ts
+│   │   │   │   ├── ExecError.ts
+│   │   │   │   ├── GraphQLRequestError.ts
+│   │   │   │   ├── InitEngineSessionBinaryError.ts
+│   │   │   │   ├── NotAwaitedRequestError.ts
+│   │   │   │   ├── TooManyNestedObjectsError.ts
+│   │   │   │   ├── UnknownDaggerError.ts
+│   │   │   │   ├── errors-codes.ts
+│   │   │   │   └── index.ts
+│   │   │   └── utils.ts
+│   │   ├── connect.ts
+│   │   ├── connectOpts.ts
+│   │   ├── context
+│   │   │   ├── builder.ts
+│   │   │   └── context.ts
+│   │   ├── entrypoint
+│   │   │   ├── entrypoint.ts
+│   │   │   ├── invoke.ts
+│   │   │   ├── load.ts
+│   │   │   └── register.ts
+│   │   ├── graphql
+│   │   │   └── client.ts
+│   │   ├── index.ts
+│   │   ├── introspector
+│   │   │   ├── decorators
+│   │   │   │   └── decorators.ts
+│   │   │   ├── registry
+│   │   │   │   └── registry.ts
+│   │   │   ├── scanner
+│   │   │   │   ├── metadata.ts
+│   │   │   │   ├── scan.ts
+│   │   │   │   ├── serialize.ts
+│   │   │   │   ├── typeDefs.ts
+│   │   │   │   └── utils.ts
+│   │   │   └── utils
+│   │   │       └── files.ts
+│   │   ├── package.json
+│   │   └── provisioning
+│   │       ├── bin.ts
+│   │       ├── default.ts
+│   │       ├── engineconn.ts
+│   │       └── index.ts
+│   ├── src
+│   │   └── index.ts
+│   └── tsconfig.json
+└── dagger.json
+
+15 directories, 46 files
 ```
 
 </TabItem>
