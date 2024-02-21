@@ -2,27 +2,11 @@ package main
 
 import (
 	"context"
-	"runtime"
 )
 
 type HelloWorld struct{}
 
-func (m *HelloWorld) Build(
-	ctx context.Context,
-	source *Directory,
-	// +optional
-	architecture string,
-	// +optional
-	os string,
-) *Container {
-
-	if architecture == "" {
-		architecture = runtime.GOARCH
-	}
-
-	if os == "" {
-		os = runtime.GOOS
-	}
+func (m *HelloWorld) Build(ctx context.Context, source *Directory, architecture string, os string) *Container {
 
 	dir := dag.Container().
 		From("golang:1.21").

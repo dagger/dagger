@@ -163,7 +163,11 @@ dagger call tree --dir .
 
 The result will look like this:
 
-```shell.
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```shell
+.
 ├── LICENSE
 ├── dagger
 │   ├── dagger.gen.go
@@ -178,6 +182,72 @@ The result will look like this:
 2 directories, 8 files
 ```
 
+</TabItem>
+<TabItem value="Python">
+
+```shell
+.
+├── LICENSE
+├── dagger
+│   ├── pyproject.toml
+│   ├── sdk
+│   │   ├── LICENSE
+│   │   ├── README.md
+│   │   ├── pyproject.toml
+│   │   └── src
+│   │       └── dagger
+│   │           ├── __init__.py
+│   │           ├── __main__.py
+│   │           ├── _codegen
+│   │           │   ├── __init__.py
+│   │           │   ├── cli.py
+│   │           │   └── generator.py
+│   │           ├── _config.py
+│   │           ├── _connection.py
+│   │           ├── _engine
+│   │           │   ├── __init__.py
+│   │           │   ├── _version.py
+│   │           │   ├── conn.py
+│   │           │   ├── download.py
+│   │           │   ├── progress.py
+│   │           │   └── session.py
+│   │           ├── _exceptions.py
+│   │           ├── _managers.py
+│   │           ├── client
+│   │           │   ├── __init__.py
+│   │           │   ├── _core.py
+│   │           │   ├── _guards.py
+│   │           │   ├── _session.py
+│   │           │   ├── base.py
+│   │           │   └── gen.py
+│   │           ├── log.py
+│   │           ├── mod
+│   │           │   ├── __init__.py
+│   │           │   ├── _arguments.py
+│   │           │   ├── _converter.py
+│   │           │   ├── _exceptions.py
+│   │           │   ├── _module.py
+│   │           │   ├── _resolver.py
+│   │           │   ├── _types.py
+│   │           │   ├── _utils.py
+│   │           │   └── cli.py
+│   │           └── py.typed
+│   └── src
+│       └── main.py
+└── dagger.json
+
+9 directories, 39 files
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/arguments-return-values/typescript/arguments-directory/index.ts
+```
+
+</TabItem>
+</Tabs>
+
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
@@ -185,6 +255,32 @@ dagger call tree --dir https://github.com/dagger/dagger#main:cmd/dagger
 ```
 
 The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
+
+```shell
+.
+├── call.go
+├── cloud.go
+├── debug.go
+├── engine.go
+├── exec_nonunix.go
+├── exec_unix.go
+├── flags.go
+├── functions.go
+├── gen.go
+├── licenses.go
+├── listen.go
+├── log.go
+├── main.go
+├── module.go
+├── module_test.go
+├── query.go
+├── run.go
+├── session.go
+├── shell.go
+└── version.go
+
+0 directories, 20 files
+```
 
 :::note
 When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
