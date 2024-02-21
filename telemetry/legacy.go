@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"github.com/dagger/dagger/tracing"
 	"github.com/vito/progrock"
 	"google.golang.org/protobuf/proto"
 )
@@ -20,10 +21,8 @@ var _ progrock.Writer = LegacyIDInternalizer{}
 func (f LegacyIDInternalizer) WriteStatus(status *progrock.StatusUpdate) error {
 	var foundIds []int
 	for i, v := range status.Vertexes {
-		for _, l := range v.Labels {
-			if l.Name == "id" && l.Value == "true" {
-				foundIds = append(foundIds, i)
-			}
+		if v.Label(tracing.IDLabel) == "true" {
+			foundIds = append(foundIds, i)
 		}
 	}
 	if len(foundIds) == 0 {

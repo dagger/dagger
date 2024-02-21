@@ -49,6 +49,9 @@ func SpanAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next
 	}
 }
 
+// IDLabel is a label set to "true" for a vertex corresponding to a DagQL ID.
+const IDLabel = "dagger.io/id"
+
 func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	return func(ctx context.Context) (dagql.Typed, error) {
 		if isIntrospection(id) {
@@ -68,7 +71,7 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		// }
 		opts := []progrock.VertexOpt{
 			// see telemetry/legacy.go LegacyIDInternalizer
-			progrock.WithLabels(progrock.Labelf("id", "true")),
+			progrock.WithLabels(progrock.Labelf(IDLabel, "true")),
 		}
 		if dagql.IsInternal(ctx) {
 			opts = append(opts, progrock.Internal())

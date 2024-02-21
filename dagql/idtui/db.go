@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/tracing"
 	"github.com/vito/progrock"
 )
 
@@ -138,17 +139,30 @@ func (db *DB) Step(dig string) (*Step, bool) {
 		Digest: dig,
 		db:     db,
 	}
-
+	ivals := db.Intervals[dig]
+	if len(ivals) == 0 {
+		// no vertices seen; give up
+		return nil, false
+	}
 	outID := db.IDs[dig]
 	switch {
 	case outID != nil && outID.Field == "id":
+		// ignore 'id' field selections, they're everywhere and not interesting
 		return nil, false
-	case outID == nil && step.IsInternal():
+	case !step.HasStarted():
+		// ignore anything in pending state; not interesting, easier to assume
+		// things have always started
 		return nil, false
-	case outID != nil && !step.HasStarted():
-		return nil, false
-	case outID == nil && !step.HasStarted():
-		return nil, false
+	case outID == nil:
+		// no ID; check if we're a regular vertex, or if we're supposed to have an
+		// ID (arrives later via VertexMeta event)
+		for _, vtx := range ivals {
+			if vtx.Label(tracing.IDLabel) == "true" {
+				// no ID yet, but it's an ID vertex; ignore it until we get the ID so
+				// we never have to deal with the intermediate state
+				return nil, false
+			}
+		}
 	}
 	if outID != nil && outID.Base != nil {
 		parentDig, err := outID.Base.Digest()
