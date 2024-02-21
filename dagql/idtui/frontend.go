@@ -64,6 +64,7 @@ type Frontend struct {
 	plainConsole progrock.Writer
 
 	// TUI state/config
+	restore           func()  // restore terminal
 	fps               float64 // frames per second
 	profile           termenv.Profile
 	window            tea.WindowSizeMsg     // set by BubbleTea
@@ -163,7 +164,8 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 	if err != nil {
 		return err
 	}
-	defer term.Restore(ttyFd, oldState) //nolint: errcheck
+	fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
+	defer fe.restore()
 
 	// start piping from the TTY to our swappable writer.
 	go io.Copy(fe.in, tty) //nolint: errcheck
@@ -527,7 +529,13 @@ type doneMsg struct {
 	err error
 }
 
-func (fe *Frontend) spawn() tea.Msg {
+func (fe *Frontend) spawn() (msg tea.Msg) {
+	defer func() {
+		if r := recover(); r != nil {
+			fe.restore()
+			panic(r)
+		}
+	}()
 	return doneMsg{fe.run(fe.runCtx)}
 }
 
