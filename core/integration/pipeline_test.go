@@ -77,7 +77,7 @@ func TestPipeline(t *testing.T) {
 		_, err = client.Sync(ctx)
 		require.NoError(t, err)
 
-		_, err = srv.Stop(ctx)
+		_, err = srv.Stop(ctx) // FIXME: shouldn't need this, but test is flaking
 		require.NoError(t, err)
 
 		require.NoError(t, c.Close()) // close + flush logs
