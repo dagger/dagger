@@ -171,7 +171,15 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/typescript/aliases"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/typescript/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/documentation"
             },
             {
               "type": "doc",
