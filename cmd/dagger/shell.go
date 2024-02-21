@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock"
 )
@@ -47,7 +46,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 
 	// NB: this is not idtui.PrimaryVertex because instead of spitting out the
 	// raw TTY output, we want to render the post-processed vterm.
-	ctx, vtx := progrock.Span(ctx, digest.FromString(shellEndpoint).String(), "terminal",
+	_, vtx := progrock.Span(ctx, shellEndpoint, "terminal",
 		idtui.Zoomed(func(term *midterm.Terminal) io.Writer {
 			term.ForwardRequests = os.Stderr
 			term.ForwardResponses = shellStdinW

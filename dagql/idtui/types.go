@@ -50,11 +50,12 @@ func CollectPipelines(rows []*TraceRow) []Pipeline {
 	pls := []Pipeline{}
 	var cur Pipeline
 	for _, r := range rows {
-		if len(cur) == 0 {
+		switch {
+		case len(cur) == 0:
 			cur = append(cur, r)
-		} else if r.Chained {
+		case r.Chained:
 			cur = append(cur, r)
-		} else if len(cur) > 0 {
+		case len(cur) > 0:
 			pls = append(pls, cur)
 			cur = Pipeline{r}
 		}
