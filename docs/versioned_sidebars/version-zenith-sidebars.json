@@ -26,7 +26,182 @@
     },
     {
       "type": "category",
-      "label": "Developer Guide",
+      "label": "Developer Guide (Option A)",
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "label": "Introduction",
+          "id": "developer-guide/index"
+        },
+        {
+          "type": "category",
+          "label": "Overview",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/modules-vs-functions"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/architecture"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/execution-environment"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Module Basics",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/first-steps"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/arguments-return-values"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/chaining"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/fundamentals/debugging"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Developing with Go",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/go/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/constructors"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/interfaces"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/ide-integration"
+            },
+            {
+              "type": "link",
+              "label": "Go SDK Reference",
+              "href": "https://pkg.go.dev/dagger.io/dagger"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Developing with Python",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/python/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/constructors"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/conventions"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/ide-integration"
+            },
+            {
+              "type": "link",
+              "label": "Python SDK Reference",
+              "href": "https://dagger-io.readthedocs.org/"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Developing with TypeScript",
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/constructors"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/conventions"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/ide-integration"
+            },
+            {
+              "type": "doc",
+              "label": "Reference",
+              "id": "reference/typescript/modules"
+            }
+          ]
+        },
+        {
+          "type": "link",
+          "label": "API Reference",
+          "href": "https://docs.dagger.io/api/reference"
+        },
+        {
+          "type": "doc",
+          "id": "developer-guide/known-issues"
+        }
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Developer Guide (Option B)",
       "collapsible": true,
       "collapsed": true,
       "items": [
@@ -50,18 +225,6 @@
             {
               "type": "doc",
               "id": "developer-guide/fundamentals/execution-environment"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/fundamentals/arguments-return-values"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/fundamentals/dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/fundamentals/secrets"
             }
           ]
         },
@@ -79,6 +242,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/go/module-structure"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/go/constructors"
             },
             {
@@ -88,10 +255,6 @@
             {
               "type": "doc",
               "id": "developer-guide/go/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/services"
             },
             {
               "type": "doc",
@@ -115,15 +278,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/conventions"
-            },
-            {
-              "type": "doc",
               "id": "developer-guide/go/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/best-practices"
             },
             {
               "type": "link",
@@ -147,6 +302,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/python/module-structure"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/python/constructors"
             },
             {
@@ -156,10 +315,6 @@
             {
               "type": "doc",
               "id": "developer-guide/python/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/services"
             },
             {
               "type": "doc",
@@ -179,15 +334,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/conventions"
-            },
-            {
-              "type": "doc",
               "id": "developer-guide/python/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/best-practices"
             },
             {
               "type": "link",
@@ -200,6 +347,10 @@
           "type": "category",
           "label": "Developing with TypeScript",
           "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/module-structure"
+            },
             {
               "type": "doc",
               "id": "developer-guide/typescript/first-steps"
@@ -219,10 +370,6 @@
             {
               "type": "doc",
               "id": "developer-guide/typescript/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/services"
             },
             {
               "type": "doc",
@@ -250,15 +397,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/conventions"
-            },
-            {
-              "type": "doc",
               "id": "developer-guide/typescript/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/best-practices"
             },
             {
               "type": "doc",

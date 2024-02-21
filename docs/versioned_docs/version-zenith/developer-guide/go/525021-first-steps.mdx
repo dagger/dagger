@@ -2,7 +2,7 @@
 slug: /developer-guide/go/525021/first-steps
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "First Steps"
+title: "Your First Module"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -10,7 +10,7 @@ import PartialDeveloperQuickstartIntroduction from '../../partials/_developer_qu
 import PartialDeveloperQuickstartTrivyTest from '../../partials/_developer_quickstart_trivy_test.mdx';
 import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quickstart_conclusion.mdx';
 
-# Quickstart
+# Your First Module
 
 <PartialExperimentalDocs />
 
@@ -46,9 +46,9 @@ This quickstart assumes that:
     dagger call container-echo --string-arg 'Hello daggernauts!' stdout
     ```
 
-    :::tip
-    When using `dagger call` to call module functions, do not explicitly use the name of the module.
-    :::
+:::tip
+When using `dagger call` to call module functions, do not explicitly use the name of the module.
+:::
 
 :::note
 When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
@@ -102,7 +102,7 @@ Your module functions can accept and return multiple different types, not just b
     ```go file=./snippets/first-steps/step3b/main.go
     ```
 
-    Test it using `dagger call`:
+1. Test it using `dagger call`:
 
     ```sh
     dagger call hello-world --message "I am a potato" message
@@ -120,9 +120,7 @@ The example module in the previous sections was just that - an example. Next, le
 1. Initialize a new module:
 
     ```shell
-    mkdir trivy/
-    cd trivy/
-    dagger init --name=trivy --sdk=go
+    dagger init --name=trivy --sdk=go trivy
     ```
 
 1. Replace the generated `dagger/main.go` file with the following code:

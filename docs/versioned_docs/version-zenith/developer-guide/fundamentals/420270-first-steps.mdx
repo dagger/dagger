@@ -1,0 +1,308 @@
+---
+slug: /developer-guide/fundamentals/420270/first-steps
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Your First Module"
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+import PartialDeveloperQuickstartIntroduction from '../../partials/_developer_quickstart_introduction.mdx';
+import PartialDeveloperQuickstartTrivyTest from '../../partials/_developer_quickstart_trivy_test.mdx';
+import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quickstart_conclusion.mdx';
+
+# Your First Module
+
+<PartialExperimentalDocs />
+
+## Introduction
+
+<PartialDeveloperQuickstartIntroduction />
+
+## Requirements
+
+This quickstart assumes that:
+
+- You have a good understanding of the Dagger Go, Python or TypeScript SDK. If not, refer to the [Go](https://pkg.go.dev/dagger.io/dagger), [Python](https://dagger-io.readthedocs.org/) or [TypeScript](../../reference/typescript/modules.md) SDK reference.
+- You have the Dagger CLI installed. If not, [install Dagger](../../329058-install.mdx).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+
+## Step 1: Initialize a new module
+
+1. Create a new directory on your filesystem and run `dagger init` to bootstrap your first module. We'll call it `potato` here, but you can choose your favorite food.
+
+    <Tabs groupId="language">
+    <TabItem value="Go">
+
+    ```sh
+    mkdir potato/
+    cd potato/
+
+    # initialize Dagger module
+    dagger init --name=potato --sdk=go
+    ```
+
+    This will generate a `dagger.json` module file, an initial `dagger/main.go` source file, as well as a generated `dagger/dagger.gen.go` and library folders for the generated module code.
+
+    </TabItem>
+    <TabItem value="Python">
+
+    ```sh
+    mkdir potato/
+    cd potato/
+
+    # initialize Dagger module
+    dagger init --name=potato --sdk=python
+    ```
+
+    This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
+
+    </TabItem>
+    <TabItem value="TypeScript">
+
+    ```sh
+    mkdir potato/
+    cd potato/
+
+    # initialize Dagger module
+    dagger init --name=potato --sdk=typescript
+    ```
+
+    This will generate a `dagger.json` module file, initial `dagger/src/index.ts` and typescript basic setup with a `dagger/package.json`, a `dagger/tsconfig.json` and a `dagger/yarn.lock`, as well as a generated `dagger/sdk` folder for local development.
+
+    </TabItem>
+    </Tabs>
+
+2. Test the module with the `dagger call` command:
+
+    ```sh
+    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
+    ```
+
+:::tip
+When using `dagger call` to call module functions, do not explicitly use the name of the module.
+:::
+
+:::note
+When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+:::
+
+## Step 2: Add a function
+
+Let's try changing the `dagger/src/index.ts` file.
+
+1. Let's replace the auto-generated template with something simpler:
+
+    <Tabs groupId="language">
+    <TabItem value="Go">
+
+    ```go file=./snippets/first-steps/go/step2/main.go
+    ```
+
+    Module functions are flexible in what parameters they can take. You can include
+    an optional `context.Context`, and an optional `error` result. These are all
+    valid variations of the above:
+
+    ```go
+    func (m *Potato) HelloWorld() string
+    func (m *Potato) HelloWorld() (string, error)
+    func (m *Potato) HelloWorld(ctx context.Context) string
+    func (m *Potato) HelloWorld(ctx context.Context) (string, error)
+    ```
+
+    </TabItem>
+    <TabItem value="Python">
+
+    ```python file=./snippets/first-steps/python/step2/main.py
+    ```
+
+    </TabItem>
+    <TabItem value="TypeScript">
+
+    ```typescript file=./snippets/first-steps/typescript/step2/index.ts
+    ```
+
+    The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
+
+    </TabItem>
+    </Tabs>
+
+2. Test the new function, once again using `dagger call`:
+
+    ```sh
+    dagger call hello-world
+    ```
+
+## Step 3: Use input parameters and return types
+
+Your module functions can accept and return multiple different types, not just basic built-in types.
+
+1. Update the function to accept multiple parameters (some of which are optional):
+
+    <Tabs groupId="language">
+    <TabItem value="Go">
+
+    ```go file=./snippets/first-steps/go/step3a/main.go
+    ```
+
+    The optional parameters are specified using the special `// +optional` comment, which dagger uses to set these as optional in the generated API. These comments must appear in the comment block before the parameter.
+
+    </TabItem>
+    <TabItem value="Python">
+
+    ```python file=./snippets/first-steps/python/step3a/main.py
+    ```
+
+    The type annotation with the [Doc() metadata](https://peps.python.org/pep-0727/#specification) is used to document the parameter in the API.
+
+    </TabItem>
+    <TabItem value="TypeScript">
+
+    ```typescript file=./snippets/first-steps/typescript/step3a/index.ts
+    ```
+
+    You can use [jsDoc](https://jsdoc.app/) to document the parameter in the API.
+
+    </TabItem>
+    </Tabs>
+
+    Here's an example of calling the function with optional parameters:
+
+    ```sh
+    dagger call hello-world --count 10 --mashed
+    ```
+
+2. Update the function to return a custom `PotatoMessage` type:
+
+    <Tabs groupId="language">
+    <TabItem value="Go">
+
+    ```go file=./snippets/first-steps/go/step3b/main.go
+    ```
+
+    </TabItem>
+    <TabItem value="Python">
+
+    ```python file=./snippets/first-steps/python/step3b/main.py
+    ```
+
+
+    [dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
+    is only needed to allow accessing the field directly via the API. Otherwise,
+    it will still be used during serialization/deserialization when passing the
+    object instance to other functions.
+
+    </TabItem>
+    <TabItem value="TypeScript">
+
+    ```typescript file=./snippets/first-steps/typescript/step3b/index.ts
+    ```
+
+    Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
+
+    </TabItem>
+    </Tabs>
+
+  1. Test it using `dagger call`:
+
+    ```sh
+    dagger call hello-world --message "I am a potato" message
+    dagger call hello-world --message "I am a potato" from
+    ```
+
+:::tip
+Use `dagger call --help` to get help on the commands and flags available.
+:::
+
+## Example: Write a vulnerability scanning module
+
+The example module in the previous sections was just that - an example. Next, let's put everything you've learnt to the test, by building a module with a real-world application: scanning a container image for vulnerabilities with [Trivy](https://trivy.dev/).
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+1. Initialize a new module:
+
+    ```shell
+    dagger init --name=trivy --sdk=go trivy
+    ```
+
+1. Replace the generated `dagger/main.go` file with the following code:
+
+    ```go file=./snippets/first-steps/go/trivy/main.go
+    ```
+
+    In this example, the `ScanImage()` function accepts four parameters (apart from the context):
+      - A reference to the container image to be scanned (required);
+      - A severity filter (optional);
+      - The exit code to use if scanning finds vulnerabilities (optional);
+      - The reporting format (optional).
+
+    `dag` is the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+
+    The function code performs the following operations:
+      - It uses the `dag` client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `WithExec()` method returns a revised `Container` with the results of command execution.
+      - It retrieves the output stream of the command with the `Container.Stdout()` method and prints the result to the console.
+
+</TabItem>
+<TabItem value="Python">
+
+1. Initialize a new module:
+
+    ```shell
+    dagger init --name=trivy --sdk=python trivy
+    ```
+
+1. Replace the generated `dagger/src/main.py` file with the following code:
+
+    ```python file=./snippets/first-steps/python/trivy/main.py
+    ```
+
+    In this example, the `scan_image()` function accepts four parameters:
+      - A reference to the container image to be scanned (required);
+      - A severity filter (optional);
+      - The exit code to use if scanning finds vulnerabilities (optional);
+      - The reporting format (optional).
+
+    The function code performs the following operations:
+      - It uses the default `dag` client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `with_exec()` method returns a revised `Container` with the results of command execution.
+      - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+1. Initialize a new module:
+
+    ```shell
+    dagger init --name=trivy --sdk=typescript trivy
+    ```
+
+1. Replace the generated `dagger/src/index.ts` file with the following code:
+
+    ```typescript file=./snippets/first-steps/typescript/trivy/index.ts
+    ```
+
+    In this example, the `scanImage()` function accepts four parameters:
+      - A reference to the container image to be scanned (required);
+      - A severity filter (optional);
+      - The exit code to use if scanning finds vulnerabilities (optional);
+      - The reporting format (optional).
+
+    The function code performs the following operations:
+      - It uses the default `dag` client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the official Trivy image `aquasec/trivy:latest`. This method returns a `Container` representing an OCI-compatible container image.
+      - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `withExec()` method returns a revised `Container` with the results of command execution.
+      - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
+
+</TabItem>
+</Tabs>
+
+3. Test the function using `dagger call`:
+
+    <PartialDeveloperQuickstartTrivyTest />
+
+## Conclusion
+
+<PartialDeveloperQuickstartConclusion />

@@ -2,7 +2,7 @@
 slug: /developer-guide/typescript/506316/first-steps
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "First Steps"
+title: "Your First Module"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -10,7 +10,7 @@ import PartialDeveloperQuickstartIntroduction from '../../partials/_developer_qu
 import PartialDeveloperQuickstartTrivyTest from '../../partials/_developer_quickstart_trivy_test.mdx';
 import PartialDeveloperQuickstartConclusion from '../../partials/_developer_quickstart_conclusion.mdx';
 
-# Quickstart
+# Your First Module
 
 <PartialExperimentalDocs />
 
@@ -46,9 +46,9 @@ This quickstart assumes that:
     dagger call container-echo --string-arg 'Hello daggernauts!' stdout
     ```
 
-    :::tip
-    When using `dagger call` to call module functions, do not explicitly use the name of the module.
-    :::
+:::tip
+When using `dagger call` to call module functions, do not explicitly use the name of the module.
+:::
 
 :::note
 When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
@@ -65,7 +65,7 @@ Let's try changing the `dagger/src/index.ts` file.
 
     The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
 
-2. Test the new function, once again using `dagger call`:
+1. Test the new function, once again using `dagger call`:
 
     ```sh
     dagger call hello-world
@@ -88,19 +88,19 @@ Your module functions can accept and return multiple different types, not just b
     dagger call hello-world --count 10 --mashed
     ```
 
-2. Update the function to return a custom `PotatoMessage` type:
+1. Update the function to return a custom `PotatoMessage` type:
 
     ```typescript file=./snippets/first-steps/step3b/index.ts
     ```
 
-    Test it using `dagger call`:
+1. Test it using `dagger call`:
 
     ```sh
     dagger call hello-world --message "I am a potato" message
     dagger call hello-world --message "I am a potato" from
     ```
 
-    Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
+Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
 
 :::tip
 Use `dagger call --help` to get help on the commands and flags available.
@@ -113,14 +113,10 @@ The example module in the previous sections was just that - an example. Next, le
 1. Initialize a new module:
 
     ```shell
-    mkdir trivy/
-
-    cd trivy/
-
-    dagger init --name=trivy --sdk=typescript
+    dagger init --name=trivy --sdk=typescript trivy
     ```
 
-2. Replace the generated `dagger/src/index.ts` file with the following code:
+1. Replace the generated `dagger/src/index.ts` file with the following code:
 
     ```typescript file=./snippets/first-steps/trivy/index.ts
     ```
@@ -136,7 +132,7 @@ The example module in the previous sections was just that - an example. Next, le
       - It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the `trivy image` command for image scanning. It also passes the optional parameters to the command. The `withExec()` method returns a revised `Container` with the results of command execution.
       - It retrieves the output stream of the command with the `Container.stdout()` method and prints the result to the console.
 
-3. Test the function using `dagger call`:
+1. Test the function using `dagger call`:
 
     <PartialDeveloperQuickstartTrivyTest />
 

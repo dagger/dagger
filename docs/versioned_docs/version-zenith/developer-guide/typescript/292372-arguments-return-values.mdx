@@ -11,4 +11,272 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+Dagger Functions are regular code, written in a supported programming language, and running in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
+
+Here's an example of a simple Dagger Function:
+
+```typescript file=./snippets/arguments-return-values/functions-simple/index.ts
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call hello
+```
+
+The result will be:
+
+```shell
+Hello, world
+```
+
+Here's an example of a more complex Dagger Function, which calls a remote API method:
+
+```typescript file=./snippets/arguments-return-values/functions-complex/index.ts
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get-user
+```
+
+The result will look something like this:
+
+```shell
+{
+  "title": "Mrs",
+  "first": "Beatrice",
+  "last": "Lavigne"
+}
+```
+
+## Arguments
+
+Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments, such as `Directory`, `Container`, `Service`, Secret`, and many more.
+
+Here's an example of modifying the previous Dagger Function to accept a string argument:
+
+```typescript file=./snippets/arguments-return-values/arguments-string/index.ts
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get-user --gender male
+```
+
+The result will look something like this:
+
+```shell
+{
+  "title": "Mr",
+  "first": "Hans-Werner",
+  "last": "Thielen"
+}
+```
+
+Here's an example of a Dagger Function that accepts a `Directory` as argument:
+
+```typescript file=./snippets/arguments-return-values/arguments-directory/index.ts
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call tree --dir .
+```
+
+The result will look like this:
+
+```shell
+.
+├── LICENSE
+├── dagger
+│   ├── package.json
+│   ├── sdk
+│   │   ├── LICENSE
+│   │   ├── README.md
+│   │   ├── api
+│   │   │   ├── client.gen.ts
+│   │   │   └── utils.ts
+│   │   ├── common
+│   │   │   ├── errors
+│   │   │   │   ├── DaggerSDKError.ts
+│   │   │   │   ├── DockerImageRefValidationError.ts
+│   │   │   │   ├── EngineSessionConnectParamsParseError.ts
+│   │   │   │   ├── EngineSessionConnectionTimeoutError.ts
+│   │   │   │   ├── EngineSessionErrorOptions.ts
+│   │   │   │   ├── ExecError.ts
+│   │   │   │   ├── GraphQLRequestError.ts
+│   │   │   │   ├── InitEngineSessionBinaryError.ts
+│   │   │   │   ├── NotAwaitedRequestError.ts
+│   │   │   │   ├── TooManyNestedObjectsError.ts
+│   │   │   │   ├── UnknownDaggerError.ts
+│   │   │   │   ├── errors-codes.ts
+│   │   │   │   └── index.ts
+│   │   │   └── utils.ts
+│   │   ├── connect.ts
+│   │   ├── connectOpts.ts
+│   │   ├── context
+│   │   │   ├── builder.ts
+│   │   │   └── context.ts
+│   │   ├── entrypoint
+│   │   │   ├── entrypoint.ts
+│   │   │   ├── invoke.ts
+│   │   │   ├── load.ts
+│   │   │   └── register.ts
+│   │   ├── graphql
+│   │   │   └── client.ts
+│   │   ├── index.ts
+│   │   ├── introspector
+│   │   │   ├── decorators
+│   │   │   │   └── decorators.ts
+│   │   │   ├── registry
+│   │   │   │   └── registry.ts
+│   │   │   ├── scanner
+│   │   │   │   ├── metadata.ts
+│   │   │   │   ├── scan.ts
+│   │   │   │   ├── serialize.ts
+│   │   │   │   ├── typeDefs.ts
+│   │   │   │   └── utils.ts
+│   │   │   └── utils
+│   │   │       └── files.ts
+│   │   ├── package.json
+│   │   └── provisioning
+│   │       ├── bin.ts
+│   │       ├── default.ts
+│   │       ├── engineconn.ts
+│   │       └── index.ts
+│   ├── src
+│   │   └── index.ts
+│   └── tsconfig.json
+└── dagger.json
+
+15 directories, 46 files
+```
+
+You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
+
+```shell
+dagger call tree --dir https://github.com/dagger/dagger#main:cmd/dagger
+```
+
+The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
+
+```shell
+.
+├── call.go
+├── cloud.go
+├── debug.go
+├── engine.go
+├── exec_nonunix.go
+├── exec_unix.go
+├── flags.go
+├── functions.go
+├── gen.go
+├── licenses.go
+├── listen.go
+├── log.go
+├── main.go
+├── module.go
+├── module_test.go
+├── query.go
+├── run.go
+├── session.go
+├── shell.go
+└── version.go
+
+0 directories, 20 files
+```
+
+:::note
+When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
+:::
+
+### Optional arguments
+
+Function arguments can be marked as optional. In this case, the Dagger CLI will not display an error if the argument is omitted in the function call.
+
+Here's an example of a Dagger Function with an optional argument:
+
+
+```typescript file=./snippets/arguments-return-values/arguments-optional/index.ts
+```
+
+Here is an example call for this Dagger Function, with the optional argument:
+
+```shell
+dagger call hello --name John
+```
+
+The result will look like this:
+
+```shell
+Hello, John
+```
+
+Here is an example call for this Dagger Function, without the optional argument:
+
+```shell
+dagger call hello
+```
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+### Default arguments
+
+Function arguments can be configured to use default values if no value is supplied for them.
+
+Here's an example of a Dagger Function with a default value for an argument:
+
+```typescript file=./snippets/arguments-return-values/arguments-default/index.ts
+```
+
+Here is an example call for this Dagger Function, without the required argument:
+
+```shell
+dagger call hello
+```
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+## Return values
+
+Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
+
+This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory as argument (the source code) and return another directory (containing binaries) or a container image (with the binaries included).
+
+Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
+
+```typescript file=./snippets/arguments-return-values/return-values-container/index.ts
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call build --source https://github.com/golang/example/#master:hello --os linux --architecture amd64 terminal
+```
+
+This example chains two functions calls:
+- a call to `Build()`, which builds a Go application from a remote GitHub repository and returns a `Container` with the compiled binary;
+- a call to `Terminal()`, which opens an interactive terminal session with the `Container` returned by the previous function.
+
+The result will be an interactive terminal session with the built container, which you can use to validate the compiled Go binary:
+
+```shell
+/ # cd /usr/local/bin
+/usr/local/bin # ls
+hello
+/usr/local/bin # ./hello
+Hello, world!
+/usr/local/bin #
+```
