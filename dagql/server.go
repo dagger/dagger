@@ -328,7 +328,7 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
 			return &graphql.Response{
-				Errors: gqlerror.List{gqlErr(err, nil)},
+				Errors: gqlErrs(err),
 			}
 		}
 
@@ -343,15 +343,28 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	}
 }
 
+func gqlErrs(err error) (errs gqlerror.List) {
+	if list, ok := err.(gqlerror.List); ok {
+		return list
+	}
+	if unwrap, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range unwrap.Unwrap() {
+			errs = append(errs, gqlErrs(e)...)
+		}
+	} else if err != nil {
+		errs = append(errs, gqlErr(err, nil))
+	}
+	return
+}
+
 func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (map[string]any, error) {
 	if gqlOp.Doc == nil {
 		var err error
 		gqlOp.Doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
 		if err != nil {
-			return nil, err
+			return nil, gqlErrs(err)
 		}
 	}
-
 	results := make(map[string]any)
 	for _, op := range gqlOp.Doc.Operations {
 		switch op.Operation {
@@ -365,7 +378,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			}
 			results, err = s.Resolve(ctx, s.root, sels...)
 			if err != nil {
-				return nil, fmt.Errorf("resolve: %w", err)
+				return nil, err
 			}
 		case ast.Mutation:
 			// TODO
@@ -385,7 +398,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (map[string]any, error) {
 	results := new(sync.Map)
 
-	pool := new(pool.ErrorPool)
+	pool := pool.New().WithErrors()
 	for _, sel := range sels {
 		sel := sel
 		pool.Go(func() error {
@@ -398,7 +411,7 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 		})
 	}
 	if err := pool.Wait(); err != nil {
-		return nil, err
+		return nil, gqlErrs(err)
 	}
 
 	resultsMap := make(map[string]any)
