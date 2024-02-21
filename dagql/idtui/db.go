@@ -155,7 +155,7 @@ func (db *DB) Step(dig string) (*Step, bool) {
 		if err != nil {
 			return nil, false
 		}
-		step.Base = db.Simplify(parentDig.String())
+		step.BaseDigest = db.Simplify(parentDig.String())
 	}
 	return step, true
 }
@@ -178,12 +178,19 @@ func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
 		return vs[i].Started.AsTime().Before(vs[j].Started.AsTime())
 	})
 	for _, vtx := range db.Intervals[dig] {
-		if vtx.Cached {
-			continue
-		}
-		if earliest == nil {
+		switch {
+		case earliest == nil:
+			// always show _something_
 			earliest = vtx
-			continue
+		case vtx.Cached:
+			// don't allow a cached vertex to override a non-cached one
+		case earliest.Cached:
+			// unclear how this would happen, but non-cached versions are always more
+			// interesting
+			earliest = vtx
+		case vtx.Started.AsTime().Before(earliest.Started.AsTime()):
+			// prefer the earliest active interval
+			earliest = vtx
 		}
 		// if vtx.Completed == nil && earliest.Completed != nil {
 		// 	// prioritize actively running vertex over a completed one
@@ -194,9 +201,6 @@ func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
 		// 	// never replace a running vertex with a completed one
 		// 	continue
 		// }
-		if vtx.Started.AsTime().Before(earliest.Started.AsTime()) {
-			earliest = vtx
-		}
 	}
 	return earliest
 }

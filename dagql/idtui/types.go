@@ -32,8 +32,6 @@ func CollectRows(steps []*Step) []*TraceRow {
 	return rows
 }
 
-type Pipeline []TraceRow
-
 type TraceRow struct {
 	Step *Step
 
@@ -43,6 +41,53 @@ type TraceRow struct {
 	Chained   bool
 
 	Children []*TraceRow
+}
+
+type Pipeline []*TraceRow
+
+func CollectPipelines(rows []*TraceRow) []Pipeline {
+	pls := []Pipeline{}
+	var cur Pipeline
+	for _, r := range rows {
+		if len(cur) == 0 {
+			cur = append(cur, r)
+		} else if r.Chained {
+			cur = append(cur, r)
+		} else if len(cur) > 0 {
+			pls = append(pls, cur)
+			cur = Pipeline{r}
+		}
+	}
+	if len(cur) > 0 {
+		pls = append(pls, cur)
+	}
+	return pls
+}
+
+type LogsView struct {
+	Primary *Step
+	Body    []*TraceRow
+	Init    *TraceRow
+}
+
+func CollectLogsView(rows []*TraceRow) *LogsView {
+	view := &LogsView{}
+	for _, r := range rows {
+		switch {
+		case view.Primary == nil && r.Step.Digest == PrimaryVertex:
+			view.Primary = r.Step
+			view.Body = r.Children
+			for _, b := range view.Body {
+				b.Parent = nil
+			}
+		case view.Primary == nil && r.Step.Digest == InitVertex:
+			view.Init = r
+		default:
+			// make sure we reveal anything 'extra' by default (fail open)
+			view.Body = append(view.Body, r)
+		}
+	}
+	return view
 }
 
 const (
@@ -104,8 +149,8 @@ func WalkSteps(steps []*Step, f func(*TraceRow)) {
 			Step:   step,
 			Parent: parent,
 		}
-		if step.Base != "" {
-			row.Chained = step.Base == lastSeen
+		if step.BaseDigest != "" {
+			row.Chained = step.BaseDigest == lastSeen
 		}
 		if step.IsRunning() {
 			row.setRunning()
