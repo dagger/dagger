@@ -17,8 +17,8 @@ import (
 type Client struct {
 	conn engineconn.EngineConn
 
-	Client graphql.Client
 	Query  *querybuilder.Selection
+	client graphql.Client
 }
 
 // ClientOpt holds a client option
@@ -75,8 +75,8 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	c := &Client{
-		Client: gql,
-		Query:  querybuilder.Query(),
+		Query:  querybuilder.Query().Client(gql),
+		client: gql,
 		conn:   conn,
 	}
 
@@ -93,7 +93,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 
 // GraphQLClient returns the underlying graphql.Client
 func (c *Client) GraphQLClient() graphql.Client {
-	return c.Client
+	return c.client
 }
 
 // Close the engine connection
@@ -112,7 +112,7 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 		r.Errors = resp.Errors
 		r.Extensions = resp.Extensions
 	}
-	return c.Client.MakeRequest(ctx, &graphql.Request{
+	return c.client.MakeRequest(ctx, &graphql.Request{
 		Query:     req.Query,
 		Variables: req.Variables,
 		OpName:    req.OpName,
