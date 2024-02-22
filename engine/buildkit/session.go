@@ -3,11 +3,14 @@ package buildkit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/content/local"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
@@ -15,14 +18,26 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 )
 
-// OCIStoreName is the name of the OCI content store used for OCI tarball
-// imports.
-const OCIStoreName = "dagger-oci"
+const (
+	// OCIStoreName is the name of the OCI content store used for OCI tarball
+	// imports.
+	OCIStoreName = "dagger-oci"
+
+	// BuiltinContentOCIStoreName is the name of the OCI content store used for
+	// builtins like SDKs that we package with the engine container but still use
+	// in LLB.
+	BuiltinContentOCIStoreName = "dagger-builtin-content"
+)
 
 func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess, err := bksession.NewSession(ctx, identity.NewID(), "")
 	if err != nil {
 		return nil, err
+	}
+
+	builtinStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
@@ -32,7 +47,8 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(&client.AnyDirTarget{})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
-		"oci:" + OCIStoreName: c.Worker.ContentStore(),
+		"oci:" + OCIStoreName:               c.Worker.ContentStore(),
+		"oci:" + BuiltinContentOCIStoreName: builtinStore,
 	}))
 
 	clientConn, serverConn := net.Pipe()

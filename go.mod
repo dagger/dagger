@@ -106,6 +106,8 @@ require (
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
 
+require github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81
+
 require (
 	cdr.dev/slog v1.4.2 // indirect
 	dario.cat/mergo v1.0.0 // indirect
