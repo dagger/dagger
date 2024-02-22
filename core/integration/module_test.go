@@ -3833,6 +3833,39 @@ class Test {
 	})
 }
 
+func TestModuleGoEmbedded(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/playground").
+		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Playground struct {
+	*Directory
+}
+
+func New() Playground {
+	return Playground{Directory: dag.Directory()}
+}
+
+func (p *Playground) SayHello() string {
+	return "hello!"
+}
+`,
+		})
+
+	out, err := ctr.With(daggerQuery(`{playground{sayHello}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"playground":{"sayHello":"hello!"}}`, out)
+}
+
 func TestModuleWrapping(t *testing.T) {
 	t.Parallel()
 

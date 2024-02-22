@@ -241,13 +241,30 @@ func (spec *parsedObjectType) ModuleName() string {
 	return spec.moduleName
 }
 
-/*
-Extra generated code needed for the object implementation.
+// Extra generated code needed for the object implementation.
+func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
+	code := Empty()
 
-Right now, this is just an UnmarshalJSON method. This is needed because objects may have fields
-of an interface type, which the JSON unmarshaller can't handle on its own. Instead, this custom
-unmarshaller will unmarshal the JSON into a struct where all the fields are concrete types,
-including the underlying concrete struct implementation of any interface fields.
+	method, err := spec.marshalJSONMethodCode()
+	if err != nil {
+		return nil, err
+	}
+	code.Add(method.Line().Line())
+
+	method, err = spec.unmarshalJSONMethodCode()
+	if err != nil {
+		return nil, err
+	}
+	code.Add(method.Line().Line())
+	return code, nil
+}
+
+/*
+UnmarshalJSON is needed because objects may have fields of an interface type,
+which the JSON unmarshaller can't handle on its own. Instead, this custom
+unmarshaller will unmarshal the JSON into a struct where all the fields are
+concrete types, including the underlying concrete struct implementation of any
+interface fields.
 
 After it unmarshals into that, it copies the fields to the real object fields, handling any
 special cases around interface conversions (e.g. converting a slice of structs to a slice of
@@ -271,7 +288,7 @@ e.g.:
 		return nil
 	}
 */
-func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
+func (spec *parsedObjectType) unmarshalJSONMethodCode() (*Statement, error) {
 	concreteFields := make([]Code, 0, len(spec.fields))
 	setFieldCodes := make([]*Statement, 0, len(spec.fields))
 	for _, field := range spec.fields {
@@ -285,7 +302,7 @@ func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
 		}
 		concreteFields = append(concreteFields, fieldCode)
 
-		setFieldCode, err := spec.setFieldsFromConcreteStructCode(field)
+		setFieldCode, err := spec.setFieldsFromUnmarshalStructCode(field)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate set field code: %w", err)
 		}
@@ -300,14 +317,89 @@ func (spec *parsedObjectType) ImplementationCode() (*Statement, error) {
 			g.Var().Id("concrete").Struct(concreteFields...)
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("concrete"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
-
 			for _, setFieldCode := range setFieldCodes {
 				g.Add(setFieldCode)
 			}
-
 			g.Return(Nil())
-		}).
-		Line(), nil
+		}), nil
+}
+
+/*
+MarshalJSON is needed because if using embedded fields, a struct will inherit
+the embedded MarshalJSON function (which could be an imported type, so would
+return an ID instead of a JSON serialization) - so we should always provide our
+own implementation.
+
+The custom marshaller transforms all the fields from the target into a concrete
+struct (exactly the same as in UnmarshalJSON), but taking interfaces and
+turning them into "any" types (since we don't know the underlying type, so we
+should defer to their serialization).
+
+e.g.:
+
+	func (r *Test) MarshalJSON() ([]byte, error) {
+		var concrete struct {
+			IfaceField          any
+			IfaceFieldNeverSet  any
+			IfacePrivateField   any
+			IfaceListField      any
+			OtherIfaceListField any
+		}
+		concrete.IfaceField = r.IfaceField
+		concrete.IfaceFieldNeverSet = r.IfaceFieldNeverSet
+		concrete.IfacePrivateField = r.IfacePrivateField
+		concrete.IfaceListField = r.IfaceListField
+		concrete.OtherIfaceListField = r.OtherIfaceListField
+		return json.Marshal(&concrete)
+	}
+*/
+func (spec *parsedObjectType) marshalJSONMethodCode() (*Statement, error) {
+	concreteFields := make([]Code, 0, len(spec.fields))
+	getFieldCodes := make([]*Statement, 0, len(spec.fields))
+	for _, field := range spec.fields {
+		fieldTypeCode, err := spec.marshalFieldTypeCode(field.typeSpec)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate field type code: %w", err)
+		}
+		fieldCode := Id(field.goName).Add(fieldTypeCode)
+		if field.goName != field.name {
+			fieldCode.Tag(map[string]string{"json": field.name})
+		}
+		concreteFields = append(concreteFields, fieldCode)
+
+		getFieldCode, err := spec.setFieldsToMarshalStructCode(field)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate get field code: %w", err)
+		}
+		getFieldCodes = append(getFieldCodes, getFieldCode)
+	}
+
+	return Func().Params(Id("r").Op("*").Id(spec.name)).
+		Id("MarshalJSON").
+		Params().
+		Params(Id("[]byte"), Id("error")).
+		BlockFunc(func(g *Group) {
+			g.Var().Id("concrete").Struct(concreteFields...)
+			for _, getFieldCode := range getFieldCodes {
+				g.Add(getFieldCode)
+			}
+			g.Return(Id("json").Dot("Marshal").Call(Op("&").Id("concrete")))
+		}), nil
+}
+
+/*
+The code for the type of a field in the concrete struct we use for marshalling into.
+*/
+func (spec *parsedObjectType) marshalFieldTypeCode(typeSpec ParsedType) (*Statement, error) {
+	switch typeSpec := typeSpec.(type) {
+	case *parsedIfaceTypeReference:
+		return Id("any"), nil
+	case *parsedSliceType:
+		if _, ok := typeSpec.underlying.(*parsedIfaceTypeReference); ok {
+			return Id("any"), nil
+		}
+	}
+	return spec.concreteFieldTypeCode(typeSpec)
 }
 
 /*
@@ -356,7 +448,7 @@ The code for setting the fields of the real object from the concrete struct unma
 	r.Iface = concrete.Iface.toIface()
 	r.IfaceList = convertSlice(concrete.IfaceList, (*customIfaceImpl).toIface)
 */
-func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) (*Statement, error) {
+func (spec *parsedObjectType) setFieldsFromUnmarshalStructCode(field *fieldSpec) (*Statement, error) {
 	s := Empty()
 	switch typeSpec := field.typeSpec.(type) {
 	case *parsedPrimitiveType, *parsedObjectTypeReference:
@@ -381,6 +473,10 @@ func (spec *parsedObjectType) setFieldsFromConcreteStructCode(field *fieldSpec) 
 	}
 
 	return s, nil
+}
+
+func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) (*Statement, error) {
+	return Empty().Id("concrete").Dot(field.goName).Op("=").Id("r").Dot(field.goName), nil
 }
 
 type fieldSpec struct {
