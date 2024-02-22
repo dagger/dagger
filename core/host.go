@@ -142,7 +142,7 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 			},
 			{
 				Name:  "accessor",
-				Value: dagql.NewString(accessor),
+				Value: dagql.Opt(dagql.NewString(accessor)),
 			},
 		},
 	})

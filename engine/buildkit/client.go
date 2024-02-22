@@ -315,11 +315,6 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
 		}
 
-		// clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		// if err != nil {
-		// 	return nil, err
-		// }
-
 		gw := &filteringGateway{
 			FrontendLLBBridge: c.llbBridge,
 			secretTranslator:  ctx.Value("secret-translator").(func(string) (string, error)),
@@ -328,8 +323,17 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		if err != nil {
 			return nil, err
 		}
+		if req.Evaluate {
+			err = llbRes.EachRef(func(ref bksolver.ResultProxy) error {
+				_, err := ref.Result(ctx)
+				return err
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
 	default:
-		return nil, fmt.Errorf("invalid request")
+		llbRes = &bkfrontend.Result{}
 	}
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
