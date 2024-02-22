@@ -244,7 +244,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 	// include exec metadata that isn't included in the cache key
 	var llbRes *bkfrontend.Result
-	if req.Definition != nil && req.Definition.Def != nil {
+	switch {
+	case req.Definition != nil && req.Definition.Def != nil:
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
@@ -302,7 +303,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		if err != nil {
 			return nil, wrapError(ctx, err, c.ID())
 		}
-	} else if req.Frontend != "" {
+	case req.Frontend != "":
 		// HACK: don't force evaluation like this, we can write custom frontend
 		// wrappers (for dockerfile.v0 and gateway.v0) that read from ctx to
 		// replace the llbBridge it knows about.
@@ -327,7 +328,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid request")
 	}
 

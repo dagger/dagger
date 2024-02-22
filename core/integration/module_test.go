@@ -5033,7 +5033,7 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 		require.NoError(t, c.Close())
 	})
 
-	t.Run("seperate secret stores", func(t *testing.T) {
+	t.Run("separate secret stores", func(t *testing.T) {
 		// check that modules can't access each other's global secret stores,
 		// by attempting to leak from each other
 		t.Parallel()

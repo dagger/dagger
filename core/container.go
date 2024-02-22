@@ -387,6 +387,8 @@ func (container *Container) Build(
 		dockerui.DefaultLocalNameDockerfile: contextDir.LLB,
 	}
 
+	// FIXME: ew, this is a terrible way to pass this around
+	//nolint:staticcheck
 	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
 		m, err := container.Query.CurrentModule(ctx)
 		if err != nil && !errors.Is(err, ErrNoCurrentModule) {

@@ -2233,7 +2233,7 @@ type Query {
   ): Query!
 
   """Reference a secret by name."""
-  secret(name: String!): Secret!
+  secret(accessor: String, name: String!): Secret!
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.
