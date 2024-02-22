@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
@@ -212,7 +213,9 @@ func (fe *Frontend) runWithoutTUI(ctx context.Context, tty *os.File, run func(co
 		if fe.Debug {
 			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
 		}
-		fe.plainConsole = console.NewWriter(consoleSink, opts...)
+		fe.plainConsole = telemetry.NewLegacyIDInternalizer(
+			console.NewWriter(consoleSink, opts...),
+		)
 	}
 	return run(ctx)
 }
