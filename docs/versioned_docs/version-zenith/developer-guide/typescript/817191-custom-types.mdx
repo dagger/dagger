@@ -11,24 +11,24 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TypeScript has multiple ways to support complex data type. However, the Dagger TypeScript SDK only support it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords does not allows decorators.
+TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords do not allows decorators.
 
-Here is an example of a module `HelloWorld` that has a function `daggerOrganisation` that returns a custom `GitHubOrganisation` type that has multiples fields exposed in it:
+Here is an example of a function named `daggerOrganization` that returns a custom `GitHubOrganization` type, itself containing a collection of `GitHubAccount` types:
 
 ```typescript file=./snippets/custom-types/index.ts
 ```
 
-Note that `GitHubOrganisation` and `GitHubAccount` has no functions exposed but you could define if you need to.
+Note that `GitHubOrganization` and `GitHubAccount` have no functions exposed, but these may be defined if needed.
 
-And here's an example of call to this module to get all members' url:
+Here's an example of calling this module to get all member URLs:
 
 ```shell
-dagger call dagger-organisation members url
+dagger call dagger-organization members url
 ```
 
 The result will be:
 
 ```shell
-https://github.com/daggernaut
-https://github.com/johnDoe
+https://github.com/jane
+https://github.com/john
 ```

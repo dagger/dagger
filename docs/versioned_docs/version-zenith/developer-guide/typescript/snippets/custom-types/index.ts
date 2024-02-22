@@ -19,7 +19,7 @@ class GitHubAccount {
 }
 
 @object()
-class GitHubOrganisation {
+class GitHubOrganization {
   @field()
   url: string;
 
@@ -33,14 +33,14 @@ class GitHubOrganisation {
 @object()
 class HelloWorld {
   @func()
-  daggerOrganisation(): GitHubOrganisation {
-    const organisation = new GitHubOrganisation();
+  daggerOrganization(): GitHubOrganization {
+    const organisation = new GitHubOrganization();
 
     organisation.url = 'https://github.com/dagger';
     organisation.repository = [dag.git(`${organisation.url}/dagger`)];
     organisation.members = [
-      new GitHubAccount('daggernaut', 'daggertnaut@dagger.io'),
-      new GitHubAccount('johnDoe', 'john.doe@acme.io')
+      new GitHubAccount('jane', 'jane@example.com'),
+      new GitHubAccount('john', 'john@example.com')
     ];
 
     return organisation;

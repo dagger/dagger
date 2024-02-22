@@ -11,16 +11,14 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-Module are handling error in the same way the language do. This allows you to support any kind of error handling your application requires.
+Module handle errors in the same way as the language they are written in. This allows you to support any kind of error handling that your application requires. You can also use error handling to verify user input.
 
-You can also use error handling to verify users' input.
-
-Here is an example module that expose a function `divide` and shall throw an error if the exposant is `0`:
+Here is an example module with a function `divide()`, that throws an error if the denominator is zero:
 
 ```typescript file=./snippets/error-handling/index.ts
 ```
 
-And here an example call for this module:
+Here is an example call for this module:
 
 ```shell
 dagger call divide --a 4 --b 2
@@ -32,7 +30,7 @@ The result will be:
 2
 ```
 
-But if you send 0 as exposant:
+Here is another example call for this module, this time dividing by zero:
 
 ```shell
 dagger call divide --a 4 --b 0

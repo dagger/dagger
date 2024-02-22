@@ -11,15 +11,14 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-You can change the name of an exposed field or functions to make something more understable.  
-To do so, simply add the name of your alias as a parameter of your decorator.
+You can change the name of an exposed field or function to make it more readable. To do so, simply add the alias as a parameter of the corresponding decorator.
 
-Here is an example of a module `HelloWorld` with the field `ctr` exposed as `container` and the function `displayVersion` exposed as `version`:
+Here is an example of a module with the field `ctr` aliased as `container` and the function `displayVersion` aliased as `version`:
 
 ```typescript file=./snippets/aliases/index.ts
 ```
 
-You can see that field and functions are overidden when you call `dagger functions`:
+Field and function names are overridden by their aliases in the output of `dagger functions`:
 
 ```shell
 Name        Description

@@ -11,37 +11,36 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-To make your module as simple to use as possible for others, it's a good practise to document it.  
-There are multiple part of your module that you can document.
+To make your module easy to use for others, consider documenting its functions, objects and fields.
 
 ## Module documentation
 
-The following code snippet shows how you can add a top level module documentation.  
+The following code snippet shows how to add high0level module documentation:
 
 ```typescript file=./snippets/documentation/module/index.ts
 ```
 
 ## Object documentation
 
-The following code snippet shows how you can add documentation for an object of your module.  
+The following code snippet shows how to add documentation for an object of your module:
 
 ```typescript file=./snippets/documentation/object/index.ts
 ```
 
 ## Function documentation
 
-The following code snippet shows how you can add document for a function in your object.
+The following code snippet shows how to add document for a function in your module:
 
 ```typescript file=./snippets/documentation/function/index.ts
 ```
 
-The documentation will be displayed when you use the `--help` flag:
+This documentation will be displayed for the `--help` flag of `dagger call`:
 
 ```shell
 dagger call add --help
 ```
 
-And the result will be:
+Here is an example of the result:
 
 ```shell
 Compute the sum of two numbers.
@@ -56,17 +55,17 @@ EXPERIMENTAL:
 
 Flags:
       --a int   The first number to add (default 4)
-      --b int   The second number to add    
+      --b int   The second number to add
 ```
 
 ## Field documentation
 
-The following code snippet shows how you can add document for a field in your object.
+The following code snippet shows how to add documentation for fields in your objects:
 
 ```typescript file=./snippets/documentation/field/index.ts
 ```
 
-And you see the following result when you call `dagger functions`:
+Here is an example of the result when calling `dagger functions`:
 
 ```shell
 Name   Description
