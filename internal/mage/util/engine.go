@@ -24,7 +24,7 @@ const (
 	engineDialStdioPath = "/usr/local/bin/dial-stdio"
 	engineShimPath      = distconsts.EngineShimPath
 
-	golangVersion = "1.21.3"
+	golangVersion = "1.21.7"
 	alpineVersion = "3.18"
 	ubuntuVersion = "22.04"
 	runcVersion   = "v1.1.12"
