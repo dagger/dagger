@@ -220,7 +220,7 @@
         },
         {
           "type": "category",
-          "label": "Fundamentals",
+          "label": "Overview",
           "items": [
             {
               "type": "doc",
