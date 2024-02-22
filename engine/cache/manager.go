@@ -345,7 +345,7 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 		return err
 	}
 
-	if skipped := getURLResp.Skip; skipped {
+	if skipped = getURLResp.Skip; skipped {
 		return nil
 	}
 
