@@ -6,6 +6,8 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/moby/buildkit/session/secrets"
+	"github.com/pkg/errors"
 )
 
 type secretSchema struct {
@@ -92,9 +94,11 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
-	// XXX: this shouldn't print the scope on error
 	bytes, err := secret.Query.Secrets.GetSecret(ctx, secret.Accessor)
 	if err != nil {
+		if errors.Is(err, secrets.ErrNotFound) {
+			return "", errors.Wrapf(secrets.ErrNotFound, "secret %s", secret.Name)
+		}
 		return "", err
 	}
 

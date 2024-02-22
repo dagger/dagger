@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"crypto/hmac"
+	"encoding/hex"
 	"sync"
 
 	"github.com/moby/buildkit/session/secrets"
@@ -22,13 +24,12 @@ type Secret struct {
 }
 
 func NewSecretAccessor(name string, scope string) string {
-	// XXX: does the order matter? security perspective HMAC? (name <-> scope)
-	//      - yes, it does
-	// XXX: explain why this is safe actually
-	//      - we can't bundle the scope by itself - since then you could guess it
-	//      - so we combine the name and the scope
-
-	return digest.FromString(scope + "." + name).Hex()
+	// Use an HMAC, which allows us to keep the scope secret
+	// This also protects from length-extension attacks (where if we had
+	// access to secret FOO in scope X, we could derive access to FOOBAR).
+	h := hmac.New(digest.SHA256.Hash, []byte(scope))
+	dt := h.Sum([]byte(name))
+	return hex.EncodeToString(dt)
 }
 
 func (*Secret) Type() *ast.Type {
