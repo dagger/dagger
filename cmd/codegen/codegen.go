@@ -60,7 +60,12 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 			cmd.Dir = cfg.OutputDir
 			cmd.Stdout = vtx.Stdout()
 			cmd.Stderr = vtx.Stderr()
-			vtx.Task(strings.Join(cmd.Args, " ")).Done(cmd.Run())
+			task := vtx.Task(strings.Join(cmd.Args, " "))
+			err := cmd.Run()
+			task.Done(err)
+			if err != nil {
+				return err
+			}
 		}
 
 		if !generated.NeedRegenerate {
