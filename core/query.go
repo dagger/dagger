@@ -58,6 +58,8 @@ type Query struct {
 	endpointMu *sync.RWMutex
 }
 
+var ErrNoCurrentModule = fmt.Errorf("no current module")
+
 func NewRoot() *Query {
 	return &Query{
 		clientCallContext: map[digest.Digest]*ClientCallContext{},
@@ -180,7 +182,7 @@ func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
 		return nil, err
 	}
 	if clientMetadata.ModuleCallerDigest == "" {
-		return nil, fmt.Errorf("no current module for main client caller")
+		return nil, fmt.Errorf("%w: main client caller has no module", ErrNoCurrentModule)
 	}
 
 	q.clientCallMu.RLock()
@@ -198,7 +200,7 @@ func (q *Query) CurrentFunctionCall(ctx context.Context) (*FunctionCall, error) 
 		return nil, err
 	}
 	if clientMetadata.ModuleCallerDigest == "" {
-		return nil, fmt.Errorf("no current function call for main client caller")
+		return nil, fmt.Errorf("%w: main client caller has no function", ErrNoCurrentModule)
 	}
 
 	q.clientCallMu.RLock()

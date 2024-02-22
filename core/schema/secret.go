@@ -6,6 +6,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/session/secrets"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
@@ -45,15 +46,11 @@ type secretArgs struct {
 func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secretArgs) (*core.Secret, error) {
 	accessor := string(args.Accessor.GetOr(""))
 	if accessor == "" {
-		m, err := parent.CurrentModule(ctx)
+		var err error
+		accessor, err = s.makeAccessor(ctx, parent, args.Name)
 		if err != nil {
 			return nil, err
 		}
-		d, err := m.InstanceID.Digest()
-		if err != nil {
-			return nil, err
-		}
-		accessor = core.NewSecretAccessor(args.Name, d.String())
 	}
 
 	return parent.NewSecret(accessor), nil
@@ -67,15 +64,10 @@ type setSecretArgs struct {
 func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (dagql.Instance[*core.Secret], error) {
 	var inst dagql.Instance[*core.Secret]
 
-	m, err := parent.CurrentModule(ctx)
+	accessor, err := s.makeAccessor(ctx, parent, args.Name)
 	if err != nil {
 		return inst, err
 	}
-	d, err := m.InstanceID.Digest()
-	if err != nil {
-		return inst, err
-	}
-	accessor := core.NewSecretAccessor(args.Name, d.String())
 
 	if err := parent.Secrets.AddSecret(ctx, accessor, []byte(args.Plaintext)); err != nil {
 		return inst, err
@@ -111,4 +103,19 @@ func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args 
 	}
 
 	return dagql.NewString(string(bytes)), nil
+}
+
+func (s *secretSchema) makeAccessor(ctx context.Context, parent *core.Query, name string) (string, error) {
+	m, err := parent.CurrentModule(ctx)
+	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+		return "", err
+	}
+	var d digest.Digest
+	if m != nil {
+		d, err = m.InstanceID.Digest()
+		if err != nil {
+			return "", err
+		}
+	}
+	return core.NewSecretAccessor(name, d.String()), nil
 }

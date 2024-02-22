@@ -123,7 +123,7 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	}
 	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
-	// TODO: Bridge should return an executor
+	// TODO: upstream Bridge should return an executor
 	br := client.LLBSolver.Bridge(client.job).(interface {
 		bkfrontend.FrontendLLBBridge
 		executor.Executor
@@ -303,23 +303,25 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return nil, wrapError(ctx, err, c.ID())
 		}
 	} else if req.Frontend != "" {
-		// HACK: don't look this up, write custom frontend wrappers (for
-		// dockerfile.v0 and gateway.v0) that read from ctx to replace the
-		// llbBridge it knows about
+		// HACK: don't force evaluation like this, we can write custom frontend
+		// wrappers (for dockerfile.v0 and gateway.v0) that read from ctx to
+		// replace the llbBridge it knows about.
+		// This current implementation may be limited when it comes to
+		// implement provenance/etc.
 
 		f, ok := c.Frontends[req.Frontend]
 		if !ok {
 			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
 		}
 
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
+		// clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		// if err != nil {
+		// 	return nil, err
+		// }
 
 		gw := &filteringGateway{
 			FrontendLLBBridge: c.llbBridge,
-			secretPrefix:      clientMetadata.ClientID + "/",
+			secretTranslator:  ctx.Value("secret-translator").(func(string) (string, error)),
 		}
 		llbRes, err = f.Solve(ctx, gw, c.llbExec, req.FrontendOpt, req.FrontendInputs, c.ID(), c.SessionManager)
 		if err != nil {
@@ -801,7 +803,7 @@ func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
 
 type filteringGateway struct {
 	bkfrontend.FrontendLLBBridge
-	secretPrefix string
+	secretTranslator func(string) (string, error)
 }
 
 func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
@@ -817,21 +819,20 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 			}
 
 			for _, secret := range execOp.ExecOp.GetSecretenv() {
-				dt, _ := json.MarshalIndent(secret, "", "  ")
-				fmt.Println(string(dt))
-
-				secret.ID = gw.secretPrefix + secret.ID
+				secret.ID, err = gw.secretTranslator(secret.ID)
+				if err != nil {
+					return err
+				}
 			}
 			for _, mount := range execOp.ExecOp.GetMounts() {
 				if mount.MountType != bksolverpb.MountType_SECRET {
 					continue
 				}
 				secret := mount.SecretOpt
-
-				dt, _ := json.MarshalIndent(secret, "", "  ")
-				fmt.Println(string(dt))
-
-				secret.ID = gw.secretPrefix + secret.ID
+				secret.ID, err = gw.secretTranslator(secret.ID)
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		}); err != nil {

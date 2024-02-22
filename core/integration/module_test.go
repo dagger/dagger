@@ -3004,7 +3004,7 @@ func TestModuleGoUtilsPkg(t *testing.T) {
 		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
-			
+
 import (
 	"context"
 	"main/utils"
@@ -5195,7 +5195,7 @@ func diffSecret(ctx context.Context, first, second *Secret) error {
 	if err != nil {
 		return err
 	}
-	
+
 	if firstOut != secondOut {
 		return fmt.Errorf("%q != %q", firstOut, secondOut)
 	}

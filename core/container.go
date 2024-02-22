@@ -340,7 +340,6 @@ func (container *Container) Build(
 	container.Services.Merge(contextDir.Services)
 
 	for _, secret := range secrets {
-		// ??? what - how does this work?
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secret.Name),
@@ -388,7 +387,22 @@ func (container *Container) Build(
 		dockerui.DefaultLocalNameDockerfile: contextDir.LLB,
 	}
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
+		m, err := container.Query.CurrentModule(ctx)
+		if err != nil && !errors.Is(err, ErrNoCurrentModule) {
+			return "", err
+		}
+		var d digest.Digest
+		if m != nil {
+			d, err = m.InstanceID.Digest()
+			if err != nil {
+				return "", err
+			}
+		}
+		return NewSecretAccessor(name, d.String()), nil
+	})
+
+	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
