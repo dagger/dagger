@@ -31,12 +31,10 @@ func (m *MyMod) Foo(ctx context.Context, fooer Fooer) (string, error) {
 }
 ```
 
-<!-- TODO verify the following with Erik -->
-
 Functions defined in interface definitions must match the client-side API
-signature style. If it returns a scalar value or an array it must accept a
-`context.Context` argument and return an `error` return value. If it returns a
-chainable object value, it must not return an error value, and it doesn't need
+signature style. If they return a scalar value or an array, they must accept a
+`context.Context` argument and return an `error` return value. If they return a
+chainable object value, they must not return an `error` value, and they do not need
 to include a `context.Context` argument.
 
 Note that you must also provide argument names, since they directly translate
