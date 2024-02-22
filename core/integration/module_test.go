@@ -2762,7 +2762,7 @@ type Test struct{}
 
 func (m *Test) FnA(ctx context.Context) (string, error) {
 	resp := &graphql.Response{}
-	err := dag.Client.MakeRequest(ctx, &graphql.Request{
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
 		Query: "{test{fnB}}",
 	}, resp)
 	if err != nil {
