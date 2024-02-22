@@ -23,6 +23,21 @@ type Secret struct {
 	Accessor string `json:"accessor,omitempty"`
 }
 
+func GetLocalSecretAccessor(ctx context.Context, parent *Query, name string) (string, error) {
+	m, err := parent.CurrentModule(ctx)
+	if err != nil && !errors.Is(err, ErrNoCurrentModule) {
+		return "", err
+	}
+	var d digest.Digest
+	if m != nil {
+		d, err = m.InstanceID.Digest()
+		if err != nil {
+			return "", err
+		}
+	}
+	return NewSecretAccessor(name, d.String()), nil
+}
+
 func NewSecretAccessor(name string, scope string) string {
 	// Use an HMAC, which allows us to keep the scope secret
 	// This also protects from length-extension attacks (where if we had

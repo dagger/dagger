@@ -7,7 +7,6 @@ import (
 
 	"github.com/containerd/containerd/labels"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
@@ -121,16 +120,16 @@ func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) 
 }
 
 func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	accessor, err := GetLocalSecretAccessor(ctx, host.Query, secretName)
 	if err != nil {
 		return i, err
 	}
-	accessor := NewSecretAccessor(secretName, clientMetadata.ClientID)
 
 	secretFileContent, err := host.Query.Buildkit.ReadCallerHostFile(ctx, path)
 	if err != nil {
 		return i, fmt.Errorf("read secret file: %w", err)
 	}
+
 	if err := host.Query.Secrets.AddSecret(ctx, accessor, secretFileContent); err != nil {
 		return i, err
 	}

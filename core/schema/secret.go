@@ -6,7 +6,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/session/secrets"
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
@@ -47,7 +46,7 @@ func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secr
 	accessor := string(args.Accessor.GetOr(""))
 	if accessor == "" {
 		var err error
-		accessor, err = s.makeAccessor(ctx, parent, args.Name)
+		accessor, err = core.GetLocalSecretAccessor(ctx, parent, args.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +63,7 @@ type setSecretArgs struct {
 func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (dagql.Instance[*core.Secret], error) {
 	var inst dagql.Instance[*core.Secret]
 
-	accessor, err := s.makeAccessor(ctx, parent, args.Name)
+	accessor, err := core.GetLocalSecretAccessor(ctx, parent, args.Name)
 	if err != nil {
 		return inst, err
 	}
@@ -103,19 +102,4 @@ func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args 
 	}
 
 	return dagql.NewString(string(bytes)), nil
-}
-
-func (s *secretSchema) makeAccessor(ctx context.Context, parent *core.Query, name string) (string, error) {
-	m, err := parent.CurrentModule(ctx)
-	if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
-		return "", err
-	}
-	var d digest.Digest
-	if m != nil {
-		d, err = m.InstanceID.Digest()
-		if err != nil {
-			return "", err
-		}
-	}
-	return core.NewSecretAccessor(name, d.String()), nil
 }

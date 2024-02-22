@@ -390,18 +390,7 @@ func (container *Container) Build(
 	// FIXME: ew, this is a terrible way to pass this around
 	//nolint:staticcheck
 	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
-		m, err := container.Query.CurrentModule(ctx)
-		if err != nil && !errors.Is(err, ErrNoCurrentModule) {
-			return "", err
-		}
-		var d digest.Digest
-		if m != nil {
-			d, err = m.InstanceID.Digest()
-			if err != nil {
-				return "", err
-			}
-		}
-		return NewSecretAccessor(name, d.String()), nil
+		return GetLocalSecretAccessor(ctx, container.Query, name)
 	})
 
 	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
