@@ -1,10 +1,8 @@
-### Rerun commands with `--focus=false`
+### Rerun commands with `--debug`
 
-Sometimes, the Dagger client logs are automatically collapsed and don't contain
-all the information from a failure.
-
-To make sure that logs aren't automatically collapsed, you can run any `dagger`
-subcommand with the `--focus=false` flag to disable this behavior.
+The Dagger CLI tries to keep its output concise by default. If you're running
+into issues and want to debug with more detailed output, you can run any `dagger`
+subcommand with the `--debug` flag to have it reveal all available information.
 
 ### Access the Dagger Engine logs
 
