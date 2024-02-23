@@ -97,7 +97,7 @@ Let's try changing the `dagger/src/index.ts` file.
     <Tabs groupId="language">
     <TabItem value="Go">
 
-    ```go file=./snippets/first-steps/go/step2/main.go
+    ```go file=../go/snippets/first-steps/step2/main.go
     ```
 
     Module functions are flexible in what parameters they can take. You can include
@@ -114,13 +114,13 @@ Let's try changing the `dagger/src/index.ts` file.
     </TabItem>
     <TabItem value="Python">
 
-    ```python file=./snippets/first-steps/python/step2/main.py
+    ```python file=../python/snippets/first-steps/step2/main.py
     ```
 
     </TabItem>
     <TabItem value="TypeScript">
 
-    ```typescript file=./snippets/first-steps/typescript/step2/index.ts
+    ```typescript file=../typescript/snippets/first-steps/step2/index.ts
     ```
 
     The `@object` decorator expose the class to the Dagger API and allow calling its methods decorator by `@func` from the Dagger CLI.
@@ -143,7 +143,7 @@ Your module functions can accept and return multiple different types, not just b
     <Tabs groupId="language">
     <TabItem value="Go">
 
-    ```go file=./snippets/first-steps/go/step3a/main.go
+    ```go file=../go/snippets/first-steps/step3a/main.go
     ```
 
     The optional parameters are specified using the special `// +optional` comment, which dagger uses to set these as optional in the generated API. These comments must appear in the comment block before the parameter.
@@ -151,7 +151,7 @@ Your module functions can accept and return multiple different types, not just b
     </TabItem>
     <TabItem value="Python">
 
-    ```python file=./snippets/first-steps/python/step3a/main.py
+    ```python file=../python/snippets/first-steps/step3a/main.py
     ```
 
     The type annotation with the [Doc() metadata](https://peps.python.org/pep-0727/#specification) is used to document the parameter in the API.
@@ -159,7 +159,7 @@ Your module functions can accept and return multiple different types, not just b
     </TabItem>
     <TabItem value="TypeScript">
 
-    ```typescript file=./snippets/first-steps/typescript/step3a/index.ts
+    ```typescript file=../typescript/snippets/first-steps/step3a/index.ts
     ```
 
     You can use [jsDoc](https://jsdoc.app/) to document the parameter in the API.
@@ -178,13 +178,13 @@ Your module functions can accept and return multiple different types, not just b
     <Tabs groupId="language">
     <TabItem value="Go">
 
-    ```go file=./snippets/first-steps/go/step3b/main.go
+    ```go file=../go/snippets/first-steps/step3b/main.go
     ```
 
     </TabItem>
     <TabItem value="Python">
 
-    ```python file=./snippets/first-steps/python/step3b/main.py
+    ```python file=../python/snippets/first-steps/step3b/main.py
     ```
 
 
@@ -196,7 +196,7 @@ Your module functions can accept and return multiple different types, not just b
     </TabItem>
     <TabItem value="TypeScript">
 
-    ```typescript file=./snippets/first-steps/typescript/step3b/index.ts
+    ```typescript file=../typescript/snippets/first-steps/step3b/index.ts
     ```
 
     Using the `@field` decorator is only needed to allow accessing the field directly via the Dagger API. Otherwise, it will still be used during serialization/deserialization when passing the object instance to other functions.
@@ -230,7 +230,7 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Replace the generated `dagger/main.go` file with the following code:
 
-    ```go file=./snippets/first-steps/go/trivy/main.go
+    ```go file=../go/snippets/first-steps/trivy/main.go
     ```
 
     In this example, the `ScanImage()` function accepts four parameters (apart from the context):
@@ -257,7 +257,7 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Replace the generated `dagger/src/main.py` file with the following code:
 
-    ```python file=./snippets/first-steps/python/trivy/main.py
+    ```python file=../python/snippets/first-steps/trivy/main.py
     ```
 
     In this example, the `scan_image()` function accepts four parameters:
@@ -282,7 +282,7 @@ The example module in the previous sections was just that - an example. Next, le
 
 1. Replace the generated `dagger/src/index.ts` file with the following code:
 
-    ```typescript file=./snippets/first-steps/typescript/trivy/index.ts
+    ```typescript file=../typescript/snippets/first-steps/trivy/index.ts
     ```
 
     In this example, the `scanImage()` function accepts four parameters:
