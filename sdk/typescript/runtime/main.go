@@ -75,6 +75,7 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 		}).
 		WithVCSIgnoredPaths([]string{
 			genDir,
+			"node_modules/**",
 		}), nil
 }
 
