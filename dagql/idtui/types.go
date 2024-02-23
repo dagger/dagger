@@ -84,11 +84,6 @@ func CollectLogsView(rows []*TraceRow) *LogsView {
 			view.Primary = row.Step
 			view.Body = row.Children
 		case view.Primary == nil && row.Step.Digest == InitVertex:
-			// collapse initialization steps by default
-			//
-			// TODO: I added this and immediately disliked it, but let's give it time
-			// and see what others think naturally
-			row.Collapsed = true
 			view.Init = row
 		default:
 			// reveal anything 'extra' by default (fail open)

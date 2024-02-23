@@ -643,11 +643,9 @@ func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
 	}
 	fe.renderStep(out, row.Step, row.Depth())
 	fe.renderLogs(out, row.Step.Digest, row.Depth())
-	if !row.Collapsed {
-		for _, child := range row.Children {
-			if err := fe.renderRow(out, child); err != nil {
-				return err
-			}
+	for _, child := range row.Children {
+		if err := fe.renderRow(out, child); err != nil {
+			return err
 		}
 	}
 	return nil
