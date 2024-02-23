@@ -370,22 +370,7 @@ func pythonSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
 			Directory("/out")
 
-		var index ocispecs.Index
-		indexContents, err := sdkDir.File("index.json").Contents(ctx)
-		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-			panic(err)
-		}
-		manifest := index.Manifests[0]
-		manifestDgst := manifest.Digest.String()
-
-		return ctr.
-			WithEnvVariable(distconsts.PythonSDKManifestDigestEnvName, manifestDgst).
-			WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
-				Include: []string{"blobs/"},
-			})
+		return sdkContent(ctx, ctr, sdkDir, distconsts.PythonSDKManifestDigestEnvName)
 	}
 }
 
@@ -420,22 +405,7 @@ func typescriptSDKContent(ctx context.Context, c *dagger.Client, arch string) da
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
 			Directory("/out")
 
-		var index ocispecs.Index
-		indexContents, err := sdkDir.File("index.json").Contents(ctx)
-		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-			panic(err)
-		}
-		manifest := index.Manifests[0]
-		manifestDgst := manifest.Digest.String()
-
-		return ctr.
-			WithEnvVariable(distconsts.TypescriptSDKManifestDigestEnvName, manifestDgst).
-			WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
-				Include: []string{"blobs/"},
-			})
+		return sdkContent(ctx, ctr, sdkDir, distconsts.TypescriptSDKManifestDigestEnvName)
 	}
 }
 
@@ -458,23 +428,27 @@ func goSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger.Wit
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
 			Directory("/out")
 
-		var index ocispecs.Index
-		indexContents, err := sdkDir.File("index.json").Contents(ctx)
-		if err != nil {
-			panic(err)
-		}
-		if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-			panic(err)
-		}
-		manifest := index.Manifests[0]
-		manifestDgst := manifest.Digest.String()
-
-		return ctr.
-			WithEnvVariable(distconsts.GoSDKManifestDigestEnvName, manifestDgst).
-			WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
-				Include: []string{"blobs/"},
-			})
+		return sdkContent(ctx, ctr, sdkDir, distconsts.GoSDKManifestDigestEnvName)
 	}
+}
+
+func sdkContent(ctx context.Context, ctr *dagger.Container, sdkDir *dagger.Directory, envName string) *dagger.Container {
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
+		panic(err)
+	}
+	manifest := index.Manifests[0]
+	manifestDgst := manifest.Digest.String()
+
+	return ctr.
+		WithEnvVariable(envName, manifestDgst).
+		WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
+			Include: []string{"blobs/"},
+		})
 }
 
 func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
