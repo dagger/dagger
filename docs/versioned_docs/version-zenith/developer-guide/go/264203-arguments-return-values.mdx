@@ -63,7 +63,7 @@ Here's an example of modifying the previous Dagger Function to accept a string a
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call get-user --gender male
+dagger call get-user --gender=male
 ```
 
 The result will look something like this:
@@ -84,7 +84,7 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument:
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call tree --dir .
+dagger call tree --dir=. --depth=1
 ```
 
 The result will look like this:
@@ -108,7 +108,7 @@ The result will look like this:
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger call tree --dir https://github.com/dagger/dagger#main:cmd/dagger
+dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger
 ```
 
 The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
@@ -155,7 +155,7 @@ Here's an example of a Dagger Function with an optional argument:
 Here is an example call for this Dagger Function, with the optional argument:
 
 ```shell
-dagger call hello --name John
+dagger call hello --name=John
 ```
 
 The result will look like this:
@@ -211,7 +211,7 @@ Here's an example of a Dagger Function that accepts a `Directory` containing a G
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call build --source https://github.com/golang/example/#master:hello --os linux --architecture amd64 terminal
+dagger call build --source=https://github.com/golang/example/#master:hello --os=linux --architecture=amd64 terminal
 ```
 
 This example chains two functions calls:

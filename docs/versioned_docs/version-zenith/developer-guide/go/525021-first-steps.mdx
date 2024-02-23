@@ -43,7 +43,7 @@ This quickstart assumes that:
 1. Test the module with the `dagger call` command:
 
     ```sh
-    dagger call container-echo --string-arg 'Hello daggernauts!' stdout
+    dagger call container-echo --string-arg='Hello daggernauts!' stdout
     ```
 
 :::tip
@@ -94,7 +94,7 @@ Your module functions can accept and return multiple different types, not just b
     Here's an example of calling the function with optional parameters:
 
     ```sh
-    dagger call hello-world --count 10 --mashed
+    dagger call hello-world --count=10 --mashed
     ```
 
 1. Update the function to return a custom `PotatoMessage` type:
@@ -105,8 +105,8 @@ Your module functions can accept and return multiple different types, not just b
 1. Test it using `dagger call`:
 
     ```sh
-    dagger call hello-world --message "I am a potato" message
-    dagger call hello-world --message "I am a potato" from
+    dagger call hello-world --message="I am a potato" message
+    dagger call hello-world --message="I am a potato" from
     ```
 
 :::tip

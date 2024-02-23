@@ -6,7 +6,7 @@ import (
 
 type MyModule struct{}
 
-func (m *MyModule) Tree(ctx context.Context, dir *Directory) (string, error) {
+func (m *MyModule) Tree(ctx context.Context, dir *Directory, depth int) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
 		WithMountedDirectory("/mnt", dir).
