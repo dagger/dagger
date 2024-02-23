@@ -262,17 +262,68 @@ describe("Invoke typescript function", function () {
 
       const scanResult = scan(files)
 
-      // Mocking the fetch from the dagger API
-      const input = {
-        parentName: "HelloWorld", // HelloWorld
-        fnName: "greet", // helloWorld
-        parentArgs: {},
-        fnArgs: { name: "Dagger" },
-      }
+      // We wrap the execution into a Dagger connection
+      await connection(async () => {
+        const constructorInput = {
+          parentName: "HelloWorld", // HelloWorld
+          fnName: "", // call constructor
+          parentArgs: {
+            prefix: "test",
+          },
+          fnArgs: {},
+        }
 
-      const result = await invoke(scanResult, input)
+        const constructorResult = await invoke(scanResult, constructorInput)
 
-      assert.equal("hello Dagger", result)
+        assert.equal("test", constructorResult.prefix)
+        assert.notStrictEqual(undefined, constructorResult.container)
+
+        // Mocking the fetch from the dagger API
+        const input = {
+          parentName: "HelloWorld", // HelloWorld
+          fnName: "greet", // helloWorld
+          parentArgs: JSON.parse(JSON.stringify(constructorResult)),
+          fnArgs: { name: "Dagger" },
+        }
+
+        const result = await invoke(scanResult, input)
+        assert.equal("hello Dagger", result)
+      })
+    })
+
+    it("Should correctly invoke hello world with custom prefix", async function () {
+      const files = await listFiles(`${rootDirectory}/alias`)
+
+      // Load function
+      await load(files)
+
+      const scanResult = scan(files)
+      await connection(async () => {
+        const constructorInput = {
+          parentName: "HelloWorld", // HelloWorld
+          fnName: "", // call constructor
+          parentArgs: {
+            prefix: "test",
+          },
+          fnArgs: {},
+        }
+
+        const constructorResult = await invoke(scanResult, constructorInput)
+
+        assert.equal("test", constructorResult.prefix)
+        assert.notStrictEqual(undefined, constructorResult.container)
+
+        // Mocking the fetch from the dagger API
+        const input = {
+          parentName: "HelloWorld", // HelloWorld
+          fnName: "customGreet", // helloWorld
+          parentArgs: JSON.parse(JSON.stringify(constructorResult)),
+          fnArgs: { name: "Dagger" },
+        }
+
+        const result = await invoke(scanResult, input)
+        assert.equal("test Dagger", result)
+      })
     })
   })
 })
