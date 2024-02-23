@@ -477,7 +477,8 @@ func TestModuleGit(t *testing.T) {
 			sdk: "go",
 			gitGeneratedFiles: []string{
 				"/dagger.gen.go",
-				"/querybuilder/**",
+				"/internal/dagger/**",
+				"/internal/querybuilder/**",
 			},
 		},
 		{
@@ -2962,7 +2963,7 @@ func TestModuleGoUseDaggerTypesDirect(t *testing.T) {
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
-import "main/dagger"
+import "main/internal/dagger"
 
 type Minimal struct{}
 
@@ -3019,7 +3020,7 @@ func (m *Minimal) Hello(ctx context.Context) (string, error) {
 		WithNewFile("utils/util.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package utils
 
-import "main/dagger"
+import "main/internal/dagger"
 
 func Foo() *dagger.Directory {
 	return dagger.Connect().Directory().WithNewFile("/foo", "hello world")

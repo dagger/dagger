@@ -334,7 +334,8 @@ func (sdk *goSDK) Codegen(
 		Code: modifiedSrcDir,
 		VCSGeneratedPaths: []string{
 			"dagger.gen.go",
-			"querybuilder/**",
+			"internal/dagger/**",
+			"internal/querybuilder/**",
 		},
 	}, nil
 }

@@ -52,7 +52,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	mfs := memfs.New()
 
 	genSt := &generator.GeneratedState{
-		Overlay: layerfs.New(mfs, dagger.QueryBuilder),
+		Overlay: layerfs.New(mfs, &MountedFS{FS: dagger.QueryBuilder, Name: "internal"}),
 		PostCommands: []*exec.Cmd{
 			// run 'go mod tidy' after generating to fix and prune dependencies
 			exec.Command("go", "mod", "tidy"),
