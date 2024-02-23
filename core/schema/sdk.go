@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
-	"github.com/vito/progrock"
+	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/distconsts"
@@ -88,9 +89,9 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 	case "go":
 		return &goSDK{root: root, dag: s.dag}, nil
 	case "python":
-		return s.loadBuiltinSDK(ctx, root, sdkName, distconsts.PythonSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case "typescript":
-		return s.loadBuiltinSDK(ctx, root, sdkName, distconsts.TypescriptSDKEngineContainerModulePath)
+		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}
@@ -234,36 +235,35 @@ func (s *moduleSchema) loadBuiltinSDK(
 	ctx context.Context,
 	root *core.Query,
 	name string,
-	engineContainerModulePath string,
+	manifestDigest digest.Digest,
 ) (*moduleSDK, error) {
-	ctx, recorder := progrock.WithGroup(ctx, fmt.Sprintf("load builtin module sdk %s", name))
-
 	// TODO: currently hardcoding assumption that builtin sdks put *module* source code at
-	// subdir right under the *full* sdk source dir. Can be generalized once we support
+	// "runtime" subdir right under the *full* sdk source dir. Can be generalized once we support
 	// default-args/scripts in dagger.json
-	fullSDKSourcePath := filepath.Dir(engineContainerModulePath)
-	_, desc, err := root.Buildkit.EngineContainerLocalImport(
-		ctx,
-		recorder,
-		root.Platform.Spec(),
-		fullSDKSourcePath,
-		nil,
-		nil,
-	)
-	if err != nil {
+	var fullSDKDir dagql.Instance[*core.Directory]
+	if err := s.dag.Select(ctx, s.dag.Root(), &fullSDKDir,
+		dagql.Selector{
+			Field: "builtinContainer",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "digest",
+					Value: dagql.String(manifestDigest.String()),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "rootfs",
+		},
+	); err != nil {
 		return nil, fmt.Errorf("failed to import full sdk source for sdk %s from engine container filesystem: %w", name, err)
-	}
-	fullSDKDir, err := core.LoadBlob(ctx, s.dag, desc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load full sdk source for module sdk %s: %w", name, err)
 	}
 
 	var sdkModDir dagql.Instance[*core.Directory]
-	err = s.dag.Select(ctx, fullSDKDir, &sdkModDir,
+	err := s.dag.Select(ctx, fullSDKDir, &sdkModDir,
 		dagql.Selector{
 			Field: "directory",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(filepath.Base(engineContainerModulePath))},
+				{Name: "path", Value: dagql.String("runtime")},
 			},
 		},
 	)
@@ -533,35 +533,7 @@ func (sdk *goSDK) baseWithCodegen(
 
 func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], error) {
 	var inst dagql.Instance[*core.Container]
-	ctx, recorder := progrock.WithGroup(ctx, "load builtin module sdk go")
-	tarDir, tarName := filepath.Split(distconsts.GoSDKEngineContainerTarballPath)
-	_, desc, err := sdk.root.Buildkit.EngineContainerLocalImport(
-		ctx,
-		recorder,
-		sdk.root.Platform.Spec(),
-		tarDir,
-		nil,
-		[]string{tarName},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to import go module sdk tarball from engine container filesystem: %s", err)
-	}
-	blobDir, err := core.LoadBlob(ctx, sdk.dag, desc)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load go module sdk tarball: %w", err)
-	}
-	var tarballFile dagql.Instance[*core.File]
-	if err := sdk.dag.Select(ctx, blobDir, &tarballFile, dagql.Selector{
-		Field: "file",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.String(tarName),
-			},
-		},
-	}); err != nil {
-		return inst, fmt.Errorf("failed to get tarball file from go module sdk tarball: %w", err)
-	}
+
 	var modCache dagql.Instance[*core.CacheVolume]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &modCache, dagql.Selector{
 		Field: "cacheVolume",
@@ -586,15 +558,14 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 	}); err != nil {
 		return inst, fmt.Errorf("failed to get build cache from go module sdk tarball: %w", err)
 	}
+
 	var ctr dagql.Instance[*core.Container]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &ctr, dagql.Selector{
-		Field: "container",
-	}, dagql.Selector{
-		Field: "import",
+		Field: "builtinContainer",
 		Args: []dagql.NamedInput{
 			{
-				Name:  "source",
-				Value: dagql.NewID[*core.File](tarballFile.ID()),
+				Name:  "digest",
+				Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName)),
 			},
 		},
 	}, dagql.Selector{

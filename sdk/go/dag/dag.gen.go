@@ -46,6 +46,12 @@ func Blob(digest string, size int, mediaType string, uncompressed string) *dagge
 	return client.Blob(digest, size, mediaType, uncompressed)
 }
 
+// Retrieves a container builtin to the engine.
+func BuiltinContainer(digest string) *dagger.Container {
+	client := initClient()
+	return client.BuiltinContainer(digest)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()

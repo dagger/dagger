@@ -4634,6 +4634,20 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Retrieves a container builtin to the engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `digest` - Digest of the image manifest
+    pub fn builtin_container(&self, digest: impl Into<String>) -> Container {
+        let mut query = self.selection.select("builtinContainer");
+        query = query.arg("digest", digest.into());
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Constructs a cache volume for a given cache key.
     ///
     /// # Arguments

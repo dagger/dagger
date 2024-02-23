@@ -20,6 +20,16 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Retrieves a container builtin to the engine.\n\n## Required Arguments\n\n* `digest` - Digest of the image manifest"
+    @spec builtin_container(t(), Dagger.String.t()) :: Dagger.Container.t()
+    def builtin_container(%__MODULE__{} = query, digest) do
+      selection = select(query.selection, "builtinContainer")
+      selection = arg(selection, "digest", digest)
+      %Dagger.Container{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Constructs a cache volume for a given cache key.\n\n## Required Arguments\n\n* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\")."
     @spec cache_volume(t(), Dagger.String.t()) :: Dagger.CacheVolume.t()
     def cache_volume(%__MODULE__{} = query, key) do
