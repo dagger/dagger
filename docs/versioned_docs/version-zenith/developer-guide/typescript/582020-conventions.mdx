@@ -11,41 +11,6 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-## Decorators
-
-A module's main functions is declared as methods of a class (decorated with `@object()`) having the same name as the module (in PascalCase).
-
-Every objects, functions (decorated with `@func()`) and fields (decorated with `field()`) with a decorator are exposed through the Dagger API to the user.
-
-Here is an example of a module that exposes a function `alpine` that returns an object `Alpine` with the method `echo` and the field `ctr`:
-
-```typescript file=./snippets/conventions/decorators/index.ts
-
-```
-
-And here is an example of call to this module:
-
-```shell
-dagger call alpine echo --msg="hello","world"
-```
-
-The reult will be:
-
-```shell
-hello world
-```
-
-But you could also directly query the field `ctr` to chain operations:
-
-```shell
-dagger call alpine ctr with-exec --args "echo","hello","world" stdout
-```
-
-This will output the same result as before:
-
-```shell
-hello world
-```
 
 ## Default value for complex type
 
