@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock/console"
@@ -80,7 +81,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		SecretToken:    sessionToken.String(),
 		RunnerHost:     runnerHost,
 		UserAgent:      labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
-		ProgrockWriter: console.NewWriter(os.Stderr),
+		ProgrockWriter: telemetry.NewLegacyIDInternalizer(console.NewWriter(os.Stderr)),
 		JournalFile:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 	})
 	if err != nil {
