@@ -11,4 +11,116 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+It’s essential to understand a few things about Go modules and how they’re structured, in order to make it fit with your normal workflow.
+
+## Runtime container with Go 1.21
+
+Go modules run in a runtime container that's bootstrapped by the engine, with the neccessary environment to run the module’s code. It's currently hardcoded to run in **Go 1.21**, but we plan to allow more configuration in the future.
+
+## Go modules
+
+Dagger modules written in Go are automatically created as [Go modules](https://go.dev/ref/mod). When you create a module, a `go.mod` and `go.sum` file will automatically be created for you that import the necessary dependencies. You can install and manage dependencies just as you would for any standard go environment.
+
+After using new dependencies in your code, you can update your `go.mod`/`go.sum` with the newly imported dependencies by using [`go mod tidy`](https://go.dev/ref/mod#go-mod-tidy).
+
+### Go workspaces
+
+Since it's common to have a sub-directory inside your main project containing your dagger module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
+
+When you create a new Go module, Dagger attempts to add it to a root `go.work` if it exists, or you can add it manually later with `go work use ./path/to/mymodule`.
+
+```go
+// go.work
+go 1.21.7
+
+use (
+	./path/to/mymodule
+)
+```
+
+### Go vendor
+
+[Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See <https://github.com/dagger/dagger/issues/6076>.
+
+## File layout
+
+The template from `dagger init` creates the following structure:
+
+```
+.
+├── dagger
+│   └── dagger.gen.go
+├── dagger.gen.go
+├── dagger.json
+├── go.mod
+├── go.sum
+├── main.go
+└── querybuilder
+    ├── marshal.go
+    └── querybuilder.go
+```
+
+- `dagger.json` is the dagger module config file.
+- `go.mod`/`go.sum` manage the [Go module](#go-modules) and its dependencies.
+- `main.go` is where your module code goes.
+- `dagger.gen.go` contains automatically-generated types and helpers needed to configure and run the module.
+- The sub-packages:
+    - `dagger` contains automatically-generated definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` contains automatically-generated utilities for building GraphQL queries (used internally by the `dagger` package).
+    
+:::note
+While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
+:::
+
+## Multiple files
+
+You can split your Go module into multiple files, not just `main.go`. To do this, you can just create another file beside `main.go` (for example, into `utils.go`):
+
+```
+.
+├── dagger
+│   └── dagger.gen.go
+├── ...
+├── main.go
+└── utils.go
+```
+
+This file should be inside the same package as `main.go`, and as such, can access any private variables/functions/types inside the package.
+
+Additionally, you can also split your module into Go subpackages (for example, into `utils`):
+
+```
+.
+├── dagger
+│   └── dagger.gen.go
+├── ...
+├── main.go
+└── utils
+    └── utils.go
+```
+
+Because this is a separate package, you can only use the variables/functions/types that are exported from this package in `main.go` (you can't access types from `main.go` in the `utils` package).
+
+:::note
+Only types and functions in the top-level package are part of the public-facing API for the module.
+:::
+
+You can access other dagger types from a sub-package by importing the generated sub-package `<module>/dagger`:
+
+```go
+// utils/utils.go
+
+import "main/dagger"
+
+func DoThing(client *dagger.Client) *dagger.Directory {
+    // we need to pass *dagger.Client in here, since we don't have access to `dag`
+	...
+}
+```
+
+## Development environment
+
+To get your IDE to recognize the dagger Go module, you'll need to:
+
+- Run `dagger develop` to generate all the local go files locally (you can choose to omit these from your version control system if you like, they aren't required to run your module).
+- Configure your `go.work` to include the path to your module (see [Go workspaces](#go-workspaces) above)
