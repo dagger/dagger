@@ -38,7 +38,7 @@ hello world
 But you could also directly query the field `ctr` to chain operations:
 
 ```shell
-/opt/homebrew/bin/dagger call alpine ctr with-exec --args "echo","hello","world" stdout
+dagger call alpine ctr with-exec --args "echo","hello","world" stdout
 ```
 
 This will output the same result as before:
@@ -80,38 +80,4 @@ And the result will be:
 
 ```shell
 VERSION_ID=3.14.0
-```
-
-## Fields exposition
-
-TypeScript has some keywords to handle fields exposition in class (`private`, `protected` and `public`).
-However, Dagger will only expose the fields of a modude that are explicitely exposed using the `@field()` decorators, the rest
-will stay private in the context of your class.
-Note that even if it's private, their state will still be loaded so you can use these fields without exposing them.
-
-Here's an example of a module `Person` that has multiple properties not exposed outside the module and a function `identity` that use the `crypto` library to hash these:
-
-```typescript file=./snippets/conventions/fields-exposition/index.ts
-
-```
-
-If we execute `dagger functions`, we can see that `age` and `job` are not exposed:
-
-```shell
-dagger functions
-Name       Description
-identity   Get the identity of the person based on its personal information.
-name       Get the name of the person
-```
-
-Here is an example of call to this module:
-
-```shell
-dagger call --name="john" --age=23 --job="devops"  identity
-```
-
-And the result is:
-
-```shell
-c11fb2dc1c5bfe34b0ed5737b8c58914ddb56a83602ead3eff2f06e46efc4a24
 ```

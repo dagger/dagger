@@ -1,0 +1,44 @@
+
+---
+slug: /developer-guide/typescript/461818/visibility
+displayed_sidebar: 'zenith'
+toc_max_heading_level: 2
+title: 'Visibility'
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Visibility
+
+<PartialExperimentalDocs />
+
+TypeScript has some keywords to handle fields exposition in class (`private`, `protected` and `public`).
+However, Dagger will only expose the fields of a modude that are explicitely exposed using the `@field()` decorators, the rest
+will stay private in the context of your class.
+Note that even if it's private, their state will still be loaded so you can use these fields without exposing them.
+
+Here's an example of a module `Person` that has multiple properties not exposed outside the module and a function `identity` that use the `crypto` library to hash these:
+
+```typescript file=./snippets/visibility/index.ts
+```
+
+If we execute `dagger functions`, we can see that `age` and `job` are not exposed:
+
+```shell
+dagger functions
+Name       Description
+identity   Get the identity of the person based on its personal information.
+name       Get the name of the person
+```
+
+Here is an example of call to this module:
+
+```shell
+dagger call --name="john" --age=23 --job="devops"  identity
+```
+
+And the result is:
+
+```shell
+c11fb2dc1c5bfe34b0ed5737b8c58914ddb56a83602ead3eff2f06e46efc4a24
+```
