@@ -93,22 +93,15 @@ The result will look like this:
 .
 ├── LICENSE
 ├── dagger
-│   ├── dagger.gen.go
-│   ├── go.mod
-│   ├── go.sum
-│   ├── main.go
-│   └── querybuilder
-│       ├── marshal.go
-│       └── querybuilder.go
 └── dagger.json
 
-2 directories, 8 files
+2 directories, 2 files
 ```
 
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger
+dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger --depth=1
 ```
 
 The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
@@ -136,7 +129,7 @@ The result will be the same file listing as [this GitHub page](https://github.co
 ├── shell.go
 └── version.go
 
-0 directories, 20 files
+1 directory, 20 files
 ```
 
 :::note

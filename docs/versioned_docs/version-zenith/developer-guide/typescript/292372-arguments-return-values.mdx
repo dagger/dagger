@@ -84,7 +84,7 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument:
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call tree --dir=.
+dagger call tree --dir=. --depth=1
 ```
 
 The result will look like this:
@@ -93,73 +93,15 @@ The result will look like this:
 .
 ├── LICENSE
 ├── dagger
-│   ├── package.json
-│   ├── sdk
-│   │   ├── LICENSE
-│   │   ├── README.md
-│   │   ├── api
-│   │   │   ├── client.gen.ts
-│   │   │   └── utils.ts
-│   │   ├── common
-│   │   │   ├── errors
-│   │   │   │   ├── DaggerSDKError.ts
-│   │   │   │   ├── DockerImageRefValidationError.ts
-│   │   │   │   ├── EngineSessionConnectParamsParseError.ts
-│   │   │   │   ├── EngineSessionConnectionTimeoutError.ts
-│   │   │   │   ├── EngineSessionErrorOptions.ts
-│   │   │   │   ├── ExecError.ts
-│   │   │   │   ├── GraphQLRequestError.ts
-│   │   │   │   ├── InitEngineSessionBinaryError.ts
-│   │   │   │   ├── NotAwaitedRequestError.ts
-│   │   │   │   ├── TooManyNestedObjectsError.ts
-│   │   │   │   ├── UnknownDaggerError.ts
-│   │   │   │   ├── errors-codes.ts
-│   │   │   │   └── index.ts
-│   │   │   └── utils.ts
-│   │   ├── connect.ts
-│   │   ├── connectOpts.ts
-│   │   ├── context
-│   │   │   ├── builder.ts
-│   │   │   └── context.ts
-│   │   ├── entrypoint
-│   │   │   ├── entrypoint.ts
-│   │   │   ├── invoke.ts
-│   │   │   ├── load.ts
-│   │   │   └── register.ts
-│   │   ├── graphql
-│   │   │   └── client.ts
-│   │   ├── index.ts
-│   │   ├── introspector
-│   │   │   ├── decorators
-│   │   │   │   └── decorators.ts
-│   │   │   ├── registry
-│   │   │   │   └── registry.ts
-│   │   │   ├── scanner
-│   │   │   │   ├── metadata.ts
-│   │   │   │   ├── scan.ts
-│   │   │   │   ├── serialize.ts
-│   │   │   │   ├── typeDefs.ts
-│   │   │   │   └── utils.ts
-│   │   │   └── utils
-│   │   │       └── files.ts
-│   │   ├── package.json
-│   │   └── provisioning
-│   │       ├── bin.ts
-│   │       ├── default.ts
-│   │       ├── engineconn.ts
-│   │       └── index.ts
-│   ├── src
-│   │   └── index.ts
-│   └── tsconfig.json
 └── dagger.json
 
-15 directories, 46 files
+2 directories, 2 files
 ```
 
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger
+dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger --depth=1
 ```
 
 The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
@@ -187,7 +129,7 @@ The result will be the same file listing as [this GitHub page](https://github.co
 ├── shell.go
 └── version.go
 
-0 directories, 20 files
+1 directory, 20 files
 ```
 
 :::note
