@@ -333,20 +333,26 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 func (g *GoGenerator) baseModuleSource() string {
 	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
 
-	return fmt.Sprintf(`package main
+	return fmt.Sprintf(`// The %s module's short description
+//
+// The %s module's long description is here. It can span multiple lines and
+// provides more detail about your module's usage.
+
+package main
 
 import (
 	"context"
 )
 
-type %s struct {}
+// Functions for working with %s
+type %s struct{}
 
-// example usage: "dagger call container-echo --string-arg yo stdout"
+// Returns a container that echoes whatever string argument is provided
 func (m *%s) ContainerEcho(stringArg string) *Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }
 
-// example usage: "dagger call grep-dir --directory-arg . --pattern GrepDir"
+// Returns lines that match a pattern in the files of the provided Directory
 func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
@@ -355,6 +361,5 @@ func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern strin
 		WithExec([]string{"grep", "-R", pattern, "."}).
 		Stdout(ctx)
 }
-
-`, moduleStructName, moduleStructName, moduleStructName)
+`, moduleStructName, moduleStructName, moduleStructName, moduleStructName, moduleStructName, moduleStructName)
 }
