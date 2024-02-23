@@ -31,7 +31,7 @@ class GitHubOrganization {
 }
 
 @object()
-class HelloWorld {
+class MyModule {
   @func()
   daggerOrganization(): GitHubOrganization {
     const organisation = new GitHubOrganization();

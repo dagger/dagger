@@ -1,6 +1,9 @@
 import dagger
-from dagger import function
+from dagger import object_type, function
 
-@function
-def hello(name: str = "world") -> str:
-    return f"Hello, {name}"
+@object_type
+class MyModule:
+
+    @function
+    def hello(name: str = "world") -> str:
+        return f"Hello, {name}"

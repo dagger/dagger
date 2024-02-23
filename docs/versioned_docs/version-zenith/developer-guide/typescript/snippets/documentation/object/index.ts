@@ -1,10 +1,10 @@
 import { dag, object, func } from '@dagger.io/dagger';
 
 /**
- * The HelloWorld object is a simple example of documenting an object.
+ * The MyModule object is a simple example of documenting an object.
  */
 @object()
-class HelloWorld {
+class MyModule {
   @func()
   async version(): Promise<string> {
     return await dag

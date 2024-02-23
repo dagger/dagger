@@ -1,7 +1,7 @@
 import { object, func, field } from "@dagger.io/dagger"
 
 @object()
-class HelloWorld {
+class MyModule {
 
   @field()
   greeting = "Hello"
@@ -10,13 +10,13 @@ class HelloWorld {
   name = "World"
 
   @func()
-  withGreeting(greeting: string): HelloWorld {
+  withGreeting(greeting: string): MyModule {
     this.greeting = greeting
     return this
   }
 
   @func()
-  withName(name: string): HelloWorld {
+  withName(name: string): MyModule {
     this.name = name
     return this
   }

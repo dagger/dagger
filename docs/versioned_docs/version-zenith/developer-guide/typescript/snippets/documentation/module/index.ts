@@ -4,7 +4,7 @@
 import { dag, object, func } from '@dagger.io/dagger';
 
 @object()
-class HelloWorld {
+class MyModule {
   @func()
   async version(): Promise<string> {
     return await dag

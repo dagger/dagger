@@ -1,5 +1,5 @@
 {
-  "name": "hello-world",
+  "name": "my-module",
   "sdk": "go",
   "source": "dagger",
   "engineVersion": "v0.9.10"

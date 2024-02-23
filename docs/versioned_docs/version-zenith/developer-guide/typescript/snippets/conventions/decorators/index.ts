@@ -17,7 +17,7 @@ class Alpine {
 }
 
 @object()
-class HelloWorld {
+class MyModule {
   @func()
   alpine(version?: string): Alpine {
     return new Alpine(version)

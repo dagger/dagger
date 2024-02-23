@@ -1,7 +1,7 @@
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class HelloWorld {
+class MyModule {
 
   greeting: string
   name: string

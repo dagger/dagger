@@ -4,9 +4,9 @@ import (
 	"context"
 )
 
-type HelloWorld struct{}
+type MyModule struct{}
 
-func (m *HelloWorld) Build(ctx context.Context, source *Directory, architecture string, os string) *Container {
+func (m *MyModule) Build(ctx context.Context, source *Directory, architecture string, os string) *Container {
 
 	dir := dag.Container().
 		From("golang:1.21").

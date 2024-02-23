@@ -5,9 +5,9 @@ import (
 	"fmt"
 )
 
-type HelloWorld struct{}
+type MyModule struct{}
 
-func (m *HelloWorld) GetUser(ctx context.Context, gender string) (string, error) {
+func (m *MyModule) GetUser(ctx context.Context, gender string) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
 		WithExec([]string{"apk", "add", "curl"}).

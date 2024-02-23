@@ -5,9 +5,9 @@ import (
 	"fmt"
 )
 
-type HelloWorld struct {}
+type MyModule struct{}
 
-func (m *HelloWorld) Hello(
+func (m *MyModule) Hello(
 	ctx context.Context,
 	// +optional
 	// +default="world"

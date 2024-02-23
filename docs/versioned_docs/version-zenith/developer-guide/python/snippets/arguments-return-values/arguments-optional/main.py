@@ -1,8 +1,11 @@
 import dagger
-from dagger import function
+from dagger import object_type, function
 
-@function
-def hello(name: str | None = None) -> str:
-    if name != None:
-        return f"Hello, {name}"
-    return "Hello, world"
+@object_type
+class MyModule:
+
+    @function
+    def hello(name: str | None = None) -> str:
+        if name != None:
+            return f"Hello, {name}"
+        return "Hello, world"

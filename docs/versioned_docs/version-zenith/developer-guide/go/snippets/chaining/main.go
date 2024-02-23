@@ -7,22 +7,22 @@ import (
 	"fmt"
 )
 
-type HelloWorld struct {
+type MyModule struct {
 	Greeting string
 	Name     string
 }
 
-func (hello *HelloWorld) WithGreeting(ctx context.Context, greeting string) (*HelloWorld, error) {
+func (hello *MyModule) WithGreeting(ctx context.Context, greeting string) (*MyModule, error) {
 	hello.Greeting = greeting
 	return hello, nil
 }
 
-func (hello *HelloWorld) WithName(ctx context.Context, name string) (*HelloWorld, error) {
+func (hello *MyModule) WithName(ctx context.Context, name string) (*MyModule, error) {
 	hello.Name = name
 	return hello, nil
 }
 
-func (hello *HelloWorld) Message(ctx context.Context) (string, error) {
+func (hello *MyModule) Message(ctx context.Context) (string, error) {
 	var (
 		greeting = hello.Greeting
 		name     = hello.Name

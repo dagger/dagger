@@ -17,7 +17,7 @@ A module's main functions is declared as methods of a class (decorated with `@ob
 
 Every objects, functions (decorated with `@func()`) and fields (decorated with `field()`) with a decorator are exposed through the Dagger API to the user.
 
-Here is an example of a module `HelloWorld` that exposes a method `alpine` that returns an object `Alpine` with the method `echo` and the field `ctr`:
+Here is an example of a module that exposes a function `alpine` that returns an object `Alpine` with the method `echo` and the field `ctr`:
 
 ```typescript file=./snippets/conventions/decorators/index.ts
 
@@ -51,10 +51,10 @@ hello world
 
 You might create a module that depends on some Dagger object such as `Container` and want to add a default value on
 one of your field or function's arugment. In that case, you cannot use the classic TypeScript notation for default
-argument in the field because it is not a primitive type.  
+argument in the field because it is not a primitive type.
 The correct way to define a default object type as function argument is to use the `??` notation.
 
-Here's is an example of a module `HelloWorld` with a default argument `ctr` of type `Container`:
+Here's is an example of a module with a default argument `ctr` of type `Container`:
 
 ```typescript file=./snippets/conventions/default-object-in-constructor/index.ts
 
@@ -84,9 +84,9 @@ VERSION_ID=3.14.0
 
 ## Fields exposition
 
-TypeScript has some keywords to handle fields exposition in class (`private`, `protected` and `public`).  
+TypeScript has some keywords to handle fields exposition in class (`private`, `protected` and `public`).
 However, Dagger will only expose the fields of a modude that are explicitely exposed using the `@field()` decorators, the rest
-will stay private in the context of your class.  
+will stay private in the context of your class.
 Note that even if it's private, their state will still be loaded so you can use these fields without exposing them.
 
 Here's an example of a module `Person` that has multiple properties not exposed outside the module and a function `identity` that use the `crypto` library to hash these:

@@ -1,7 +1,7 @@
 import { dag, Container, object, func, field } from "@dagger.io/dagger"
 
 @object()
-class HelloWorld {
+class MyModule {
   @field("container")
   ctr: Container
 

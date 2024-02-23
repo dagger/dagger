@@ -3,17 +3,17 @@ from dagger import field, function, object_type
 
 
 @object_type
-class HelloWorld:
+class MyModule:
     greeting: str = field(default="Hello")
     name: str = field(default="World")
 
     @function
-    def with_greeting(self, greeting: str) -> "HelloWorld":
+    def with_greeting(self, greeting: str) -> "MyModule":
         self.greeting = greeting
         return self
 
     @function
-    def with_name(self, name: str) -> "HelloWorld":
+    def with_name(self, name: str) -> "MyModule":
         self.name = name
         return self
 

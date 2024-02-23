@@ -13,18 +13,18 @@ func New(
 	// +optional
 	// +default="World"
 	name string,
-) *HelloWorld {
-	return &HelloWorld{
+) *MyModule {
+	return &MyModule{
 		Greeting: greeting,
 		Name:     name,
 	}
 }
 
-type HelloWorld struct {
+type MyModule struct {
 	Greeting string
 	Name     string
 }
 
-func (hello *HelloWorld) Message() string {
+func (hello *MyModule) Message() string {
 	return fmt.Sprintf("%s, %s!", hello.Greeting, hello.Name)
 }

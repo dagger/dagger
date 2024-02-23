@@ -4,8 +4,8 @@ import (
 	"context"
 )
 
-type HelloWorld struct{}
+type MyModule struct{}
 
-func (m *HelloWorld) Hello(ctx context.Context) (string, error) {
+func (m *MyModule) Hello(ctx context.Context) (string, error) {
 	return "Hello, world", nil
 }

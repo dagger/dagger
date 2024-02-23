@@ -15,7 +15,7 @@ It's essential to understand a few things about TypeScript modules and how they 
 
 ## Runtime container with Node 21.3
 
-Like in other SDKS, TypeScript modules run in a container (called the _runtime container_) that's bootstrapped specifically by the TypeScript SDK, with the necessary environment to run the module's code.  
+Like in other SDKS, TypeScript modules run in a container (called the _runtime container_) that's bootstrapped specifically by the TypeScript SDK, with the necessary environment to run the module's code.
 It's currently hardcoded to run in **Node 21.3**, but we plan on it being configurable at some point.
 
 TypeScript can also be run in other runtime such as [Bun](https://bun.sh/) and [Deno](https://deno.com/), these runtime are not supported now but we are [working on it](https://github.com/dagger/dagger/issues/6591).
@@ -80,7 +80,7 @@ import { Test } from "./test" // in src/test.ts
 import { Lint } from "./lint" // in src/lint.ts
 
 @object()
-class HelloWorld {
+class MyModule {
   @field()
   test: Test = new Test()
 
