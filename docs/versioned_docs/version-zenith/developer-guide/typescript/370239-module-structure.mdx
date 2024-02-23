@@ -1,8 +1,8 @@
 ---
 slug: /developer-guide/typescript/370239/module-structure
-displayed_sidebar: "zenith"
+displayed_sidebar: 'zenith'
 toc_max_heading_level: 2
-title: "Module Structure"
+title: 'Module Structure'
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
@@ -11,4 +11,104 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+It's essential to understand a few things about TypeScript modules and how they are structured, in order to make it fit with your normal workflow.
+
+## Runtime container with Node 21.3
+
+Like in other SDKS, TypeScript modules run in a container (called the _runtime container_) that's bootstrapped specifically by the TypeScript SDK, with the necessary environment to run the module's code.  
+It's currently hardcoded to run in **Node 21.3**, but we plan on it being configurable at some point.
+
+TypeScript can also be run in other runtime such as [Bun](https://bun.sh/) and [Deno](https://deno.com/), these runtime are not supported now but we are [working on it](https://github.com/dagger/dagger/issues/6591).
+
+## Automatic SDK install
+
+The TypeScript SDK is installed automatically, including dependencies, with a version that's tied to the currently running Dagger Engine container[^1]:
+
+```shell
+# Executed by the container runtime
+npm install --package-lock-only ./sdk
+```
+
+This is why the initial `package.json` doesn't include any dependencies except a local link to the `sdk` generated directory.
+
+```json
+{
+  "dependencies": {
+    "typescript": "^5.3.2"
+  },
+  "devDependencies": {
+    "@dagger.io/dagger": "./sdk"
+  }
+}
+```
+
+[^1]: The SDK files in the Engine docker container are mounted under `/sdk` in the Dagger runtime container.
+
+## Modules as TypeScript libraries
+
+Dagger modules in Typescript are built to be installed, _like libraries_. The runtime container installs your code with:
+
+```shell
+# Executed by the container runtime
+npm install
+```
+
+Meaning that as long as your project has a `package.json`, it can be used as a library and you can
+manage your project using any node package manager such as [npm](https://www.npmjs.com/), [pnpm](https://pnpm.io/) or [yarn](https://yarnpkg.com/).
+
+## Adding dependencies
+
+To add a TypeScript dependencies, simply add it to the `package.json`'s `dependencies` using your favorite package manager:
+
+```
+npm install <my dependency>
+```
+
+You can indeed pin a specific dependency version, or even add local dependency, it works the same way as a basic node project.
+
+## Multiple files
+
+Due to TypeScript limitation, it's not possible to split your main class module (`index.ts`) into multiple files.
+
+However, you can create sub classes in different files and expose them from your main class module:
+
+```typescript
+// src/index.ts
+import { field, object } from "@dagger.io/dagger"
+
+import { Test } from "./test" // in src/test.ts
+import { Lint } from "./lint" // in src/lint.ts
+
+@object()
+class HelloWorld {
+  @field()
+  test: Test = new Test()
+
+  @field()
+  lint: Lint = new Lint()
+}
+```
+
+## Src layout
+
+The default template from `dagger init` creates a `index.ts` file inside a `src` directory.
+
+:::warning
+The TypeScript SDK expect to find the module source code inside the `src` directory.
+:::
+
+## Development environment
+
+Your IDE should recognize the `dagger` Typescript module and any added Dagger module dependencies in the generated client (`sdk/`) as long
+as your `tsconfig.json` has a path configured on it.
+
+If you initialize a module using `dagger init`, the default template already setup it for you:
+
+```json
+    "experimentalDecorators": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk"]
+    }
+```
+
+This setup doesn't require you to install the dependency directly, you can already benefit of the type hinting thanks to the `tsconfig.json`.
