@@ -37,7 +37,7 @@ const (
 {{- end }}
 {{ end }}
 
-{{ if IsModuleCode }}
+{{ if and IsModuleCode (not IsPartial) }}
 // ptr returns a pointer to the given value.
 func ptr[T any](v T) *T {
 	return &v
