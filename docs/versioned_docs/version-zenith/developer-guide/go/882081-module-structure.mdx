@@ -11,11 +11,11 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-It’s essential to understand a few things about Go modules and how they’re structured, in order to make it fit with your normal workflow.
+It's essential to understand a few things about Go modules and how they're structured, in order to make it fit with your normal workflow.
 
 ## Runtime container with Go 1.21
 
-Go modules run in a runtime container that's bootstrapped by the engine, with the neccessary environment to run the module’s code. It's currently hardcoded to run in **Go 1.21**, but we plan to allow more configuration in the future.
+Go modules run in a runtime container that's bootstrapped by the engine, with the neccessary environment to run the module's code. It's currently hardcoded to run in **Go 1.21**, but we plan to allow more configuration in the future.
 
 ## Go modules
 
@@ -40,7 +40,7 @@ use (
 
 ### Go vendor
 
-[Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See <https://github.com/dagger/dagger/issues/6076>.
+[Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See [https://github.com/dagger/dagger/issues/6076](https://github.com/dagger/dagger/issues/6076).
 
 ## File layout
 
@@ -67,7 +67,7 @@ The template from `dagger init` creates the following structure:
 - The sub-packages:
     - `dagger` contains automatically-generated definitions for the Dagger API that's tied to the currently running Dagger Engine container.
     - `querybuilder` contains automatically-generated utilities for building GraphQL queries (used internally by the `dagger` package).
-    
+
 :::note
 While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
 :::
