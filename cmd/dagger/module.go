@@ -209,7 +209,7 @@ Any module can be installed to via "dagger install".
 
 A module can only be called once it has been initialized with an SDK though. The "--sdk" flag can be provided to init here, but if it's not the configuration can be updated later via "dagger develop".
 
-The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger". 
+The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
 `,
 	Example: "dagger init --name=hello --sdk=python --source=some/subdir",
 	GroupID: moduleGroup.ID,
@@ -732,6 +732,14 @@ func getModuleConfigurationForSourceRef(
 				return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
 			}
 			if namedDep, ok := modCfg.DependencyByName(srcRefStr); ok {
+				src := dag.ModuleSource(namedDep.Source)
+				kind, err := src.Kind(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if kind == dagger.GitSource {
+					return getModuleConfigurationForSourceRef(ctx, dag, namedDep.Source, resolveFromCaller)
+				}
 				depPath := filepath.Join(defaultConfigDir, namedDep.Source)
 				srcRefStr = depPath
 			}

@@ -470,7 +470,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 	depSubpath := filepath.Join(srcRootSubpath, depRootSubpath)
 
 	if !filepath.IsLocal(depSubpath) {
-		return inst, fmt.Errorf("module dep source path %q escapes root", depSubpath)
+		return inst, fmt.Errorf("module dep source root path %q escapes root", depRootSubpath)
 	}
 
 	switch src.Kind {
@@ -1011,7 +1011,6 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				localDep.sdkKey = sdkPath
 
 			case core.ModuleSourceKindGit:
-				// TODO: this codepath is completely untested atm
 				localDep.sdk, err = s.sdkForModule(ctx, query, modCfg.SDK, dagql.Instance[*core.ModuleSource]{})
 				if err != nil {
 					return nil, fmt.Errorf("failed to get git module sdk: %w", err)

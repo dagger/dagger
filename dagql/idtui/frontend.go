@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -258,7 +259,11 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 }
 
 func (fe *Frontend) renderPrimaryOutput() error {
+	var trailingLn bool
 	for _, l := range fe.primaryLogs {
+		if bytes.HasSuffix(l.Data, []byte("\n")) {
+			trailingLn = true
+		}
 		switch l.Stream {
 		case progrock.LogStream_STDOUT:
 			if _, err := os.Stdout.Write(l.Data); err != nil {
@@ -269,6 +274,11 @@ func (fe *Frontend) renderPrimaryOutput() error {
 				return err
 			}
 		}
+	}
+	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
+		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
+		// encourage module authors to add one of their own
+		fmt.Fprintln(os.Stdout)
 	}
 	return nil
 }
