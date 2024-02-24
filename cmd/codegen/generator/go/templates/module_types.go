@@ -5,6 +5,7 @@ import (
 	"go/types"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
+	"github.com/iancoleman/strcase"
 )
 
 // A Go type that has been parsed and can be registered with the dagger API
@@ -22,6 +23,12 @@ type ParsedType interface {
 type NamedParsedType interface {
 	ParsedType
 	Name() string
+	ModuleName() string
+}
+
+func loadFromIDGQLFieldName(spec NamedParsedType) string {
+	// NOTE: unfortunately we currently need to account for namespacing here
+	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.ModuleName()), spec.Name())
 }
 
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
@@ -74,10 +81,15 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		if typeName == "" {
 			return nil, fmt.Errorf("struct types must be named")
 		}
+		moduleName := ""
+		if !ps.isDaggerGenerated(named.Obj()) {
+			moduleName = ps.moduleName
+		}
 		return &parsedObjectTypeReference{
-			name:   typeName,
-			isPtr:  isPtr,
-			goType: named,
+			name:       typeName,
+			moduleName: moduleName,
+			isPtr:      isPtr,
+			goType:     named,
 		}, nil
 
 	case *types.Interface:
@@ -88,9 +100,14 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		if typeName == "" {
 			return nil, fmt.Errorf("interface types must be named")
 		}
+		moduleName := ""
+		if !ps.isDaggerGenerated(named.Obj()) {
+			moduleName = ps.moduleName
+		}
 		return &parsedIfaceTypeReference{
-			name:   typeName,
-			goType: named,
+			name:       typeName,
+			moduleName: moduleName,
+			goType:     named,
 		}, nil
 
 	default:
@@ -165,7 +182,9 @@ func (spec *parsedSliceType) GoSubTypes() []types.Type {
 // parsedObjectTypeReference is a parsed object type that is referred to just by name rather
 // than with the full type definition
 type parsedObjectTypeReference struct {
-	name   string
+	name       string
+	moduleName string
+
 	isPtr  bool
 	goType types.Type
 }
@@ -191,11 +210,16 @@ func (spec *parsedObjectTypeReference) Name() string {
 	return spec.name
 }
 
+func (spec *parsedObjectTypeReference) ModuleName() string {
+	return spec.moduleName
+}
+
 // parsedIfaceTypeReference is a parsed object type that is referred to just by name rather
 // than with the full type definition
 type parsedIfaceTypeReference struct {
-	name   string
-	goType types.Type
+	name       string
+	moduleName string
+	goType     types.Type
 }
 
 var _ NamedParsedType = &parsedIfaceTypeReference{}
@@ -217,4 +241,8 @@ func (spec *parsedIfaceTypeReference) GoSubTypes() []types.Type {
 
 func (spec *parsedIfaceTypeReference) Name() string {
 	return spec.name
+}
+
+func (spec *parsedIfaceTypeReference) ModuleName() string {
+	return spec.moduleName
 }

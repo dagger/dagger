@@ -2,7 +2,6 @@ import contextlib
 import typing
 
 import anyio.to_thread
-from typing_extensions import Self
 
 asyncify = anyio.to_thread.run_sync
 
@@ -18,16 +17,8 @@ class ResourceManager(contextlib.AbstractAsyncContextManager):
             yield stack
             self.stack = stack.pop_all()
 
-    # For type checker as inherited method isn't typed.
-    async def __aenter__(self) -> Self:
-        await self.start()
-        return self
-
     async def __aexit__(self, *_) -> None:
         await self.close()
-
-    async def start(self) -> None:
-        ...
 
     async def close(self) -> None:
         await self.stack.aclose()

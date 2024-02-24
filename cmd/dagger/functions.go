@@ -299,7 +299,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 			setCmdOutput(cmd, primaryVtx)
 		}
 		if ctx.Err() != nil {
-			cmd.PrintErrln("Canceled")
+			cmd.PrintErrln("Canceled.")
 		} else if rerr != nil {
 			cmd.PrintErrln("Error:", rerr.Error())
 
@@ -527,7 +527,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 
 			q := fc.q.Bind(&response)
 
-			if err := q.Execute(ctx, dag.GraphQLClient()); err != nil {
+			if err := q.Execute(ctx, dag.Client); err != nil {
 				return fmt.Errorf("response from query: %w", err)
 			}
 

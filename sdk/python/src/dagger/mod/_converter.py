@@ -79,6 +79,7 @@ def to_typedef(  # noqa: C901
     import dagger
     from dagger import dag
     from dagger.client._guards import is_id_type_subclass
+    from dagger.client.base import Enum, Scalar
 
     td = dag.type_def()
 
@@ -96,6 +97,11 @@ def to_typedef(  # noqa: C901
 
     typ = non_null(typ)
 
+    # Can't represent unions in the API.
+    if is_union(typ):
+        msg = f"Unsupported union type: {typ.hint}"
+        raise TypeError(msg)
+
     if typ is TypeHint(type(None)):
         return td.with_kind(dagger.TypeDefKind.VOID_KIND)
 
@@ -108,10 +114,21 @@ def to_typedef(  # noqa: C901
     if typ.hint in builtins:
         return td.with_kind(builtins[typ.hint])
 
-    # Can't represent unions in the API.
-    if is_union(typ):
-        msg = f"Unsupported union type: {typ.hint}"
-        raise TypeError(msg)
+    # TODO: Fix when we have support for TypeDefKind.ENUM_KIND in core.
+    if issubclass(typ.hint, Enum):
+        msg = (
+            "Enum types are not supported yet. Define argument as a string"
+            " and convert to the desired enum type in the function body."
+        )
+        raise NotImplementedError(msg)
+
+    # TODO: Fix when we have support for TypeDefKind.SCALAR_KIND in core.
+    if issubclass(typ.hint, Scalar):
+        msg = (
+            "Scalar types are not supported yet. Define argument as a string"
+            " and convert to the desired scalar type in the function body."
+        )
+        raise NotImplementedError(msg)
 
     # NB: str is a Collection, but we've handled it above.
     if typ.is_subhint(TypeHint(Collection)):

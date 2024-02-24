@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-February%208,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-February%220,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -67,12 +67,12 @@ flowchart TB
 
 Before you go ahead and produce a new release, remember that it's a team
 effort. The first step is to let the team know what is going to happen,
-preferably a few days in advance so that they can react. We do this by:
+preferably a few days in advance so that they can react. To do this:
 
-- [ ] Create a new post in [Discord
-      #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
-      e.g. [`v0.9.9 release - January 26,
-2024`](https://discord.com/channels/707636530424053791/1200404768540069908)
+- [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
+      e.g. [`v0.9.11 Milestone`](https://github.com/dagger/dagger/milestone/36)
+- [ ] Create a new post in [Discord #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
+      e.g. [`v0.9.11 release - 20th February 2024`](https://discord.com/channels/707636530424053791/1207018781654917181)
 
 This allows others to weigh in whether:
 
@@ -89,7 +89,7 @@ Most importantly, patch vs minor is **not** a technical decision. If you want
 to read more about this, see [this (private) Discord
 thread](https://discord.com/channels/707636530424053791/1101242942267601038/1101508879671623780).
 
-> **Note**
+> [!NOTE]
 >
 > Once you know what type of release we are producing - patch vs minor -
 > remember to edit the `?` in the Discord thread.
@@ -107,7 +107,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
       improvements looks like](https://github.com/dagger/dagger/pull/5056).
 - [ ] Update the date in the shields.io badge, first line in this file.
 
-> **Note**
+> [!NOTE]
 >
 > We believe in documentation first, automation second. Documenting a process
 > forces us to understand it well. Continuously editing this documentation
@@ -123,22 +123,23 @@ and improve it. We want small, constant improvements which compound. Therefore:
 
 ## 🚙 Engine + 🚗 CLI ⏱ `30mins`
 
-> **Warning**
+> [!WARNING]
 >
 > It is important to always do an Engine + CLI release prior to releasing any
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.9.9.md` by either running `changie batch
-patch` (or `changie batch minor` if this is a new minor).
+- [ ] Create e.g. `.changes/v0.9.11.md` by either running `changie batch patch`
+      (or `changie batch minor` if this is a new minor).
 
-> **Note**
+> [!NOTE]
+>
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.9.9.md`
+      `.changes/v0.9.11.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.9.9-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.9.11-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -247,6 +248,8 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
       SDK version before we create a new GitHub release and make it widely public.
 
 ```console
+go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
+go mod tidy
 cd internal/mage
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require github.com/dagger/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
@@ -258,8 +261,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.9 sh
-# mv ~/.local/bin/dagger{,-0.9.9}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.11 sh
+# mv ~/.local/bin/dagger{,-0.9.11}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 cd ../..
 dagger run ./hack/make engine:test
@@ -275,7 +278,7 @@ dagger run ./hack/make engine:test
       this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
       The new version can take up to `60mins` to appear, it's OK to move on.
 
-> **Note**
+> [!NOTE]
 >
 > To upload the release notes, we need to have the [`gh`
 > CLI](https://cli.github.com/) installed, e.g. `brew install gh`
@@ -401,7 +404,7 @@ gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
 
 ## 📒 Documentation ⏱ `5mins`
 
-> **Warning**
+> [!WARNING]
 >
 > Merging a documentation PR does NOT automatically deploy the
 > new documentation to the production website.
@@ -446,7 +449,7 @@ production deployment via Netlify as follows:
 - [ ] If you are satisfied with the preview, click the "Publish deploy" button.
       This will publish the selected deployment on https://docs.dagger.io
 
-> **Note**
+> [!NOTE]
 >
 > There have been cases where Netlify builds have failed with errors,
 > but the same build succeeds when performed locally. In the past, one reason
@@ -474,6 +477,10 @@ This is documented internally, ping @jpadams, @vito or anyone who knows about Da
 ## Last step
 
 - [ ] When all the above done, remember to add the `RELEASING.md` changes to
-      the `improve-releasing-during-v...` PR that you have opened earlier. Here
-      is an example: https://github.com/dagger/dagger/pull/5658
-- [ ] Remember to toggle all the checkboxes back to `[ ]`
+      the `improve-releasing-during-v...` PR that you have opened earlier (remember
+      to toggle all the checkboxes back to `[ ]`). Here is an example:
+      https://github.com/dagger/dagger/pull/5658
+- [ ] Close the Discord release thread you created in [Let the team know](#let-the-team-know)
+- [ ] Close the GitHub milestone you created in [Let the team know](#let-the-team-know)
+  - If there are remaining PRs/issues that were not resolved, then move
+    them into the next milestone (or remove it from a milestone entirely)

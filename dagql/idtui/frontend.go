@@ -64,13 +64,15 @@ type Frontend struct {
 	plainConsole progrock.Writer
 
 	// TUI state/config
-	fps         float64 // frames per second
-	profile     termenv.Profile
-	window      tea.WindowSizeMsg     // set by BubbleTea
-	view        *bytes.Buffer         // rendered async
-	logs        map[string]*Vterm     // vertex logs
-	zoomed      map[string]*zoomState // interactive zoomed terminals
-	currentZoom *zoomState            // current zoomed terminal
+	fps               float64 // frames per second
+	profile           termenv.Profile
+	window            tea.WindowSizeMsg     // set by BubbleTea
+	view              *strings.Builder      // rendered async
+	logs              map[string]*Vterm     // vertex logs
+	zoomed            map[string]*zoomState // interactive zoomed terminals
+	currentZoom       *zoomState            // current zoomed terminal
+	scrollbackQueue   []tea.Cmd             // queue of tea.Printlns for scrollback
+	scrollbackQueueMu sync.Mutex            // need a separate lock for this
 
 	// held to synchronize tea.Model and progrock.Writer
 	mu sync.Mutex
@@ -91,7 +93,7 @@ func New() *Frontend {
 		fps:       30, // sane default, fine-tune if needed
 		profile:   profile,
 		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:      new(bytes.Buffer),
+		view:      new(strings.Builder),
 		logs:      make(map[string]*Vterm),
 		zoomed:    make(map[string]*zoomState),
 		messages:  logs,
@@ -128,12 +130,15 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 	return runErr
 }
 
+// ConnectedToEngine is called when the CLI connects to an engine.
 func (fe *Frontend) ConnectedToEngine(name string) {
 	if !fe.Silent && fe.Plain {
 		fmt.Fprintln(consoleSink, "Connected to engine", name)
 	}
 }
 
+// ConnectedToCloud is called when the CLI has started emitting events to
+// The Cloud.
 func (fe *Frontend) ConnectedToCloud(cloudURL string) {
 	if !fe.Silent && fe.Plain {
 		fmt.Fprintln(consoleSink, "Dagger Cloud URL:", cloudURL)
@@ -163,11 +168,15 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 	// start piping from the TTY to our swappable writer.
 	go io.Copy(fe.in, tty) //nolint: errcheck
 
-	// TODO: support scrollable viewport?
-	// f.out.EnableMouseCellMotion()
+	// support scrollable viewport
+	// fe.out.EnableMouseCellMotion()
 
+	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
+	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancel(ctx)
+
+	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
 		tea.WithInput(inR),
 		tea.WithOutput(fe.out),
@@ -175,12 +184,19 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 		// counter-productive.
 		tea.WithoutCatchPanics(),
 	)
+
+	// run the program, which starts the callback async
 	if _, err := fe.program.Run(); err != nil {
 		return err
 	}
+
+	// if the ctx was canceled, we don't need to return whatever random garbage
+	// error string we got back; just return the ctx err.
 	if fe.runCtx.Err() != nil {
 		return fe.runCtx.Err()
 	}
+
+	// return the run err result
 	return fe.err
 }
 
@@ -243,7 +259,11 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 }
 
 func (fe *Frontend) renderPrimaryOutput() error {
+	var trailingLn bool
 	for _, l := range fe.primaryLogs {
+		if bytes.HasSuffix(l.Data, []byte("\n")) {
+			trailingLn = true
+		}
 		switch l.Stream {
 		case progrock.LogStream_STDOUT:
 			if _, err := os.Stdout.Write(l.Data); err != nil {
@@ -255,21 +275,24 @@ func (fe *Frontend) renderPrimaryOutput() error {
 			}
 		}
 	}
+	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
+		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
+		// encourage module authors to add one of their own
+		fmt.Fprintln(os.Stdout)
+	}
 	return nil
 }
 
 func (fe *Frontend) redirectStdin(st *zoomState) {
 	if st == nil {
 		fe.in.Restore()
-		// TODO: support scrollable viewport?
 		// restore scrolling as we transition back to the DAG UI, since an app
 		// may have disabled it
-		// f.out.EnableMouseCellMotion()
+		// fe.out.EnableMouseCellMotion()
 	} else {
-		// TODO: support scrollable viewport?
 		// disable mouse events, can't assume zoomed input wants it (might be
 		// regular shell like sh)
-		// f.out.DisableMouseCellMotion()
+		// fe.out.DisableMouseCellMotion()
 		fe.in.SetOverride(st.Input)
 	}
 }
@@ -399,6 +422,10 @@ func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
 	}
 }
 
+type scrollbackMsg struct {
+	Line string
+}
+
 func (fe *Frontend) initZoom(v *progrock.Vertex) {
 	var vt *midterm.Terminal
 	if fe.window.Height == -1 || fe.window.Width == -1 {
@@ -406,6 +433,12 @@ func (fe *Frontend) initZoom(v *progrock.Vertex) {
 	} else {
 		vt = midterm.NewTerminal(fe.window.Height, fe.window.Width)
 	}
+	vt.OnScrollback(func(line midterm.Line) {
+		fe.scrollbackQueueMu.Lock()
+		fe.scrollbackQueue = append(fe.scrollbackQueue, tea.Println(line.Display()))
+		fe.scrollbackQueueMu.Unlock()
+	})
+	vt.Raw = true
 	w := setupTerm(v.Id, vt)
 	st := &zoomState{
 		Output: vt,
@@ -470,6 +503,9 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 func (fe *Frontend) renderZoomed(out *termenv.Output, st *zoomState) (bool, error) {
 	var renderedAny bool
 	for i := 0; i < st.Output.UsedHeight(); i++ {
+		if i > 0 {
+			fmt.Fprintln(out)
+		}
 		if err := st.Output.RenderLine(out, i); err != nil {
 			return renderedAny, err
 		}
@@ -512,6 +548,9 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return fe, nil
 
+	case scrollbackMsg:
+		return fe, tea.Println(msg.Line)
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -533,11 +572,15 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return fe, nil
 
 	case ui.FrameMsg:
+		fe.render()
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
-		fe.render()
-		return fe, ui.Frame(fe.fps)
+		fe.scrollbackQueueMu.Lock()
+		queue := fe.scrollbackQueue
+		fe.scrollbackQueue = nil
+		fe.scrollbackQueueMu.Unlock()
+		return fe, tea.Sequence(append(queue, ui.Frame(fe.fps))...)
 
 	default:
 		return fe, nil
@@ -587,7 +630,7 @@ func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
 
 func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error {
 	id := step.ID()
-	vtx := step.db.PrimaryVertex(step.Digest)
+	vtx := step.db.MostInterestingVertex(step.Digest)
 	if id != nil {
 		if err := fe.renderID(out, vtx, id, depth, false); err != nil {
 			return err

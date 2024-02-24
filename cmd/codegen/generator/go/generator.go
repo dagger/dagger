@@ -10,8 +10,11 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"text/template"
 
+	"github.com/blang/semver"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
@@ -54,6 +57,10 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			// run 'go mod tidy' after generating to fix and prune dependencies
 			exec.Command("go", "mod", "tidy"),
 		},
+	}
+	if _, err := os.Stat(filepath.Join(g.Config.ModuleContextPath, "go.work")); err == nil {
+		// run "go work use ." after generating if we had a go.work at the root
+		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
 	}
 
 	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs)
@@ -178,6 +185,9 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 			newModName := "main" // use a safe default, not going to be a reserved word. User is free to modify
 
 			newMod.AddModuleStmt(newModName)
+			if v, err := semver.Parse(strings.TrimPrefix(runtime.Version(), "go")); err == nil {
+				newMod.AddGoStmt(v.String())
+			}
 			newMod.SetRequire(sdkMod.Require)
 
 			info.PackageImport = newModName
@@ -274,11 +284,11 @@ func renderFile(
 
 	formatted, err := format.Source(source)
 	if err != nil {
-		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
+		return nil, fmt.Errorf("error formatting generated code: %w", err)
 	}
 	formatted, err = imports.Process(filepath.Join(cfg.OutputDir, "dummy.go"), formatted, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error formatting generated code: %T %+v %w\nsource:\n%s", err, err, err, string(source))
+		return nil, fmt.Errorf("error formatting generated code: %w", err)
 	}
 	return formatted, nil
 }
@@ -304,7 +314,9 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 		return nil, nil, fmt.Errorf("no packages found in %s", dir)
 	case 1:
 		if pkgs[0].Name == "" {
-			// this happens when loading an empty dir within an existing Go module
+			// this can happen when:
+			// - loading an empty dir within an existing Go module
+			// - loading a dir that is not included in a parent go.work
 			return nil, nil, fmt.Errorf("package name is empty")
 		}
 		return pkgs[0], fset, nil

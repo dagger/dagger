@@ -135,19 +135,23 @@ func (spec *parsedIfaceType) Name() string {
 	return spec.name
 }
 
+func (spec *parsedIfaceType) ModuleName() string {
+	return spec.moduleName
+}
+
 // The code implementing the concrete struct that implements the interface and associated methods.
 func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
 	code := Empty().
-		Add(spec.concreteStructDefCode()).Line().
-		Add(spec.idDefCode()).Line().
-		Add(spec.loadFromIDMethodCode()).Line().
-		Add(spec.graphqlTypeMethodCode()).Line().
-		Add(spec.graphqlIDTypeMethodCode()).Line().
-		Add(spec.graphqlIDMethodCode()).Line().
-		Add(spec.marshalJSONMethodCode()).Line().
-		Add(spec.unmarshalJSONMethodCode()).Line().
-		Add(spec.toIfaceMethodCode()).Line()
+		Add(spec.concreteStructDefCode()).Line().Line().
+		Add(spec.idDefCode()).Line().Line().
+		Add(spec.loadFromIDMethodCode()).Line().Line().
+		Add(spec.graphqlTypeMethodCode()).Line().Line().
+		Add(spec.graphqlIDTypeMethodCode()).Line().Line().
+		Add(spec.graphqlIDMethodCode()).Line().Line().
+		Add(spec.marshalJSONMethodCode()).Line().Line().
+		Add(spec.unmarshalJSONMethodCode()).Line().Line().
+		Add(spec.toIfaceMethodCode()).Line().Line()
 
 	// the ID method, which is not explicitly declared by the user but needed internally
 	idMethodCode, err := spec.concreteMethodCode(&funcTypeSpec{
@@ -159,7 +163,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ID method code: %w", err)
 	}
-	code.Add(idMethodCode).Line()
+	code.Add(idMethodCode).Line().Line()
 
 	// the implementations of the methods declared on the interface
 	for _, method := range spec.methods {
@@ -167,7 +171,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate method %s code: %w", method.name, err)
 		}
-		code.Add(methodCode).Line()
+		code.Add(methodCode).Line().Line()
 	}
 
 	return code, nil
@@ -179,11 +183,6 @@ func (spec *parsedIfaceType) concreteStructName() string {
 
 func (spec *parsedIfaceType) idTypeName() string {
 	return spec.name + "ID"
-}
-
-func (spec *parsedIfaceType) loadFromIDGQLFieldName() string {
-	// NOTE: unfortunately we currently need to account for namespacing here
-	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.moduleName), spec.name)
 }
 
 func (spec *parsedIfaceType) loadFromIDMethodName() string {
@@ -202,18 +201,18 @@ func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec)
 The struct definition for the concrete implementation of the interface. e.g.:
 
 	type customIfaceImpl struct {
-		q    *querybuilder.Selection
-		c    graphql.Client
-		id   *CustomIfaceID
-		str  *string
-		int  *int
-		bool *bool
+		Query  *querybuilder.Selection
+		Client graphql.Client
+		id     *CustomIfaceID
+		str    *string
+		int    *int
+		bool   *bool
 	}
 */
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	return Type().Id(spec.concreteStructName()).StructFunc(func(g *Group) {
-		g.Id("q").Op("*").Qual("querybuilder", "Selection")
-		g.Id("c").Qual("graphql", "Client")
+		g.Id("Query").Op("*").Qual("querybuilder", "Selection")
+		g.Id("Client").Qual("graphql", "Client")
 		g.Id("id").Op("*").Id(spec.idTypeName())
 
 		for _, method := range spec.methods {
@@ -233,25 +232,25 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
 
 	func (r *Client) LoadCustomIfaceFromID(id CustomIfaceID) CustomIface {
-		q := r.q.Select("loadTestCustomIfaceFromID")
+		q := r.Query.Select("loadTestCustomIfaceFromID")
 		q = q.Arg("id", id)
 		return &customIfaceImpl{
-			c: r.c,
-			q: q,
+			Query:  q,
+			Client: r.Client,
 		}
 	}
 */
 func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
-	return Func().Params(Id("r").Op("*").Id("Client")).
+	return Func().
 		Id(spec.loadFromIDMethodName()).
-		Params(Id("id").Id(spec.idTypeName())).
+		Params(Id("r").Op("*").Id("Client"), Id("id").Id(spec.idTypeName())).
 		Params(Id(spec.name)).
 		BlockFunc(func(g *Group) {
-			g.Id("q").Op(":=").Id("r").Dot("q").Dot("Select").Call(Lit(spec.loadFromIDGQLFieldName()))
+			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
 			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
 			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
-				Id("q"): Id("q"),
-				Id("c"): Id("r").Dot("c"),
+				Id("Query"):  Id("q"),
+				Id("Client"): Id("r").Dot("Client"),
 			}))
 		})
 }
@@ -359,8 +358,8 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Var().Id("id").Id(spec.idTypeName())
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
-			g.Op("*").Id("r").Op("=").Op("*").Id("dag").Dot(spec.loadFromIDMethodName()).
-				Call(Id("id")).Assert(Id("*").Id(spec.concreteStructName()))
+			g.Op("*").Id("r").Op("=").Op("*").Id(spec.loadFromIDMethodName()).
+				Call(Id("dag"), Id("id")).Assert(Id("*").Id(spec.concreteStructName()))
 			g.Return(Nil())
 		})
 }
@@ -392,7 +391,7 @@ The code for the given interface method's concrete implementation attached to co
 implementation struct. e.g.:
 
 	func (r *customIfaceImpl) WithSomeArg(ctx context.Context, someArg string) CustomIface {
-		q := r.q.Select("withSomeArg")
+		q := r.Query.Select("withSomeArg")
 		q = q.Arg("someArg", someArg)
 
 		// concreteMethodExecuteQueryCode...
@@ -438,7 +437,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 		BlockFunc(func(g *Group) {
 			g.Add(spec.concreteMethodCheckCachedFieldCode(method))
 
-			g.Id("q").Op(":=").Id("r").Dot("q").Dot("Select").Call(Lit(gqlFieldName))
+			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(gqlFieldName))
 			for _, argSpec := range method.argSpecs {
 				if argSpec.typeSpec == nil {
 					// skip context
@@ -463,10 +462,10 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		/*
 			Void return, just need to return error. e.g.:
 
-				q := r.q.Select("void")
+				q := r.Query.Select("void")
 				var response Void
 				q = q.Bind(&response)
-				return q.Execute(ctx, r.c)
+				return q.Execute(ctx, r.Client)
 		*/
 
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
@@ -476,17 +475,17 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		s.Var().Id("response").Add(implTypeCode).Line()
 		s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
 		s.Return(
-			Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")),
+			Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")),
 		)
 
 	case *parsedPrimitiveType:
 		/*
 			Just return the primitive type response + error. e.g.:
 
-				q := r.q.Select("str")
+				q := r.Query.Select("str")
 				var response string
 				q = q.Bind(&response)
-				return response, q.Execute(ctx, r.c)
+				return response, q.Execute(ctx, r.Client)
 		*/
 
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
@@ -497,7 +496,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
 		s.Return(
 			Id("response"),
-			Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")),
+			Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")),
 		)
 
 	case *parsedIfaceTypeReference, *parsedObjectTypeReference:
@@ -505,8 +504,8 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			Just object type with chained query (no error). e.g.:
 
 				return &customIfaceImpl{
-					c: r.c,
-					q: q,
+					Client: r.Client,
+					Query:  q,
 				}
 		*/
 
@@ -515,8 +514,8 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			return nil, fmt.Errorf("failed to generate return type code: %w", err)
 		}
 		s.Return(Op("&").Add(implTypeCode).Values(Dict{
-			Id("q"): Id("q"),
-			Id("c"): Id("r").Dot("c"),
+			Id("Query"):  Id("q"),
+			Id("Client"): Id("r").Dot("Client"),
 		}))
 
 	case *parsedSliceType:
@@ -531,7 +530,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						Id DirectoryID
 					}
 					q = q.Bind(&idResults)
-					err := q.Execute(ctx, r.c)
+					err := q.Execute(ctx, r.Client)
 					if err != nil {
 						return nil, err
 					}
@@ -540,9 +539,8 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &Directory{
-							c:  r.c,
-							id: &id,
-							q:  querybuilder.Query().Select("loadDirectoryFromID").Arg("id", id),
+							Query:  querybuilder.Query().Select("loadDirectoryFromID").Arg("id", id),
+							Client: r.Client,
 						})
 					}
 					return results, nil
@@ -550,13 +548,13 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 
 			// TODO: if iface is from this module then it needs namespacing...
 			idScalarName := fmt.Sprintf("%sID", strcase.ToCamel(underlyingReturnType.Name()))
-			loadFromIDQueryName := fmt.Sprintf("load%sFromID", strcase.ToCamel(underlyingReturnType.Name()))
+			loadFromIDQueryName := loadFromIDGQLFieldName(underlyingReturnType)
 
 			s.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("id")).Line()
 			s.Var().Id("idResults").Index().Struct(Id("Id").Id(idScalarName)).Line()
 			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("idResults")).Line()
 
-			s.Id("err").Op(":=").Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")).Line()
+			s.Id("err").Op(":=").Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")).Line()
 			s.If(Id("err").Op("!=").Nil()).Block(Return(Nil(), Id("err"))).Line()
 
 			underlyingReturnTypeCode, err := spec.concreteMethodSigTypeCode(returnType.underlying)
@@ -570,11 +568,15 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id").Line()
-				g.Id("results").Op("=").Append(Id("results"), Op("&").Add(underlyingImplTypeCode).Values(Dict{
-					Id("id"): Op("&").Id("id"),
-					Id("q"):  Id("querybuilder").Dot("Query").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
-					Id("c"):  Id("r").Dot("c"),
-				}))
+				d := Dict{
+					Id("Query"):  Id("querybuilder").Dot("Query").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
+					Id("Client"): Id("r").Dot("Client"),
+					// FIXME: this is a nice optimization, but we can't enable
+					// it since the private "id" field can only be accessed on
+					// local structs
+					// Id("id"): Op("&").Id("id"),
+				}
+				g.Id("results").Op("=").Append(Id("results"), Op("&").Add(underlyingImplTypeCode).Values(d))
 			}).Line()
 
 			s.Return(Id("results"), Nil())
@@ -585,7 +587,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 
 					var response []string
 					q = q.Bind(&response)
-					return response, q.Execute(ctx, r.c)
+					return response, q.Execute(ctx, r.Client)
 			*/
 
 			implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
@@ -596,7 +598,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
 			s.Return(
 				Id("response"),
-				Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("c")),
+				Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")),
 			)
 
 		default:
@@ -621,7 +623,7 @@ e.g.:
 func (spec *parsedIfaceType) concreteMethodCheckCachedFieldCode(method *funcTypeSpec) *Statement {
 	structFieldName := spec.concreteStructCachedFieldName(method)
 
-	s := Empty()
+	s := Null()
 	if _, ok := method.returnSpec.(*parsedPrimitiveType); ok {
 		s.If(Id("r").Dot(structFieldName).Op("!=").Nil()).Block(
 			Return(Op("*").Id("r").Dot(structFieldName), Nil()),
