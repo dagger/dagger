@@ -5,18 +5,15 @@ import (
 	_ "embed"
 	"fmt"
 	"path"
+
+	"github.com/iancoleman/strcase"
 )
 
 func New(
 	// +optional
 	sdkSourceDir *Directory,
 ) *PythonSdk {
-	return &PythonSdk{
-		SDKSourceDir: sdkSourceDir,
-		RequiredPaths: []string{
-			"**/pyproject.toml",
-		},
-	}
+	return &PythonSdk{SDKSourceDir: sdkSourceDir}
 }
 
 type PythonSdk struct {
@@ -80,6 +77,12 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 }
 
 func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
+	// Load module name for the template class
+	modName, err := modSource.ModuleOriginalName(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module name: %v", err)
+	}
+
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %v", err)
@@ -89,8 +92,6 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir.WithoutDirectory("runtime")).
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory("./template")).
 		WithExec([]string{"python", "-m", "pip", "install", "-e", sdkSrc}).
-		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
@@ -102,6 +103,9 @@ func (m *PythonSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, in
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
+        WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/__NAME__/%s/g", strcase.ToCamel(modName)), "/opt/src/main.py"}).
 		WithExec([]string{"sh", "-c", "[ -f pyproject.toml ] || cp /opt/pyproject.toml ."}).
 		WithExec([]string{"sh", "-c", "find . -name '*.py' | grep -q . || { mkdir -p src; cp /opt/src/main.py src/main.py; }"}), nil
 }
