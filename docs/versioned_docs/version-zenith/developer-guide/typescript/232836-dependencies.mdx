@@ -11,13 +11,17 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-To add a dependency to your module, you can use `dagger install`, as in the following example:
+When you add a dependency to your module with `dagger install`, the dependent module will be added to the code-generation routines and can be accessed from your own module's code.
 
-```sh
+The entrypoint to accessing dependent modules from your own module's code is `dag`, the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+
+Here is an example:
+
+```shell
 dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
 ```
 
-Dependent modules will be added to your code-generation routines, so you can access them from your own module's code, as shown below:
+This module can be accessed from your own module's code, as shown below:
 
 ```typescript
 @func()

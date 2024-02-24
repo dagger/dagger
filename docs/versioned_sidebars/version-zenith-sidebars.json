@@ -79,6 +79,10 @@
                 },
                 {
                   "type": "doc",
+                  "id": "developer-guide/go/dependencies"
+                },
+                {
+                  "type": "doc",
                   "id": "developer-guide/go/chaining"
                 },
                 {
@@ -154,6 +158,10 @@
                 },
                 {
                   "type": "doc",
+                  "id": "developer-guide/python/dependencies"
+                },
+                {
+                  "type": "doc",
                   "id": "developer-guide/python/chaining"
                 },
                 {
@@ -212,52 +220,73 @@
               "id": "developer-guide/typescript/first-module"
             },
             {
-              "type": "doc",
-              "id": "developer-guide/typescript/arguments-return-values"
+              "type": "category",
+              "label": "Essentials",
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/arguments-return-values"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/constructors"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/dependencies"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/chaining"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/secrets"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/error-handling"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/debugging"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/ide-integration"
+                },
+
+              ]
             },
             {
-              "type": "doc",
-              "id": "developer-guide/typescript/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/constructors"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/chaining"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/ide-integration"
+              "type": "category",
+              "label": "Further Reading",
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/module-structure"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/custom-types"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/aliases"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/decorators"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/visibility"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/typescript/documentation"
+                }
+              ]
             },
             {
               "type": "doc",

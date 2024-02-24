@@ -78,6 +78,10 @@ The result will look something like this:
 }
 ```
 
+:::note
+The context and error return are optional in the module's function signature; remove them if you don't need them.
+:::
+
 Here's an example of a Dagger Function that accepts a `Directory` as argument:
 
 ```go file=./snippets/arguments-return-values/arguments-directory/main.go
@@ -223,6 +227,3 @@ hello
 Hello, world!
 /usr/local/bin #
 ```
-
-- The context and error return are optional in the module's function signature; remove them if you don't need them.
-- A module's private fields will not be persisted.
