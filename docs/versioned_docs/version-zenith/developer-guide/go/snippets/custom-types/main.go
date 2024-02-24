@@ -1,48 +1,29 @@
-import { dag, object, func, GitRepository, field } from '@dagger.io/dagger';
+package main
 
-@object()
-class GitHubAccount {
-  @field()
-  username: string;
+type MyModule struct{}
 
-  @field()
-  email: string;
-
-  @field()
-  url: string
-
-  constructor(username: string, email: string) {
-    this.username = username;
-    this.email = email;
-    this.url = `https://github.com/${username}`
-  }
+func (module *MyModule) DaggerOrganization() *GitHubOrganization {
+	return &GitHubOrganization{
+		URL:          "https://github.com/dagger",
+		Repositories: []*GitRepository{dag.Git(`${organisation.url}/dagger`)},
+		Members: []*GitHubAccount{
+			{"jane", "jane@example.com"},
+			{"john", "john@example.com"},
+		},
+	}
 }
 
-@object()
-class GitHubOrganization {
-  @field()
-  url: string;
-
-  @field()
-  repository: GitRepository[];
-
-  @field()
-  members: GitHubAccount[];
+type GitHubAccount struct {
+	Username string
+	Email    string
 }
 
-@object()
-class MyModule {
-  @func()
-  daggerOrganization(): GitHubOrganization {
-    const organisation = new GitHubOrganization();
+func (account *GitHubAccount) URL() string {
+	return "https://github.com/" + account.Username
+}
 
-    organisation.url = 'https://github.com/dagger';
-    organisation.repository = [dag.git(`${organisation.url}/dagger`)];
-    organisation.members = [
-      new GitHubAccount('jane', 'jane@example.com'),
-      new GitHubAccount('john', 'john@example.com')
-    ];
-
-    return organisation;
-  }
+type GitHubOrganization struct {
+	URL          string
+	Repositories []*GitRepository
+	Members      []*GitHubAccount
 }

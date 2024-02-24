@@ -1,16 +1,17 @@
-/**
- * Hello World module is a simple example of a module documentation
- */
-import { dag, object, func } from '@dagger.io/dagger';
+// Hello World module is a simple example of a module description
+package main
 
-@object()
-class MyModule {
-  @func()
-  async version(): Promise<string> {
-    return await dag
-      .container()
-      .from('alpine:3.14.0')
-      .withExec(['/bin/sh', '-c', 'cat /etc/os-release | grep VERSION_ID'])
-      .stdout();
-  }
+// Further documentation for the module goes here.
+
+import (
+	"context"
+)
+
+type MyModule struct{}
+
+func (*MyModule) Version(ctx context.Context) (string, error) {
+	return dag.Container().
+		From("alpine:3.14.0").
+		WithExec([]string{"/bin/sh", "-c", "cat /etc/os-release | grep VERSION_ID"}).
+		Stdout(ctx)
 }

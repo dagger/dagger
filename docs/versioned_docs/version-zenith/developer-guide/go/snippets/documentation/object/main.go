@@ -1,16 +1,15 @@
-import { dag, object, func } from '@dagger.io/dagger';
+package main
 
-/**
- * The MyModule object is a simple example of documenting an object.
- */
-@object()
-class MyModule {
-  @func()
-  async version(): Promise<string> {
-    return await dag
-      .container()
-      .from('alpine:3.14.0')
-      .withExec(['/bin/sh', '-c', 'cat /etc/os-release | grep VERSION_ID'])
-      .stdout();
-  }
+import (
+	"context"
+)
+
+// The MyModule object is a simple example of documenting an object.
+type MyModule struct{}
+
+func (*MyModule) Version(ctx context.Context) (string, error) {
+	return dag.Container().
+		From("alpine:3.14.0").
+		WithExec([]string{"/bin/sh", "-c", "cat /etc/os-release | grep VERSION_ID"}).
+		Stdout(ctx)
 }

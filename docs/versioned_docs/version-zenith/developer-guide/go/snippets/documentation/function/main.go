@@ -1,17 +1,16 @@
-import { object, func } from '@dagger.io/dagger';
+package main
 
-@object()
-class MyModule {
-  /**
-   * Compute the sum of two numbers.
-   *
-   * Example usage: dagger call add --a=4 --b=5
-   *
-   * @param a The first number to add
-   * @param b The second number to add
-   */
-  @func()
-  add(a: number = 4, b: number): number {
-    return a + b
-  }
+type MyModule struct{}
+
+// Compute the sum of two numbers.
+//
+// Example usage: dagger call add --a=4 --b=5
+func (*MyModule) Add(
+	// The first number to add
+	// +default=4
+	a int,
+	// The second number to add
+	b int,
+) int {
+	return a + b
 }

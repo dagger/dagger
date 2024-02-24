@@ -1,30 +1,28 @@
-import * as crypto from 'crypto';
+package main
 
-import { object, func, field } from '@dagger.io/dagger';
+import (
+	"crypto/sha256"
+	"fmt"
+)
 
-@object()
-class person {
-  /**
-   * Get the name of the person
-   */
-  @field()
-  name: string;
+type Person struct {
+	Name string
+	Job  string
 
-  private age: number;
+	// +private
+	Age int
+}
 
-  job: string;
+func New(name string, job string, age int) *Person {
+	return &Person{
+		Name: name,
+		Job:  job,
+		Age:  age,
+	}
+}
 
-  constructor(name: string, job: string, age: number) {
-    this.name = name;
-    this.age = age;
-    this.job = job;
-  }
-
-  /**
-   * Get the identity of the person based on its personal information.
-   */
-  @func()
-  identity(): string {
-    return crypto.createHash('sha256').update(`${this.name}-${this.job}-${this.age.toString()}`).digest('hex');
-  }
+// Get the identity of the person based on its personal information.
+func (p *Person) Identity() string {
+	str := fmt.Sprintf("%s-%s-%d", p.Name, p.Job, p.Age)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(str)))
 }

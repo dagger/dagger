@@ -1,0 +1,7 @@
+dagger.gen.go
+dagger/
+querybuilder/
+internal/
+go.mod
+go.sum
+.gitattributes

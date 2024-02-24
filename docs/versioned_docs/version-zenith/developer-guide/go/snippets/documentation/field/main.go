@@ -1,21 +1,15 @@
-import { object, field } from '@dagger.io/dagger';
+package main
 
-@object()
-class Person {
-  /**
-   * The name of the person.
-   */
-  @field()
-  name: string = 'anonymous';
+type Person struct {
+	// The name of the person.
+	Name string
+	// The age of the person.
+	Age int
+}
 
-  /**
-   * The age of the person.
-   */
-  @field()
-  age: number;
-
-  constructor(age: number, name?: string) {
-    this.name = name ?? this.name;
-    this.age = age;
-  }
+func New(name string, age int) *Person {
+	return &Person{
+		Name: name,
+		Age:  age,
+	}
 }
