@@ -357,15 +357,15 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/typescript/module-structure"
-            },
-            {
-              "type": "doc",
               "id": "developer-guide/typescript/first-module"
             },
             {
               "type": "doc",
               "id": "developer-guide/typescript/arguments-return-values"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/module-structure"
             },
             {
               "type": "doc",
