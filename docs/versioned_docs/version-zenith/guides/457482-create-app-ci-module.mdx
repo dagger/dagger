@@ -86,7 +86,7 @@ Dagger exposes every module using a language-agnostic HTTP API. So, even though 
 First, add the `node` module as a dependency:
 
 ```shell
-dagger install github.com/quartz-technology/daggerverse/node
+dagger install github.com/quartz-technology/daggerverse/node@v0.0.1
 ```
 
 <Tabs groupId="language">
@@ -103,7 +103,6 @@ This function does the following:
   - It calls the `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
   - It calls the `Node.WithSource()` function, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
     - The `Node.WithSource()` function accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
-    - Since this directory path will be required by multiple functions, it's convenient to specify it once as a field (`source`) in the module constructor and then access its value from other functions.
   - It calls the `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
   - It calls the `Node.Container()` function, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
 
@@ -121,7 +120,6 @@ This function does the following:
   - It calls the `Node.with_npm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
   - It calls the `Node.with_source()` function, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
     - The `Node.with_source()` function accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
-    - Since this directory path will be required by multiple functions, it's convenient to specify it once as a field (`source`) in the module constructor and then access its value from other functions.
   - It calls the `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
   - It calls the `Node.container()` function, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
 
@@ -139,7 +137,6 @@ This function does the following:
   - It calls the `Node.withNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
   - It calls the `Node.withSource()` function, which returns a revised `Node` object including the application source code mounted in the container filesystem and a cache volume for Node.js modules.
     - The `Node.withSource()` function accepts a `Directory` representing the application source code directory. This directory path will be passed as a command-line flag when calling the function using the CLI.
-    - Since this directory path will be required by multiple functions, it's convenient to specify it once as a field (`source`) in the module constructor and then access its value from other functions.
   - It calls the `Node.install()` function, which runs `npm install` in the container and returns a revised `Node` object including the application's dependencies.
   - It calls the `Node.container()` function, which returns a `Container` representing the final container image with the application source code, Node.js runtime and cache volume.
 
@@ -198,7 +195,7 @@ This function does the following:
 Try the function by running it as below:
 
 ```shell
-dagger call --source . test
+dagger call test --source=.
 ```
 
 :::note
@@ -208,19 +205,14 @@ For security, Dagger modules do not have access to the host and so, host resourc
 Here's an example of the output you will see:
 
 ```shell
-✔ dagger call test [1m14.2s]
-┃
-┃ > myapp@0.0.0 test:unit
-┃ > vitest run
-┃
-┃  RUN  v1.1.0 /src
-┃
-┃  ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 65ms
-┃
-┃  Test Files  1 passed (1)
-┃       Tests  1 passed (1)
-┃    Start at  15:46:12
-┃    Duration  8.85s (transform 751ms, setup 0ms, collect 1.04s, tests 65ms, environment 4.51s, prepare 1.19s)
+> myapp@0.0.0 test:unit
+> vitest run
+ RUN  v1.1.0 /src
+ ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 65ms
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  15:46:12
+   Duration  8.85s (transform 751ms, setup 0ms, collect 1.04s, tests 65ms, environment 4.51s, prepare 1.19s)
 ```
 
 ## Step 4: Add a function to build the application
@@ -275,16 +267,15 @@ The `npm run build` command is appropriate for the example Vue application used 
 Try the function by running it as below. Note the additional chained call to `Directory.Entries()` on the function's `Directory` return value, to display a file listing for the build directory.
 
 ```shell
-dagger call --source . build entries
+dagger call build --source=. entries
 ```
 
 Here's an example of the output you will see:
 
 ```shell
-✔ dagger call build [1m32.7s]
-┃ assets
-┃ favicon.ico
-┃ index.html
+assets
+favicon.ico
+index.html
 ```
 
 ## Step 5: Add a function to publish the application image
@@ -338,14 +329,13 @@ This code listing adds two functions:
 Try the function by running the command below:
 
 ```shell
-dagger call --source . publish
+dagger call publish --source=.
 ```
 
 Here's an example of the output you will see:
 
 ```shell
-✔ dagger call publish [5m32.6s]
-┃ ttl.sh/myapp-6263158:10m@sha256:802f4edeb30b47b5ab4c52d8cccd9d18dd9f4c0d6a0a6b8015926d0290312bb0
+ttl.sh/myapp-6263158:10m@sha256:802f4edeb30b47b5ab4c52d8cccd9d18dd9f4c0d6a0a6b8015926d0290312bb0
 ```
 
 ## Step 6: Add a function to run the application as a local service
@@ -385,7 +375,7 @@ This function simply calls the `package()` function created earlier to obtain th
 Try the function by running the command below:
 
 ```shell
-dagger call --source . serve up --ports 8080:80
+dagger call serve --source=. up --ports=8080:80
 ```
 
 You should now be able to access the application by browsing to http://localhost:8080 on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
