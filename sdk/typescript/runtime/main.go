@@ -78,9 +78,6 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	default:
 		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
 	}
-
-	return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
-
 }
 
 // Codegen returns the generated API client based on user's module

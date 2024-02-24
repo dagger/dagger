@@ -25,11 +25,6 @@ function readPackageJson(): Runtime {
     return undefined
   }
 
-<<<<<<< Updated upstream
-  const packageFile = fs
-    .readFileSync(packagePath, "utf8");
-  const packageJson = JSON.parse(packageFile);
-=======
   const packageFile = fs.readFileSync(packagePath, "utf8")
 
   let packageJson
@@ -39,7 +34,6 @@ function readPackageJson(): Runtime {
     // unable to parse package.json
     return undefined
   }
->>>>>>> Stashed changes
 
   if (packageJson?.dagger?.runtime !== undefined) {
     return packageJson.dagger.runtime
