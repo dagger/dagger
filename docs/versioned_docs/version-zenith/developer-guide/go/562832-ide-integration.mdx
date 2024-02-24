@@ -11,24 +11,24 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-When you generate a Go module for the first time Dagger will create a `go.mod` file just for the module. If your module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse your editor.
+When you generate a Go Dagger Module for the first time, Dagger will create a `go.mod` file just for the module. If the module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse the IDE.
 
-If you already have a `go.mod` in the parent directory that you want to use instead, you can just delete the extra `go.mod` and `go.sum` - Dagger will use the parent one instead. This is not advisable if your module has certain dependencies that are not relevant to your core product, since most consumers will prefer a narrower set of dependencies.
+If there is already a `go.mod` in the parent directory that you would like to use instead, delete the newly-generated `go.mod` and `go.sum` and Dagger will use the parent one instead. This is not advisable if your Dagger Module has certain dependencies that are not relevant to your core product, since most consumers will prefer a narrower set of dependencies.
 
-If you want to keep the `go.mod` and be able to edit your module in the same editor session as your project code, you may want to set up a [Go workspace](https://go.dev/doc/tutorial/workspaces):
+To keep the generated `go.mod` file and edit your Dagger Module in the same IDE session as your project code, one option is to set up a [Go workspace](https://go.dev/doc/tutorial/workspaces):
 
-```sh
-# in the root of your repo
+```shell
+# in the root of your repository
 go work init
 go work use ./
 go work use ./path/to/mod
 ```
 
-After restarting your editor you should now be able to use go-to-definition like normal even when editing `dagger/main.go` from your project root.
+After restarting the IDE, you should be able to use IDE features such as go-to-definition, even when editing `dagger/main.go` from the project root.
 
-You probably don't want to commit `go.work`, so it is advisable to add it to your `.gitignore`:
+In most cases, `go.work` should not be committed to the repository, so it is advisable to add it to the project's `.gitignore` file:
 
-```sh
+```shell
 echo go.work >> .gitignore
 echo go.work.sum >> .gitignore
 ```

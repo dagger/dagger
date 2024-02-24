@@ -13,19 +13,19 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, be a simple way to accept module-wide configuration.
 
-Here is an example module:
+Here is an example module with a constructor:
 
-```go file=./snippets/constructors/index.ts
+```typescript file=./snippets/constructors/index.ts
 ```
 
 And here is an example call for this module:
 
-```console
+```shell
 dagger call --name=Foo message
 ```
 
 The result will be:
 
-```console
+```shell
 Hello, Foo!
 ```

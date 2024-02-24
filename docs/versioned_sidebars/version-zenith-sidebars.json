@@ -233,6 +233,10 @@
             {
               "type": "doc",
               "id": "developer-guide/overview/execution-environment"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/overview/dependencies"
             }
           ]
         },
@@ -245,48 +249,56 @@
               "id": "developer-guide/go/first-module"
             },
             {
-              "type": "doc",
-              "id": "developer-guide/go/arguments-return-values"
+              "type": "category",
+              "label": "Essentials",
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/arguments-return-values"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/constructors"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/secrets"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/chaining"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/error-handling"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/debugging"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/ide-integration"
+                }
+              ]
             },
             {
-              "type": "doc",
-              "id": "developer-guide/go/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/constructors"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/chaining"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/interfaces"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/ide-integration"
+              "type": "category",
+              "label": "Further Reading",
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/module-structure"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/custom-types"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/interfaces"
+                }
+              ]
             },
             {
               "type": "link",

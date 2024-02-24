@@ -11,7 +11,7 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-Module handle errors in the same way as the language they are written in. This allows you to support any kind of error handling that your application requires. You can also use error handling to verify user input.
+Dagger Modules handle errors in the same way as the language they are written in. This allows you to support any kind of error handling that your application requires. You can also use error handling to verify user input.
 
 Here is an example module with a function `divide()`, that throws an error if the denominator is zero:
 
@@ -38,6 +38,6 @@ dagger call divide --a=4 --b=0
 
 The result will be:
 
-```
+```shell
 cannot divide by zero
 ```

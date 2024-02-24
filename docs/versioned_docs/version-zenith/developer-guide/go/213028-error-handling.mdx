@@ -11,17 +11,13 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-Error handling in Go modules follows typical Go error patterns with explicit
-`error` return values and `if err != nil` checks.
+Error handling in Go modules follows typical Go error patterns with explicit `error` return values and `if err != nil` checks. You can also use error handling to verify user input.
 
-You can also use error handling to verify users' input.
+Here is an example module with a function `divide()`, that throws an error if the denominator is zero:
 
-Here is an example module that expose a function `divide` and shall throw an error if the exposant is `0`:
-
-```typescript file=./snippets/error-handling/main.go
+```go file=./snippets/error-handling/main.go
 ```
-
-And here an example call for this module:
+Here is an example call for this module:
 
 ```shell
 dagger call divide --a=4 --b=2
@@ -33,7 +29,7 @@ The result will be:
 2
 ```
 
-But if you send 0 as exposant:
+Here is another example call for this module, this time dividing by zero:
 
 ```shell
 dagger call divide --a=4 --b=0
@@ -41,6 +37,6 @@ dagger call divide --a=4 --b=0
 
 The result will be:
 
-```
+```shell
 cannot divide by zero
 ```
