@@ -26,190 +26,7 @@
     },
     {
       "type": "category",
-      "label": "Developer Guide (Option A)",
-      "collapsible": true,
-      "collapsed": true,
-      "items": [
-        {
-          "type": "doc",
-          "label": "Introduction",
-          "id": "developer-guide/index"
-        },
-        {
-          "type": "category",
-          "label": "Overview",
-          "items": [
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/modules-vs-functions"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/architecture"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/execution-environment"
-            }
-          ]
-        },
-        {
-          "type": "category",
-          "label": "Module Basics",
-          "items": [
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/first-steps"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/arguments-return-values"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/chaining"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/overview/debugging"
-            }
-          ]
-        },
-        {
-          "type": "category",
-          "label": "Developing with Go",
-          "items": [
-            {
-              "type": "doc",
-              "id": "developer-guide/go/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/constructors"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/interfaces"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/ide-integration"
-            },
-            {
-              "type": "link",
-              "label": "Go SDK Reference",
-              "href": "https://pkg.go.dev/dagger.io/dagger"
-            }
-          ]
-        },
-        {
-          "type": "category",
-          "label": "Developing with Python",
-          "items": [
-            {
-              "type": "doc",
-              "id": "developer-guide/python/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/constructors"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/conventions"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/ide-integration"
-            },
-            {
-              "type": "link",
-              "label": "Python SDK Reference",
-              "href": "https://dagger-io.readthedocs.org/"
-            }
-          ]
-        },
-        {
-          "type": "category",
-          "label": "Developing with TypeScript",
-          "items": [
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/constructors"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/conventions"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/ide-integration"
-            },
-            {
-              "type": "doc",
-              "label": "Reference",
-              "id": "reference/typescript/modules"
-            }
-          ]
-        },
-        {
-          "type": "link",
-          "label": "API Reference",
-          "href": "https://docs.dagger.io/api/reference"
-        },
-        {
-          "type": "doc",
-          "id": "developer-guide/known-issues"
-        }
-      ]
-    },
-    {
-      "type": "category",
-      "label": "Developer Guide (Option B)",
+      "label": "Developer Guide",
       "collapsible": true,
       "collapsed": true,
       "items": [
@@ -262,11 +79,11 @@
                 },
                 {
                   "type": "doc",
-                  "id": "developer-guide/go/secrets"
+                  "id": "developer-guide/go/chaining"
                 },
                 {
                   "type": "doc",
-                  "id": "developer-guide/go/chaining"
+                  "id": "developer-guide/go/secrets"
                 },
                 {
                   "type": "doc",
@@ -297,6 +114,14 @@
                 {
                   "type": "doc",
                   "id": "developer-guide/go/interfaces"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/visibility"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/go/documentation"
                 }
               ]
             },
@@ -305,7 +130,6 @@
               "label": "Go SDK Reference",
               "href": "https://pkg.go.dev/dagger.io/dagger"
             }
-
           ]
         },
         {
@@ -317,44 +141,60 @@
               "id": "developer-guide/python/first-module"
             },
             {
-              "type": "doc",
-              "id": "developer-guide/python/arguments-return-values"
+              "type": "category",
+              "label": "Essentials",
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/arguments-return-values"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/constructors"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/chaining"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/secrets"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/error-handling"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/debugging"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/ide-integration"
+                }
+              ]
             },
             {
-              "type": "doc",
-              "id": "developer-guide/python/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/constructors"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/chaining"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/ide-integration"
+              "type": "category",
+              "label": "Further Reading",
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/module-structure"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/custom-types"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/visibility"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/documentation"
+                }
+              ]
             },
             {
               "type": "link",

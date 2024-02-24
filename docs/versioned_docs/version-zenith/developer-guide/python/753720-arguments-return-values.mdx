@@ -51,6 +51,10 @@ The result will look something like this:
 }
 ```
 
+:::note
+A module's main functions can be declared as either top-level functions or as methods of a class (decorated with [dagger.mod.object_type](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.object_type)) having the same name as the module (in PascalCase), but not both.
+:::
+
 ## Arguments
 
 Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments, such as `Directory`, `Container`, `Service`, Secret`, and many more.

@@ -1,6 +1,6 @@
 
 ---
-slug: /developer-guide/typescript/461818/visibility
+slug: /developer-guide/go/892021/visibility
 displayed_sidebar: 'zenith'
 toc_max_heading_level: 2
 title: 'Visibility'
@@ -12,15 +12,11 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TypeScript offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those fields of a Dagger Module that are explicitly decorated with the `@field()` decorator. Other fields will remain private.
-
-:::note
-Even if a field remains private, its state will still be loaded and it can be used even though it is not exposed via the Dagger API.
-:::
+TODO
 
 Here's an example of a Dagger Module that has multiple properties which are not exposed outside the module, and a Dagger Function that uses the `crypto` library to hash these:
 
-```typescript file=./snippets/visibility/index.ts
+```go file=./snippets/visibility/main.go
 ```
 
 From `dagger functions`, it can be seen that `age` and `job` are not exposed:
