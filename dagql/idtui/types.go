@@ -3,24 +3,59 @@ package idtui
 import (
 	"sort"
 	"time"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
-func CollectSteps(db *DB) []*Step {
-	var steps []*Step //nolint:prealloc
-	for vID := range db.Vertices {
-		step, ok := db.Step(vID)
-		if !ok {
-			continue
-		}
-		steps = append(steps, step)
-	}
-	sort.Slice(steps, func(i, j int) bool {
-		return steps[i].IsBefore(steps[j])
-	})
-	return steps
+type Trace struct {
+	ID         trace.TraceID
+	Epoch, End time.Time
+	db         *DB
 }
 
-func CollectRows(steps []*Step) []*TraceRow {
+func (trace *Trace) HexID() string {
+	return trace.ID.String()
+}
+
+func (trace *Trace) Name() string {
+	if span := trace.db.PrimarySpanForTrace(trace.ID); span != nil {
+		return span.Name()
+	}
+	return "unknown"
+}
+
+func (trace *Trace) PrimarySpan() *Span {
+	return trace.db.PrimarySpanForTrace(trace.ID)
+}
+
+type Task struct {
+	Span      sdktrace.ReadOnlySpan
+	Name      string
+	Current   int64
+	Total     int64
+	Started   time.Time
+	Completed time.Time
+}
+
+func CollectSpans(db *DB, traceID trace.TraceID) []*Span {
+	var spans []*Span //nolint:prealloc
+	for _, span := range db.Spans {
+		if span.Ignore {
+			continue
+		}
+		if traceID.IsValid() && span.SpanContext().TraceID() != traceID {
+			continue
+		}
+		spans = append(spans, span)
+	}
+	sort.Slice(spans, func(i, j int) bool {
+		return spans[i].IsBefore(spans[j])
+	})
+	return spans
+}
+
+func CollectRows(steps []*Span) []*TraceRow {
 	var rows []*TraceRow
 	WalkSteps(steps, func(row *TraceRow) {
 		if row.Parent != nil {
@@ -33,7 +68,7 @@ func CollectRows(steps []*Step) []*TraceRow {
 }
 
 type TraceRow struct {
-	Step *Step
+	Span *Span
 
 	Parent *TraceRow
 
@@ -67,25 +102,22 @@ func CollectPipelines(rows []*TraceRow) []Pipeline {
 }
 
 type LogsView struct {
-	Primary *Step
+	Primary *Span
 	Body    []*TraceRow
-	Init    *TraceRow
 }
 
 func CollectLogsView(rows []*TraceRow) *LogsView {
 	view := &LogsView{}
 	for _, row := range rows {
-		switch {
-		case view.Primary == nil && row.Step.Digest == PrimaryVertex:
+		if row.Span.Primary {
 			// promote children of primary vertex to the top-level
 			for _, child := range row.Children {
 				child.Parent = nil
 			}
-			view.Primary = row.Step
-			view.Body = row.Children
-		case view.Primary == nil && row.Step.Digest == InitVertex:
-			view.Init = row
-		default:
+			view.Primary = row.Span
+			// reveal anything 'extra' below the primary content
+			view.Body = append(row.Children, view.Body...)
+		} else {
 			// reveal anything 'extra' by default (fail open)
 			view.Body = append(view.Body, row)
 		}
@@ -98,17 +130,17 @@ const (
 	GCThreshold      = 1 * time.Second
 )
 
-func (row *TraceRow) IsInteresting() bool {
-	step := row.Step
+func (row *TraceRow) IsInteresting(verbosity int) bool {
+	step := row.Span
 	if step.Err() != nil {
 		// show errors always
 		return true
 	}
-	if step.IsInternal() {
+	if step.IsInternal() && verbosity < 3 {
 		// internal steps are, by definition, not interesting
 		return false
 	}
-	if step.Duration() < TooFastThreshold {
+	if step.Duration() < TooFastThreshold && verbosity < 2 {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}
@@ -116,7 +148,7 @@ func (row *TraceRow) IsInteresting() bool {
 		// show things once they've been running for a while
 		return true
 	}
-	if completed := step.FirstCompleted(); completed != nil && time.Since(*completed) < GCThreshold {
+	if verbosity >= 1 || step.EndTime().IsZero() || time.Since(step.EndTime()) < GCThreshold {
 		// show things that just completed, to reduce flicker
 		return true
 	}
@@ -137,31 +169,38 @@ func (row *TraceRow) setRunning() {
 	}
 }
 
-func WalkSteps(steps []*Step, f func(*TraceRow)) {
-	var lastSeen string
-	seen := map[string]bool{}
-	var walk func(*Step, *TraceRow)
-	walk = func(step *Step, parent *TraceRow) {
-		if seen[step.Digest] {
+func WalkSteps(steps []*Span, f func(*TraceRow)) {
+	var lastRow *TraceRow
+	seen := map[trace.SpanID]bool{}
+	var walk func(*Span, *TraceRow)
+	walk = func(span *Span, parent *TraceRow) {
+		spanID := span.SpanContext().SpanID()
+		if seen[spanID] {
+			return
+		}
+		if span.Passthrough {
+			for _, child := range span.Children() {
+				walk(child, parent)
+			}
 			return
 		}
 		row := &TraceRow{
-			Step:   step,
+			Span:   span,
 			Parent: parent,
 		}
-		if step.BaseDigest != "" {
-			row.Chained = step.BaseDigest == lastSeen
+		if span.ReceiverDigest != "" && lastRow != nil {
+			row.Chained = span.SimpleReceiver() == lastRow.Span.Digest
 		}
-		if step.IsRunning() {
+		if span.IsRunning() {
 			row.setRunning()
 		}
 		f(row)
-		lastSeen = step.Digest
-		seen[step.Digest] = true
-		for _, child := range step.Children() {
+		lastRow = row
+		seen[spanID] = true
+		for _, child := range span.Children() {
 			walk(child, row)
 		}
-		lastSeen = step.Digest
+		lastRow = row
 	}
 	for _, step := range steps {
 		walk(step, nil)

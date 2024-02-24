@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/tracing"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vito/progrock"
 )
 
 const (
@@ -121,11 +121,6 @@ func (fcs FuncCommands) All() []*cobra.Command {
 		cmds[i] = fc.Command()
 	}
 	return cmds
-}
-
-func setCmdOutput(cmd *cobra.Command, vtx *progrock.VertexRecorder) {
-	cmd.SetOut(vtx.Stdout())
-	cmd.SetErr(vtx.Stderr())
 }
 
 // FuncCommand is a config object used to create a dynamic set of commands
@@ -250,7 +245,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 			// Between PreRunE and RunE, flags are validated.
 			RunE: func(c *cobra.Command, a []string) error {
-				return withEngineAndTUI(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 
 					// withEngineAndTUI changes the context.
@@ -276,26 +271,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
 
-	var primaryVtx *progrock.VertexRecorder
 	var cmd *cobra.Command
-
-	// The following is a little complicated because it needs to handle the case
-	// where we fail to load the modules or parse the CLI.
-	//
-	// In the happy path we want to initialize the PrimaryVertex with the parsed
-	// command string, but we can't have that until we load the command.
-	//
-	// So we just detect if we failed before getting to that point and fall back
-	// to the outer command.
 	defer func() {
 		if cmd == nil { // errored during loading
 			cmd = c
-		}
-		if primaryVtx == nil { // errored during loading
-			ctx, primaryVtx = progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { primaryVtx.Done(rerr) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, primaryVtx)
 		}
 		if ctx.Err() != nil {
 			cmd.PrintErrln("Canceled.")
@@ -321,12 +300,6 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	if err != nil {
 		return err
 	}
-
-	// Ok, we've loaded the command, now we can initialize the PrimaryVertex.
-	ctx, primaryVtx = progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-	defer func() { primaryVtx.Done(rerr) }()
-	cmd.SetContext(ctx)
-	setCmdOutput(cmd, primaryVtx)
 
 	if fc.showHelp {
 		// Hide aliases for sub-commands. They just allow using the SDK's
@@ -363,8 +336,8 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	ctx := c.Context()
 	dag := fc.c.Dagger()
 
-	ctx, vtx := progrock.Span(ctx, idtui.InitVertex, "initialize")
-	defer func() { vtx.Done(rerr) }()
+	ctx, span := Tracer().Start(ctx, "initialize", tracing.Encapsulate())
+	defer tracing.End(span, func() error { return rerr })
 
 	modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
 	if err != nil {
@@ -523,8 +496,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			ctx := cmd.Context()
 			query, _ := fc.q.Build(ctx)
 
-			rec := progrock.FromContext(ctx)
-			rec.Debug("executing", progrock.Labelf("query", "%+v", query))
+			slog.Debug("executing query", "query", query)
 
 			var response any
 

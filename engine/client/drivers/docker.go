@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"os/exec"
@@ -13,11 +15,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/pkg/errors"
-	"github.com/vito/progrock"
-
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
+	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
+
+	"github.com/dagger/dagger/tracing"
 )
 
 func init() {
@@ -27,8 +30,8 @@ func init() {
 // dockerDriver creates and manages a container, then connects to it
 type dockerDriver struct{}
 
-func (d *dockerDriver) Provision(ctx context.Context, rec *progrock.VertexRecorder, target *url.URL, opts *DriverOpts) (Connector, error) {
-	helper, err := d.create(ctx, rec, target.Host+target.Path, opts)
+func (d *dockerDriver) Provision(ctx context.Context, target *url.URL, opts *DriverOpts) (Connector, error) {
+	helper, err := d.create(ctx, target.Host+target.Path, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +58,9 @@ const (
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
+func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
+	log := tracing.ContextLogger(ctx, slog.LevelWarn) // TODO
+
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
 	fallbackToLeftoverEngine := false
@@ -71,9 +76,9 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent)); err != nil {
-			vtx.Recorder.Warn("failed to resolve image; falling back to leftover engine", progrock.ErrorLabel(err))
+			log.Warn("failed to resolve image; falling back to leftover engine", "error", err)
 			if strings.Contains(err.Error(), "DENIED") {
-				vtx.Recorder.Warn("check your docker registry auth; it might be incorrect or expired")
+				log.Warn("check your docker registry auth; it might be incorrect or expired")
 			}
 			fallbackToLeftoverEngine = true
 		} else {
@@ -85,7 +90,7 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 	// And check if we are in a fallback case then perform fallback to most recent engine
 	leftoverEngines, err := collectLeftoverEngines(ctx)
 	if err != nil {
-		vtx.Recorder.Warn("failed to list containers", progrock.ErrorLabel(err))
+		log.Warn("failed to list containers", "error", err)
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
@@ -93,17 +98,14 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 			return nil, errors.Errorf("no fallback container found")
 		}
 
-		startTask := vtx.Task("starting engine")
-		defer startTask.Done(rerr)
-
 		// the first leftover engine may not be running, so make sure to start it
 		firstEngine := leftoverEngines[0]
 		cmd := exec.CommandContext(ctx, "docker", "start", firstEngine)
-		if output, err := cmd.CombinedOutput(); err != nil {
+		if output, err := traceExec(ctx, cmd); err != nil {
 			return nil, errors.Wrapf(err, "failed to start container: %s", output)
 		}
 
-		garbageCollectEngines(ctx, vtx, leftoverEngines[1:])
+		garbageCollectEngines(ctx, log, leftoverEngines[1:])
 
 		return connhDocker.Helper(&url.URL{
 			Scheme: "docker-container",
@@ -123,14 +125,11 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 	for i, leftoverEngine := range leftoverEngines {
 		// if we already have a container with that name, attempt to start it
 		if leftoverEngine == containerName {
-			startTask := vtx.Task("starting engine")
-			defer startTask.Done(rerr)
-
 			cmd := exec.CommandContext(ctx, "docker", "start", leftoverEngine)
-			if output, err := cmd.CombinedOutput(); err != nil {
+			if output, err := traceExec(ctx, cmd); err != nil {
 				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
-			garbageCollectEngines(ctx, vtx, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			garbageCollectEngines(ctx, log, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
 			return connhDocker.Helper(&url.URL{
 				Scheme: "docker-container",
 				Host:   containerName,
@@ -139,16 +138,10 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 	}
 
 	// ensure the image is pulled
-	if err := exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef).Run(); err != nil {
-		pullCmd := exec.CommandContext(ctx, "docker", "pull", imageRef)
-		pullCmd.Stdout = vtx.Stdout()
-		pullCmd.Stderr = vtx.Stderr()
-		pullTask := vtx.Task("pulling %s", imageRef)
-		if err := pullCmd.Run(); err != nil {
-			pullTask.Done(err)
+	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef)); err != nil {
+		if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef)); err != nil {
 			return nil, errors.Wrapf(err, "failed to pull image")
 		}
-		pullTask.Done(nil)
 	}
 
 	cmd := exec.CommandContext(ctx,
@@ -171,9 +164,7 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 
 	cmd.Args = append(cmd.Args, imageRef, "--debug")
 
-	startTask := vtx.Task("starting engine")
-	defer startTask.Done(rerr)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := traceExec(ctx, cmd); err != nil {
 		if !isContainerAlreadyInUseOutput(string(output)) {
 			return nil, errors.Wrapf(err, "failed to run container: %s", output)
 		}
@@ -182,7 +173,7 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	garbageCollectEngines(ctx, vtx, leftoverEngines)
+	garbageCollectEngines(ctx, log, leftoverEngines)
 
 	return connhDocker.Helper(&url.URL{
 		Scheme: "docker-container",
@@ -190,19 +181,32 @@ func (d *dockerDriver) create(ctx context.Context, vtx *progrock.VertexRecorder,
 	})
 }
 
-func garbageCollectEngines(ctx context.Context, rec *progrock.VertexRecorder, engines []string) {
+func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []string) {
 	for _, engine := range engines {
 		if engine == "" {
 			continue
 		}
-		if output, err := exec.CommandContext(ctx,
+		if output, err := traceExec(ctx, exec.CommandContext(ctx,
 			"docker", "rm", "-fv", engine,
-		).CombinedOutput(); err != nil {
+		)); err != nil {
 			if !strings.Contains(string(output), "already in progress") {
-				rec.Recorder.Warn("failed to remove old container", progrock.ErrorLabel(err), progrock.Labelf("container", engine))
+				log.Warn("failed to remove old container", "container", engine, "error", err)
 			}
 		}
 	}
+}
+
+func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
+	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
+	defer tracing.End(span, func() error { return rerr })
+	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, "")
+	outBuf := new(bytes.Buffer)
+	cmd.Stdout = io.MultiWriter(stdout, outBuf)
+	cmd.Stdout = stderr
+	if err := cmd.Run(); err != nil {
+		return outBuf.String(), errors.Wrap(err, "failed to run command")
+	}
+	return outBuf.String(), nil
 }
 
 func collectLeftoverEngines(ctx context.Context) ([]string, error) {

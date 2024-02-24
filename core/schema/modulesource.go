@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -756,10 +755,9 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		excludes = append(excludes, exclude)
 	}
 
-	pipelineName := fmt.Sprintf("load local module context %s", contextAbsPath)
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 	_, desc, err := src.Query.Buildkit.LocalImport(
-		ctx, subRecorder, src.Query.Platform.Spec(),
+		ctx,
+		src.Query.Platform.Spec(),
 		contextAbsPath,
 		excludes,
 		includes,
@@ -884,7 +882,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 	// cache of sourceRootAbsPath -> *callerLocalDep
 	collectedDeps dagql.CacheMap[string, *callerLocalDep],
 ) error {
-	_, err := collectedDeps.GetOrInitialize(ctx, sourceRootAbsPath, func(ctx context.Context) (*callerLocalDep, error) {
+	_, _, err := collectedDeps.GetOrInitialize(ctx, sourceRootAbsPath, func(ctx context.Context) (*callerLocalDep, error) {
 		sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get source root relative path: %s", err)

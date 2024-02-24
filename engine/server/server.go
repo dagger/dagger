@@ -16,15 +16,15 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/tracing"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/sirupsen/logrus"
-	"github.com/vito/progrock"
 )
 
 type DaggerServer struct {
@@ -32,10 +32,8 @@ type DaggerServer struct {
 	bkClient *buildkit.Client
 	worker   bkworker.Worker
 
-	schema      *schema.APIServer
-	recorder    *progrock.Recorder
-	analytics   analytics.Tracker
-	progCleanup func() error
+	schema    *schema.APIServer
+	analytics analytics.Tracker
 
 	doneCh    chan struct{}
 	closeOnce sync.Once
@@ -52,9 +50,10 @@ func NewDaggerServer(
 	serverID string,
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
-	rootLabels []pipeline.Label,
+	rootLabels telemetry.Labels,
 	cloudToken string,
 	doNotTrack bool,
+	pubsub *tracing.PubSub,
 ) (*DaggerServer, error) {
 	srv := &DaggerServer{
 		serverID: serverID,
@@ -68,43 +67,14 @@ func NewDaggerServer(
 		doneCh: make(chan struct{}, 1),
 	}
 
-	clientConn := caller.Conn()
-	progClient := progrock.NewProgressServiceClient(clientConn)
-	progUpdates, err := progClient.WriteUpdates(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	progWriter, progCleanup, err := buildkit.ProgrockForwarder(bkClient.ProgSockPath, progrock.MultiWriter{
-		progrock.NewRPCWriter(clientConn, progUpdates),
-		buildkit.ProgrockLogrusWriter{},
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.progCleanup = progCleanup
-
-	progrockLabels := []*progrock.Label{}
-	for _, label := range rootLabels {
-		progrockLabels = append(progrockLabels, &progrock.Label{
-			Name:  label.Name,
-			Value: label.Value,
-		})
-	}
-	srv.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
-
-	// NOTE: context.Background is used because if the provided context is canceled, buildkit can
-	// leave internal progress contexts open and leak goroutines.
-	bkClient.WriteStatusesTo(context.Background(), srv.recorder)
-
 	apiSchema, err := schema.New(ctx, schema.InitializeArgs{
 		BuildkitClient: srv.bkClient,
 		Platform:       srv.worker.Platforms(true)[0],
-		ProgSockPath:   bkClient.ProgSockPath,
 		OCIStore:       srv.worker.ContentStore(),
 		LeaseManager:   srv.worker.LeaseManager(),
 		Secrets:        secretStore,
 		Auth:           authProvider,
+		PubSub:         pubsub,
 	})
 	if err != nil {
 		return nil, err
@@ -124,11 +94,6 @@ func (srv *DaggerServer) Close() {
 		close(srv.doneCh)
 	})
 
-	// mark all groups completed
-	srv.recorder.Complete()
-	// close the recorder so the UI exits
-	srv.recorder.Close()
-	srv.progCleanup()
 	// close the analytics recorder
 	srv.analytics.Close()
 }
@@ -174,6 +139,7 @@ func (srv *DaggerServer) ServeClientConn(
 	httpSrv := http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
 	}
 	defer httpSrv.Close()
 	return httpSrv.Serve(l)
@@ -188,7 +154,6 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		bklog.G(req.Context()).Debugf("http handler for client conn to path %s", req.URL.Path)
 		defer bklog.G(req.Context()).Debugf("http handler for client conn done: %s", clientMetadata.ClientID)
 
-		req = req.WithContext(progrock.ToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 		req = req.WithContext(analytics.WithContext(req.Context(), srv.analytics))
 

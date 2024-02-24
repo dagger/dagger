@@ -11,15 +11,14 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/tracing"
 )
 
 // File is a content-addressed file.
@@ -249,7 +248,7 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 	return fs.Open(file.File)
 }
 
-func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bool) error {
+func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bool) (rerr error) {
 	svcs := file.Query.Services
 	bk := file.Query.Buildkit
 
@@ -262,9 +261,8 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return err
 	}
 
-	ctx, vtx := progrock.Span(ctx, identity.NewID(),
-		fmt.Sprintf("export file %s to host %s", file.File, dest))
-	defer vtx.Done(err)
+	ctx, vtx := Tracer().Start(ctx, fmt.Sprintf("export file %s to host %s", file.File, dest))
+	defer tracing.End(vtx, func() error { return rerr })
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {

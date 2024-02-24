@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
+	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -17,30 +19,42 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/telemetry/sdklog"
+	"github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
 	"github.com/dagger/dagger/tracing"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vito/progrock"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type InitializeArgs struct {
 	BuildkitClient *buildkit.Client
 	Platform       specs.Platform
-	ProgSockPath   string
 	OCIStore       content.Store
 	LeaseManager   *leaseutil.Manager
 	Auth           *auth.RegistryAuthProvider
 	Secrets        *core.SecretStore
+	PubSub         *tracing.PubSub
+}
+
+type OtelSubscriber interface {
+	Subscribe(trace.TraceID, otlptrace.Client) func()
 }
 
 type APIServer struct {
 	// The root of the schema, housing all of the state and dependencies for the
 	// server for easy access from descendent objects.
-	root *core.Query
+	root    *core.Query
+	pubsub  *tracing.PubSub
+	traceID trace.TraceID
 }
 
 func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
@@ -49,7 +63,6 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 	root := core.NewRoot()
 	root.Buildkit = params.BuildkitClient
 	root.Services = svcs
-	root.ProgrockSocketPath = params.ProgSockPath
 	root.Platform = core.Platform(params.Platform)
 	root.Secrets = params.Secrets
 	root.OCIStore = params.OCIStore
@@ -73,13 +86,26 @@ func New(ctx context.Context, params InitializeArgs) (*APIServer, error) {
 		core.NewModDeps(root, []core.Mod{coreMod}),
 	)
 
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		return nil, fmt.Errorf("invalid traceID")
+	}
+
 	return &APIServer{
-		root: root,
+		root:    root,
+		pubsub:  params.PubSub,
+		traceID: traceID,
 	}, nil
 }
 
 func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	slog.Debug("schema serving HTTP with trace",
+		"ctx", trace.SpanContextFromContext(ctx).TraceID(),
+		"method", r.Method,
+		"path", r.URL.Path)
+
 	errorOut := func(err error, code int) {
 		bklog.G(ctx).WithError(err).Error("failed to serve request")
 		http.Error(w, err.Error(), code)
@@ -96,14 +122,6 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest), http.StatusInternalServerError)
 		return
 	}
-
-	rec := progrock.FromContext(ctx)
-	if header := r.Header.Get(client.ProgrockParentHeader); header != "" {
-		rec = rec.WithParent(header)
-	} else if callContext.ProgrockParent != "" {
-		rec = rec.WithParent(callContext.ProgrockParent)
-	}
-	ctx = progrock.ToContext(ctx, rec)
 
 	schema, err := callContext.Deps.Schema(ctx)
 	if err != nil {
@@ -143,6 +161,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	srv := handler.NewDefaultServer(schema)
+
 	// NB: break glass when needed:
 	// srv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
 	// 	res := next(ctx)
@@ -150,14 +169,80 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
 	// 	return res
 	// })
+
 	mux := http.NewServeMux()
+
 	mux.Handle("/query", srv)
+
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
+
+		bklog.G(ctx).Debugf("shutting down client %s from caller %s", clientMetadata.ClientID, clientMetadata.ModuleCallerDigest)
+
 		if err := s.root.Services.StopClientServices(ctx, clientMetadata); err != nil {
 			bklog.G(ctx).WithError(err).Error("failed to shutdown")
 		}
+
+		if clientMetadata.ModuleCallerDigest == "" {
+			// Flush all in-flight telemetry when a main client goes away.
+			//
+			// Awkwardly, we're flushing in-flight telemetry for _all_ clients when
+			// _each_ client goes away. But we're only flushing the PubSub exporter,
+			// which doesn't seem expensive enough to be worth the added complexity
+			// of somehow only flushing a single client. This exporter already
+			// flushes every 100ms anyway, so this really just helps ensure the last
+			// few spans are received.
+			tracing.FlushLiveProcessors(ctx)
+
+			// Drain active /trace connections.
+			//
+			// NB(vito): Technically it should be safe to just let them be
+			// interrupted when the connection dies, but draining/flushing is a pain
+			// in the butt to troubleshoot, so it feels a bit nicer to do it more
+			// methodically. I added this, then learned I don't need it, but if I'm
+			// ever troubleshooting this again I'm likely to just write this code
+			// again, so I kept it.
+			s.pubsub.Drain(s.traceID)
+		}
+	}))
+
+	mux.Handle("/trace", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusNotImplemented)
+			return
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		exp, err := otlptrace.New(ctx, &chunkedTraceClient{
+			w: w,
+			f: flusher,
+		})
+		if err != nil {
+			slog.Warn("failed to create exporter", "err", err)
+			http.Error(w, "failed to create exporter", http.StatusInternalServerError)
+			return
+		}
+		s.pubsub.SubscribeToSpans(ctx, s.traceID, exp)
+	}))
+
+	mux.Handle("/logs", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := req.Context()
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusNotImplemented)
+			return
+		}
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		exp := &chunkedLogsClient{
+			w: w,
+			f: flusher,
+		}
+		if err := exp.Start(ctx); err != nil {
+			slog.Warn("failed to emit first chunk", "err", err)
+			return
+		}
+		s.pubsub.SubscribeToLogs(ctx, s.traceID, exp)
 	}))
 
 	s.root.MuxEndpoints(mux)
@@ -167,6 +252,78 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var handler http.Handler = mux
 	handler = flushAfterNBytes(buildkit.MaxFileContentsChunkSize)(handler)
 	handler.ServeHTTP(w, r)
+}
+
+type chunkedTraceClient struct {
+	w http.ResponseWriter
+	f http.Flusher
+	l sync.Mutex
+}
+
+var _ otlptrace.Client = (*chunkedTraceClient)(nil)
+
+func (h *chunkedTraceClient) Start(ctx context.Context) error {
+	slog.Info("attached to traces; sending initial response")
+	fmt.Fprintf(h.w, "0\n")
+	h.f.Flush()
+	return nil
+}
+
+func (h *chunkedTraceClient) Stop(ctx context.Context) error {
+	return nil
+}
+
+func (h *chunkedTraceClient) UploadTraces(ctx context.Context, protoSpans []*tracepb.ResourceSpans) error {
+	h.l.Lock()
+	defer h.l.Unlock()
+	pbRequest := &coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: protoSpans,
+	}
+	rawRequest, err := proto.Marshal(pbRequest)
+	if err != nil {
+		return err
+	}
+	// TODO hacky length-prefixed encoding
+	fmt.Fprintf(h.w, "%d\n", len(rawRequest))
+	h.w.Write(rawRequest)
+	h.f.Flush()
+	return nil
+}
+
+type chunkedLogsClient struct {
+	w http.ResponseWriter
+	f http.Flusher
+	l sync.Mutex
+}
+
+func (h *chunkedLogsClient) Start(ctx context.Context) error {
+	slog.Info("attached to traces; sending initial response")
+	fmt.Fprintf(h.w, "0\n")
+	h.f.Flush()
+	return nil
+}
+
+var _ sdklog.LogExporter = (*chunkedLogsClient)(nil)
+
+func (h *chunkedLogsClient) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+	h.l.Lock()
+	defer h.l.Unlock()
+	pbRequest := &collogspb.ExportLogsServiceRequest{
+		ResourceLogs: transform.Logs(logs),
+	}
+	rawRequest, err := proto.Marshal(pbRequest)
+	if err != nil {
+		return err
+	}
+	// TODO hacky length-prefixed encoding
+	fmt.Fprintf(h.w, "%d\n", len(rawRequest))
+	h.w.Write(rawRequest)
+	h.f.Flush()
+	return nil
+}
+
+func (h *chunkedLogsClient) Shutdown(ctx context.Context) error {
+	return nil
 }
 
 func (s *APIServer) ShutdownClient(ctx context.Context, client *engine.ClientMetadata) error {

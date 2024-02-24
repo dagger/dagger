@@ -26,8 +26,6 @@ type Query struct {
 	// The current pipeline.
 	Pipeline pipeline.Path
 
-	ProgrockSocketPath string
-
 	Services *Services
 
 	Secrets *SecretStore
@@ -107,8 +105,6 @@ type ClientCallContext struct {
 	// metadata of that ongoing function call
 	Module *Module
 	FnCall *FunctionCall
-
-	ProgrockParent string
 }
 
 func (q *Query) ClientCallContext(clientDigest digest.Digest) (*ClientCallContext, bool) {
@@ -155,7 +151,6 @@ func (q *Query) RegisterFunctionCall(
 	deps *ModDeps,
 	mod *Module,
 	call *FunctionCall,
-	progrockParent string,
 ) error {
 	if dgst == "" {
 		return fmt.Errorf("cannot register function call with empty digest")
@@ -168,10 +163,9 @@ func (q *Query) RegisterFunctionCall(
 		return nil
 	}
 	q.clientCallContext[dgst] = &ClientCallContext{
-		Deps:           deps,
-		Module:         mod,
-		FnCall:         call,
-		ProgrockParent: progrockParent,
+		Deps:   deps,
+		Module: mod,
+		FnCall: call,
 	}
 	return nil
 }
@@ -225,12 +219,11 @@ func (q *Query) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
 	return callCtx.Deps, nil
 }
 
-func (q *Query) WithPipeline(name, desc string, labels []pipeline.Label) *Query {
+func (q *Query) WithPipeline(name, desc string) *Query {
 	q = q.Clone()
 	q.Pipeline = q.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: desc,
-		Labels:      labels,
 	})
 	return q
 }

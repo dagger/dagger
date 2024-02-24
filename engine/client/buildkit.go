@@ -10,9 +10,8 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
+	"github.com/dagger/dagger/tracing"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/util/tracing/detect"
-	"github.com/vito/progrock"
 	"go.opentelemetry.io/otel"
 )
 
@@ -21,7 +20,7 @@ const (
 	envDaggerCloudCachetoken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 )
 
-func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote *url.URL, userAgent string) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
+func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
 	driver, err := drivers.GetDriver(remote.Scheme)
 	if err != nil {
 		return nil, nil, err
@@ -34,7 +33,7 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 		cloudToken = v
 	}
 
-	connector, err := driver.Provision(ctx, rec, remote, &drivers.DriverOpts{
+	connector, err := driver.Provision(ctx, remote, &drivers.DriverOpts{
 		UserAgent:        userAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
@@ -44,23 +43,15 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 	}
 
 	opts := []bkclient.ClientOpt{
+		// TODO verify?
 		bkclient.WithTracerProvider(otel.GetTracerProvider()),
 	}
 	opts = append(opts, bkclient.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return connector.Connect(ctx)
 	}))
 
-	exp, _, err := detect.Exporter()
-	if err == nil {
-		if td, ok := exp.(bkclient.TracerDelegate); ok {
-			opts = append(opts, bkclient.WithTracerDelegate(td))
-		}
-	} else {
-		fmt.Fprintln(rec.Stdout(), "failed to detect opentelemetry exporter: ", err)
-	}
-
-	startTask := rec.Task("starting engine")
-	defer startTask.Done(rerr)
+	ctx, span := Tracer().Start(ctx, "starting engine")
+	defer tracing.End(span, func() error { return rerr })
 
 	c, err := bkclient.New(ctx, remote.String(), opts...)
 	if err != nil {
@@ -77,6 +68,7 @@ func newBuildkitClient(ctx context.Context, rec *progrock.VertexRecorder, remote
 	if err != nil {
 		return nil, nil, err
 	}
+
 	if info.BuildkitVersion.Package != engine.Package {
 		return nil, nil, fmt.Errorf("remote is not a valid dagger server (expected %q, got %q)", engine.Package, info.BuildkitVersion.Package)
 	}

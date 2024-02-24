@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/vito/progrock"
 )
 
 var runCmd = &cobra.Command{
@@ -71,7 +70,7 @@ func init() {
 }
 
 func Run(cmd *cobra.Command, args []string) {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	err := run(ctx, args)
 	if err != nil {
@@ -95,9 +94,7 @@ func run(ctx context.Context, args []string) error {
 
 	sessionToken := u.String()
 
-	focus = runFocus
-	useLegacyTUI = true
-	return withEngineAndTUI(ctx, client.Params{
+	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
@@ -124,22 +121,19 @@ func run(ctx context.Context, args []string) error {
 
 		var cmdErr error
 		if !silent {
-			cmdline := strings.Join(subCmd.Args, " ")
-			_, cmdVtx := progrock.Span(ctx, idtui.PrimaryVertex, cmdline)
 			if stdoutIsTTY {
-				subCmd.Stdout = cmdVtx.Stdout()
+				subCmd.Stdout = ioctx.Stdout(ctx)
 			} else {
 				subCmd.Stdout = os.Stdout
 			}
 
 			if stderrIsTTY {
-				subCmd.Stderr = cmdVtx.Stderr()
+				subCmd.Stderr = ioctx.Stderr(ctx)
 			} else {
 				subCmd.Stderr = os.Stderr
 			}
 
 			cmdErr = subCmd.Run()
-			cmdVtx.Done(cmdErr)
 		} else {
 			subCmd.Stdout = os.Stdout
 			subCmd.Stderr = os.Stderr

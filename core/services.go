@@ -15,7 +15,6 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -182,11 +181,7 @@ dance:
 		}
 	}
 
-	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-	}
+	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 
 	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
 	if err != nil {

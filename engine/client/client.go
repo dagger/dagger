@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -32,22 +35,24 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/util/grpcerrors"
+	"github.com/moby/buildkit/util/tracing/transform"
 	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"github.com/vito/progrock"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
+	"github.com/dagger/dagger/tracing"
 )
-
-const ProgrockParentHeader = "X-Progrock-Parent"
 
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
@@ -67,9 +72,6 @@ type Params struct {
 
 	DisableHostRW bool
 
-	JournalFile        string
-	ProgrockWriter     progrock.Writer
-	ProgrockParent     string
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
 
@@ -77,6 +79,9 @@ type Params struct {
 	// grpc context metadata for any api requests back to the engine. It's used by the API
 	// server to determine which schema to serve and other module context metadata.
 	ModuleCallerDigest digest.Digest
+
+	EngineTrace sdktrace.SpanExporter
+	EngineLogs  sdklog.LogExporter
 }
 
 type Client struct {
@@ -89,7 +94,7 @@ type Client struct {
 	closeRequests context.CancelFunc
 	closeMu       sync.RWMutex
 
-	Recorder *progrock.Recorder
+	telemetry *errgroup.Group
 
 	httpClient *http.Client
 	bkClient   *bkclient.Client
@@ -106,7 +111,9 @@ type Client struct {
 
 	nestedSessionPort int
 
-	labels []pipeline.Label
+	labels telemetry.Labels
+
+	finishRun func(error)
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
@@ -118,47 +125,24 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.ServerID = identity.NewID()
 	}
 
-	c.internalCtx, c.internalCancel = context.WithCancel(context.Background())
+	// NB: decouple from the originator's cancel ctx
+	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancel(context.WithoutCancel(ctx))
+
 	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
+
 	defer func() {
 		if rerr != nil {
 			c.internalCancel()
 		}
 	}()
-	c.closeCtx, c.closeRequests = context.WithCancel(context.Background())
 
-	// progress
-	progMultiW := progrock.MultiWriter{}
-	if c.ProgrockWriter != nil {
-		progMultiW = append(progMultiW, c.ProgrockWriter)
-	}
-	if c.JournalFile != "" {
-		fw, err := newProgrockFileWriter(c.JournalFile)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		progMultiW = append(progMultiW, fw)
+	workdir, err := os.Getwd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 
-	tel := telemetry.New()
-	var cloudURL string
-	if tel.Enabled() {
-		cloudURL = tel.URL()
-		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
-	}
-	if c.ProgrockParent != "" {
-		c.Recorder = progrock.NewSubRecorder(progMultiW, c.ProgrockParent)
-	} else {
-		c.Recorder = progrock.NewRecorder(progMultiW)
-	}
-	ctx = progrock.ToContext(ctx, c.Recorder)
-
-	defer func() {
-		if rerr != nil {
-			c.Recorder.Close()
-		}
-	}()
+	c.labels = telemetry.LoadDefaultLabels(workdir, engine.Version)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
@@ -180,26 +164,21 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	// sneakily using ModuleCallerDigest here because it seems nicer than just
-	// making something up, and should be pretty much 1:1 I think (even
-	// non-cached things will have a different caller digest each time)
-	connectDigest := params.ModuleCallerDigest
-	var opts []progrock.VertexOpt
-	if connectDigest == "" {
-		connectDigest = digest.FromString("_root") // arbitrary
-	} else {
-		opts = append(opts, progrock.Internal())
+	connectSpanOpts := []trace.SpanStartOption{
+		tracing.Encapsulate(),
 	}
-
+	if params.ModuleCallerDigest != "" {
+		connectSpanOpts = append(connectSpanOpts, tracing.Internal())
+	}
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", opts...)
-	defer func() { loader.Done(rerr) }()
+	connectCtx, span := Tracer().Start(ctx, "connect", connectSpanOpts...)
+	defer tracing.End(span, func() error { return rerr })
+	connectCtx, connectStdout, connectStderr := tracing.WithStdioToOtel(connectCtx, InstrumentationLibrary)
 
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
 
-	var err error
 	c.upstreamCacheImportOptions, c.upstreamCacheExportOptions, err = allCacheConfigsFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
@@ -210,7 +189,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
-	bkClient, bkInfo, err := newBuildkitClient(ctx, loader, remote, c.UserAgent)
+	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.UserAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
@@ -233,7 +212,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 	c.hostname = hostname
 
-	sessionTask := loader.Task("starting session")
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	_, sessionSpan := Tracer().Start(connectCtx, "starting session")
+	defer tracing.End(sessionSpan, func() error { return rerr })
 
 	sharedKey := ""
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
@@ -247,18 +228,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		}
 	}()
 
-	workdir, err := os.Getwd()
-	if err != nil {
-		return nil, nil, fmt.Errorf("get workdir: %w", err)
-	}
-
-	labels := pipeline.Labels{}
-	labels.AppendCILabel()
-	labels = append(labels, pipeline.LoadVCSLabels(workdir)...)
-	labels = append(labels, pipeline.LoadClientLabels(engine.Version)...)
-
-	c.labels = labels
-
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:           c.ID(),
 		ClientSecretToken:  c.SecretToken,
@@ -268,9 +237,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ParentClientIDs:    c.ParentClientIDs,
 		ModuleCallerDigest: c.ModuleCallerDigest,
 	})
-
-	// progress
-	bkSession.Allow(progRockAttachable{progMultiW})
 
 	// filesync
 	if !c.DisableHostRW {
@@ -287,8 +253,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
 
 	// host=>container networking
-	bkSession.Allow(session.NewTunnelListenerAttachable(c.Recorder))
-	ctx = progrock.ToContext(ctx, c.Recorder)
+	bkSession.Allow(session.NewTunnelListenerAttachable(ctx))
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
@@ -335,22 +300,38 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			// only show errors once the time between attempts exceeds this threshold, otherwise common
 			// cases of 1 or 2 retries become too noisy
 			if nextBackoff > time.Second {
-				fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
+				fmt.Fprintln(connectStderr, "Failed to connect; retrying...", innerErr)
 			}
 		} else {
-			fmt.Fprintln(loader.Stdout(), "OK!")
+			fmt.Fprintln(connectStdout, "OK!")
 		}
 
 		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))
-
-	sessionTask.Done(err)
-
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
 
-	if c.CloudURLCallback != nil && cloudURL != "" {
+	sessionSpan.End()
+
+	c.telemetry = new(errgroup.Group)
+
+	if c.EngineTrace != nil {
+		if err := c.exportTraces(); err != nil {
+			return nil, nil, fmt.Errorf("export traces: %w", err)
+		}
+	}
+
+	if c.EngineLogs != nil {
+		if err := c.exportLogs(); err != nil {
+			return nil, nil, fmt.Errorf("export logs: %w", err)
+		}
+	}
+
+	var cloudURL string
+	tel := telemetry.New()
+	if tel.Enabled() {
+		cloudURL = tel.URL()
 		c.CloudURLCallback(cloudURL)
 	}
 
@@ -363,13 +344,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 func (c *Client) daggerConnect(ctx context.Context) error {
 	var err error
-	c.daggerClient, err = dagger.Connect(context.Background(),
+	c.daggerClient, err = dagger.Connect(
+		context.WithoutCancel(ctx),
 		dagger.WithConn(EngineConn(c)),
 		dagger.WithSkipCompatibilityCheck())
 	return err
 }
 
-func (c *Client) Close() (rerr error) {
+func (c *Client) Close(runErr error) (rerr error) {
 	// shutdown happens outside of c.closeMu, since it requires a connection
 	if err := c.shutdownServer(); err != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
@@ -423,18 +405,147 @@ func (c *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	// mark all groups completed
-	// close the recorder so the UI exits
-	if c.Recorder != nil {
-		c.Recorder.Complete()
-		c.Recorder.Close()
+	// finalize the run, sending the error result upstream
+	if c.finishRun != nil {
+		c.finishRun(runErr)
+	}
+
+	if err := c.telemetry.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("traces: %w", err))
 	}
 
 	return rerr
 }
 
+func (c *Client) exportTraces() error {
+	// NB: we never actually want to interrupt this, since it's relied upon for
+	// seeing what's going on, even during shutdown
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	req, innerErr := http.NewRequestWithContext(ctx, "GET", "http://dagger/trace", nil)
+	if innerErr != nil {
+		return fmt.Errorf("new request: %w", innerErr)
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("connect to traces: %w", err)
+	}
+
+	slog.Debug("exporting traces from engine")
+
+	c.telemetry.Go(func() error {
+		defer resp.Body.Close()
+
+		defer slog.Debug("done exporting traces from engine")
+
+		for {
+			var bytesLen int
+			if _, err := fmt.Fscanf(resp.Body, "%d\n", &bytesLen); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return fmt.Errorf("scan trace length indicator: %w", err)
+			}
+			slog.Debug("exporter scanned length", "bytes", bytesLen)
+			if bytesLen == 0 {
+				slog.Debug("got 0-length response; skipping")
+				continue
+			}
+			buf := make([]byte, bytesLen)
+			if _, err := io.ReadFull(resp.Body, buf); err != nil {
+				return fmt.Errorf("read trace payload: %w", err)
+			}
+			var pbRequest coltracepb.ExportTraceServiceRequest
+			if err := proto.Unmarshal(buf, &pbRequest); err != nil {
+				return fmt.Errorf("unmarshal trace: %w", err)
+			}
+			spans := transform.Spans(pbRequest.ResourceSpans)
+
+			slog.Debug("exporting spans from engine", "len", len(spans))
+			for _, span := range spans {
+				slog.Debug("exporting span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
+			}
+
+			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
+				return fmt.Errorf("export %d spans: %w", len(spans), err)
+			}
+		}
+
+		return nil
+	})
+
+	return nil
+}
+
+func (c *Client) exportLogs() error {
+	// NB: we never actually want to interrupt this, since it's relied upon for
+	// seeing what's going on, even during shutdown
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	req, innerErr := http.NewRequestWithContext(ctx, "GET", "http://dagger/logs", nil)
+	if innerErr != nil {
+		return fmt.Errorf("new request: %w", innerErr)
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("connect to traces: %w", err)
+	}
+
+	slog.Debug("exporting traces from engine")
+
+	c.telemetry.Go(func() error {
+		defer resp.Body.Close()
+
+		defer slog.Debug("done exporting traces from engine")
+
+		for {
+			var bytesLen int
+			if _, err := fmt.Fscanf(resp.Body, "%d\n", &bytesLen); err != nil {
+				if err == io.EOF {
+					break
+				}
+				return fmt.Errorf("scan trace length indicator: %w", err)
+			}
+			slog.Debug("exporter scanned length", "bytes", bytesLen)
+			if bytesLen == 0 {
+				slog.Debug("got 0-length response; skipping")
+				continue
+			}
+			buf := make([]byte, bytesLen)
+			if _, err := io.ReadFull(resp.Body, buf); err != nil {
+				return fmt.Errorf("read trace payload: %w", err)
+			}
+			var pbRequest collogspb.ExportLogsServiceRequest
+			if err := proto.Unmarshal(buf, &pbRequest); err != nil {
+				return fmt.Errorf("unmarshal trace: %w", err)
+			}
+
+			logs := telemetry.TransformPBLogs(pbRequest.GetResourceLogs())
+			slog.Debug("exporting logs from engine", "len", len(logs))
+
+			if err := c.Params.EngineLogs.ExportLogs(ctx, logs); err != nil {
+				return fmt.Errorf("export %d logs: %w", len(logs), err)
+			}
+		}
+
+		return nil
+	})
+
+	return nil
+}
+
 func (c *Client) shutdownServer() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// don't immediately cancel shutdown if we're shutting down because we were
+	// canceled
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
@@ -522,6 +633,12 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	defer cancel()
 
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if !traceID.IsValid() {
+		// panic("huh")
+		slog.Warn("serving HTTP without a trace", "ctx", traceID, "method", r.Method, "path", r.URL.Path)
+	}
+
 	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
 		if !ok || username != c.SecretToken {
@@ -566,6 +683,8 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFunc, w http.ResponseWriter, r *http.Request) {
+	slog.Warn("serving hijacked HTTP with trace", "ctx", trace.SpanContextFromContext(ctx).TraceID())
+
 	serverConn, err := c.DialContext(ctx, "", "")
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -855,14 +974,6 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	}
 }
 
-type progRockAttachable struct {
-	writer progrock.Writer
-}
-
-func (a progRockAttachable) Register(srv *grpc.Server) {
-	progrock.RegisterProgressServiceServer(srv, progrock.NewRPCReceiver(a.writer))
-}
-
 const (
 	// cache configs that should be applied to be import and export
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
@@ -956,7 +1067,6 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
-		req.Header.Add(ProgrockParentHeader, progrock.FromContext(req.Context()).Parent)
 		req.SetBasicAuth(engineClient.SecretToken, "")
 		resp := httptest.NewRecorder()
 		engineClient.ServeHTTP(resp, req)

@@ -16,7 +16,6 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vito/progrock"
 )
 
 type ModuleFunction struct {
@@ -236,8 +235,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 		deps = mod.Deps.Prepend(mod)
 	}
 
-	err = mod.Query.RegisterFunctionCall(callerDigest, deps, fn.mod, callMeta,
-		progrock.FromContext(ctx).Parent)
+	err = mod.Query.RegisterFunctionCall(callerDigest, deps, fn.mod, callMeta)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
 	}

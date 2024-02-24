@@ -3,18 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
-	"github.com/vito/progrock"
 )
 
 var (
@@ -38,15 +35,7 @@ func init() {
 }
 
 func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, _ []string) error {
-	var stderr io.Writer
-	if silent {
-		stderr = os.Stderr
-	} else {
-		var vtx *progrock.VertexRecorder
-		ctx, vtx = progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-		defer vtx.Done(nil)
-		stderr = vtx.Stderr()
-	}
+	stderr := cmd.OutOrStderr()
 
 	sessionL, err := net.Listen("tcp", listenAddress)
 	if err != nil {

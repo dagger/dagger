@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -23,16 +24,22 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/console"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/network"
 	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/vito/progrock"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/tracing"
 )
 
 const (
@@ -179,6 +186,34 @@ func shim() (returnExitCode int) {
 		return errorExitCode
 	}
 
+	// Set up slog initially to log directly to stderr, in case something goes
+	// wrong with the logging setup.
+	slog.SetDefault(tracing.PrettyLogger(os.Stderr, slog.LevelWarn))
+
+	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
+		ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
+	}
+
+	traceCfg := tracing.Config{
+		Detect: false, // false, since we want "live" exporting
+		Resource: resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("dagger-shim"),
+			semconv.ServiceVersionKey.String(engine.Version),
+		),
+	}
+	if exp, ok := tracing.ConfiguredSpanExporter(ctx); ok {
+		traceCfg.LiveTraceExporters = append(traceCfg.LiveTraceExporters, exp)
+	}
+	if exp, ok := tracing.ConfiguredLogExporter(ctx); ok {
+		traceCfg.LiveLogExporters = append(traceCfg.LiveLogExporters, exp)
+	}
+
+	tracing.Init(ctx, traceCfg)
+	defer tracing.Close()
+
+	ctx, stdoutOtel, stderrOtel := tracing.WithStdioToOtel(ctx, "dagger.io/shim")
+
 	name := os.Args[1]
 	args := []string{}
 	if len(os.Args) > 2 {
@@ -248,8 +283,12 @@ func shim() (returnExitCode int) {
 			stderrRedirect = stderrRedirectFile
 		}
 
-		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
-		errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
+		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, stdoutOtel, os.Stdout)
+		errWriter := io.MultiWriter(stderrFile, stderrRedirect, stderrOtel, os.Stderr)
+
+		// Direct slog to the new stderr. This is only for dev time debugging, and
+		// runtime errors/warnings.
+		slog.SetDefault(tracing.PrettyLogger(errWriter, slog.LevelWarn))
 
 		if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 			cmd.Stdout = outWriter
@@ -449,6 +488,8 @@ func setupBundle() int {
 	}
 
 	var gpuParams string
+	var otelEndpoint string
+	var otelProto string
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
@@ -463,26 +504,12 @@ func setupBundle() int {
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
-			// propagate parent vertex ID
-			keepEnv = append(keepEnv, "_DAGGER_PROGROCK_PARENT="+execMetadata.ProgParent)
-
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.runner.sock",
 				Type:        "bind",
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
-			})
-			// also need the progsock path for forwarding progress
-			if execMetadata.ProgSockPath == "" {
-				fmt.Fprintln(os.Stderr, "missing progsock path")
-				return errorExitCode
-			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.progrock.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      execMetadata.ProgSockPath,
 			})
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 		case strings.HasPrefix(env, aliasPrefix):
@@ -493,14 +520,37 @@ func setupBundle() int {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return errorExitCode
 			}
-		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS"):
-			splits := strings.Split(env, "=")
-			gpuParams = splits[1]
+		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
+			_, gpuParams, _ = strings.Cut(env, "=")
+
+			// filter out Buildkit's OTLP env vars, we have our own
+		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="):
+			_, otelEndpoint, _ = strings.Cut(env, "=")
+
+		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="):
+			_, otelProto, _ = strings.Cut(env, "=")
+
 		default:
 			keepEnv = append(keepEnv, env)
 		}
 	}
 	spec.Process.Env = keepEnv
+
+	if otelEndpoint != "" {
+		if strings.HasPrefix(otelEndpoint, "/") {
+			// Buildkit currently sets this to /dev/otel-grpc.sock which is not a valid
+			// endpoint URL despite being set in an OTEL_* env var.
+			otelEndpoint = "unix://" + otelEndpoint
+		}
+		spec.Process.Env = append(spec.Process.Env,
+			// Re-set the otel env vars, but with a corrected otelEndpoint.
+			"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="+otelEndpoint,
+			// Dagger sets up a log exporter too.
+			"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="+otelEndpoint,
+		)
+	}
 
 	if gpuParams != "" {
 		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s", gpuParams))
@@ -631,10 +681,21 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
 
+	slog.Warn("nesting trace", "ctx", trace.SpanContextFromContext(ctx).TraceID())
+
+	// TODO optional? or do we/Buildkit always set it up?
+	// TODO i think this isn't needed since the outermost thing should be
+	// forwarding already
+	// exp, err := otlptracegrpc.New(ctx)
+	// if err != nil {
+	// 	return fmt.Errorf("error creating OTLP exporter: %w", err)
+	// }
+
 	clientParams := client.Params{
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
+		// EngineTrace:     exp,
 	}
 
 	if _, ok := internalEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION"); ok {
@@ -650,25 +711,23 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
 	}
 
-	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
-	if err != nil {
-		return fmt.Errorf("error connecting to progrock: %w", err)
-	}
-	clientParams.ProgrockWriter = progW
-
-	if parentID := os.Getenv("_DAGGER_PROGROCK_PARENT"); parentID != "" {
-		clientParams.ProgrockParent = parentID
+	for _, env := range os.Environ() {
+		fmt.Println(env)
 	}
 
 	sess, ctx, err := client.Connect(ctx, clientParams)
 	if err != nil {
 		return fmt.Errorf("error connecting to engine: %w", err)
 	}
-	defer sess.Close()
+	defer sess.Close(nil)
 
 	_ = ctx // avoid ineffasign lint
 
-	go http.Serve(l, sess) //nolint:gosec
+	srv := &http.Server{ //nolint:gosec
+		Handler:     sess,
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+	go srv.Serve(l)
 
 	// pass dagger session along to any SDKs that run in the container
 	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(sessionPort))

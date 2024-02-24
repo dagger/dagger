@@ -15,16 +15,21 @@ import (
 const (
 	flushInterval = 100 * time.Millisecond
 	pushURL       = "https://api.dagger.cloud/events"
+
+	heartbeatInterval = time.Minute
 )
 
 type Telemetry struct {
 	enabled bool
 	closed  bool
 
+	run   *RunPayload
 	runID string
 
 	pushURL string
 	token   string
+
+	heartbeats *time.Ticker
 
 	mu     sync.Mutex
 	queue  []*Event
@@ -41,7 +46,6 @@ func New() *Telemetry {
 	}
 
 	t := &Telemetry{
-		runID:   uuid.NewString(),
 		pushURL: os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"),
 		token:   cloudToken,
 		stopCh:  make(chan struct{}),
@@ -55,10 +59,35 @@ func New() *Telemetry {
 	if t.token != "" {
 		// only send telemetry if a token was configured
 		t.enabled = true
+		t.heartbeats = time.NewTicker(heartbeatInterval)
 		go t.start()
 	}
 
 	return t
+}
+
+func (t *Telemetry) StartRun(labels Labels) func(error) {
+	if !t.enabled {
+		return func(error) {}
+	}
+
+	t.mu.Lock()
+	t.run = &RunPayload{
+		Labels:    labels,
+		StartedAt: time.Now(),
+	}
+	t.runID = uuid.NewString()
+	t.pushLocked(t.run.Clone(), t.run.StartedAt)
+	t.mu.Unlock()
+
+	return func(err error) {
+		now := time.Now()
+		t.run.CompletedAt = &now
+		if err != nil {
+			t.run.Error = err.Error()
+		}
+		t.Push(t.run.Clone(), now)
+	}
 }
 
 func (t *Telemetry) Enabled() bool {
@@ -81,6 +110,10 @@ func (t *Telemetry) Push(p Payload, ts time.Time) {
 		return
 	}
 
+	t.pushLocked(p, ts)
+}
+
+func (t *Telemetry) pushLocked(p Payload, ts time.Time) {
 	ev := &Event{
 		Version:   eventVersion,
 		Timestamp: ts,
@@ -102,12 +135,22 @@ func (t *Telemetry) start() {
 		select {
 		case <-time.After(flushInterval):
 			t.send()
+		case <-t.heartbeats.C:
+			t.heartbeat()
 		case <-t.stopCh:
 			// On stop, send the current queue and exit
 			t.send()
 			return
 		}
 	}
+}
+
+func (t *Telemetry) heartbeat() {
+	t.mu.Lock()
+	if t.run != nil {
+		t.pushLocked(t.run.Clone(), time.Now())
+	}
+	t.mu.Unlock()
 }
 
 func (t *Telemetry) send() {
@@ -129,6 +172,9 @@ func (t *Telemetry) send() {
 			continue
 		}
 	}
+
+	fmt.Fprintln(os.Stderr, payload.String())
+	return
 
 	req, err := http.NewRequest(http.MethodPost, t.pushURL, bytes.NewReader(payload.Bytes()))
 	if err != nil {

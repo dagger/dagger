@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,16 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/vito/progrock/console"
 )
 
-var sessionLabels pipeline.Labels
+var sessionLabels = telemetry.NewLabelFlag()
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -41,14 +38,14 @@ type connectParams struct {
 }
 
 func EngineSession(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
 
-	labels := &sessionLabels
+	labelsFlag := &sessionLabels
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
@@ -78,16 +75,14 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	}
 
 	sess, _, err := client.Connect(ctx, client.Params{
-		SecretToken:    sessionToken.String(),
-		RunnerHost:     runnerHost,
-		UserAgent:      labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
-		ProgrockWriter: telemetry.NewLegacyIDInternalizer(console.NewWriter(os.Stderr)),
-		JournalFile:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		SecretToken: sessionToken.String(),
+		RunnerHost:  runnerHost,
+		UserAgent:   labelsFlag.Labels.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent(),
 	})
 	if err != nil {
 		return err
 	}
-	defer sess.Close()
+	defer sess.Close(nil)
 
 	srv := http.Server{
 		Handler:           sess,

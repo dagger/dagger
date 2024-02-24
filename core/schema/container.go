@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -560,12 +559,12 @@ func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container
 
 type containerPipelineArgs struct {
 	Name        string
-	Description string                              `default:""`
-	Labels      []dagql.InputObject[pipeline.Label] `default:"[]"`
+	Description string                             `default:""`
+	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
 func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.WithPipeline(ctx, args.Name, args.Description, collectInputsSlice(args.Labels))
+	return parent.WithPipeline(ctx, args.Name, args.Description)
 }
 
 func (s *containerSchema) rootfs(ctx context.Context, parent *core.Container, args struct{}) (*core.Directory, error) {

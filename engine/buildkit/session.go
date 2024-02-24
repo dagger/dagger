@@ -16,6 +16,7 @@ import (
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -40,9 +41,10 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
+	spanCtx := trace.SpanContextFromContext(ctx)
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
-	sess.Allow(&socketProxy{c})
-	sess.Allow(&authProxy{c})
+	sess.Allow(&socketProxy{spanCtx, c})
+	sess.Allow(&authProxy{spanCtx, c})
 	sess.Allow(&client.AnyDirSource{})
 	sess.Allow(&client.AnyDirTarget{})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{

@@ -4,12 +4,14 @@ import (
 	"context"
 
 	"github.com/moby/buildkit/session/sshforward"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 type socketProxy struct {
-	c *Client
+	spanCtx trace.SpanContext
+	c       *Client
 }
 
 func (p *socketProxy) Register(srv *grpc.Server) {
@@ -25,6 +27,8 @@ func (p *socketProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgent
 func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
+
+	ctx = trace.ContextWithSpanContext(ctx, p.spanCtx) // ensure server's span context is propagated
 
 	incomingMD, _ := metadata.FromIncomingContext(ctx)
 	ctx = metadata.NewOutgoingContext(ctx, incomingMD)

@@ -19,6 +19,14 @@ func New() *ID {
 func (id *ID) Inputs() ([]digest.Digest, error) {
 	seen := map[digest.Digest]struct{}{}
 	var inputs []digest.Digest
+	if id.Base != nil {
+		dig, err := id.Base.Digest()
+		if err != nil {
+			return nil, err
+		}
+		seen[dig] = struct{}{}
+		inputs = append(inputs, dig)
+	}
 	for _, arg := range id.Args {
 		ins, err := arg.Value.Inputs()
 		if err != nil {
@@ -240,11 +248,11 @@ func (id *ID) Encode() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(proto), nil
+	return base64.StdEncoding.EncodeToString(proto), nil
 }
 
 func (id *ID) Decode(str string) error {
-	bytes, err := base64.URLEncoding.DecodeString(str)
+	bytes, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
 		return fmt.Errorf("cannot decode ID from %q: %w", str, err)
 	}

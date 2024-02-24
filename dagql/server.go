@@ -47,8 +47,7 @@ type AroundFunc func(
 	context.Context,
 	Object,
 	*idproto.ID,
-	func(context.Context) (Typed, error),
-) func(context.Context) (Typed, error)
+) (context.Context, func(res Typed, cached bool, err error))
 
 // Cache stores results of pure selections against Server.
 type Cache interface {
@@ -56,7 +55,7 @@ type Cache interface {
 		context.Context,
 		digest.Digest,
 		func(context.Context) (Typed, error),
-	) (Typed, error)
+	) (Typed, bool, error)
 }
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
@@ -569,6 +568,8 @@ func CurrentID(ctx context.Context) *idproto.ID {
 	return val.(*idproto.ID)
 }
 
+func NoopDone(res Typed, cached bool, rerr error) {}
+
 func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *idproto.ID, rerr error) {
 	chainedID, err := self.IDFor(ctx, sel)
 	if err != nil {
@@ -579,17 +580,19 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	if err != nil {
 		return nil, nil, err
 	}
-	doSelect := func(ctx context.Context) (Typed, error) {
+	var val Typed
+	doSelect := func(ctx context.Context) (innerVal Typed, innerErr error) {
+		if s.telemetry != nil {
+			wrappedCtx, done := s.telemetry(ctx, self, chainedID)
+			defer func() { done(innerVal, false, innerErr) }()
+			ctx = wrappedCtx
+		}
 		return self.Select(ctx, sel)
 	}
-	if s.telemetry != nil {
-		doSelect = s.telemetry(ctx, self, chainedID, doSelect)
-	}
-	var val Typed
 	if chainedID.IsTainted() {
 		val, err = doSelect(ctx)
 	} else {
-		val, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
+		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
 	}
 	if err != nil {
 		return nil, nil, err

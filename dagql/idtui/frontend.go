@@ -1,29 +1,28 @@
 package idtui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/idproto"
-	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
+	"github.com/dagger/dagger/tracing"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
-	"github.com/vito/progrock"
-	"github.com/vito/progrock/console"
 	"github.com/vito/progrock/ui"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
-)
-
-const (
-	InitVertex    = "init"
-	PrimaryVertex = "primary"
 )
 
 var consoleSink = os.Stderr
@@ -39,46 +38,38 @@ type Frontend struct {
 	// Silent tells the frontend to not display progress at all.
 	Silent bool
 
-	// updated by Run
-	program   *tea.Program
-	in        *swappableWriter
-	out       *termenv.Output
-	run       func(context.Context) error
-	runCtx    context.Context
-	interrupt func()
-	done      bool
-	err       error
+	// Verbosity is the level of detail to show in the TUI.
+	Verbosity int
 
-	// updated via progrock.Writer interface
+	// updated by Run
+	program     *tea.Program
+	in          *swappableWriter
+	out         *termenv.Output
+	run         func(context.Context) error
+	runCtx      context.Context
+	interrupt   func()
+	interrupted bool
+	done        bool
+	err         error
+
+	// updated as events are written
 	db       *DB
 	eof      bool
 	logsView *LogsView
 
-	// progrock logging
-	messages  *Vterm
-	messagesW *termenv.Output
-
-	// primaryVtx is the primary vertex whose output is printed directly to
-	// stdout/stderr on exit after cleaning up the TUI.
-	primaryVtx  *progrock.Vertex
-	primaryLogs []*progrock.VertexLog
-
-	// plainConsole is the writer to forward events to when in plain mode.
-	plainConsole progrock.Writer
+	// global logs
+	messagesView *Vterm
+	messagesBuf  *strings.Builder
+	messagesW    *termenv.Output
 
 	// TUI state/config
-	restore           func()  // restore terminal
-	fps               float64 // frames per second
-	profile           termenv.Profile
-	window            tea.WindowSizeMsg     // set by BubbleTea
-	view              *strings.Builder      // rendered async
-	logs              map[string]*Vterm     // vertex logs
-	zoomed            map[string]*zoomState // interactive zoomed terminals
-	currentZoom       *zoomState            // current zoomed terminal
-	scrollbackQueue   []tea.Cmd             // queue of tea.Printlns for scrollback
-	scrollbackQueueMu sync.Mutex            // need a separate lock for this
+	restore func()  // restore terminal
+	fps     float64 // frames per second
+	profile termenv.Profile
+	window  tea.WindowSizeMsg // set by BubbleTea
+	view    *strings.Builder  // rendered async
 
-	// held to synchronize tea.Model and progrock.Writer
+	// held to synchronize tea.Model with updates
 	mu sync.Mutex
 }
 
@@ -88,20 +79,20 @@ type zoomState struct {
 }
 
 func New() *Frontend {
-	logs := NewVterm()
 	profile := ui.ColorProfile()
 	idproto.EnableDigestCache()
+	logsView := NewVterm()
+	logsOut := new(strings.Builder)
 	return &Frontend{
 		db: NewDB(),
 
-		fps:       30, // sane default, fine-tune if needed
-		profile:   profile,
-		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:      new(strings.Builder),
-		logs:      make(map[string]*Vterm),
-		zoomed:    make(map[string]*zoomState),
-		messages:  logs,
-		messagesW: ui.NewOutput(logs, termenv.WithProfile(profile)),
+		fps:          30, // sane default, fine-tune if needed
+		profile:      profile,
+		window:       tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		view:         new(strings.Builder),
+		messagesView: logsView,
+		messagesBuf:  logsOut,
+		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
 	}
 }
 
@@ -118,8 +109,8 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 
 	var runErr error
 	if fe.Plain || fe.Silent {
-		// no TTY found; default to console
-		runErr = fe.runWithoutTUI(ctx, tty, run)
+		// no TTY found; just run normally and do a final render
+		runErr = run(ctx)
 	} else {
 		// run the TUI until it exits and cleans up the TTY
 		runErr = fe.runWithTUI(ctx, tty, run)
@@ -150,6 +141,13 @@ func (fe *Frontend) ConnectedToCloud(cloudURL string) {
 }
 
 func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
+	// redirect slog to the logs pane
+	level := slog.LevelWarn
+	if fe.Debug {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(tracing.PrettyLogger(fe.messagesW, level))
+
 	// NOTE: establish color cache before we start consuming stdin
 	fe.out = ui.NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
@@ -205,29 +203,21 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 	return fe.err
 }
 
-func (fe *Frontend) runWithoutTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
-	if !fe.Silent {
-		opts := []console.WriterOpt{
-			console.ShowInternal(fe.Debug),
-		}
-		if fe.Debug {
-			opts = append(opts, console.WithMessageLevel(progrock.MessageLevel_DEBUG))
-		}
-		fe.plainConsole = telemetry.NewLegacyIDInternalizer(
-			console.NewWriter(consoleSink, opts...),
-		)
-	}
-	return run(ctx)
-}
-
 // finalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
 func (fe *Frontend) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+
+	fe.recalculateView()
+
 	out := termenv.NewOutput(os.Stderr)
 
-	if fe.Debug || fe.err != nil {
+	if fe.messagesBuf.Len() > 0 {
+		fmt.Fprintln(out, fe.messagesBuf.String())
+	}
+
+	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
 		if renderedAny, err := fe.renderProgress(out); err != nil {
 			return err
 		} else if renderedAny {
@@ -235,52 +225,48 @@ func (fe *Frontend) finalRender() error {
 		}
 	}
 
-	if zoom := fe.currentZoom; zoom != nil {
-		if renderedAny, err := fe.renderZoomed(out, zoom); err != nil {
-			return err
-		} else if renderedAny {
-			fmt.Fprintln(out)
-		}
-	}
-
-	if renderedAny, err := fe.renderMessages(out, true); err != nil {
-		return err
-	} else if renderedAny {
-		fmt.Fprintln(out)
-	}
-
 	return fe.renderPrimaryOutput()
 }
 
 func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error) {
-	if fe.messages.UsedHeight() == 0 {
+	if fe.messagesView.UsedHeight() == 0 {
 		return false, nil
 	}
 	if full {
-		fe.messages.SetHeight(fe.messages.UsedHeight())
+		fe.messagesView.SetHeight(fe.messagesView.UsedHeight())
 	} else {
-		fe.messages.SetHeight(10)
+		fe.messagesView.SetHeight(10)
 	}
-	_, err := fmt.Fprint(out, fe.messages.View())
+	_, err := fmt.Fprint(out, fe.messagesView.View())
 	return true, err
 }
 
 func (fe *Frontend) renderPrimaryOutput() error {
-	if len(fe.primaryLogs) == 0 {
+	logs := fe.db.PrimaryLogs[fe.db.PrimarySpan]
+	if len(logs) == 0 {
 		return nil
 	}
 	var trailingLn bool
-	for _, l := range fe.primaryLogs {
-		if bytes.HasSuffix(l.Data, []byte("\n")) {
+	for _, l := range logs {
+		data := l.Body().AsString()
+		if strings.HasSuffix(data, "\n") {
 			trailingLn = true
 		}
-		switch l.Stream {
-		case progrock.LogStream_STDOUT:
-			if _, err := os.Stdout.Write(l.Data); err != nil {
+		var stream int
+		l.WalkAttributes(func(attr log.KeyValue) bool {
+			if attr.Key == tracing.LogStreamAttr {
+				stream = int(attr.Value.AsInt64())
+				return false
+			}
+			return true
+		})
+		switch stream {
+		case 1:
+			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
 				return err
 			}
-		case progrock.LogStream_STDERR:
-			if _, err := os.Stderr.Write(l.Data); err != nil {
+		case 2:
+			if _, err := fmt.Fprint(os.Stderr, data); err != nil {
 				return err
 			}
 		}
@@ -342,126 +328,37 @@ func (w *swappableWriter) Write(p []byte) (int, error) {
 	return w.original.Write(p)
 }
 
-var _ progrock.Writer = (*Frontend)(nil)
+var _ sdktrace.SpanExporter = (*Frontend)(nil)
 
-func (fe *Frontend) WriteStatus(update *progrock.StatusUpdate) error {
+func (fe *Frontend) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-	if err := fe.db.WriteStatus(update); err != nil {
+	slog.Debug("frontend exporting", "spans", len(spans))
+	for _, span := range spans {
+		slog.Debug("frontend exporting span",
+			"trace", span.SpanContext().TraceID(),
+			"id", span.SpanContext().SpanID(),
+			"parent", span.Parent().SpanID(),
+			"span", span.Name(),
+		)
+	}
+	return fe.db.ExportSpans(ctx, spans)
+}
+
+var _ sdklog.LogExporter = (*Frontend)(nil)
+
+func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	slog.Debug("frontend exporting logs", "logs", len(logs))
+	return fe.db.ExportLogs(ctx, logs)
+}
+
+func (fe *Frontend) Shutdown(ctx context.Context) error {
+	if err := fe.db.Shutdown(ctx); err != nil {
 		return err
 	}
-	if fe.plainConsole != nil {
-		if err := fe.plainConsole.WriteStatus(update); err != nil {
-			return err
-		}
-	}
-	for _, v := range update.Vertexes {
-		_, isZoomed := fe.zoomed[v.Id]
-		if v.Zoomed && !isZoomed {
-			fe.initZoom(v)
-		} else if isZoomed {
-			fe.releaseZoom(v)
-		}
-		if v.Id == PrimaryVertex {
-			fe.primaryVtx = v
-		}
-	}
-	for _, l := range update.Logs {
-		if l.Vertex == PrimaryVertex {
-			fe.primaryLogs = append(fe.primaryLogs, l)
-		}
-		var w io.Writer
-		if t, found := fe.zoomed[l.Vertex]; found {
-			w = t.Output
-		} else {
-			w = fe.vertexLogs(l.Vertex)
-		}
-		_, err := w.Write(l.Data)
-		if err != nil {
-			return fmt.Errorf("write logs: %w", err)
-		}
-	}
-	for _, msg := range update.Messages {
-		if fe.Debug || msg.Level > progrock.MessageLevel_DEBUG {
-			progrock.WriteMessage(fe.messagesW, msg)
-		}
-	}
-	if len(update.Vertexes) > 0 {
-		steps := CollectSteps(fe.db)
-		rows := CollectRows(steps)
-		fe.logsView = CollectLogsView(rows)
-	}
-	return nil
-}
-
-func (fe *Frontend) vertexLogs(id string) *Vterm {
-	term, found := fe.logs[id]
-	if !found {
-		term = NewVterm()
-		if fe.window.Width != -1 {
-			term.SetWidth(fe.window.Width)
-		}
-		fe.logs[id] = term
-	}
-	return term
-}
-
-var (
-	// what's a little global state between friends?
-	termSetups  = map[string]progrock.TermSetupFunc{}
-	termSetupsL = new(sync.Mutex)
-)
-
-func setupTerm(vtxID string, vt *midterm.Terminal) io.Writer {
-	termSetupsL.Lock()
-	defer termSetupsL.Unlock()
-	setup, ok := termSetups[vtxID]
-	if ok && setup != nil {
-		return setup(vt)
-	}
-	return nil
-}
-
-// Zoomed marks the vertex as zoomed, indicating it should take up as much
-// screen space as possible.
-func Zoomed(setup progrock.TermSetupFunc) progrock.VertexOpt {
-	return progrock.VertexOptFunc(func(vertex *progrock.Vertex) {
-		termSetupsL.Lock()
-		termSetups[vertex.Id] = setup
-		termSetupsL.Unlock()
-		vertex.Zoomed = true
-	})
-}
-
-type scrollbackMsg struct {
-	Line string
-}
-
-func (fe *Frontend) initZoom(v *progrock.Vertex) {
-	var vt *midterm.Terminal
-	if fe.window.Height == -1 || fe.window.Width == -1 {
-		vt = midterm.NewAutoResizingTerminal()
-	} else {
-		vt = midterm.NewTerminal(fe.window.Height, fe.window.Width)
-	}
-	vt.OnScrollback(func(line midterm.Line) {
-		fe.scrollbackQueueMu.Lock()
-		fe.scrollbackQueue = append(fe.scrollbackQueue, tea.Println(line.Display()))
-		fe.scrollbackQueueMu.Unlock()
-	})
-	vt.Raw = true
-	w := setupTerm(v.Id, vt)
-	st := &zoomState{
-		Output: vt,
-		Input:  w,
-	}
-	fe.zoomed[v.Id] = st
-	fe.currentZoom = st
-	fe.redirectStdin(st)
-}
-
-func (fe *Frontend) releaseZoom(vtx *progrock.Vertex) {
-	delete(fe.zoomed, vtx.Id)
+	return fe.Close()
 }
 
 type eofMsg struct{}
@@ -469,22 +366,12 @@ type eofMsg struct{}
 func (fe *Frontend) Close() error {
 	if fe.program != nil {
 		fe.program.Send(eofMsg{})
-	} else if fe.plainConsole != nil {
-		if err := fe.plainConsole.Close(); err != nil {
-			return err
-		}
-		fmt.Fprintln(consoleSink)
 	}
 	return nil
 }
 
 func (fe *Frontend) Render(out *termenv.Output) error {
-	// if we're zoomed, render the zoomed terminal and nothing else, but only
-	// after we've actually seen output from it.
-	if fe.currentZoom != nil && fe.currentZoom.Output.UsedHeight() > 0 {
-		_, err := fe.renderZoomed(out, fe.currentZoom)
-		return err
-	}
+	fe.recalculateView()
 	if _, err := fe.renderProgress(out); err != nil {
 		return err
 	}
@@ -494,26 +381,27 @@ func (fe *Frontend) Render(out *termenv.Output) error {
 	return nil
 }
 
+func (fe *Frontend) recalculateView() {
+	steps := CollectSpans(fe.db, trace.TraceID{})
+	rows := CollectRows(steps)
+	fe.logsView = CollectLogsView(rows)
+}
+
 func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 	var renderedAny bool
 	if fe.logsView == nil {
 		return false, nil
 	}
-	if init := fe.logsView.Init; init != nil && (fe.Debug || init.IsInteresting()) {
-		if err := fe.renderRow(out, init); err != nil {
-			return renderedAny, err
-		}
-	}
 	for _, row := range fe.logsView.Body {
-		if fe.Debug || row.IsInteresting() {
-			if err := fe.renderRow(out, row); err != nil {
+		if fe.Debug || row.IsInteresting(fe.Verbosity) {
+			if err := fe.renderRow(out, row, 0); err != nil {
 				return renderedAny, err
 			}
 			renderedAny = true
 		}
 	}
 	if fe.logsView.Primary != nil && !fe.done {
-		fe.renderLogs(out, fe.logsView.Primary.Digest, -1)
+		fe.renderLogs(out, fe.logsView.Primary, -1)
 		renderedAny = true
 	}
 	return renderedAny, nil
@@ -559,6 +447,7 @@ func (fe *Frontend) spawn() (msg tea.Msg) {
 func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case doneMsg: // run finished
+		slog.Debug("run finished", "err", msg.err)
 		fe.done = true
 		fe.err = msg.err
 		if fe.eof {
@@ -567,33 +456,37 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return fe, nil
 
 	case eofMsg: // received end of updates
+		slog.Debug("got EOF")
 		fe.eof = true
 		if fe.done {
 			return fe, tea.Quit
 		}
 		return fe, nil
 
-	case scrollbackMsg:
-		return fe, tea.Println(msg.Line)
-
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
+			if fe.interrupted {
+				slog.Warn("exiting immediately")
+				return fe, tea.Quit
+			} else {
+				slog.Warn("canceling... (press again to exit immediately)")
+			}
 			fe.interrupt()
+			fe.interrupted = true
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
+		case "ctrl+\\": // SIGQUIT
+			fe.restore()
+			syscall.Kill(syscall.Getpid(), syscall.SIGQUIT)
+			return fe, nil
 		default:
 			return fe, nil
 		}
 
 	case tea.WindowSizeMsg:
 		fe.window = msg
-		for _, st := range fe.zoomed {
-			st.Output.Resize(msg.Height, msg.Width)
-		}
-		for _, vt := range fe.logs {
-			vt.SetWidth(msg.Width)
-		}
-		fe.messages.SetWidth(msg.Width)
+		fe.db.SetWidth(msg.Width)
+		fe.messagesView.SetWidth(msg.Width)
 		return fe, nil
 
 	case ui.FrameMsg:
@@ -601,11 +494,7 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
-		fe.scrollbackQueueMu.Lock()
-		queue := fe.scrollbackQueue
-		fe.scrollbackQueue = nil
-		fe.scrollbackQueueMu.Unlock()
-		return fe, tea.Sequence(append(queue, ui.Frame(fe.fps))...)
+		return fe, ui.Frame(fe.fps)
 
 	default:
 		return fe, nil
@@ -640,37 +529,49 @@ func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
 	return fe.renderID(out, nil, id, 0, false)
 }
 
-func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow) error {
-	if !row.IsInteresting() && !fe.Debug {
+func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
+	if !row.IsInteresting(fe.Verbosity) && !fe.Debug {
 		return nil
 	}
-	fe.renderStep(out, row.Step, row.Depth())
-	fe.renderLogs(out, row.Step.Digest, row.Depth())
-	for _, child := range row.Children {
-		if err := fe.renderRow(out, child); err != nil {
-			return err
+	if !row.Span.Passthrough {
+		fe.renderStep(out, row.Span, depth)
+		fe.renderLogs(out, row.Span, depth)
+		depth++
+	}
+	if !row.Span.Encapsulate {
+		for _, child := range row.Children {
+			if err := fe.renderRow(out, child, depth); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (fe *Frontend) renderStep(out *termenv.Output, step *Step, depth int) error {
-	id := step.ID()
-	vtx := step.db.MostInterestingVertex(step.Digest)
+func (fe *Frontend) renderStep(out *termenv.Output, span *Span, depth int) error {
+	id := span.Call
 	if id != nil {
-		if err := fe.renderID(out, vtx, id, depth, false); err != nil {
+		if err := fe.renderID(out, span, id, depth, false); err != nil {
 			return err
 		}
-	} else if vtx != nil {
-		if err := fe.renderVertex(out, vtx, depth); err != nil {
+	} else if span != nil {
+		if err := fe.renderVertex(out, span, depth); err != nil {
 			return err
 		}
+	}
+	if span.Status().Code == codes.Error && span.Status().Description != "" {
+		indent(out, depth)
+		// print error description above it
+		fmt.Fprintf(out,
+			out.String("! %s\n").Foreground(termenv.ANSIYellow).String(),
+			span.Status().Description,
+		)
 	}
 	return nil
 }
 
-func (fe *Frontend) renderLogs(out *termenv.Output, dig string, depth int) {
-	if logs, ok := fe.logs[dig]; ok {
+func (fe *Frontend) renderLogs(out *termenv.Output, span *Span, depth int) {
+	if logs, ok := fe.db.Logs[span.SpanContext().SpanID()]; ok {
 		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		if depth != -1 {
 			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
@@ -700,13 +601,13 @@ func (fe *Frontend) renderIDBase(out *termenv.Output, id *idproto.ID) error {
 	return nil
 }
 
-func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
+func (fe *Frontend) renderID(out *termenv.Output, span *Span, id *idproto.ID, depth int, inline bool) error {
 	if !inline {
 		indent(out, depth)
 	}
 
-	if vtx != nil {
-		fe.renderStatus(out, vtx)
+	if span != nil {
+		fe.renderStatus(out, span, depth)
 	}
 
 	if id.Base != nil {
@@ -738,16 +639,16 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
 				case *idproto.Literal_Id:
-					argVertexID, err := x.Id.Digest()
+					arg := x.Id
+					if baseStep, ok := fe.db.HighLevelCall(x.Id); ok {
+						arg = baseStep
+					}
+					argDig, err := arg.Digest()
 					if err != nil {
 						return err
 					}
-					argVtx := fe.db.Vertices[argVertexID.String()]
-					base := x.Id
-					if baseStep, ok := fe.db.HighLevelStep(x.Id); ok {
-						base = baseStep.ID()
-					}
-					if err := fe.renderID(out, argVtx, base, depth-1, true); err != nil {
+					argVtx := fe.db.MostInterestingSpan(argDig.String())
+					if err := fe.renderID(out, argVtx, arg, depth-1, true); err != nil {
 						return err
 					}
 				default:
@@ -773,8 +674,8 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
 	fmt.Fprint(out, typeStr)
 
-	if vtx != nil {
-		fe.renderDuration(out, vtx)
+	if span != nil {
+		fe.renderDuration(out, span)
 	}
 
 	fmt.Fprintln(out)
@@ -782,12 +683,12 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 	return nil
 }
 
-func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, depth int) error {
+func (fe *Frontend) renderVertex(out *termenv.Output, span *Span, depth int) error {
 	indent(out, depth)
-	fe.renderStatus(out, vtx)
-	fmt.Fprint(out, vtx.Name)
-	fe.renderVertexTasks(out, vtx, depth)
-	fe.renderDuration(out, vtx)
+	fe.renderStatus(out, span, depth)
+	fmt.Fprint(out, span.Name())
+	fe.renderVertexTasks(out, span, depth)
+	fe.renderDuration(out, span)
 	fmt.Fprintln(out)
 	return nil
 }
@@ -839,24 +740,22 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 	fmt.Fprint(out, out.String(lit.ToAST().String()).Foreground(color))
 }
 
-func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
+func (fe *Frontend) renderStatus(out *termenv.Output, span *Span, depth int) {
 	var symbol string
 	var color termenv.Color
-	if vtx.Completed != nil {
-		switch {
-		case vtx.Error != nil:
-			symbol = ui.IconFailure
-			color = termenv.ANSIRed
-		case vtx.Canceled:
-			symbol = ui.IconSkipped
-			color = termenv.ANSIBrightBlack
-		default:
-			symbol = ui.IconSuccess
-			color = termenv.ANSIGreen
-		}
-	} else {
+	switch {
+	case span.IsRunning():
 		symbol = ui.DotFilled
 		color = termenv.ANSIYellow
+	case span.Canceled:
+		symbol = ui.IconSkipped
+		color = termenv.ANSIBrightBlack
+	case span.Status().Code == codes.Error:
+		symbol = ui.IconFailure
+		color = termenv.ANSIRed
+	default:
+		symbol = ui.IconSuccess
+		color = termenv.ANSIGreen
 	}
 
 	symbol = out.String(symbol).Foreground(color).String()
@@ -864,13 +763,13 @@ func (fe *Frontend) renderStatus(out *termenv.Output, vtx *progrock.Vertex) {
 	fmt.Fprintf(out, "%s ", symbol)
 }
 
-func (fe *Frontend) renderDuration(out *termenv.Output, vtx *progrock.Vertex) {
+func (fe *Frontend) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(vtx.Duration()))
-	if vtx.Completed != nil {
-		duration = duration.Faint()
-	} else {
+	duration := out.String(fmtDuration(span.Duration()))
+	if span.IsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
+	} else {
+		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
 }
@@ -879,16 +778,16 @@ var (
 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
 )
 
-func (fe *Frontend) renderVertexTasks(out *termenv.Output, vtx *progrock.Vertex, depth int) error {
-	tasks := fe.db.Tasks[vtx.Id]
+func (fe *Frontend) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
+	tasks := fe.db.Tasks[span.SpanContext().SpanID()]
 	if len(tasks) == 0 {
 		return nil
 	}
 	var spaced bool
 	for _, t := range tasks {
 		var sym termenv.Style
-		if t.GetTotal() != 0 {
-			percent := int(100 * (float64(t.GetCurrent()) / float64(t.GetTotal())))
+		if t.Total != 0 {
+			percent := int(100 * (float64(t.Current) / float64(t.Total)))
 			idx := (len(progChars) - 1) * percent / 100
 			chr := progChars[idx]
 			sym = out.String(chr)
@@ -901,10 +800,10 @@ func (fe *Frontend) renderVertexTasks(out *termenv.Output, vtx *progrock.Vertex,
 			// }
 			continue
 		}
-		if t.Completed != nil {
-			sym = sym.Foreground(termenv.ANSIGreen)
-		} else if t.Started != nil {
+		if t.Completed.IsZero() {
 			sym = sym.Foreground(termenv.ANSIYellow)
+		} else {
+			sym = sym.Foreground(termenv.ANSIGreen)
 		}
 		if !spaced {
 			fmt.Fprint(out, " ")

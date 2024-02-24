@@ -6,17 +6,13 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
 
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
-	"github.com/vito/midterm"
-	"github.com/vito/progrock"
 )
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
@@ -42,27 +38,9 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 		defer errResp.Body.Close()
 	}
 
-	shellStdinR, shellStdinW := io.Pipe()
-
-	// NB: this is not idtui.PrimaryVertex because instead of spitting out the
-	// raw TTY output, we want to render the post-processed vterm.
-	_, vtx := progrock.Span(ctx, shellEndpoint, "terminal",
-		idtui.Zoomed(func(term *midterm.Terminal) io.Writer {
-			term.ForwardRequests = os.Stderr
-			term.ForwardResponses = shellStdinW
-			term.CursorVisible = true
-			term.OnResize(func(h, w int) {
-				message := []byte(engine.ResizePrefix)
-				message = append(message, []byte(fmt.Sprintf("%d;%d", w, h))...)
-				// best effort
-				_ = wsconn.WriteMessage(websocket.BinaryMessage, message)
-			})
-			return shellStdinW
-		}))
-	defer func() { vtx.Done(rerr) }()
-
-	stdout := vtx.Stdout()
-	stderr := vtx.Stderr()
+	stdin := os.Stdin
+	stdout := os.Stdout
+	stderr := os.Stderr
 
 	// Handle incoming messages
 	errCh := make(chan error)
@@ -100,7 +78,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 		b := make([]byte, 512)
 
 		for {
-			n, err := shellStdinR.Read(b)
+			n, err := stdin.Read(b)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "read: %v\n", err)
 				continue

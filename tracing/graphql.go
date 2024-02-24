@@ -2,127 +2,96 @@ package tracing
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
+	"fmt"
 	"log/slog"
+	"strings"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
-	"github.com/dagger/dagger/dagql/ioctx"
-	"github.com/vito/progrock"
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
-	// install tracing at the outermost layer so we don't ignore perf impact of
-	// other telemetry
-	return SpanAroundFunc(ctx, self, id,
-		ProgrockAroundFunc(ctx, self, id, next))
-}
-
-func SpanAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
-	return func(ctx context.Context) (dagql.Typed, error) {
-		if isIntrospection(id) {
-			return next(ctx)
-		}
-
-		ctx, span := Tracer.Start(ctx, id.Display())
-
-		v, err := next(ctx)
-
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-		}
-		if v != nil {
-			serialized, err := json.MarshalIndent(v, "", "  ")
-			if err == nil {
-				// span.AddEvent("event", trace.WithAttributes(attribute.String("value", string(serialized))))
-				span.SetAttributes(attribute.String("value", string(serialized)))
-			}
-		}
-		span.End()
-
-		return v, err
+func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
+	if isIntrospection(id) {
+		return ctx, dagql.NoopDone
 	}
-}
 
-// IDLabel is a label set to "true" for a vertex corresponding to a DagQL ID.
-const IDLabel = "dagger.io/id"
+	var base string
+	if id.Base == nil {
+		base = "Query"
+	} else {
+		base = id.Base.Type.ToAST().Name()
+	}
+	spanName := fmt.Sprintf("%s.%s", base, id.Field)
 
-func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
-	return func(ctx context.Context) (dagql.Typed, error) {
-		if isIntrospection(id) {
-			return next(ctx)
+	payload, err := anypb.New(id)
+	if err != nil {
+		slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
+		return ctx, dagql.NoopDone
+	}
+	dig := digest.FromBytes(payload.GetValue())
+	payload.GetTypeUrl()
+	attrs := []attribute.KeyValue{
+		attribute.String(DagDigestAttr, dig.String()),
+		attribute.String(DagIDTypeAttr, payload.GetTypeUrl()),
+		attribute.String(DagIDBlobAttr, base64.StdEncoding.EncodeToString(payload.GetValue())),
+	}
+	if idInputs, err := id.Inputs(); err != nil {
+		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)
+	} else {
+		inputs := make([]string, len(idInputs))
+		for i, input := range idInputs {
+			inputs[i] = input.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(DagInputsAttr, inputs))
+	}
+	if dagql.IsInternal(ctx) {
+		attrs = append(attrs, attribute.Bool(InternalAttr, true))
+	}
+
+	ctx, span := dagql.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
+	ctx, _, _ = WithStdioToOtel(ctx, dagql.InstrumentationLibrary)
+
+	return ctx, func(res dagql.Typed, cached bool, err error) {
+		defer End(span, func() error { return err })
+
+		if cached {
+			// TODO maybe this should be an event?
+			span.SetAttributes(attribute.Bool(CachedAttr, true))
 		}
 
-		dig, err := id.Digest()
 		if err != nil {
-			slog.Warn("failed to digest id", "id", id.Display(), "err", err)
-			return next(ctx)
-		}
-		// TODO: we don't need this for anything yet
-		// inputs, err := id.Inputs()
-		// if err != nil {
-		// 	slog.Warn("failed to digest inputs", "id", id.Display(), "err", err)
-		// 	return next(ctx)
-		// }
-		opts := []progrock.VertexOpt{
-			// see telemetry/legacy.go LegacyIDInternalizer
-			progrock.WithLabels(progrock.Labelf(IDLabel, "true")),
-		}
-		if dagql.IsInternal(ctx) {
-			opts = append(opts, progrock.Internal())
-		}
-
-		// group any self-calls or Buildkit vertices beneath this vertex
-		ctx, vtx := progrock.Span(ctx, dig.String(), id.Field, opts...)
-		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
-		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
-
-		// send ID payload to the frontend
-		payload, err := anypb.New(id)
-		if err != nil {
-			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
-			return next(ctx)
-		}
-		vtx.Meta("id", payload)
-
-		// respect user-configured pipelines
-		// TODO: remove if we have truly retired these
-		if w, ok := self.(dagql.Wrapper); ok { // unwrap dagql.Instance
-			if pl, ok := w.Unwrap().(pipeline.Pipelineable); ok {
-				ctx = pl.PipelinePath().WithGroups(ctx)
-			}
-		}
-
-		// call the actual resolver
-		res, resolveErr := next(ctx)
-		if resolveErr != nil {
 			// NB: we do +id.Display() instead of setting it as a field to avoid
 			// dobule quoting
-			slog.Warn("error resolving "+id.Display(), "error", resolveErr)
+			slog.Warn("error resolving "+id.Display(), "error", err)
 		}
+
+		// don't consider loadFooFromID to be a 'creator' as that would only
+		// obfuscate the real ID.
+		//
+		// NB: so long as the simplifying process rejects larger IDs, this
+		// shouldn't be necessary, but it seems like a good idea to just never even
+		// consider it.
+		isLoader := strings.HasPrefix(id.Field, "load") && strings.HasSuffix(id.Field, "FromID")
 
 		// record an object result as an output of this vertex
 		//
 		// this allows the UI to "simplify" this ID back to its creator ID when it
 		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
 		// instead of the full container().from().[...].stdout() ID
-		if obj, ok := res.(dagql.Object); ok {
+		if obj, ok := res.(dagql.Object); ok && !isLoader {
 			objDigest, err := obj.ID().Digest()
 			if err != nil {
 				slog.Error("failed to digest object", "id", id.Display(), "err", err)
 			} else {
-				vtx.Output(objDigest)
+				// TODO maybe this should be an event?
+				span.SetAttributes(attribute.String(DagOutputAttr, objDigest.String()))
 			}
 		}
-
-		vtx.Done(resolveErr)
-
-		return res, resolveErr
 	}
 }
 

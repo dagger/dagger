@@ -14,15 +14,14 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/tracing"
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vito/progrock"
 )
 
 var (
@@ -56,7 +55,6 @@ const (
 
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
-	moduleFlags.BoolVar(&focus, "focus", true, "Only show output for focused commands")
 
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -94,12 +92,7 @@ dagger config -m github.com/dagger/hello-dagger
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { vtx.Done(err) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, vtx)
-
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)
@@ -161,13 +154,8 @@ The "--source" flag allows controlling the directory in which the actual module 
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-
-			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { vtx.Done(err) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, vtx)
 
 			// default the module source root to the current working directory if it doesn't exist yet
 			cwd, err := os.Getwd()
@@ -252,7 +240,7 @@ var moduleInstallCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, false)
 			if err != nil {
@@ -376,7 +364,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, false)
 			if err != nil {
@@ -466,13 +454,8 @@ forced), to avoid mistakingly depending on uncommitted files.
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			rec := progrock.FromContext(ctx)
-
-			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { vtx.Done(err) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, vtx)
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			log := tracing.GlobalLogger(ctx)
 
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
@@ -505,7 +488,7 @@ forced), to avoid mistakingly depending on uncommitted files.
 			}
 			commit := head.Hash()
 
-			rec.Debug("git commit", progrock.Labelf("commit", commit.String()))
+			log.Debug("git commit", "commit", commit.String())
 
 			orig, err := repo.Remote("origin")
 			if err != nil {
@@ -764,7 +747,7 @@ func optionalModCmdWrapper(
 	presetSecretToken string,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
-		return withEngineAndTUI(cmd.Context(), client.Params{
+		return withEngine(cmd.Context(), client.Params{
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
@@ -793,6 +776,11 @@ func optionalModCmdWrapper(
 func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
 	var res struct {
 		TypeDefs []*modTypeDef
+	}
+
+	modID, err := mod.ID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get module ID: %w", err)
 	}
 
 	const query = `
@@ -882,10 +870,10 @@ query TypeDefs($module: ModuleID!) {
 }
 `
 
-	err := dag.Do(ctx, &dagger.Request{
+	err = dag.Do(ctx, &dagger.Request{
 		Query: query,
 		Variables: map[string]interface{}{
-			"module": mod,
+			"module": modID,
 		},
 	}, &dagger.Response{
 		Data: &res,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -12,10 +13,11 @@ import (
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/tracing"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -23,7 +25,6 @@ import (
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
@@ -35,21 +36,18 @@ import (
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
-	"github.com/moby/buildkit/util/tracing/transform"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type BuildkitController struct {
 	BuildkitControllerOpts
-	*tracev1.UnimplementedTraceServiceServer // needed for grpc service register to not complain
 
 	llbSolver             *llbsolver.Solver
 	genericSolver         *solver.Solver
@@ -75,7 +73,7 @@ type BuildkitControllerOpts struct {
 	Entitlements           []string
 	EngineName             string
 	Frontends              map[string]frontend.Frontend
-	TraceCollector         trace.SpanExporter
+	TelemetryPubSub        *tracing.PubSub
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	DNSConfig              *oci.DNSConfig
@@ -158,6 +156,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).WithError(err).Errorf("failed to get client metadata for session call")
 		return fmt.Errorf("failed to get client metadata for session call: %w", err)
 	}
+
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", opts.ClientID).
 		WithField("client_hostname", opts.ClientHostname).
@@ -242,10 +241,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			})
 		}
 
-		// using a new random ID rather than server ID to squash any nefarious attempts to set
-		// a server id that has e.g. ../../.. or similar in it
-		progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", identity.NewID())
-
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
 			Worker:                e.worker,
 			SessionManager:        e.SessionManager,
@@ -255,7 +250,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			AuthProvider:          authProvider,
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
 			UpstreamCacheImports:  cacheImporterCfgs,
-			ProgSockPath:          progSockPath,
 			MainClientCaller:      caller,
 			MainClientCallerID:    opts.ClientID,
 			DNSConfig:             e.DNSConfig,
@@ -268,11 +262,26 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 		bklog.G(ctx).Debugf("initialized new server buildkit client")
 
-		labels := opts.Labels
-		labels = append(labels, pipeline.EngineLabel(e.EngineName))
-		labels = append(labels, pipeline.LoadServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH, e.cacheManager.ID() != cache.LocalCacheID)...)
+		slog.Warn("initializing dagger server with trace", "trace", trace.SpanContextFromContext(ctx).TraceID())
 
-		srv, err = NewDaggerServer(ctx, bkClient, e.worker, caller, opts.ServerID, secretStore, authProvider, labels, opts.CloudToken, opts.DoNotTrack)
+		labels := opts.Labels.
+			WithEngineLabel(e.EngineName).
+			WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
+				e.cacheManager.ID() != cache.LocalCacheID)
+
+		srv, err = NewDaggerServer(
+			ctx,
+			bkClient,
+			e.worker,
+			caller,
+			opts.ServerID,
+			secretStore,
+			authProvider,
+			labels,
+			opts.CloudToken,
+			opts.DoNotTrack,
+			e.TelemetryPubSub,
+		)
 		if err != nil {
 			e.perServerMu.Unlock(opts.ServerID)
 			return fmt.Errorf("new Dagger server: %w", err)
@@ -485,20 +494,10 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 	return resp, nil
 }
 
-func (e *BuildkitController) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
-	if e.TraceCollector == nil {
-		return nil, status.Errorf(codes.Unavailable, "trace collector not configured")
-	}
-	err := e.TraceCollector.ExportSpans(ctx, transform.Spans(req.GetResourceSpans()))
-	if err != nil {
-		return nil, err
-	}
-	return &tracev1.ExportTraceServiceResponse{}, nil
-}
-
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
-	tracev1.RegisterTraceServiceServer(server, e)
+	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{Exporter: e.TelemetryPubSub})
+	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{Exporter: e.TelemetryPubSub})
 }
 
 func (e *BuildkitController) Close() error {

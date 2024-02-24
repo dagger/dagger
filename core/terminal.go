@@ -59,11 +59,6 @@ func (container *Container) Terminal(svcID *idproto.ID, args *TerminalArgs) (*Te
 	endpoint := "terminals/" + termID.Encoded()
 	term := &Terminal{Endpoint: endpoint}
 	return term, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		clientMetadata, err := engine.ClientMetadataFromContext(r.Context())
-		if err != nil {
-			panic(err)
-		}
-
 		var upgrader = websocket.Upgrader{}
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -76,7 +71,7 @@ func (container *Container) Terminal(svcID *idproto.ID, args *TerminalArgs) (*Te
 		bklog.G(r.Context()).Debugf("terminal handler for %s has been upgraded", endpoint)
 		defer bklog.G(context.Background()).Debugf("terminal handler for %s finished", endpoint)
 
-		if err := container.runTerminal(r.Context(), svcID, ws, clientMetadata, args); err != nil {
+		if err := container.runTerminal(r.Context(), svcID, ws, args); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("terminal handler failed")
 			err = ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 			if err != nil {
@@ -90,7 +85,6 @@ func (container *Container) runTerminal(
 	ctx context.Context,
 	svcID *idproto.ID,
 	conn *websocket.Conn,
-	clientMetadata *engine.ClientMetadata,
 	args *TerminalArgs,
 ) error {
 	container = container.Clone()
