@@ -41,15 +41,15 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/modules-vs-functions"
+              "id": "developer-guide/overview/modules-vs-functions"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/architecture"
+              "id": "developer-guide/overview/architecture"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/execution-environment"
+              "id": "developer-guide/overview/execution-environment"
             }
           ]
         },
@@ -59,27 +59,27 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/first-steps"
+              "id": "developer-guide/overview/first-steps"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/arguments-return-values"
+              "id": "developer-guide/overview/arguments-return-values"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/dependencies"
+              "id": "developer-guide/overview/dependencies"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/chaining"
+              "id": "developer-guide/overview/chaining"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/secrets"
+              "id": "developer-guide/overview/secrets"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/debugging"
+              "id": "developer-guide/overview/debugging"
             }
           ]
         },
@@ -224,15 +224,15 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/modules-vs-functions"
+              "id": "developer-guide/overview/modules-vs-functions"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/architecture"
+              "id": "developer-guide/overview/architecture"
             },
             {
               "type": "doc",
-              "id": "developer-guide/fundamentals/execution-environment"
+              "id": "developer-guide/overview/execution-environment"
             }
           ]
         },
@@ -242,7 +242,7 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/go/first-steps"
+              "id": "developer-guide/go/first-module"
             },
             {
               "type": "doc",
@@ -302,7 +302,7 @@
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/python/first-steps"
+              "id": "developer-guide/python/first-module"
             },
             {
               "type": "doc",
@@ -361,7 +361,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/first-steps"
+              "id": "developer-guide/typescript/first-module"
             },
             {
               "type": "doc",
