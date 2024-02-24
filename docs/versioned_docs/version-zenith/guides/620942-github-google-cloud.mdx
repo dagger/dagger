@@ -102,22 +102,21 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
     ```go file=./snippets/github-google-cloud/go/main.go
     ```
 
-    This Dagger Module contains a constructor and three Dagger Functions. Let's look at each in detail.
-
-    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. By convention, constructor arguments are available to all the functions in the object. Since this Dagger Module has only one object, all the Dagger Functions in the Dagger Module have access to this constructor argument.
+    This Dagger Module contains three Dagger Functions. Let's look at each in detail.
 
     The `Build()` function takes care of building the application image.
+      - It accepts one argument: a `Directory` representing the directory containing the application source code.
       - It uses the client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
       - It uses the `Container.WithDirectory()` method to return the container image with the application source code written at the `/home/node` path, and the `Container.WithWorkdir()` method to set the working directory in the container.
       - It chains the `Container.WithExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `Container.WithEntrypoint()` method.
 
     The `Publish()` function takes care of publishing the container image to Google Artifact Registry.
-      - It accepts four arguments: strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
+      - It accepts six arguments: the Go context, a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
       - It invokes the `Build()` function to produce a `Container` representing the application image.
       - It uses the `Container.Publish()` method to publish the container to the Google Artifact Registry repository and returns the SHA identifier of the published image.
 
     The `Deploy()` function takes care of deploying the application to an existing Google Cloud Run service.
-      - It accepts six arguments: strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
+      - It accepts eight arguments: the Go context, a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
       - It invokes the `Publish()` function to build and publish a `Container` representing the application image.
       - It uses the Google Cloud Run module to deploy the container image to the named Google Cloud Run service.
 
@@ -141,22 +140,21 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
     ```python file=./snippets/github-google-cloud/python/main.py
     ```
 
-    This Dagger Module contains a constructor and three Dagger Functions. Let's look at each in detail.
-
-    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. By convention, constructor arguments are available to all the functions in the object. Since this Dagger Module has only one object, all the Dagger Functions in the Dagger Module have access to this constructor argument.
+    This Dagger Module contains three Dagger Functions. Let's look at each in detail.
 
     The `build()` function takes care of building the application image.
+      - It accepts one argument: a `Directory` representing the directory containing the application source code.
       - It uses the client's `Container().from_()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
       - It uses the `Container.with_directory()` method to return the container image with the application source code written at the `/home/node` path, and the `Container.with_workdir()` method to set the working directory in the container.
       - It chains the `Container.with_exec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `Container.with_entrypoint()` method.
 
     The `publish()` function takes care of publishing the container image to Google Artifact Registry.
-      - It accepts four arguments: strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
+      - It accepts five arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
       - It invokes the `build()` function to produce a `Container` representing the application image.
       - It uses the `Container.publish()` method to publish the container to the Google Artifact Registry repository and returns the SHA identifier of the published image.
 
     The `deploy()` function takes care of deploying the application to an existing Google Cloud Run service.
-      - It accepts six arguments: strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
+      - It accepts seven arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
       - It invokes the `publish()` function to build and publish a `Container` representing the application image.
       - It uses the Google Cloud Run module to deploy the container image to the named Google Cloud Run service
 
@@ -180,22 +178,21 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
     ```typescript file=./snippets/github-google-cloud/typescript/index.ts
     ```
 
-    This Dagger Module contains a constructor and three Dagger Functions. Let's look at each in detail.
-
-    The constructor accepts a single argument, a `Directory` representing the directory containing the application source code. By convention, constructor arguments are available to all the functions in the object. Since this Dagger Module has only one object, all the Dagger Functions in the Dagger Module have access to this constructor argument.
+    This Dagger Module contains three Dagger Functions. Let's look at each in detail.
 
     The `build()` function takes care of building the application image.
+      - It accepts one argument: a `Directory` representing the directory containing the application source code.
       - It uses the client's `Container().from()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
       - It uses the `Container.withDirectory()` method to return the container image with the application source code written at the `/home/node` path, and the `Container.withWorkdir()` method to set the working directory in the container.
       - It chains the `Container.withExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `Container.withEntrypoint()` method.
 
     The `publish()` function takes care of publishing the container image to Google Artifact Registry.
-      - It accepts four arguments: strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
+      - It accepts five arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
       - It invokes the `build()` function to produce a `Container` representing the application image.
       - It uses the `Container.publish()` method to publish the container to the Google Artifact Registry repository and returns the SHA identifier of the published image.
 
     The `deploy()` function takes care of deploying the application to an existing Google Cloud Run service.
-      - It accepts six arguments: strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
+      - It accepts seven arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
       - It invokes the `publish()` function to build and publish a `Container` representing the application image.
       - It uses the Google Cloud Run module to deploy the container image to the named Google Cloud Run service.
 
@@ -209,7 +206,7 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 Once credentials are configured, test the Dagger Functions by running the command below from the application directory. Remember to update the `registry-location`, `repository`, `service`, and `service-location` arguments if you specified different values when creating the various Google Cloud services in Step 3 and Step 4.
 
 ```shell
-dagger call --source . deploy --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
+dagger call deploy --source . --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
 ```
 
 Dagger performs the operations defined in the Dagger Function, logging each operation to the console. At the end of the process, the built container is deployed to Google Cloud Run and the function returns the deployment URL. Browse to the deployment URL to see the running application.

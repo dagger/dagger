@@ -5,42 +5,33 @@ import (
 	"fmt"
 )
 
-type MyModule struct {
-	Source *Directory
-}
-
-// constructor
-func New(source *Directory) *MyModule {
-	return &MyModule{
-		Source: source,
-	}
-}
+type MyModule struct{}
 
 // build a container
-func (m *MyModule) Build() *Container {
+func (m *MyModule) Build(source *Directory) *Container {
 	return dag.Container().
 		From("node:21").
-		WithDirectory("/home/node", m.Source).
+		WithDirectory("/home/node", source).
 		WithWorkdir("/home/node").
 		WithExec([]string{"npm", "install"}).
 		WithEntrypoint([]string{"npm", "start"})
 }
 
 // publish an image
-// example: dagger call --source . publish --project PROJECT --location LOCATION --repository REPOSITORY/APPNAME --credential env:GOOGLE_JSON
-func (m *MyModule) Publish(ctx context.Context, project string, location string, repository string, credential *Secret) (string, error) {
+// example: dagger call publish --source . --project PROJECT --location LOCATION --repository REPOSITORY/APPNAME --credential env:GOOGLE_JSON
+func (m *MyModule) Publish(ctx context.Context, source *Directory, project string, location string, repository string, credential *Secret) (string, error) {
 	registry := fmt.Sprintf("%s-docker.pkg.dev/%s/%s", location, project, repository)
-	return m.Build().
+	return m.Build(source).
 		WithRegistryAuth(fmt.Sprintf("%s-docker.pkg.dev", location), "_json_key", credential).
 		Publish(ctx, registry)
 }
 
 // deploy an image to Google Cloud Run
-// example: dagger call --source . deploy --project PROJECT --registry-location LOCATION --repository REPOSITORY/APPNAME --service-location LOCATION --service SERVICE  --credential env:GOOGLE_JSON
-func (m *MyModule) Deploy(ctx context.Context, project, registryLocation, repository, serviceLocation, service string, credential *Secret) (string, error) {
+// example: dagger call deploy --source . --project PROJECT --registry-location LOCATION --repository REPOSITORY/APPNAME --service-location LOCATION --service SERVICE  --credential env:GOOGLE_JSON
+func (m *MyModule) Deploy(ctx context.Context, source *Directory, project, registryLocation, repository, serviceLocation, service string, credential *Secret) (string, error) {
 
 	// publish image
-	addr, err := m.Publish(ctx, project, registryLocation, repository, credential)
+	addr, err := m.Publish(ctx, source, project, registryLocation, repository, credential)
 	if err != nil {
 		return "", err
 	}
