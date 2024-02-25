@@ -47,6 +47,11 @@ func (m *Test) FnC() *Obj {
 	return nil
 }
 
+// doc for Prim
+func (m *Test) Prim() string {
+	return "yo"
+}
+
 type Obj struct {
 	// doc for FieldA
 	FieldA *Container
@@ -78,6 +83,7 @@ type OtherObj struct {
 func (m *OtherObj) FnE() *Container {
 	return nil
 }
+
 `,
 		})
 
@@ -88,6 +94,7 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "fn-a   doc for FnA")
 		require.Contains(t, lines, "fn-b   doc for FnB")
 		require.Contains(t, lines, "fn-c   doc for FnC")
+		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
 	t.Run("return core object", func(t *testing.T) {
@@ -97,6 +104,11 @@ func (m *OtherObj) FnE() *Container {
 		// just verify some of the container funcs are there, too many to be exhaustive
 		require.Contains(t, lines, "file                          Retrieves a file at the given path.")
 		require.Contains(t, lines, "as-tarball                    Returns a File representing the container serialized to a tarball.")
+	})
+
+	t.Run("return primitive", func(t *testing.T) {
+		_, err := ctr.With(daggerFunctions("prim")).Stdout(ctx)
+		require.ErrorContains(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
 	})
 
 	t.Run("alt casing", func(t *testing.T) {
