@@ -200,6 +200,8 @@ dagger call test --source=.
 
 :::note
 For security, Dagger modules do not have access to the host and so, host resources such as directories, files, environment variables, services and so on must be explicitly passed using command-line arguments.
+
+If your source directory is located somewhere other than the current working directory (i.e. `.`) then you can adjust the `--source` argument value accordingly.
 :::
 
 Here's an example of the output you will see:
@@ -277,6 +279,14 @@ assets
 favicon.ico
 index.html
 ```
+
+If you'd like the directory to be exported to your local host, you can run the following command to export it to `./dist`.
+
+```shell
+dagger call -o ./dist build --source=.
+```
+
+The exported directory should now be available locally at `./dist`.
 
 ## Step 5: Add a function to publish the application image
 
