@@ -107,11 +107,6 @@ Update the Dagger Function to return a custom `PotatoMessage` type:
 ```python file=./snippets/first-module/step4/main.py
 ```
 
-[dagger.mod.field](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.field)
-is only needed to allow accessing the field directly via the API. Otherwise,
-it will still be used during serialization/deserialization when passing the
-object instance to other functions.
-
 Test it using `dagger call`:
 
 ```sh
@@ -133,7 +128,7 @@ Now, put everything you've learnt to the test, by building a Dagger Module and D
 1. Initialize a new module:
 
     ```shell
-    dagger init --name=trivy --sdk=python trivy
+    dagger init --sdk=python trivy
     cd trivy
     ```
 
