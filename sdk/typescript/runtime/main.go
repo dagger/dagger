@@ -58,7 +58,9 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
 		// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 		// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
-		WithEntrypoint([]string{"tsx", "--tsconfig", tsConfigPath, entrypointPath}), nil
+		// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
+		// not useful to display to the user.
+		WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", tsConfigPath, entrypointPath}), nil
 }
 
 // Codegen returns the generated API client based on user's module
