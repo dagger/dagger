@@ -223,8 +223,8 @@ CMD echo "stage2"
 			WithNewFile("Dockerfile",
 				`FROM golang:1.18.2-alpine
 WORKDIR /src
-RUN --mount=type=secret,id=my-secret test "$(cat /run/secrets/my-secret)" = "barbar"
-RUN --mount=type=secret,id=my-secret cp /run/secrets/my-secret  /secret
+RUN --mount=type=secret,id=my-secret,required=true test "$(cat /run/secrets/my-secret)" = "barbar"
+RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret  /secret
 CMD cat /secret
 `)
 

@@ -46,6 +46,12 @@ func Blob(digest string, size int, mediaType string, uncompressed string) *dagge
 	return client.Blob(digest, size, mediaType, uncompressed)
 }
 
+// Retrieves a container builtin to the engine.
+func BuiltinContainer(digest string) *dagger.Container {
+	client := initClient()
+	return client.BuiltinContainer(digest)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string) *dagger.CacheVolume {
 	client := initClient()
@@ -345,9 +351,9 @@ func Pipeline(name string, opts ...dagger.PipelineOpts) *dagger.Client {
 }
 
 // Reference a secret by name.
-func Secret(name string) *dagger.Secret {
+func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()
-	return client.Secret(name)
+	return client.Secret(name, opts...)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

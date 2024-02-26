@@ -1986,6 +1986,12 @@ type Query {
     uncompressed: String!
   ): Directory!
 
+  """Retrieves a container builtin to the engine."""
+  builtinContainer(
+    """Digest of the image manifest"""
+    digest: String!
+  ): Container!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """
@@ -2227,7 +2233,7 @@ type Query {
   ): Query!
 
   """Reference a secret by name."""
-  secret(name: String!): Secret!
+  secret(accessor: String, name: String!): Secret!
 
   """
   Sets a secret given a user defined name to its plaintext and returns the secret.

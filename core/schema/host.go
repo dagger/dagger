@@ -2,13 +2,19 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/labels"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/moby/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -24,6 +30,7 @@ func (s *hostSchema) Install() {
 		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
 			return parent.NewHost(), nil
 		}).Doc(`Queries the host environment.`),
+
 		dagql.Func("blob", func(ctx context.Context, parent *core.Query, args struct {
 			Digest       string `doc:"Digest of the blob"`
 			Size         int64  `doc:"Size of the blob"`
@@ -53,6 +60,61 @@ func (s *hostSchema) Install() {
 			}
 			return core.NewDirectory(parent, blobDef.ToPB(), "/", parent.Platform, nil), nil
 		}).Doc("Retrieves a content-addressed blob."),
+
+		dagql.Func("builtinContainer", func(ctx context.Context, parent *core.Query, args struct {
+			Digest string `doc:"Digest of the image manifest"`
+		}) (*core.Container, error) {
+			st := llb.OCILayout(
+				fmt.Sprintf("dagger/import@%s", args.Digest),
+				llb.OCIStore("", buildkit.BuiltinContentOCIStoreName),
+				llb.Platform(parent.Platform.Spec()),
+			)
+
+			execDef, err := st.Marshal(ctx, llb.Platform(parent.Platform.Spec()))
+			if err != nil {
+				return nil, fmt.Errorf("marshal root: %w", err)
+			}
+
+			container, err := core.NewContainer(parent, parent.Platform)
+			if err != nil {
+				return nil, fmt.Errorf("new container: %w", err)
+			}
+
+			container.FS = execDef.ToPB()
+
+			goSDKContentStore, err := local.NewStore(distconsts.EngineContainerBuiltinContentDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
+			}
+
+			manifestBlob, err := content.ReadBlob(ctx, goSDKContentStore, specs.Descriptor{
+				Digest: digest.Digest(args.Digest),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("image archive read manifest blob: %w", err)
+			}
+
+			var man specs.Manifest
+			err = json.Unmarshal(manifestBlob, &man)
+			if err != nil {
+				return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
+			}
+
+			configBlob, err := content.ReadBlob(ctx, goSDKContentStore, man.Config)
+			if err != nil {
+				return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
+			}
+
+			var imgSpec specs.Image
+			err = json.Unmarshal(configBlob, &imgSpec)
+			if err != nil {
+				return nil, fmt.Errorf("load image config: %w", err)
+			}
+
+			container.Config = imgSpec.Config
+
+			return container, nil
+		}).Doc("Retrieves a container builtin to the engine."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Host]{

@@ -20,6 +20,16 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Retrieves a container builtin to the engine.\n\n## Required Arguments\n\n* `digest` - Digest of the image manifest"
+    @spec builtin_container(t(), Dagger.String.t()) :: Dagger.Container.t()
+    def builtin_container(%__MODULE__{} = query, digest) do
+      selection = select(query.selection, "builtinContainer")
+      selection = arg(selection, "digest", digest)
+      %Dagger.Container{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Constructs a cache volume for a given cache key.\n\n## Required Arguments\n\n* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\")."
     @spec cache_volume(t(), Dagger.String.t()) :: Dagger.CacheVolume.t()
     def cache_volume(%__MODULE__{} = query, key) do
@@ -633,11 +643,19 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Reference a secret by name.\n\n## Required Arguments\n\n* `name` -"
-    @spec secret(t(), Dagger.String.t()) :: Dagger.Secret.t()
-    def secret(%__MODULE__{} = query, name) do
+    @doc "Reference a secret by name.\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments\n\n* `accessor` -"
+    @spec secret(t(), Dagger.String.t(), keyword()) :: Dagger.Secret.t()
+    def secret(%__MODULE__{} = query, name, optional_args \\ []) do
       selection = select(query.selection, "secret")
       selection = arg(selection, "name", name)
+
+      selection =
+        if is_nil(optional_args[:accessor]) do
+          selection
+        else
+          arg(selection, "accessor", optional_args[:accessor])
+        end
+
       %Dagger.Secret{selection: selection, client: query.client}
     end
   )

@@ -1,0 +1,42 @@
+---
+slug: /developer-guide/python/582829/error-handling
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Error Handling"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Error Handling
+
+<PartialExperimentalDocs />
+
+Dagger Modules handle errors in the same way as the language they are written in. This allows you to support any kind of error handling that your application requires. You can also use error handling to verify user input.
+
+Here is an example module with a function `divide()`, that throws an error if the denominator is zero:
+
+```python file=./snippets/error-handling/main.py
+```
+Here is an example call for this module:
+
+```shell
+dagger call divide --a=4 --b=2
+```
+
+The result will be:
+
+```shell
+2
+```
+
+Here is another example call for this module, this time dividing by zero:
+
+```shell
+dagger call divide --a=4 --b=0
+```
+
+The result will be:
+
+```shell
+cannot divide by zero
+```

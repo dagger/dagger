@@ -14,7 +14,11 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
+{{ if IsModuleCode }}
+	"{{.PackageImport}}/internal/querybuilder"
+{{ else }}
 	"{{.PackageImport}}/querybuilder"
+{{ end }}
 )
 
 // assertNotNil panic if the given value is nil.

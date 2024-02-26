@@ -11,7 +11,8 @@ const (
 
 	EngineDefaultStateDir = "/var/lib/dagger"
 
-	GoSDKEngineContainerTarballPath        = "/usr/local/share/dagger/go-module-sdk-image.tar"
-	PythonSDKEngineContainerModulePath     = "/usr/local/share/dagger/python-sdk/runtime"
-	TypescriptSDKEngineContainerModulePath = "/usr/local/share/dagger/typescript-sdk/runtime"
+	EngineContainerBuiltinContentDir   = "/usr/local/share/dagger/content"
+	GoSDKManifestDigestEnvName         = "DAGGER_GO_SDK_MANIFEST_DIGEST"
+	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
+	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
 )

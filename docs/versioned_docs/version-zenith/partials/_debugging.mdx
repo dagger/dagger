@@ -1,0 +1,14 @@
+### Rerun commands with `--debug`
+
+The Dagger CLI tries to keep its output concise by default. If you're running
+into issues and want to debug with more detailed output, you can run any `dagger`
+subcommand with the `--debug` flag to have it reveal all available information.
+
+### Access the Dagger Engine logs
+
+The Dagger Engine runs in a dedicated Docker container and emits log messages as it works. Here's how to access these logs:
+
+```shell
+DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
+docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
+```
