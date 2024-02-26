@@ -29,15 +29,18 @@
       "label": "Developer Guide",
       "collapsible": true,
       "collapsed": true,
+      "link": {
+        "type": "doc",
+        "id": "developer-guide/index"
+      },
       "items": [
-        {
-          "type": "doc",
-          "label": "Introduction",
-          "id": "developer-guide/index"
-        },
         {
           "type": "category",
           "label": "Overview",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/overview/index"
+          },
           "items": [
             {
               "type": "doc",
@@ -60,6 +63,10 @@
         {
           "type": "category",
           "label": "Developing with Go",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/go/index"
+          },
           "items": [
             {
               "type": "doc",
@@ -127,6 +134,10 @@
         {
           "type": "category",
           "label": "Developing with Python",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/python/index"
+          },
           "items": [
             {
               "type": "doc",
@@ -190,6 +201,10 @@
         {
           "type": "category",
           "label": "Developing with TypeScript",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/typescript/index"
+          },
           "items": [
             {
               "type": "doc",
