@@ -71,7 +71,11 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/constructors"
+              "id": "developer-guide/go/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/secrets"
             },
             {
               "type": "doc",
@@ -83,27 +87,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/go/custom-types"
+              "id": "developer-guide/go/constructors"
             },
             {
               "type": "doc",
@@ -115,7 +99,23 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/documentation"
+              "id": "developer-guide/go/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/debugging"
             },
             {
               "type": "link",
@@ -146,6 +146,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/python/dependencies"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/python/chaining"
             },
             {
@@ -159,10 +163,6 @@
               {
               "type": "doc",
               "id": "developer-guide/python/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/python/dependencies"
             },
             {
               "type": "doc",
@@ -201,7 +201,11 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/constructors"
+              "id": "developer-guide/typescript/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/secrets"
             },
             {
               "type": "doc",
@@ -213,23 +217,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/secrets"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "developer-guide/typescript/module-structure"
+              "id": "developer-guide/typescript/constructors"
             },
             {
               "type": "doc",
@@ -237,11 +225,11 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/aliases"
+              "id": "developer-guide/typescript/decorators"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/decorators"
+              "id": "developer-guide/typescript/aliases"
             },
             {
               "type": "doc",
@@ -249,7 +237,20 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/documentation"
+              "id": "developer-guide/typescript/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/ide-integration"
+            },
+
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/debugging"
             },
             {
               "type": "doc",
