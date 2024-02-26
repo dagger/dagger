@@ -664,8 +664,40 @@ describe("scan static TypeScript", function () {
         HelloWorld: {
           name: "HelloWorld",
           description: "",
-          fields: {},
-          constructor: undefined,
+          fields: {
+            prefix: {
+              name: "gretingPrefix",
+              alias: "prefix",
+              typeDef: { kind: TypeDefKind.StringKind },
+              description: "",
+              isExposed: true,
+            },
+            container: {
+              name: "ctr",
+              alias: "container",
+              typeDef: {
+                kind: TypeDefKind.ObjectKind,
+                name: "Container",
+              },
+              description: "",
+              isExposed: true,
+            },
+          },
+          constructor: {
+            args: {
+              ctr: {
+                defaultValue: undefined,
+                description: "",
+                isVariadic: false,
+                name: "ctr",
+                optional: true,
+                typeDef: {
+                  kind: TypeDefKind.ObjectKind,
+                  name: "Container",
+                },
+              },
+            },
+          },
           methods: {
             testBar: {
               name: "bar",
@@ -721,6 +753,33 @@ describe("scan static TypeScript", function () {
                   isVariadic: false,
                 },
               },
+            },
+            customGreet: {
+              name: "customHelloWorld",
+              alias: "customGreet",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {
+                name: {
+                  name: "name",
+                  typeDef: { kind: TypeDefKind.StringKind },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+              },
+            },
+            version: {
+              name: "displayVersion",
+              alias: "version",
+              returnType: {
+                kind: TypeDefKind.StringKind,
+              },
+              description: "",
+              args: {},
             },
           },
         },

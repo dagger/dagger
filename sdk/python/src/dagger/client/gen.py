@@ -5312,6 +5312,21 @@ class Client(Root):
         return Directory(_ctx)
 
     @typecheck
+    def builtin_container(self, digest: str) -> Container:
+        """Retrieves a container builtin to the engine.
+
+        Parameters
+        ----------
+        digest:
+            Digest of the image manifest
+        """
+        _args = [
+            Arg("digest", digest),
+        ]
+        _ctx = self._select("builtinContainer", _args)
+        return Container(_ctx)
+
+    @typecheck
     def cache_volume(self, key: str) -> CacheVolume:
         """Constructs a cache volume for a given cache key.
 

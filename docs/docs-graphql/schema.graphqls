@@ -1986,6 +1986,12 @@ type Query {
     uncompressed: String!
   ): Directory!
 
+  """Retrieves a container builtin to the engine."""
+  builtinContainer(
+    """Digest of the image manifest"""
+    digest: String!
+  ): Container!
+
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
     """

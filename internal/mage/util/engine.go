@@ -3,8 +3,8 @@ package util
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -14,6 +14,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/exp/maps"
 
 	"github.com/dagger/dagger/internal/distconsts"
@@ -243,9 +244,9 @@ func devEngineContainer(ctx context.Context, c *dagger.Client, arch string, vers
 		}).
 		WithFile(engineShimPath, shimBin(c, arch, version)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
-		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
-		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
-		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
+		With(goSDKContent(ctx, c, arch)).
+		With(pythonSDKContent(ctx, c, arch)).
+		With(typescriptSDKContent(ctx, c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, false)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
@@ -292,9 +293,9 @@ func devEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arc
 		}).
 		WithFile(engineShimPath, shimBin(c, arch, version)).
 		WithFile(engineServerPath, engineBin(c, arch, version)).
-		WithFile(distconsts.GoSDKEngineContainerTarballPath, goSDKImageTarBall(c, arch)).
-		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), pythonSDK(c)).
-		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), typescriptSDK(c, arch)).
+		With(goSDKContent(ctx, c, arch)).
+		With(pythonSDKContent(ctx, c, arch)).
+		With(typescriptSDKContent(ctx, c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/", cniPlugins(c, arch, true)).
 		WithDirectory("/", dialstdioFiles(c, arch)).
@@ -344,65 +345,110 @@ func devEngineContainersWithGPUSupport(ctx context.Context, c *dagger.Client, ar
 
 // helper functions for building the dev engine container
 
-func pythonSDK(c *dagger.Client) *dagger.Directory {
-	return c.Host().Directory("sdk/python", dagger.HostDirectoryOpts{
-		Include: []string{
-			"pyproject.toml",
-			"src/**/*.py",
-			"src/**/*.typed",
-			"runtime/",
-			"LICENSE",
-			"README.md",
-			"dagger.json",
-		},
-	})
+func pythonSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		sdkCtrTarball := c.Container().
+			WithRootfs(c.Host().Directory("sdk/python", dagger.HostDirectoryOpts{
+				Include: []string{
+					"pyproject.toml",
+					"src/**/*.py",
+					"src/**/*.typed",
+					"runtime/",
+					"LICENSE",
+					"README.md",
+					"dagger.json",
+				},
+			})).
+			WithFile("/codegen", goSDKCodegenBin(c, arch)).
+			AsTarball(dagger.ContainerAsTarballOpts{
+				ForcedCompression: dagger.Uncompressed,
+			})
+
+		sdkDir := c.Container().From("alpine:"+alpineVersion).
+			WithMountedDirectory("/out", c.Directory()).
+			WithMountedFile("/sdk.tar", sdkCtrTarball).
+			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
+			Directory("/out")
+
+		return sdkContent(ctx, ctr, sdkDir, distconsts.PythonSDKManifestDigestEnvName)
+	}
 }
 
-func typescriptSDK(c *dagger.Client, arch string) *dagger.Directory {
-	return c.Host().Directory("sdk/typescript", dagger.HostDirectoryOpts{
-		Include: []string{
-			"**/*.ts",
-			"LICENSE",
-			"README.md",
-			"runtime",
-			"package.json",
-			"dagger.json",
-		},
-		Exclude: []string{
-			"node_modules",
-			"dist",
-			"**/test",
-			"**/*.spec.ts",
-			"dev",
-		},
-	}).WithFile("/codegen", goSDKCodegenBin(c, arch))
+func typescriptSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		sdkCtrTarball := c.Container().
+			WithRootfs(c.Host().Directory("sdk/typescript", dagger.HostDirectoryOpts{
+				Include: []string{
+					"**/*.ts",
+					"LICENSE",
+					"README.md",
+					"runtime",
+					"package.json",
+					"dagger.json",
+				},
+				Exclude: []string{
+					"node_modules",
+					"dist",
+					"**/test",
+					"**/*.spec.ts",
+					"dev",
+				},
+			})).
+			WithFile("/codegen", goSDKCodegenBin(c, arch)).
+			AsTarball(dagger.ContainerAsTarballOpts{
+				ForcedCompression: dagger.Uncompressed,
+			})
+
+		sdkDir := c.Container().From("alpine:"+alpineVersion).
+			WithMountedDirectory("/out", c.Directory()).
+			WithMountedFile("/sdk.tar", sdkCtrTarball).
+			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
+			Directory("/out")
+
+		return sdkContent(ctx, ctr, sdkDir, distconsts.TypescriptSDKManifestDigestEnvName)
+	}
 }
 
-func goSDKImageTarBall(c *dagger.Client, arch string) *dagger.File {
-	// TODO: update this to use Container.AsTarball once released
-	ctx := context.Background()
-	tmpDir, err := os.MkdirTemp("", "dagger-go-sdk")
-	if err != nil {
-		panic(err)
-	}
-	defer os.RemoveAll(tmpDir)
-	tarballPath := filepath.Join(tmpDir, filepath.Base(distconsts.GoSDKEngineContainerTarballPath))
+func goSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		base := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+			From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion))
 
-	_, err = c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
-		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
-		WithEnvVariable("GOTOOLCHAIN", "auto").
-		WithFile("/usr/local/bin/codegen", goSDKCodegenBin(c, arch)).
-		WithEntrypoint([]string{"/usr/local/bin/codegen"}).
-		Export(ctx, tarballPath)
-	if err != nil {
-		panic(err)
-	}
+		sdkCtrTarball := base.
+			WithEnvVariable("GOTOOLCHAIN", "auto").
+			WithFile("/usr/local/bin/codegen", goSDKCodegenBin(c, arch)).
+			WithEntrypoint([]string{"/usr/local/bin/codegen"}).
+			AsTarball(dagger.ContainerAsTarballOpts{
+				ForcedCompression: dagger.Uncompressed,
+			})
 
-	f, err := c.Host().File(tarballPath).Sync(ctx)
+		sdkDir := base.
+			WithMountedDirectory("/out", c.Directory()).
+			WithMountedFile("/sdk.tar", sdkCtrTarball).
+			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
+			Directory("/out")
+
+		return sdkContent(ctx, ctr, sdkDir, distconsts.GoSDKManifestDigestEnvName)
+	}
+}
+
+func sdkContent(ctx context.Context, ctr *dagger.Container, sdkDir *dagger.Directory, envName string) *dagger.Container {
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
 	if err != nil {
 		panic(err)
 	}
-	return f
+	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
+		panic(err)
+	}
+	manifest := index.Manifests[0]
+	manifestDgst := manifest.Digest.String()
+
+	return ctr.
+		WithEnvVariable(envName, manifestDgst).
+		WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
+			Include: []string{"blobs/"},
+		})
 }
 
 func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {
