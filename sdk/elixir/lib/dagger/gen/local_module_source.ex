@@ -7,10 +7,15 @@ defmodule Dagger.LocalModuleSource do
 
   (
     @doc "The directory containing everything needed to load load and use the module."
-    @spec context_directory(t()) :: Dagger.Directory.t()
+    @spec context_directory(t()) :: {:ok, Dagger.Directory.t() | nil} | {:error, term()}
     def context_directory(%__MODULE__{} = local_module_source) do
       selection = select(local_module_source.selection, "contextDirectory")
-      %Dagger.Directory{selection: selection, client: local_module_source.client}
+
+      case execute(selection, local_module_source.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.Directory)
+        error -> error
+      end
     end
   )
 

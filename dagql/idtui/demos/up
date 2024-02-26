@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e -u -x
+
+cd ~/src/dagger.io/daggerverse
+
+dagger -m dag call --help
+dagger -m dag call --src ./ app --help
+dagger -m dag call --src ./ app up

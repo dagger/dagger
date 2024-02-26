@@ -1,4 +1,4 @@
-package analytics
+package dagql
 
 import "context"
 
@@ -8,7 +8,7 @@ type internalKey struct{}
 //
 // This is used for analytics so that we can distinguish between calls made by
 // an end user and calls made within the engine, for example to SDK modules.
-func WithInternal(ctx context.Context) context.Context {
+func withInternal(ctx context.Context) context.Context {
 	return context.WithValue(ctx, internalKey{}, true)
 }
 

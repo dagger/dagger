@@ -53,8 +53,7 @@ EOF
 }
 
 func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) (rerr error) {
-	rec := progrock.FromContext(ctx)
-	vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+	ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 	defer func() { vtx.Done(rerr) }()
 	res, err := runQuery(ctx, engineClient, args)
 	if err != nil {

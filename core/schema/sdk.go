@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
 
@@ -113,8 +112,6 @@ func (s *moduleSchema) newModuleSDK(
 	sdkModMeta dagql.Instance[*core.Module],
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
 ) (*moduleSDK, error) {
-	ctx = analytics.WithInternal(ctx)
-
 	dag := dagql.NewServer(root)
 	dag.Cache = root.Cache
 	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
@@ -147,8 +144,6 @@ func (s *moduleSchema) newModuleSDK(
 
 // Codegen calls the Codegen function on the SDK Module
 func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
-	ctx = analytics.WithInternal(ctx)
-
 	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
@@ -176,8 +171,6 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 
 // Runtime calls the Runtime function on the SDK Module
 func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
-	ctx = analytics.WithInternal(ctx)
-
 	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
@@ -215,8 +208,6 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 }
 
 func (sdk *moduleSDK) RequiredPaths(ctx context.Context) ([]string, error) {
-	ctx = analytics.WithInternal(ctx)
-
 	var paths []string
 	err := sdk.dag.Select(ctx, sdk.sdk, &paths,
 		dagql.Selector{

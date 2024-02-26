@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 
 	"dagger.io/dagger"
@@ -18,8 +17,6 @@ import (
 )
 
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
-	rec := progrock.FromContext(ctx)
-
 	var vtxName string
 	if cfg.ModuleName != "" {
 		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleName)
@@ -27,7 +24,7 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
 	}
 
-	vtx := rec.Vertex(digest.FromString(time.Now().String()), vtxName)
+	ctx, vtx := progrock.Span(ctx, time.Now().String(), vtxName)
 	defer func() { vtx.Done(err) }()
 
 	logsW := vtx.Stdout()

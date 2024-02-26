@@ -32,8 +32,6 @@ func CollectRows(steps []*Step) []*TraceRow {
 	return rows
 }
 
-type Pipeline []TraceRow
-
 type TraceRow struct {
 	Step *Step
 
@@ -42,7 +40,57 @@ type TraceRow struct {
 	IsRunning bool
 	Chained   bool
 
-	Children []*TraceRow
+	Children  []*TraceRow
+	Collapsed bool
+}
+
+type Pipeline []*TraceRow
+
+func CollectPipelines(rows []*TraceRow) []Pipeline {
+	pls := []Pipeline{}
+	var cur Pipeline
+	for _, r := range rows {
+		switch {
+		case len(cur) == 0:
+			cur = append(cur, r)
+		case r.Chained:
+			cur = append(cur, r)
+		case len(cur) > 0:
+			pls = append(pls, cur)
+			cur = Pipeline{r}
+		}
+	}
+	if len(cur) > 0 {
+		pls = append(pls, cur)
+	}
+	return pls
+}
+
+type LogsView struct {
+	Primary *Step
+	Body    []*TraceRow
+	Init    *TraceRow
+}
+
+func CollectLogsView(rows []*TraceRow) *LogsView {
+	view := &LogsView{}
+	for _, row := range rows {
+		switch {
+		case view.Primary == nil && row.Step.Digest == PrimaryVertex:
+			// promote children of primary vertex to the top-level
+			for _, child := range row.Children {
+				child.Parent = nil
+			}
+			view.Primary = row.Step
+			view.Body = row.Children
+		case view.Primary == nil && row.Step.Digest == InitVertex:
+			view.Init = row
+		default:
+			// reveal anything 'extra' by default (fail open)
+			view.Body = append(view.Body, row)
+		}
+	}
+	return view
 }
 
 const (
@@ -53,13 +101,10 @@ const (
 func (row *TraceRow) IsInteresting() bool {
 	step := row.Step
 	if step.Err() != nil {
-		// show errors always (TODO: make sure encapsulation is possible)
+		// show errors always
 		return true
 	}
-	if step.IsInternal() &&
-		// TODO: ID vertices are marked internal for compatibility with Cloud,
-		// otherwise they'd be all over the place
-		step.ID() == nil {
+	if step.IsInternal() {
 		// internal steps are, by definition, not interesting
 		return false
 	}
@@ -104,8 +149,8 @@ func WalkSteps(steps []*Step, f func(*TraceRow)) {
 			Step:   step,
 			Parent: parent,
 		}
-		if step.Base != "" {
-			row.Chained = step.Base == lastSeen
+		if step.BaseDigest != "" {
+			row.Chained = step.BaseDigest == lastSeen
 		}
 		if step.IsRunning() {
 			row.setRunning()

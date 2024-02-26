@@ -38,13 +38,13 @@ func init() {
 }
 
 func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, _ []string) error {
-	rec := progrock.FromContext(ctx)
-
 	var stderr io.Writer
 	if silent {
 		stderr = os.Stderr
 	} else {
-		vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+		var vtx *progrock.VertexRecorder
+		ctx, vtx = progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
+		defer vtx.Done(nil)
 		stderr = vtx.Stderr()
 	}
 

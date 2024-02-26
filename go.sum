@@ -1485,6 +1485,14 @@ github.com/vito/midterm v0.1.5-0.20240215023001-e649b2677bfa h1:2zKtb3ChJT0FBEt+
 github.com/vito/midterm v0.1.5-0.20240215023001-e649b2677bfa/go.mod h1:2ujYuyOObdWrQtnXAzwSBcPRKhC5Q96ex0nsf2Dmfzk=
 github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291 h1:VcLECqiOXx4PTEzsV0QlWVubUeE+k0ZclAlKpUuejo8=
 github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
+github.com/vito/progrock v0.10.2-0.20240216024921-b1a31734923f h1:rBajDxzdBWfwBUw6zB65a6sD0Jrti2xdh/SazmLsE4A=
+github.com/vito/progrock v0.10.2-0.20240216024921-b1a31734923f/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
+github.com/vito/progrock v0.10.2-0.20240216040120-c7cf9658d2ce h1:n7A1/7/zGs2YmxrhJM9tkiiceA2VMDjCBI/4F+SyToM=
+github.com/vito/progrock v0.10.2-0.20240216040120-c7cf9658d2ce/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
+github.com/vito/progrock v0.10.2-0.20240221021632-1a1211373001 h1:Le2v108rmYDDcHz8R06C1n91I1zPlt5/V4wHhsFGJz0=
+github.com/vito/progrock v0.10.2-0.20240221021632-1a1211373001/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
+github.com/vito/progrock v0.10.2-0.20240221152222-63c8df30db8d h1:hh9zh0tcr3/th/mtxEpzLVE8rvx+LejDrbWmqmi+RUM=
+github.com/vito/progrock v0.10.2-0.20240221152222-63c8df30db8d/go.mod h1:Q8hxIUXZW8vkezLwH4TnRmXv+XdRb4KfLtS9t5RtH9g=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 h1:qZcnPZbiX8gGs3VmipVc3ft29vPYBZzlox/04Von6+k=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63/go.mod h1:KoQ+3z63GUJzQ7AhU0AWQNU+LPda2EwL/cx1PlbDzVQ=

@@ -1632,7 +1632,7 @@ type LocalModuleSource {
   """
   The directory containing everything needed to load load and use the module.
   """
-  contextDirectory: Directory!
+  contextDirectory: Directory
 
   """A unique identifier for this LocalModuleSource."""
   id: LocalModuleSourceID!

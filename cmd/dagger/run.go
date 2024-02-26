@@ -124,11 +124,8 @@ func run(ctx context.Context, args []string) error {
 
 		var cmdErr error
 		if !silent {
-			rec := progrock.FromContext(ctx)
-
 			cmdline := strings.Join(subCmd.Args, " ")
-			cmdVtx := rec.Vertex(idtui.PrimaryVertex, cmdline)
-
+			_, cmdVtx := progrock.Span(ctx, idtui.PrimaryVertex, cmdline)
 			if stdoutIsTTY {
 				subCmd.Stdout = cmdVtx.Stdout()
 			} else {
