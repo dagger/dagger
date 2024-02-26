@@ -4717,7 +4717,6 @@ func TestModuleDaggerListen(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 
 		modDir := t.TempDir()
 		_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
@@ -4727,10 +4726,16 @@ func TestModuleDaggerListen(t *testing.T) {
 		listenCmd.Env = append(listenCmd.Env, os.Environ()...)
 		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
 
+		listenOutput := make(chan []byte)
 		go func() {
 			out, _ := listenCmd.CombinedOutput()
-			t.Logf("listen output: %s", string(out))
+			listenOutput <- out
 		}()
+		t.Cleanup(func() {
+			t.Logf("listen output: %s", string(<-listenOutput))
+		})
+		t.Cleanup(cancel)
+
 		var out []byte
 		for range limitTicker(time.Second, 60) {
 			callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
@@ -4756,7 +4761,6 @@ func TestModuleDaggerListen(t *testing.T) {
 			t.Parallel()
 
 			ctx, cancel := context.WithCancel(context.Background())
-			t.Cleanup(cancel)
 
 			modDir := t.TempDir()
 			_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
@@ -4766,10 +4770,16 @@ func TestModuleDaggerListen(t *testing.T) {
 			listenCmd.Env = append(listenCmd.Env, os.Environ()...)
 			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
 
+			listenOutput := make(chan []byte)
 			go func() {
 				out, _ := listenCmd.CombinedOutput()
-				t.Logf("listen output: %s", string(out))
+				listenOutput <- out
 			}()
+			t.Cleanup(func() {
+				t.Logf("listen output: %s", string(<-listenOutput))
+			})
+			t.Cleanup(cancel)
+
 			var out []byte
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
@@ -4792,15 +4802,21 @@ func TestModuleDaggerListen(t *testing.T) {
 			tmpdir := t.TempDir()
 
 			ctx, cancel := context.WithCancel(context.Background())
-			t.Cleanup(cancel)
 
 			listenCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12458")
 			listenCmd.Env = append(listenCmd.Env, os.Environ()...)
 			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+
+			listenOutput := make(chan []byte)
 			go func() {
 				out, _ := listenCmd.CombinedOutput()
-				t.Logf("listen output: %s", string(out))
+				listenOutput <- out
 			}()
+			t.Cleanup(func() {
+				t.Logf("listen output: %s", string(<-listenOutput))
+			})
+			t.Cleanup(cancel)
+
 			var out []byte
 			var err error
 			for range limitTicker(time.Second, 60) {
