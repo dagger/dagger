@@ -18,7 +18,7 @@ Just as you can chain and return `Directory` types, you can also chain and retur
 Try calling this function:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@7884cbc1941f85a7c714fc7f1bcc5c148842c21e base with-package --name cowsay container
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 base with-package --name cowsay container
 ```
 
 This Wolfi container builder module exposes a number of functions:
@@ -43,7 +43,7 @@ One of the most interesting `Container` functions is `Terminal()`, which can be 
 To see this in action, call the previous function again, this time chaining an additional function call to `Shell()` on the returned `Container`:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@7884cbc1941f85a7c714fc7f1bcc5c148842c21e base with-package --name cowsay container terminal --cmd sh
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 base with-package --name cowsay container terminal --cmd sh
 ```
 
 This revised command builds the container image and then drops you into an interactive terminal, allowing you to directly execute commands in the running container.
@@ -76,7 +76,7 @@ While most terminal programs such as `htop` or `vim` work with `dagger ... termi
 The `Container` type has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same result as before (although non-interactively) by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@7884cbc1941f85a7c714fc7f1bcc5c148842c21e base with-package --name=cowsay container with-exec --args "cowsay" --args "dagger" stdout
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 base with-package --name=cowsay container with-exec --args "cowsay" --args "dagger" stdout
 ```
 
 ### Publish the container image to a registry
@@ -84,7 +84,7 @@ dagger call -m github.com/shykes/daggerverse/wolfi@7884cbc1941f85a7c714fc7f1bcc5
 The `Container` type also has a `Publish()` function, which publishes the container to a registry. To see this in action, call the previous function again, this time chaining an additional function call to `Publish()` on the returned `Container`:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@7884cbc1941f85a7c714fc7f1bcc5c148842c21e base with-package --name=cowsay container publish --address ttl.sh/my-wolfi
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 base with-package --name=cowsay container publish --address ttl.sh/my-wolfi
 ```
 
 The output will be a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
