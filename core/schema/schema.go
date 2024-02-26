@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/tracing"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/util/bklog"
@@ -97,7 +98,7 @@ func (s *APIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rec := progrock.FromContext(ctx)
-	if header := r.Header.Get("X-Progrock-Parent"); header != "" {
+	if header := r.Header.Get(client.ProgrockParentHeader); header != "" {
 		rec = rec.WithParent(header)
 	} else if callContext.ProgrockParent != "" {
 		rec = rec.WithParent(callContext.ProgrockParent)

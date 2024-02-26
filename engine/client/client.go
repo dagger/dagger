@@ -47,6 +47,8 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
+const ProgrockParentHeader = "X-Progrock-Parent"
+
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.
@@ -954,7 +956,7 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
-		req.Header.Add("X-Progrock-Parent", progrock.FromContext(req.Context()).Parent)
+		req.Header.Add(ProgrockParentHeader, progrock.FromContext(req.Context()).Parent)
 		req.SetBasicAuth(engineClient.SecretToken, "")
 		resp := httptest.NewRecorder()
 		engineClient.ServeHTTP(resp, req)
