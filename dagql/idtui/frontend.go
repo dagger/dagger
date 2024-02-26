@@ -266,6 +266,9 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 }
 
 func (fe *Frontend) renderPrimaryOutput() error {
+	if len(fe.primaryLogs) == 0 {
+		return nil
+	}
 	var trailingLn bool
 	for _, l := range fe.primaryLogs {
 		if bytes.HasSuffix(l.Data, []byte("\n")) {
