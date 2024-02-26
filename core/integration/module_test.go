@@ -3861,9 +3861,9 @@ func (p *Playground) SayHello() string {
 `,
 		})
 
-	out, err := ctr.With(daggerQuery(`{playground{sayHello}}`)).Stdout(ctx)
+	out, err := ctr.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"playground":{"sayHello":"hello!"}}`, out)
+	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
 }
 
 func TestModuleWrapping(t *testing.T) {
