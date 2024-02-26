@@ -15,7 +15,7 @@ It's essential to understand a few key concepts about Dagger Modules created for
 
 ## Runtime container with Python 3.11
 
-Like in other SDKs, Python modules run in a container (called the *runtime container*) that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It's currently hardcoded to run in Python 3.11 (although this may be configurable in future).
+Dagger Modules run in a container (called the "runtime container") that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It's currently hardcoded to run in Python 3.11 (although this may be configurable in future).
 
 ## Automatic SDK install
 
@@ -28,18 +28,18 @@ pip install -e /sdk
 
 This is why the initial `pyproject.toml` file doesn't include any dependencies.
 
-[^1]: The SDK files are mounted under `/sdk` in the Dagger Engine container.
+[^1]: The SDK files are mounted under `/sdk` in the Dagger Engine runtime container.
 
 ## Modules as Python libraries
 
-Dagger Modules in Python are built to be installed, like libraries. The runtime container installs your code with:
+Dagger Modules in Python are built to be installed, like libraries. The runtime container installs the module code with:
 
 ```shell
 # executed by the runtime container
 pip install .
 ```
 
-Due to [PEP 517](https://peps.python.org/pep-0517/) and [pip supporting `pyproject.toml`](https://pip.pypa.io/en/stable/reference/build-system/pyproject-toml/), this means that all package managers that support the [build backend](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#declaring-the-build-backend) standard are automatically supported.
+Due to [PEP 517](https://peps.python.org/pep-0517/) and [`pip` supporting `pyproject.toml`](https://pip.pypa.io/en/stable/reference/build-system/pyproject-toml/), this means that all package managers that support the [build backend](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#declaring-the-build-backend) standard are automatically supported.
 
 For example, you can use [Hatch](https://hatch.pypa.io/latest/config/build/#build-system), [Poetry](https://python-poetry.org/docs/pyproject/#poetry-and-pep-517), or [PDM](https://pdm-project.org/latest/reference/build/), to manage a module's dependencies and configure how it's built and installed.
 
@@ -55,7 +55,7 @@ This is the most important requirement. The other conventions are flexible, as l
 
 ## Python dependencies
 
-To add a Python dependency, simply [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+To add a Python dependency, simply [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements), as in the example below:
 
 ```toml
 [project]

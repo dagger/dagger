@@ -1,5 +1,5 @@
 /**
- * Hello World module is a simple example of a module documentation
+ * This module returns information about the OS for a container image
  */
 import { dag, object, func } from '@dagger.io/dagger';
 

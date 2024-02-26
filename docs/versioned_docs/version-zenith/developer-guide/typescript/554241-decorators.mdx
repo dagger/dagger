@@ -11,29 +11,28 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-A module's main functions is declared as methods of a class (decorated with `@object()`) having the same name as the module (in PascalCase).
+A Dagger Module's functions are declared as methods of a class (decorated with `@object()`) having the same name as the module (in PascalCase).
 
-Every objects, functions (decorated with `@func()`) and fields (decorated with `field()`) with a decorator are exposed through the Dagger API to the user.
+All objects decorated with `@object()`, functions decorated with `@func()` and fields decorated with `field()` with a decorator are exposed in the Dagger API.
 
 Here is an example of a module that exposes a function `alpine` that returns an object `Alpine` with the method `echo` and the field `ctr`:
 
 ```typescript file=./snippets/decorators/index.ts
-
 ```
 
-And here is an example of call to this module:
+And here is an example of a call to this module:
 
 ```shell
 dagger call alpine echo --msg="hello","world"
 ```
 
-The reult will be:
+The result will be:
 
 ```shell
 hello world
 ```
 
-But you could also directly query the field `ctr` to chain operations:
+An alternative is to directly query the field `ctr` and [chain](./129302-chaining.mdx) additional function calls to it:
 
 ```shell
 dagger call alpine ctr with-exec --args "echo","hello","world" stdout
