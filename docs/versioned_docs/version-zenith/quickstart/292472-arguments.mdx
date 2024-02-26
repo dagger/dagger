@@ -22,7 +22,7 @@ To list available arguments for a function, use `dagger call FUNC --help`. The D
 For example, inspect the arguments of the `hello` function you called earlier:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello call hello --help
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --help
 ```
 
 You should see output that looks like this:
@@ -50,7 +50,7 @@ To pass a string argument to a function, add the corresponding flag to your `dag
 Let's pass two arguments to our `hello` function, from the list we saw above:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello call hello --greeting bonjour --name daggernaut
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting bonjour --name daggernaut
 ```
 
 You should see the following output:
@@ -70,7 +70,7 @@ To pass a boolean argument from the command-line, simply add the corresponding f
 Let's try this with the `giant` argument to our `hello` function:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello call hello --greeting bonjour --name daggernaut --giant
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting bonjour --name daggernaut --giant
 ```
 
 You should see the same output as before, but in giant letters!
@@ -106,7 +106,7 @@ Try this with the `hello` function. In order to print giant letters, it dynamica
 Try calling `hello` with a custom container which has the `figlet` tool installed:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello call hello --greeting bonjour --name daggernaut --giant --figlet-container index.docker.io/hairyhenderson/figlet
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting bonjour --name daggernaut --giant --figlet-container index.docker.io/hairyhenderson/figlet
 ```
 
 You should see the image being pulled, then the following output:
@@ -131,7 +131,7 @@ You should see the image being pulled, then the following output:
 It worked! What happens if you pass a container that doesn't have the required tool installed?
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello call hello --giant --greeting bonjour --name daggernaut --figlet-container index.docker.io/alpine
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --giant --greeting bonjour --name daggernaut --figlet-container index.docker.io/alpine
 ```
 
 You should see an error telling you that `figlet` could not be found:
