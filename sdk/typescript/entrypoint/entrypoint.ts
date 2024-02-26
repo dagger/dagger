@@ -52,12 +52,19 @@ export async function entrypoint() {
 
         await load(files)
 
-        result = await invoke(scanResult, {
-          parentName,
-          fnName,
-          parentArgs,
-          fnArgs: args,
-        })
+        try {
+          result = await invoke(scanResult, {
+            parentName,
+            fnName,
+            parentArgs,
+            fnArgs: args,
+          })
+        } catch (e) {
+          if (e instanceof Error) {
+            console.error(`${e.name}: ${e.message}`)
+          }
+          process.exit(1)
+        }
       }
 
       // If result is set, we stringify it

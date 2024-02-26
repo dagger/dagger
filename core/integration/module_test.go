@@ -3833,6 +3833,39 @@ class Test {
 	})
 }
 
+func TestModuleGoEmbedded(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	ctr = ctr.
+		WithWorkdir("/playground").
+		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Playground struct {
+	*Directory
+}
+
+func New() Playground {
+	return Playground{Directory: dag.Directory()}
+}
+
+func (p *Playground) SayHello() string {
+	return "hello!"
+}
+`,
+		})
+
+	out, err := ctr.With(daggerQuery(`{playground{sayHello, directory{entries}}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"playground":{"sayHello":"hello!", "directory":{"entries": []}}}`, out)
+}
+
 func TestModuleWrapping(t *testing.T) {
 	t.Parallel()
 
@@ -4709,6 +4742,132 @@ func TestModuleHostError(t *testing.T) {
 		With(daggerCall("fn")).
 		Sync(ctx)
 	require.ErrorContains(t, err, "dag.Host undefined")
+}
+
+func TestModuleDaggerListen(t *testing.T) {
+	t.Parallel()
+
+	t.Run("with mod", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		modDir := t.TempDir()
+		_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--listen", "127.0.0.1:12456")
+		listenCmd.Env = append(listenCmd.Env, os.Environ()...)
+		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+
+		listenOutput := make(chan []byte)
+		go func() {
+			out, _ := listenCmd.CombinedOutput()
+			listenOutput <- out
+		}()
+		t.Cleanup(func() {
+			t.Logf("listen output: %s", string(<-listenOutput))
+		})
+		t.Cleanup(cancel)
+
+		var out []byte
+		for range limitTicker(time.Second, 60) {
+			callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
+			copy(callCmd.Env, os.Environ())
+			callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
+			out, err = callCmd.CombinedOutput()
+			if err == nil {
+				lines := strings.Split(string(out), "\n")
+				lastLine := lines[len(lines)-2]
+				require.Equal(t, "hi", lastLine)
+				return
+			}
+			time.Sleep(1 * time.Second)
+		}
+		t.Fatalf("failed to call container-echo: %s err: %v", string(out), err)
+	})
+
+	t.Run("disable read write", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("with mod", func(t *testing.T) {
+			// mod load fails but should still be able to query base api
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(context.Background())
+
+			modDir := t.TempDir()
+			_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+			require.NoError(t, err)
+
+			listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12457")
+			listenCmd.Env = append(listenCmd.Env, os.Environ()...)
+			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+
+			listenOutput := make(chan []byte)
+			go func() {
+				out, _ := listenCmd.CombinedOutput()
+				listenOutput <- out
+			}()
+			t.Cleanup(func() {
+				t.Logf("listen output: %s", string(<-listenOutput))
+			})
+			t.Cleanup(cancel)
+
+			var out []byte
+			for range limitTicker(time.Second, 60) {
+				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
+				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Env = append(callCmd.Env, os.Environ()...)
+				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
+				out, err = callCmd.CombinedOutput()
+				if err == nil {
+					require.Contains(t, string(out), "3.18.6")
+					return
+				}
+				time.Sleep(1 * time.Second)
+			}
+			t.Fatalf("failed to call query: %s err: %v", string(out), err)
+		})
+
+		t.Run("without mod", func(t *testing.T) {
+			t.Parallel()
+
+			tmpdir := t.TempDir()
+
+			ctx, cancel := context.WithCancel(context.Background())
+
+			listenCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12458")
+			listenCmd.Env = append(listenCmd.Env, os.Environ()...)
+			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+
+			listenOutput := make(chan []byte)
+			go func() {
+				out, _ := listenCmd.CombinedOutput()
+				listenOutput <- out
+			}()
+			t.Cleanup(func() {
+				t.Logf("listen output: %s", string(<-listenOutput))
+			})
+			t.Cleanup(cancel)
+
+			var out []byte
+			var err error
+			for range limitTicker(time.Second, 60) {
+				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
+				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Env = append(callCmd.Env, os.Environ()...)
+				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
+				out, err = callCmd.CombinedOutput()
+				if err == nil {
+					require.Contains(t, string(out), "3.18.6")
+					return
+				}
+				time.Sleep(1 * time.Second)
+			}
+			t.Fatalf("failed to call query: %s err: %v", string(out), err)
+		})
+	})
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
