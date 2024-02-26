@@ -48,25 +48,25 @@ The template from `dagger init` creates the following structure:
 
 ```
 .
-├── dagger
-│   └── dagger.gen.go
 ├── dagger.gen.go
 ├── dagger.json
 ├── go.mod
 ├── go.sum
-├── main.go
-└── querybuilder
-    ├── marshal.go
-    └── querybuilder.go
+├── internal
+│   ├── dagger
+│   │   └── dagger.gen.go
+│   └── querybuilder
+│       ├── marshal.go
+│       └── querybuilder.go
+└── main.go
 ```
 
 - `dagger.json` is the dagger module config file.
 - `go.mod`/`go.sum` manage the [Go module](#go-modules) and its dependencies.
 - `main.go` is where your module code goes.
-- `dagger.gen.go` contains automatically-generated types and helpers needed to configure and run the module.
-- The sub-packages:
-    - `dagger` contains automatically-generated definitions for the Dagger API that's tied to the currently running Dagger Engine container.
-    - `querybuilder` contains automatically-generated utilities for building GraphQL queries (used internally by the `dagger` package).
+- `internal` contains automatically-generated types and helpers needed to configure and run the module
+    - `dagger` contains definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
 
 :::note
 While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
@@ -78,9 +78,9 @@ You can split your Dagger Module into multiple files, not just `main.go`. To do 
 
 ```
 .
-├── dagger
-│   └── dagger.gen.go
 ├── ...
+├── internal
+│   └── ...
 ├── main.go
 └── utils.go
 ```
@@ -91,9 +91,9 @@ Additionally, you can also split your Dagger Module into Go subpackages (for exa
 
 ```
 .
-├── dagger
-│   └── dagger.gen.go
 ├── ...
+├── internal
+│   └── ...
 ├── main.go
 └── utils
     └── utils.go
@@ -105,12 +105,12 @@ Because this is a separate package, you can only use the variables/functions/typ
 Only types and functions in the top-level package are part of the public-facing API for the module.
 :::
 
-You can access other Dagger types from a sub-package by importing the generated sub-package `<module>/dagger`:
+You can access other Dagger types from a sub-package by importing the generated sub-package `<module>/internal/dagger`:
 
 ```go
 // utils/utils.go
 
-import "main/dagger"
+import "main/internal/dagger"
 
 func DoThing(client *dagger.Client) *dagger.Directory {
     // we need to pass *dagger.Client in here, since we don't have access to `dag`
