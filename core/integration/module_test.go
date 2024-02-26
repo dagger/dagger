@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -3003,7 +3004,7 @@ func TestModuleGoUtilsPkg(t *testing.T) {
 		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
-			
+
 import (
 	"context"
 	"main/utils"
@@ -4866,6 +4867,431 @@ func TestModuleDaggerListen(t *testing.T) {
 				time.Sleep(1 * time.Second)
 			}
 			t.Fatalf("failed to call query: %s err: %v", string(out), err)
+		})
+	})
+}
+
+func TestModuleSecretNested(t *testing.T) {
+	t.Parallel()
+
+	t.Run("pass secrets between modules", func(t *testing.T) {
+		// check that we can pass valid secret objects between functions in
+		// different modules
+
+		c, ctx := connect(t)
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/secreter").
+			With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import "context"
+
+type Secreter struct {}
+
+func (_ *Secreter) Make() *Secret {
+	return dag.SetSecret("FOO", "inner")
+}
+
+func (_ *Secreter) Get(ctx context.Context, secret *Secret) (string, error) {
+	return secret.Plaintext(ctx)
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel").
+			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./secreter")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (t *Toplevel) TryReturn(ctx context.Context) error {
+	text, err := dag.Secreter().Make().Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if text != "inner" {
+		return fmt.Errorf("expected \"inner\", but got %q", text)
+	}
+	return nil
+}
+
+func (t *Toplevel) TryArg(ctx context.Context) error {
+	text, err := dag.Secreter().Get(ctx, dag.SetSecret("BAR", "outer"))
+	if err != nil {
+		return err
+	}
+	if text != "outer" {
+		return fmt.Errorf("expected \"outer\", but got %q", text)
+	}
+	return nil
+}
+`,
+			})
+
+		t.Run("can pass secrets", func(t *testing.T) {
+			_, err := ctr.With(daggerQuery(`{toplevel{tryArg}}`)).Stdout(ctx)
+			require.NoError(t, err)
+		})
+
+		t.Run("can return secrets", func(t *testing.T) {
+			_, err := ctr.With(daggerQuery(`{toplevel{tryReturn}}`)).Stdout(ctx)
+			require.NoError(t, err)
+		})
+	})
+
+	t.Run("duplicate secret names", func(t *testing.T) {
+		// check that each module has it's own segmented secret store, by
+		// writing secrets with the same name
+		t.Parallel()
+
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/maker").
+			With(daggerExec("init", "--name=maker", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import "context"
+
+type Maker struct {}
+
+func (_ *Maker) MakeSecret(ctx context.Context) (*Secret, error) {
+	secret := dag.SetSecret("FOO", "inner")
+	_, err := secret.ID(ctx)  // force the secret into the store
+	if err != nil {
+		return nil, err
+	}
+	return secret, nil
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel").
+			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./maker")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (t *Toplevel) Attempt(ctx context.Context) error {
+	secret := dag.SetSecret("FOO", "outer")
+	_, err := secret.ID(ctx)  // force the secret into the store
+	if err != nil {
+		return err
+	}
+
+	// this creates an inner secret "FOO", but it mustn't overwrite the outer one
+	secret2 := dag.Maker().MakeSecret()
+
+	plaintext, err := secret.Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "outer" {
+		return fmt.Errorf("expected \"outer\", but got %q", plaintext)
+	}
+
+	plaintext, err = secret2.Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "inner" {
+		return fmt.Errorf("expected \"inner\", but got %q", plaintext)
+	}
+
+	return nil
+}
+`,
+			})
+
+		_, err := ctr.With(daggerQuery(`{toplevel{attempt}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.NoError(t, c.Close())
+	})
+
+	t.Run("separate secret stores", func(t *testing.T) {
+		// check that modules can't access each other's global secret stores,
+		// by attempting to leak from each other
+		t.Parallel()
+
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/leaker").
+			With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Leaker struct {}
+
+func (l *Leaker) Leak(ctx context.Context) error {
+	secret, _ := dag.Secret("mysecret").Plaintext(ctx)
+	fmt.Println("trying to read secret:", secret)
+	return nil
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/leaker-build").
+			With(daggerExec("init", "--name=leaker-build", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import "context"
+
+type LeakerBuild struct {}
+
+func (l *LeakerBuild) Leak(ctx context.Context) error {
+	_, err := dag.Directory().
+		WithNewFile("Dockerfile", "FROM alpine\nRUN --mount=type=secret,id=mysecret cat /run/secrets/mysecret || true").
+		DockerBuild().
+		Sync(ctx)
+	return err
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel").
+			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./leaker")).
+			With(daggerExec("install", "./leaker-build")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import "context"
+
+type Toplevel struct {}
+
+func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
+	// get the id of a secret to force the engine to eval it
+	_, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = dag.Leaker().Leak(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = dag.LeakerBuild().Leak(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+`,
+			})
+
+		_, err := ctr.With(daggerQuery(`{toplevel{attempt(uniq: %q)}}`, identity.NewID())).Stdout(ctx)
+		require.NoError(t, err)
+		require.NoError(t, c.Close())
+		require.NotContains(t, logs.String(), "asdfasdf")
+	})
+
+	t.Run("secret by id leak", func(t *testing.T) {
+		// check that modules can't access each other's global secret stores,
+		// even when we know the underlying IDs
+		t.Parallel()
+
+		t.Skip("this protection is not yet implemented")
+
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/leaker").
+			With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+)
+
+type Leaker struct {}
+
+func (l *Leaker) Leak(ctx context.Context, target string) string {
+	secret, _ := dag.LoadSecretFromID(SecretID(target)).Plaintext(ctx)
+	return secret
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel").
+			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./leaker")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
+	secretID, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	// loading secret-by-id in the same module should succeed
+	plaintext, err := dag.LoadSecretFromID(secretID).Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "asdfasdf" {
+		return fmt.Errorf("expected \"asdfasdf\", but got %q", plaintext)
+	}
+
+	// but getting a leaker module to do this should fail
+	plaintext, err = dag.Leaker().Leak(ctx, string(secretID))
+	if err != nil {
+		return err
+	}
+	if plaintext != "" {
+		return fmt.Errorf("expected \"\", but got %q", plaintext)
+	}
+
+	return nil
+}
+`,
+			})
+
+		_, err := ctr.With(daggerQuery(`{toplevel{attempt(uniq: %q)}}`, identity.NewID())).Stdout(ctx)
+		require.NoError(t, err)
+		require.NoError(t, c.Close())
+	})
+
+	t.Run("secrets cache normally", func(t *testing.T) {
+		// check that secrets cache as they would without nested modules,
+		// which is essentially dependent on whether they have stable IDs
+
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/secreter").
+			With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+type Secreter struct {}
+
+func (_ *Secreter) Make(uniq string) *Secret {
+	return dag.SetSecret("MY_SECRET", uniq)
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel").
+			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./secreter")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (_ *Toplevel) AttemptInternal(ctx context.Context) error {
+	return diffSecret(
+		ctx,
+		dag.SetSecret("MY_SECRET", "foo"),
+		dag.SetSecret("MY_SECRET", "bar"),
+	)
+}
+
+func (_ *Toplevel) AttemptExternal(ctx context.Context) error {
+	return diffSecret(
+		ctx,
+		dag.Secreter().Make("foo"),
+		dag.Secreter().Make("bar"),
+	)
+}
+
+func diffSecret(ctx context.Context, first, second *Secret) error {
+	firstOut, err := dag.Container().
+		From("alpine").
+		WithSecretVariable("VAR", first).
+		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+
+	secondOut, err := dag.Container().
+		From("alpine").
+		WithSecretVariable("VAR", second).
+		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+
+	if firstOut != secondOut {
+		return fmt.Errorf("%q != %q", firstOut, secondOut)
+	}
+	return nil
+}
+`,
+			})
+
+		t.Run("internal secrets cache", func(t *testing.T) {
+			_, err := ctr.With(daggerQuery(`{toplevel{attemptInternal}}`)).Stdout(ctx)
+			require.NoError(t, err)
+		})
+
+		t.Run("external secrets cache", func(t *testing.T) {
+			_, err := ctr.With(daggerQuery(`{toplevel{attemptExternal}}`)).Stdout(ctx)
+			require.NoError(t, err)
 		})
 	})
 }

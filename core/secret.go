@@ -2,9 +2,12 @@ package core
 
 import (
 	"context"
+	"crypto/hmac"
+	"encoding/hex"
 	"sync"
 
 	"github.com/moby/buildkit/session/secrets"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -12,8 +15,36 @@ import (
 // Secret is a content-addressed secret.
 type Secret struct {
 	Query *Query
+
 	// Name specifies the name of the secret.
 	Name string `json:"name,omitempty"`
+
+	// Accessor specifies the accessor key for the secret.
+	Accessor string `json:"accessor,omitempty"`
+}
+
+func GetLocalSecretAccessor(ctx context.Context, parent *Query, name string) (string, error) {
+	m, err := parent.CurrentModule(ctx)
+	if err != nil && !errors.Is(err, ErrNoCurrentModule) {
+		return "", err
+	}
+	var d digest.Digest
+	if m != nil {
+		d, err = m.Source.ID().Digest()
+		if err != nil {
+			return "", err
+		}
+	}
+	return NewSecretAccessor(name, d.String()), nil
+}
+
+func NewSecretAccessor(name string, scope string) string {
+	// Use an HMAC, which allows us to keep the scope secret
+	// This also protects from length-extension attacks (where if we had
+	// access to secret FOO in scope X, we could derive access to FOOBAR).
+	h := hmac.New(digest.SHA256.Hash, []byte(scope))
+	dt := h.Sum([]byte(name))
+	return hex.EncodeToString(dt)
 }
 
 func (*Secret) Type() *ast.Type {
@@ -32,10 +63,6 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
-func (secret *Secret) Plaintext(ctx context.Context) ([]byte, error) {
-	return secret.Query.Secrets.GetSecret(ctx, secret.Name)
-}
-
 func NewSecretStore() *SecretStore {
 	return &SecretStore{
 		secrets: map[string][]byte{},
@@ -51,7 +78,7 @@ type SecretStore struct {
 
 // AddSecret adds the secret identified by user defined name with its plaintext
 // value to the secret store.
-func (store *SecretStore) AddSecret(_ context.Context, name string, plaintext []byte) error {
+func (store *SecretStore) AddSecret(ctx context.Context, name string, plaintext []byte) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.secrets[name] = plaintext

@@ -351,9 +351,9 @@ func Pipeline(name string, opts ...dagger.PipelineOpts) *dagger.Client {
 }
 
 // Reference a secret by name.
-func Secret(name string) *dagger.Secret {
+func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()
-	return client.Secret(name)
+	return client.Secret(name, opts...)
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.

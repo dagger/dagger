@@ -567,10 +567,13 @@ class Client extends Client\AbstractClient
     /**
      * Reference a secret by name.
      */
-    public function secret(string $name): Secret
+    public function secret(string $name, ?string $accessor = null): Secret
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $accessor) {
+        $innerQueryBuilder->setArgument('accessor', $accessor);
+        }
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

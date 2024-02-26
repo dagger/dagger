@@ -4607,6 +4607,11 @@ pub struct QueryPipelineOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub labels: Option<Vec<PipelineLabel>>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySecretOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub accessor: Option<&'a str>,
+}
 impl Query {
     /// Retrieves a content-addressed blob.
     ///
@@ -5547,9 +5552,30 @@ impl Query {
         };
     }
     /// Reference a secret by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn secret(&self, name: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
         query = query.arg("name", name.into());
+        return Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Reference a secret by name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn secret_opts<'a>(&self, name: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
+        let mut query = self.selection.select("secret");
+        query = query.arg("name", name.into());
+        if let Some(accessor) = opts.accessor {
+            query = query.arg("accessor", accessor);
+        }
         return Secret {
             proc: self.proc.clone(),
             selection: query,
