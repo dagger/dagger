@@ -11,4 +11,24 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+A Dagger Module can have multiple object types defined. It's important to understand that they are only accessible through [chaining](./528510-chaining.mdx), starting from a function in the main object.
+
+Here is an example of a function named `DaggerOrganization` that returns a custom `GitHubOrganization` type, itself containing a collection of `GitHubAccount` types:
+
+```go file=./snippets/custom-types/main.go
+```
+
+Note that `GitHubOrganization` and `GitHubAccount` have no functions exposed, but these may be defined if needed.
+
+Here's an example of calling this module to get all member URLs:
+
+```shell
+dagger call dagger-organization members url
+```
+
+The result will be:
+
+```shell
+https://github.com/jane
+https://github.com/john
+```

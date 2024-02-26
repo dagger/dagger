@@ -1,7 +1,7 @@
-// Hello World module is a simple example of a module description
+// This module returns information about the OS for a container image
 package main
 
-// Further documentation for the module goes here.
+// Further documentation for the module here.
 
 import (
 	"context"

@@ -16,19 +16,9 @@ definitions so that your module can accept arbitrary values from other modules
 without being tightly coupled to the concrete type underneath.
 
 To use an interface, define a Go interface that embeds `DaggerObject` and use
-it in a module function argument:
+it in a function argument:
 
-```go
-type MyMod struct {}
-
-type Fooer interface {
-  DaggerObject
-  Foo(ctx context.Context, bar int) (string, error)
-}
-
-func (m *MyMod) Foo(ctx context.Context, fooer Fooer) (string, error) {
-  return fooer.Foo(ctx, 42)
-}
+```go file=./snippets/interfaces/main.go
 ```
 
 Functions defined in interface definitions must match the client-side API
