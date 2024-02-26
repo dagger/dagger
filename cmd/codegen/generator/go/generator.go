@@ -333,9 +333,9 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 func (g *GoGenerator) baseModuleSource() string {
 	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
 
-	return fmt.Sprintf(`// The %s module's short description
+	return fmt.Sprintf(`// The %[1]s module's short description
 //
-// The %s module's long description is here. It can span multiple lines and
+// The %[1]s module's long description is here. It can span multiple lines and
 // provides more detail about your module's usage.
 
 package main
@@ -344,16 +344,16 @@ import (
 	"context"
 )
 
-// Functions for working with %s
-type %s struct{}
+// Functions for working with %[1]s
+type %[1]s struct{}
 
 // Returns a container that echoes whatever string argument is provided
-func (m *%s) ContainerEcho(stringArg string) *Container {
+func (m *%[1]s) ContainerEcho(stringArg string) *Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }
 
 // Returns lines that match a pattern in the files of the provided Directory
-func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
+func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
 		WithMountedDirectory("/mnt", directoryArg).
@@ -361,5 +361,5 @@ func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern strin
 		WithExec([]string{"grep", "-R", pattern, "."}).
 		Stdout(ctx)
 }
-`, moduleStructName, moduleStructName, moduleStructName, moduleStructName, moduleStructName, moduleStructName)
+`, moduleStructName)
 }
