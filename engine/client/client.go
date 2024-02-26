@@ -182,12 +182,15 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// making something up, and should be pretty much 1:1 I think (even
 	// non-cached things will have a different caller digest each time)
 	connectDigest := params.ModuleCallerDigest
+	var opts []progrock.VertexOpt
 	if connectDigest == "" {
 		connectDigest = digest.FromString("_root") // arbitrary
+	} else {
+		opts = append(opts, progrock.Internal())
 	}
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", progrock.Internal())
+	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", opts...)
 	defer func() { loader.Done(rerr) }()
 
 	// Check if any of the upstream cache importers/exporters are enabled.
