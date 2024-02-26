@@ -54,16 +54,6 @@ npm install
 
 This means that so long as the project has a `package.json` file, it can be used as a library and it can be managed using any Node.js package manager such as [`npm`](https://www.npmjs.com/), [`pnpm`](https://pnpm.io/) or [`yarn`](https://yarnpkg.com/).
 
-## TypeScript dependencies
-
-To add a TypeScript dependency, simply add it to the `package.json`'s `dependencies` using your favorite package manager:
-
-```shell
-npm install pm2
-```
-
-Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
-
 ## Multiple files
 
 Due to TypeScript limitations, it is not possible to split your main class module (`index.ts`) into multiple files. However, it is possible to create sub-classes in different files and access them from your main class module:

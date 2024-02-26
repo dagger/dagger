@@ -264,6 +264,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/python/typescript-dependencies"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/typescript/ide-integration"
             },
 

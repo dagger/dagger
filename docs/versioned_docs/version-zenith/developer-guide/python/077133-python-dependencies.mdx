@@ -5,7 +5,6 @@ toc_max_heading_level: 2
 title: "Python Dependencies"
 ---
 
-
 # Python Dependencies
 
 To add a Python dependency, simply [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements), as in the example below:
@@ -34,7 +33,7 @@ dependencies = [
 ]
 ```
 
-With Hatch, there is the option to also use a [plugin](https://pypi.org/project/hatch-requirements-txt/) to dynamically use a `requirements.txt` file in `dependencies`, which allows for a [`pip-tools`](https://pypi.org/project/pip-tools/) workflow:
+With Hatch, there is also the option to use a [plugin](https://pypi.org/project/hatch-requirements-txt/) to dynamically use a `requirements.txt` file in `dependencies`, which allows for a [`pip-tools`](https://pypi.org/project/pip-tools/) workflow:
 
 ```toml
 [build-system]
@@ -70,4 +69,3 @@ The `requirements.txt` file now contains:
 #    uv pip compile requirements.in -o requirements.txt
 infisical-python==2.1.8
 ```
-
