@@ -27,9 +27,18 @@
     {
       "type": "category",
       "label": "User Guide",
+      "link": {
+        "type": "doc",
+        "id": "user-guide/index"
+      },
       "collapsible": true,
       "collapsed": true,
       "items": [
+        {
+          "type": "doc",
+          "label": "Dagger in CI",
+          "id": "user-guide/ci/index"
+        },
         {
           "type": "category",
           "label": "Dagger Cloud",

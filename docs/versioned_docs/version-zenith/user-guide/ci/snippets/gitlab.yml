@@ -9,9 +9,6 @@
     DOCKER_CERT_PATH: '/certs/client'
     DOCKER_DRIVER: overlay2
     DOCKER_VERSION: '20.10.16'
-    // highlight-start
-    DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
-    // highlight-end
 .dagger:
   extends: [.docker]
   before_script:
@@ -20,9 +17,4 @@
 build:
   extends: [.dagger]
   script:
-    - dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
-    // highlight-start
-    # for ephemeral runners only: override the default docker stop timeout and
-    # give the Dagger Engine more time to push cache data to Dagger Cloud
-    - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
-    // highlight-end
+    - dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting Hola --name Daggernauts --shout

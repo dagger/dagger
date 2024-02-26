@@ -9,18 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      -
+        name: Call Dagger Function
+        uses: dagger/dagger-for-github@v5
         with:
-          node-version: 16
-      - name: Install deps
-        run: npm ci
-      - name: Install Dagger CLI
-        run: cd /usr/local && { curl -L https://dl.dagger.io/dagger/install.sh | sh; cd -; }
-      - name: Run Dagger pipeline
-        run: dagger run node index.mjs
+          version: "0.9.11"
+          verb: call
+          module: github.com/kpenfound/dagger-modules/golang@v0.1.5
+          args: build --project=. --args=./cmd/dagger
         // highlight-start
-        env:
-           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
       # for ephemeral runners only: override the default docker stop timeout and
       # give the Dagger Engine more time to push cache data to Dagger Cloud
       - name: Stop Engine

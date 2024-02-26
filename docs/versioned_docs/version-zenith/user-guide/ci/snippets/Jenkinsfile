@@ -1,0 +1,14 @@
+pipeline {
+  agent { label 'dagger' }
+
+  stages {
+    stage("dagger") {
+      steps {
+        sh '''
+            curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+            dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting Hola --name Daggernauts --shout
+        '''
+      }
+    }
+  }
+}

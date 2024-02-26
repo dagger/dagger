@@ -1,0 +1,43 @@
+---
+slug: /user-guide/ci
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Dagger in CI
+
+<PartialExperimentalDocs />
+
+This guide explains how to integrate the Dagger SDKs with various CI services/tools.
+
+## GitHub Actions
+
+```yaml title=".github/workflows/dagger.yml" file=./snippets/actions.yml
+```
+
+## GitLab CI
+
+```yaml title=".gitlab-ci.yml" file=./snippets/gitlab.yml
+```
+
+## CircleCI
+
+```yaml title=".circleci/config.yml" file=./snippets/circle.yml
+```
+
+## Jenkins
+
+Requires `docker` client installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`.
+
+```groovy title="Jenkinsfile" file=./snippets/Jenkinsfile
+```
+
+## Azure Pipelines
+
+```yaml title="azure-pipelines.yml" file=./snippets/azure-pipelines.yml
+```
+
+## AWS CodePipeline
+
+```yaml title="buildspec.yml" file=./snippets/buildspec.yml
+```

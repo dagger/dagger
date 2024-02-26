@@ -4,8 +4,11 @@ slug: /user-guide/cloud/572923/get-started
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 # Get Started with Dagger Cloud
+
+<PartialExperimentalDocs />
 
 ## Introduction
 
@@ -72,7 +75,7 @@ To find your token, browse to the **Organization Settings** page, by clicking yo
 
 Once you have your token, you can now use it to connect Dagger Cloud with your CI and/or local development machines.
 
-### Local development
+### Connect from your local development host
 
 You can visualize and debug your local Dagger pipeline runs with Dagger Cloud to identify issues before pushing them to CI.
 
@@ -86,7 +89,7 @@ export DAGGER_CLOUD_TOKEN={your token}
 Dagger Cloud uses metadata from your version control system (VCS), such as Git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned Git repository.
 :::
 
-### In CI
+### Connect from your CI engine
 
 The general procedure to connect Dagger Cloud with a CI provider/CI tool is:
 
@@ -219,7 +222,7 @@ Here is a sample Argo Workflows specification with Dagger Cloud integration:
 At the end of this step, you will have data from one or more CI or local runs available for inspection and debugging in Dagger Cloud.
 :::
 
-### Local development
+### Trigger runs from your local development host
 
 :::info Best practices for visualizing local runs in Dagger Cloud
 Dagger Cloud uses metadata from your version control system (VCS), such as Git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned Git repository.
@@ -235,7 +238,7 @@ To see this in action, commit a change to your locally-cloned example repository
 ```shell
 echo "test" >> README.md
 git commit -a -m "Updated README"
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.3 --proj=. call build --args=./cmd/dagger
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
 ```
 
 Because you ran this in a Git context, the Dagger Cloud UI shows the VCS Git metadata associated with the commit.
@@ -250,7 +253,7 @@ If you run outside of a Git context, Dagger Cloud will show the same detailed st
 To use Dagger Cloud locally with multiple organizations, you must set distinct environment variables for each organization's Dagger Cloud token. You can find the unique token for an organization in the **Organization Settings** page.
 :::
 
-### In CI
+### Trigger runs from your CI engine
 
 Once your CI provider/tool is connected with Dagger Cloud, it's time to test the integration.
 
@@ -290,10 +293,9 @@ One of Dagger's most powerful features is its ability to cache data across pipel
 
 Dagger comes with built-in support to define one or more such directories as cache volumes and persist their contents across runs. Dagger Cloud enhances caching support significantly and allows cross-host synchronization of cache volumes. This allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
-Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a run. If you're using the starter application and Dagger pipeline from [Appendix A](#appendix-a-create-a-dagger-pipeline), do this by updating the Dagger pipeline code as shown below (changes are highlighted):
+Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a run.
 
-```javascript file=./snippets/get-started/step4/index.mjs
-```
+TODO
 
 This revised pipeline now uses a cache volume for the application dependencies.
 
