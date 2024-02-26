@@ -11,27 +11,29 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-It’s essential to understand a few things about Python modules and how they’re structured, in order to make it fit with your normal workflow.
+It's essential to understand a few key concepts about Dagger Modules created for use with the Python SDK, for a better fit with your normal development workflow.
 
 ## Runtime container with Python 3.11
 
-Like in other SDKs, Python modules run in a container (called the *runtime container*) that’s bootstrapped specifically by the Python SDK, with the necessary environment to run the module’s code. It’s currently hardcoded to run in **Python 3.11**, but we plan on it being configurable at some point.
+Like in other SDKs, Python modules run in a container (called the *runtime container*) that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It's currently hardcoded to run in Python 3.11 (although this may be configurable in future).
 
 ## Automatic SDK install
 
-The Python SDK is installed automatically, including dependencies, with a version that’s tied to the currently running Dagger Engine container[^1]:
+The Python SDK is installed automatically, including dependencies, with a version that's tied to the currently running Dagger Engine container[^1]:
+
 ```shell
 # executed by the runtime container
 pip install -e /sdk
 ```
 
-This is why the initial `pyproject.toml` file doesn’t include any dependencies.
+This is why the initial `pyproject.toml` file doesn't include any dependencies.
 
-[^1]: The SDK files in the Engine docker container are mounted under `/sdk` in the Dagger runtime container.
+[^1]: The SDK files are mounted under `/sdk` in the Dagger Engine container.
 
 ## Modules as Python libraries
 
-Dagger modules in Python are built to be installed, **like libraries**. The runtime container installs your code with:
+Dagger Modules in Python are built to be installed, like libraries. The runtime container installs your code with:
+
 ```shell
 # executed by the runtime container
 pip install .
@@ -39,21 +41,22 @@ pip install .
 
 Due to [PEP 517](https://peps.python.org/pep-0517/) and [pip supporting `pyproject.toml`](https://pip.pypa.io/en/stable/reference/build-system/pyproject-toml/), this means that all package managers that support the [build backend](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#declaring-the-build-backend) standard are automatically supported.
 
-For example, you can use [Hatch](https://hatch.pypa.io/latest/config/build/#build-system), [Poetry](https://python-poetry.org/docs/pyproject/#poetry-and-pep-517), or [PDM](https://pdm-project.org/latest/reference/build/), to manage a module’s dependencies and configure how it’s built and installed.
+For example, you can use [Hatch](https://hatch.pypa.io/latest/config/build/#build-system), [Poetry](https://python-poetry.org/docs/pyproject/#poetry-and-pep-517), or [PDM](https://pdm-project.org/latest/reference/build/), to manage a module's dependencies and configure how it's built and installed.
 
 Read more about this in the [Packaging Python Projects](https://packaging.python.org/en/latest/tutorials/packaging-projects/) tutorial.
 
 ### Required `main` in `site-packages`
 
-The module’s code isn’t executed directly like a script; it’s rather **imported** under the hardcoded name `main` (which will also be configurable in the future).
+The module's code isn't executed directly like a script, but it is rather imported under the hardcoded name `main` (although this may be configurable in future).
 
-This means that after `pip install .`, there should be a Python module (or package) called `main` in the virtual environment’s *site-packages* directory inside the runtime container (`/opt/venv/lib/python-3.11/site-packages/main`).
+This means that after `pip install .`, there should be a Python module (or package) called `main` in the virtual environment's `site-packages/` directory inside the runtime container (`/opt/venv/lib/python-3.11/site-packages/main`).
 
 This is the most important requirement. The other conventions are flexible, as long as the above is verified.
 
-## Adding dependencies
+## Python dependencies
 
-To add a Python dependency, simply [add it to `pyproject.toml`’s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+To add a Python dependency, simply [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+
 ```toml
 [project]
 dependencies = [
@@ -61,14 +64,15 @@ dependencies = [
 ]
 ```
 
-Of course, for tools that support it, you can simply use the CLI:
+Of course, for tools that support it, you can simply use the CLI, as below:
+
 ```shell
 poetry add infisical-python
 ```
 
 ### Pinned dependencies
 
-Since the module is installed via `pip install .`, lock files aren’t supported yet because they’re not a part of the standard build system and thus require using the tool directly. In the meantime, you’ll need to pin it:
+Since the module is installed via `pip install .`, lock files aren't supported yet because they're not a part of the standard build system and thus require using the tool directly. In the meantime, you'll need to pin it:
 
 ```toml
 [project]
@@ -77,7 +81,8 @@ dependencies = [
 ]
 ```
 
-With Hatch, you can also use a [plugin](https://pypi.org/project/hatch-requirements-txt/) to dynamically use a `requirements.txt` file in `dependencies`, which allows for a [pip-tools](https://pypi.org/project/pip-tools/) workflow:
+With Hatch, there is the option to also use a [plugin](https://pypi.org/project/hatch-requirements-txt/) to dynamically use a `requirements.txt` file in `dependencies`, which allows for a [`pip-tools`](https://pypi.org/project/pip-tools/) workflow:
+
 ```toml
 [build-system]
 requires = ["hatchling", "hatch-requirements-txt"]
@@ -92,36 +97,37 @@ dynamic = ["dependencies"]
 files = ["requirements.txt"]
 ```
 
-Using the fast [uv](https://github.com/astral-sh/uv) tool, you can now manage constraints in a separate file:
+Using the fast [`uv`](https://github.com/astral-sh/uv) tool, you can now manage constraints in a separate file:
+
 ```
 # requirements.in
 infisical-python>=2.1.6
 ```
 
-And generate a pinned file from those constraints:
+Then, generate a pinned file from those constraints:
+
 ```
 uv pip compile requirements.in -o requirements.txt
 ```
 
-Where `requirements.txt` now contains:
+The `requirements.txt` file now contains:
+
 ```
 # This file was autogenerated by uv v0.1.5 via the following command:
 #    uv pip compile requirements.in -o requirements.txt
 infisical-python==2.1.8
 ```
 
-:::note
-It’s possible we’ll support installing from `requirements.txt` directly through a solution for lock files as well.
-:::
 ## Multiple files
 
 You can split your Python module (`main.py`) into multiple files by turning it into a [package](https://realpython.com/python-modules-packages/):
+
 ```shell
 mkdir src/main
 mv src/main.py src/main/__init__.py
 ```
 
-Just need to make sure Dagger sees it by importing in `__init__.py`:
+Ensure that Dagger sees it by importing it in `__init__.py`:
 
 ```python
 # src/main/__init__.py
@@ -135,27 +141,30 @@ from .lint import Lint  # in src/main/lint.py
 ## Project name
 
 The default project name in `pyproject.toml` is also `main`:
+
 ```toml
 [project]
 name = "main"
 ```
 
- This is because most package managers use the name of the project to find the package to build, under `./src`. So, if you change the name of the project, you also need to make sure your chosen tool can find the package.
+This is because most package managers use the name of the project to find the package to build, under `./src`. So, if you change the name of the project, you also need to make sure your chosen tool can find the package.
 
- For example, with Poetry, using a different project name (truncated for brevity):
+Here is an example of using a different project name with Poetry (truncated for brevity):
+
 ```toml
 [tool.poetry]
 name = "awesome-module"
 packages = [{ include = "main.py", from = "src" }]
 ```
 
-## src layout
+## Default project layout
 
-The default template from `dagger init` creates a `main.py` file inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code, which prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (read [this blog post](https://blog.ionelmc.ro/2014/05/25/python-packaging/) for more on this).
+The default template from `dagger init` creates a `main.py` file inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code, which prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python pakaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
 
-Tools like [build](https://build.pypa.io/en/latest/) (default), [Hatch](https://hatch.pypa.io/latest/), and [Poetry](https://python-poetry.org/docs/) already detect this project layout by default, but it’s not required and can be overridden as long as `main` is installed correctly installed in `site-packages`. Or at least importable with `import main`.
+Tools like [build](https://build.pypa.io/en/latest/) (default), [Hatch](https://hatch.pypa.io/latest/), and [Poetry](https://python-poetry.org/docs/) already detect this project layout by default, but it's not required and can be overridden as long as `main` is installed correctly in `site-packages`, or is at least importable with `import main`.
 
-For example, moving the `main` package next to `pyproject.toml`:
+Here is an example of moving the `main` package next to `pyproject.toml`, resulting in the following structure:
+
 ```
 .
 ├── main
@@ -166,7 +175,8 @@ For example, moving the `main` package next to `pyproject.toml`:
 └── pyproject.toml
 ```
 
-You need to explicitly tell Poetry where to find the package (truncated for brevity):
+In this case, it is necessary to to explicitly tell Poetry where to find the package, as shown below (truncated for brevity):
+
 ```toml
 [tool.poetry]
 name = "awesome-module"

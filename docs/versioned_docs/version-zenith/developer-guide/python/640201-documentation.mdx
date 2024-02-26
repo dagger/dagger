@@ -2,18 +2,17 @@
 slug: /developer-guide/python/640201/documentation
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "Documentation"
+title: "Inline Documentation"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
-# Documentation
+# Inline Documentation
 
 <PartialExperimentalDocs />
 
-Dagger modules and functions can be documented so that descriptions are shown
-in the API, and consequently in the CLI and other places like https://daggerverse.dev.
-
+Dagger Modules and Dagger Functions should be documented so that descriptions are shown
+in the API and the CLI - for example, when calling `dagger functions` and `dagger call --help`.
 
 ## Documentation strings
 
@@ -35,7 +34,7 @@ is documented at the top of the `__init__.py` file, just like any Python package
 
 ## Function arguments
 
-For function arguments, [annotate][typing-doc] with the [dagger.Doc][dag-doc] metadata:
+For function arguments, [annotate][`typing-doc`] with the [`dagger.Doc`][dag-doc] metadata:
 
 ```python file=./snippets/documentation/arguments/main.py
 ```
@@ -43,7 +42,6 @@ For function arguments, [annotate][typing-doc] with the [dagger.Doc][dag-doc] me
 :::note
 [`dagger.Doc`][dag-doc] is just an alias for [`typing_extensions.Doc`][ext-doc].
 :::
-
 
 [docstrings]: https://peps.python.org/pep-0008/#documentation-strings
 [pymod]: https://docs.python.org/3/tutorial/modules.html

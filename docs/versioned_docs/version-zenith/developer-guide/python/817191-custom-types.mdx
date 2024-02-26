@@ -22,11 +22,11 @@ that returns a custom `Organization` type, itself containing a collection of
 ```python file=./snippets/custom-types/main.py
 ```
 
-Remember that the [dagger.field][dag-field] descriptors expose getter functions
+Remember that the [`dagger.field`][dag-field] descriptors expose getter functions
 without arguments, for their [attributes](./944887-attribute-functions.mdx).
 
 :::note
-When the Dagger server extends the API schema with these types, it'll prefix
+When the Dagger Engine extends the API schema with these types, it prefixes
 their names with the name of the main object:
 - Github
 - GithubAccount

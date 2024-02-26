@@ -2,19 +2,19 @@
 slug: /developer-guide/python/428321/constructors
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "Constructor"
+title: "Constructors"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
-# Constructor
+# Constructors
 
 <PartialExperimentalDocs />
 
 The main object's constructor is exposed as the entrypoint function for a module.
-Its parameters are available as flags in the `dagger call` command, directly.
+Its parameters are available as flags in the `dagger call` command directly.
 
-It can be a simple way to accept module-wide configuration, or just for setting
+This is a simple way to accept module-wide configuration, or just to set
 a few attributes without having to create setter functions for them.
 
 In the Python SDK, the [`@dagger.object_type`][@object_type] decorator wraps
@@ -44,9 +44,9 @@ using the same annotation used on function arguments:
 ```python file=./snippets/constructors/doc/main.py
 ```
 
-We can see the flags documented in `dagger call --help`:
+The flags can be seen documented in the output of `dagger call --help`:
 
-```
+```shell
 Flags:
       --greeting string   The greeting to use (default "Hello")
       --name string       Who to greet (default "World")
@@ -54,7 +54,6 @@ Flags:
 Function Commands:
   message       Return the greeting message
 ```
-
 
 ## Exclude argument in constructor
 
@@ -64,9 +63,9 @@ generated `__init__()` function, using [dataclasses.field(init=False)][field]:
 ```python file=./snippets/constructors/exclude/main.py
 ```
 
-We can see that only the `name` flag was added:
+In this case, only the `name` flag was added and is visible in the output:
 
-```
+```shell
 Flags:
       --name string      Who to greet (default "World")
 
@@ -74,7 +73,7 @@ Function Commands:
   message       Return the greeting message
 ```
 
-## Constructor only argument
+## Constructor-only arguments
 
 The opposite is also possible. To define an argument that only exists in
 the constructor, but not as a class attribute, define it as an
@@ -100,7 +99,6 @@ a factory class method which must be named `create`:
 
 ```python file=./snippets/constructors/async/main.py
 ```
-
 
 [@object_type]: https://dagger-io.readthedocs.io/en/sdk-python-v0.9.11/module.html#dagger.object_type
 [dataclass]: https://docs.python.org/3/library/dataclasses.html
