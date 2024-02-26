@@ -381,7 +381,7 @@ dagger call serve --source=. up --ports=8080:80
 You should now be able to access the application by browsing to http://localhost:8080 on the host (replace `localhost` with your Docker host's network name if accessing it remotely).
 
 :::tip
-The `--ports 8080:80` argument results in container port 80 being mapped to host port 8080. An alternative is to use the `--native` argument, which results in the exposed ports on the container being auto-mapped to the corresponding ports on the host.
+The `--ports 8080:80` argument results in container port 80 being mapped to host port 8080. An alternative is to not provide any `--ports` flags, which results in the exposed ports on the container being auto-mapped to the corresponding ports on the host (i.e. port `80` will be used on your localhost).
 :::
 
 ## Conclusion
