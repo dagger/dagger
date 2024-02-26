@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -51,8 +52,13 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	mfs := memfs.New()
 
+	var overlay fs.FS = mfs
+	if g.Config.ModuleName != "" {
+		overlay = layerfs.New(mfs, &MountedFS{FS: dagger.QueryBuilder, Name: "internal"})
+	}
+
 	genSt := &generator.GeneratedState{
-		Overlay: layerfs.New(mfs, dagger.QueryBuilder),
+		Overlay: overlay,
 		PostCommands: []*exec.Cmd{
 			// run 'go mod tidy' after generating to fix and prune dependencies
 			exec.Command("go", "mod", "tidy"),
@@ -81,9 +87,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		pkgInfo.PackageName = "main"
 
 		// generate an initial dagger.gen.go from the base Dagger API
-		baseCfg := g.Config
-		baseCfg.ModuleName = ""
-		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
+		if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 

@@ -477,7 +477,8 @@ func TestModuleGit(t *testing.T) {
 			sdk: "go",
 			gitGeneratedFiles: []string{
 				"/dagger.gen.go",
-				"/querybuilder/**",
+				"/internal/dagger/**",
+				"/internal/querybuilder/**",
 			},
 		},
 		{
@@ -1621,8 +1622,8 @@ func TestModuleGoExtendCore(t *testing.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("internal/dagger/more.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package dagger
 
 import "context"
 
@@ -2962,7 +2963,7 @@ func TestModuleGoUseDaggerTypesDirect(t *testing.T) {
 		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package main
 
-import "main/dagger"
+import "main/internal/dagger"
 
 type Minimal struct{}
 
@@ -3019,7 +3020,7 @@ func (m *Minimal) Hello(ctx context.Context) (string, error) {
 		WithNewFile("utils/util.go", dagger.ContainerWithNewFileOpts{
 			Contents: `package utils
 
-import "main/dagger"
+import "main/internal/dagger"
 
 func Foo() *dagger.Directory {
 	return dagger.Connect().Directory().WithNewFile("/foo", "hello world")
@@ -4822,8 +4823,8 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	switch sdk {
 	case "go":
 		// FIXME: go codegen is split up into dagger/dagger.gen.go and
-		// dagger/dagger/dagger.gen.go
-		return "dagger/dagger/dagger.gen.go"
+		// dagger/internal/dagger/dagger.gen.go
+		return "dagger/internal/dagger/dagger.gen.go"
 	case "python":
 		return "dagger/sdk/src/dagger/client/gen.py"
 	case "typescript":
