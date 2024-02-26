@@ -111,7 +111,7 @@ const config = {
           entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
           tsconfig: '../sdk/typescript/tsconfig.json',
           // Zenith reference
-          out: '../versioned_docs/version-zenith/developer/typescript/reference/',
+          out: '../versioned_docs/version-zenith/reference/typescript/',
           excludeProtected: true,
           exclude: '../sdk/typescript/node_modules/**',
           skipErrorChecking: true,
@@ -136,7 +136,7 @@ const config = {
       sidebarCollapsed: false,
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
-        additionalLanguages: ["php", "rust", "elixir", "bash"],
+        additionalLanguages: ["php", "rust", "elixir", "bash", "toml"],
         theme: prismThemes.dracula,
       },
       navbar: {
