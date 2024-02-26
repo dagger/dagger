@@ -115,8 +115,6 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
-1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitHub Actions workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
-
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
 
 Here is a sample GitHub Actions workflow file with the Dagger Cloud integration highlighted:
@@ -228,7 +226,7 @@ At the end of this step, you will have data from one or more CI or local runs av
 Dagger Cloud uses metadata from your version control system (VCS), such as Git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned Git repository.
 :::
 
-Before completing these steps, ensure you've [added your Dagger Cloud token as an environment variable](#local-development).
+Before completing these steps, ensure you've [added your Dagger Cloud token as an environment variable](#connect-from-your-local-development-host).
 
 1. In your terminal, call the Dagger Module. If your environment variable is properly defined, you will see a Dagger Cloud URL printed in the terminal.
 1. Click on the URL to view details of the run in Dagger Cloud.

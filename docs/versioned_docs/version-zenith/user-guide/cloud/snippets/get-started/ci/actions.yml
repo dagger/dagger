@@ -19,9 +19,4 @@ jobs:
           args: build --project=. --args=./cmd/dagger
         // highlight-start
           cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
-      # for ephemeral runners only: override the default docker stop timeout and
-      # give the Dagger Engine more time to push cache data to Dagger Cloud
-      - name: Stop Engine
-        run: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
-        if: always()
         // highlight-end
