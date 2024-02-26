@@ -1,7 +1,7 @@
 import { dag, object, func, GitRepository, field } from '@dagger.io/dagger';
 
 @object()
-class GitHubAccount {
+class Account {
   @field()
   username: string;
 
@@ -19,7 +19,7 @@ class GitHubAccount {
 }
 
 @object()
-class GitHubOrganization {
+class Organization {
   @field()
   url: string;
 
@@ -27,20 +27,20 @@ class GitHubOrganization {
   repository: GitRepository[];
 
   @field()
-  members: GitHubAccount[];
+  members: Account[];
 }
 
 @object()
-class MyModule {
+class Github {
   @func()
-  daggerOrganization(): GitHubOrganization {
-    const organisation = new GitHubOrganization();
+  daggerOrganization(): Organization {
+    const organisation = new Organization();
 
     organisation.url = 'https://github.com/dagger';
     organisation.repository = [dag.git(`${organisation.url}/dagger`)];
     organisation.members = [
-      new GitHubAccount('jane', 'jane@example.com'),
-      new GitHubAccount('john', 'john@example.com')
+      new Account('jane', 'jane@example.com'),
+      new Account('john', 'john@example.com')
     ];
 
     return organisation;

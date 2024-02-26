@@ -1,29 +1,29 @@
 package main
 
-type MyModule struct{}
+type Github struct{}
 
-func (module *MyModule) DaggerOrganization() *GitHubOrganization {
-	return &GitHubOrganization{
+func (module *Github) DaggerOrganization() *Organization {
+	return &Organization{
 		URL:          "https://github.com/dagger",
 		Repositories: []*GitRepository{dag.Git(`${organisation.url}/dagger`)},
-		Members: []*GitHubAccount{
+		Members: []*Account{
 			{"jane", "jane@example.com"},
 			{"john", "john@example.com"},
 		},
 	}
 }
 
-type GitHubAccount struct {
+type Account struct {
 	Username string
 	Email    string
 }
 
-func (account *GitHubAccount) URL() string {
+func (account *Account) URL() string {
 	return "https://github.com/" + account.Username
 }
 
-type GitHubOrganization struct {
+type Organization struct {
 	URL          string
 	Repositories []*GitRepository
-	Members      []*GitHubAccount
+	Members      []*Account
 }
