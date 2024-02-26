@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 )
@@ -38,6 +39,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &portForwardValue{}
 	case CacheVolume:
 		return &cacheVolumeValue{}
+	case Platform:
+		return &platformValue{}
 	}
 	return nil
 }
@@ -59,6 +62,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*portForwardValue]{}
 	case CacheVolume:
 		return &sliceValue[*cacheVolumeValue]{}
+	case Platform:
+		return &sliceValue[*platformValue]{}
 	}
 	return nil
 }
@@ -480,6 +485,42 @@ func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client) (any, erro
 	return dag.CacheVolume(v.name), nil
 }
 
+type platformValue struct {
+	platform platforms.Platform
+}
+
+func (v *platformValue) Type() string {
+	return Platform
+}
+
+func (v *platformValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("platform cannot be empty")
+	}
+	if s == "current" {
+		v.platform = platforms.DefaultSpec()
+		return nil
+	}
+
+	p, err := platforms.Parse(s)
+	if err != nil {
+		return err
+	}
+	v.platform = p
+	return nil
+}
+
+func (v *platformValue) String() string {
+	return platforms.Format(v.platform)
+}
+
+func (v *platformValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
+	if v.String() == "" {
+		return nil, fmt.Errorf("cacheVolume name cannot be empty")
+	}
+	return dagger.Platform(platforms.Format(v.platform)), nil
+}
+
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
 func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any, error) {
@@ -488,6 +529,13 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 
 	if flags.Lookup(name) != nil {
 		return nil, fmt.Errorf("flag already exists: %s", name)
+	}
+
+	if r.TypeDef.Alias != "" {
+		if val := GetCustomFlagValue(r.TypeDef.Alias); val != nil {
+			flags.Var(val, name, usage)
+			return val, nil
+		}
 	}
 
 	switch r.TypeDef.Kind {
@@ -527,6 +575,13 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any,
 
 	case dagger.ListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
+
+		if elementType.Alias != "" {
+			if val := GetCustomFlagValue(elementType.Alias); val != nil {
+				flags.Var(val, name, usage)
+				return val, nil
+			}
+		}
 
 		switch elementType.Kind {
 		case dagger.StringKind:

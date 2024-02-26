@@ -798,6 +798,7 @@ func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module
 fragment TypeDefRefParts on TypeDef {
 	kind
 	optional
+	alias
 	asObject {
 			name
 	}
@@ -851,6 +852,7 @@ query TypeDefs($module: ModuleID!) {
 	typeDefs: currentTypeDefs {
 		kind
 		optional
+		alias
 		asObject {
 			name
 			sourceModuleName
@@ -1041,6 +1043,7 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 type modTypeDef struct {
 	Kind        dagger.TypeDefKind
 	Optional    bool
+	Alias       string
 	AsObject    *modObject
 	AsInterface *modInterface
 	AsInput     *modInput

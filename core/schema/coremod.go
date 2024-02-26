@@ -110,6 +110,11 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
 	for _, introspectionType := range schema.Types {
 		switch introspectionType.Kind {
+		case introspection.TypeKindScalar:
+			typeDefs = append(typeDefs, &core.TypeDef{
+				Kind:  core.TypeDefKindString,
+				Alias: introspectionType.Name,
+			})
 		case introspection.TypeKindObject:
 			typeDef := &core.ObjectTypeDef{
 				Name:        introspectionType.Name,
@@ -293,6 +298,8 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 		default:
 			// default to saying it's a string for now
 			typeDef.Kind = core.TypeDefKindString
+			typeDef.Alias = introspectionType.Name
+			fmt.Println("thinking", typeDef.Kind, typeDef.Alias)
 		}
 
 		return typeDef, true, nil

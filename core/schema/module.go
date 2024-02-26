@@ -225,6 +225,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withOptional", s.typeDefWithOptional).
 			Doc(`Sets whether this type can be set to null.`),
 
+		dagql.Func("withAlias", s.typeDefWithAlias).
+			Doc(),
+
 		dagql.Func("withKind", s.typeDefWithKind).
 			Doc(`Sets the kind of the type.`),
 
@@ -281,6 +284,12 @@ func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, a
 	Kind core.TypeDefKind
 }) (*core.TypeDef, error) {
 	return def.WithKind(args.Kind), nil
+}
+
+func (s *moduleSchema) typeDefWithAlias(ctx context.Context, def *core.TypeDef, args struct {
+	Name string
+}) (*core.TypeDef, error) {
+	return def.WithAlias(args.Name), nil
 }
 
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {

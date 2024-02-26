@@ -27,6 +27,7 @@ const (
 	Terminal    string = "Terminal"
 	PortForward string = "PortForward"
 	CacheVolume string = "CacheVolume"
+	Platform    string = "Platform"
 )
 
 var funcGroup = &cobra.Group{

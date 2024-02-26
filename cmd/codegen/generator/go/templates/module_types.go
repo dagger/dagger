@@ -144,6 +144,9 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	if spec.isPtr {
 		def = def.Dot("WithOptional").Call(Lit(true))
 	}
+	if spec.alias != "" {
+		def = def.Dot("WithAlias").Call(Lit(spec.alias))
+	}
 	return def, nil
 }
 

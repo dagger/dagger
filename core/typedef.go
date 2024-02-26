@@ -277,6 +277,7 @@ func (d DynamicID) MarshalJSON() ([]byte, error) {
 type TypeDef struct {
 	Kind        TypeDefKind                       `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)."`
 	Optional    bool                              `field:"true" doc:"Whether this type can be set to null. Defaults to false."`
+	Alias       string                            `field:"true"`
 	AsList      dagql.Nullable[*ListTypeDef]      `field:"true" doc:"If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."`
 	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
 	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
@@ -409,6 +410,12 @@ func (typeDef *TypeDef) WithInterface(name, desc string) *TypeDef {
 func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Optional = optional
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithAlias(name string) *TypeDef {
+	typeDef = typeDef.Clone()
+	typeDef.Alias = name
 	return typeDef
 }
 
