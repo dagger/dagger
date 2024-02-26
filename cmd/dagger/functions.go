@@ -204,9 +204,6 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			Long:    fc.Long,
 			Example: fc.Example,
 			GroupID: moduleGroup.ID,
-			Annotations: map[string]string{
-				"experimental": "",
-			},
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
