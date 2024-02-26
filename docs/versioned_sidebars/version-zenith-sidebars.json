@@ -185,6 +185,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/python/python-dependencies"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/python/ide-integration"
             },
             {
