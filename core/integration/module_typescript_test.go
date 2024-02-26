@@ -496,15 +496,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 	t.Run("should use package.json configuration node", func(t *testing.T) {
 		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
 			Contents: `{
-				"name": "my-module",
-				"version": "1.0.0",
-				"description": "My module",
-				"main": "index.js",
-				"scripts": {
-					"test": "echo \"Error: no test specified\" && exit 1"
-				},
-				"author": "John doe",
-				"license": "MIT",
 				"dagger": {
 					"runtime": "node"
 				}
@@ -519,15 +510,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 	t.Run("should use package.json configuration bun", func(t *testing.T) {
 		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
 			Contents: `{
-				"name": "my-module",
-				"version": "1.0.0",
-				"description": "My module",
-				"main": "index.js",
-				"scripts": {
-					"test": "echo \"Error: no test specified\" && exit 1"
-				},
-				"author": "John doe",
-				"license": "MIT",
 				"dagger": {
 					"runtime": "bun"
 				}
@@ -573,15 +555,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 			With(sdkSource("typescript", runtimeDetection)).
 			WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
 				Contents: `{
-					"name": "my-module",
-					"version": "1.0.0",
-					"description": "My module",
-					"main": "index.js",
-					"scripts": {
-						"test": "echo \"Error: no test specified\" && exit 1"
-					},
-					"author": "John doe",
-					"license": "MIT",
 					"dagger": {
 						"runtime": "bun"
 					}

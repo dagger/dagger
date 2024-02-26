@@ -8,6 +8,13 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
+type SupportedTSRuntime string
+
+const (
+	Bun  SupportedTSRuntime = "bun"
+	Node SupportedTSRuntime = "node"
+)
+
 func New(
 	// +optional
 	sdkSourceDir *Directory,
@@ -52,24 +59,24 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 
 	detectedRuntime, err := t.DetectRuntime(ctx, modSource, subPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create module runtime: %w", err)
 	}
 
 	entrypointPath := path.Join(ModSourceDirPath, subPath, EntrypointExecutablePath)
 	tsConfigPath := path.Join(ModSourceDirPath, subPath, "tsconfig.json")
 
+	ctr = ctr.WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile))
+
 	switch detectedRuntime {
-	case "bun":
+	case Bun:
 		return ctr.
 			// Install dependencies
 			WithExec([]string{"bun", "install"}).
-			WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
 			WithEntrypoint([]string{"bun", entrypointPath}), nil
-	case "node":
+	case Node:
 		return ctr.
 		// Install dependencies
 		WithExec([]string{"npm", "install"}).
-		WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile)).
 		// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 		// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 		// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -114,7 +121,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 
 	detectedRuntime, err := t.DetectRuntime(ctx, modSource, subPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
 	ctr, err := t.Base(detectedRuntime)
@@ -157,7 +164,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 	})
 
 	switch detectedRuntime {
-	case "bun":
+	case Bun:
 		base = base.
 			// Check if the project has existing source:
 			// if it does: add sdk as dev dependency
@@ -167,7 +174,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			},
 				ContainerWithExecOpts{SkipEntrypoint: true},
 			)
-	case "node":
+	case Node:
 		base = base.
 			WithExec([]string{"npm", "install", "-g", "tsx"}).
 			// Check if the project has existing source:
@@ -192,14 +199,14 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node container with cache setup for yarn
-func (t *TypeScriptSdk) Base(runtime string) (*Container, error) {
+func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	switch runtime {
-	case "bun":
+	case Bun:
 		return dag.Container().
 			From("oven/bun:1.0.27").
 			WithMountedCache("~/.bun/install/cache", dag.CacheVolume("mod-bun-cache")).
 			WithoutEntrypoint(), nil
-	case "node":
+	case Node:
 		return dag.Container().
 			From("node:21.3-alpine").
 			WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache")).
@@ -209,7 +216,7 @@ func (t *TypeScriptSdk) Base(runtime string) (*Container, error) {
 	}
 }
 
-func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (string, error) {
+func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	detectedRuntime, err := dag.Container().
 		From("oven/bun:1.0.27").
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
@@ -222,9 +229,10 @@ func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSour
 		return "", fmt.Errorf("could not detect runtime: %v", err)
 	}
 
-	if detectedRuntime != "bun" && detectedRuntime != "node" {
+	switch detectedRuntime {
+	case string(Bun), string(Node):
+		return SupportedTSRuntime(detectedRuntime), nil
+	default:
 		return "", fmt.Errorf("detected unknown runtime: %v", detectedRuntime)
 	}
-
-	return detectedRuntime, nil
 }
