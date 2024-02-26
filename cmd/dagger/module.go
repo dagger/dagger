@@ -668,6 +668,19 @@ func (c *configuredModule) FullyInitialized() bool {
 	return c.ModuleSourceConfigExists
 }
 
+func getExplicitModuleSourceRef() (string, bool) {
+	if moduleURL != "" {
+		return moduleURL, true
+	}
+
+	// it's unset or default value, use mod if present
+	if v, ok := os.LookupEnv("DAGGER_MODULE"); ok {
+		return v, true
+	}
+
+	return "", false
+}
+
 func getDefaultModuleConfiguration(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -679,17 +692,9 @@ func getDefaultModuleConfiguration(
 	// files needing to be loaded).
 	resolveFromCaller bool,
 ) (*configuredModule, error) {
-	srcRefStr := moduleURL
-	if srcRefStr == "" {
-		// it's unset or default value, use mod if present
-		if v, ok := os.LookupEnv("DAGGER_MODULE"); ok {
-			srcRefStr = v
-		}
-
-		// it's still unset, set to the default
-		if srcRefStr == "" {
-			srcRefStr = moduleURLDefault
-		}
+	srcRefStr, ok := getExplicitModuleSourceRef()
+	if !ok {
+		srcRefStr = moduleURLDefault
 	}
 
 	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr, resolveFromCaller)
@@ -828,8 +833,13 @@ func optionalModCmdWrapper(
 		return withEngineAndTUI(cmd.Context(), client.Params{
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			_, explicitModRefSet := getExplicitModuleSourceRef()
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
+				if !explicitModRefSet {
+					// the user didn't explicitly try to run with a module, so just run in default mode
+					return fn(ctx, engineClient, nil, cmd, cmdArgs)
+				}
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
 			var loadedMod *dagger.Module

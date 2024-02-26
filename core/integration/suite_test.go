@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -285,4 +286,17 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
+}
+
+func limitTicker(interval time.Duration, limit int) <-chan time.Time {
+	ch := make(chan time.Time, limit)
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		defer close(ch)
+		for i := 0; i < limit; i++ {
+			ch <- <-ticker.C
+		}
+	}()
+	return ch
 }
