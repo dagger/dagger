@@ -38,7 +38,9 @@ func (s *secretSchema) Install() {
 }
 
 type secretArgs struct {
-	Name     string
+	Name string
+
+	// Accessor is the scoped per-module name, which should guarantee uniqueness.
 	Accessor dagql.Optional[dagql.String]
 }
 
@@ -52,7 +54,7 @@ func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secr
 		}
 	}
 
-	return parent.NewSecret(accessor), nil
+	return parent.NewSecret(args.Name, accessor), nil
 }
 
 type setSecretArgs struct {
@@ -60,20 +62,18 @@ type setSecretArgs struct {
 	Plaintext string `sensitive:"true"` // NB: redundant with ArgSensitive above
 }
 
-func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (dagql.Instance[*core.Secret], error) {
-	var inst dagql.Instance[*core.Secret]
-
+func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (i dagql.Instance[*core.Secret], err error) {
 	accessor, err := core.GetLocalSecretAccessor(ctx, parent, args.Name)
 	if err != nil {
-		return inst, err
+		return i, err
+	}
+	if err := parent.Secrets.AddSecret(ctx, accessor, []byte(args.Plaintext)); err != nil {
+		return i, err
 	}
 
-	if err := parent.Secrets.AddSecret(ctx, accessor, []byte(args.Plaintext)); err != nil {
-		return inst, err
-	}
 	// NB: to avoid putting the plaintext value in the graph, return a freshly
 	// minted Object that just gets the secret by name
-	if err := s.srv.Select(ctx, s.srv.Root(), &inst, dagql.Selector{
+	if err := s.srv.Select(ctx, s.srv.Root(), &i, dagql.Selector{
 		Field: "secret",
 		Args: []dagql.NamedInput{
 			{
@@ -86,10 +86,10 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 			},
 		},
 	}); err != nil {
-		return inst, err
+		return i, err
 	}
 
-	return inst, nil
+	return i, nil
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {

@@ -433,7 +433,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	ctr, err := bkcontainer.NewContainer(
 		context.Background(),
 		c.Worker.CacheManager(),
-		c.Worker.Executor(),
+		c.llbExec,
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,

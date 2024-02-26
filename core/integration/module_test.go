@@ -5122,6 +5122,86 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 		require.NotContains(t, logs.String(), "asdfasdf")
 	})
 
+	t.Run("secret by id leak", func(t *testing.T) {
+		// check that modules can't access each other's global secret stores,
+		// even when we know the underlying IDs
+		t.Parallel()
+
+		t.Skip("this protection is not yet implemented")
+
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/toplevel/leaker").
+			With(daggerExec("init", "--name=leaker", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+)
+
+type Leaker struct {}
+
+func (l *Leaker) Leak(ctx context.Context, target string) string {
+	secret, _ := dag.LoadSecretFromID(SecretID(target)).Plaintext(ctx)
+	return secret
+}
+`,
+			})
+
+		ctr = ctr.
+			WithWorkdir("/toplevel").
+			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./leaker")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Toplevel struct {}
+
+func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
+	secretID, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return err
+	}
+
+	// loading secret-by-id in the same module should succeed
+	plaintext, err := dag.LoadSecretFromID(secretID).Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+	if plaintext != "asdfasdf" {
+		return fmt.Errorf("expected \"asdfasdf\", but got %q", plaintext)
+	}
+
+	// but getting a leaker module to do this should fail
+	plaintext, err = dag.Leaker().Leak(ctx, string(secretID))
+	if err != nil {
+		return err
+	}
+	if plaintext != "" {
+		return fmt.Errorf("expected \"\", but got %q", plaintext)
+	}
+
+	return nil
+}
+`,
+			})
+
+		_, err := ctr.With(daggerQuery(`{toplevel{attempt(uniq: %q)}}`, identity.NewID())).Stdout(ctx)
+		require.NoError(t, err)
+		require.NoError(t, c.Close())
+	})
+
 	t.Run("secrets cache normally", func(t *testing.T) {
 		// check that secrets cache as they would without nested modules,
 		// which is essentially dependent on whether they have stable IDs
