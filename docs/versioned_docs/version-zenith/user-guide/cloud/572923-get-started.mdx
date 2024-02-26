@@ -29,7 +29,7 @@ Dagger Cloud includes plans for both individuals and teams. [See more informatio
 
 - You have an understanding of how Dagger works. If not, [read the Dagger Quickstart](../../quickstart/index.mdx).
 - You have a GitHub account (required for Dagger Cloud identity verification). If not, [register for a free GitHub account](https://github.com/signup).
-- You have a source code repository and a Dagger Module that interacts with it. If not, fork and then locally clone the [Dagger source code repository](https://github.com/dagger/dagger), which you can use with the [Go builder module](https://github.com/kpenfound/dagger-modules/tree/main/golang) from the [Dagger Quickstart](../../quickstart/index.mdx).
+- You have a source code repository and a Dagger Module that interacts with it. If not, fork and locally clone the [Dagger source code repository](https://github.com/dagger/dagger), which you can use with a [Go builder module](https://github.com/kpenfound/dagger-modules/tree/main/golang).
 
 ## Step 1: Sign up for Dagger Cloud
 
@@ -233,10 +233,10 @@ Before completing these steps, ensure you've [added your Dagger Cloud token as a
 1. In your terminal, call the Dagger Module. If your environment variable is properly defined, you will see a Dagger Cloud URL printed in the terminal.
 1. Click on the URL to view details of the run in Dagger Cloud.
 
-To see this in action, commit a change to your locally-cloned example repository and build the Dagger CLI locally.
+To see this in action, commit a change to your forked and locally-cloned Dagger repository and call the Go builder module to build it.
 
 ```shell
-echo "test" >> README.md
+echo "test on local host" >> README.md
 git commit -a -m "Updated README"
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
 ```
@@ -257,11 +257,11 @@ To use Dagger Cloud locally with multiple organizations, you must set distinct e
 
 Once your CI provider/tool is connected with Dagger Cloud, it's time to test the integration.
 
-To do this, trigger your CI workflow by pushing a commit or opening a pull request. If you are using the starter application and pipeline from Appendix A, use the following commands:
+To do this, trigger your CI workflow by pushing a commit or opening a pull request. If you are working with a forked and locally-cloned Dagger repository, use the following commands:
 
 ```shell
 echo "test on Dagger Cloud" >> README.md
-git commit -a -m "Updated README again"
+git commit -a -m "Updated README"
 git push
 ```
 
@@ -293,22 +293,13 @@ One of Dagger's most powerful features is its ability to cache data across pipel
 
 Dagger comes with built-in support to define one or more such directories as cache volumes and persist their contents across runs. Dagger Cloud enhances caching support significantly and allows cross-host synchronization of cache volumes. This allows multiple machines, including ephemeral runners, to intelligently share a distributed cache.
 
-Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. To see how this works, add a cache volume to your Dagger pipeline and then trigger a run.
-
-TODO
-
-This revised pipeline now uses a cache volume for the application dependencies.
-
-- It uses the client's `cacheVolume()` method to initialize a new cache volume named `node`.
-- It uses the `Container.withMountedCache()` method to mount this cache volume at the node_modules/ mount point in the container.
-
-Next, trigger your CI workflow by pushing a commit or opening a pull request.
+Dagger Cloud automatically detects and creates cache volumes when they are declared in your code. The Go builder module used in this guide already declares two cache volumes, named `gomodcache` and `gobuildcache`. To see them in action, trigger your CI workflow by pushing a commit or opening a pull request.
 
 :::info
 If you've configured cache volumes for the first time in a local development environment, call your Dagger Module via the Dagger CLI and then run the command `docker container stop -t 300 "$(docker container list --filter 'name=^dagger-engine-*' -q)"`. This step ensures your new cache volumes populate to Dagger Cloud as these are during the engine shutdown phase. You only need to do this the first time you use Dagger Cloud locally with cache volumes or when you add new cache volumes in your Dagger pipeline.
 :::
 
-To see your cache volumes, browse to the **Organization Settings** page of Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the **Configuration** tab. You should see the newly-created volume listed and enabled.
+To see your cache volumes, browse to the **Organization Settings** page of Dagger Cloud dashboard (accessible by clicking your user profile icon in the Dagger Cloud interface) and navigate to the **Configuration** tab. You should see the newly-created volumes listed and enabled.
 
 :::note
 Your cache volumes will appear in the UI within a few minutes after your pipeline run has completed. If you don't see them in the UI, ensure you've referenced the volumes correctly in your Dagger Module code and that you've set up your CI or local development workflows to push the cache volumes to Dagger Cloud.
