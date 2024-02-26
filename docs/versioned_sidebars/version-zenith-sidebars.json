@@ -74,7 +74,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/arguments-return-values"
+              "id": "developer-guide/go/functions"
             },
             {
               "type": "doc",
@@ -145,7 +145,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/arguments-return-values"
+              "id": "developer-guide/python/functions"
             },
             {
               "type": "doc",
@@ -216,7 +216,7 @@
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/arguments-return-values"
+              "id": "developer-guide/typescript/functions"
             },
             {
               "type": "doc",

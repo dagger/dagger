@@ -1,23 +1,21 @@
 ---
-slug: /developer-guide/typescript/292372/arguments-return-values
+slug: /developer-guide/typescript/292372/functions
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "Functions, Arguments and Return Values"
+title: "Functions"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
-# Functions, Arguments and Return Values
+# Functions
 
 <PartialExperimentalDocs />
-
-## Functions
 
 Dagger Functions are regular code, written in a supported programming language, and running in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
 
 Here's an example of a simple Dagger Function:
 
-```typescript file=./snippets/arguments-return-values/functions-simple/index.ts
+```typescript file=./snippets/functions/functions-simple/index.ts
 ```
 
 Here is an example call for this Dagger Function:
@@ -34,7 +32,7 @@ Hello, world
 
 Here's an example of a more complex Dagger Function, which calls a remote API method:
 
-```typescript file=./snippets/arguments-return-values/functions-complex/index.ts
+```typescript file=./snippets/functions/functions-complex/index.ts
 ```
 
 Here is an example call for this Dagger Function:
@@ -59,7 +57,7 @@ Dagger Functions, just like regular functions, can accept arguments. In addition
 
 Here's an example of modifying the previous Dagger Function to accept a string argument:
 
-```typescript file=./snippets/arguments-return-values/arguments-string/index.ts
+```typescript file=./snippets/functions/arguments-string/index.ts
 ```
 
 Here is an example call for this Dagger Function:
@@ -80,7 +78,7 @@ The result will look something like this:
 
 Here's an example of a Dagger Function that accepts a `Directory` as argument:
 
-```typescript file=./snippets/arguments-return-values/arguments-directory/index.ts
+```typescript file=./snippets/functions/arguments-directory/index.ts
 ```
 
 Here is an example call for this Dagger Function:
@@ -145,7 +143,7 @@ Function arguments can be marked as optional. In this case, the Dagger CLI will 
 Here's an example of a Dagger Function with an optional argument:
 
 
-```typescript file=./snippets/arguments-return-values/arguments-optional/index.ts
+```typescript file=./snippets/functions/arguments-optional/index.ts
 ```
 
 Here is an example call for this Dagger Function, with the optional argument:
@@ -178,7 +176,7 @@ Function arguments can be configured to use default values if no value is suppli
 
 Here's an example of a Dagger Function with a default value for an argument:
 
-```typescript file=./snippets/arguments-return-values/arguments-default/index.ts
+```typescript file=./snippets/functions/arguments-default/index.ts
 ```
 
 Here is an example call for this Dagger Function, without the required argument:
@@ -201,7 +199,7 @@ This opens powerful applications to Dagger Functions. For example, a Dagger Func
 
 Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
 
-```typescript file=./snippets/arguments-return-values/return-values-container/index.ts
+```typescript file=./snippets/functions/return-values-container/index.ts
 ```
 
 Here is an example call for this Dagger Function:
