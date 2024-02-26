@@ -1,14 +1,11 @@
-TODO
-import { object, func } from "@dagger.io/dagger"
+from dagger import function, object_type
 
-@object()
-class MyModule {
-  @func()
-  divide(a: number, b: number): number {
-    if (b == 0) {
-      throw new Error("cannot divide by zero")
-    }
 
-    return a / b
-  }
-}
+@object_type
+class MyModule:
+
+  @function
+  def divide(self, a: int, b: int) -> float:
+      if b == 0:
+          raise ValueError("cannot divide by zero")
+      return a / b

@@ -11,11 +11,16 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-Dagger Functions can return custom objects, which in turn can define new functions. This allows for "chaining" of functions in the same style as the core Dagger API.
+Functions can return objects, including their own. This in turn allows for "chaining"
+in the same style as the core Dagger API.
 
-So long as your object can be JSON-serialized, its state will be preserved and passed to the next function in the chain.
+Every call to a function is executed independently by the API, and thus by Python
+as well, even if they're in the same object. So long as the object can be
+JSON-serialized, its state will be preserved and passed to the next function the
+chain.
 
-Here is an example module with support for function chaining:
+The following listing shows an example of function chaining, using instance
+attributes to share state:
 
 ```python file=./snippets/chaining/main.py
 ```
@@ -23,7 +28,7 @@ Here is an example module with support for function chaining:
 And here is an example call for this module:
 
 ```shell
-dagger call with-name --name=Monde with-greeting --greeting=Bonjour message
+dagger call with-greeting --greeting=Bonjour with-name --name=Monde message
 ```
 
 The result will be:

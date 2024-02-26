@@ -1,5 +1,8 @@
-from dagger import function
+from dagger import function, object_type
 
-@function
-def hello_world() -> str:
-    return "Hello Daggernauts!"
+@object_type
+class Potato:
+    @function
+    def hello_world() -> str:
+        return "Hello Daggernauts!"
+

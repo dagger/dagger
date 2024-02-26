@@ -1,19 +1,11 @@
-TODO
-import { object, func } from "@dagger.io/dagger"
+from dagger import function, object_type
 
-@object()
-class MyModule {
 
-  greeting: string
-  name: string
+@object_type
+class MyModule:
+    greeting: str = "Hello"
+    name: str = "World"
 
-  constructor (greeting: string = "Hello", name: string = "World") {
-    this.greeting = greeting
-    this.name = name
-  }
-
-  @func()
-  message(): string {
-    return `${this.greeting} ${this.name}`
-  }
-}
+    @function
+    def message(self) -> str:
+        return f"{self.greeting}, {self.name}!"

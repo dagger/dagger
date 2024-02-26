@@ -154,15 +154,7 @@
                 },
                 {
                   "type": "doc",
-                  "id": "developer-guide/python/constructors"
-                },
-                {
-                  "type": "doc",
-                  "id": "developer-guide/python/dependencies"
-                },
-                {
-                  "type": "doc",
-                  "id": "developer-guide/python/chaining"
+                  "id": "developer-guide/python/documentation"
                 },
                 {
                   "type": "doc",
@@ -170,15 +162,27 @@
                 },
                 {
                   "type": "doc",
+                  "id": "developer-guide/python/chaining"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/constructors"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/attribute-functions"
+                },
+                 {
+                  "type": "doc",
+                  "id": "developer-guide/python/custom-types"
+                },
+                {
+                  "type": "doc",
+                  "id": "developer-guide/python/dependencies"
+                },
+                {
+                  "type": "doc",
                   "id": "developer-guide/python/error-handling"
-                },
-                {
-                  "type": "doc",
-                  "id": "developer-guide/python/debugging"
-                },
-                {
-                  "type": "doc",
-                  "id": "developer-guide/python/ide-integration"
                 }
               ]
             },
@@ -192,15 +196,11 @@
                 },
                 {
                   "type": "doc",
-                  "id": "developer-guide/python/custom-types"
+                  "id": "developer-guide/python/ide-integration"
                 },
                 {
                   "type": "doc",
-                  "id": "developer-guide/python/visibility"
-                },
-                {
-                  "type": "doc",
-                  "id": "developer-guide/python/documentation"
+                  "id": "developer-guide/python/debugging"
                 }
               ]
             },

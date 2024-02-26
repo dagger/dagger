@@ -1,11 +1,12 @@
 import dagger
-from dagger import dag, object_type, function
+from dagger import dag, function, object_type
+
 
 @object_type
 class MyModule:
 
     @function
-    async def github_api(endpoint: str, token: dagger.Secret) -> str:
+    async def github_api(self, endpoint: str, token: dagger.Secret) -> str:
         plaintext = await token.plaintext()
         return await (
             dag.container()

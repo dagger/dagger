@@ -24,6 +24,8 @@ dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281a
 This module can be accessed from your own module's code, as shown below:
 
 ```python
+from dagger import dag, function
+
 @function
 async def hello_world() -> str:
     return await dag.hello_world().message()

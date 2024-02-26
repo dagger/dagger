@@ -1,14 +1,10 @@
-from typing import Annotated
-
-from dagger import Doc, function
+from dagger import function, object_type
 
 
-@function
-def hello_world(
-    count: Annotated[int, Doc("The number of potatoes to process")],
-    mashed: Annotated[bool, Doc("Whether the potatoes are mashed")] = False,
-) -> str:
-    """Tell the world how many potatoes you have."""
-    if mashed:
-        return f"Hello Daggernauts, I have mashed {count} potatoes"
-    return f"Hello Daggernauts, I have {count} potatoes"
+@object_type
+class Potato:
+    @function
+    def hello_world(self, count: int, mashed: bool = False) -> str:
+        if mashed:
+            return f"Hello Daggernauts, I have mashed {count} potatoes"
+        return f"Hello Daggernauts, I have {count} potatoes"

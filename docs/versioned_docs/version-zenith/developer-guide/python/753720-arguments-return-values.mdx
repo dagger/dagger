@@ -2,16 +2,14 @@
 slug: /developer-guide/python/753720/arguments-return-values
 displayed_sidebar: "zenith"
 toc_max_heading_level: 2
-title: "Functions, Arguments and Return Values"
+title: "Functions"
 ---
 
 import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
-# Functions, Arguments and Return Values
+# Functions
 
 <PartialExperimentalDocs />
-
-## Functions
 
 Dagger Functions are regular code, written in a supported programming language, and running in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
 
@@ -53,9 +51,21 @@ The result will look something like this:
 }
 ```
 
-:::note
-A module's main functions can be declared as either top-level functions or as methods of a class (decorated with [dagger.mod.object_type](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.mod.object_type)) having the same name as the module (in PascalCase), but not both.
-:::
+## Class methods
+
+Dagger Functions are implemented as [@dagger.function][@function] decorated
+methods, of a [@dagger.object_type][@object_type] decorated class.
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
+
+It's possible for a module to implement multiple classes (*object types*), but
+**the first one needs to have a name that matches the module's name**, in
+*PascalCase*. This object is sometimes referred to as the *main object*.
+
+For example, for a module initialized with `dagger init --name=my-module`,
+the main object needs to be named `MyModule`.
+
 
 ## Arguments
 
@@ -90,7 +100,7 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument:
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call tree --dir=. --depth=1
+dagger call tree --src=. --depth=1
 ```
 
 The result will look like this:
@@ -107,7 +117,7 @@ The result will look like this:
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger --depth=1
+dagger call tree --src=https://github.com/dagger/dagger#main:cmd/dagger --depth=1
 ```
 
 The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
@@ -142,7 +152,7 @@ The result will be the same file listing as [this GitHub page](https://github.co
 When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
 :::
 
-### Optional arguments
+## Optional arguments
 
 Function arguments can be marked as optional. In this case, the Dagger CLI will not display an error if the argument is omitted in the function call.
 
@@ -175,9 +185,21 @@ The result will look like this:
 Hello, world
 ```
 
-### Default arguments
+:::note
+The API considers any type that accepts a `None` value to be optional. Thus,
+if the `name` argument is omitted from an API request, it will be set to `None`
+automatically.
 
-Function arguments can be configured to use default values if no value is supplied for them.
+However, when used directly from Python code, it's in fact a required argument
+since it has no default value. In this context, the term "optional" is the same
+concept as the older [`typing.Optional[X]`](https://docs.python.org/3/library/typing.html#typing.Optional)
+annotation for a type that allows the `None` value.
+:::
+
+
+## Default values
+
+Function arguments can define a default value if no value is supplied for them.
 
 Here's an example of a Dagger Function with a default value for an argument:
 
@@ -196,6 +218,17 @@ The result will look like this:
 Hello, world
 ```
 
+:::tip
+For consistency between Python and the API, choose to always set optionals
+with a default value, even if it's:
+
+```python
+name: str | None = None
+```
+The above is in fact necessary if the default value needs to be set from the
+function body instead of the signature (dynamic, complex or a mutable value).
+:::
+
 ## Return values
 
 Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
@@ -210,7 +243,7 @@ Here's an example of a Dagger Function that accepts a `Directory` containing a G
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call build --source=https://github.com/golang/example/#master:hello --os=linux --architecture=amd64 terminal
+dagger call build --source=https://github.com/golang/example/#master:hello --os=linux --arch=amd64 terminal
 ```
 
 This example chains two functions calls:
@@ -227,3 +260,36 @@ hello
 Hello, world!
 /usr/local/bin #
 ```
+
+## Type annotations
+
+Even though the Python runtime doesn’t enforce [type annotations][typing] at runtime,
+it’s important to define them with Dagger Functions. The Python SDK needs the
+typing information at runtime to correctly report to the API. It can’t rely on
+[type inference][inference], which is only possible for external [static type
+checkers][type-checker].
+
+If a function doesn’t have a return type annotation, it’ll be declared as `None`,
+which translates to the [dagger.Void][void] type in the API:
+
+```python
+@function
+def hello(self):
+    return "Hello world!"
+
+# Error: cannot convert string to Void
+```
+
+It’s fine however, when no value actually needs to be returned:
+
+```python
+@function
+def hello(self):
+    ...
+    # no return
+```
+
+[typing]: https://docs.python.org/3/library/typing.html
+[inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
+[type-checker]: https://realpython.com/python-type-checking/#static-type-checking
+[void]: https://dagger-io.readthedocs.io/en/sdk-python-v0.9.11/client.html#dagger.Void

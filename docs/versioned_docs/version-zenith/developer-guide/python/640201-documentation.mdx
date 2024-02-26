@@ -11,4 +11,43 @@ import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 <PartialExperimentalDocs />
 
-TODO
+Dagger modules and functions can be documented so that descriptions are shown
+in the API, and consequently in the CLI and other places like https://daggerverse.dev.
+
+
+## Documentation strings
+
+The following code snippet shows how to use Python's
+[documentation string conventions][docstrings] for adding descriptions to:
+- The whole [module][pymod] or [package][pypkg]
+- Object type classes (group of functions)
+- Function methods
+
+<!-- loud_hello has a multi-line docstring on purpose -->
+```python file=./snippets/documentation/docstrings/main.py
+```
+
+:::note
+To use multiple Python source files, the `src/main.py` module needs to be converted
+into a [package][pypkg]: `src/main/__init__.py`. In this case, the Dagger Module
+is documented at the top of the `__init__.py` file, just like any Python package.
+:::
+
+## Function arguments
+
+For function arguments, [annotate][typing-doc] with the [dagger.Doc][dag-doc] metadata:
+
+```python file=./snippets/documentation/arguments/main.py
+```
+
+:::note
+[`dagger.Doc`][dag-doc] is just an alias for [`typing_extensions.Doc`][ext-doc].
+:::
+
+
+[docstrings]: https://peps.python.org/pep-0008/#documentation-strings
+[pymod]: https://docs.python.org/3/tutorial/modules.html
+[pypkg]: https://docs.python.org/3/tutorial/modules.html#packages
+[dag-doc]: https://dagger-io.readthedocs.io/en/sdk-python-v0.10.0/module.html#dagger.Doc
+[ext-doc]: https://typing-extensions.readthedocs.io/en/latest/#Doc
+[typing-doc]: https://peps.python.org/pep-0727/#specification

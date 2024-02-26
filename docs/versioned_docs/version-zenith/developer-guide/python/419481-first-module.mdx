@@ -32,7 +32,7 @@ Create a new directory on your filesystem and run `dagger init` to bootstrap you
 
     ```sh
     # initialize Dagger module
-    dagger init --name=potato --sdk=python potato
+    dagger init --sdk=python potato
     cd potato
     ```
 
@@ -83,8 +83,6 @@ Update the Dagger Function to accept multiple input parameters (some of which ar
 
 ```python file=./snippets/first-module/step3/main.py
 ```
-
-The type annotation with the [Doc() metadata](https://peps.python.org/pep-0727/#specification) is used to document the parameter in the API.
 
 Here's an example of calling the Dagger Function with optional parameters:
 

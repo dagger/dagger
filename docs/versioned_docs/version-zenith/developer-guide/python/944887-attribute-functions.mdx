@@ -1,0 +1,51 @@
+---
+slug: /developer-guide/python/944887/attribute-functions
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Attributes as functions"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Attributes as functions
+
+<PartialExperimentalDocs />
+
+Object attributes can be exposed as Dagger Functions, without having to
+create a getter function explicitly.
+
+There's a [dagger.field][dag-field] descriptor that is wrapper of
+[dataclasses.field][data-field], but creates a getter function for the attribute
+as well so that it's accessible from the API.
+
+Here's an example where one attribute is exposed as a function, while the other
+is not:
+
+```python file=./snippets/attribute-functions/basic/main.py
+```
+
+Notice that compared to [dataclasses.field][data-field], the [dagger.field][dag-field]
+wrapper only supports setting `init: bool`, and both `default` and `default_factory`
+in the same `default` parameter.
+
+We can confirm with `dagger call --help` that only the `greeting` function
+was created, while `name` remains only a constructor argument:
+
+```
+Flags:
+      --greeting string   The greeting to use (default "Hello")
+      --name string       Who to greet (default "World")
+
+Function Commands:
+  greeting      The greeting to use
+  message       Return the greeting message
+```
+
+:::note
+In a future version of the Python SDK, the same `dagger.function` decorator will
+be used as a descriptor in place of `dagger.field` to make the distinction clearer.
+:::
+
+
+[dag-field]: https://dagger-io.readthedocs.io/en/sdk-python-v0.9.11/module.html#dagger.field
+[data-field]: https://docs.python.org/3/library/dataclasses.html#mutable-default-values

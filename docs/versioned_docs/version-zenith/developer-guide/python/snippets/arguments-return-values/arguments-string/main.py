@@ -1,11 +1,11 @@
-import dagger
-from dagger import dag, object_type, function
+from dagger import dag, function, object_type
+
 
 @object_type
 class MyModule:
 
     @function
-    async def get_user(gender: str) -> str:
+    async def get_user(self, gender: str) -> str:
         return await (
             dag.container()
             .from_("alpine:latest")
