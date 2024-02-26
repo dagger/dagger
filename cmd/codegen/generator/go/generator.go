@@ -37,6 +37,8 @@ const (
 	StarterTemplateFile = "main.go"
 )
 
+var goVersion = semver.MustParse(strings.TrimPrefix(runtime.Version(), "go"))
+
 type GoGenerator struct {
 	Config generator.Config
 }
@@ -151,7 +153,17 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		if err != nil {
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
-
+		currentModGoVersion, err := semver.Parse(currentMod.Go.Version)
+		if err != nil {
+			var err2 error
+			currentModGoVersion, err2 = semver.Parse(currentMod.Go.Version + ".0")
+			if err2 != nil {
+				return nil, false, fmt.Errorf("parse go.mod version %q: %w", currentMod.Go.Version, err)
+			}
+		}
+		if currentModGoVersion.GT(goVersion) {
+			return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", currentMod.Go.Version, goVersion)
+		}
 		newMod = currentMod
 
 		for _, req := range sdkMod.Require {
@@ -189,9 +201,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 			newModName := "main" // use a safe default, not going to be a reserved word. User is free to modify
 
 			newMod.AddModuleStmt(newModName)
-			if v, err := semver.Parse(strings.TrimPrefix(runtime.Version(), "go")); err == nil {
-				newMod.AddGoStmt(v.String())
-			}
+			newMod.AddGoStmt(goVersion.String())
 			newMod.SetRequire(sdkMod.Require)
 
 			info.PackageImport = newModName
