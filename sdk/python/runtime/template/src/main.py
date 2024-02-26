@@ -10,7 +10,8 @@ from one of the SDKs.
 
 The first line in this comment block is a short description line and the
 rest is a long description with more detail on the module's purpose or usage,
-if appropriate. All modules should have a short description."""
+if appropriate. All modules should have a short description.
+"""
 
 import dagger
 from dagger import dag, function, object_type
