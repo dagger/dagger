@@ -1,0 +1,18 @@
+pipeline {
+  agent { label 'dagger' }
+
+  environment {
+   DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
+  }
+
+  stages {
+    stage("dagger") {
+      steps {
+        sh '''
+            npm ci
+            dagger run node index.mjs
+        '''
+      }
+    }
+  }
+}

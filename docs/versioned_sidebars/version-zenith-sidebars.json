@@ -26,6 +26,43 @@
     },
     {
       "type": "category",
+      "label": "User Guide",
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "category",
+          "label": "Dagger Cloud",
+          "link": {
+            "type": "doc",
+            "id": "user-guide/cloud/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Get Started",
+              "id": "user-guide/cloud/get-started"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/cloud/user-interface"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/cloud/roles-permissions"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/cloud/org-administration"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "category",
       "label": "Developers",
       "collapsible": true,
       "collapsed": true,

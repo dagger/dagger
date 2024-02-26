@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: dagger-in-argo-
+spec:
+  entrypoint: dagger-workflow
+  volumes:
+    - name: dagger-conn
+      hostPath:
+        path: /var/run/dagger
+    - name: gomod-cache
+      persistentVolumeClaim:
+        claimName: gomod-cache
+  templates:
+    - name: dagger-workflow
+      inputs:
+        artifacts:
+          - name: project-source
+            path: /work
+            git:
+              repo: https://github.com/kpenfound/greetings-api.git
+              revision: "main"
+          - name: dagger-cli
+            path: /usr/local/bin
+            mode: 0755
+            http:
+              url: https://github.com/dagger/dagger/releases/download/v0.8.7/dagger_v0.8.7_linux_arm64.tar.gz
+      container:
+        image: golang:1.21.0-bookworm
+        command: ["sh", "-c"]
+        args: ["dagger run go run ./ci ci"]
+        workingDir: /work
+        env:
+        - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+          value: "unix:///var/run/dagger/buildkitd.sock"
+        - name: "DAGGER_CLOUD_TOKEN"
+          valueFrom:
+            secretKeyRef:
+              name: dagger-cloud
+              key: token
+        volumeMounts:
+          - name: dagger-conn
+            mountPath: /var/run/dagger
+          - name: gomod-cache
+            mountPath: /go/pkg/mod
