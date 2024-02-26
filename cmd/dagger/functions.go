@@ -80,7 +80,7 @@ available functions.
 				continue
 			}
 			// FIXME: handle arrays of objects
-			return fmt.Errorf("function '%s' returns non-object type %v", field, nextType.Kind)
+			return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 		}
 		// List functions on the final object
 		fns := o.GetFunctions()
