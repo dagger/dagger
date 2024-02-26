@@ -80,7 +80,7 @@ The first step is to add a function to build a base image containing the applica
 Since the application is a Node.js application, it's convenient to use the [`node` module](https://github.com/quartz-technology/daggerverse/node), which provides a set of ready-made functions to manage a Node.js project.
 
 :::note
-Dagger exposes every module using a language-agnostic HTTP API. So, even though the [`node` module](https://github.com/quartz-technology/daggerverse/node) is written in TypeScript, you can transparently call its functions from your module written in Go, Python or any other supported language.
+Dagger exposes every module using a language-agnostic GraphQL API. So, even though the [`node` module](https://github.com/quartz-technology/daggerverse/node) is written in TypeScript, you can transparently call its functions from your module written in Go, Python or any other supported language.
 :::
 
 First, add the `node` module as a dependency:
