@@ -1622,8 +1622,8 @@ func TestModuleGoExtendCore(t *testing.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("internal/dagger/more.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package dagger
 
 import "context"
 
@@ -4823,8 +4823,8 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	switch sdk {
 	case "go":
 		// FIXME: go codegen is split up into dagger/dagger.gen.go and
-		// dagger/dagger/dagger.gen.go
-		return "dagger/dagger/dagger.gen.go"
+		// dagger/internal/dagger/dagger.gen.go
+		return "dagger/internal/dagger/dagger.gen.go"
 	case "python":
 		return "dagger/sdk/src/dagger/client/gen.py"
 	case "typescript":

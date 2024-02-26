@@ -129,8 +129,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 
 			obj := named.Obj()
 			basePkg := funcs.modulePkg.Types.Path()
-			if obj.Pkg().Path() != basePkg && strings.TrimSuffix(obj.Pkg().Path(), "/internal/dagger") != basePkg {
-				// the type must be created in the target package
+			if obj.Pkg().Path() != basePkg && !ps.isDaggerGenerated(obj) {
+				// the type must be created in the target package (if not a
+				// generated type)
 				return "", fmt.Errorf("cannot code-generate for foreign type %s", obj.Name())
 			}
 			if !obj.Exported() {
