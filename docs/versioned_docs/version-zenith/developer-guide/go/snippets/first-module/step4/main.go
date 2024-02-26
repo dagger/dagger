@@ -17,7 +17,6 @@ func (m *Potato) HelloWorld(
 	// +optional
 	mashed bool,
 ) PotatoMessage {
-
 	if mashed {
 		return PotatoMessage{
 			Message: fmt.Sprintf("Hello Daggernauts, I have mashed %d potatoes", count),
