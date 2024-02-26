@@ -49,6 +49,6 @@ This includes:
 
 1. Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
 
-  An argument of type `String` will handle any environment variable value, but other argument types may work with certain values of environment variables. For example, an environment variable whose value is a local path to a file or directory could be used for function arguments of type `File` or `Directory`.
-
 1. Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://<host>:<port>`.
+
+More details can be found in [Pass arguments to a function](../../quickstart/292472-arguments.mdx)
