@@ -177,6 +177,10 @@
             },
             {
               "type": "doc",
+              "id": "developer-guide/python/name-overrides"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/python/error-handling"
             },
             {

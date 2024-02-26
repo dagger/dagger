@@ -56,9 +56,6 @@ The result will look something like this:
 Dagger Functions are implemented as [@dagger.function][@function] decorated
 methods, of a [@dagger.object_type][@object_type] decorated class.
 
-[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
-[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
-
 It's possible for a module to implement multiple classes (*object types*), but
 **the first one needs to have a name that matches the module's name**, in
 *PascalCase*. This object is sometimes referred to as the *main object*.
@@ -289,7 +286,9 @@ def hello(self):
     # no return
 ```
 
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
 [typing]: https://docs.python.org/3/library/typing.html
 [inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
 [type-checker]: https://realpython.com/python-type-checking/#static-type-checking
-[void]: https://dagger-io.readthedocs.io/en/sdk-python-v0.9.11/client.html#dagger.Void
+[void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
