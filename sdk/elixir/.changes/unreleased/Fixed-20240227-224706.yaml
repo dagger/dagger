@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix \ didn't get escape, cause APIs that accept string can get GraphQL parse
+  error.
+time: 2024-02-27T22:47:06.02558+07:00
+custom:
+  Author: wingyplus
+  PR: "6757"
