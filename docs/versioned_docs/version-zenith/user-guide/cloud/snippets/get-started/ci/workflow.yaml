@@ -24,7 +24,7 @@ spec:
             path: /usr/local/bin
             mode: 0755
             http:
-              url: https://github.com/dagger/dagger/releases/download/v0.9.11/dagger_v0.9.11_linux_arm64.tar.gz
+              url: https://github.com/dagger/dagger/releases/download/v0.10.0/dagger_v0.10.0_linux_arm64.tar.gz
       container:
         image: alpine:latest
         command: ["sh", "-c"]

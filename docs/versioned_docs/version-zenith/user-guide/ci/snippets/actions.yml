@@ -14,7 +14,7 @@ jobs:
         name: Call Dagger Function
         uses: dagger/dagger-for-github@v5
         with:
-          version: "0.9.11"
+          version: "0.10.0"
           verb: call
           module: github.com/shykes/daggerverse/hello@v0.1.2
           args: hello --greeting Hola --name Daggernauts --shout message
