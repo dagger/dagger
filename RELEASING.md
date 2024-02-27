@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-February%220,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-February%227,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -70,9 +70,9 @@ effort. The first step is to let the team know what is going to happen,
 preferably a few days in advance so that they can react. To do this:
 
 - [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
-      e.g. [`v0.9.11 Milestone`](https://github.com/dagger/dagger/milestone/36)
+      e.g. [`v0.10.0 Milestone`](https://github.com/dagger/dagger/milestone/33)
 - [ ] Create a new post in [Discord #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
-      e.g. [`v0.9.11 release - 20th February 2024`](https://discord.com/channels/707636530424053791/1207018781654917181)
+      e.g. [`v0.10.0 release - 27th February 2024`](https://discord.com/channels/707636530424053791/1210184315346882620)
 
 This allows others to weigh in whether:
 
@@ -129,7 +129,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.9.11.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.10.0.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -137,9 +137,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.9.11.md`
+      `.changes/v0.10.0.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.9.11-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.10.0-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -160,8 +160,6 @@ export ENGINE_VERSION="$(changie latest)"
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
 git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
-
-export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 ```
 
 This will kick off
@@ -178,7 +176,7 @@ export BUMP_ENGINE_PR=
 
 ```console
 git fetch "${DAGGER_REPO_REMOTE:?must be set}"
-git checkout bump-engine
+git checkout --track "${DAGGER_REPO_REMOTE:?must be set}/bump-engine"
 
 cd sdk/go
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
@@ -261,8 +259,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.9.11 sh
-# mv ~/.local/bin/dagger{,-0.9.11}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.10.0 sh
+# mv ~/.local/bin/dagger{,-0.10.0}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 cd ../..
 dagger run ./hack/make engine:test
