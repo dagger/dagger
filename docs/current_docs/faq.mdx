@@ -2,13 +2,14 @@
 slug: /faq
 pagination_next: null
 pagination_prev: null
-displayed_sidebar: "current"
+displayed_sidebar: "zenith"
 ---
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # FAQ
+
 
 ## General
 
@@ -18,29 +19,17 @@ We're building the devops operating system, an integrated platform to orchestrat
 
 ### How do I install Dagger?
 
-Refer to the documentation for information on how to install the [Dagger CLI](./cli/465058-install.mdx) and the Dagger [Go](./sdk/go/371491-install.mdx), [Node.js](./sdk/nodejs/835948-install.mdx) and [Python](./sdk/python/866944-install.mdx) SDKs.
+Refer to the documentation for information on how to install the [Dagger CLI](./329058-install.mdx).
 
 ### How do I update Dagger?
 
-:::tip
-[Learn more about compatibility between the Dagger Engine, the Dagger CLI and Dagger SDKs](#what-compatibility-is-there-between-the-dagger-engine-dagger-sdks-and-dagger-cli-versions).
-:::
-
-#### CLI
-
-To install a Dagger CLI that matches your OS & architecture, run the following next to the `bin` directory where `dagger` is currently installed, e.g. `/usr/local`:
+To install a Dagger CLI that matches your OS & architecture, run the following:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | sh
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 ```
 
-The above will create `./bin/dagger`.
-
-If your user account doesn't have sufficient privileges to install in the specified location and `sudo` is available, use the following command instead:
-
-```shell
-curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
-```
+This installs `dagger` in `$HOME/.local/bin`:
 
 Homebrew users can alternatively use the following commands:
 
@@ -48,54 +37,6 @@ Homebrew users can alternatively use the following commands:
 brew update
 brew upgrade dagger
 ```
-
-#### SDKs
-
-To update a Dagger SDK, follow the same procedure that you would follow to update any other SDK package in your chosen development environment. For example:
-
-- Go SDK
-
-  ```shell
-  go get -u dagger.io/dagger
-  ```
-
-- Node.js SDK
-
-  <Tabs>
-  <TabItem value="npm">
-
-  ```shell
-  npm install @dagger.io/dagger@latest --save-dev
-  ```
-
-  </TabItem>
-  <TabItem value="yarn">
-
-  ```shell
-  yarn upgrade --latest @dagger.io/dagger --dev
-  ```
-
-  </TabItem>
-  </Tabs>
-
-- Python SDK
-
-  <Tabs>
-  <TabItem value="PyPI">
-
-  ```shell
-  pip install -U dagger-io
-  ```
-
-  </TabItem>
-  <TabItem value="Conda">
-
-  ```shell
-  conda update dagger-io
-  ```
-
-  </TabItem>
-  </Tabs>
 
 ### What compatibility is there between the Dagger Engine, Dagger SDKs and Dagger CLI versions?
 
@@ -162,7 +103,22 @@ Follow these steps:
 
 ### Does Dagger send telemetry?
 
-By default, the Dagger CLI sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used. Telemetry is optional and can be disabled at any time by setting the environment variable `DO_NOT_TRACK=1` before running the Dagger CLI. Our telemetry implementation is open-source and implements the [Console Do Not Track (DNT) standard](https://consoledonottrack.com/) standard. [Learn more about what is included in Dagger telemetry data and how we use it](./guides/294022-telemetry.mdx).
+By default, the Dagger CLI sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used. Telemetry is optional and can be disabled at any time. If you are willing and able to leave telemetry enabled: thank you! This will help us better understand how Dagger is used, and will allow us to improve your experience.
+
+### What telemetry does Dagger send?
+
+The following information is included in telemetry:
+
+- Dagger version
+- Platform information
+- Command run
+- Anonymous device ID
+
+We use telemetry for aggregate analysis, and do not tie telemetry events to a specific identity. Our telemetry implementation is open-source and can be reviewed in our [GitHub repository](https://github.com/dagger/dagger).
+
+### Can Dagger telemetry be disabled?
+
+Dagger implements the [Console Do Not Track (DNT) standard](https://consoledonottrack.com/). As a result, you can disable the telemetry by setting the environment variable `DO_NOT_TRACK=1` before running the Dagger CLI.
 
 ### What are Dagger's caching features?
 
@@ -171,7 +127,7 @@ Dagger is able to cache:
 - Operations, such as copying files or directories to a container, running tests, compiling code, etc.
 - Volumes, such as data caches or package manager caches
 
-Operations are automatically cached every time a Dagger pipeline runs. [Cache volumes](./quickstart/635927-caching.mdx) must be explicity defined and used in your Dagger pipeline code.
+Operations are automatically cached every time a Dagger pipeline runs. Cache volumes must be explicity defined and used in your Dagger pipeline code.
 
 ### Can I run the Dagger Engine as a "rootless" container?
 
@@ -193,7 +149,7 @@ Dagger Cloud complements the Dagger Engine with a production-grade control plane
 
 ### Is Dagger Cloud a hosting service for Dagger Engines?
 
-No, Dagger Cloud is a “bring your own compute” service. The Dagger Engine can run on a wide variety of machines, including most development and CI platforms. If the Dagger Engine can run on it, then Dagger Cloud supports it.
+No, Dagger Cloud is a "bring your own compute" service. The Dagger Engine can run on a wide variety of machines, including most development and CI platforms. If the Dagger Engine can run on it, then Dagger Cloud supports it.
 
 ### Which CI providers does Dagger Cloud work with?
 
@@ -227,21 +183,17 @@ Dagger Cloud features a global data storage service spanning 26 regions across 3
 
 The ability to "bring your own storage" is coming soon. Please reach out to us if this capability is needed for your organization.
 
-### How do I connect my pipelines to Dagger Cloud?
-
-Refer to our [getting started guide](./cloud/572923-get-started.mdx) for detailed information on connecting Dagger Cloud with your CI provider or CI tool.
-
 ## Dagger SDKs
 
 ### What language SDKs are available for Dagger?
 
-We currently offer a [Go SDK](/sdk/go), a [Node.js SDK](/sdk/nodejs) and a [Python SDK](/sdk/python). Waiting for your favorite language to be supported? [Let us know which one](https://airtable.com/shrzABOn1wCk5yBF4), and we'll notify you when it's ready.
+We currently offer a [Go SDK](./developer-guide/go/index.mdx), a [TypeScript SDK](./developer-guide/typescript/index.mdx) and a [Python SDK](./developer-guide/python/index.mdx).
 
 ### How do I log in to a container registry using a Dagger SDK?
 
 There are two options available:
 
-1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK ([example](./guides/723462-use-secrets.mdx#use-secrets-with-dagger-sdk-methods)).
+1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK.
 1. Dagger SDKs can use your existing Docker credentials without requiring separate authentication. Simply execute `docker login` against your container registry on the host where your Dagger pipelines are running.
 
 ## Dagger API
@@ -256,4 +208,4 @@ No. You only need to know one of Dagger's supported SDKs languages to use Dagger
 
 ### There's no SDK for &lt;language&gt; yet. Can I still use Dagger?
 
-Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/) ([example](./api/254103-build-custom-client.mdx)) or from the [Dagger CLI](./cli/index.mdx).
+Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/)  or from the [Dagger CLI](./329058-install.mdx).

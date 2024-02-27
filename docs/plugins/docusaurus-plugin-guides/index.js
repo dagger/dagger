@@ -4,13 +4,13 @@ const utils = require("@docusaurus/utils");
 
 module.exports = async function guidesPlugin(context, options) {
   const currentGuidesPath = path.resolve(options.currentGuidesPath);
-  const versionedGuidesPath = path.resolve(options.versionedGuidesPath);
+  //const versionedGuidesPath = path.resolve(options.versionedGuidesPath);
   const guidesJSONPath = "./static/guides.json";
   return {
     name: "docusaurus-plugin-guides",
     async loadContent() {
       const currentGuidesFolderPath = path.resolve(currentGuidesPath);
-      const versionedGuidesFolderPath = path.resolve(versionedGuidesPath);
+      //const versionedGuidesFolderPath = path.resolve(versionedGuidesPath);
 
       const currentGuides = fs
         .readdirSync(currentGuidesFolderPath)
@@ -44,6 +44,7 @@ module.exports = async function guidesPlugin(context, options) {
           ];
         });
 
+      /*
       const versionedGuides = fs
         .readdirSync(versionedGuidesFolderPath)
         .flatMap((x) => {
@@ -78,14 +79,17 @@ module.exports = async function guidesPlugin(context, options) {
             },
           ];
         });
+        */
 
       currentGuides.sort((a, b) => {
         return b.timestamp - a.timestamp;
       });
 
+      /*
       versionedGuides.sort((a, b) => {
         return b.timestamp - a.timestamp;
       });
+      */
 
       let allTags = new Set();
       currentGuides.forEach((guide) =>
@@ -94,6 +98,7 @@ module.exports = async function guidesPlugin(context, options) {
       allTags = [...allTags];
       fs.writeFileSync(
         guidesJSONPath,
+        //JSON.stringify({ currentGuides, versionedGuides, allTags })
         JSON.stringify({ currentGuides, versionedGuides, allTags })
       );
     },

@@ -50,11 +50,6 @@ const config = {
             [remarkCodeImport, { allowImportingFromOutside: true }],
           ],
           versions: {
-            zenith: {
-              path: '/zenith',
-              banner: 'none',
-              badge: false
-            },
             current: {
               path: '/',
               banner: 'none',
@@ -74,7 +69,6 @@ const config = {
     "docusaurus-plugin-image-zoom",
     [path.resolve(__dirname, "plugins/docusaurus-plugin-guides"), {
       currentGuidesPath: "./current_docs/guides",
-      versionedGuidesPath: "./versioned_docs/version-zenith/guides"
     }],
     [
       "posthog-docusaurus",
@@ -89,32 +83,7 @@ const config = {
           id: "current-generation",
           entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
           tsconfig: '../sdk/typescript/tsconfig.json',
-          // Still nodejs in the reference for now
-          out: '../current_docs/sdk/nodejs/reference/',
-          excludeProtected: true,
-          exclude: '../sdk/typescript/node_modules/**',
-          skipErrorChecking: true,
-          disableSources: true,
-          sidebar: {
-            categoryLabel: 'Reference',
-          },
-          frontmatter: {
-            displayed_sidebar: 'current',
-            sidebar_label: 'Reference',
-            title: "Dagger NodeJS SDK"
-          },
-          hideMembersSymbol: true,
-          requiredToBeDocumented: ["Class"]
-        },
-      ],
-      [
-        "docusaurus-plugin-typedoc",
-        {
-          id: "zenith-generation",
-          entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
-          tsconfig: '../sdk/typescript/tsconfig.json',
-          // Zenith reference
-          out: '../versioned_docs/version-zenith/reference/typescript/',
+          out: '../current_docs/reference/typescript/',
           excludeProtected: true,
           exclude: '../sdk/typescript/node_modules/**',
           skipErrorChecking: true,
@@ -123,7 +92,7 @@ const config = {
             categoryLabel: 'TypeScript SDK Reference',
           },
           frontmatter: {
-            displayed_sidebar: 'zenith',
+            displayed_sidebar: 'current',
             sidebar_label: 'TypeScript SDK Reference',
             title: "TypeScript SDK Reference"
           },
