@@ -51,12 +51,16 @@ func (Elixir) Lint(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	_, err = elixirBase(c, elixirVersions[1]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "lint"}).
 		Sync(ctx)
@@ -86,13 +90,17 @@ func (Elixir) Test(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	for _, elixirVersion := range elixirVersions {
 		_, err := elixirBase(c.Pipeline(elixirVersion), elixirVersion).
 			WithServiceBinding("dagger-engine", devEngine).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-			WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+			WithMountedFile(cliBinPath, cliBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithExec([]string{"mix", "test"}).
 			Sync(ctx)
@@ -122,12 +130,16 @@ func (Elixir) Generate(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	generated := elixirBase(c, elixirVersions[1]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "dagger.gen"})
 

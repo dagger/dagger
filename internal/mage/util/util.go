@@ -155,12 +155,12 @@ func DaggerBinary(c *dagger.Client, version string) *dagger.File {
 }
 
 // DevelDaggerBinary returns a compiled dagger binary with the devel version
-func DevelDaggerBinary(ctx context.Context, c *dagger.Client) *dagger.File {
+func DevelDaggerBinary(ctx context.Context, c *dagger.Client) (*dagger.File, error) {
 	info, err := DevelVersionInfo(ctx, c)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return PlatformDaggerBinary(c, "", "", "", info.EngineVersion())
+	return PlatformDaggerBinary(c, "", "", "", info.EngineVersion()), nil
 }
 
 // HostDaggerBinary returns a dagger binary compiled to target the host's OS+arch

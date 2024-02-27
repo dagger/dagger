@@ -85,12 +85,17 @@ func (t TypeScript) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	_, err = nodeJsBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"yarn", "test"}).
 		Sync(ctx)
@@ -111,12 +116,17 @@ func (t TypeScript) Generate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	generated, err := nodeJsBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithMountedFile("/usr/local/bin/codegen", util.CodegenBinary(c)).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"codegen", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
