@@ -3,6 +3,9 @@ import { dag, Container, Directory, Secret, object, func } from "@dagger.io/dagg
 @object()
 class MyModule {
 
+  /**
+   * Build an image
+   */
   @func()
   build(source: Directory): Container {
     return dag.container().from("node:21")
@@ -12,6 +15,13 @@ class MyModule {
       .withEntrypoint(["npm", "start"])
   }
 
+  /**
+   * Publish an image
+   *
+   * example: dagger call publish --source . --project PROJECT
+   *   --location LOCATION --repository REPOSITORY/APPNAME
+   *   --credential env:GOOGLE_JSON
+   */
   @func()
   async publish(source: Directory, project: string, location: string, repository: string, credential: Secret): Promise<string> {
     const registry = `${location}-docker.pkg.dev/${project}/${repository}`
@@ -20,6 +30,14 @@ class MyModule {
       .publish(registry)
   }
 
+  /**
+   * Deploy an image to Google Cloud Run
+   *
+   * example: dagger call deploy --source . --project PROJECT
+   *  --registry-location LOCATION --repository REPOSITORY/APPNAME
+   *  --service-location LOCATION --service SERVICE
+   *  --credential env:GOOGLE_JSON
+   */
   @func()
   async deploy(source: Directory, project: string, registryLocation: string, repository: string, serviceLocation: string, service: string, credential: Secret): Promise<string> {
 

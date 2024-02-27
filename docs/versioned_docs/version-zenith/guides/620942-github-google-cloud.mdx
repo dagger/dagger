@@ -3,7 +3,7 @@ slug: /620942/github-google-cloud
 displayed_sidebar: "zenith"
 category: "guides"
 authors: ["Vikram Vaswani"]
-date: "2024-08-04"
+date: "2024-02-27"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -12,7 +12,6 @@ import PartialGoogleCloudServiceAcountKeySetup from '../partials/_google_cloud_s
 import PartialGoogleCloudApiSetup from '../partials/_google_cloud_api_setup.mdx';
 import PartialGoogleCloudRunSetup from '../partials/_google_cloud_run_setup.mdx';
 import PartialGoogleArtifactRegistrySetup from '../partials/_google_artifact_registry_setup.mdx';
-import PartialGoogleCloudSdkCredentialsSetup from '../partials/_google_cloud_sdk_credentials_setup.mdx';
 
 # Use Dagger with GitHub Actions and Google Cloud
 
@@ -201,12 +200,10 @@ The next step is to create a Dagger Module to do the heavy lifting: build a cont
 
 ## Step 6: Test the Dagger pipeline on the local host
 
-<PartialGoogleCloudSdkCredentialsSetup />
-
-Once credentials are configured, test the Dagger Functions by running the command below from the application directory. Remember to update the `registry-location`, `repository`, `service`, and `service-location` arguments if you specified different values when creating the various Google Cloud services in Step 3 and Step 4.
+Once credentials are configured, test the Dagger Functions by running the command below from the application directory. Remember to update the `registry-location`, `repository`, `service`, and `service-location` arguments if you specified different values when creating the various Google Cloud services in Step 3 and Step 4, and update the `SERVICE-ACCOUNT-KEY-FILE` placeholder with the local filesystem path to your JSON service key file from Step 1.
 
 ```shell
-dagger call deploy --source . --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential env:GOOGLE_CREDENTIALS
+dagger call deploy --source . --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential file:SERVICE-ACCOUNT-KEY-FILE
 ```
 
 Dagger performs the operations defined in the Dagger Function, logging each operation to the console. At the end of the process, the built container is deployed to Google Cloud Run and the function returns the deployment URL. Browse to the deployment URL to see the running application.

@@ -7,7 +7,7 @@ import (
 
 type MyModule struct{}
 
-// build a container
+// build an image
 func (m *MyModule) Build(source *Directory) *Container {
 	return dag.Container().
 		From("node:21").
