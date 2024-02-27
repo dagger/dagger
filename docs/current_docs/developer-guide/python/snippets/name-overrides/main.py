@@ -16,4 +16,3 @@ class MyModule:
     ) -> dagger.Container:
         """Import the specified image"""
         return dag.container().with_label("definition", self.def_).from_(from_)
-

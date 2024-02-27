@@ -9,7 +9,6 @@ class PotatoMessage:
 
 @object_type
 class Potato:
-
     @function
     def hello_world(
         self,

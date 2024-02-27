@@ -4,7 +4,6 @@ from dagger import dag, function, object_type
 
 @object_type
 class MyModule:
-
     @function
     async def tree(self, src: dagger.Directory, depth: str) -> str:
         return await (

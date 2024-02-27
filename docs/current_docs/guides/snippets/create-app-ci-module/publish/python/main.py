@@ -1,15 +1,16 @@
 import random
+
 import dagger
-from dagger import dag, object_type, function
+from dagger import dag, function, object_type
+
 
 @object_type
 class MyModule:
     @function
     async def publish(self, source: dagger.Directory) -> str:
         """Publish an image"""
-        return await (
-            self.package(source)
-            .publish(f"ttl.sh/myapp-{random.randrange(10 ** 8)}")
+        return await self.package(source).publish(
+            f"ttl.sh/myapp-{random.randrange(10 ** 8)}"
         )
 
     def package(self, source: dagger.Directory) -> dagger.Container:
@@ -25,7 +26,8 @@ class MyModule:
     def build(self, source: dagger.Directory) -> dagger.Directory:
         """Create a production build"""
         return (
-            dag.node().with_container(self.build_base_image(source))
+            dag.node()
+            .with_container(self.build_base_image(source))
             .build()
             .container()
             .directory("./dist")
@@ -35,7 +37,8 @@ class MyModule:
     async def test(self, source: dagger.Directory) -> str:
         """Run unit tests"""
         return await (
-            dag.node().with_container(self.build_base_image(source))
+            dag.node()
+            .with_container(self.build_base_image(source))
             .run(["run", "test:unit", "run"])
             .stdout()
         )

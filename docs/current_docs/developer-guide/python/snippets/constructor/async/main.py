@@ -13,15 +13,14 @@ class MyModule:
     @classmethod
     async def create(
         cls,
-        paralelize: Annotated[int | None, Doc("Number of parallel processes to run")] = None,
+        paralelize: Annotated[
+            int | None, Doc("Number of parallel processes to run")
+        ] = None,
     ):
         if paralelize is None:
-            paralelize = int(await (
-                dag.container()
-                .from_("alpine")
-                .with_exec(["nproc"])
-                .stdout()
-            ))
+            paralelize = int(
+                await dag.container().from_("alpine").with_exec(["nproc"]).stdout()
+            )
         return cls(paralelize=paralelize)
 
     @function

@@ -1,6 +1,7 @@
 import dagger
 from dagger import dag, object_type
 
+
 @object_type
 class MyModule:
     def build_base_image(self, source: dagger.Directory) -> dagger.Container:

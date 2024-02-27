@@ -1,6 +1,6 @@
-import random
 import dagger
-from dagger import dag, object_type, function
+from dagger import dag, function, object_type
+
 
 @object_type
 class MyModule:

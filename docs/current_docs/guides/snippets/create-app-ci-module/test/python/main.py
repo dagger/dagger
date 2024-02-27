@@ -1,5 +1,6 @@
 import dagger
-from dagger import dag, object_type, function
+from dagger import dag, function, object_type
+
 
 @object_type
 class MyModule:
@@ -7,7 +8,8 @@ class MyModule:
     async def test(self, source: dagger.Directory) -> str:
         """Run unit tests"""
         return await (
-            dag.node().with_container(self.build_base_image(source))
+            dag.node()
+            .with_container(self.build_base_image(source))
             .run(["run", "test:unit", "run"])
             .stdout()
         )

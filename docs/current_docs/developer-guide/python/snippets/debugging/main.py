@@ -8,7 +8,6 @@ configure_logging(logging.DEBUG)
 
 @object_type
 class MyModule:
-
     @function
     def echo(self, msg: str) -> str:
         return msg

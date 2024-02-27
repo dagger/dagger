@@ -4,7 +4,6 @@ from dagger import dag, function, object_type
 
 @object_type
 class MyModule:
-
     @function
     def build(self, source: dagger.Directory, arch: str, os: str) -> dagger.Container:
         dir = (
@@ -19,7 +18,5 @@ class MyModule:
             .directory("/src/build")
         )
         return (
-            dag.container()
-            .from_("alpine:latest")
-            .with_directory("/usr/local/bin", dir)
+            dag.container().from_("alpine:latest").with_directory("/usr/local/bin", dir)
         )

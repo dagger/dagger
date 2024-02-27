@@ -15,4 +15,3 @@ class MyModule:
     def message(self) -> str:
         """Return the greeting message"""
         return f"{self.greeting}, {self.name}!"
-

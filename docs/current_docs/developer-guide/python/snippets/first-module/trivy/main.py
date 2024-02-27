@@ -22,7 +22,7 @@ class Trivy:
         exit_code: Annotated[
             int,
             Doc("The exit code to return if vulnerabilities are found"),
-        ]= 0,
+        ] = 0,
         format: Annotated[
             str,
             Doc("The output format to use for the scan results"),
