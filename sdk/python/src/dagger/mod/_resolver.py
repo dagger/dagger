@@ -129,11 +129,19 @@ class FunctionResolver(Resolver, Generic[P, R]):
             fn = fn.with_description(self.func_doc)
 
         for param in self.parameters.values():
+            arg_type = to_typedef(param.resolved_type)
+            default = self._get_default_value(param)
+
+            # Default factories or more complex types aren't reflected in the
+            # API so we need to mark them as nullable to allow omission.
+            if param.has_default and default is None:
+                arg_type = arg_type.with_optional(True)
+
             fn = fn.with_arg(
                 param.name,
-                to_typedef(param.resolved_type),
+                arg_type,
                 description=param.doc,
-                default_value=self._get_default_value(param),
+                default_value=default,
             )
 
         return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
