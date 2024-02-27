@@ -179,6 +179,9 @@ func (s *moduleSchema) moduleSourceAsModule(
 				{Name: "source", Value: dagql.NewID[*core.ModuleSource](src.ID())},
 			},
 		},
+		dagql.Selector{
+			Field: "initialize",
+		},
 	)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create module: %w", err)

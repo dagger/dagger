@@ -371,7 +371,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	if !modConf.FullyInitialized() {
 		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
 	}
-	mod := modConf.Source.AsModule().Initialize()
+	mod := modConf.Source.AsModule()
 	_, err = mod.Serve(ctx)
 	if err != nil {
 		return nil, nil, err

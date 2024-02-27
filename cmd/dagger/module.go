@@ -778,7 +778,7 @@ func optionalModCmdWrapper(
 			}
 			var loadedMod *dagger.Module
 			if modConf.FullyInitialized() {
-				loadedMod = modConf.Source.AsModule().Initialize()
+				loadedMod = modConf.Source.AsModule()
 				_, err := loadedMod.Serve(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
