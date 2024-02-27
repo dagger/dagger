@@ -2,11 +2,7 @@
 slug: /user-guide/cloud/741031/user-interface
 ---
 
-import PartialExperimentalDocs from '../../partials/_experimental.mdx';
-
 # User Interface
-
-<PartialExperimentalDocs />
 
 Dagger Cloud lets you visualize your Dagger pipelines in two ways: runs and changes.
 
@@ -26,7 +22,7 @@ The Dagger team is working on a new user experience to group your Dagger runs by
 
 The *All Runs* page lists available runs.
 
-![View runs](/img/versioned_docs/version-zenith/user-guide/cloud/user-interface/all-runs.png)
+![View runs](/img/current_docs/user-guide/cloud/user-interface/all-runs.png)
 
 Here's a quick summary of what you'll see for each run.
 
@@ -51,14 +47,14 @@ You can display a subset of runs, such as runs related to a specific commit, bra
 
 You can drill down into the details of a specific run by clicking it. This directs you to a run-specific *Run Details* page. When you run Dagger locally, this is the page you visit when you click the Dagger Cloud link in the CLI output.
 
-![View run details](/img/versioned_docs/version-zenith/user-guide/cloud/user-interface/run-details.png)
+![View run details](/img/current_docs/user-guide/cloud/user-interface/run-details.png)
 
 The *Run Details* page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
 
 ### Run Details: Step viewer
 Clicking into a specific step will open a drawer with several elements that can help you debug why your pipeline is failing and help you identify why a step might not have been cached.
 
-![View step details](/img/versioned_docs/version-zenith/user-guide/cloud/user-interface/step-details.png)
+![View step details](/img/current_docs/user-guide/cloud/user-interface/step-details.png)
 
 
 ## Changes
@@ -69,7 +65,7 @@ A change is a group of runs for a specific commit or pull/merge request.
 
 The *All Changes* page lists available groups.
 
-![View changes](/img/versioned_docs/version-zenith/user-guide/cloud/user-interface/all-changes.png)
+![View changes](/img/current_docs/user-guide/cloud/user-interface/all-changes.png)
 
 Here's a quick summary of what you'll see for each change.
 
@@ -90,6 +86,6 @@ Here's a quick summary of what you'll see for each change.
 ### Change Details page
 You can drill down into the details of a specific change by clicking it. This directs you to a *Change Details* page, as shown below:
 
-![View change details](/img/versioned_docs/version-zenith/user-guide/cloud/user-interface/change-details.png)
+![View change details](/img/current_docs/user-guide/cloud/user-interface/change-details.png)
 
 The *Change Details* page lists all the pipeline runs for the commit or pull request. The tree view shows Dagger pipelines and detailed logs of steps and outputs within those pipelines. Clicking into a run takes you to the [run's details page](user-interface#run-details-page).

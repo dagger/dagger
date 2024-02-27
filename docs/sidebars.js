@@ -27,6 +27,52 @@ module.exports = {
     },
     {
       "type": "category",
+      "label": "User Guide",
+      "link": {
+        "type": "doc",
+        "id": "user-guide/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "label": "Dagger in CI",
+          "id": "user-guide/ci/index"
+        },
+        {
+          "type": "category",
+          "label": "Dagger Cloud",
+          "link": {
+            "type": "doc",
+            "id": "user-guide/cloud/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Get Started",
+              "id": "user-guide/cloud/get-started"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/cloud/user-interface"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/cloud/roles-permissions"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/cloud/org-administration"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "category",
       "label": "Developer Guide",
       "collapsible": true,
       "collapsed": true,
