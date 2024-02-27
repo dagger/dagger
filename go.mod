@@ -78,7 +78,7 @@ require (
 	github.com/urfave/cli v1.22.14
 	github.com/vektah/gqlparser/v2 v2.5.10
 	github.com/vito/midterm v0.1.5-0.20240215023001-e649b2677bfa
-	github.com/vito/progrock v0.10.2-0.20240119030128-52ef9ee1a291
+	github.com/vito/progrock v0.10.2-0.20240221152222-63c8df30db8d
 	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 	github.com/zeebo/xxh3 v1.0.2
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.0
@@ -105,6 +105,8 @@ require (
 	oss.terrastruct.com/d2 v0.6.1
 	oss.terrastruct.com/util-go v0.0.0-20231101220827-55b3812542c2
 )
+
+require github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81
 
 require (
 	cdr.dev/slog v1.4.2 // indirect

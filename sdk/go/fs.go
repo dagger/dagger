@@ -1,6 +1,8 @@
 package dagger
 
-import "embed"
+import (
+	"embed"
+)
 
 // These are exported so that they can be used by codegen.
 

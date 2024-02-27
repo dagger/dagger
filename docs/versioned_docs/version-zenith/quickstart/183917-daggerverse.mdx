@@ -20,4 +20,4 @@ All Dagger CLI commands work as expected with Daggerverse URLs. Here are a few m
 - [Stitch videos together](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch): `wget -q https://download.samplelib.com/mp4/sample-5s.mp4 && wget -q https://download.samplelib.com/mp4/sample-10s.mp4 && dagger call -m github.com/marcosnils/daggerverse/videostitch@main -o output.mp4 stitch --src-dir .`
 - [Scan a container image for vulnerabilities](https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy): `dagger call -m github.com/jpadams/daggerverse/trivy scan-image --image-ref alpine/git:latest`
 
-You can also add your own module to the Daggerverse, for others in the community to use and extend. You'll find more information on how to do this in our [guide on publishing modules to the Daggerverse](../developer/821742-publishing-modules.mdx).
+You can also add your own module to the Daggerverse, for others in the community to use and extend. You'll find more information on how to do this in our [guide on publishing modules to the Daggerverse](#).

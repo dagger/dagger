@@ -893,6 +893,10 @@ export type ClientPipelineOpts = {
   labels?: PipelineLabel[]
 }
 
+export type ClientSecretOpts = {
+  accessor?: string
+}
+
 /**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
@@ -6610,6 +6614,23 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Retrieves a container builtin to the engine.
+   * @param digest Digest of the image manifest
+   */
+  builtinContainer = (digest: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "builtinContainer",
+          args: { digest },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
@@ -7456,13 +7477,13 @@ export class Client extends BaseClient {
   /**
    * Reference a secret by name.
    */
-  secret = (name: string): Secret => {
+  secret = (name: string, opts?: ClientSecretOpts): Secret => {
     return new Secret({
       queryTree: [
         ...this._queryTree,
         {
           operation: "secret",
-          args: { name },
+          args: { name, ...opts },
         },
       ],
       ctx: this._ctx,

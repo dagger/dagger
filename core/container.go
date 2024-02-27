@@ -387,7 +387,13 @@ func (container *Container) Build(
 		dockerui.DefaultLocalNameDockerfile: contextDir.LLB,
 	}
 
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+	// FIXME: ew, this is a terrible way to pass this around
+	//nolint:staticcheck
+	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
+		return GetLocalSecretAccessor(ctx, container.Query, name)
+	})
+
+	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
@@ -1076,7 +1082,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Name)}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Accessor)}
 
 		var secretDest string
 		switch {

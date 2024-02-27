@@ -1,8 +1,0 @@
-{
-  "name": "mymod",
-  "sdk": "go",
-  "dependencies": [
-    "github.com/quartz-technology/daggerverse/node@9ce087b83aa8b85f828d7d92ce39bd7c055cfc0f",
-    "github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473"
-  ]
-}

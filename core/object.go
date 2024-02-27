@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/moby/buildkit/solver/pb"
@@ -338,7 +337,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				// TODO: there may be a more elegant way to do this, but the desired
 				// effect is to cache SDK module calls, which we used to do pre-DagQL.
 				// We should figure out how user modules can opt in to caching, too.
-				Cache: analytics.IsInternal(ctx),
+				Cache: dagql.IsInternal(ctx),
 				// Pipeline:  _, // TODO
 				SkipSelfSchema: false, // TODO?
 			}

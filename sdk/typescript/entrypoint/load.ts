@@ -318,18 +318,33 @@ export async function loadResult(
   scanResult: ScanResult,
   parentName: string,
 ): Promise<any> {
+  // Handle IDable objects
   if (result && typeof result?.id === "function") {
     result = await result.id()
   }
 
+  // Handle arrays
+  if (Array.isArray(result)) {
+    result = await Promise.all(
+      result.map(async (r) => await loadResult(r, scanResult, parentName)),
+    )
+
+    return result
+  }
+
+  // Handle objects
   if (typeof result === "object") {
+    const state: any = {}
+
     for (const [key, value] of Object.entries(result)) {
-      result[loadResultAlias(scanResult, parentName, key)] = await loadResult(
+      state[loadResultAlias(scanResult, parentName, key)] = await loadResult(
         value,
         scanResult,
         loadAliasParentName(scanResult, parentName, key),
       )
     }
+
+    result = state
   }
 
   return result

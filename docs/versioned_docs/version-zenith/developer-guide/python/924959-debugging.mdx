@@ -1,0 +1,77 @@
+---
+slug: /developer-guide/python/924959/debugging
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Debugging"
+---
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Debugging
+
+<PartialExperimentalDocs />
+
+If you come across bugs, here are some simple debugging suggestions.
+
+## Rerun commands with `--debug`
+
+The Dagger CLI tries to keep its output concise by default. If you're running
+into issues and want to debug with more detailed output, you can run any `dagger`
+subcommand with the `--debug` flag to have it reveal all available information.
+
+## Enable Pyton debug logs
+
+The Python SDK prints debugging information at various steps of the execution
+flow of a module, which can be very useful in understanding what's being
+received from and sent to the API.
+
+This is done using standard Python [logging](https://docs.python.org/3/howto/logging.html),
+so it's highly configurable (for example, saving to a file or sending to an
+external system like Sentry). But for a simple lowering of the default logging
+level to [logging.DEBUG](https://docs.python.org/3/library/logging.html#logging.DEBUG),
+there's a convenience function for that:
+
+```python file=./snippets/debugging/main.py
+```
+
+:::note
+With the TUI, you need to use a progress output that doesn't collapse on success
+like `--progress=plain` or `--debug`, otherwise it won't show in the terminal.
+:::
+
+Using the command `dagger call --debug echo --msg="hello"`, should print
+something like:
+
+```
+✔ MyModule.echo(msg: "hello"): String! 0.5s
+  ✔ exec /runtime 0.5s
+  ┃ [DEBUG] dagger.client._session: Configuring shared connection to GraphQL server
+  ┃ [DEBUG] dagger.client._session: Establishing client session to GraphQL server
+  ┃ [DEBUG] dagger.mod._module: invoke => {'parent_name': 'MyModule', 'parent_json': '{}', 'name': 'echo', 'input_args': "{'msg': 'hello'}"}
+  ┃ [DEBUG] dagger.mod._module: resolver => MyModule.echo
+  ┃ [DEBUG] dagger.mod._resolver: func => <Signature (msg: str) -> str>
+  ┃ [DEBUG] dagger.mod._resolver: input args => {'msg': 'hello'}
+  ┃ [DEBUG] dagger.mod._resolver: structured args => {'msg': 'hello'}
+  ┃ [DEBUG] dagger.mod._module: result => 'hello'
+  ┃ [DEBUG] dagger.mod._module: output => '"hello"'
+  ┃ [DEBUG] dagger.client._session: Closing client session to GraphQL server
+DEBUG: executing query="query{myModule{echo(msg:\"hello\")}}"
+```
+
+The above gives a lot of useful information:
+- The function and parent object that the API wants to execute
+- The parent object's state
+- The function's signature
+- The user inputs before and after deserialization
+- The user inputs after being converted to more complex types (structuring)
+- The function's result before and after serialization
+
+Additionally, with `--debug` the GraphQL query that the CLI produced is also shown.
+
+## Access the Dagger Engine logs
+
+The Dagger Engine runs in a dedicated Docker container and emits log messages as it works. Here's how to access these logs:
+
+```shell
+DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
+docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
+```

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -36,6 +37,8 @@ const (
 	StarterTemplateFile = "main.go"
 )
 
+var goVersion = semver.MustParse(strings.TrimPrefix(runtime.Version(), "go"))
+
 type GoGenerator struct {
 	Config generator.Config
 }
@@ -51,8 +54,13 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	mfs := memfs.New()
 
+	var overlay fs.FS = mfs
+	if g.Config.ModuleName != "" {
+		overlay = layerfs.New(mfs, &MountedFS{FS: dagger.QueryBuilder, Name: "internal"})
+	}
+
 	genSt := &generator.GeneratedState{
-		Overlay: layerfs.New(mfs, dagger.QueryBuilder),
+		Overlay: overlay,
 		PostCommands: []*exec.Cmd{
 			// run 'go mod tidy' after generating to fix and prune dependencies
 			exec.Command("go", "mod", "tidy"),
@@ -81,9 +89,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		pkgInfo.PackageName = "main"
 
 		// generate an initial dagger.gen.go from the base Dagger API
-		baseCfg := g.Config
-		baseCfg.ModuleName = ""
-		if err := generateCode(ctx, baseCfg, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
+		if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
@@ -147,7 +153,17 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		if err != nil {
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
-
+		currentModGoVersion, err := semver.Parse(currentMod.Go.Version)
+		if err != nil {
+			var err2 error
+			currentModGoVersion, err2 = semver.Parse(currentMod.Go.Version + ".0")
+			if err2 != nil {
+				return nil, false, fmt.Errorf("parse go.mod version %q: %w", currentMod.Go.Version, err)
+			}
+		}
+		if currentModGoVersion.GT(goVersion) {
+			return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", currentMod.Go.Version, goVersion)
+		}
 		newMod = currentMod
 
 		for _, req := range sdkMod.Require {
@@ -185,9 +201,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 			newModName := "main" // use a safe default, not going to be a reserved word. User is free to modify
 
 			newMod.AddModuleStmt(newModName)
-			if v, err := semver.Parse(strings.TrimPrefix(runtime.Version(), "go")); err == nil {
-				newMod.AddGoStmt(v.String())
-			}
+			newMod.AddGoStmt(goVersion.String())
 			newMod.SetRequire(sdkMod.Require)
 
 			info.PackageImport = newModName
@@ -329,21 +343,35 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 func (g *GoGenerator) baseModuleSource() string {
 	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
 
-	return fmt.Sprintf(`package main
+	return fmt.Sprintf(`// A generated module for %[1]s functions
+//
+// This module has been generated via dagger init and serves as a reference to
+// basic module structure as you get started with Dagger.
+//
+// Two functions have been pre-created. You can modify, delete, or add to them,
+// as needed. They demonstrate usage of arguments and return types using simple
+// echo and grep commands. The functions can be called from the dagger CLI or
+// from one of the SDKs.
+//
+// The first line in this comment block is a short description line and the
+// rest is a long description with more detail on the module's purpose or usage,
+// if appropriate. All modules should have a short description.
+
+package main
 
 import (
 	"context"
 )
 
-type %s struct {}
+type %[1]s struct{}
 
-// example usage: "dagger call container-echo --string-arg yo stdout"
-func (m *%s) ContainerEcho(stringArg string) *Container {
+// Returns a container that echoes whatever string argument is provided
+func (m *%[1]s) ContainerEcho(stringArg string) *Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }
 
-// example usage: "dagger call grep-dir --directory-arg . --pattern GrepDir"
-func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
+// Returns lines that match a pattern in the files of the provided Directory
+func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
 		WithMountedDirectory("/mnt", directoryArg).
@@ -351,6 +379,5 @@ func (m *%s) GrepDir(ctx context.Context, directoryArg *Directory, pattern strin
 		WithExec([]string{"grep", "-R", pattern, "."}).
 		Stdout(ctx)
 }
-
-`, moduleStructName, moduleStructName, moduleStructName)
+`, moduleStructName)
 }

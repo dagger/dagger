@@ -178,12 +178,8 @@ type globArgs struct {
 	Pattern string
 }
 
-func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) (dagql.Array[dagql.String], error) {
-	ents, err := parent.Glob(ctx, ".", args.Pattern)
-	if err != nil {
-		return nil, err
-	}
-	return dagql.NewStringArray(ents...), nil
+func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
+	return parent.Glob(ctx, ".", args.Pattern)
 }
 
 type dirFileArgs struct {

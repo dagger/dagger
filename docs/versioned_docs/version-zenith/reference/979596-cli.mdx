@@ -32,7 +32,6 @@ The Dagger CLI provides a command-line interface to Dagger.
 * [dagger install](#dagger-install)	 - Add a new dependency to a Dagger module
 * [dagger login](#dagger-login)	 - Log in to Dagger Cloud
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
-* [dagger publish](#dagger-publish)	 - Publish a Dagger module to the Daggerverse
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
 * [dagger version](#dagger-version)	 - Print dagger version
@@ -219,7 +218,7 @@ Any module can be installed to via "dagger install".
 
 A module can only be called once it has been initialized with an SDK though. The "--sdk" flag can be provided to init here, but if it's not the configuration can be updated later via "dagger develop".
 
-The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger". 
+The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
 
 
 ```
@@ -229,7 +228,7 @@ dagger init [flags] [PATH]
 ### Examples
 
 ```
-dagger mod init --name=hello --sdk=python --source=some/subdir
+dagger init --name=hello --sdk=python --source=some/subdir
 ```
 
 ### Options
@@ -268,7 +267,7 @@ dagger install [flags] MODULE
 ### Examples
 
 ```
-dagger mod install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
+dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
 ```
 
 ### Options
@@ -317,43 +316,6 @@ Log out from Dagger Cloud
 
 ```
 dagger logout [flags]
-```
-
-### Options inherited from parent commands
-
-```
-      --debug             Show more information for debugging
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-```
-
-### SEE ALSO
-
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
-
-## dagger publish
-
-Publish a Dagger module to the Daggerverse
-
-### Synopsis
-
-Publish a local module to the Daggerverse (https://daggerverse.dev).
-
-The module needs to be committed to a git repository and have a remote
-configured with name "origin". The git repository must be clean (unless
-forced), to avoid mistakingly depending on uncommitted files.
-
-
-```
-dagger publish [flags]
-```
-
-### Options
-
-```
-      --focus        Only show output for focused commands (default true)
-  -f, --force        Force publish even if the git repository is not clean
-  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 
 ### Options inherited from parent commands

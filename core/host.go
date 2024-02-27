@@ -120,11 +120,17 @@ func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) 
 }
 
 func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
+	accessor, err := GetLocalSecretAccessor(ctx, host.Query, secretName)
+	if err != nil {
+		return i, err
+	}
+
 	secretFileContent, err := host.Query.Buildkit.ReadCallerHostFile(ctx, path)
 	if err != nil {
 		return i, fmt.Errorf("read secret file: %w", err)
 	}
-	if err := host.Query.Secrets.AddSecret(ctx, secretName, secretFileContent); err != nil {
+
+	if err := host.Query.Secrets.AddSecret(ctx, accessor, secretFileContent); err != nil {
 		return i, err
 	}
 	err = srv.Select(ctx, srv.Root(), &i, dagql.Selector{
@@ -133,6 +139,10 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 			{
 				Name:  "name",
 				Value: dagql.NewString(secretName),
+			},
+			{
+				Name:  "accessor",
+				Value: dagql.Opt(dagql.NewString(accessor)),
 			},
 		},
 	})

@@ -103,7 +103,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	if caller, err := mod.Query.CurrentModule(ctx); err == nil {
 		props["caller_type"] = "module"
 		moduleAnalyticsProps(caller, "caller_", props)
-	} else if analytics.IsInternal(ctx) {
+	} else if dagql.IsInternal(ctx) {
 		props["caller_type"] = "internal"
 	} else {
 		props["caller_type"] = "direct"

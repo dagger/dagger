@@ -15,7 +15,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -726,13 +725,9 @@ func (dir *Directory) Export(ctx context.Context, destPath string) (rerr error) 
 		defPB = dir.LLB
 	}
 
-	rec := progrock.FromContext(ctx)
-
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath),
-	)
-	defer vtx.Done(rerr)
+	ctx, vtx := progrock.Span(ctx, identity.NewID(),
+		fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
+	defer func() { vtx.Done(rerr) }()
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {

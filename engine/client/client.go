@@ -47,6 +47,8 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
+const ProgrockParentHeader = "X-Progrock-Parent"
+
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.
@@ -182,14 +184,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// making something up, and should be pretty much 1:1 I think (even
 	// non-cached things will have a different caller digest each time)
 	connectDigest := params.ModuleCallerDigest
+	var opts []progrock.VertexOpt
 	if connectDigest == "" {
 		connectDigest = digest.FromString("_root") // arbitrary
+	} else {
+		opts = append(opts, progrock.Internal())
 	}
 
-	loader := c.Recorder.Vertex(connectDigest, "connect", progrock.Internal())
-	defer func() {
-		loader.Done(rerr)
-	}()
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", opts...)
+	defer func() { loader.Done(rerr) }()
 
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
@@ -324,7 +328,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
 		defer cancel()
 
-		innerErr := c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		// Make an introspection request, since those get ignored by telemetry and
+		// we don't want this to show up, since it's just a health check.
+		innerErr := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
 		if innerErr != nil {
 			// only show errors once the time between attempts exceeds this threshold, otherwise common
 			// cases of 1 or 2 retries become too noisy
@@ -950,6 +956,7 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
+		req.Header.Add(ProgrockParentHeader, progrock.FromContext(req.Context()).Parent)
 		req.SetBasicAuth(engineClient.SecretToken, "")
 		resp := httptest.NewRecorder()
 		engineClient.ServeHTTP(resp, req)

@@ -264,6 +264,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			ProgSockPath:          progSockPath,
 			MainClientCaller:      caller,
 			DNSConfig:             e.DNSConfig,
+			Frontends:             e.Frontends,
 		})
 		if err != nil {
 			e.perServerMu.Unlock(opts.ServerID)

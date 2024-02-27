@@ -1,0 +1,119 @@
+---
+slug: /developer-guide/go/882081/module-structure
+displayed_sidebar: "zenith"
+toc_max_heading_level: 2
+title: "Module Structure"
+---
+
+import PartialExperimentalDocs from '../../partials/_experimental.mdx';
+
+# Module Structure
+
+<PartialExperimentalDocs />
+
+It's essential to understand a few key concepts about Dagger Modules created for use with the Go SDK, for a better fit with your normal development workflow.
+
+## Runtime container with Go 1.21
+
+Dagger Modules run in a runtime container that's bootstrapped by the Dagger Engine, with the neccessary environment to run the Dagger Module's code. It's currently hardcoded to run in Go 1.21  (although this may be configurable in future).
+
+## Go modules
+
+Dagger Modules written for use with the Go SDK are automatically created as [Go modules](https://go.dev/ref/mod). At module creation time, a `go.mod` and `go.sum` file will automatically be created  that import the necessary dependencies. Dependencies can be installed and managed just as for any standard Go environment.
+
+After using new dependencies in your code, update your `go.mod`/`go.sum` with the newly imported dependencies by using [`go mod tidy`](https://go.dev/ref/mod#go-mod-tidy).
+
+### Go workspaces
+
+Since it's common to have a sub-directory inside your main project containing your Dagger Module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
+
+When a new Dagger Module is created, Dagger attempts to add it to a root `go.work` if it exists. If not, it can be added manually later with `go work use ./path/to/mymodule`.
+
+```go
+// go.work
+go 1.21.7
+
+use (
+	./path/to/mymodule
+)
+```
+
+### Go vendor
+
+[Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See [https://github.com/dagger/dagger/issues/6076](https://github.com/dagger/dagger/issues/6076) for more information.
+
+## File layout
+
+The template from `dagger init` creates the following structure:
+
+```
+.
+├── dagger.gen.go
+├── dagger.json
+├── go.mod
+├── go.sum
+├── internal
+│   ├── dagger
+│   │   └── dagger.gen.go
+│   └── querybuilder
+│       ├── marshal.go
+│       └── querybuilder.go
+└── main.go
+```
+
+- `dagger.json` is the dagger module config file.
+- `go.mod`/`go.sum` manage the [Go module](#go-modules) and its dependencies.
+- `main.go` is where your module code goes.
+- `internal` contains automatically-generated types and helpers needed to configure and run the module
+    - `dagger` contains definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
+
+:::note
+While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
+:::
+
+## Multiple files
+
+You can split your Dagger Module into multiple files, not just `main.go`. To do this, you can just create another file beside `main.go` (for example, `utils.go`):
+
+```
+.
+├── ...
+├── internal
+│   └── ...
+├── main.go
+└── utils.go
+```
+
+This file should be inside the same package as `main.go`, and as such, can access any private variables/functions/types inside the package.
+
+Additionally, you can also split your Dagger Module into Go subpackages (for example, `utils`):
+
+```
+.
+├── ...
+├── internal
+│   └── ...
+├── main.go
+└── utils
+    └── utils.go
+```
+
+Because this is a separate package, you can only use the variables/functions/types that are exported from this package in `main.go` (you can't access types from `main.go` in the `utils` package).
+
+:::note
+Only types and functions in the top-level package are part of the public-facing API for the module.
+:::
+
+You can access other Dagger types from a sub-package by importing the generated sub-package `<module>/internal/dagger`:
+
+```go
+// utils/utils.go
+
+import "main/internal/dagger"
+
+func DoThing(client *dagger.Client) *dagger.Directory {
+    // we need to pass *dagger.Client in here, since we don't have access to `dag`
+	...
+}
+```

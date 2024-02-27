@@ -27,6 +27,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Retrieves a container builtin to the engine.
+     */
+    public function builtinContainer(string $digest): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('builtinContainer');
+        $innerQueryBuilder->setArgument('digest', $digest);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(string $key): CacheVolume
@@ -557,10 +567,13 @@ class Client extends Client\AbstractClient
     /**
      * Reference a secret by name.
      */
-    public function secret(string $name): Secret
+    public function secret(string $name, ?string $accessor = null): Secret
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('secret');
         $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $accessor) {
+        $innerQueryBuilder->setArgument('accessor', $accessor);
+        }
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

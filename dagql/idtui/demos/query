@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -e -u -x
+
+echo '{container{from(address:"postgres"){withExec(args:["sleep", "3"]){stdout}}}}' | \
+  dagger query
+
+echo '{container{from(address:"postgres"){withExec(args:["sleep", "3"]){stdout}}}}' | \
+  dagger query | jq .
+
+echo '{container{from(address:"postgres"){withExec(args:["sleep", "3"]){stdout}}}}' | \
+  dagger --debug query

@@ -546,11 +546,12 @@ func (s *moduleSchema) moduleSourceWithContextDirectory(
 	}
 
 	src = src.Clone()
-	var err error
-	src.AsLocalSource.Value.ContextDirectory, err = args.Dir.Load(ctx, s.dag)
+	dir, err := args.Dir.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load context directory: %w", err)
 	}
+	src.AsLocalSource.Value.ContextDirectory.Value = dir
+	src.AsLocalSource.Value.ContextDirectory.Valid = true
 	return src, nil
 }
 

@@ -12,50 +12,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// TODO: remove these ghost commands after next release (v0.9.8)
-var downloadCmd = &cobra.Command{
-	Use:                "download",
-	Short:              "Download an asset from module function",
-	Aliases:            []string{"export", "dl"},
-	Hidden:             true,
-	SilenceUsage:       true,
-	DisableFlagParsing: true,
-	Args: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf(`%q has been replaced by "dagger call COMMANDS... --output=PATH"`, cmd.CommandPath())
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// do nothing
-	},
-}
-
-var upCmd = &cobra.Command{
-	Use:                "up",
-	Short:              "Start a service and expose its ports to the host",
-	Hidden:             true,
-	SilenceUsage:       true,
-	DisableFlagParsing: true,
-	Args: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf(`%q has been replaced by "dagger call COMMANDS... up"`, cmd.CommandPath())
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// do nothing
-	},
-}
-
-var shellCmd = &cobra.Command{
-	Use:                "shell",
-	Short:              "Open a shell in a container",
-	Hidden:             true,
-	SilenceUsage:       true,
-	DisableFlagParsing: true,
-	Args: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf(`%q has been replaced by "dagger call COMMANDS... shell"`, cmd.CommandPath())
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// do nothing
-	},
-}
-
 var outputPath string
 var jsonOutput bool
 

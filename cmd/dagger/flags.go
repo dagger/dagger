@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -209,6 +210,12 @@ func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error)
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
 	vStr := v.String()
 	vStr = strings.TrimPrefix(vStr, "file://")
+	if !filepath.IsAbs(vStr) {
+		vStr, err = filepath.Abs(vStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
+		}
+	}
 	return dag.Host().Directory(vStr), nil
 }
 
@@ -251,10 +258,19 @@ func (v *fileValue) String() string {
 }
 
 func (v *fileValue) Get(_ context.Context, c *dagger.Client) (any, error) {
-	if v.String() == "" {
+	vStr := v.String()
+	if vStr == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
 	}
-	return c.Host().File(v.String()), nil
+	vStr = strings.TrimPrefix(vStr, "file://")
+	if !filepath.IsAbs(vStr) {
+		var err error
+		vStr, err = filepath.Abs(vStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
+		}
+	}
+	return c.Host().File(vStr), nil
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
