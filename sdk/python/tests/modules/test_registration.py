@@ -125,15 +125,3 @@ def test_func_doc():
     r = get_resolver(mod, "Foo", "fn_with_doc")
 
     assert cast(FunctionResolver, r).func_doc == "Foo."
-
-
-@pytest.mark.anyio()
-async def test_nullable_no_default():
-    mod = Module()
-
-    @mod.function
-    def echo(msg: str | None) -> str:
-        return "hello" if msg is None else msg
-
-    with pytest.raises(TypeError, match="must have a default value"):
-        await mod._register(mod.get_resolvers("foo"), "foo")

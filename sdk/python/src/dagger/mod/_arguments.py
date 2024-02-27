@@ -1,6 +1,8 @@
 import dataclasses
 import inspect
 
+from beartype.door import TypeHint
+
 from ._types import APIName
 
 
@@ -13,9 +15,14 @@ class Parameter:
     resolved_type: type
     doc: str | None
 
-    @property
-    def is_optional(self) -> bool:
-        return self.signature.default is not inspect.Signature.empty
+    has_default: bool = dataclasses.field(init=False)
+    is_optional: bool = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        from ._utils import is_nullable
+
+        self.has_default = self.signature.default is not inspect.Signature.empty
+        self.is_optional = self.has_default or is_nullable(TypeHint(self.resolved_type))
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
