@@ -1,5 +1,5 @@
 {
-  "zenith": [
+  "current": [
     {
       "type": "doc",
       "id": "index",
