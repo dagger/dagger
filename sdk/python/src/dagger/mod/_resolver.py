@@ -82,7 +82,7 @@ class FieldResolver(Resolver):
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
         return typedef.with_field(
             self.name,
-            to_typedef(self.type_annotation, self.is_optional),
+            to_typedef(self.type_annotation),
             description=self.doc or None,
         )
 
@@ -131,7 +131,7 @@ class FunctionResolver(Resolver, Generic[P, R]):
         for param in self.parameters.values():
             fn = fn.with_arg(
                 param.name,
-                to_typedef(param.resolved_type, param.is_optional),
+                to_typedef(param.resolved_type),
                 description=param.doc,
                 default_value=self._get_default_value(param),
             )
@@ -139,7 +139,7 @@ class FunctionResolver(Resolver, Generic[P, R]):
         return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
 
     def _get_default_value(self, param: Parameter) -> dagger.JSON | None:
-        if not param.is_optional:
+        if not param.has_default:
             return None
 
         default_value = param.signature.default
@@ -317,9 +317,13 @@ class FunctionResolver(Resolver, Generic[P, R]):
                 if not param.is_optional:
                     msg = f"Missing required argument: {python_name}"
                     raise UserError(msg)
-                continue
 
-            value = inputs[param.name]
+                if param.has_default:
+                    continue
+
+            # If the argument is optional and has no default, it's a nullable type.
+            # According to GraphQL spec, null is a valid value in case it's omitted.
+            value = inputs.get(param.name)
             type_ = param.resolved_type
 
             try:

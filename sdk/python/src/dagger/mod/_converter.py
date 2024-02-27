@@ -67,10 +67,7 @@ def make_converter():
 
 
 @functools.cache
-def to_typedef(  # noqa: C901
-    annotation: type,
-    has_default: bool | None = None,
-) -> "TypeDef":
+def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901:
     """Convert Python object to API type."""
     assert not is_annotated(
         annotation
@@ -88,11 +85,7 @@ def to_typedef(  # noqa: C901
 
     typ = TypeHint(annotation)
 
-    if is_nullable(typ) and has_default is False:
-        msg = f"Nullable type must have a default value: {typ.hint!r}"
-        raise TypeError(msg)
-
-    if is_nullable(typ) or has_default is True:
+    if is_nullable(typ):
         td = td.with_optional(True)
 
     typ = non_null(typ)
