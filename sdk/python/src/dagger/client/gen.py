@@ -5963,10 +5963,16 @@ class Client(Root):
         return Client(_ctx)
 
     @typecheck
-    def secret(self, name: str) -> "Secret":
+    def secret(
+        self,
+        name: str,
+        *,
+        accessor: str | None = None,
+    ) -> "Secret":
         """Reference a secret by name."""
         _args = [
             Arg("name", name),
+            Arg("accessor", accessor, None),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)

@@ -5762,9 +5762,20 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 }
 
+// SecretOpts contains options for Client.Secret
+type SecretOpts struct {
+	Accessor string
+}
+
 // Reference a secret by name.
-func (r *Client) Secret(name string) *Secret {
+func (r *Client) Secret(name string, opts ...SecretOpts) *Secret {
 	q := r.Query.Select("secret")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `accessor` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Accessor) {
+			q = q.Arg("accessor", opts[i].Accessor)
+		}
+	}
 	q = q.Arg("name", name)
 
 	return &Secret{

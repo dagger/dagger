@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/containerd/labels"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/internal/distconsts"
@@ -201,6 +202,14 @@ type hostSocketArgs struct {
 }
 
 func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (*core.Socket, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.ClientID != host.Query.Buildkit.MainClientCallerID {
+		return nil, fmt.Errorf("only the main client can access the host's unix sockets")
+	}
+
 	return host.Socket(args.Path), nil
 }
 

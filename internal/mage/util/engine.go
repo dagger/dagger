@@ -356,7 +356,6 @@ func pythonSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger
 					"runtime/",
 					"LICENSE",
 					"README.md",
-					"dagger.json",
 				},
 			})).
 			WithFile("/codegen", goSDKCodegenBin(c, arch)).

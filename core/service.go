@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
@@ -225,6 +226,7 @@ func (svc *Service) startContainer(
 		fmt.Sprintf("service %s", host),
 		progrock.Weak(),
 	)
+	ctx = progrock.ToContext(ctx, rec)
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -262,9 +264,11 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	vtx := rec.Vertex(dig+".start", "start "+strings.Join(execOp.Meta.Args, " "))
+	ctx, vtx := progrock.Span(ctx, dig.String()+"."+identity.NewID(), "start "+strings.Join(execOp.Meta.Args, " "))
 	defer func() {
 		if err != nil {
+			// NB: this is intentionally conditional; we only complete if there was
+			// an error starting. vtx.Done is called elsewhere.
 			vtx.Error(err)
 		}
 	}()

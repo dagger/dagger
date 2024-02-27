@@ -15,14 +15,11 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/midterm"
 	"github.com/vito/progrock"
 )
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {
-	rec := progrock.FromContext(ctx)
-
 	dialer := &websocket.Dialer{
 		NetDialContext: engineClient.DialContext,
 	}
@@ -49,7 +46,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 
 	// NB: this is not idtui.PrimaryVertex because instead of spitting out the
 	// raw TTY output, we want to render the post-processed vterm.
-	vtx := rec.Vertex(digest.FromString(shellEndpoint), "terminal",
+	_, vtx := progrock.Span(ctx, shellEndpoint, "terminal",
 		idtui.Zoomed(func(term *midterm.Terminal) io.Writer {
 			term.ForwardRequests = os.Stderr
 			term.ForwardResponses = shellStdinW
@@ -62,9 +59,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 			})
 			return shellStdinW
 		}))
-	defer func() {
-		vtx.Done(rerr)
-	}()
+	defer func() { vtx.Done(rerr) }()
 
 	stdout := vtx.Stdout()
 	stderr := vtx.Stderr()

@@ -28,7 +28,7 @@ import (
 var (
 	moduleGroup = &cobra.Group{
 		ID:    "module",
-		Title: "Dagger Module Commands (Experimental)",
+		Title: "Dagger Module Commands",
 	}
 
 	moduleURL   string
@@ -78,82 +78,26 @@ func init() {
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	configCmd.AddCommand(oldInitCmd, oldInstallCmd, oldSyncCmd)
 	configCmd.AddGroup(moduleGroup)
 }
 
-var oldInitCmd = &cobra.Command{
-	Use:                "init",
-	Short:              "Initialize a new Dagger module",
-	Hidden:             true,
-	SilenceUsage:       true,
-	DisableFlagParsing: true,
-	Args: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf(`"dagger mod init" has been replaced by "dagger init"`)
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// do nothing
-	},
-}
-
-var oldInstallCmd = &cobra.Command{
-	Use:                "install",
-	Short:              "Add a new dependency to a Dagger module",
-	Hidden:             true,
-	SilenceUsage:       true,
-	DisableFlagParsing: true,
-	GroupID:            moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-	Args: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf(`"dagger mod install" has been replaced by "dagger install"`)
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// do nothing
-	},
-}
-
-var oldSyncCmd = &cobra.Command{
-	Use:          "sync",
-	Short:        "Setup or update all the resources needed to develop on a module locally",
-	Hidden:       true,
-	SilenceUsage: true,
-	GroupID:      moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-	DisableFlagParsing: true,
-	Args: func(cmd *cobra.Command, args []string) error {
-		return fmt.Errorf(`"dagger mod sync" has been replaced by "dagger develop"`)
-	},
-	Run: func(cmd *cobra.Command, args []string) {
-		// do nothing
-	},
-}
-
 var configCmd = &cobra.Command{
-	Use:     "config",
-	Aliases: []string{"mod"},
-	Short:   "Get or set the configuration of a Dagger module",
-	Long:    "Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.",
+	Use:   "config",
+	Short: "Get or set the configuration of a Dagger module",
+	Long:  "Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.",
 	Example: strings.TrimSpace(`
 dagger config -m /path/to/some/dir
 dagger config -m github.com/dagger/hello-dagger
 `,
 	),
 	GroupID: moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			cmd.SetContext(ctx)
-
-			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, vtx)
 
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
@@ -213,18 +157,16 @@ The "--source" flag allows controlling the directory in which the actual module 
 `,
 	Example: "dagger init --name=hello --sdk=python --source=some/subdir",
 	GroupID: moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-	Args: cobra.MaximumNArgs(1),
+	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
-			vtx := progrock.FromContext(ctx).Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, vtx)
 
 			// default the module source root to the current working directory if it doesn't exist yet
@@ -307,10 +249,7 @@ var moduleInstallCmd = &cobra.Command{
 	// TODO: use example from a reference module, using a tag instead of commit
 	Example: "dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473",
 	GroupID: moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-	Args: cobra.ExactArgs(1),
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -435,9 +374,6 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 :::
 `,
 	GroupID: moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
@@ -528,16 +464,14 @@ forced), to avoid mistakingly depending on uncommitted files.
 		daDaggerverse,
 	),
 	GroupID: moduleGroup.ID,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.FromContext(ctx)
 
-			vtx := rec.Vertex(idtui.PrimaryVertex, cmd.CommandPath())
+			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
 			defer func() { vtx.Done(err) }()
+			cmd.SetContext(ctx)
 			setCmdOutput(cmd, vtx)
 
 			dag := engineClient.Dagger()
@@ -668,6 +602,19 @@ func (c *configuredModule) FullyInitialized() bool {
 	return c.ModuleSourceConfigExists
 }
 
+func getExplicitModuleSourceRef() (string, bool) {
+	if moduleURL != "" {
+		return moduleURL, true
+	}
+
+	// it's unset or default value, use mod if present
+	if v, ok := os.LookupEnv("DAGGER_MODULE"); ok {
+		return v, true
+	}
+
+	return "", false
+}
+
 func getDefaultModuleConfiguration(
 	ctx context.Context,
 	dag *dagger.Client,
@@ -679,17 +626,9 @@ func getDefaultModuleConfiguration(
 	// files needing to be loaded).
 	resolveFromCaller bool,
 ) (*configuredModule, error) {
-	srcRefStr := moduleURL
-	if srcRefStr == "" {
-		// it's unset or default value, use mod if present
-		if v, ok := os.LookupEnv("DAGGER_MODULE"); ok {
-			srcRefStr = v
-		}
-
-		// it's still unset, set to the default
-		if srcRefStr == "" {
-			srcRefStr = moduleURLDefault
-		}
+	srcRefStr, ok := getExplicitModuleSourceRef()
+	if !ok {
+		srcRefStr = moduleURLDefault
 	}
 
 	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr, resolveFromCaller)
@@ -828,8 +767,13 @@ func optionalModCmdWrapper(
 		return withEngineAndTUI(cmd.Context(), client.Params{
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			_, explicitModRefSet := getExplicitModuleSourceRef()
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
 			if err != nil {
+				if !explicitModRefSet {
+					// the user didn't explicitly try to run with a module, so just run in default mode
+					return fn(ctx, engineClient, nil, cmd, cmdArgs)
+				}
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
 			var loadedMod *dagger.Module

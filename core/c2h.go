@@ -12,7 +12,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
 
@@ -24,8 +23,6 @@ type c2hTunnel struct {
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
-	rec := progrock.FromContext(ctx)
-
 	scratchDef, err := llb.Scratch().Marshal(ctx)
 	if err != nil {
 		return err
@@ -79,14 +76,8 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 		))
 	}
 
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		strings.Join(args, " "),
-		// progrock.Internal(),
-	)
-	defer func() {
-		vtx.Done(err)
-	}()
+	ctx, vtx := progrock.Span(ctx, identity.NewID(), strings.Join(args, " "))
+	defer func() { vtx.Done(err) }()
 
 	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
 		Hostname: d.tunnelServiceHost,

@@ -13,7 +13,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
@@ -263,12 +262,8 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return err
 	}
 
-	rec := progrock.FromContext(ctx)
-
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		fmt.Sprintf("export file %s to host %s", file.File, dest),
-	)
+	ctx, vtx := progrock.Span(ctx, identity.NewID(),
+		fmt.Sprintf("export file %s to host %s", file.File, dest))
 	defer vtx.Done(err)
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)

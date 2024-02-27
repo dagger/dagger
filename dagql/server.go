@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"sync"
 
@@ -317,7 +318,7 @@ type ExtendedError interface {
 
 // Exec implements graphql.ExecutableSchema.
 func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
-	return func(ctx context.Context) *graphql.Response {
+	return func(ctx context.Context) (res *graphql.Response) {
 		gqlOp := graphql.GetOperationContext(ctx)
 
 		if err := gqlOp.Validate(ctx); err != nil {
@@ -326,17 +327,8 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
-			gqlErr := &gqlerror.Error{
-				Err:     err,
-				Message: err.Error(),
-				// TODO Path would correspond nicely to an ID
-			}
-			var ext ExtendedError
-			if errors.As(err, &ext) {
-				gqlErr.Extensions = ext.Extensions()
-			}
 			return &graphql.Response{
-				Errors: gqlerror.List{gqlErr},
+				Errors: gqlErrs(err),
 			}
 		}
 
@@ -351,15 +343,28 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 	}
 }
 
+func gqlErrs(err error) (errs gqlerror.List) {
+	if list, ok := err.(gqlerror.List); ok {
+		return list
+	}
+	if unwrap, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range unwrap.Unwrap() {
+			errs = append(errs, gqlErrs(e)...)
+		}
+	} else if err != nil {
+		errs = append(errs, gqlErr(err, nil))
+	}
+	return
+}
+
 func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (map[string]any, error) {
 	if gqlOp.Doc == nil {
 		var err error
 		gqlOp.Doc, err = parser.ParseQuery(&ast.Source{Input: gqlOp.RawQuery})
 		if err != nil {
-			return nil, err
+			return nil, gqlErrs(err)
 		}
 	}
-
 	results := make(map[string]any)
 	for _, op := range gqlOp.Doc.Operations {
 		switch op.Operation {
@@ -373,7 +378,7 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			}
 			results, err = s.Resolve(ctx, s.root, sels...)
 			if err != nil {
-				return nil, fmt.Errorf("resolve: %w", err)
+				return nil, err
 			}
 		case ast.Mutation:
 			// TODO
@@ -393,20 +398,20 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (map[string]any, error) {
 	results := new(sync.Map)
 
-	pool := new(pool.ErrorPool)
+	pool := pool.New().WithErrors()
 	for _, sel := range sels {
 		sel := sel
 		pool.Go(func() error {
 			res, err := s.resolvePath(ctx, self, sel)
 			if err != nil {
-				return fmt.Errorf("%s: %w", sel.Name(), err)
+				return err
 			}
 			results.Store(sel.Name(), res)
 			return nil
 		})
 	}
 	if err := pool.Wait(); err != nil {
-		return nil, err
+		return nil, gqlErrs(err)
 	}
 
 	resultsMap := make(map[string]any)
@@ -458,6 +463,10 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 // Select evaluates a series of chained field selections starting from the
 // given object and assigns the final result value into dest.
 func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Selector) error {
+	// Annotate ctx with the internal flag so we can distinguish self-calls from
+	// user-calls in the UI.
+	ctx = withInternal(ctx)
+
 	var res Typed = self
 	var id *idproto.ID
 	var err error
@@ -588,7 +597,57 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	return val, chainedID, nil
 }
 
+func idToPath(id *idproto.ID) ast.Path {
+	path := ast.Path{}
+	if id == nil { // Query
+		return path
+	}
+	if id.Base != nil {
+		path = idToPath(id.Base)
+	}
+	path = append(path, ast.PathName(id.Field))
+	if id.Nth != 0 {
+		path = append(path, ast.PathIndex(id.Nth-1))
+	}
+	return path
+}
+
+func gqlErr(rerr error, path ast.Path) *gqlerror.Error {
+	var gqlErr *gqlerror.Error
+	if errors.As(rerr, &gqlErr) {
+		if len(gqlErr.Path) == 0 {
+			gqlErr.Path = path
+		}
+		return gqlErr
+	}
+	gqlErr = &gqlerror.Error{
+		Err:     rerr,
+		Message: rerr.Error(),
+		Path:    path,
+	}
+	var ext ExtendedError
+	if errors.As(rerr, &ext) {
+		gqlErr.Extensions = ext.Extensions()
+	}
+	return gqlErr
+}
+
 func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (res any, rerr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			rerr = PanicError{
+				Cause:     r,
+				Self:      self,
+				Selection: sel,
+				Stack:     debug.Stack(),
+			}
+		}
+
+		if rerr != nil {
+			rerr = gqlErr(rerr, append(idToPath(self.ID()), ast.PathName(sel.Name())))
+		}
+	}()
+
 	val, chainedID, err := s.cachedSelect(ctx, self, sel.Selector)
 	if err != nil {
 		return nil, err

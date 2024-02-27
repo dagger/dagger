@@ -3,6 +3,8 @@ name: Engine & CLI
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - docs/**
   pull_request:
     types:
       - opened
@@ -19,12 +21,6 @@ permissions:
   pull-requests: write
 
 jobs:
-  lint:
-    uses: ./.github/workflows/_hack_make.yml
-    secrets: inherit
-    with:
-      mage-targets: engine:lint
-
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
@@ -42,7 +38,6 @@ jobs:
       mage-targets: engine:testimportant
       size: dagger-runner-docker-fix
       dev-engine: true
-
 
   test-publish-cli:
     uses: ./.github/workflows/_hack_make.yml

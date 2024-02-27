@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/tracing"
 	"github.com/vito/progrock"
 )
 
@@ -138,24 +139,37 @@ func (db *DB) Step(dig string) (*Step, bool) {
 		Digest: dig,
 		db:     db,
 	}
-
+	ivals := db.Intervals[dig]
+	if len(ivals) == 0 {
+		// no vertices seen; give up
+		return nil, false
+	}
 	outID := db.IDs[dig]
 	switch {
 	case outID != nil && outID.Field == "id":
+		// ignore 'id' field selections, they're everywhere and not interesting
 		return nil, false
-	case outID == nil && step.IsInternal():
+	case !step.HasStarted():
+		// ignore anything in pending state; not interesting, easier to assume
+		// things have always started
 		return nil, false
-	case outID != nil && !step.HasStarted():
-		return nil, false
-	case outID == nil && !step.HasStarted():
-		return nil, false
+	case outID == nil:
+		// no ID; check if we're a regular vertex, or if we're supposed to have an
+		// ID (arrives later via VertexMeta event)
+		for _, vtx := range ivals {
+			if vtx.Label(tracing.IDLabel) == "true" {
+				// no ID yet, but it's an ID vertex; ignore it until we get the ID so
+				// we never have to deal with the intermediate state
+				return nil, false
+			}
+		}
 	}
 	if outID != nil && outID.Base != nil {
 		parentDig, err := outID.Base.Digest()
 		if err != nil {
 			return nil, false
 		}
-		step.Base = db.Simplify(parentDig.String())
+		step.BaseDigest = db.Simplify(parentDig.String())
 	}
 	return step, true
 }
@@ -178,23 +192,23 @@ func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
 		return vs[i].Started.AsTime().Before(vs[j].Started.AsTime())
 	})
 	for _, vtx := range db.Intervals[dig] {
-		if vtx.Cached {
-			continue
+		// a running vertex is always most interesting, and these are already in
+		// order
+		if vtx.Completed == nil {
+			return vtx
 		}
-		if earliest == nil {
+		switch {
+		case earliest == nil:
+			// always show _something_
 			earliest = vtx
-			continue
-		}
-		// if vtx.Completed == nil && earliest.Completed != nil {
-		// 	// prioritize actively running vertex over a completed one
-		// 	earliest = vtx
-		// 	continue
-		// }
-		// if earliest.Completed == nil && vtx.Completed != nil {
-		// 	// never replace a running vertex with a completed one
-		// 	continue
-		// }
-		if vtx.Started.AsTime().Before(earliest.Started.AsTime()) {
+		case vtx.Cached:
+			// don't allow a cached vertex to override a non-cached one
+		case earliest.Cached:
+			// unclear how this would happen, but non-cached versions are always more
+			// interesting
+			earliest = vtx
+		case vtx.Started.AsTime().Before(earliest.Started.AsTime()):
+			// prefer the earliest active interval
 			earliest = vtx
 		}
 	}

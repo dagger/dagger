@@ -263,7 +263,9 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			UpstreamCacheImports:  cacheImporterCfgs,
 			ProgSockPath:          progSockPath,
 			MainClientCaller:      caller,
+			MainClientCallerID:    opts.ClientID,
 			DNSConfig:             e.DNSConfig,
+			Frontends:             e.Frontends,
 		})
 		if err != nil {
 			e.perServerMu.Unlock(opts.ServerID)

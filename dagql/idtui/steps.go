@@ -13,8 +13,8 @@ import (
 )
 
 type Step struct {
-	Base   string
-	Digest string
+	BaseDigest string
+	Digest     string
 
 	db *DB
 }
@@ -23,21 +23,16 @@ func (step *Step) ID() *idproto.ID {
 	return step.db.IDs[step.Digest]
 }
 
+func (step *Step) Base() (*Step, bool) {
+	return step.db.Step(step.BaseDigest)
+}
+
 func (step *Step) HasStarted() bool {
 	return len(step.db.Intervals[step.Digest]) > 0
 }
 
-func (step *Step) FirstVertex() bool {
-	ivals := step.db.Intervals[step.Digest]
-	if len(ivals) == 0 {
-		return false
-	}
-	for _, vtx := range ivals {
-		if vtx.Completed == nil {
-			return true
-		}
-	}
-	return false
+func (step *Step) MostInterestingVertex() *progrock.Vertex {
+	return step.db.MostInterestingVertex(step.Digest)
 }
 
 func (step *Step) IsRunning() bool {
@@ -164,7 +159,8 @@ func (step *Step) IsBefore(other *Step) bool {
 		// equal start + end time; maybe a cache hit. break ties by seeing if one
 		// depends on the other.
 		// TODO: this isn't needed for the current TUI since we don't even show
-		// cached steps
+		// cached steps, but we do want this for the web UI. Bring this back once
+		// we can be sure it doesn't explode into quadratic complexity. (Memoize?)
 		// return step.db.IsTransitiveDependency(other.Digest, step.Digest)
 		return false
 	}

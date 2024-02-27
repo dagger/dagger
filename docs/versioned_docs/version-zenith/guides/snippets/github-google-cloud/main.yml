@@ -1,0 +1,31 @@
+name: 'ci'
+
+on:
+  push:
+    branches:
+    - master
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Call Dagger Function
+        uses: dagger/dagger-for-github@v5
+        with:
+          version: "0.9.10"
+          verb: call
+          args: |
+            deploy \
+            --source . \
+            --project myproject \
+            --registry-location us-central1 \
+            --repository myrepository/myapp \
+            --service-location us-central1 \
+            --service myservice  \
+            --credential env:GOOGLE_CREDENTIALS \
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
