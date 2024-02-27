@@ -34,6 +34,12 @@
   status = 302
 
 [[redirects]]
+  # redirect temporary zenith page to current docs
+  from = "/zenith"
+  to = "/"
+  status = 301
+
+[[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
   from = "/0.1/*"
   to = "https://archive.docs.dagger.io/0.1/:splat"
