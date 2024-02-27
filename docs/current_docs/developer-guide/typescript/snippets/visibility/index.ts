@@ -1,6 +1,6 @@
-import * as crypto from 'crypto';
+import * as crypto from "crypto";
 
-import { object, func, field } from '@dagger.io/dagger';
+import { object, func, field } from "@dagger.io/dagger";
 
 @object()
 class person {
@@ -25,6 +25,9 @@ class person {
    */
   @func()
   identity(): string {
-    return crypto.createHash('sha256').update(`${this.name}-${this.job}-${this.age.toString()}`).digest('hex');
+    return crypto
+      .createHash("sha256")
+      .update(`${this.name}-${this.job}-${this.age.toString()}`)
+      .digest("hex");
   }
 }

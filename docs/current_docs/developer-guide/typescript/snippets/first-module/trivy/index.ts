@@ -1,13 +1,13 @@
-import { dag, func, object, } from '@dagger.io/dagger';
+import { dag, func, object } from "@dagger.io/dagger";
 
 @object()
 class Trivy {
   @func()
   async scanImage(
     imageRef: string,
-    severity: string = "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL",
+    severity = "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL",
     exitCode = 0,
-    format = "table"
+    format = "table",
   ): Promise<string> {
     return dag
       .container()
@@ -23,7 +23,6 @@ class Trivy {
         format,
         imageRef,
       ])
-      .stdout()
+      .stdout();
   }
 }
-

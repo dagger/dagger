@@ -1,4 +1,4 @@
-import { dag, object, func, GitRepository, field } from '@dagger.io/dagger';
+import { dag, object, func, GitRepository, field } from "@dagger.io/dagger";
 
 @object()
 class Account {
@@ -9,12 +9,12 @@ class Account {
   email: string;
 
   @field()
-  url: string
+  url: string;
 
   constructor(username: string, email: string) {
     this.username = username;
     this.email = email;
-    this.url = `https://github.com/${username}`
+    this.url = `https://github.com/${username}`;
   }
 }
 
@@ -36,11 +36,11 @@ class Github {
   daggerOrganization(): Organization {
     const organisation = new Organization();
 
-    organisation.url = 'https://github.com/dagger';
+    organisation.url = "https://github.com/dagger";
     organisation.repository = [dag.git(`${organisation.url}/dagger`)];
     organisation.members = [
-      new Account('jane', 'jane@example.com'),
-      new Account('john', 'john@example.com')
+      new Account("jane", "jane@example.com"),
+      new Account("john", "john@example.com"),
     ];
 
     return organisation;

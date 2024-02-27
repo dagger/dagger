@@ -1,11 +1,9 @@
-import { object, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger";
 
 @object()
 class MyModule {
-
   @func()
-  hello(name: string = "world"): string {
-    return `Hello, ${name}`
+  hello(name = "world"): string {
+    return `Hello, ${name}`;
   }
-
 }

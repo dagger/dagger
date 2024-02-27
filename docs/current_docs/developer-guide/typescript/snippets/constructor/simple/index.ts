@@ -1,18 +1,17 @@
-import { object, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger";
 
 @object()
 class MyModule {
+  greeting: string;
+  name: string;
 
-  greeting: string
-  name: string
-
-  constructor (greeting: string = "Hello", name: string = "World") {
-    this.greeting = greeting
-    this.name = name
+  constructor(greeting = "Hello", name = "World") {
+    this.greeting = greeting;
+    this.name = name;
   }
 
   @func()
   message(): string {
-    return `${this.greeting} ${this.name}`
+    return `${this.greeting} ${this.name}`;
   }
 }

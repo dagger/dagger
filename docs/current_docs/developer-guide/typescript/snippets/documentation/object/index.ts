@@ -1,4 +1,4 @@
-import { object, field } from '@dagger.io/dagger';
+import { object, field } from "@dagger.io/dagger";
 
 /**
  * The Person object represents a single user of the system
@@ -9,7 +9,7 @@ class Person {
    * The name of the person.
    */
   @field()
-  name: string = 'anonymous';
+  name = "anonymous";
 
   /**
    * The age of the person.
