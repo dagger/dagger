@@ -1612,6 +1612,164 @@ class Minimal {
 	}
 }
 
+func TestModuleOptionalDefaults(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		sdk      string
+		source   string
+		expected string
+	}{
+		{
+			sdk: "go",
+			source: `package main
+
+import "fmt"
+
+type Test struct{ }
+
+func (m *Test) Foo(
+	a string,
+	// +optional
+	b *string,
+	// +default="foo"
+	c string,
+	// +optional
+	// +default=null
+	d *string,
+	// +optional
+	// +default="bar"
+	e *string,
+) string {
+	return fmt.Sprintf("%+v, %+v, %+v, %+v, %+v", a, b, c, d, *e)
+}
+`,
+			expected: "test, <nil>, foo, <nil>, bar",
+		},
+		{
+			sdk: "python",
+			source: `from dagger import field, function, object_type
+
+@object_type
+class Test:
+    @function
+    def foo(
+        self,
+        a: str,
+        b: str | None,
+        c: str = "foo",
+        d: str | None = None,
+        e: str | None = "bar",
+    ) -> str:
+        return ", ".join(repr(x) for x in (a, b, c, d, e))
+`,
+			expected: "'test', None, 'foo', None, 'bar'",
+		},
+		{
+			sdk: "typescript",
+			source: `import { object, func, field } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  foo(
+    a: string,
+    b?: string,
+    c: string = "foo",
+    d: string | null = null,
+    e: string | null = "bar",
+  ): string {
+    return [a, b, c, d, e].map(v => JSON.stringify(v)).join(", ")
+  }
+}
+`,
+			expected: "\"test\", , \"foo\", null, \"bar\"",
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+
+			c, ctx := connect(t)
+
+			modGen := modInit(ctx, t, c, tc.sdk, tc.source)
+
+			q := heredoc.Doc(`
+                query {
+                    __type(name: "Test") {
+                        fields {
+                            name
+                            args {
+                                name
+                                type {
+                                    name
+                                    kind
+                                    ofType {
+                                        name
+                                        kind
+                                    }
+                                }
+                                defaultValue
+                            }
+                        }
+                    }
+                }
+            `)
+
+			out, err := modGen.With(daggerQuery(q)).Stdout(ctx)
+			require.NoError(t, err)
+			args := gjson.Get(out, "__type.fields.#(name=foo).args")
+
+			t.Run("a: String!", func(t *testing.T) {
+				// required, i.e., non-null and no default
+				arg := args.Get("#(name=a)")
+				require.Equal(t, "NON_NULL", arg.Get("type.kind").String())
+				require.Equal(t, "SCALAR", arg.Get("type.ofType.kind").String())
+				require.Nil(t, arg.Get("defaultValue").Value())
+			})
+
+			t.Run("b: String", func(t *testing.T) {
+				// GraphQL implicitly sets default to null for nullable types
+				arg := args.Get("#(name=b)")
+				require.Equal(t, "SCALAR", arg.Get("type.kind").String())
+				require.Nil(t, arg.Get("defaultValue").Value())
+			})
+
+			t.Run(`c: String! = "foo"`, func(t *testing.T) {
+				// non-null, with default
+				if tc.sdk == "typescript" {
+					t.Skip("TODO: allow non-null with default in TypeScript")
+				}
+				arg := args.Get("#(name=c)")
+				require.Equal(t, "NON_NULL", arg.Get("type.kind").String())
+				require.Equal(t, "SCALAR", arg.Get("type.ofType.kind").String())
+				require.JSONEq(t, `"foo"`, arg.Get("defaultValue").String())
+			})
+
+			t.Run("d: String = null", func(t *testing.T) {
+				// nullable, with explicit null default; same as b in practice
+				arg := args.Get("#(name=d)")
+				require.Equal(t, "SCALAR", arg.Get("type.kind").String())
+				require.JSONEq(t, "null", arg.Get("defaultValue").String())
+			})
+
+			t.Run(`e: String = "bar"`, func(t *testing.T) {
+				// nullable, with non-null default
+				arg := args.Get("#(name=e)")
+				require.Equal(t, "SCALAR", arg.Get("type.kind").String())
+				require.JSONEq(t, `"bar"`, arg.Get("defaultValue").String())
+			})
+
+			t.Run("default values", func(t *testing.T) {
+				out, err = modGen.With(daggerCall("foo", "--a=test")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, out)
+			})
+		})
+	}
+}
+
 // this is no longer allowed, but verify the SDK errors out
 func TestModuleGoExtendCore(t *testing.T) {
 	t.Parallel()
