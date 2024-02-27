@@ -117,6 +117,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 - Remove `zenith` entry from `docs/versions.json`
 
 - In `docusaurus.config.js`:
+  - Set `url: 'https://archive.docs.dagger.io'`
   - Set `baseUrl: "/0.9/"`
   - Add announcement bar in `themeConfig` object
 
@@ -152,12 +153,19 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
 
-  - Delete `zenith` version entry from `versions` object
+  - Delete entire `versions` object
 
-        zenith: {
-          path: '/zenith',
-          banner: 'none',
-          badge: false
+        versions: {
+          zenith: {
+            path: '/zenith',
+            banner: 'none',
+            badge: false
+          },
+          current: {
+            path: '/',
+            banner: 'none',
+            badge: false
+          },
         },
 
   - Delete `versionedGuidesPath` from `plugins` object
@@ -191,8 +199,14 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
         },
       ],
 
+- In `docs/current_docs/` sub-directory:
+  - Replace `(/cli` URL links with `(/0.9/cli` URL links
+  - Replace `(/sdk` URL links with `(/0.9/sdk` URL links
 - In `docs/current_docs/guides/` sub-directory:
-  - Replace `slug: /` paths with slug: `/0.9/` paths
+  - Replace `(../sdk/nodejs/)` URL links with `(/0.9/sdk/nodejs/)` URL links
+  - Replace `(../sdk/python/)` URL links with `(/0.9/sdk/python/)` URL links
+  - Replace `(../sdk/go/)` URL links with `(/0.9/sdk/go/)` URL links
+  - Replace `(../api/)` URL links with `(/0.9/api/)` URL links
 - Run `npm run build` and store the `build/` directory as `site/0.9`
 
 ## Build top-level site (archive.docs.dagger.io)
