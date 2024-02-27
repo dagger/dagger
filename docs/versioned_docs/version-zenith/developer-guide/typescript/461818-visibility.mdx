@@ -5,11 +5,9 @@ toc_max_heading_level: 2
 title: 'Visibility'
 ---
 
-import PartialExperimentalDocs from '../../partials/_experimental.mdx';
 
 # Visibility
 
-<PartialExperimentalDocs />
 
 TypeScript offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those fields of a Dagger Module that are explicitly decorated with the `@field()` decorator. Other fields will remain private.
 
