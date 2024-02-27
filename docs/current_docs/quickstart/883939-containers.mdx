@@ -16,7 +16,7 @@ Just as you can chain and return `Directory` types, you can also chain and retur
 Try calling this function:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay
 ```
 
 This Wolfi container builder module exposes a number of functions:
@@ -28,7 +28,7 @@ This Wolfi container builder module exposes a number of functions:
 You can chain these functions together to build and return a Wolfi container image containing specific packages - in this example, the `cowsay` package. You should see the container being built and the packages being added, as shown below:
 
 ```shell
-✔ dagger call base with-package container [5.00s]
+✔ dagger call container [5.00s]
 ┃ Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
 ```
 
@@ -38,10 +38,10 @@ This means that the build succeeded, and a `Container` type representing the bui
 
 One of the most interesting `Container` functions is `Terminal()`, which can be used to open an interactive terminal session with the container. This feature is very useful for debugging and experimenting since it allows you to interact with containers directly and at any stage of your Dagger function execution.
 
-To see this in action, call the previous function again, this time chaining an additional function call to `Shell()` on the returned `Container`:
+To see this in action, call the previous function again, this time chaining an additional function call to `Terminal()` on the returned `Container`:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name cowsay container terminal --cmd sh
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay terminal
 ```
 
 This revised command builds the container image and then drops you into an interactive terminal, allowing you to directly execute commands in the running container.
@@ -71,10 +71,10 @@ While most terminal programs such as `htop` or `vim` work with `dagger ... termi
 
 ### Execute commands in the container
 
-The `Container` type has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same result as before (although non-interactively) by chaining a function call to `WithExec()` on the `Container` returned previously, as shown in the following command:
+The `Container` type has a `withExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same result as before (although non-interactively) by chaining a function call to `withExec()` on the `Container` returned previously, as shown in the following command:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container with-exec --args "cowsay" --args "dagger" stdout
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay with-exec --args cowsay,dagger stdout
 ```
 
 ### Publish the container image to a registry
@@ -82,13 +82,15 @@ dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cows
 The `Container` type also has a `Publish()` function, which publishes the container to a registry. To see this in action, call the previous function again, this time chaining an additional function call to `Publish()` on the returned `Container`:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi base with-package --name=cowsay container publish --address ttl.sh/my-wolfi
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 \
+  container --packages=cowsay \
+  publish --address ttl.sh/dagger-cowsay-$RANDOM
 ```
 
 The output will be a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
 ```shell
-✔ dagger call base with-package container publish [10.38s]
+✔ dagger call container publish [10.38s]
 ┃ ttl.sh/my-wolfi@sha256:1da9eea134000de6b9afef7d812ced0d6f4ebe45db50c0f1afdac5864862ae56
 ```
 
