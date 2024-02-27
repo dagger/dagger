@@ -212,9 +212,12 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 ## Build top-level site (archive.docs.dagger.io)
 
 - Obtain the index page template from `archived_docs/index.html.tmpl` and modify as needed.
+- Copy the `archived_docs/netlify.toml` file to the site root (needed for the embargoes and the API Playground embeds in the 0.9/ sub-site)
 - Create and upload this filesystem structure to the Netlify site
 
       site/
         0.1/
         0.2/
+        0.9/
         index.html
+        netlify.toml
