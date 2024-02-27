@@ -166,14 +166,10 @@ func (srv *DaggerServer) ServeClientConn(
 
 	// NOTE: not sure how inefficient making a new server per-request is, fix if it's meaningful.
 	// Maybe we could dynamically mux in more endpoints for each client or something
-	handler, handlerDone, err := srv.HTTPHandlerForClient(clientMetadata, conn, bklog.G(ctx))
+	handler, err := srv.HTTPHandlerForClient(clientMetadata, conn, bklog.G(ctx))
 	if err != nil {
 		return fmt.Errorf("failed to create http handler: %w", err)
 	}
-	defer func() {
-		<-handlerDone
-		bklog.G(ctx).Trace("handler done")
-	}()
 	httpSrv := http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
@@ -182,10 +178,11 @@ func (srv *DaggerServer) ServeClientConn(
 	return httpSrv.Serve(l)
 }
 
-func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata, conn net.Conn, lg *logrus.Entry) (http.Handler, <-chan struct{}, error) {
-	doneCh := make(chan struct{})
+func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata, conn net.Conn, lg *logrus.Entry) (http.Handler, error) {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		defer close(doneCh)
+		defer func() {
+			lg.Trace("handler done")
+		}()
 		req = req.WithContext(bklog.WithLogger(req.Context(), lg))
 		bklog.G(req.Context()).Debugf("http handler for client conn to path %s", req.URL.Path)
 		defer bklog.G(req.Context()).Debugf("http handler for client conn done: %s", clientMetadata.ClientID)
@@ -195,7 +192,7 @@ func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 		req = req.WithContext(analytics.WithContext(req.Context(), srv.analytics))
 
 		srv.schema.ServeHTTP(w, req)
-	}), doneCh, nil
+	}), nil
 }
 
 // converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
