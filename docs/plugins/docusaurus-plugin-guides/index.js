@@ -4,13 +4,17 @@ const utils = require("@docusaurus/utils");
 
 module.exports = async function guidesPlugin(context, options) {
   const currentGuidesPath = path.resolve(options.currentGuidesPath);
-  //const versionedGuidesPath = path.resolve(options.versionedGuidesPath);
+  if (options.versionedGuidesPath) {
+    const versionedGuidesPath = path.resolve(options.versionedGuidesPath);
+  }
   const guidesJSONPath = "./static/guides.json";
   return {
     name: "docusaurus-plugin-guides",
     async loadContent() {
       const currentGuidesFolderPath = path.resolve(currentGuidesPath);
-      //const versionedGuidesFolderPath = path.resolve(versionedGuidesPath);
+      if (options.versionedGuidesPath) {
+        const versionedGuidesFolderPath = path.resolve(versionedGuidesPath);
+      }
 
       const currentGuides = fs
         .readdirSync(currentGuidesFolderPath)
@@ -44,8 +48,8 @@ module.exports = async function guidesPlugin(context, options) {
           ];
         });
 
-      /*
-      const versionedGuides = fs
+      if (options.versionedGuidesPath) {
+        const versionedGuides = fs
         .readdirSync(versionedGuidesFolderPath)
         .flatMap((x) => {
           const versionedGuidePath = `${versionedGuidesFolderPath}/${x}`;
@@ -79,28 +83,35 @@ module.exports = async function guidesPlugin(context, options) {
             },
           ];
         });
-        */
+      }
+
 
       currentGuides.sort((a, b) => {
         return b.timestamp - a.timestamp;
       });
 
-      /*
-      versionedGuides.sort((a, b) => {
-        return b.timestamp - a.timestamp;
-      });
-      */
+      if (options.versionedGuidesPath) {
+        versionedGuides.sort((a, b) => {
+          return b.timestamp - a.timestamp;
+        });
+      }
 
       let allTags = new Set();
       currentGuides.forEach((guide) =>
         guide.frontMatter.tags.forEach((tag) => allTags.add(tag))
       );
       allTags = [...allTags];
-      fs.writeFileSync(
-        guidesJSONPath,
-        //JSON.stringify({ currentGuides, versionedGuides, allTags })
-        JSON.stringify({ currentGuides, versionedGuides, allTags })
-      );
+      if (options.versionedGuidesPath) {
+        fs.writeFileSync(
+          guidesJSONPath,
+          JSON.stringify({ currentGuides, versionedGuides, allTags })
+        );
+      } else {
+        fs.writeFileSync(
+          guidesJSONPath,
+          JSON.stringify({ currentGuides, allTags })
+        );
+      }
     },
   };
 };
