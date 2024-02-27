@@ -236,16 +236,8 @@ To see this in action, commit a change to your forked and locally-cloned Dagger 
 ```shell
 echo "test on local host" >> README.md
 git commit -a -m "Updated README"
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --source=. --args=./cmd/dagger
 ```
-
-Because you ran this in a Git context, the Dagger Cloud UI shows the VCS Git metadata associated with the commit.
-
-![Local run with metadata](/img/versioned_docs/version-zenith/user-guide/cloud/get-started/local-run-git-metadata.png)
-
-If you run outside of a Git context, Dagger Cloud will show the same detailed steps. However, the top-level metadata will not be populated.
-
-![Local run, no metadata](/img/versioned_docs/version-zenith/user-guide/cloud/get-started/local-run-no-metadata.png)
 
 :::info Multiple Dagger Cloud organizations
 To use Dagger Cloud locally with multiple organizations, you must set distinct environment variables for each organization's Dagger Cloud token. You can find the unique token for an organization in the **Organization Settings** page.
@@ -263,17 +255,28 @@ git commit -a -m "Updated README"
 git push
 ```
 
-Once your CI workflow begins, navigate to the **All Runs** page of the Dagger Cloud dashboard. You should see your most recent CI run as the first entry in the table, as shown below:
+### Visualize the run
+
+Navigate to the **All Runs** page of the Dagger Cloud dashboard. You should see your most recent run as the first entry in the table, as shown below:
 
 ![View runs](/img/versioned_docs/version-zenith/user-guide/cloud/get-started/view-runs.png)
 
 A run represents one invocation of a Dagger pipeline. It contains detailed information about the steps performed by the pipeline.
 
-The **All Runs** page provides an overview of all runs. You can drill down into the details of a specific run by clicking it. This directs you to a run-specific Run Details page, as shown below:
+The **All Runs** page provides an overview of all runs. You can drill down into the details of a specific run by clicking it. This directs you to a run-specific **Run Details** page, as shown below:
 
 ![View run details](/img/versioned_docs/version-zenith/user-guide/cloud/get-started/view-run-details-tree.png)
 
 The **Run Details** page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
+
+When the run is performed in a Git context, the Dagger Cloud UI shows the VCS Git metadata associated with the commit.
+
+![Run with metadata](/img/versioned_docs/version-zenith/user-guide/cloud/get-started/run-git-metadata.png)
+
+When the run takes place outside of a Git context, Dagger Cloud will show the same detailed steps. However, the top-level metadata will not be populated.
+
+![Run, no metadata](/img/versioned_docs/version-zenith/user-guide/cloud/get-started/run-no-metadata.png)
+
 
 Learn more about the [Dagger Cloud user interface](./741031-user-interface.mdx).
 
