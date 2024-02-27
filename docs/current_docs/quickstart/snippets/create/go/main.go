@@ -9,11 +9,10 @@ import (
 
 type Example struct{}
 
+// Build and publish a project using a Wolfi container
 func (m *Example) BuildAndPublish(ctx context.Context, buildSrc *Directory, buildArgs []string) (string, error) {
-	// retrieve a new Wolfi container
 	ctr := dag.Wolfi().Container()
 
-	// publish the Wolfi container with the build result
 	return dag.
 		Golang().
 		BuildContainer(GolangBuildContainerOpts{Source: buildSrc, Args: buildArgs, Base: ctr}).
