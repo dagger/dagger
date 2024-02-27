@@ -33,6 +33,7 @@
   to = "/"
   status = 302
 
+[[redirects]]
   # redirect temporary zenith page to current docs
   from = "/zenith"
   to = "/"
