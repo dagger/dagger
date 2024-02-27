@@ -497,6 +497,54 @@ func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (stri
 		require.NoError(t, err)
 		require.Equal(t, "foo\nbar\n", out)
 	})
+
+	t.Run("module args", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
+				Contents: "foo",
+			}).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) ModSrc(ctx context.Context, modSrc *ModuleSource) *ModuleSource {
+	return modSrc
+}
+
+func (m *Test) Mod(ctx context.Context, module *Module) *Module {
+	return module
+}
+`,
+			})
+
+		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".gitattributes\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+
+		out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".gitattributes\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+
+		out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef("top-level"), "as-string")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, testGitModuleRef("top-level"), out)
+
+		out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef("top-level"), "source", "as-string")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, testGitModuleRef("top-level"), out)
+	})
 }
 
 func TestModuleDaggerCallReturnTypes(t *testing.T) {

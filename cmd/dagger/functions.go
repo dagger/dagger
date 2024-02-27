@@ -19,14 +19,16 @@ import (
 )
 
 const (
-	Directory   string = "Directory"
-	Container   string = "Container"
-	File        string = "File"
-	Secret      string = "Secret"
-	Service     string = "Service"
-	Terminal    string = "Terminal"
-	PortForward string = "PortForward"
-	CacheVolume string = "CacheVolume"
+	Directory    string = "Directory"
+	Container    string = "Container"
+	File         string = "File"
+	Secret       string = "Secret"
+	Service      string = "Service"
+	Terminal     string = "Terminal"
+	PortForward  string = "PortForward"
+	CacheVolume  string = "CacheVolume"
+	ModuleSource string = "ModuleSource"
+	Module       string = "Module"
 )
 
 var funcGroup = &cobra.Group{
