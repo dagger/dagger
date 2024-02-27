@@ -1,4 +1,4 @@
-import { dag, func, object } from "@dagger.io/dagger";
+import { dag, func, object } from "@dagger.io/dagger"
 
 @object()
 class Trivy {
@@ -23,6 +23,6 @@ class Trivy {
         format,
         imageRef,
       ])
-      .stdout();
+      .stdout()
   }
 }

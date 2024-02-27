@@ -5,7 +5,7 @@ import {
   Secret,
   object,
   func,
-} from "@dagger.io/dagger";
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -20,7 +20,7 @@ class MyModule {
       .withDirectory("/home/node", source)
       .withWorkdir("/home/node")
       .withExec(["npm", "install"])
-      .withEntrypoint(["npm", "start"]);
+      .withEntrypoint(["npm", "start"])
   }
 
   /**
@@ -38,10 +38,10 @@ class MyModule {
     repository: string,
     credential: Secret,
   ): Promise<string> {
-    const registry = `${location}-docker.pkg.dev/${project}/${repository}`;
+    const registry = `${location}-docker.pkg.dev/${project}/${repository}`
     return await this.build(source)
       .withRegistryAuth(`${location}-docker.pkg.dev`, "_json_key", credential)
-      .publish(registry);
+      .publish(registry)
   }
 
   /**
@@ -68,10 +68,10 @@ class MyModule {
       registryLocation,
       repository,
       credential,
-    );
+    )
 
     return dag
       .googleCloudRun()
-      .updateService(project, serviceLocation, service, addr, 3000, credential);
+      .updateService(project, serviceLocation, service, addr, 3000, credential)
   }
 }

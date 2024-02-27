@@ -8,12 +8,3 @@ ignore = [
     "S108",  # probable insecure usage of temporary file or directory
     "T201",  # `print` found
 ]
-
-[extend-per-file-ignores]
-"quickstart/**" = [
-    "S311",  # standard pseudo-random generators are not suitable for cryptographic purposes
-]
-"lambda.py" = [
-    "ARG001",  # unused function argument
-    "S113",  # probable use of requests call without timeout
-]

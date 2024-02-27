@@ -1,4 +1,4 @@
-import { object, func } from "@dagger.io/dagger";
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -12,6 +12,6 @@ class MyModule {
    */
   @func()
   add(a = 4, b: number): number {
-    return a + b;
+    return a + b
   }
 }

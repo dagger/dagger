@@ -1,4 +1,4 @@
-import { object, func, field } from "@dagger.io/dagger";
+import { object, func, field } from "@dagger.io/dagger"
 
 @object()
 class Potato {
@@ -8,26 +8,26 @@ class Potato {
    */
   @func()
   helloWorld(count: number, mashed = false): PotatoMessage {
-    let m: string;
+    let m: string
     if (mashed) {
-      m = `Hello Daggernauts, I have mashed ${count} potatoes`;
+      m = `Hello Daggernauts, I have mashed ${count} potatoes`
     } else {
-      m = `Hello Daggernauts, I have ${count} potatoes`;
+      m = `Hello Daggernauts, I have ${count} potatoes`
     }
-    return new PotatoMessage(m, "potato@example.com");
+    return new PotatoMessage(m, "potato@example.com")
   }
 }
 
 @object()
 class PotatoMessage {
   @field()
-  message: string;
+  message: string
 
   @field()
-  from: string;
+  from: string
 
   constructor(message: string, from: string) {
-    this.message = message;
-    this.from = from;
+    this.message = message
+    this.from = from
   }
 }

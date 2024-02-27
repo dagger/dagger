@@ -5,14 +5,14 @@ import {
   Service,
   object,
   func,
-} from "@dagger.io/dagger";
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
   // create a service from the production image
   @func()
   serve(source: Directory): Service {
-    return this.package(source).asService();
+    return this.package(source).asService()
   }
 
   // publish an image
@@ -20,7 +20,7 @@ class MyModule {
   async publish(source: Directory): Promise<string> {
     return await this.package(source).publish(
       "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000),
-    );
+    )
   }
 
   // create a production image
@@ -30,7 +30,7 @@ class MyModule {
       .container()
       .from("nginx:1.25-alpine")
       .withDirectory("/usr/share/nginx/html", this.build(source))
-      .withExposedPort(80);
+      .withExposedPort(80)
   }
 
   // create a production build
@@ -41,7 +41,7 @@ class MyModule {
       .withContainer(this.buildBaseImage(source))
       .build()
       .container()
-      .directory("./dist");
+      .directory("./dist")
   }
 
   // run unit tests
@@ -51,7 +51,7 @@ class MyModule {
       .node()
       .withContainer(this.buildBaseImage(source))
       .run(["run", "test:unit", "run"])
-      .stdout();
+      .stdout()
   }
 
   // build base image
@@ -62,6 +62,6 @@ class MyModule {
       .withNpm()
       .withSource(source)
       .install([])
-      .container();
+      .container()
   }
 }

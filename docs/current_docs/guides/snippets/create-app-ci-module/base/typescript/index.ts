@@ -1,4 +1,4 @@
-import { dag, Container, Directory, object } from "@dagger.io/dagger";
+import { dag, Container, Directory, object } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -10,6 +10,6 @@ class MyModule {
       .withNpm()
       .withSource(source)
       .install([])
-      .container();
+      .container()
   }
 }

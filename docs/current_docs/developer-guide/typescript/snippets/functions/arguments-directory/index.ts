@@ -1,4 +1,4 @@
-import { dag, Directory, object, func } from "@dagger.io/dagger";
+import { dag, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -11,6 +11,6 @@ class MyModule {
       .withWorkdir("/mnt")
       .withExec(["apk", "add", "tree"])
       .withExec(["tree", "-L", depth])
-      .stdout();
+      .stdout()
   }
 }

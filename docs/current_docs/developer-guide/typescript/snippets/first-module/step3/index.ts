@@ -1,4 +1,4 @@
-import { object, func } from "@dagger.io/dagger";
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Potato {
@@ -9,9 +9,9 @@ class Potato {
   @func()
   helloWorld(count: number, mashed = false): string {
     if (mashed) {
-      return `Hello Daggernauts, I have mashed ${count} potatoes`;
+      return `Hello Daggernauts, I have mashed ${count} potatoes`
     }
 
-    return `Hello Daggernauts, I have ${count} potatoes`;
+    return `Hello Daggernauts, I have ${count} potatoes`
   }
 }

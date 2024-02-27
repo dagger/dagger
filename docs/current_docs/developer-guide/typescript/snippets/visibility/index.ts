@@ -1,6 +1,6 @@
-import * as crypto from "crypto";
+import * as crypto from "crypto"
 
-import { object, func, field } from "@dagger.io/dagger";
+import { object, func, field } from "@dagger.io/dagger"
 
 @object()
 class person {
@@ -8,16 +8,16 @@ class person {
    * Get the name of the person
    */
   @field()
-  name: string;
+  name: string
 
-  private age: number;
+  private age: number
 
-  job: string;
+  job: string
 
   constructor(name: string, job: string, age: number) {
-    this.name = name;
-    this.age = age;
-    this.job = job;
+    this.name = name
+    this.age = age
+    this.job = job
   }
 
   /**
@@ -28,6 +28,6 @@ class person {
     return crypto
       .createHash("sha256")
       .update(`${this.name}-${this.job}-${this.age.toString()}`)
-      .digest("hex");
+      .digest("hex")
   }
 }

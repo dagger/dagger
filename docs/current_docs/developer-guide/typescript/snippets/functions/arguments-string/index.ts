@@ -1,4 +1,4 @@
-import { dag, object, func } from "@dagger.io/dagger";
+import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -14,6 +14,6 @@ class MyModule {
         "-c",
         `curl https://randomuser.me/api/?gender=${gender} | jq .results[0].name`,
       ])
-      .stdout();
+      .stdout()
   }
 }
