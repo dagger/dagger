@@ -20,7 +20,7 @@ This opens powerful applications to Dagger Functions. For example, a function th
 Try calling this Go builder function:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger call build --args ./cmd/dagger
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger
 ```
 
 This function takes a `proj` argument of type `Directory`. Similar to how the CLI can pass a `Container` from a remote OCI address, it can also pass a `Directory` from a local path or remote Git address. Here, you're passing the address of Dagger's open-source repository.
@@ -54,7 +54,7 @@ Using this knowledge of function chaining, call the builder function again and c
 Begin by listing the directory's contents:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger call build --args ./cmd/dagger entries
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger entries
 ```
 
 The result should look like this:
@@ -106,7 +106,7 @@ The result should look like this:
 This does look like the contents of the Dagger repository after build. Great! Next, export its contents to the local filesystem:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang --proj https://github.com/dagger/dagger call build --args ./cmd/dagger export --path ./my-dagger-build
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger export --path ./my-dagger-build
 ```
 
 This revised command builds the Go binary and exports the build output directory to the Dagger host. Once the command completes execution, a new `my-dagger-build` directory is created in the current working directory on the Dagger host. This directory contains the compiled Go binary.
@@ -128,7 +128,7 @@ dagger devel (f11d17fb2) (registry.dagger.io/engine) linux/amd64
 As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang functions
-dagger -m github.com/kpenfound/dagger-modules/golang call --help
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 functions
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call --help
 ```
 :::
