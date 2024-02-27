@@ -2784,6 +2784,45 @@ func (m *Test) FnB() string {
 	require.JSONEq(t, `{"test":{"fnA": "hi from b"}}`, out)
 }
 
+func TestModuleNoHostSocket(t *testing.T) {
+	// verify that a sneaky module can't access host sockets with raw gql queries
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+import (
+	"context"
+
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Test struct{}
+
+func (m *Test) Fn(ctx context.Context) string {
+	resp := &graphql.Response{}
+	err := dag.Client.MakeRequest(ctx, &graphql.Request{
+		Query: "{host{unixSocket(path:\"/some/sock\"){id}}}",
+	}, resp)
+	if err != nil {
+		return err.Error()
+	}
+	panic("should not reach here")
+}
+`,
+		}).
+		With(daggerCall("fn")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "only the main client can access the host's unix sockets")
+}
+
 func TestModuleGoWithOtherModuleTypes(t *testing.T) {
 	t.Parallel()
 
