@@ -17,7 +17,7 @@ defmodule Dagger.ClientTest do
   }
 
   setup do
-    client = Dagger.connect!()
+    client = Dagger.connect!(connect_timeout: :timer.seconds(60))
     on_exit(fn -> Dagger.close(client) end)
 
     %{client: client}
@@ -289,5 +289,22 @@ defmodule Dagger.ClientTest do
              |> Container.stdout()
 
     assert out =~ ~r/Welcome to nginx/
+  end
+
+  test "string escape", %{client: client} do
+    assert {:ok, _} =
+             client
+             |> Client.container()
+             |> Container.from("nginx:1.25-alpine3.18")
+             |> Container.with_new_file("/a.txt",
+               contents: """
+                 \\  /       Partly cloudy
+               _ /\"\".-.     +29(31) °C
+                 \\_(   ).   ↑ 13 km/h
+                 /(___(__)  10 km
+                            0.0 mm
+               """
+             )
+             |> Sync.sync()
   end
 end
