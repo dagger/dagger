@@ -1,5 +1,4 @@
 import sys
-import os
 import anyio
 import dagger
 

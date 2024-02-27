@@ -1,0 +1,42 @@
+---
+slug: /quickstart/562821/hello
+hide_table_of_contents: true
+title: "Call your first function"
+---
+
+# Quickstart
+
+
+## Call your first function
+
+Before you can start using Dagger, here are a few important concepts to know.
+
+- To use Dagger, you call Dagger Functions. Dagger Functions are regular code, written in a supported programming language, and run in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
+- The Dagger Engine provides some core functions, but you are encouraged to write your own and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. Functions are packaged, shared and reused using modules.
+- You can call functions from external modules in exactly the same way as you would call core functions. The simplest and most common way is to use the Dagger CLI, which you installed in the previous section. The Dagger CLI is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI configuration. But Dagger Functions can also be called from other Dagger Functions (more on this later).
+- Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories as well.
+
+You're now ready to dive into Dagger and call your first function! Use the following command:
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello
+```
+
+Here's what you should see:
+
+```shell
+✔ dagger call hello [0.20s]
+┃ Hello, world!
+```
+
+Well done! You've just called your first Dagger function!
+
+As you can see, Dagger loaded a module directly from its GitHub repository, and executed the function `hello` from that module.
+
+If you [inspect the source code of the module](https://github.com/shykes/daggerverse/blob/0d8450fb2554d17854566028538aa6d55cdc1640/hello/main.go), you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string.
+
+Note that the function supports arguments - we'll get to that later.
+
+:::info
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Hello()` is invoked as `dagger call hello`.
+:::

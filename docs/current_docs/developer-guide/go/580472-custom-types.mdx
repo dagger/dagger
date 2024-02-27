@@ -1,0 +1,42 @@
+---
+slug: /developer-guide/go/580472/custom-types
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Custom Types"
+---
+
+
+# Custom Types
+
+
+A Dagger Module can have multiple object types defined. It's important to understand that they are only accessible through [chaining](./528510-chaining.mdx), starting from a function in the main object.
+
+Here is an example of a function named `DaggerOrganization` that returns a custom `Organization` type, itself containing a collection of `Account` types:
+
+```go file=./snippets/custom-types/main.go
+```
+
+:::note
+When the Dagger Engine extends the Dagger API schema with these types, it prefixes
+their names with the name of the main object:
+- Github
+- GithubAccount
+- GithubOrganization
+
+This is to prevent possible naming conflicts when loading multiple modules,
+which is reflected in code generation (for example, when using this module in
+another one as a dependency).
+:::
+
+Here's an example of calling this module to get all member URLs:
+
+```shell
+dagger call dagger-organization members url
+```
+
+The result will be:
+
+```shell
+https://github.com/jane
+https://github.com/john
+```

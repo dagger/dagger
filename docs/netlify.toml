@@ -16,89 +16,6 @@
   force = true
 
 [[redirects]]
-  from = "/api/reference"
-  to = "/api/reference/"
-  status = 200
-
-[[redirects]]
-  # redirect single-language guide index to unified guides index
-  from = "/sdk/go/275922/guides"
-  to = "/guides"
-  status = 302
-
-[[redirects]]
-  # redirect single-language guide index to unified guides index
-  from = "/sdk/nodejs/947203/guides"
-  to = "/guides"
-  status = 302
-
-[[redirects]]
-  # redirect single-language guide index to unified guides index
-  from = "/sdk/python/234291/guides"
-  to = "/guides"
-  status = 302
-
-[[redirects]]
-  # URL consistency fix
-  from = "/sdk/go/406009/multiplatform-support"
-  to = "/406009/multiplatform-support"
-  status = 302
-
-[[redirects]]
-  # URL consistency fix
-  from = "/sdk/nodejs/620941/github-google-cloud"
-  to = "/620941/github-google-cloud"
-  status = 302
-
-[[redirects]]
-  # URL consistency fix
-  from = "/sdk/python/648384/multi-builds"
-  to = "/648384/multi-builds"
-  status = 302
-
-[[redirects]]
-  # redirect single-language guide to multi-language guide
-  from = "/560223/private-repositories"
-  to = "/710884/private-repositories"
-  status = 302
-
-[[redirects]]
-  # redirect single-language guide to multi-language guide
-  from = "/683293/private-repositories"
-  to = "/710884/private-repositories"
-  status = 302
-
-[[redirects]]
-  # redirect Go CI guide to unified multi-language CI guide
-  from = "/768421/go-ci"
-  to = "/145912/ci"
-  status = 302
-
-[[redirects]]
-  # redirect Node.js CI guide to unified multi-language CI guide
-  from = "/114934/nodejs-ci"
-  to = "/145912/ci"
-  status = 302
-
-[[redirects]]
-  # redirect Python CI guide to unified multi-language CI guide
-  from = "/454108/python-ci"
-  to = "/145912/ci"
-  status = 302
-
-[[redirects]]
-  # redirect old guides index page
-  from = "/278912/guides"
-  to = "/guides"
-  status = 302
-
-[[redirects]]
-  # redirect old cookbook index page
-  from = "/7442989/cookbook"
-  to = "/cookbook"
-  status = 302
-
-[[redirects]]
   # redirect old FAQ index page
   from = "/162770/faq"
   to = "/faq"
@@ -111,82 +28,10 @@
   status = 302
 
 [[redirects]]
-  # redirect old quickstart basics page
-  from = "/319191/quickstart-basics"
-  to = "/quickstart/319191/basics"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart setup page
-  from = "/120918/quickstart-setup"
-  to = "/quickstart/120918/setup"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart sdk page
-  from = "/628381/quickstart-sdk"
-  to = "/quickstart/628381/sdk"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart first pipeline page
-  from = "/593914/quickstart-hello"
-  to = "/quickstart/593914/hello"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart test page
-  from = "/947391/quickstart-test"
-  to = "/quickstart/947391/test"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart build page
-  from = "/349011/quickstart-build"
-  to = "/quickstart/349011/build"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart publish page
-  from = "/730264/quickstart-publish"
-  to = "/quickstart/730264/publish"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart multi-build page
-  from = "/472910/quickstart-build-multi"
-  to = "/quickstart/472910/build-multi"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart caching page
-  from = "/635927/quickstart-caching"
-  to = "/quickstart/635927/caching"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart dockerfile build page
-  from = "/429462/quickstart-build-dockerfile"
-  to = "/429462/quickstart-build-dockerfile"
-  status = 302
-
-[[redirects]]
-  # redirect old quickstart conclusion page
-  from = "/481031/quickstart-conclusion"
-  to = "/quickstart/481031/conclusion"
-  status = 302
-
-[[redirects]]
-  # redirect services guide to new URL
-  from = "/757394/use-service-containers"
-  to = "/757394/use-services"
-  status = 302
-
-[[redirects]]
-  # redirect temporary zenith labs page to temporary zenith docs
+  # redirect temporary zenith labs page to current docs
   from = "/labs/project-zenith"
-  to = "/zenith"
-  status = 301
+  to = "/"
+  status = 302
 
 [[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
@@ -521,6 +366,401 @@
   status = 301
 # end: specific redirects for v0.2 docs
 
+# redirect for v0.9 pages starting with /sdk/*
+[[redirects]]
+  from = "/sdk/*"
+  to = "https://archive.docs.dagger.io/0.9/sdk/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/current/sdk/nodejs/*"
+  to = "https://archive.docs.dagger.io/0.9/sdk/nodejs/:splat"
+  status = 301
+
+# redirect for v0.9 pages starting with /cloud/*
+[[redirects]]
+  from = "/cloud/*"
+  to = "https://archive.docs.dagger.io/0.9/cloud/:splat"
+  status = 301
+
+# redirect for v0.9 pages starting with /cli/*
+[[redirects]]
+  from = "/cli/*"
+  to = "https://archive.docs.dagger.io/0.9/cli/:splat"
+  status = 301
+
+# redirect for v0.9 pages starting with /api/*
+[[redirects]]
+  from = "/api/*"
+  to = "https://archive.docs.dagger.io/0.9/api/:splat"
+  status = 301
+
+# start: redirects for specific v0.9 pages
+[[redirects]]
+  from = "/cookbook"
+  to = "https://archive.docs.dagger.io/0.9/cookbook"
+  status = 301
+
+[[redirects]]
+  from = "/guides"
+  to = "https://archive.docs.dagger.io/0.9/guides"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/120918/setup"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/120918/setup"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/319191/basics"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/319191/basics"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/349011/build"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/349011/build"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/429462/build-dockerfile"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/429462/build-dockerfile"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/472910/build-multi"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/472910/build-multi"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/481031/conclusion"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/481031/conclusion"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/593914/hello"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/593914/hello"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/628381/sdk"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/628381/sdk"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/635927/caching"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/635927/caching"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/729236/cli"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/729236/cli"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/730264/publish"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/730264/publish"
+  status = 301
+
+[[redirects]]
+  from = "/quickstart/947391/test"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/947391/test"
+  status = 301
+
+[[redirects]]
+  from = "/110632/embed-directories"
+  to = "https://archive.docs.dagger.io/0.9/110632/embed-directories"
+  status = 301
+
+[[redirects]]
+  from = "/128409/build-test-publish-php"
+  to = "https://archive.docs.dagger.io/0.9/128409/build-test-publish-php"
+  status = 301
+
+[[redirects]]
+  from = "/145912/ci"
+  to = "https://archive.docs.dagger.io/0.9/145912/ci"
+  status = 301
+
+[[redirects]]
+  from = "/183109/aws-codebuild-codepipeline"
+  to = "https://archive.docs.dagger.io/0.9/183109/aws-codebuild-codepipeline"
+  status = 301
+
+[[redirects]]
+  from = "/183109/aws-lambda"
+  to = "https://archive.docs.dagger.io/0.9/183109/aws-lambda"
+  status = 301
+
+[[redirects]]
+  from = "/194031/kubernetes"
+  to = "https://archive.docs.dagger.io/0.9/194031/kubernetes"
+  status = 301
+
+[[redirects]]
+  from = "/205271/replace-dockerfile"
+  to = "https://archive.docs.dagger.io/0.9/205271/replace-dockerfile"
+  status = 301
+
+[[redirects]]
+  from = "/213240/tekton"
+  to = "https://archive.docs.dagger.io/0.9/213240/tekton"
+  status = 301
+
+[[redirects]]
+  from = "/235290/troubleshooting"
+  to = "https://archive.docs.dagger.io/0.9/235290/troubleshooting"
+  status = 301
+
+[[redirects]]
+  from = "/237420/ci-architecture-kubernetes"
+  to = "https://archive.docs.dagger.io/0.9/237420/ci-architecture-kubernetes"
+  status = 301
+
+[[redirects]]
+  from = "/252029/load-images-local-docker-engine"
+  to = "https://archive.docs.dagger.io/0.9/252029/load-images-local-docker-engine"
+  status = 301
+
+[[redirects]]
+  from = "/294022/telemetry"
+  to = "https://archive.docs.dagger.io/0.9/294022/telemetry"
+  status = 301
+
+[[redirects]]
+  from = "/324301/argo-workflows"
+  to = "https://archive.docs.dagger.io/0.9/324301/argo-workflows"
+  status = 301
+
+[[redirects]]
+  from = "/406009/multiplatform-support"
+  to = "https://archive.docs.dagger.io/0.9/406009/multiplatform-support"
+  status = 301
+
+[[redirects]]
+  from = "/sdk/go/406009/multiplatform-support"
+  to = "https://archive.docs.dagger.io/0.9/406009/multiplatform-support"
+  status = 301
+
+[[redirects]]
+  from = "/421437/work-with-host-filesystem"
+  to = "https://archive.docs.dagger.io/0.9/421437/work-with-host-filesystem"
+  status = 301
+
+[[redirects]]
+  from = "/488564/openshift-gitlab"
+  to = "https://archive.docs.dagger.io/0.9/488564/openshift-gitlab"
+  status = 301
+
+[[redirects]]
+  from = "/541047/alternative-runtimes"
+  to = "https://archive.docs.dagger.io/0.9/541047/alternative-runtimes"
+  status = 301
+
+[[redirects]]
+  from = "/544174/multistage-build"
+  to = "https://archive.docs.dagger.io/0.9/544174/multistage-build"
+  status = 301
+
+[[redirects]]
+  from = "/592101/custom-callbacks"
+  to = "https://archive.docs.dagger.io/0.9/592101/custom-callbacks"
+  status = 301
+
+[[redirects]]
+  from = "/620301/azure-pipelines-container-instances"
+  to = "https://archive.docs.dagger.io/0.9/620301/azure-pipelines-container-instances"
+  status = 301
+
+[[redirects]]
+  from = "/620941/github-google-cloud"
+  to = "https://archive.docs.dagger.io/0.9/620941/github-google-cloud"
+  status = 301
+
+[[redirects]]
+  from = "/648384/multi-builds"
+  to = "https://archive.docs.dagger.io/0.9/648384/multi-builds"
+  status = 301
+
+[[redirects]]
+  from = "/710884/private-repositories"
+  to = "https://archive.docs.dagger.io/0.9/710884/private-repositories"
+  status = 301
+
+[[redirects]]
+  from = "/723462/use-secrets"
+  to = "https://archive.docs.dagger.io/0.9/723462/use-secrets"
+  status = 301
+
+[[redirects]]
+  from = "/757394/use-services"
+  to = "https://archive.docs.dagger.io/0.9/757394/use-services"
+  status = 301
+
+[[redirects]]
+  from = "/759201/gitlab-google-cloud"
+  to = "https://archive.docs.dagger.io/0.9/759201/gitlab-google-cloud"
+  status = 301
+
+[[redirects]]
+  from = "/882813/build-test-publish-java-spring"
+  to = "https://archive.docs.dagger.io/0.9/882813/build-test-publish-java-spring"
+  status = 301
+
+[[redirects]]
+  from = "/899944/aws-cdk-ecs"
+  to = "https://archive.docs.dagger.io/0.9/899944/aws-cdk-ecs"
+  status = 301
+
+[[redirects]]
+  from = "/934191/eks-github-karpenter"
+  to = "https://archive.docs.dagger.io/0.9/934191/eks-github-karpenter"
+  status = 301
+
+[[redirects]]
+  # redirect single-language guide index to unified guides index
+  from = "/sdk/go/275922/guides"
+  to = "https://archive.docs.dagger.io/0.9/guides"
+  status = 301
+
+[[redirects]]
+  # redirect single-language guide index to unified guides index
+  from = "/sdk/nodejs/947203/guides"
+  to = "https://archive.docs.dagger.io/0.9/guides"
+  status = 301
+
+[[redirects]]
+  # redirect single-language guide index to unified guides index
+  from = "/sdk/python/234291/guides"
+  to = "https://archive.docs.dagger.io/0.9/guides"
+  status = 301
+
+[[redirects]]
+  # URL consistency fix
+  from = "/sdk/nodejs/620941/github-google-cloud"
+  to = "https://archive.docs.dagger.io/0.9/620941/github-google-cloud"
+  status = 301
+
+[[redirects]]
+  # URL consistency fix
+  from = "/sdk/python/648384/multi-builds"
+  to = "https://archive.docs.dagger.io/0.9/648384/multi-builds"
+  status = 301
+
+[[redirects]]
+  # redirect single-language guide to multi-language guide
+  from = "/560223/private-repositories"
+  to = "https://archive.docs.dagger.io/0.9/710884/private-repositories"
+  status = 301
+
+[[redirects]]
+  # redirect single-language guide to multi-language guide
+  from = "/683293/private-repositories"
+  to = "https://archive.docs.dagger.io/0.9/710884/private-repositories"
+  status = 301
+
+[[redirects]]
+  # redirect Go CI guide to unified multi-language CI guide
+  from = "/768421/go-ci"
+  to = "https://archive.docs.dagger.io/0.9/145912/ci"
+  status = 301
+
+[[redirects]]
+  # redirect Node.js CI guide to unified multi-language CI guide
+  from = "/114934/nodejs-ci"
+  to = "https://archive.docs.dagger.io/0.9/145912/ci"
+  status = 301
+
+[[redirects]]
+  # redirect Python CI guide to unified multi-language CI guide
+  from = "/454108/python-ci"
+  to = "https://archive.docs.dagger.io/0.9/145912/ci"
+  status = 301
+
+[[redirects]]
+  # redirect old guides index page
+  from = "/278912/guides"
+  to = "https://archive.docs.dagger.io/0.9/guides"
+  status = 301
+
+[[redirects]]
+  # redirect old cookbook index page
+  from = "/7442989/cookbook"
+  to = "https://archive.docs.dagger.io/0.9/cookbook"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart basics page
+  from = "/319191/quickstart-basics"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/319191/basics"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart setup page
+  from = "/120918/quickstart-setup"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/120918/setup"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart sdk page
+  from = "/628381/quickstart-sdk"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/628381/sdk"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart first pipeline page
+  from = "/593914/quickstart-hello"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/593914/hello"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart test page
+  from = "/947391/quickstart-test"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/947391/test"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart build page
+  from = "/349011/quickstart-build"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/349011/build"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart publish page
+  from = "/730264/quickstart-publish"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/730264/publish"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart multi-build page
+  from = "/472910/quickstart-build-multi"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/472910/build-multi"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart caching page
+  from = "/635927/quickstart-caching"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/635927/caching"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart dockerfile build page
+  from = "/429462/quickstart-build-dockerfile"
+  to = "https://archive.docs.dagger.io/0.9/429462/quickstart-build-dockerfile"
+  status = 301
+
+[[redirects]]
+  # redirect old quickstart conclusion page
+  from = "/481031/quickstart-conclusion"
+  to = "https://archive.docs.dagger.io/0.9/quickstart/481031/conclusion"
+  status = 301
+
+[[redirects]]
+  # redirect services guide to new URL
+  from = "/757394/use-service-containers"
+  to = "https://archive.docs.dagger.io/0.9/757394/use-services"
+  status = 302
+# end: redirects for specific v0.9 pages
+
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
 [[redirects]]
@@ -533,11 +773,6 @@
   from = "/_next/*"
   to = "https://play.dagger.cloud/_next/:splat"
   status = 200
-
-[[redirects]]
-  from = "/current/sdk/nodejs/*"
-  to = "/sdk/nodejs/:splat"
-  status = 302
 
 [[headers]]
   for = "/*"

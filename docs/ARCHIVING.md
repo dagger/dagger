@@ -109,12 +109,115 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
   - Replace `/img` paths with `/0.2/img` paths in `getting-started/f44rm-how-it-works.mdx`
 - Run `npm run build` and store the `build/` directory as `site/0.2`
 
+## Build 0.9 sub-site
+
+- Clone branch `v0.9.x` at last commit
+- Delete `docs/versioned_docs/version-zenith` sub-directory
+- Delete `docs/versioned_sidebars/version-zenith-sidebars.json` file
+- Remove `zenith` entry from `docs/versions.json`
+
+- In `docusaurus.config.js`:
+  - Set `url: 'https://archive.docs.dagger.io'`
+  - Set `baseUrl: "/0.9/"`
+  - Add announcement bar in `themeConfig` object
+
+        themeConfig: {
+          //
+          announcementBar: {
+            id: 'unmaintained_docs',
+            content:
+              'This is the documentation for Dagger 0.9.x, which is no longer maintained. We encourage you to upgrade. For up-to-date documentation, visit <a target="_blank" rel="noopener noreferrer" href="https://docs.dagger.io">docs.dagger.io</a>.',
+            backgroundColor: '#fcc009',
+            textColor: '#000000',
+            isCloseable: false,
+          },
+        }
+
+  - Delete search bar
+
+        {
+          type: "search",
+          position: "right",
+          className: "header-searchbar",
+        },
+
+  - Delete Algolia search config
+
+        algolia: {
+          apiKey: "bffda1490c07dcce81a26a144115cc02",
+          indexName: "dagger",
+          appId: "XEIYPBWGOI",
+        },
+
+  - Delete edit URL
+
+          editUrl: "https://github.com/dagger/dagger/edit/main/website",
+
+  - Delete entire `versions` object
+
+        versions: {
+          zenith: {
+            path: '/zenith',
+            banner: 'none',
+            badge: false
+          },
+          current: {
+            path: '/',
+            banner: 'none',
+            badge: false
+          },
+        },
+
+  - Delete `versionedGuidesPath` from `plugins` object
+
+        versionedGuidesPath: "./versioned_docs/version-zenith/guides"
+
+  - Delete `zenith-generation` reference doc entry from `plugins` object
+
+      [
+        "docusaurus-plugin-typedoc",
+        {
+          id: "zenith-generation",
+          entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
+          tsconfig: '../sdk/typescript/tsconfig.json',
+          // Zenith reference
+          out: '../versioned_docs/version-zenith/reference/typescript/',
+          excludeProtected: true,
+          exclude: '../sdk/typescript/node_modules/**',
+          skipErrorChecking: true,
+          disableSources: true,
+          sidebar: {
+            categoryLabel: 'TypeScript SDK Reference',
+          },
+          frontmatter: {
+            displayed_sidebar: 'zenith',
+            sidebar_label: 'TypeScript SDK Reference',
+            title: "TypeScript SDK Reference"
+          },
+          hideMembersSymbol: true,
+          requiredToBeDocumented: ["Class"]
+        },
+      ],
+
+- In `docs/current_docs/` sub-directory:
+  - Replace `(/cli` URL links with `(/0.9/cli` URL links
+  - Replace `(/sdk` URL links with `(/0.9/sdk` URL links
+- In `docs/current_docs/guides/` sub-directory:
+  - Replace `(../sdk/nodejs/)` URL links with `(/0.9/sdk/nodejs/)` URL links
+  - Replace `(../sdk/python/)` URL links with `(/0.9/sdk/python/)` URL links
+  - Replace `(../sdk/go/)` URL links with `(/0.9/sdk/go/)` URL links
+  - Replace `(../api/)` URL links with `(/0.9/api/)` URL links
+- Run `npm run build` and store the `build/` directory as `site/0.9`
+
 ## Build top-level site (archive.docs.dagger.io)
 
 - Obtain the index page template from `archived_docs/index.html.tmpl` and modify as needed.
+- Copy the `archived_docs/netlify.toml` file to the site root (needed for the embargoes and the API Playground embeds in the 0.9/ sub-site)
 - Create and upload this filesystem structure to the Netlify site
 
       site/
         0.1/
         0.2/
+        0.9/
         index.html
+        netlify.toml

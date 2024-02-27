@@ -1,0 +1,37 @@
+---
+slug: /developer-guide/go/520657/constructor
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Module Constructor"
+---
+
+
+# Module Constructor
+
+
+Sometimes it's convenient to have a special function for constructing the main module object. This can, for example, be a simple way to accept module-wide configuration.
+
+Here is an example module with a constructor:
+
+```go file=./snippets/constructor/main.go
+```
+
+And here is an example call for this module:
+
+```shell
+dagger call --name=Foo message
+```
+
+The result will be:
+
+```shell
+Hello, Foo!
+```
+
+:::note
+Dagger Modules have only one constructor. Constructors of [custom types](./580472-custom-types.mdx) are not registered; they are constructed by the function that [chains](./528510-chaining.mdx) them.
+:::
+
+:::note
+If you plan to use constructor fields in other module functions, ensure that they are declared as public. This is because Dagger stores fields using JSON marshalling and private fields are omitted during the marshalling process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
+:::
