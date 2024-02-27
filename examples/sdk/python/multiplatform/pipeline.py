@@ -1,7 +1,6 @@
 import sys
 import anyio
 import dagger
-import uuid
 
 
 async def pipeline():
