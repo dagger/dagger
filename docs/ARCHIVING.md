@@ -109,6 +109,93 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
   - Replace `/img` paths with `/0.2/img` paths in `getting-started/f44rm-how-it-works.mdx`
 - Run `npm run build` and store the `build/` directory as `site/0.2`
 
+## Build 0.9 sub-site
+
+- Clone branch `v0.9.x` at last commit
+- Delete `docs/versioned_docs/version-zenith` sub-directory
+- Delete `docs/versioned_sidebars/version-zenith-sidebars.json` file
+- Remove `zenith` entry from `docs/versions.json`
+
+- In `docusaurus.config.js`:
+  - Set `baseUrl: "/0.9/"`
+  - Add announcement bar in `themeConfig` object
+
+        themeConfig: {
+          //
+          announcementBar: {
+            id: 'unmaintained_docs',
+            content:
+              'This is the documentation for Dagger 0.9.x, which is no longer maintained. We encourage you to upgrade. For up-to-date documentation, visit <a target="_blank" rel="noopener noreferrer" href="https://docs.dagger.io">docs.dagger.io</a>.',
+            backgroundColor: '#fcc009',
+            textColor: '#000000',
+            isCloseable: false,
+          },
+        }
+
+  - Delete search bar
+
+        {
+          type: "search",
+          position: "right",
+          className: "header-searchbar",
+        },
+
+  - Delete Algolia search config
+
+        algolia: {
+          apiKey: "bffda1490c07dcce81a26a144115cc02",
+          indexName: "dagger",
+          appId: "XEIYPBWGOI",
+        },
+
+  - Delete edit URL
+
+          editUrl: "https://github.com/dagger/dagger/edit/main/website",
+
+  - Delete `zenith` version entry from `versions` object
+
+        zenith: {
+          path: '/zenith',
+          banner: 'none',
+          badge: false
+        },
+
+  - Delete `versionedGuidesPath` from `plugins` object
+
+        versionedGuidesPath: "./versioned_docs/version-zenith/guides"
+
+  - Delete `zenith-generation` reference doc entry from `plugins` object
+
+      [
+        "docusaurus-plugin-typedoc",
+        {
+          id: "zenith-generation",
+          entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
+          tsconfig: '../sdk/typescript/tsconfig.json',
+          // Zenith reference
+          out: '../versioned_docs/version-zenith/reference/typescript/',
+          excludeProtected: true,
+          exclude: '../sdk/typescript/node_modules/**',
+          skipErrorChecking: true,
+          disableSources: true,
+          sidebar: {
+            categoryLabel: 'TypeScript SDK Reference',
+          },
+          frontmatter: {
+            displayed_sidebar: 'zenith',
+            sidebar_label: 'TypeScript SDK Reference',
+            title: "TypeScript SDK Reference"
+          },
+          hideMembersSymbol: true,
+          requiredToBeDocumented: ["Class"]
+        },
+      ],
+
+
+- In `docs/current_docs` sub-directory:
+  - Replace `/img` paths with `/0.9/img` paths
+- Run `npm run build` and store the `build/` directory as `site/0.9`
+
 ## Build top-level site (archive.docs.dagger.io)
 
 - Obtain the index page template from `archived_docs/index.html.tmpl` and modify as needed.
