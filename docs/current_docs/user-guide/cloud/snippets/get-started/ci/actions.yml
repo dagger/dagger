@@ -1,0 +1,22 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      -
+        name: Call Dagger Function
+        uses: dagger/dagger-for-github@v5
+        with:
+          version: "0.10.0"
+          verb: call
+          module: github.com/kpenfound/dagger-modules/golang@v0.1.5
+          args: build --project=. --args=./cmd/dagger
+        // highlight-start
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+        // highlight-end
