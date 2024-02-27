@@ -15,19 +15,8 @@ type Docs mg.Namespace
 
 const (
 	generatedSchemaPath = "docs/docs-graphql/schema.graphqls"
-	generatedCliRefPath = "docs/current_docs/cli/979595-reference.mdx"
-	generatedCliZenPath = "docs/versioned_docs/version-zenith/reference/979596-cli.mdx"
+	generatedCliZenPath = "docs/current_docs/reference/979596-cli.mdx"
 )
-
-const cliRefFrontmatter = `---
-slug: /cli/979595/reference
-pagination_next: null
-pagination_prev: null
----
-
-# Reference
-
-`
 
 const cliZenFrontmatter = `---
 slug: /reference/979596/cli/
@@ -35,12 +24,7 @@ pagination_next: null
 pagination_prev: null
 ---
 
-import PartialExperimentalDocs from '../partials/_experimental.mdx';
-
 # CLI Reference
-
-<PartialExperimentalDocs />
-
 `
 
 // Lint lints documentation files
@@ -143,17 +127,7 @@ func (d Docs) GenerateCli(ctx context.Context) error {
 	eg.Go(func() error {
 		c = c.Pipeline("docs").Pipeline("generate").Pipeline("cli-reference")
 
-		_, err = util.GoBase(c).
-			WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliRefFrontmatter, "--output=cli.mdx"}).
-			File("cli.mdx").
-			Export(gctx, generatedCliRefPath)
-
-		return err
-	})
-
-	eg.Go(func() error {
-		c = c.Pipeline("docs").Pipeline("generate").Pipeline("cli-zenith-reference")
-
+		// Should we keep `--include-experimental`?
 		_, err = util.GoBase(c).
 			WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
 			File("cli.mdx").

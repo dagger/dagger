@@ -191,7 +191,6 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
         },
       ],
 
-
 - In `docs/current_docs/guides/` sub-directory:
   - Replace `slug: /` paths with slug: `/0.9/` paths
 - Run `npm run build` and store the `build/` directory as `site/0.9`
