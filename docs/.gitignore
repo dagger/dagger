@@ -10,6 +10,7 @@
 versioned_docs/version-zenith/developer/typescript/reference/*
 versioned_docs/version-zenith/reference/typescript/*
 current_docs/sdk/nodejs/reference/*
+current_docs/reference/typescript/*
 static/guides.json
 
 # Misc

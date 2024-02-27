@@ -1,251 +1,324 @@
-/**
- * Creating a sidebar enables you to:
- - create an ordered group of docs
- - render a sidebar for each doc of that group
- - provide next/previous navigation
-
- The sidebars can be generated from the filesystem, or explicitly defined here.
-
- Create as many sidebars as you want.
- */
 
 module.exports = {
-  current: [
+  "current": [
     {
-      type: "doc",
-      id: "index",
-      label: "Introduction",
+      "type": "doc",
+      "id": "index",
+      "label": "Introduction"
     },
     {
-      type: "doc",
-      id: "quickstart/index",
-      label: "Quickstart",
+      "type": "doc",
+      "label": "Installation",
+      "id": "install"
     },
     {
-      type: "doc",
-      id: "guides",
-      label: "Guides",
+      "type": "category",
+      "label": "Quickstart",
+      "items": [
+        "quickstart/index",
+        "quickstart/cli",
+        "quickstart/hello",
+        "quickstart/arguments",
+        "quickstart/directories",
+        "quickstart/containers",
+        "quickstart/custom-modules",
+        "quickstart/conclusion"
+      ]
     },
     {
-      type: "doc",
-      id: "cookbook",
-      label: "Cookbook",
-    },
-    {
-      type: "category",
-      label: "Dagger Cloud",
-      collapsible: true,
-      collapsed: true,
-      items: [
+      "type": "category",
+      "label": "Developer Guide",
+      "collapsible": true,
+      "collapsed": true,
+      "link": {
+        "type": "doc",
+        "id": "developer-guide/index"
+      },
+      "items": [
         {
-          type: "doc",
-          label: "Overview",
-          id: "cloud/index",
-        },
-        {
-          type: "doc",
-          label: "Get Started",
-          id: "cloud/get-started",
-        },
-        {
-          type: "category",
-          label: "Reference",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            "cloud/reference/user-interface",
-            "cloud/reference/roles-permissions",
-            "cloud/reference/org-administration",
+          "type": "category",
+          "label": "Overview",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/overview/index"
+          },
+          "items": [
+            {
+              "type": "doc",
+              "id": "developer-guide/overview/modules-vs-functions"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/overview/architecture"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/overview/execution-environment"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/overview/dependencies"
+            }
           ]
         },
-      ],
-    },
-    {
-      type: "category",
-      label: "Dagger SDKs and API",
-      collapsible: true,
-      collapsed: true,
-      items: [
         {
-          type: "category",
-          label: "Go SDK",
-          collapsible: true,
-          collapsed: true,
-          items: [
+          "type": "category",
+          "label": "Developing with Go",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/go/index"
+          },
+          "items": [
             {
-              type: "doc",
-              label: "Overview",
-              id: "sdk/go/index",
-            },
-            "sdk/go/install",
-            {
-              type: "doc",
-              label: "Get Started",
-              id: "sdk/go/get-started",
+              "type": "doc",
+              "id": "developer-guide/go/first-module"
             },
             {
-              type: "link",
-              label: "Reference",
-              href: "https://pkg.go.dev/dagger.io/dagger",
+              "type": "doc",
+              "id": "developer-guide/go/functions"
             },
-          ],
+            {
+              "type": "doc",
+              "id": "developer-guide/go/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/chaining"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/constructor"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/interfaces"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/visibility"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/go/debugging"
+            },
+            {
+              "type": "link",
+              "label": "Go SDK Reference",
+              "href": "https://pkg.go.dev/dagger.io/dagger"
+            }
+          ]
         },
         {
-          type: "category",
-          label: "Node.js SDK",
-          collapsible: true,
-          collapsed: true,
-          items: [
+          "type": "category",
+          "label": "Developing with Python",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/python/index"
+          },
+          "items": [
             {
-              type: "doc",
-              label: "Overview",
-              id: "sdk/nodejs/index",
-            },
-            "sdk/nodejs/install",
-            {
-              type: "doc",
-              label: "Get Started",
-              id: "sdk/nodejs/get-started",
+              "type": "doc",
+              "id": "developer-guide/python/first-module"
             },
             {
-              type: "doc",
-              label: "Reference",
-              id: "sdk/nodejs/reference/modules",
+              "type": "doc",
+              "id": "developer-guide/python/functions"
             },
-          ],
+            {
+              "type": "doc",
+              "id": "developer-guide/python/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/chaining"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/constructor"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/attribute-functions"
+            },
+              {
+              "type": "doc",
+              "id": "developer-guide/python/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/name-overrides"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/python-dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/python/debugging"
+            },
+            {
+              "type": "link",
+              "label": "Python SDK Reference",
+              "href": "https://dagger-io.readthedocs.org/"
+            }
+          ]
         },
         {
-          type: "category",
-          label: "Python SDK",
-          collapsible: true,
-          collapsed: true,
-          items: [
+          "type": "category",
+          "label": "Developing with TypeScript",
+          "link": {
+            "type": "doc",
+            "id": "developer-guide/typescript/index"
+          },
+          "items": [
             {
-              type: "doc",
-              label: "Overview",
-              id: "sdk/python/index",
-            },
-            "sdk/python/install",
-            {
-              type: "doc",
-              label: "Get Started",
-              id: "sdk/python/get-started",
+              "type": "doc",
+              "id": "developer-guide/typescript/first-module"
             },
             {
-              type: "link",
-              label: "Reference",
-              href: "https://dagger-io.readthedocs.org/",
+              "type": "doc",
+              "id": "developer-guide/typescript/functions"
             },
-          ],
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/chaining"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/constructor"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/decorators"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/aliases"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/visibility"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/typescript-dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "developer-guide/typescript/debugging"
+            },
+            {
+              "type": "doc",
+              "label": "Reference",
+              "id": "reference/typescript/modules"
+            }
+          ]
         },
         {
-          type: "category",
-          label: "Elixir SDK (Experimental)",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            {
-              type: "doc",
-              label: "Overview",
-              id: "sdk/elixir/index",
-            },
-            "sdk/elixir/install",
-            {
-              type: "doc",
-              label: "Get Started",
-              id: "sdk/elixir/get-started",
-            },
-            {
-              type: "link",
-              label: "Reference",
-              href: "https://hexdocs.pm/dagger/Dagger.html",
-            },
-          ],
+          "type": "doc",
+          "id": "guides",
+          "label": "Guides"
         },
         {
-          type: "category",
-          label: "GraphQL API",
-          collapsible: true,
-          collapsed: true,
-          items: [
-            {
-              type: "doc",
-              label: "Overview",
-              id: "api/index",
-            },
-            "api/concepts",
-            "api/playground",
-            "api/build-custom-client",
-            {
-              type: "link",
-              label: "Reference",
-              href: "https://docs.dagger.io/api/reference",
-            },
-          ],
+          "type": "link",
+          "label": "API Reference",
+          "href": "https://docs.dagger.io/api/reference"
         },
+        {
+          "type": "doc",
+          "id": "developer-guide/known-issues"
+        }
       ]
     },
     {
-      type: "category",
-      label: "Dagger CLI",
-      collapsible: true,
-      collapsed: true,
-      items: [
-        {
-          type: "doc",
-          label: "Overview",
-          id: "cli/index",
-        },
-        "cli/install",
-        "cli/run-pipelines-cli",
-        {
-          type: "doc",
-          label: "Reference",
-          id: "cli/reference",
-        },
-      ],
+      "type": "doc",
+      "label": "CLI Reference",
+      "id": "reference/cli"
     },
     {
-      type: "doc",
-      id: "faq",
+      "type": "doc",
+      "id": "faq"
     },
     {
-      type: "doc",
-      id: "contributing",
+      "type": "doc",
+      "id": "contributing"
     },
     {
-      type: "link",
-      label: "Changelog",
-      href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
-    },
-  ],
-  quickstart: [
-    {
-      type: "doc",
-      id: "index",
-      label: "Home",
-    },
-    {
-      type: "category",
-      label: "Quickstart",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        "quickstart/index",
-        "quickstart/basics",
-        "quickstart/setup",
-        "quickstart/cli",
-        "quickstart/sdk",
-        "quickstart/hello",
-        "quickstart/test",
-        "quickstart/build",
-        "quickstart/publish",
-        "quickstart/build-multi",
-        "quickstart/caching",
-        "quickstart/build-dockerfile",
-        "quickstart/conclusion",
-      ]
+      "type": "link",
+      "label": "Changelog",
+      "href": "https://github.com/dagger/dagger/blob/main/CHANGELOG.md"
     }
-  ],
-
-};
+  ]
+}

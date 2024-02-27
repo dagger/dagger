@@ -1,0 +1,132 @@
+---
+slug: /quickstart/853930/directories
+hide_table_of_contents: true
+title: "Build a binary with a function"
+---
+
+# Quickstart
+
+
+## Build a binary with a function
+
+Not only can functions use Dagger's core types in their arguments; they can use them in their return value as well.
+
+This opens powerful applications to Dagger Functions. For example, a function that builds binaries could take a directory as argument (the source code) and return another directory (containing binaries).
+
+### Call a builder function
+
+Try calling this Go builder function:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger
+```
+
+This function takes a `proj` argument of type `Directory`. Similar to how the CLI can pass a `Container` from a remote OCI address, it can also pass a `Directory` from a local path or remote Git address. Here, you're passing the address of Dagger's open-source repository.
+
+Once the command completes, you should see this output:
+
+```shell
+✔ dagger call build [43.67s]
+┃ Directory evaluated. Use "dagger call build --help" to see available sub-commands.
+⧗ 50.56s ✔ 158 ∅ 3
+```
+
+This means that the build succeeded, and the build directory was returned. But how do you use it?
+
+:::tip
+It's important to realize that even though you're building a Go application in this example, you don't need to have Go, Git or any other local dependencies installed on the Dagger host. You only need the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
+:::
+
+### Understand function chaining
+
+Dagger Functions can return either basic types or objects. Objects can define their own functions (in the classic object-oriented model). When calling a function that returns an object, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called function chaining, and is a core feature of Dagger.
+
+Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects. They each define various functions for interacting with their respective objects.
+
+When a function returns a core type - for example, a directory - the caller typically continues the chain by calling a function from that directory - for example, export it to the local filesystem, modify it, mount it into a container, etc.
+
+### Export the build directory
+
+Using this knowledge of function chaining, call the builder function again and continue the chain by interacting with the resulting directory.
+
+Begin by listing the directory's contents:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger entries
+```
+
+The result should look like this:
+
+```shell
+✔ dagger call build entries [2.20s]
+┃ .changes
+┃ .changie.yaml
+┃ .dockerignore
+┃ .git
+┃ .github
+┃ .gitignore
+┃ .golangci.yml
+┃ .goreleaser.common.yml
+┃ .goreleaser.nightly.yml
+┃ .goreleaser.yml
+┃ .markdownlint.yaml
+┃ .readthedocs.yaml
+┃ CHANGELOG.md
+┃ CODE_OF_CONDUCT.md
+┃ CONTRIBUTING.md
+┃ LICENSE
+┃ NOTICE
+┃ README.md
+┃ RELEASING.md
+┃ auth
+┃ ci
+┃ cmd
+┃ core
+┃ dagger
+┃ dagql
+┃ docs
+┃ engine
+┃ examples
+┃ go.mod
+┃ go.sum
+┃ hack
+┃ helm
+┃ install.sh
+┃ internal
+┃ network
+┃ sdk
+┃ telemetry
+┃ tracing
+┃ zenith
+⧗ 4.71s ✔ 129 ∅ 10
+```
+
+This does look like the contents of the Dagger repository after build. Great! Next, export its contents to the local filesystem:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger export --path ./my-dagger-build
+```
+
+This revised command builds the Go binary and exports the build output directory to the Dagger host. Once the command completes execution, a new `my-dagger-build` directory is created in the current working directory on the Dagger host. This directory contains the compiled Go binary.
+
+Validate the compiled binary by executing the following commands on the Dagger host:
+
+```shell
+cd my-dagger-build
+./dagger version
+```
+
+You should see output similar to the following, which confirms that you've just remotely built a development version of Dagger:
+
+```shell
+dagger devel (f11d17fb2) (registry.dagger.io/engine) linux/amd64
+```
+
+:::tip
+As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 functions
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call --help
+```
+:::

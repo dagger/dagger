@@ -87,6 +87,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	astFields := unpackASTFields(astStructType.Fields)
 	for i := 0; i < t.NumFields(); i++ {
 		field := t.Field(i)
+		fmt.Println(field.Name(), field.Exported())
 		if !field.Exported() {
 			continue
 		}

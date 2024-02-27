@@ -64,8 +64,9 @@ func (s *containerSchema) Install() {
 				`They will be mounted at /run/secrets/[secret-name] in the build container`,
 				`They can be accessed in the Dockerfile using the "secret" mount type
 				and mount path /run/secrets/[secret-name], e.g. RUN
-				--mount=type=secret,id=my-secret curl http://example.com?token=$(cat
-				/run/secrets/my-secret)`),
+				--mount=type=secret,id=my-secret curl [http://example.com?token=$(cat
+				/run/secrets/my-secret)](http://example.com?token=$(cat
+					/run/secrets/my-secret))`),
 
 		dagql.Func("rootfs", s.rootfs).
 			Doc(`Retrieves this container's root filesystem. Mounts are not included.`),

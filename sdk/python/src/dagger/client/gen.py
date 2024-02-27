@@ -412,7 +412,8 @@ class Container(Type):
             They can be accessed in the Dockerfile using the "secret" mount
             type and mount path /run/secrets/[secret-name], e.g. RUN
             --mount=type=secret,id=my-secret curl
-            http://example.com?token=$(cat /run/secrets/my-secret)
+            [http://example.com?token=$(cat /run/secrets/my-
+            secret)](http://example.com?token=$(cat /run/secrets/my-secret))
         """
         _args = [
             Arg("context", context),

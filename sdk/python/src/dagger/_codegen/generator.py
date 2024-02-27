@@ -6,7 +6,7 @@ import re
 import textwrap
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Container, Iterator
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import partial
@@ -44,7 +44,6 @@ from graphql import (
     GraphQLType,
     GraphQLWrappingType,
     Undefined,
-    assert_leaf_type,
     get_named_type,
     is_leaf_type,
 )
@@ -226,41 +225,6 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
     yield "__all__ = ["
     yield from (indent(f"{quote(name)},") for name in sorted(ctx.defined))
     yield "]"
-
-
-@dataclass(slots=True)
-class SimpleField:
-    name: InitVar[str]
-    graphql_type: InitVar[GraphQLLeafType]
-    python_name: str = field(init=False)
-    graphql_name: str = field(init=False)
-    type_format: str = field(init=False)
-
-    def __post_init__(self, name: str, graphql_field: GraphQLLeafType):
-        graphql_field = assert_leaf_type(graphql_field)
-        self.graphql_name = name
-        # Create a private version of the field to avoid name clashes.
-        self.python_name = f"_{format_name(name)}"
-        self.type_format = format_output_type(graphql_field)
-
-    def as_kwarg(self) -> str:
-        return f"{self}={quote(self.graphql_name)}"
-
-    def as_attr(self) -> str:
-        return f"{self}: {self.type_format}"
-
-    def __str__(self) -> str:
-        return self.python_name
-
-
-def get_lists_of_object_types(type_map: TypeMap):
-    """Get object types that are returned in lists."""
-    for t in type_map.values():
-        if t.name.startswith("_") or not is_object_type(t):
-            continue
-        for f in t.fields.values():
-            if is_list_of_objects_type(f.type):
-                yield get_named_type(f.type)
 
 
 def get_grouped_types(handlers: tuple[Handler, ...], type_map: TypeMap):

@@ -1,0 +1,60 @@
+---
+slug: /developer-guide/typescript/104624/documentation
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Inline Documentation"
+---
+
+
+# Inline Documentation
+
+
+Dagger Modules and Dagger Functions should be documented so that descriptions are shown
+in the API and the CLI - for example, when calling `dagger functions` and `dagger call --help`.
+
+## Module documentation
+
+The following code snippet shows how to add high-level module documentation:
+
+```typescript file=./snippets/documentation/module/index.ts
+```
+
+## Function documentation
+
+The following code snippet shows how to add documentation for a function in your Dagger Module:
+
+```typescript file=./snippets/documentation/function/index.ts
+```
+
+Here is an example of the result from `dagger call add --help`:
+
+```shell
+Compute the sum of two numbers.
+
+Example usage: dagger call add --a=4 --b=5
+
+Usage:
+  dagger call add [flags]
+
+EXPERIMENTAL:
+  dagger call add is currently under development and may change in the future.
+
+Flags:
+      --a int   The first number to add (default 4)
+      --b int   The second number to add
+```
+
+## Object and field documentation
+
+The following code snippet shows how to add documentation for an object and its fields in your Dagger Module:
+
+```typescript file=./snippets/documentation/object/index.ts
+```
+
+Here is an example of the result from `dagger functions`:
+
+```shell
+Name   Description
+age    The age of the person.
+name   The name of the person.
+```

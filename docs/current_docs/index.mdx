@@ -3,62 +3,50 @@ slug: /
 displayed_sidebar: "current"
 ---
 
-import PartialHowDaggerWorks from './partials/_how_does_dagger_work.mdx';
-
 # Dagger Documentation
 
 ## What is Dagger?
 
-Dagger is a programmable CI/CD engine that runs your pipelines in containers.
+Dagger is an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs.
 
-### Programmable
+### What is the Dagger Engine?
 
-Develop your CI/CD pipelines as code, in the same programming language as your application.
+The Dagger Engine is a programmable tool that lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
 
-### Runs your pipelines in containers
+1. Encapsulate all your project's tasks and workflows into simple functions, written in your programming language of choice.
+2. Dagger packages your functions into a custom GraphQL API.
+3. Run your functions from the command line, your language interpreter, or a custom HTTP client.
+4. Package your functions into a module, to reuse in your next project or share with the community.
+5. Search for existing modules, and import them into yours. All Dagger modules can reuse each other's functions - regardless of which language they are written in.
 
-Dagger executes your pipelines entirely as [standard OCI containers](https://opencontainers.org/). This has several benefits:
+### What is Dagger Cloud?
 
-* **Instant local testing**
-* **Portability**: the same pipeline can run on your local machine, a CI runner, a dedicated server, or any container hosting service.
-* **Superior caching**: every operation is cached by default, and caching works the same everywhere
-* **Compatibility** with the Docker ecosystem: if it runs in a container, you can add it to your pipeline.
-* **Cross-language instrumentation**: teams can use each other's tools without learning each other's language.
-
-## What is Dagger Cloud?
-
-Dagger Cloud complements Dagger with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
+Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
 
 ## Who is it for?
 
 Dagger may be a good fit if you are...
 
-* A developer wishing your CI pipelines were code instead of YAML.
-* Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
-* A platform engineer writing custom tooling, with the goal of unifying continuous delivery across organizational silos.
-* A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice.
+- Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
+- A platform engineer writing custom tooling, with the goal of unifying application delivery across organizational silos.
+- A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice.
+
+### Benefits to development teams
+
+- Reduce complexity: Even complex builds can be expressed as a few simple functions.
+- No more "push and pray": Everything CI can do, your local dev environment can do too.
+- Native language benefits: Use the same programming language to develop your application and its delivery tooling.
+- Easy onboarding of new developers: If you can build, test and deploy, they can too.
+- Caching by default: Dagger caches everything. Expect 2x to 10x speed-ups.
+- Cross-team collaboration: Reuse another team's workflows without learning their stack.
+
+### Benefits to platform teams
+
+- Reduce CI lock-in: Dagger functions run on all major CI platforms - no proprietary DSL needed.
+- Eliminate bottlenecks: Let application teams write their own functions. Enable standardization by providing them a library of reusable components.
+- Save time and money with faster CI runs: CI pipelines that are "Daggerized" typically run 2x to 10x faster, thanks to caching and concurrency. This means developers waste less time waiting for CI, and you spend less money on CI compute.
+- Benefit from a viable platform strategy: Development teams need flexibility, and you need control. Dagger gives you a way to reconcile the two, in an incremental way that leverages the stack you already have.
 
 ## How does it work?
 
-<PartialHowDaggerWorks />
-
-## Getting started
-
-To get started with Dagger, use our [quickstart](./quickstart/index.mdx), which walks you through the basics of creating and using a pipeline with our SDKs. Alternatively, choose an SDK and follow that SDK's getting started guide.
-
-To use Dagger in production, learn about [Dagger Cloud](https://dagger.io/cloud) and use our [Dagger Cloud guide](./cloud/572923-get-started.mdx) to connect Dagger with your CI provider or CI tool.
-
-## Which SDK should I use?
-
-| If you are... | then you should... |
-| -- | -- |
-| a Go developer | Use the [Go SDK](sdk/go) |
-| a Python developer | Use the [Python SDK](sdk/python) |
-| a TypeScript/JavaScript developer | Use the [Node.js SDK](sdk/nodejs) |
-| looking for an excuse to learn Go | Use the [Go SDK](sdk/go) |
-| looking for an excuse to learn Python | Use the [Python SDK](sdk/python) |
-| looking for an excuse to learn TypeScript/JavaScript | Use the [Node.js SDK](sdk/nodejs) |
-| waiting for your favorite language to be supported | [Let us know which one](https://airtable.com/shrzABOn1wCk5yBF4), and we'll notify you when it is ready |
-| a GraphQL veteran | Use the [GraphQL API](api) |
-| a fan of shell scripts | Use the [CLI](cli) |
-| Not sure which SDK to choose 🤷 | In doubt, try the [Go SDK](sdk/go). It does not require advanced Go knowledge, and what you learn will transpose well to future SDKs
+See the [architecture overview](./developer-guide/overview/482011-architecture.mdx) for more information.
