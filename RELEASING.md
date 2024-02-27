@@ -89,6 +89,9 @@ Most importantly, patch vs minor is **not** a technical decision. If you want
 to read more about this, see [this (private) Discord
 thread](https://discord.com/channels/707636530424053791/1101242942267601038/1101508879671623780).
 
+- [ ] If doing a minor release, determine if there are any deprecations that
+      can be removed
+
 > [!NOTE]
 >
 > Once you know what type of release we are producing - patch vs minor -
