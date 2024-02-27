@@ -1,10 +1,26 @@
+/**
+ * A generated module for QuickStart functions
+ *
+ * This module has been generated via dagger init and serves as a reference to
+ * basic module structure as you get started with Dagger.
+ *
+ * Two functions have been pre-created. You can modify, delete, or add to them,
+ * as needed. They demonstrate usage of arguments and return types using simple
+ * echo and grep commands. The functions can be called from the dagger CLI or
+ * from one of the SDKs.
+ *
+ * The first line in this comment block is a short description line and the
+ * rest is a long description with more detail on the module's purpose or usage,
+ * if appropriate. All modules should have a short description.
+ */
+
 import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class QuickStart {
   /**
-   * example usage: "dagger call container-echo --string-arg yo stdout"
+   * Returns a container that echoes whatever string argument is provided
    */
   @func()
   containerEcho(stringArg: string): Container {
@@ -12,7 +28,7 @@ class QuickStart {
   }
 
   /**
-   * example usage: "dagger call grep-dir --directory-arg . --pattern GrepDir"
+   * Returns lines that match a pattern in the files of the provided Directory
    */
   @func()
   async grepDir(directoryArg: Directory, pattern: string): Promise<string> {
