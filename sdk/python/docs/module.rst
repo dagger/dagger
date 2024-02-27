@@ -13,3 +13,5 @@ Experimental Dagger modules support.
 
 .. autoclass:: Arg
 
+.. autoclass:: Doc
+
