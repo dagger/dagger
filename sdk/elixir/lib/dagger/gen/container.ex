@@ -54,7 +54,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n* `target` - Target build stage to build.\n* `build_args` - Additional build arguments.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name] in the build container\n\nThey can be accessed in the Dockerfile using the \"secret\" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl <http://example.com?token=$(cat /run/secrets/my-secret)>"
+    @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n* `target` - Target build stage to build.\n* `build_args` - Additional build arguments.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name] in the build container\n\nThey can be accessed in the Dockerfile using the \"secret\" mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [http://example.com?token=$(cat /run/secrets/my-secret)](http://example.com?token=$(cat /run/secrets/my-secret))"
     @spec build(t(), Dagger.Directory.t(), keyword()) :: Dagger.Container.t()
     def build(%__MODULE__{} = container, context, optional_args \\ []) do
       selection = select(container.selection, "build")
