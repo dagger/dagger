@@ -98,7 +98,7 @@ module.exports = async function guidesPlugin(context, options) {
 
       let allTags = new Set();
       currentGuides.forEach((guide) =>
-        guide.frontMatter.tags.forEach((tag) => allTags.add(tag))
+        guide.frontMatter.tags?.forEach((tag) => allTags.add(tag))
       );
       allTags = [...allTags];
       if (options.versionedGuidesPath) {

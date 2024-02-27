@@ -78,28 +78,28 @@ const config = {
       }
     ],
     [
-        "docusaurus-plugin-typedoc",
-        {
-          id: "current-generation",
-          entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
-          tsconfig: '../sdk/typescript/tsconfig.json',
-          out: '../current_docs/reference/typescript/',
-          excludeProtected: true,
-          exclude: '../sdk/typescript/node_modules/**',
-          skipErrorChecking: true,
-          disableSources: true,
-          sidebar: {
-            categoryLabel: 'TypeScript SDK Reference',
-          },
-          frontmatter: {
-            displayed_sidebar: 'current',
-            sidebar_label: 'TypeScript SDK Reference',
-            title: "TypeScript SDK Reference"
-          },
-          hideMembersSymbol: true,
-          requiredToBeDocumented: ["Class"]
+      "docusaurus-plugin-typedoc",
+      {
+        id: "current-generation",
+        entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
+        tsconfig: '../sdk/typescript/tsconfig.json',
+        out: '../current_docs/reference/typescript/',
+        excludeProtected: true,
+        exclude: '../sdk/typescript/node_modules/**',
+        skipErrorChecking: true,
+        disableSources: true,
+        sidebar: {
+          categoryLabel: 'TypeScript SDK Reference',
         },
-      ],
+        frontmatter: {
+          displayed_sidebar: 'current',
+          sidebar_label: 'TypeScript SDK Reference',
+          title: "TypeScript SDK Reference"
+        },
+        hideMembersSymbol: true,
+        requiredToBeDocumented: ["Class"]
+      },
+    ],
   ],
   themes: ['@docusaurus/theme-mermaid'],
   themeConfig:

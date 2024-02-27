@@ -1,4 +1,5 @@
-{
+
+module.exports = {
   "current": [
     {
       "type": "doc",
@@ -274,7 +275,6 @@
               "type": "doc",
               "id": "developer-guide/typescript/ide-integration"
             },
-
             {
               "type": "doc",
               "id": "developer-guide/typescript/debugging"
