@@ -265,11 +265,30 @@ func (v *fileValue) String() string {
 	return v.path
 }
 
-func (v *fileValue) Get(_ context.Context, c *dagger.Client) (any, error) {
+func (v *fileValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
 	vStr := v.String()
 	if vStr == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
 	}
+
+	// Try parsing as a Git URL
+	parsedGit, err := parseGit(v.String())
+	if err == nil {
+		gitOpts := dagger.GitOpts{
+			KeepGitDir: true,
+		}
+		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
+		}
+		gitDir := dag.Git(parsedGit.Remote, gitOpts).Branch(parsedGit.Fragment.Ref).Tree()
+		path := parsedGit.Fragment.Subdir
+		if path == "" {
+			return nil, fmt.Errorf("expected path selection for git repo")
+		}
+		return gitDir.File(path), nil
+	}
+
+	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
 	vStr = strings.TrimPrefix(vStr, "file://")
 	if !filepath.IsAbs(vStr) {
 		var err error
@@ -278,7 +297,7 @@ func (v *fileValue) Get(_ context.Context, c *dagger.Client) (any, error) {
 			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
 		}
 	}
-	return c.Host().File(vStr), nil
+	return dag.Host().File(vStr), nil
 }
 
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
