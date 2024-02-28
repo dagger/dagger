@@ -277,8 +277,6 @@ const (
 		fmt.Println(err.Error())
 		os.Exit(2)
 	}
-	fmt.Printf("### %+v\n", result)
-	fmt.Printf("### %s\n", resultBytes)
 	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
 	if err != nil {
 		fmt.Println(err.Error())
