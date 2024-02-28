@@ -11,7 +11,7 @@ import TabItem from "@theme/TabItem";
 
 ## Create your first module
 
-So far, you've been calling Dagger Functions using the Dagger CLI. However, you can also call Dagger Functions through code, by creating your own Dagger Module and installing other modules into it. This allows you to express more complex workflows and operations by reusing modules created by others and connecting them together using the programming language you're most comfortable with.
+So far, you've been calling Dagger Functions using the Dagger CLI. However, you can also call Dagger Functions through code, by creating your own Dagger Module and installing other Dagger Modules into it. This allows you to express more complex workflows and operations by reusing modules created by others and connecting them together using the programming language you're most comfortable with.
 
 In the previous sections, you've used the Dagger CLI to call Dagger Functions to build a Go binary from a remote repository and export it to your local filesystem, and to build and publish a container image to a registry. But what if you wanted to combine these operations (and other) into a single workflow?
 
@@ -53,7 +53,7 @@ To see this in action, create a custom Dagger Module to build a Go binary, add i
     </TabItem>
     </Tabs>
 
-1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new module using `dagger install`:
+1. Dagger lets you add dependencies to your modules, so that you can build on modules created by others. Add the `golang` and `wolfi` modules as dependencies in your new Dagger Module using `dagger install`:
 
     ```shell
     dagger install github.com/kpenfound/dagger-modules/golang@v0.1.5
@@ -119,7 +119,7 @@ To see this in action, create a custom Dagger Module to build a Go binary, add i
     </TabItem>
     </Tabs>
 
-Call the new function using the Dagger CLI:
+Call the new Dagger Function using the Dagger CLI:
 
 ```shell
 dagger call build-and-publish --build-src https://github.com/dagger/dagger --build-args ./cmd/dagger --out-file ./dagger
@@ -137,7 +137,7 @@ Test the published container image using the command below (remember to update t
 docker run --rm -it ttl.sh/my-dagger-container-3056246 /usr/local/bin/dagger version
 ```
 
-Well done! You've just successfully written your first Dagger Module and function!
+Well done! You've just successfully written your first Dagger Module and Function!
 
 :::info
 When you install one module in another, Dagger exposes its functions using a language-agnostic GraphQL API. This means that any module is usable from any other module, regardless of whether they use the same programming language or not - for example, you can use a Python module from Go, or a TypeScript module from Python. This also means that you no longer care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits the requirements at hand. [Learn more about how Dagger works](../developer-guide/overview/482011-architecture.mdx).
