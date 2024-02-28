@@ -5,7 +5,7 @@ from dagger import dag, function, object_type
 
 
 @object_type
-class TestModule:
+class MyModule:
     @function
     async def build_and_publish(
         self,
@@ -21,5 +21,5 @@ class TestModule:
             dag.wolfi()
             .container()
             .with_file("/usr/local/bin/dagger", file)
-            .publish(f"ttl.sh/my-dagger-container-{uuid.uuid4().hex[:8]}:10m")
+            .publish(f"ttl.sh/my-dagger-container-{uuid.uuid4().hex[:8]}")
         )
