@@ -84,13 +84,13 @@ dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 \
 The output will be a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
 ```shell
-ttl.sh/my-wolfi@sha256:1da9eea134000de6b9afef7d812ced0d6f4ebe45db50c0f1afdac5864862ae56
+ttl.sh/dagger-cowsay-10939@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
 ```
 
-Test the container image using the command below:
+Test the container image using the command below (update the image reference as per the output of the previous command):
 
 ```shell
-docker run --rm -it ttl.sh/my-wolfi cowsay "dagger"
+docker run --rm -it ttl.sh/dagger-cowsay-10939 cowsay "dagger"
 ```
 
 You should see the output below:
