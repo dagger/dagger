@@ -1,9 +1,9 @@
 import { dag, Directory, object, func } from "@dagger.io/dagger"
 
-@object
+@object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class MyModule {
-  @func
+  @func()
   async buildAndPublish(
     buildSrc: Directory,
     buildArgs: string[],
@@ -19,7 +19,6 @@ class MyModule {
     // build and publish container with binary file
     return dag
       .wolfi()
-      .base()
       .container()
       .withFile("/usr/local/bin/dagger", file)
       .publish(

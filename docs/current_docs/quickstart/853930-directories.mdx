@@ -26,9 +26,7 @@ This function takes a `proj` argument of type `Directory`. Similar to how the CL
 Once the command completes, you should see this output:
 
 ```shell
-✔ dagger call build [43.67s]
-┃ Directory evaluated. Use "dagger call build --help" to see available sub-commands.
-⧗ 50.56s ✔ 158 ∅ 3
+Directory evaluated. Use "dagger call build --help" to see available sub-commands.
 ```
 
 This means that the build succeeded, and the build directory was returned. But how do you use it?
@@ -58,7 +56,6 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project
 The result should look like this:
 
 ```shell
-✔ dagger call build entries [2.20s]
 ┃ .changes
 ┃ .changie.yaml
 ┃ .dockerignore
@@ -98,7 +95,6 @@ The result should look like this:
 ┃ telemetry
 ┃ tracing
 ┃ zenith
-⧗ 4.71s ✔ 129 ∅ 10
 ```
 
 This does look like the contents of the Dagger repository after build. Great! Next, export its contents to the local filesystem:
@@ -116,10 +112,10 @@ cd my-dagger-build
 ./dagger version
 ```
 
-You should see output similar to the following, which confirms that you've just remotely built a development version of Dagger:
+You should see output similar to the following, which confirms that you've just remotely built a development version of the Dagger CLI:
 
 ```shell
-dagger devel (f11d17fb2) (registry.dagger.io/engine) linux/amd64
+dagger (registry.dagger.io/engine) linux/amd64
 ```
 
 :::tip

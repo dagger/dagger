@@ -6,7 +6,6 @@ title: "Call your first function"
 
 # Quickstart
 
-
 ## Call your first function
 
 Before you can start using Dagger, here are a few important concepts to know.
@@ -25,15 +24,14 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello
 Here's what you should see:
 
 ```shell
-✔ dagger call hello [0.20s]
-┃ Hello, world!
+hello, world!
 ```
 
 Well done! You've just called your first Dagger function!
 
 As you can see, Dagger loaded a module directly from its GitHub repository, and executed the function `hello` from that module.
 
-If you [inspect the source code of the module](https://github.com/shykes/daggerverse/blob/0d8450fb2554d17854566028538aa6d55cdc1640/hello/main.go), you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string.
+If you [inspect the source code of the module](https://github.com/shykes/daggerverse/blob/main/hello/main.go), you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string.
 
 Note that the function supports arguments - we'll get to that later.
 
