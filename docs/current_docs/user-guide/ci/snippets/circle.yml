@@ -14,7 +14,7 @@ jobs:
       - setup_remote_docker
       - run:
           name: Install Dagger CLI
-         command: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+          command: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
       - run:
           name: Call Dagger Function
           command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
