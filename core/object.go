@@ -301,7 +301,6 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			if !ok {
 				return nil, fmt.Errorf("could not find mod type for field %q", field.Name)
 			}
-			fmt.Println(field.Name, field.OriginalName, obj.Self.Fields)
 			fieldVal, found := obj.Self.Fields[field.OriginalName]
 			if !found {
 				return nil, fmt.Errorf("field %q not found on object %q", field.Name, obj.Class.TypeName())
