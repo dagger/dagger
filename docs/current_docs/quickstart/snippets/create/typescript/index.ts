@@ -19,7 +19,6 @@ class MyModule {
     // build and publish container with binary file
     return dag
       .wolfi()
-      .base()
       .container()
       .withFile("/usr/local/bin/dagger", file)
       .publish(

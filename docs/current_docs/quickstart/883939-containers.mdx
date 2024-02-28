@@ -6,7 +6,6 @@ title: "Build a container with a function"
 
 # Quickstart
 
-
 ## Build a container with a function
 
 Just as you can chain and return `Directory` types, you can also chain and return `Container` types in functions.
@@ -19,17 +18,12 @@ Try calling this function:
 dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay
 ```
 
-This Wolfi container builder module exposes a number of functions:
+This Wolfi container builder module exposes a `Container()` function that returns a base Wolfi container image, and accepts arguments to additional packages in the base image;
 
-- A `Base()` function that creates a base container image using the `cgr.dev/chainguard/wolfi-base` container image;
-- A `WithPackage()` function that installs additional packages in the base image;
-- A `Container()` function that returns the container.
-
-You can chain these functions together to build and return a Wolfi container image containing specific packages - in this example, the `cowsay` package. You should see the container being built and the packages being added, as shown below:
+You can use this function to build and return a Wolfi container image containing specific packages - in this example, the `cowsay` package. You should see the container being built and the packages being added, as shown below:
 
 ```shell
-✔ dagger call container [5.00s]
-┃ Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
+Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
 ```
 
 This means that the build succeeded, and a `Container` type representing the built container image was returned. And, like `Directory`, `Container` is a Dagger core type which comes with useful functions of its own.
@@ -90,8 +84,7 @@ dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 \
 The output will be a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
 ```shell
-✔ dagger call container publish [10.38s]
-┃ ttl.sh/my-wolfi@sha256:1da9eea134000de6b9afef7d812ced0d6f4ebe45db50c0f1afdac5864862ae56
+ttl.sh/my-wolfi@sha256:1da9eea134000de6b9afef7d812ced0d6f4ebe45db50c0f1afdac5864862ae56
 ```
 
 Test the container image using the command below:
