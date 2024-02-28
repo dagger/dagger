@@ -158,13 +158,13 @@ export function isPublicProperty(property: ts.PropertyDeclaration): boolean {
 
 type OptionalValue = {
   optional: boolean
-  defaultValue?: string
+  defaultValue?: string | null
 }
 
 /**
  * Return true if the parameter is optional.
  *
- * This only includes optional value defines with `?`.
+ * This only includes optional value defines with `?` or `<string>|null`.
  * If a value has a default but isn't defined with `?`, it's not considered
  * optional in the context of GraphQL.
  *
@@ -183,7 +183,16 @@ export function isOptional(param: ts.Symbol): OptionalValue {
 
     // Convert the symbol declaration into Parameter
     if (ts.isParameter(parameterDeclaration)) {
+      // Check for ? notation
       result.optional = parameterDeclaration.questionToken !== undefined
+
+      // Check for `<xx>|null` notation
+      if (parameterDeclaration.type) {
+        const type = parameterDeclaration.type.getText()
+        if (type.includes("null")) {
+          result.optional = true
+        }
+      }
 
       if (parameterDeclaration.initializer !== undefined) {
         result.defaultValue = formatDefaultValue(
@@ -212,12 +221,18 @@ export function isVariadic(param: ts.Symbol): boolean {
   return false
 }
 
-function formatDefaultValue(value: string): string {
+function formatDefaultValue(value: string): string | null {
   const isSingleQuoteString = (): boolean =>
     value.startsWith("'") && value.endsWith("'")
 
   if (isSingleQuoteString()) {
     return `"${value.slice(1, value.length - 1)}"`
+  }
+
+  // Handle null, it's an edge case where the value shouldn't be wrapper with `""`
+  // Note: this is different than `'"null"'` which is a string value.
+  if (value === "null") {
+    return null
   }
 
   return value
