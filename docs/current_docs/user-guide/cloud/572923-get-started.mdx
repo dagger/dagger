@@ -127,11 +127,6 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
-Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighted:
-
-```yaml title=".gitlab-ci.yml" file=./snippets/get-started/ci/gitlab.yml
-```
-
 </TabItem>
 <TabItem value="CircleCI">
 
@@ -165,10 +160,8 @@ Here is a sample GitLab CI workflow with the Dagger Cloud integration highlighte
       CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
     ```
 
-Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variable will be automatically injected.
+  [See an example of a sample CircleCI workflow](../ci/592501-circleci.mdx)
 
-```yaml title=".circleci/config.yml" file=./snippets/get-started/ci/circle.yml
-```
 
 </TabItem>
 <TabItem value="Jenkins">
@@ -177,10 +170,7 @@ Here is a sample CircleCI workflow. The `DAGGER_CLOUD_TOKEN` environment variabl
 
 1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
 
-Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
-
-```groovy title="Jenkinsfile" file=./snippets/get-started/ci/Jenkinsfile
-```
+  [See an example of a sample Jenkins Pipeline](../ci/322019-jenkins.mdx)
 
 :::note
 - This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
@@ -199,13 +189,7 @@ Here is a sample Jenkins Pipeline with the Dagger Cloud integration highlighted:
 
 1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
 
-Here is a sample Argo Workflows specification with Dagger Cloud integration:
-
-```yaml title="workflow.yaml" file=./snippets/get-started/ci/workflow.yaml
-```
-
-```yaml title="gomodcache.yaml" file=./snippets/get-started/ci/gomodcache.yaml
-```
+  [See an example of a sample Argo Workflows specification](../ci/533927-argo-workflows.mdx)
 
 </TabItem>
 </Tabs>
