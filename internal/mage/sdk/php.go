@@ -62,11 +62,16 @@ func (t PHP) Generate(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
+
 	ok, err := phpBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		With(util.ShellCmds(
 			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),

@@ -101,7 +101,7 @@ func getEntrypoint(opts ...DevEngineOpts) (string, error) {
 		EntrypointArgKeys: keys,
 	})
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	entrypoint = buf.String()
 
@@ -129,7 +129,7 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 		ConfigKeys:    keys,
 	})
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	config = buf.String()
 
@@ -137,13 +137,17 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 }
 
 func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Service, string, error) {
-	devEngine := CIDevEngineContainer(ctx, c, opts...).AsService()
-
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	devEngine, err := CIDevEngineContainer(ctx, c, opts...)
 	if err != nil {
 		return nil, "", err
 	}
-	return devEngine, endpoint, nil
+	devSvc := devEngine.AsService()
+
+	endpoint, err := devSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		return nil, "", err
+	}
+	return devSvc, endpoint, nil
 }
 
 var DefaultDevEngineOpts = DevEngineOpts{
@@ -157,10 +161,10 @@ var DefaultDevEngineOpts = DevEngineOpts{
 	},
 }
 
-func CIDevEngineContainer(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) *dagger.Container {
+func CIDevEngineContainer(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Container, error) {
 	versionInfo, err := DevelVersionInfo(ctx, c)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	engineOpts := []DevEngineOpts{}
@@ -184,7 +188,10 @@ func CIDevEngineContainer(ctx context.Context, c *dagger.Client, opts ...DevEngi
 
 	cacheVolumeName = cacheVolumeName + identity.NewID()
 
-	devEngine := devEngineContainer(ctx, c, runtime.GOARCH, versionInfo.EngineVersion(), engineOpts...)
+	devEngine, err := devEngineContainer(ctx, c, runtime.GOARCH, versionInfo.EngineVersion(), engineOpts...)
+	if err != nil {
+		return nil, err
+	}
 
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, c.CacheVolume(cacheVolumeName)).
@@ -193,32 +200,31 @@ func CIDevEngineContainer(ctx context.Context, c *dagger.Client, opts ...DevEngi
 			ExperimentalPrivilegedNesting: true,
 		})
 
-	return devEngine
+	return devEngine, nil
 }
 
 // DevEngineContainer returns a container that runs a dev engine
-func DevEngineContainer(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+func DevEngineContainer(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) ([]*dagger.Container, error) {
 	return devEngineContainers(ctx, c, arches, version, opts...)
 }
 
 // DevEngineContainerWithGPUSUpport returns a container that runs a dev engine
-func DevEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
-	containers := devEngineContainersWithGPUSupport(ctx, c, arches, version, opts...)
-	return containers
+func DevEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) ([]*dagger.Container, error) {
+	return devEngineContainersWithGPUSupport(ctx, c, arches, version, opts...)
 }
 
-func devEngineContainer(ctx context.Context, c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+func devEngineContainer(ctx context.Context, c *dagger.Client, arch string, version string, opts ...DevEngineOpts) (*dagger.Container, error) {
 	if version == "" {
-		panic("engine version must be specified")
+		return nil, fmt.Errorf("engine version must be specified")
 	}
 
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("could not get engine config: %w")
 	}
 	engineEntrypoint, err := getEntrypoint(opts...)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("could not get engine entrypoint: %w")
 	}
 
 	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
@@ -259,24 +265,24 @@ func devEngineContainer(ctx context.Context, c *dagger.Client, arch string, vers
 			Contents:    engineEntrypoint,
 			Permissions: 0o755,
 		})
-	return container.WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
+	return container.WithEntrypoint([]string{filepath.Base(engineEntrypointPath)}), nil
 }
 
-func devEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arch string, version string, opts ...DevEngineOpts) *dagger.Container {
+func devEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arch string, version string, opts ...DevEngineOpts) (*dagger.Container, error) {
 	if arch != "amd64" {
-		panic("unsupported architecture")
+		return nil, fmt.Errorf("unsupported architecture")
 	}
 	if version == "" {
-		panic("engine version must be specified")
+		return nil, fmt.Errorf("engine version must be specified")
 	}
 
 	engineConfig, err := getConfig(opts...)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("could not get engine config: %w")
 	}
 	engineEntrypoint, err := getEntrypoint(opts...)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("could not get engine entrypoint: %w")
 	}
 
 	container := c.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
@@ -310,7 +316,7 @@ func devEngineContainerWithGPUSupport(ctx context.Context, c *dagger.Client, arc
 		}).
 		With(nvidiaSetup)
 
-	return container.WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
+	return container.WithEntrypoint([]string{filepath.Base(engineEntrypointPath)}), nil
 }
 
 // install nvidia-container-toolkit in the container
@@ -327,20 +333,28 @@ func shellExec(cmd string) dagger.WithContainerFunc {
 	}
 }
 
-func devEngineContainers(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+func devEngineContainers(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) ([]*dagger.Container, error) {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		platformVariants = append(platformVariants, devEngineContainer(ctx, c, arch, version, opts...))
+		ctr, err := devEngineContainer(ctx, c, arch, version, opts...)
+		if err != nil {
+			return nil, err
+		}
+		platformVariants = append(platformVariants, ctr)
 	}
 
-	return platformVariants
+	return platformVariants, nil
 }
 
-func devEngineContainersWithGPUSupport(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) []*dagger.Container {
+func devEngineContainersWithGPUSupport(ctx context.Context, c *dagger.Client, arches []string, version string, opts ...DevEngineOpts) ([]*dagger.Container, error) {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	// Restrict GPU images to amd64:
-	platformVariants = append(platformVariants, devEngineContainerWithGPUSupport(ctx, c, "amd64", version, opts...))
-	return platformVariants
+	ctr, err := devEngineContainerWithGPUSupport(ctx, c, "amd64", version, opts...)
+	if err != nil {
+		return nil, err
+	}
+	platformVariants = append(platformVariants, ctr)
+	return platformVariants, nil
 }
 
 // helper functions for building the dev engine container
@@ -369,7 +383,12 @@ func pythonSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
 			Directory("/out")
 
-		return sdkContent(ctx, ctr, sdkDir, distconsts.PythonSDKManifestDigestEnvName)
+		content, err := sdkContent(ctx, ctr, sdkDir, distconsts.PythonSDKManifestDigestEnvName)
+		if err != nil {
+			// FIXME: would be nice to not panic
+			panic(err)
+		}
+		return content
 	}
 }
 
@@ -404,7 +423,12 @@ func typescriptSDKContent(ctx context.Context, c *dagger.Client, arch string) da
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
 			Directory("/out")
 
-		return sdkContent(ctx, ctr, sdkDir, distconsts.TypescriptSDKManifestDigestEnvName)
+		content, err := sdkContent(ctx, ctr, sdkDir, distconsts.TypescriptSDKManifestDigestEnvName)
+		if err != nil {
+			// FIXME: would be nice to not panic
+			panic(err)
+		}
+		return content
 	}
 }
 
@@ -427,18 +451,23 @@ func goSDKContent(ctx context.Context, c *dagger.Client, arch string) dagger.Wit
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
 			Directory("/out")
 
-		return sdkContent(ctx, ctr, sdkDir, distconsts.GoSDKManifestDigestEnvName)
+		content, err := sdkContent(ctx, ctr, sdkDir, distconsts.GoSDKManifestDigestEnvName)
+		if err != nil {
+			// FIXME: would be nice to not panic
+			panic(err)
+		}
+		return content
 	}
 }
 
-func sdkContent(ctx context.Context, ctr *dagger.Container, sdkDir *dagger.Directory, envName string) *dagger.Container {
+func sdkContent(ctx context.Context, ctr *dagger.Container, sdkDir *dagger.Directory, envName string) (*dagger.Container, error) {
 	var index ocispecs.Index
 	indexContents, err := sdkDir.File("index.json").Contents(ctx)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
-		panic(err)
+		return nil, err
 	}
 	manifest := index.Manifests[0]
 	manifestDgst := manifest.Digest.String()
@@ -447,7 +476,7 @@ func sdkContent(ctx context.Context, ctr *dagger.Container, sdkDir *dagger.Direc
 		WithEnvVariable(envName, manifestDgst).
 		WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
 			Include: []string{"blobs/"},
-		})
+		}), nil
 }
 
 func goSDKCodegenBin(c *dagger.Client, arch string) *dagger.File {

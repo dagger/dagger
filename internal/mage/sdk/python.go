@@ -82,7 +82,12 @@ func (t Python) Test(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
+
 	eg, gctx := errgroup.WithContext(ctx)
 	for _, version := range versions {
 		version := version
@@ -93,7 +98,7 @@ func (t Python) Test(ctx context.Context) error {
 			_, err := base.
 				WithServiceBinding("dagger-engine", devEngine).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-				WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+				WithMountedFile(cliBinPath, cliBinary).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 				WithExec([]string{"pytest", "-Wd", "--exitfirst"}).
 				Sync(gctx)
@@ -140,12 +145,17 @@ func (t Python) Generate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	generated, err := pythonBase(c, pythonDefaultVersion).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("/").
 		WithExec([]string{cliBinPath, "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
