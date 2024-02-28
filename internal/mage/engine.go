@@ -49,6 +49,22 @@ func (t Engine) Lint(ctx context.Context) error {
 
 	repo := util.RepositoryGoCodeOnly(c)
 
+	err = util.LintGeneratedCode("go mod tidy", func() error {
+		_, err := c.Directory().
+			WithDirectory("/",
+				util.GoBase(c).
+					WithExec([]string{"go", "mod", "tidy"}).
+					Directory("."),
+				dagger.DirectoryWithDirectoryOpts{
+					Include: []string{"go.mod", "go.sum"},
+				}).
+			Export(ctx, ".")
+		return err
+	}, "go.mod", "go.sum")
+	if err != nil {
+		return err
+	}
+
 	_, err = c.Container().
 		From("golangci/golangci-lint:v1.55-alpine").
 		WithMountedDirectory("/app", repo).

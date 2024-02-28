@@ -112,6 +112,7 @@ func (t Go) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
+		WithExec([]string{"go", "mod", "tidy"}).
 		Directory(".")
 	_, err = generated.Export(ctx, goGeneratedAPIPath)
 	if err != nil {
