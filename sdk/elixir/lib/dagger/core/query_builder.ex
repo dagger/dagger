@@ -54,6 +54,8 @@ defmodule Dagger.Core.QueryBuilder.Selection do
   defp encode_value(value) when is_binary(value) do
     string =
       value
+      |> String.replace("\\", "\\\\")
+      |> String.replace("\r", "\\r")
       |> String.replace("\n", "\\n")
       |> String.replace("\t", "\\t")
       |> String.replace("\"", "\\\"")
@@ -105,7 +107,7 @@ defmodule Dagger.Core.QueryBuilder do
     q = Selection.build(selection)
 
     case Client.query(client, q) do
-      {:ok, %{status: 200, body: %{"data" => nil, "errors" => errors}}} ->
+      {:ok, %{body: %{"data" => nil, "errors" => errors}}} ->
         {:error, %Dagger.QueryError{errors: errors}}
 
       {:ok, %{status: 200, body: %{"data" => data}}} ->
