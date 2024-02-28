@@ -158,7 +158,7 @@ export function isPublicProperty(property: ts.PropertyDeclaration): boolean {
 
 type OptionalValue = {
   optional: boolean
-  defaultValue?: string | null
+  defaultValue?: string
 }
 
 /**
@@ -221,18 +221,12 @@ export function isVariadic(param: ts.Symbol): boolean {
   return false
 }
 
-function formatDefaultValue(value: string): string | null {
+function formatDefaultValue(value: string): string {
   const isSingleQuoteString = (): boolean =>
     value.startsWith("'") && value.endsWith("'")
 
   if (isSingleQuoteString()) {
     return `"${value.slice(1, value.length - 1)}"`
-  }
-
-  // Handle null, it's an edge case where the value shouldn't be wrapper with `""`
-  // Note: this is different than `'"null"'` which is a string value.
-  if (value === "null") {
-    return null
   }
 
   return value

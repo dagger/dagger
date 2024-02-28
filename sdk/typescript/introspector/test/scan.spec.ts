@@ -435,7 +435,7 @@ describe("scan static TypeScript", function () {
                   typeDef: { kind: TypeDefKind.StringKind },
                   description: "",
                   optional: true,
-                  defaultValue: null,
+                  defaultValue: "null",
                   isVariadic: false,
                 },
                 e: {
