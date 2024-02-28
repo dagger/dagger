@@ -37,7 +37,7 @@ module.exports = {
       "items": [
         {
           "type": "category",
-          "label": "Dagger in",
+          "label": "Dagger in CI",
           "link": {
             "type": "doc",
             "id": "user-guide/ci/index"

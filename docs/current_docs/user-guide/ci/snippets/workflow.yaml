@@ -33,13 +33,11 @@ spec:
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
           value: "unix:///var/run/dagger/buildkitd.sock"
-        // highlight-start
         - name: "DAGGER_CLOUD_TOKEN"
           valueFrom:
             secretKeyRef:
               name: dagger-cloud
               key: token
-        // highlight-end
         volumeMounts:
           - name: dagger-conn
             mountPath: /var/run/dagger
