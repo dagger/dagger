@@ -164,8 +164,9 @@ type OptionalValue = {
 /**
  * Return true if the parameter is optional.
  *
- * This includes both optional value defines with `?` and value that
- * have a default value.
+ * This only includes optional value defines with `?`.
+ * If a value has a default but isn't defined with `?`, it's not considered
+ * optional in the context of GraphQL.
  *
  * If there's a default value, its expression is returned in the result.
  *
@@ -182,9 +183,7 @@ export function isOptional(param: ts.Symbol): OptionalValue {
 
     // Convert the symbol declaration into Parameter
     if (ts.isParameter(parameterDeclaration)) {
-      result.optional =
-        parameterDeclaration.questionToken !== undefined ||
-        parameterDeclaration.initializer !== undefined
+      result.optional = parameterDeclaration.questionToken !== undefined
 
       if (parameterDeclaration.initializer !== undefined) {
         result.defaultValue = formatDefaultValue(
