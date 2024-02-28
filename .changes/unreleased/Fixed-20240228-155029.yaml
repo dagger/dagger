@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix panic in Contents for massive files
+time: 2024-02-28T15:50:29.369831359Z
+custom:
+  Author: jedevc
+  PR: "6772"
