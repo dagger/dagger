@@ -4,17 +4,17 @@ on:
     branches: [main]
 
 jobs:
-  dagger:
+  build:
+    name: build
     runs-on: ubuntu-latest
     steps:
-      -
-        name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
       -
         name: Call Dagger Function
         uses: dagger/dagger-for-github@v5
         with:
           version: "0.10.0"
           verb: call
-          module: github.com/shykes/daggerverse/hello@v0.1.2
-          args: hello --greeting Hola --name Daggernauts --shout message
+          module: github.com/kpenfound/dagger-modules/golang@v0.1.5
+          args: build --project=. --args=./cmd/dagger
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}

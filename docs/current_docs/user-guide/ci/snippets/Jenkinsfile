@@ -1,12 +1,16 @@
 pipeline {
   agent { label 'dagger' }
 
+  environment {
+   DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
+  }
+
   stages {
     stage("dagger") {
       steps {
         sh '''
             curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
-            dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting Hola --name Daggernauts --shout
+            dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
         '''
       }
     }

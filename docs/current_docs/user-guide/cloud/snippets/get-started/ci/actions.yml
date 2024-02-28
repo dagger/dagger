@@ -17,6 +17,4 @@ jobs:
           verb: call
           module: github.com/kpenfound/dagger-modules/golang@v0.1.5
           args: build --project=. --args=./cmd/dagger
-        // highlight-start
           cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
-        // highlight-end
