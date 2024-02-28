@@ -198,7 +198,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 
 			// bootstrap go.mod using dependencies from the embedded Go SDK
 
-			newModName := "main" // use a safe default, not going to be a reserved word. User is free to modify
+			newModName := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
 
 			newMod.AddModuleStmt(newModName)
 			newMod.AddGoStmt(goVersion.String())
@@ -249,7 +249,7 @@ func generateCode(
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {
-		dt, err := renderFile(ctx, cfg, schema, pkgInfo, tmpl)
+		dt, err := renderFile(cfg, schema, pkgInfo, tmpl)
 		if err != nil {
 			return err
 		}
@@ -269,7 +269,6 @@ func generateCode(
 }
 
 func renderFile(
-	ctx context.Context,
 	cfg generator.Config,
 	schema *introspection.Schema,
 	pkgInfo *PackageInfo,
