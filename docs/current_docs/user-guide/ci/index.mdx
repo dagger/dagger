@@ -6,32 +6,10 @@ slug: /user-guide/ci
 
 This section provides information and code samples to help you integrate Dagger with popular CI providers/tools.
 
-- GitHub Actions
-
-
-## GitLab CI
-
-```yaml title=".gitlab-ci.yml" file=./snippets/gitlab.yml
-```
-
-## CircleCI
-
-```yaml title=".circleci/config.yml" file=./snippets/circle.yml
-```
-
-## Jenkins
-
-Requires `docker` client installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`.
-
-```groovy title="Jenkinsfile" file=./snippets/Jenkinsfile
-```
-
-## Azure Pipelines
-
-```yaml title="azure-pipelines.yml" file=./snippets/azure-pipelines.yml
-```
-
-## AWS CodePipeline
-
-```yaml title="buildspec.yml" file=./snippets/buildspec.yml
-```
+- [GitHub Actions](./642920-github-actions.mdx)
+- [GitLab CI](./734201-gitlab.mdx)
+- [CircleCI](./592501-circleci.mdx )
+- [Jenkins](./322019-jenkins.mdx)
+- [Azure Pipelines](./197291-azure-pipelines.mdx)
+- [AWS CodePipeline](./963919-aws-codepipeline.mdx)
+- [Argo Workflows](./533927-argo-workflows.mdx)

@@ -112,12 +112,9 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
+  [See an example of a sample GitHub Actions workflow file](../ci/642920-github-actions.mdx)
+
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
-
-Here is a sample GitHub Actions workflow file with the Dagger Cloud integration highlighted:
-
-```yaml title=".github/workflows/dagger.yml" file=./snippets/get-started/ci/actions.yml
-```
 
 </TabItem>
 <TabItem value="GitLab CI">
@@ -125,6 +122,8 @@ Here is a sample GitHub Actions workflow file with the Dagger Cloud integration 
 1. Create a new CI/CD project variable in your GitLab project named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Ensure that you configure the project variable to be masked and protected. Refer to the GitLab documentation on [creating CI/CD project variables](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) and [CI/CD variable security](https://docs.gitlab.com/ee/ci/variables/#cicd-variable-security).
 
 1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
+
+  [See an example of a sample GitLab workflow file](../ci/734201-gitlab.mdx)
 
 1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
