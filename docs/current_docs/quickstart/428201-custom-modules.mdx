@@ -76,7 +76,7 @@ To see this in action, create a custom Dagger Module to build a Go binary, add i
     - It calls the module's `WithProject()` and `Build()` functions to build the remote directory. As you've seen already, the `Build()` function returns a `Directory` representing the state of the filesystem following the build.
     - It calls the `Directory.File()` method to return a reference to the compiled binary file.
     - It invokes the `Wolfi` module via the `dag` client.
-    - It calls the module's `Container()` functions to return a new Wolfi container image as a `Container`.
+    - It calls the module's `Container()` function to return a new Wolfi container image as a `Container`.
     - It calls the `Container.WithFile()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
     - It calls the `Container.Publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
@@ -94,7 +94,7 @@ To see this in action, create a custom Dagger Module to build a Go binary, add i
     - It calls the module's `with_project()` and `build()` functions to build the remote directory. As you've seen already, the `build()` function returns a `Directory` representing the state of the filesystem following the build.
     - It calls the `Directory.file()` method to return a reference to the compiled binary file.
     - It invokes the `Wolfi` module via the `dag` client.
-    - It calls the module's `container()` functions to return a new Wolfi container image as a `Container`.
+    - It calls the module's `container()` function to return a new Wolfi container image as a `Container`.
     - It calls the `Container.with_file()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
     - It calls the `Container.publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
@@ -112,7 +112,7 @@ To see this in action, create a custom Dagger Module to build a Go binary, add i
     - It calls the module's `withProject()` and `build()` functions to build the remote directory. As you've seen already, the `build()` function returns a `Directory` representing the state of the filesystem following the build.
     - It calls the `Directory.file()` method to return a reference to the compiled binary file.
     - It invokes the `Wolfi` module via the `dag` client.
-    - It calls the module's `container()` functions to return a new Wolfi container image as a `Container`.
+    - It calls the module's `container()` function to return a new Wolfi container image as a `Container`.
     - It calls the `Container.withFile()` method to add the compiled binary file to the container image's filesystem. This method returns a new `Container` with the result.
     - It calls the `Container.publish()` method to publish the container image to the registry and print the SHA identifier of the published image.
 
