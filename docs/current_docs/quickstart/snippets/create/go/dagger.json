@@ -1,8 +1,0 @@
-{
-  "name": "my-module",
-  "sdk": "go",
-  "dependencies": [
-    "github.com/kpenfound/dagger-modules/golang@d5dfa6e20d26fd53246c20af721364c8f57e4b50",
-    "github.com/shykes/daggerverse/wolfi@792b8449b95393100866720e26a27e34d818738a"
-  ]
-}

@@ -7,19 +7,15 @@ import (
 	"math/rand"
 )
 
-type MyModule struct{}
+type Example struct{}
 
-func (m *MyModule) BuildAndPublish(ctx context.Context, buildSrc *Directory, buildArgs []string, outFile string) (string, error) {
-	// build project and return binary file
-	file := dag.
-		Golang().
-		WithProject(buildSrc).
-		Build(buildArgs).File(outFile)
+func (m *Example) BuildAndPublish(ctx context.Context, buildSrc *Directory, buildArgs []string) (string, error) {
+	// retrieve a new Wolfi container
+	ctr := dag.Wolfi().Container()
 
-	// build and publish container with binary file
+	// publish the Wolfi container with the build result
 	return dag.
-		Wolfi().
-		Container().
-		WithFile("/usr/local/bin/dagger", file).
-		Publish(ctx, fmt.Sprintf("ttl.sh/my-dagger-container-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
+		Golang().
+		BuildContainer(GolangBuildContainerOpts{Source: buildSrc, Args: buildArgs, Base: ctr}).
+		Publish(ctx, fmt.Sprintf("ttl.sh/my-hello-container-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 }

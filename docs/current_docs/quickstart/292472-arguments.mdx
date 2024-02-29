@@ -93,7 +93,7 @@ In addition to basic types, Dagger defines powerful core types, such as `Contain
 
 This means that *a function can receive containers as arguments*. To be clear: this is not a string referencing an image on a remote registry. It is the actual state of a container, managed by the Dagger Engine, and passed to a function's code as if it were just another variable. This feature, as far as we know, is unique to Dagger, and opens endless possibilities for assembling complex pipelines where container state flows from function to function - in just a few lines of code.
 
-This feature is most powerful when calling a function from your own code (see the section on [creating a module](./428201-custom-modules.mdx)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
+This feature is most powerful when calling a function from your own code (see the section on [creating a module](./428201-custom-function.mdx)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
 
 Try this with the `hello` function. In order to print giant letters, it dynamically executes the `figlet` utility in a container and returns the container's output. By default, it builds a container with `figlet` installed; but it also supports passing a custom container, with the `figletContainer` argument.
 
