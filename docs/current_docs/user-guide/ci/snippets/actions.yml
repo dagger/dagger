@@ -17,4 +17,4 @@ jobs:
           version: "0.10.0"
           verb: call
           module: github.com/shykes/daggerverse/hello@v0.1.2
-          args: hello --greeting Hola --name Daggernauts --shout message
+          args: hello --greeting Hola --name Daggernauts --shout
