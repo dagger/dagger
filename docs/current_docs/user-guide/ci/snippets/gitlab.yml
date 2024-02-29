@@ -1,0 +1,20 @@
+.docker:
+  image: alpine:latest
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_DRIVER: overlay2
+    DOCKER_VERSION: '20.10.16'
+.dagger:
+  extends: [.docker]
+  before_script:
+    - apk add curl
+    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+build:
+  extends: [.dagger]
+  script:
+    - dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting Hola --name Daggernauts --shout

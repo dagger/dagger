@@ -39,6 +39,10 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &portForwardValue{}
 	case CacheVolume:
 		return &cacheVolumeValue{}
+	case ModuleSource:
+		return &moduleSourceValue{}
+	case Module:
+		return &moduleValue{}
 	}
 	return nil
 }
@@ -60,6 +64,10 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*portForwardValue]{}
 	case CacheVolume:
 		return &sliceValue[*cacheVolumeValue]{}
+	case ModuleSource:
+		return &sliceValue[*moduleSourceValue]{}
+	case Module:
+		return &sliceValue[*moduleValue]{}
 	}
 	return nil
 }
@@ -494,6 +502,68 @@ func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client) (any, erro
 		return nil, fmt.Errorf("cacheVolume name cannot be empty")
 	}
 	return dag.CacheVolume(v.name), nil
+}
+
+type moduleValue struct {
+	ref string
+}
+
+func (v *moduleValue) Type() string {
+	return Module
+}
+
+func (v *moduleValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("module ref cannot be empty")
+	}
+	v.ref = s
+	return nil
+}
+
+func (v *moduleValue) String() string {
+	return v.ref
+}
+
+func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client) (any, error) {
+	if v.ref == "" {
+		return nil, fmt.Errorf("module ref cannot be empty")
+	}
+	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module configuration: %w", err)
+	}
+	return modConf.Source.AsModule(), nil
+}
+
+type moduleSourceValue struct {
+	ref string
+}
+
+func (v *moduleSourceValue) Type() string {
+	return ModuleSource
+}
+
+func (v *moduleSourceValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("module source ref cannot be empty")
+	}
+	v.ref = s
+	return nil
+}
+
+func (v *moduleSourceValue) String() string {
+	return v.ref
+}
+
+func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client) (any, error) {
+	if v.ref == "" {
+		return nil, fmt.Errorf("module source ref cannot be empty")
+	}
+	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module configuration: %w", err)
+	}
+	return modConf.Source, nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a

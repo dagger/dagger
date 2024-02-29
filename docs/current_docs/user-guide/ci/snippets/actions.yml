@@ -1,0 +1,20 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Call Dagger Function
+        uses: dagger/dagger-for-github@v5
+        with:
+          version: "0.10.0"
+          verb: call
+          module: github.com/shykes/daggerverse/hello@v0.1.2
+          args: hello --greeting Hola --name Daggernauts --shout

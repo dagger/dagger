@@ -62,13 +62,18 @@ func (t Go) Test(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	output, err := util.GoBase(c).
 		WithWorkdir("sdk/go").
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"go", "test", "-v", "./..."}).
 		Stdout(ctx)
@@ -92,16 +97,22 @@ func (t Go) Generate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	generated := util.GoBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
-		WithMountedFile("/usr/local/bin/dagger", util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile("/usr/local/bin/dagger", cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
+		WithExec([]string{"go", "mod", "tidy"}).
 		Directory(".")
 	_, err = generated.Export(ctx, goGeneratedAPIPath)
 	if err != nil {

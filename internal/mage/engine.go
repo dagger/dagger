@@ -49,6 +49,22 @@ func (t Engine) Lint(ctx context.Context) error {
 
 	repo := util.RepositoryGoCodeOnly(c)
 
+	err = util.LintGeneratedCode("go mod tidy", func() error {
+		_, err := c.Directory().
+			WithDirectory("/",
+				util.GoBase(c).
+					WithExec([]string{"go", "mod", "tidy"}).
+					Directory("."),
+				dagger.DirectoryWithDirectoryOpts{
+					Include: []string{"go.mod", "go.sum"},
+				}).
+			Export(ctx, ".")
+		return err
+	}, "go.mod", "go.sum")
+	if err != nil {
+		return err
+	}
+
 	_, err = c.Container().
 		From("golangci/golangci-lint:v1.55-alpine").
 		WithMountedDirectory("/app", repo).
@@ -87,10 +103,14 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		gpuRef      = fmt.Sprintf("%s:%s-gpu", engineImage, versionInfo.EngineVersion())
 	)
 
+	targets, err := util.DevEngineContainer(ctx, c, publishedEngineArches, versionInfo.EngineVersion())
+	if err != nil {
+		return err
+	}
 	digest, err := c.Container().
 		WithRegistryAuth(registry, username, password).
 		Publish(ctx, ref, dagger.ContainerPublishOpts{
-			PlatformVariants: util.DevEngineContainer(ctx, c, publishedEngineArches, versionInfo.EngineVersion()),
+			PlatformVariants: targets,
 			// use gzip to avoid incompatibility w/ older docker versions
 			ForcedCompression: dagger.Gzip,
 		})
@@ -111,8 +131,12 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	fmt.Println("PUBLISHED IMAGE REF:", digest)
 
 	// gpu is experimental, not fatal if publish fails
+	targets, err = util.DevEngineContainerWithGPUSupport(ctx, c, publishedGPUEngineArches, versionInfo.EngineVersion())
+	if err != nil {
+		return err
+	}
 	gpuDigest, err := c.Container().Publish(ctx, gpuRef, dagger.ContainerPublishOpts{
-		PlatformVariants: util.DevEngineContainerWithGPUSupport(ctx, c, publishedGPUEngineArches, versionInfo.EngineVersion()),
+		PlatformVariants: targets,
 	})
 	if err == nil {
 		fmt.Println("PUBLISHED GPU IMAGE REF:", gpuDigest)
@@ -139,15 +163,23 @@ func (t Engine) TestPublish(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
 
+	targets, err := util.DevEngineContainer(ctx, c, publishedEngineArches, versionInfo.EngineVersion())
+	if err != nil {
+		return err
+	}
 	_, err = c.Container().Export(ctx, "./engine.tar", dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainer(ctx, c, publishedEngineArches, versionInfo.EngineVersion()),
+		PlatformVariants: targets,
 	})
 	if err != nil {
 		return err
 	}
 
+	targets, err = util.DevEngineContainerWithGPUSupport(ctx, c, publishedGPUEngineArches, versionInfo.EngineVersion())
+	if err != nil {
+		return err
+	}
 	_, err = c.Container().Export(ctx, "./engine-gpu.tar", dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainerWithGPUSupport(ctx, c, publishedGPUEngineArches, versionInfo.EngineVersion()),
+		PlatformVariants: targets,
 	})
 	if err != nil {
 		return err
@@ -245,9 +277,15 @@ func (t Engine) Dev(ctx context.Context) error {
 	// Conditionally load GPU enabled image for dev environment if the flag is set:
 	var platformVariants []*dagger.Container
 	if gpuSupportEnabled {
-		platformVariants = util.DevEngineContainerWithGPUSupport(ctx, c, arches, versionInfo.EngineVersion())
+		platformVariants, err = util.DevEngineContainerWithGPUSupport(ctx, c, arches, versionInfo.EngineVersion())
+		if err != nil {
+			return err
+		}
 	} else {
-		platformVariants = util.DevEngineContainer(ctx, c, arches, versionInfo.EngineVersion())
+		platformVariants, err = util.DevEngineContainer(ctx, c, arches, versionInfo.EngineVersion())
+		if err != nil {
+			return err
+		}
 	}
 
 	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
@@ -388,14 +426,18 @@ func (t Engine) testCmd(ctx context.Context, c *dagger.Client) (*dagger.Containe
 			`registry."privateregistry:5000"`: "http = true",
 		},
 	}
-	devEngine := util.DevEngineContainer(
+	devEngines, err := util.DevEngineContainer(
 		ctx,
 		c.Pipeline("dev-engine"),
 		[]string{runtime.GOARCH},
 		versionInfo.EngineVersion(),
 		util.DefaultDevEngineOpts,
 		opts,
-	)[0]
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	devEngine := devEngines[0]
 
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a

@@ -62,12 +62,16 @@ func (Java) Test(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	_, err = javaBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
@@ -96,12 +100,16 @@ func (Java) Generate(ctx context.Context) error {
 		return err
 	}
 
+	cliBinary, err := util.DevelDaggerBinary(ctx, c)
+	if err != nil {
+		return err
+	}
 	cliBinPath := "/.dagger-cli"
 
 	generatedSchema, err := javaBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
 		WithExec([]string{"mvn", "-N", "dagger-codegen:generateSchema"}).
@@ -115,7 +123,7 @@ func (Java) Generate(ctx context.Context) error {
 	engineVersion, err := javaBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, util.DevelDaggerBinary(ctx, c)).
+		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{cliBinPath, "version"}).
 		Stdout(ctx)
