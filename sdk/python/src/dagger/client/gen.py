@@ -1030,7 +1030,9 @@ class Container(Type):
     def terminal(
         self,
         *,
-        cmd: Sequence[str] | None = None,
+        cmd: Sequence[str] | None = [],
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
     ) -> "Terminal":
         """Return an interactive terminal for this container using its configured
         default terminal command if not overridden by args (or sh as a
@@ -1041,9 +1043,24 @@ class Container(Type):
         cmd:
             If set, override the container's default terminal command and
             invoke these command arguments instead.
+        experimental_privileged_nesting:
+            Provides dagger access to the executed command.
+            Do not use this option unless you trust the command being
+            executed; the command being executed WILL BE GRANTED FULL ACCESS
+            TO YOUR HOST FILESYSTEM.
+        insecure_root_capabilities:
+            Execute the command with all root capabilities. This is similar to
+            running a command with "sudo" or executing "docker run" with the "
+            --privileged" flag. Containerization does not provide any security
+            guarantees when using this option. It should only be used when
+            absolutely necessary and only with trusted commands.
         """
         _args = [
-            Arg("cmd", cmd, None),
+            Arg("cmd", cmd, []),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
         return Terminal(_ctx)
@@ -1087,16 +1104,37 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_default_terminal_cmd(self, args: Sequence[str]) -> "Container":
+    def with_default_terminal_cmd(
+        self,
+        args: Sequence[str],
+        *,
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
+    ) -> "Container":
         """Set the default command to invoke for the container's terminal API.
 
         Parameters
         ----------
         args:
             The args of the command.
+        experimental_privileged_nesting:
+            Provides dagger access to the executed command.
+            Do not use this option unless you trust the command being
+            executed; the command being executed WILL BE GRANTED FULL ACCESS
+            TO YOUR HOST FILESYSTEM.
+        insecure_root_capabilities:
+            Execute the command with all root capabilities. This is similar to
+            running a command with "sudo" or executing "docker run" with the "
+            --privileged" flag. Containerization does not provide any security
+            guarantees when using this option. It should only be used when
+            absolutely necessary and only with trusted commands.
         """
         _args = [
             Arg("args", args),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("withDefaultTerminalCmd", _args)
         return Container(_ctx)

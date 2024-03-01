@@ -701,6 +701,23 @@ pub struct ContainerTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
     pub cmd: Option<Vec<&'a str>>,
+    /// Provides dagger access to the executed command.
+    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
+    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithDefaultTerminalCmdOpts {
+    /// Provides dagger access to the executed command.
+    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
+    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
@@ -1339,6 +1356,15 @@ impl Container {
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
         }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
         return Terminal {
             proc: self.proc.clone(),
             selection: query,
@@ -1372,12 +1398,44 @@ impl Container {
     /// # Arguments
     ///
     /// * `args` - The args of the command.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_default_terminal_cmd(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultTerminalCmd");
         query = query.arg(
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Set the default command to invoke for the container's terminal API.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The args of the command.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_default_terminal_cmd_opts(
+        &self,
+        args: Vec<impl Into<String>>,
+        opts: ContainerWithDefaultTerminalCmdOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withDefaultTerminalCmd");
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
         return Container {
             proc: self.proc.clone(),
             selection: query,

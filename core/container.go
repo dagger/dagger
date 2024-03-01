@@ -41,6 +41,18 @@ import (
 
 var ErrContainerNoExec = errors.New("no command has been executed")
 
+type DefaultTerminalCmdOpts struct {
+	Args []string
+		
+	// Provide dagger access to the executed command
+	// Do not use this option unless you trust the command being executed.
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool `default:"false"`
+}
+
 // Container is a content-addressed container.
 type Container struct {
 	Query *Query
@@ -83,7 +95,7 @@ type Container struct {
 	Focused bool `json:"focused"`
 
 	// The args to invoke when using the terminal api on this container.
-	DefaultTerminalCmd []string `json:"defaultTerminalCmd,omitempty"`
+	DefaultTerminalCmd *DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
