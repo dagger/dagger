@@ -28,7 +28,7 @@ spec:
       container:
         image: alpine:latest
         command: ["sh", "-c"]
-        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger"]
+        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=."]
         workingDir: /work
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"

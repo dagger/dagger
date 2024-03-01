@@ -9,5 +9,5 @@ steps:
 - script: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
   displayName: 'Install Dagger CLI'
 
-- script: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
+- script: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
   displayName: 'Call Dagger Function'

@@ -17,7 +17,7 @@ jobs:
           command: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
       - run:
           name: Call Dagger Function
-          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger
+          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
       # for ephemeral runners only: override the default docker stop timeout and
       # give the Dagger Engine more time to push cache data to Dagger Cloud
       - run:
