@@ -236,7 +236,7 @@
         <daggerengine.version>devel</daggerengine.version>
 
         <assertj-core.version>3.25.0</assertj-core.version>
-        <commons-compress.version>1.24.0</commons-compress.version>
+        <commons-compress.version>1.26.0</commons-compress.version>
         <commons-lang.version>3.13.0</commons-lang.version>
         <exec-maven-plugin.version>3.1.0</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
