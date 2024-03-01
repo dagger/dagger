@@ -1,0 +1,168 @@
+---
+slug: /quickstart/822194/daggerize
+hide_table_of_contents: true
+title: "Daggerize a project"
+---
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Daggerize a project
+
+So far, you've learned the basics of calling Dagger Functions. The next step is to use them in the context of your software project.
+
+Here are the basic steps to Daggerizing an existing project:
+
+1. Initialize a new Dagger Module with `dagger init`
+2. Install other useful Dagger Modules as dependencies with `dagger install`
+3. Call useful Dagger Functions with `dagger call`
+4. Add useful `dagger call` commands to existing scripts and CI configuration
+
+Try these steps by Daggerizing an example project - a [simple "Hello world" application from the official Go example repository](https://github.com/golang/example).
+
+### Fetch the project repository
+
+Fetch a copy of the project repository:
+
+```shell
+git clone https://github.com/golang/example
+cd example
+```
+
+### Initialize a Dagger module
+
+Initialize a Dagger module at the root of the repository:
+
+```shell
+dagger init
+```
+
+You should see a new file at the root of your repository, named `dagger.json`. View its contents:
+
+```shell
+cat dagger.json
+```
+
+You should see the following:
+
+```json
+{
+  "name": "greetings-api",
+  "engineVersion": "v0.9.11"
+}
+```
+
+Finally, commit the file to your repository:
+
+```shell
+git add dagger.json
+git commit -m 'dagger init'
+```
+
+Congratulations! Your repository is now a Dagger Module.
+
+### Install a dependency
+
+Now that your project is a Dagger Module, you can install other modules into it, as dependencies. A dependency is just a Dagger Module installed into another. As an example, install the `hello` module from earlier:
+
+```shell
+dagger install github.com/shykes/daggerverse/hello@v0.1.2
+```
+
+Once the command completes, look at the `dagger.json` file again. You should see that a new dependency has been added, similar to that shown below:
+
+```json
+{
+  "name": "greetings-api",
+  "dependencies": [
+    {
+      "name": "hello",
+      "source": "github.com/shykes/daggerverse/hello@7884cbc1941f85a7c714fc7f1bcc5c148842c21e"
+    }
+  ],
+  "engineVersion": "v0.9.11"
+}
+```
+
+:::note
+The exact Git commit for the module version is recorded in `dagger.json`. Dagger enforces "version pinning", which guarantees that the module version you install is the one you'll be using.
+:::
+
+Go ahead and commit this change as well:
+
+```shell
+git add dagger.json
+git commit -m 'dagger install github.com/shykes/daggerverse/hello'
+```
+
+### Use the installed module
+
+Now that your module has its first dependency installed, you can start using it! To do so, simply refer to it by its short name - in this case, `hello`.
+
+List available functions:
+
+```shell
+dagger -m hello functions
+```
+
+You should see a familiar result:
+
+```shell
+Name    Description
+hello   Say hello to the world!
+```
+
+Call a function:
+
+```shell
+dagger -m hello call hello
+```
+
+Again, the output should be familiar:
+
+```shell
+hello, world!
+```
+
+### Daggerize a Go build
+
+The `hello` module is a good example to start with, but it doesn't have any functions to work with a Go project. To Daggerize the Go build for this example project, install the Go builder module from a previous section as another dependency:
+
+```shell
+dagger install github.com/kpenfound/dagger-modules/golang@v0.1.8
+```
+
+Then, call the `BuildContainer()` function from the Go builder module to build the project and publish a container image with the built binary:
+
+```shell
+dagger -m golang call \
+  build-container --source=.--args="-C","./hello" \
+  publish --address=ttl.sh/my-hello-container-$RANDOM
+```
+
+Once the container image is built, you should see the address at which it was published, as in the example below:
+
+```shell
+ttl.sh/my-hello-container-20124@sha256:15eb8379e1ab6f6746ccbcbf531aef23882381c29a8d09a8682fafa7b1adf467
+```
+
+Test the published container image using the command below (remember to update the image name based on the function output):
+
+```shell
+docker run \
+  --name ctr \
+  --rm \
+  -it ttl.sh/my-hello-container-20124 /usr/local/bin/hello
+```
+
+You should see the following output:
+
+```shell
+Hello, world!
+```
+
+Your project is slowly becoming more and more Daggerized...you're now able to build it, containerize it and publish it, all with a single Dagger Function call. If you like, you can integrate this call into your existing shell scripts, or perhaps a Makefile. Or, you can create a custom Dagger Module, which enables you to connect one or more Dagger Functions together in portable, expressive workflows with all the benefits of a native programming language.

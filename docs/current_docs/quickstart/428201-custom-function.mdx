@@ -1,0 +1,158 @@
+---
+slug: /quickstart/428201/custom-function
+hide_table_of_contents: true
+title: "Write your first function"
+---
+import PartialExperimentalDocs from '../partials/_experimental.mdx';
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+<PartialExperimentalDocs />
+
+## Write your first function
+
+So far, you've been calling individual Dagger Functions using the Dagger CLI. But what if you want to combine multiple Dagger Function calls?
+
+One option is, of course, to stitch together calls using the CLI and a shell script or a Makefile However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
+
+A better approach is to create a programmable Dagger Module, which can then call other Dagger Modules and Dagger Functions to achieve the required results. Creating your own Dagger Module enables you to transform your workflows into structured, discrete and composable units with clear inputs and outputs, with all the benefits of using a native programming language.
+
+By creating your own Dagger Module and installing other modules into it, you can express more complex workflows and operations by reusing modules created by others and connecting them together using the programming language you're most comfortable with.
+
+To see this in action, create a custom Dagger Module that uses two other Dagger Modules to build your project, add it to a custom container image of your choice, and publish the result to a registry.
+
+### Bootstrap a module template
+
+Begin by running `dagger develop` to bootstrap a module template in one of the supported programming languages:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```shell
+dagger develop --sdk=go
+```
+
+This will generate a `dagger.json` module file, an initial `dagger/main.go` source file, as well as a generated `dagger/dagger.gen.go` and `dagger/querybuilder` directory for the generated module code.
+
+</TabItem>
+<TabItem value="Python">
+
+```shell
+dagger develop --sdk=python
+```
+
+This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```shell
+dagger develop --sdk=typescript
+```
+
+This will generate a `dagger.json` module file, initial `dagger/src/index.ts`, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
+
+</TabItem>
+</Tabs>
+
+### Install another dependency
+
+You've already installed the Go builder module in your project. Next, install the Wolfi container builder module from earlier as another dependency:
+
+```shell
+  dagger install github.com/shykes/daggerverse/wolfi@v0.1.2
+```
+
+### Add a function to the module
+
+Update the generated module template:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update `dagger/main.go` with the following code:
+
+```go file=./snippets/create/go/main.go
+```
+
+This new `BuildAndPublish()` function accepts two arguments - the source directory and a list of build arguments - and does the following:
+
+- It invokes the `Wolfi` module via the `dag` client.
+- It calls the module's `Container()` function to return a new Wolfi container image as a `Container`.
+- It invokes the `Golang` module via the `dag` Dagger client.
+- It calls the module's `BuildContainer()` function to build the source code and return a `Container` with the compiled binary.
+- It calls the `Container.Publish()` method to publish the container image to a registry and print the SHA identifier of the published image.
+
+</TabItem>
+<TabItem value="Python">
+
+Update `dagger/src/main.py` with the following code:
+
+```python file=./snippets/create/python/main.py
+```
+
+This new `build_and_publish()` function accepts two arguments - the source directory and a list of build arguments - and does the following:
+
+- It invokes the `Wolfi` module via the `dag` client.
+- It calls the module's `container()` function to return a new Wolfi container image as a `Container`.
+- It invokes the `Golang` module via the `dag` Dagger client.
+- It calls the module's `build_container()` function to build the source code and return a `Container` with the compiled binary.
+- It calls the `Container.publish()` method to publish the container image to a registry and print the SHA identifier of the published image.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+Update `dagger/src/index.ts` with the following code:
+
+```typescript file=./snippets/create/typescript/index.ts
+```
+
+This new `buildAndPublish()` function accepts two arguments - the source directory and a list of build arguments - and does the following:
+
+- It invokes the `Wolfi` module via the `dag` client.
+- It calls the module's `container()` function to return a new Wolfi container image as a `Container`.
+- It invokes the `Golang` module via the `dag` Dagger client.
+- It calls the module's `buildContainer()` function to build the source code and return a `Container` with the compiled binary.
+- It calls the `Container.publish()` method to publish the container image to a registry and print the SHA identifier of the published image.
+
+</TabItem>
+</Tabs>
+
+### Call the function
+
+Call the new function using the Dagger CLI:
+
+```shell
+dagger call build-and-publish \
+  --build-src=. \
+  --build-args="-C","./hello"
+```
+
+Here's an example of the output you should see:
+
+```shell
+ttl.sh/my-hello-container-3056246@sha256:ef0ffb71286be8c51e3d432fb9428ce46c80a32e8456dc963d01798fcba1e880
+```
+
+Test the published container image using the command below (remember to update the image name based on the function output):
+
+```shell
+docker run \
+  --name ctr \
+  --rm \
+  -it ttl.sh/my-hello-container-3056246 /usr/local/bin/hello
+```
+
+You should see the same output as before:
+
+```shell
+Hello, world!
+```
+
+Well done! You've just successfully written your first Dagger Function!
+
+:::info
+When you install one module in another, Dagger exposes its functions using a language-agnostic GraphQL API. This means that any function can call any other function, regardless of whether they use the same programming language or not. For example, a Go function can call a Python function, which can call a Typescript function, and so on. This also means that you no longer care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements. [Learn more about how Dagger works](../index.mdx#how-does-it-work).
+:::
