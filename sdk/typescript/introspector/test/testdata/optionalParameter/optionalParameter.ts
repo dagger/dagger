@@ -34,5 +34,14 @@ export class HelloWorld {
       e: string | null = "bar",
     ): string {
       return [a, b, c, d, e].map(v => JSON.stringify(v)).join(", ")
-    }    
+    }
+    
+    @func()
+    array(
+        a: string[],
+        b: (string | null)[],
+        c: (string | null)[] | null,
+    ): string {
+        return [a, b, c].map(v => JSON.stringify(v)).join(", ")
+    }
 }

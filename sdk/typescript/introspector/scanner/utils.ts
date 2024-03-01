@@ -166,7 +166,7 @@ type OptionalValue = {
  *
  * This only includes optional value defines with `?` or `<string>|null`.
  * If a value has a default but isn't defined with `?`, it's not considered
- * optional in the context of GraphQL.
+ * optional but nullable in the context of Dagger.
  *
  * If there's a default value, its expression is returned in the result.
  *
@@ -188,9 +188,13 @@ export function isOptional(param: ts.Symbol): OptionalValue {
 
       // Check for `<xx>|null` notation
       if (parameterDeclaration.type) {
-        const type = parameterDeclaration.type.getText()
-        if (type.includes("null")) {
-          result.optional = true
+        if (ts.isUnionTypeNode(parameterDeclaration.type)) {
+          for (const _type of parameterDeclaration.type.types) {
+            if (_type.getText() === "null") {
+              result.optional = true
+              break
+            }
+          }
         }
       }
 

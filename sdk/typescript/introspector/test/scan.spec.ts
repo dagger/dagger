@@ -448,6 +448,51 @@ describe("scan static TypeScript", function () {
                 },
               },
             },
+            array: {
+              name: "array",
+              alias: undefined,
+              returnType: { kind: TypeDefKind.StringKind },
+              description: "",
+              args: {
+                a: {
+                  name: "a",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: { kind: TypeDefKind.StringKind },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                b: {
+                  name: "b",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: {
+                      kind: TypeDefKind.StringKind,
+                    },
+                  },
+                  description: "",
+                  optional: false,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+                c: {
+                  name: "c",
+                  typeDef: {
+                    kind: TypeDefKind.ListKind,
+                    typeDef: {
+                      kind: TypeDefKind.StringKind,
+                    },
+                  },
+                  description: "",
+                  optional: true,
+                  defaultValue: undefined,
+                  isVariadic: false,
+                },
+              },
+            },
           },
         },
       },
