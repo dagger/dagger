@@ -21,7 +21,8 @@ module.exports = {
         "quickstart/arguments",
         "quickstart/directories",
         "quickstart/containers",
-        "quickstart/custom-modules",
+        "quickstart/daggerize",
+        "quickstart/custom-function",
         "quickstart/conclusion"
       ]
     },

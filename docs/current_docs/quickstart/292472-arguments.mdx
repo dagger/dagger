@@ -6,7 +6,6 @@ title: "Pass arguments to a function"
 
 # Quickstart
 
-
 ## Pass arguments to a function
 
 Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments: `Directory`, `Container`, `Service`, and `Secret`.
@@ -26,19 +25,18 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --help
 You should see output that looks like this:
 
 ```shell
-✔ dagger call hello [0.00s]
-┃ Say hello to the world!
-┃
-┃ Usage:
-┃   dagger call hello [flags]
-┃
-┃ Flags:
-┃       --figlet-container Container   Optional container for running the figlet tool
-┃       --giant                        Encode the message in giant multi-character letters
-┃       --greeting string              An optional greeting (default is "hello")
-┃       --name string                  An optional name (default is "world")
-┃       --shout                        Make the message uppercase, and add more exclamation
-┃                                      points
+Say hello to the world!
+
+Usage:
+  dagger call hello [flags]
+
+Flags:
+       --figlet-container Container   Optional container for running the figlet tool
+       --giant                        Encode the message in giant multi-character letters
+       --greeting string              An optional greeting (default is "hello")
+       --name string                  An optional name (default is "world")
+       --shout                        Make the message uppercase, and add more exclamation
+                                      points
 ```
 
 ### Pass a string argument
@@ -48,14 +46,13 @@ To pass a string argument to a function, add the corresponding flag to your `dag
 Let's pass two arguments to our `hello` function, from the list we saw above:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting bonjour --name daggernaut
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjour --name=daggernaut
 ```
 
 You should see the following output:
 
 ```shell
-✔ dagger call hello [0.62s]
-┃ bonjour, daggernaut!
+bonjour, daggernaut!
 ```
 
 ### Pass a boolean argument
@@ -68,25 +65,24 @@ To pass a boolean argument from the command-line, simply add the corresponding f
 Let's try this with the `giant` argument to our `hello` function:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting bonjour --name daggernaut --giant
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjour --name=daggernaut --giant
 ```
 
 You should see the same output as before, but in giant letters!
 
 ```shell
-✔ dagger call hello [2.72s]
-┃  _                  _
-┃ | |__   ___  _ __  (_) ___  _   _ _ __
-┃ | '_ \ / _ \| '_ \ | |/ _ \| | | | '__|
-┃ | |_) | (_) | | | || | (_) | |_| | | _
-┃ |_.__/ \___/|_| |_|/ |\___/ \__,_|_|( )
-┃                  |__/               |/
-┃      _                                               _   _
-┃   __| | __ _  __ _  __ _  ___ _ __ _ __   __ _ _   _| |_| |
-┃  / _` |/ _` |/ _` |/ _` |/ _ \ '__| '_ \ / _` | | | | __| |
-┃ | (_| | (_| | (_| | (_| |  __/ |  | | | | (_| | |_| | |_|_|
-┃  \__,_|\__,_|\__, |\__, |\___|_|  |_| |_|\__,_|\__,_|\__(_)
-┃              |___/ |___/
+ _                  _
+| |__   ___  _ __  (_) ___  _   _ _ __
+| '_ \ / _ \| '_ \ | |/ _ \| | | | '__|
+| |_) | (_) | | | || | (_) | |_| | | _
+|_.__/ \___/|_| |_|/ |\___/ \__,_|_|( )
+                 |__/               |/
+     _                                               _   _
+  __| | __ _  __ _  __ _  ___ _ __ _ __   __ _ _   _| |_| |
+ / _` |/ _` |/ _` |/ _` |/ _ \ '__| '_ \ / _` | | | | __| |
+| (_| | (_| | (_| | (_| |  __/ |  | | | | (_| | |_| | |_|_|
+ \__,_|\__,_|\__, |\__, |\___|_|  |_| |_|\__,_|\__,_|\__(_)
+             |___/ |___/
 ```
 
 ### Pass a container as argument
@@ -97,49 +93,46 @@ In addition to basic types, Dagger defines powerful core types, such as `Contain
 
 This means that *a function can receive containers as arguments*. To be clear: this is not a string referencing an image on a remote registry. It is the actual state of a container, managed by the Dagger Engine, and passed to a function's code as if it were just another variable. This feature, as far as we know, is unique to Dagger, and opens endless possibilities for assembling complex pipelines where container state flows from function to function - in just a few lines of code.
 
-This feature is most powerful when calling a function from your own code (see the section on [creating a module](./428201-custom-modules.mdx)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
+This feature is most powerful when calling a function from your own code (see the section on [creating a module](./428201-custom-function.mdx)). But you can also pass a container argument from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting container object as argument to the function.
 
 Try this with the `hello` function. In order to print giant letters, it dynamically executes the `figlet` utility in a container and returns the container's output. By default, it builds a container with `figlet` installed; but it also supports passing a custom container, with the `figletContainer` argument.
 
 Try calling `hello` with a custom container which has the `figlet` tool installed:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting bonjour --name daggernaut --giant --figlet-container index.docker.io/hairyhenderson/figlet
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjour --name=daggernaut --giant --figlet-container=index.docker.io/hairyhenderson/figlet
 ```
 
 You should see the image being pulled, then the following output:
 
 ```shell
-✔ dagger call hello [1.22s]
-┃  _                  _
-┃ | |__   ___  _ __  (_) ___  _   _ _ __
-┃ | '_ \ / _ \| '_ \ | |/ _ \| | | | '__|
-┃ | |_) | (_) | | | || | (_) | |_| | | _
-┃ |_.__/ \___/|_| |_|/ |\___/ \__,_|_|( )
-┃                  |__/               |/
-┃      _                                               _   _
-┃   __| | __ _  __ _  __ _  ___ _ __ _ __   __ _ _   _| |_| |
-┃  / _` |/ _` |/ _` |/ _` |/ _ \ '__| '_ \ / _` | | | | __| |
-┃ | (_| | (_| | (_| | (_| |  __/ |  | | | | (_| | |_| | |_|_|
-┃  \__,_|\__,_|\__, |\__, |\___|_|  |_| |_|\__,_|\__,_|\__(_)
-┃              |___/ |___/
-⧗ 3.20s ✔ 73 ∅ 9
+ _                  _
+| |__   ___  _ __  (_) ___  _   _ _ __
+| '_ \ / _ \| '_ \ | |/ _ \| | | | '__|
+| |_) | (_) | | | || | (_) | |_| | | _
+|_.__/ \___/|_| |_|/ |\___/ \__,_|_|( )
+                 |__/               |/
+     _                                               _   _
+  __| | __ _  __ _  __ _  ___ _ __ _ __   __ _ _   _| |_| |
+ / _` |/ _` |/ _` |/ _` |/ _ \ '__| '_ \ / _` | | | | __| |
+| (_| | (_| | (_| | (_| |  __/ |  | | | | (_| | |_| | |_|_|
+ \__,_|\__,_|\__, |\__, |\___|_|  |_| |_|\__,_|\__,_|\__(_)
+             |___/ |___/
 ```
 
 It worked! What happens if you pass a container that doesn't have the required tool installed?
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --giant --greeting bonjour --name daggernaut --figlet-container index.docker.io/alpine
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --giant --greeting=bonjour --name=daggernaut --figlet-container=index.docker.io/alpine
 ```
 
 You should see an error telling you that `figlet` could not be found:
 
 ```shell
-✘ dagger call hello ERROR [0.98s]
-[...]
-✘ stdout ERROR [0.13s]
-✘ exec figlet Hello, world! ERROR [0.11s]
-┃ exec: "figlet": executable file not found in $PATH
+...
+  ✘ Container.stdout: String! 0.7s
+    ✘ exec figlet bonjour, daggernaut! 0.3s
+    ┃ exec: "figlet": executable file not found in $PATH
 ```
 
 ### Pass a directory as argument
@@ -147,58 +140,56 @@ You should see an error telling you that `figlet` could not be found:
 Another example is the `Directory` type, representing a directory. To see how this works, use the following command:
 
 ```shell
-dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir .
+dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir=.
 ```
 
 This example uses a file utility module and calls its `Tree()` function. The `Tree()` function accepts a directory (here, the current working directory) as argument and returns a tree representation of that directory. An abbreviated example of the output is shown below:
 
 ```shell
-✔ dagger call tree [31.01s]
-┃ .
-┃ ├── README.md
-┃ ├── cli
-┃ │   └── git-build
-┃ │       ├── README.md
-┃ │       └── build.sh
-┃ └── sdk
-┃     ├── go
-┃     │   ├── aws-cdk
-┃     │   │   ├── README.md
+.
+├── README.md
+├── cli
+│   └── git-build
+│       ├── README.md
+│       └── build.sh
+└── sdk
+    ├── go
+    │   ├── aws-cdk
+    │   │   ├── README.md
 ...
-┃ 39 directories, 125 files
+39 directories, 125 files
 ```
 
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. For example, let's try listing the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir https://github.com/dagger/dagger#main:cmd/dagger
+dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger
 ```
 
 You should see the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
 
 ```shell
-✔ dagger call tree [1.15s]
-┃ .
-┃ ├── call.go
-┃ ├── cloud.go
-┃ ├── debug.go
-┃ ├── engine.go
-┃ ├── exec_nonunix.go
-┃ ├── exec_unix.go
-┃ ├── flags.go
-┃ ├── functions.go
-┃ ├── gen.go
-┃ ├── licenses.go
-┃ ├── listen.go
-┃ ├── log.go
-┃ ├── main.go
-┃ ├── module.go
-┃ ├── module_test.go
-┃ ├── query.go
-┃ ├── run.go
-┃ ├── session.go
-┃ ├── shell.go
-┃ └── version.go
-┃
-┃ 0 directories, 20 files
+.
+├── call.go
+├── cloud.go
+├── debug.go
+├── engine.go
+├── exec_nonunix.go
+├── exec_unix.go
+├── flags.go
+├── functions.go
+├── gen.go
+├── licenses.go
+├── listen.go
+├── log.go
+├── main.go
+├── module.go
+├── module_test.go
+├── query.go
+├── run.go
+├── session.go
+├── shell.go
+└── version.go
+
+0 directories, 20 files
 ```

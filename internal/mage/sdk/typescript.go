@@ -21,6 +21,13 @@ var _ SDK = TypeScript{}
 
 type TypeScript mg.Namespace
 
+type NodeVersion string
+
+const (
+	Maintenance NodeVersion = "18"
+	LTS         NodeVersion = "20"
+)
+
 // Lint lints the TypeScript SDK
 func (t TypeScript) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
@@ -92,14 +99,28 @@ func (t TypeScript) Test(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	_, err = nodeJsBase(c).
-		WithServiceBinding("dagger-engine", devEngine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"yarn", "test"}).
-		Sync(ctx)
-	return err
+	eg, gctx := errgroup.WithContext(ctx)
+
+	// Loop over the LTS and Maintenance versions and test them
+	for _, version := range []NodeVersion{LTS, Maintenance} {
+		version := version
+		c := c.Pipeline(string(version))
+		base := nodeJsBaseFromVersion(c, version)
+		cliBinary := cliBinary
+
+		eg.Go(func() error {
+			_, err := base.
+				WithServiceBinding("dagger-engine", devEngine).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+				WithMountedFile(cliBinPath, cliBinary).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+				WithExec([]string{"yarn", "test"}).
+				Sync(gctx)
+			return err
+		})
+
+	}
+	return eg.Wait()
 }
 
 // Generate re-generates the SDK API
@@ -195,6 +216,11 @@ func (t TypeScript) Bump(_ context.Context, version string) error {
 }
 
 func nodeJsBase(c *dagger.Client) *dagger.Container {
+	// Use the LTS version by default
+	return nodeJsBaseFromVersion(c, LTS)
+}
+
+func nodeJsBaseFromVersion(c *dagger.Client, nodeVersion NodeVersion) *dagger.Container {
 	appDir := "sdk/typescript"
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
@@ -202,9 +228,11 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 	// relative paths in eslint (for docs linting).
 	mountPath := fmt.Sprintf("/%s", appDir)
 
+	nodeVersionImage := fmt.Sprintf("node:%s-alpine", nodeVersion)
+
 	return c.Container().
 		// ⚠️  Keep this in sync with the engine version defined in package.json
-		From("node:16-alpine").
+		From(nodeVersionImage).
 		WithWorkdir(mountPath).
 		WithMountedCache("/usr/local/share/.cache/yarn", c.CacheVolume("yarn_cache")).
 		WithFile(fmt.Sprintf("%s/package.json", mountPath), src.File("package.json")).

@@ -16,5 +16,5 @@ jobs:
           version: "0.10.0"
           verb: call
           module: github.com/kpenfound/dagger-modules/golang@v0.1.5
-          args: build --project=. --args=./cmd/dagger
+          args: build --project=. --args=.
           cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}

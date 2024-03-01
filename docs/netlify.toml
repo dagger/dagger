@@ -764,7 +764,13 @@
   # redirect services guide to new URL
   from = "/757394/use-service-containers"
   to = "https://archive.docs.dagger.io/0.9/757394/use-services"
-  status = 302
+  status = 301
+
+[[redirects]]
+  # redirect quickstart custom function page to new URL
+  from = "/quickstart/428201/custom-modules"
+  to = "/quickstart/428201/custom-function"
+  status = 301
 # end: redirects for specific v0.9 pages
 
 # redirect to the playground's embed to maintain same origin
