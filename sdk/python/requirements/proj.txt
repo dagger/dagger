@@ -17,7 +17,7 @@ beartype==0.17.0
     # via -r requirements.in
 cattrs==23.2.3
     # via -r requirements.in
-certifi==2023.11.17
+certifi==2024.2.2
     # via
     #   httpcore
     #   httpx
