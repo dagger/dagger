@@ -10,7 +10,7 @@ class Example:
     async def build_and_publish(
         self, build_src: dagger.Directory, build_args: list[str]
     ) -> str:
-        """ Build and publish a project using a Wolfi container """
+        """Build and publish a project using a Wolfi container"""
         # retrieve a new Wolfi container
         ctr = (
             dag
