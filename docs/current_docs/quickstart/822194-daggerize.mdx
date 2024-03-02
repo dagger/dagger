@@ -140,7 +140,7 @@ Then, call the `BuildContainer()` function from the Go builder module to build t
 
 ```shell
 dagger -m golang call \
-  build-container --source=.--args="-C","./hello" \
+  build-container --source=. --args="-C","./hello" \
   publish --address=ttl.sh/my-hello-container-$RANDOM
 ```
 
