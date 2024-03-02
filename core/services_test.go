@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -28,8 +27,7 @@ func TestServicesStartHappy(t *testing.T) {
 		ClientID: "fake-client",
 	})
 
-	stubClient := new(buildkit.Client)
-	services := core.NewServices(stubClient)
+	services := core.NewServices()
 
 	svc1 := newStartable("fake-1")
 	svc2 := newStartable("fake-2")
@@ -63,8 +61,7 @@ func TestServicesStartHappyDifferentServers(t *testing.T) {
 
 	ctx := context.Background()
 
-	stubClient := new(buildkit.Client)
-	services := core.NewServices(stubClient)
+	services := core.NewServices()
 
 	svc := newStartable("fake")
 
@@ -104,8 +101,7 @@ func TestServicesStartSad(t *testing.T) {
 		ClientID: "fake-client",
 	})
 
-	stubClient := new(buildkit.Client)
-	services := core.NewServices(stubClient)
+	services := core.NewServices()
 
 	stub := newStartable("fake")
 
@@ -126,8 +122,7 @@ func TestServicesStartConcurrentHappy(t *testing.T) {
 		ClientID: "fake-client",
 	})
 
-	stubClient := new(buildkit.Client)
-	services := core.NewServices(stubClient)
+	services := core.NewServices()
 
 	stub := newStartable("fake")
 
@@ -173,8 +168,7 @@ func TestServicesStartConcurrentSad(t *testing.T) {
 		ClientID: "fake-client",
 	})
 
-	stubClient := new(buildkit.Client)
-	services := core.NewServices(stubClient)
+	services := core.NewServices()
 
 	stub := newStartable("fake")
 
@@ -229,8 +223,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 		ClientID: "fake-client",
 	})
 
-	stubClient := new(buildkit.Client)
-	services := core.NewServices(stubClient)
+	services := core.NewServices()
 
 	stub := newStartable("fake")
 

@@ -44,6 +44,7 @@ const (
 	entitlementsJobKey = "llb.entitlements"
 )
 
+// Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
 	Worker                bkworker.Worker
 	SessionManager        *bksession.Manager
@@ -62,24 +63,24 @@ type Opts struct {
 	MainClientCallerID string
 	DNSConfig          *oci.DNSConfig
 	Frontends          map[string]bkfrontend.Frontend
+
+	ExecMetadataMu *sync.Mutex
+	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
+	RefsMu         *sync.Mutex
+	refs           map[*ref]struct{}
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
 
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
-	Opts
+	*Opts
 	session     *bksession.Session
 	job         *bksolver.Job
 	llbBridge   bkfrontend.FrontendLLBBridge
 	llbExec     executor.Executor
 	bk2progrock BK2Progrock
 
-	clientMu              sync.RWMutex
-	clientIDToSecretToken map[string]string
-
-	refs         map[*ref]struct{}
-	refsMu       sync.Mutex
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
@@ -88,22 +89,28 @@ type Client struct {
 	closeCtx context.Context
 	cancel   context.CancelFunc
 	closeMu  sync.RWMutex
-
-	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
-	execMetadataMu sync.Mutex
 }
 
-func NewClient(ctx context.Context, opts Opts) (*Client, error) {
+func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	closeCtx, cancel := context.WithCancel(context.Background())
 	client := &Client{
-		Opts:                  opts,
-		clientIDToSecretToken: make(map[string]string),
-		refs:                  make(map[*ref]struct{}),
-		containers:            make(map[bkgw.Container]struct{}),
-		closeCtx:              closeCtx,
-		cancel:                cancel,
-		execMetadata:          make(map[digest.Digest]ContainerExecUncachedMetadata),
+		Opts:       opts,
+		containers: make(map[bkgw.Container]struct{}),
+		closeCtx:   closeCtx,
+		cancel:     cancel,
 	}
+
+	// initialize ref+metadata caches if needed
+	client.RefsMu.Lock()
+	if client.refs == nil {
+		client.refs = make(map[*ref]struct{})
+	}
+	client.RefsMu.Unlock()
+	client.ExecMetadataMu.Lock()
+	if client.execMetadata == nil {
+		client.execMetadata = make(map[digest.Digest]ContainerExecUncachedMetadata)
+	}
+	client.ExecMetadataMu.Unlock()
 
 	session, err := client.newSession(ctx)
 	if err != nil {
@@ -181,14 +188,14 @@ func (c *Client) Close() error {
 	c.job.Discard()
 	c.job.CloseProgress()
 
-	c.refsMu.Lock()
+	c.RefsMu.Lock()
 	for rf := range c.refs {
 		if rf != nil {
 			rf.resultProxy.Release(context.Background())
 		}
 	}
 	c.refs = nil
-	c.refsMu.Unlock()
+	c.RefsMu.Unlock()
 
 	c.containersMu.Lock()
 	var containerReleaseGroup errgroup.Group
@@ -272,7 +279,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			// it's uncached metadata to preserve the same vertex digest.
 			// This results in buildkit's solver de-duping the op, instead of
 			// the scheduler's edge merge.
-			c.execMetadataMu.Lock()
+			c.ExecMetadataMu.Lock()
 			execMeta, ok := c.execMetadata[*execOp.OpDigest]
 			if !ok {
 				execMeta = ContainerExecUncachedMetadata{
@@ -283,7 +290,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 				}
 				c.execMetadata[*execOp.OpDigest] = execMeta
 			}
-			c.execMetadataMu.Unlock()
+			c.ExecMetadataMu.Unlock()
 
 			var err error
 			execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
@@ -346,8 +353,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return nil, err
 	}
 
-	c.refsMu.Lock()
-	defer c.refsMu.Unlock()
+	c.RefsMu.Lock()
+	defer c.RefsMu.Unlock()
 	if res.Ref != nil {
 		c.refs[res.Ref] = struct{}{}
 	}
@@ -482,51 +489,20 @@ func (c *Client) WriteStatusesTo(ctx context.Context, recorder *progrock.Recorde
 	}()
 }
 
-func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) error {
-	c.clientMu.Lock()
-	defer c.clientMu.Unlock()
-	existingToken, ok := c.clientIDToSecretToken[clientID]
-	if ok {
-		if existingToken != secretToken {
-			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
-		}
-		return nil
-	}
-	c.clientIDToSecretToken[clientID] = secretToken
-	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
-	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
-	// Deleting it would make it easier to create race conditions around using the client's session
-	// before it is fully closed.
-	return nil
-}
-
-func (c *Client) VerifyClient(clientID, secretToken string) error {
-	c.clientMu.RLock()
-	defer c.clientMu.RUnlock()
-	existingToken, ok := c.clientIDToSecretToken[clientID]
-	if !ok {
-		return fmt.Errorf("client ID %q not registered", clientID)
-	}
-	if existingToken != secretToken {
-		return fmt.Errorf("client ID %q registered with different secret token", clientID)
-	}
-	return nil
-}
-
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
 // This is useful for constructing a result for upstream remote caching.
 func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
-	c.refsMu.Lock()
+	c.RefsMu.Lock()
 	mergeInputs := make([]llb.State, 0, len(c.refs))
 	for r := range c.refs {
 		state, err := r.ToState()
 		if err != nil {
-			c.refsMu.Unlock()
+			c.RefsMu.Unlock()
 			return nil, err
 		}
 		mergeInputs = append(mergeInputs, state)
 	}
-	c.refsMu.Unlock()
+	c.RefsMu.Unlock()
 	llbdef, err := llb.Merge(mergeInputs, llb.WithCustomName("combined session result")).Marshal(ctx)
 	if err != nil {
 		return nil, err

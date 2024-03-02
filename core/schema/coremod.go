@@ -17,7 +17,7 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	dag *dagql.Server
+	Dag *dagql.Server
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -72,7 +72,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 
 	case core.TypeDefKindObject:
-		_, ok := m.dag.ObjectType(typeDef.AsObject.Value.Name)
+		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}
@@ -97,7 +97,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.dag)
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.Dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
 	}
@@ -226,7 +226,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	if err := idp.Decode(id); err != nil {
 		return nil, err
 	}
-	val, err := obj.coreMod.dag.Load(ctx, &idp)
+	val, err := obj.coreMod.Dag.Load(ctx, &idp)
 	if err != nil {
 		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
 	}
