@@ -1044,7 +1044,7 @@ class Container(Type):
             If set, override the container's default terminal command and
             invoke these command arguments instead.
         experimental_privileged_nesting:
-            Provides dagger access to the executed command.
+            Provides Dagger access to the executed command.
             Do not use this option unless you trust the command being
             executed; the command being executed WILL BE GRANTED FULL ACCESS
             TO YOUR HOST FILESYSTEM.
@@ -1118,7 +1118,7 @@ class Container(Type):
         args:
             The args of the command.
         experimental_privileged_nesting:
-            Provides dagger access to the executed command.
+            Provides Dagger access to the executed command.
             Do not use this option unless you trust the command being
             executed; the command being executed WILL BE GRANTED FULL ACCESS
             TO YOUR HOST FILESYSTEM.
@@ -1265,7 +1265,7 @@ class Container(Type):
             Redirect the command's standard error to a file in the container
             (e.g., "/tmp/stderr").
         experimental_privileged_nesting:
-            Provides dagger access to the executed command.
+            Provides Dagger access to the executed command.
             Do not use this option unless you trust the command being
             executed; the command being executed WILL BE GRANTED FULL ACCESS
             TO YOUR HOST FILESYSTEM.

@@ -368,11 +368,21 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
-    public function terminal(?array $cmd = null): Terminal
+    public function terminal(
+        ?array $cmd = null,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+    ): Terminal
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
         return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -399,10 +409,20 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Set the default command to invoke for the container's terminal API.
      */
-    public function withDefaultTerminalCmd(array $args): Container
+    public function withDefaultTerminalCmd(
+        array $args,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+    ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDefaultTerminalCmd');
         $innerQueryBuilder->setArgument('args', $args);
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

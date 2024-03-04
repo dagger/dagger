@@ -294,7 +294,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("experimentalPrivilegedNesting",
-				`Provides dagger access to the executed command.`,
+				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
 				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
 				FILESYSTEM.`).
@@ -443,7 +443,7 @@ func (s *containerSchema) Install() {
 			Doc(`Set the default command to invoke for the container's terminal API.`).
 			ArgDoc("args", `The args of the command.`).
 			ArgDoc("experimentalPrivilegedNesting",
-				`Provides dagger access to the executed command.`,
+				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
 			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
 			FILESYSTEM.`).
@@ -458,7 +458,7 @@ func (s *containerSchema) Install() {
 			Doc(`Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
 			ArgDoc("experimentalPrivilegedNesting",
-				`Provides dagger access to the executed command.`,
+				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
 		the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
 		FILESYSTEM.`).
