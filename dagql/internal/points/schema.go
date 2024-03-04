@@ -26,8 +26,8 @@ func (*Point) TypeDescription() string {
 }
 
 type Line struct {
-	From *Point
-	To   *Point
+	From *Point `field:"true"`
+	To   *Point `field:"true"`
 }
 
 func (*Line) Type() *ast.Type {

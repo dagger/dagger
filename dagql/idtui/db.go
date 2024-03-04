@@ -48,7 +48,7 @@ func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 	for _, meta := range status.Metas {
 		if meta.Name == "id" {
 			var id idproto.ID
-			if err := meta.Data.UnmarshalTo(&id); err != nil {
+			if err := id.FromAnyPB(meta.Data); err != nil {
 				return fmt.Errorf("unmarshal payload: %w", err)
 			}
 			db.IDs[meta.Vertex] = &id
@@ -146,7 +146,7 @@ func (db *DB) Step(dig string) (*Step, bool) {
 	}
 	outID := db.IDs[dig]
 	switch {
-	case outID != nil && outID.Field == "id":
+	case outID != nil && outID.Field() == "id":
 		// ignore 'id' field selections, they're everywhere and not interesting
 		return nil, false
 	case !step.HasStarted():
@@ -164,8 +164,8 @@ func (db *DB) Step(dig string) (*Step, bool) {
 			}
 		}
 	}
-	if outID != nil && outID.Base != nil {
-		parentDig, err := outID.Base.Digest()
+	if outID != nil && outID.Base() != nil {
+		parentDig, err := outID.Base().Digest()
 		if err != nil {
 			return nil, false
 		}
@@ -236,20 +236,22 @@ func (*DB) Close() error {
 }
 
 func litSize(lit *idproto.Literal) int {
-	switch x := lit.Value.(type) {
+	switch x := lit.Value().(type) {
 	case *idproto.Literal_Id:
-		return idSize(x.Id)
+		return idSize(x.Value())
 	case *idproto.Literal_List:
 		size := 0
-		for _, lit := range x.List.Values {
-			size += litSize(lit)
-		}
+		x.Range(func(_ int, lit idproto.Literal) error {
+			size += litSize(&lit)
+			return nil
+		})
 		return size
 	case *idproto.Literal_Object:
 		size := 0
-		for _, field := range x.Object.Values {
-			size += litSize(field.Value)
-		}
+		x.Range(func(_ int, _ string, value idproto.Literal) error {
+			size += litSize(&value)
+			return nil
+		})
 		return size
 	}
 	return 1
@@ -257,11 +259,11 @@ func litSize(lit *idproto.Literal) int {
 
 func idSize(id *idproto.ID) int {
 	size := 0
-	for id := id; id != nil; id = id.Base {
+	for id := id; id != nil; id = id.Base() {
 		size++
-		size += len(id.Args)
-		for _, arg := range id.Args {
-			size += litSize(arg.Value)
+		size += len(id.Args())
+		for _, arg := range id.Args() {
+			size += litSize(arg.Value())
 		}
 	}
 	return size

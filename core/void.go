@@ -36,11 +36,7 @@ func (p Void) Decoder() dagql.InputDecoder {
 }
 
 func (p Void) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Null{
-			Null: true,
-		},
-	}
+	return idproto.NewLiteralNull()
 }
 
 var _ dagql.ScalarType = Void{}

@@ -51,6 +51,14 @@ func req(t *testing.T, gql *client.Client, query string, res any) {
 	assert.NilError(t, err)
 }
 
+// TODO:?
+func reqRes[T any](t *testing.T, gql *client.Client, query string, res T) T {
+	t.Helper()
+	err := gql.Post(query, &res)
+	assert.NilError(t, err)
+	return res
+}
+
 func TestBasic(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
@@ -92,27 +100,34 @@ func TestBasic(t *testing.T) {
 	}`, &res)
 
 	pointT := (&points.Point{}).Type()
-	expectedID := idproto.New().
+	expectedID, err := idproto.New().
 		Append(
 			pointT,
 			"point",
-			&idproto.Argument{
-				Name:  "x",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-			},
-			&idproto.Argument{
-				Name:  "y",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-			},
-		).
-		Append(pointT, "shiftLeft")
+			nil,
+			false,
+			0,
+			idproto.NewArgument(
+				"x",
+				idproto.NewLiteralInt(6),
+			),
+			idproto.NewArgument(
+				"y",
+				idproto.NewLiteralInt(7),
+			),
+		)
+	assert.NilError(t, err)
+	expectedID, err = expectedID.Append(pointT, "shiftLeft", nil, false, 0)
+	assert.NilError(t, err)
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
 	assert.Equal(t, 7, res.Point.Y)
 	assert.Equal(t, 5, res.Point.ShiftLeft.Ecks)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Why)
+
 	assert.Equal(t, expectedEnc, res.Point.ShiftLeft.ID)
+
 	assert.Assert(t, cmp.Len(res.Point.ShiftLeft.Neighbors, 4))
 	assert.Equal(t, 4, res.Point.ShiftLeft.Neighbors[0].X)
 	assert.Equal(t, 7, res.Point.ShiftLeft.Neighbors[0].Y)
@@ -557,20 +572,25 @@ func TestIDsReflectQuery(t *testing.T) {
 	}`, &res)
 
 	pointT := (&points.Point{}).Type()
-	expectedID := idproto.New().
+	expectedID, err := idproto.New().
 		Append(
 			pointT,
 			"point",
-			&idproto.Argument{
-				Name:  "x",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-			},
-			&idproto.Argument{
-				Name:  "y",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-			},
-		).
-		Append(pointT, "shiftLeft")
+			nil,
+			false,
+			0,
+			idproto.NewArgument(
+				"x",
+				idproto.NewLiteralInt(6),
+			),
+			idproto.NewArgument(
+				"y",
+				idproto.NewLiteralInt(7),
+			),
+		)
+	assert.NilError(t, err)
+	expectedID, err = expectedID.Append(pointT, "shiftLeft", nil, false, 0)
+	assert.NilError(t, err)
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -657,61 +677,79 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 	}`, &res)
 
 	pointT := (&points.Point{}).Type()
-	expectedID := idproto.New().
+	expectedID, err := idproto.New().
 		Append(
 			pointT,
 			"point",
-			&idproto.Argument{
-				Name:  "x",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-			},
-			&idproto.Argument{
-				Name:  "y",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-			},
-		).
-		Append(pointT, "loginTag")
-	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
+			nil,
+			false,
+			0,
+			idproto.NewArgument(
+				"x",
+				idproto.NewLiteralInt(6),
+			),
+			idproto.NewArgument(
+				"y",
+				idproto.NewLiteralInt(7),
+			),
+		)
+	assert.NilError(t, err)
+	expectedID, err = expectedID.Append(pointT, "loginTag", nil, false, 0)
 	assert.NilError(t, err)
 
+	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
+	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
-	expectedID = idproto.New().
+
+	expectedID, err = idproto.New().
 		Append(
 			pointT,
 			"point",
-			&idproto.Argument{
-				Name:  "x",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-			},
-			&idproto.Argument{
-				Name:  "y",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-			},
-		).
-		Append(pointT, "loginChain")
+			nil,
+			false,
+			0,
+			idproto.NewArgument(
+				"x",
+				idproto.NewLiteralInt(6),
+			),
+			idproto.NewArgument(
+				"y",
+				idproto.NewLiteralInt(7),
+			),
+		)
+	assert.NilError(t, err)
+	expectedID, err = expectedID.Append(pointT, "loginChain", nil, false, 0)
+	assert.NilError(t, err)
+
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
-	expectedID = idproto.New().
+	expectedID, err = idproto.New().
 		Append(
 			pointT,
 			"point",
-			&idproto.Argument{
-				Name:  "x",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 6}},
-			},
-			&idproto.Argument{
-				Name:  "y",
-				Value: &idproto.Literal{Value: &idproto.Literal_Int{Int: 7}},
-			},
-		).
-		Append(pointT, "loginTagFalse",
-			&idproto.Argument{
-				Name:  "password",
-				Value: &idproto.Literal{Value: &idproto.Literal_String_{String_: "hunter2"}},
-			},
+			nil,
+			false,
+			0,
+			idproto.NewArgument(
+				"x",
+				idproto.NewLiteralInt(6),
+			),
+			idproto.NewArgument(
+				"y",
+				idproto.NewLiteralInt(7),
+			),
 		)
+	assert.NilError(t, err)
+	expectedID, err = expectedID.Append(pointT, "loginTagFalse", nil, false, 0,
+		idproto.NewArgument(
+			"password",
+			idproto.NewLiteralString("hunter2"),
+		),
+	)
+	assert.NilError(t, err)
+
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTagFalse.ID, expectedEnc)
@@ -837,7 +875,6 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 			y
 		}
 	}`, &loaded)
-
 	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
 	assert.Equal(t, loaded.LoadPointFromID.X, 6)
 	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
@@ -1635,6 +1672,124 @@ func TestIntrospection(t *testing.T) {
 	assert.NilError(t, enc.Encode(res))
 
 	golden.Assert(t, buf.String(), "introspection.json")
+}
+
+func TestIDFormat(t *testing.T) {
+	ctx := context.Background()
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	var pointAInst dagql.Instance[*points.Point]
+	assert.NilError(t, srv.Select(ctx, srv.Root(), &pointAInst,
+		dagql.Selector{
+			Field: "point",
+			Args: []dagql.NamedInput{
+				{Name: "x", Value: dagql.Int(2)},
+				{Name: "y", Value: dagql.Int(2)},
+			},
+		},
+	))
+	pointADgst, err := pointAInst.ID().Digest()
+	assert.NilError(t, err)
+
+	var pointBInst dagql.Instance[*points.Point]
+	assert.NilError(t, srv.Select(ctx, srv.Root(), &pointBInst,
+		dagql.Selector{
+			Field: "point",
+			Args: []dagql.NamedInput{
+				{Name: "x", Value: dagql.Int(1)},
+				{Name: "y", Value: dagql.Int(1)},
+			},
+		},
+	))
+	pointBDgst, err := pointBInst.ID().Digest()
+	assert.NilError(t, err)
+
+	var lineAInst dagql.Instance[*points.Line]
+	assert.NilError(t, srv.Select(ctx, pointBInst, &lineAInst,
+		dagql.Selector{
+			Field: "line",
+			Args: []dagql.NamedInput{
+				{Name: "to", Value: dagql.NewID[*points.Point](pointAInst.ID())},
+			},
+		},
+	))
+	lineADgst, err := lineAInst.ID().Digest()
+	assert.NilError(t, err)
+
+	var pointBFromInst dagql.Instance[*points.Point]
+	assert.NilError(t, srv.Select(ctx, lineAInst, &pointBFromInst,
+		dagql.Selector{Field: "from"},
+	))
+	pointBFromDgst, err := pointBFromInst.ID().Digest()
+	assert.NilError(t, err)
+
+	var lineBInst dagql.Instance[*points.Line]
+	assert.NilError(t, srv.Select(ctx, pointAInst, &lineBInst,
+		dagql.Selector{
+			Field: "line",
+			Args: []dagql.NamedInput{
+				{Name: "to", Value: dagql.NewID[*points.Point](pointBFromInst.ID())},
+			},
+		},
+	))
+	lineBDgst, err := lineBInst.ID().Digest()
+	assert.NilError(t, err)
+
+	var pointAFromInst dagql.Instance[*points.Point]
+	assert.NilError(t, srv.Select(ctx, lineBInst, &pointAFromInst,
+		dagql.Selector{Field: "from"},
+	))
+	pointAFromDgst, err := pointAFromInst.ID().Digest()
+	assert.NilError(t, err)
+
+	rawID, err := pointAFromInst.ID().ToProto()
+	assert.NilError(t, err)
+
+	assert.Equal(t, len(rawID.IdsByDigest), 6)
+
+	assert.Equal(t, rawID.TopLevelIDDigest, pointAFromDgst.String())
+	pointAFromIDFields, ok := rawID.IdsByDigest[rawID.TopLevelIDDigest]
+	assert.Check(t, ok)
+	assert.Equal(t, pointAFromIDFields.Field, "from")
+	assert.Equal(t, len(pointAFromIDFields.Args), 0)
+
+	assert.Equal(t, pointAFromIDFields.BaseIDDigest, lineBDgst.String())
+	lineBIDFields, ok := rawID.IdsByDigest[pointAFromIDFields.BaseIDDigest]
+	assert.Check(t, ok)
+	assert.Equal(t, lineBIDFields.Field, "line")
+	assert.Equal(t, len(lineBIDFields.Args), 1)
+
+	assert.Equal(t, lineBIDFields.BaseIDDigest, pointADgst.String())
+	pointAIDFields, ok := rawID.IdsByDigest[lineBIDFields.BaseIDDigest]
+	assert.Check(t, ok)
+	assert.Equal(t, pointAIDFields.Field, "point")
+	assert.Equal(t, len(pointAIDFields.Args), 2)
+	assert.Equal(t, pointAIDFields.BaseIDDigest, "")
+
+	lineBArg := lineBIDFields.Args[0]
+	assert.Equal(t, lineBArg.Name, "to")
+	assert.Equal(t, lineBArg.Value.GetIdDigest(), pointBFromDgst.String())
+	pointBFromIDFields, ok := rawID.IdsByDigest[lineBArg.Value.GetIdDigest()]
+	assert.Check(t, ok)
+	assert.Equal(t, pointBFromIDFields.Field, "from")
+	assert.Equal(t, len(pointBFromIDFields.Args), 0)
+
+	assert.Equal(t, pointBFromIDFields.BaseIDDigest, lineADgst.String())
+	lineAIDFields, ok := rawID.IdsByDigest[pointBFromIDFields.BaseIDDigest]
+	assert.Check(t, ok)
+	assert.Equal(t, lineAIDFields.Field, "line")
+	assert.Equal(t, len(lineAIDFields.Args), 1)
+
+	assert.Equal(t, lineAIDFields.BaseIDDigest, pointBDgst.String())
+	pointBIDFields, ok := rawID.IdsByDigest[lineAIDFields.BaseIDDigest]
+	assert.Check(t, ok)
+	assert.Equal(t, pointBIDFields.Field, "point")
+	assert.Equal(t, len(pointBIDFields.Args), 2)
+
+	lineAArg := lineAIDFields.Args[0]
+	assert.Equal(t, lineAArg.Name, "to")
+	assert.Equal(t, lineAArg.Value.GetIdDigest(), pointADgst.String())
 }
 
 func eqIDs(t *testing.T, actual, expected string) {

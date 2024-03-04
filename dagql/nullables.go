@@ -72,11 +72,7 @@ func (o Optional[I]) Decoder() InputDecoder {
 
 func (o Optional[I]) ToLiteral() *idproto.Literal {
 	if !o.Valid {
-		return &idproto.Literal{
-			Value: &idproto.Literal_Null{
-				Null: true,
-			},
-		}
+		return idproto.NewLiteralNull()
 	}
 	return o.Value.ToLiteral()
 }
@@ -144,11 +140,7 @@ func (o DynamicOptional) Decoder() InputDecoder {
 
 func (o DynamicOptional) ToLiteral() *idproto.Literal {
 	if !o.Valid {
-		return &idproto.Literal{
-			Value: &idproto.Literal_Null{
-				Null: true,
-			},
-		}
+		return idproto.NewLiteralNull()
 	}
 	return o.Value.ToLiteral()
 }

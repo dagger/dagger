@@ -179,11 +179,7 @@ func (i Int) Int64() int64 {
 }
 
 func (i Int) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Int{
-			Int: i.Int64(),
-		},
-	}
+	return idproto.NewLiteralInt(i.Int64())
 }
 
 func (Int) Type() *ast.Type {
@@ -270,11 +266,7 @@ func (Float) Decoder() InputDecoder {
 }
 
 func (f Float) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Float{
-			Float: f.Float64(),
-		},
-	}
+	return idproto.NewLiteralFloat(f.Float64())
 }
 
 func (f Float) Float64() float64 {
@@ -367,11 +359,7 @@ func (Boolean) Decoder() InputDecoder {
 }
 
 func (b Boolean) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Bool{
-			Bool: b.Bool(),
-		},
-	}
+	return idproto.NewLiteralBool(b.Bool())
 }
 
 func (b Boolean) Bool() bool {
@@ -450,11 +438,7 @@ func (String) Decoder() InputDecoder {
 }
 
 func (s String) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_String_{
-			String_: s.String(),
-		},
-	}
+	return idproto.NewLiteralString(string(s))
 }
 
 func (s String) MarshalJSON() ([]byte, error) {
@@ -594,11 +578,7 @@ func (i ID[T]) Decoder() InputDecoder {
 }
 
 func (i ID[T]) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Id{
-			Id: i.id,
-		},
-	}
+	return idproto.NewLiteralID(i.id)
 }
 
 func (i ID[T]) Encode() (string, error) {
@@ -618,11 +598,11 @@ func (i *ID[T]) Decode(str string) error {
 	if err := idp.Decode(str); err != nil {
 		return err
 	}
-	if idp.Type == nil {
+	if idp.Type() == nil {
 		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
 	}
-	if idp.Type.NamedType != expectedName {
-		return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type.ToAST())
+	if idp.Type().NamedType != expectedName {
+		return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type().ToAST())
 	}
 	i.id = &idp
 	return nil
@@ -739,15 +719,11 @@ func (a ArrayInput[I]) DecodeInput(val any) (Input, error) {
 }
 
 func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
-	list := &idproto.List{}
+	lits := make([]*idproto.Literal, 0, len(i))
 	for _, elem := range i {
-		list.Values = append(list.Values, elem.ToLiteral())
+		lits = append(lits, elem.ToLiteral())
 	}
-	return &idproto.Literal{
-		Value: &idproto.Literal_List{
-			List: list,
-		},
-	}
+	return idproto.NewLiteralList(lits...)
 }
 
 var _ Setter = ArrayInput[Input]{}
@@ -879,11 +855,7 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 }
 
 func (e *EnumValues[T]) Literal(val T) *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Enum{
-			Enum: string(val),
-		},
-	}
+	return idproto.NewLiteralEnum(string(val))
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {

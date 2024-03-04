@@ -202,8 +202,8 @@ func (s *Server) installObjectLocked(class ObjectType) {
 					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
 				}
 				id := idable.ID()
-				if id.Type.ToAST().NamedType != class.TypeName() {
-					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type.ToAST().NamedType)
+				if id.Type().ToAST().NamedType != class.TypeName() {
+					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
 				}
 				res, err := s.Load(ctx, idable.ID())
 				if err != nil {
@@ -426,25 +426,25 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	var base Object
 	var err error
-	if id.Base != nil {
-		base, err = s.Load(ctx, id.Base)
+	if id.Base() != nil {
+		base, err = s.Load(ctx, id.Base())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load base: %w", err)
 		}
 	} else {
 		base = s.root
 	}
 	astField := &ast.Field{
-		Name: id.Field,
+		Name: id.Field(),
 	}
 	vars := map[string]any{}
-	for _, arg := range id.Args {
-		vars[arg.Name] = arg.Value.ToInput()
+	for _, arg := range id.Args() {
+		vars[arg.Name()] = arg.Value().ToInput()
 		astField.Arguments = append(astField.Arguments, &ast.Argument{
-			Name: arg.Name,
+			Name: arg.Name(),
 			Value: &ast.Value{
 				Kind: ast.Variable,
-				Raw:  arg.Name,
+				Raw:  arg.Name(),
 			},
 		})
 	}
@@ -452,7 +452,7 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse field %q: %w", astField.Name, err)
 	}
-	sel.Nth = int(id.Nth)
+	sel.Nth = int(id.Nth())
 	res, id, err := s.cachedSelect(ctx, base, sel)
 	if err != nil {
 		return nil, err
@@ -505,8 +505,10 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 							continue
 						}
 					}
-					nthID := id.Clone()
-					nthID.SelectNth(nth)
+					nthID, err := id.SelectNth(nth)
+					if err != nil {
+						return err
+					}
 					obj, err := s.toSelectable(nthID, val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
@@ -575,7 +577,7 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 		return nil, nil, err
 	}
 	ctx = idToContext(ctx, chainedID)
-	dig, err := chainedID.Canonical().Digest()
+	dig, err := chainedID.Digest()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -602,12 +604,12 @@ func idToPath(id *idproto.ID) ast.Path {
 	if id == nil { // Query
 		return path
 	}
-	if id.Base != nil {
-		path = idToPath(id.Base)
+	if id.Base() != nil {
+		path = idToPath(id.Base())
 	}
-	path = append(path, ast.PathName(id.Field))
-	if id.Nth != 0 {
-		path = append(path, ast.PathIndex(id.Nth-1))
+	path = append(path, ast.PathName(id.Field()))
+	if id.Nth() != 0 {
+		path = append(path, ast.PathIndex(id.Nth()-1))
 	}
 	return path
 }
@@ -680,8 +682,10 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 			if len(sel.Subselections) == 0 {
 				results = append(results, val)
 			} else {
-				nthID := chainedID.Clone()
-				nthID.SelectNth(nth)
+				nthID, err := chainedID.SelectNth(nth)
+				if err != nil {
+					return nil, err
+				}
 				node, err := s.toSelectable(nthID, val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
@@ -823,26 +827,28 @@ func (sel Selector) AppendTo(id *idproto.ID, spec FieldSpec) *idproto.ID {
 		if arg, found := spec.Args.Lookup(arg.Name); found && arg.Sensitive {
 			continue
 		}
-		idArgs = append(idArgs, &idproto.Argument{
-			Name:  arg.Name,
-			Value: arg.Value.ToLiteral(),
-		})
+		idArgs = append(idArgs, idproto.NewArgument(
+			arg.Name,
+			arg.Value.ToLiteral(),
+		))
 	}
 	// TODO: it's better DX if it matches schema order
 	sort.Slice(idArgs, func(i, j int) bool {
-		return idArgs[i].Name < idArgs[j].Name
+		return idArgs[i].Name() < idArgs[j].Name()
 	})
-	appended := id.Append(
+	if sel.Nth != 0 {
+		astType = astType.Elem
+	}
+	appended, err := id.Append(
 		astType,
 		sel.Field,
+		spec.Module,
+		tainted,
+		sel.Nth,
 		idArgs...,
 	)
-	appended.Module = spec.Module
-	if appended.IsTainted() != tainted {
-		appended.SetTainted(tainted)
-	}
-	if sel.Nth != 0 {
-		appended.SelectNth(sel.Nth)
+	if err != nil {
+		panic(fmt.Errorf("append: %w", err))
 	}
 	return appended
 }
@@ -967,13 +973,7 @@ func (input InputObject[T]) ToLiteral() *idproto.Literal {
 	if err != nil {
 		panic(fmt.Errorf("collectLiteralArgs: %w", err))
 	}
-	return &idproto.Literal{
-		Value: &idproto.Literal_Object{
-			Object: &idproto.Object{
-				Values: args,
-			},
-		},
-	}
+	return idproto.NewLiteralObject(args...)
 }
 
 func collectLiteralArgs(obj any) ([]*idproto.Argument, error) {
@@ -1006,10 +1006,10 @@ func collectLiteralArgs(obj any) ([]*idproto.Argument, error) {
 		if err != nil {
 			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
 		}
-		args = append(args, &idproto.Argument{
-			Name:  name,
-			Value: input.ToLiteral(),
-		})
+		args = append(args, idproto.NewArgument(
+			name,
+			input.ToLiteral(),
+		))
 	}
 	return args, nil
 }

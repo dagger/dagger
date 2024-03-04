@@ -47,11 +47,7 @@ func (p Platform) Decoder() dagql.InputDecoder {
 }
 
 func (p Platform) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_String_{
-			String_: platforms.Format(specs.Platform(p)),
-		},
-	}
+	return idproto.NewLiteralString(platforms.Format(specs.Platform(p)))
 }
 
 var _ dagql.ScalarType = Platform{}

@@ -115,11 +115,7 @@ func (mod *Module) IDModule() *idproto.Module {
 		// propagating error
 		panic(err)
 	}
-	return &idproto.Module{
-		Id:   mod.InstanceID,
-		Name: mod.Name(),
-		Ref:  ref,
-	}
+	return idproto.NewModule(mod.InstanceID, mod.Name(), ref)
 }
 
 func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Module], newID *idproto.ID) (*Module, error) {

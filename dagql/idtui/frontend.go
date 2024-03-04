@@ -90,7 +90,6 @@ type zoomState struct {
 func New() *Frontend {
 	logs := NewVterm()
 	profile := ui.ColorProfile()
-	idproto.EnableDigestCache()
 	return &Frontend{
 		db: NewDB(),
 
@@ -632,8 +631,8 @@ func (fe *Frontend) View() string {
 
 // DumpID is exposed for troubleshooting.
 func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
-	if id.Base != nil {
-		if err := fe.DumpID(out, id.Base); err != nil {
+	if id.Base() != nil {
+		if err := fe.DumpID(out, id.Base()); err != nil {
 			return err
 		}
 	}
@@ -691,9 +690,9 @@ const (
 )
 
 func (fe *Frontend) renderIDBase(out *termenv.Output, id *idproto.ID) error {
-	typeName := id.Type.ToAST().Name()
+	typeName := id.Type().ToAST().Name()
 	parent := out.String(typeName)
-	if id.Module != nil {
+	if id.Module() != nil {
 		parent = parent.Foreground(moduleColor)
 	}
 	fmt.Fprint(out, parent.String())
@@ -709,20 +708,20 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 		fe.renderStatus(out, vtx)
 	}
 
-	if id.Base != nil {
-		if err := fe.renderIDBase(out, id.Base); err != nil {
+	if id.Base() != nil {
+		if err := fe.renderIDBase(out, id.Base()); err != nil {
 			return err
 		}
 		fmt.Fprint(out, ".")
 	}
 
-	fmt.Fprint(out, out.String(id.Field).Bold())
+	fmt.Fprint(out, out.String(id.Field()).Bold())
 
-	if len(id.Args) > 0 {
+	if len(id.Args()) > 0 {
 		fmt.Fprint(out, "(")
 		var needIndent bool
-		for _, arg := range id.Args {
-			if _, ok := arg.Value.ToInput().(*idproto.ID); ok {
+		for _, arg := range id.Args() {
+			if _, ok := arg.Value().ToInput().(*idproto.ID); ok {
 				needIndent = true
 				break
 			}
@@ -731,27 +730,27 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 			fmt.Fprintln(out)
 			depth++
 			depth++
-			for _, arg := range id.Args {
+			for _, arg := range id.Args() {
 				indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
-				val := arg.Value.GetValue()
+				val := arg.Value().Value()
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
 				case *idproto.Literal_Id:
-					argVertexID, err := x.Id.Digest()
+					argVertexID, err := x.Value().Digest()
 					if err != nil {
 						return err
 					}
 					argVtx := fe.db.Vertices[argVertexID.String()]
-					base := x.Id
-					if baseStep, ok := fe.db.HighLevelStep(x.Id); ok {
+					base := x.Value()
+					if baseStep, ok := fe.db.HighLevelStep(x.Value()); ok {
 						base = baseStep.ID()
 					}
 					if err := fe.renderID(out, argVtx, base, depth-1, true); err != nil {
 						return err
 					}
 				default:
-					fe.renderLiteral(out, arg.Value)
+					fe.renderLiteral(out, arg.Value())
 					fmt.Fprintln(out)
 				}
 			}
@@ -759,18 +758,18 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 			indent(out, depth)
 			depth-- //nolint:ineffassign
 		} else {
-			for i, arg := range id.Args {
+			for i, arg := range id.Args() {
 				if i > 0 {
 					fmt.Fprint(out, ", ")
 				}
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
-				fe.renderLiteral(out, arg.Value)
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name())
+				fe.renderLiteral(out, arg.Value())
 			}
 		}
 		fmt.Fprint(out, ")")
 	}
 
-	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
+	typeStr := out.String(": " + id.Type().ToAST().String()).Faint()
 	fmt.Fprint(out, typeStr)
 
 	if vtx != nil {
@@ -794,7 +793,7 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 
 func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 	var color termenv.Color
-	switch val := lit.GetValue().(type) {
+	switch val := lit.Value().(type) {
 	case *idproto.Literal_Bool:
 		color = termenv.ANSIRed
 	case *idproto.Literal_Int:
@@ -803,8 +802,8 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 		color = termenv.ANSIRed
 	case *idproto.Literal_String_:
 		color = termenv.ANSIYellow
-		if fe.window.Width != -1 && len(val.String_) > fe.window.Width {
-			display := string(digest.FromString(val.String_))
+		if fe.window.Width != -1 && len(val.Value()) > fe.window.Width {
+			display := string(digest.FromString(val.Value()))
 			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(color))
 			return
 		}
@@ -816,23 +815,25 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 		color = termenv.ANSIBrightBlack
 	case *idproto.Literal_List:
 		fmt.Fprint(out, "[")
-		for i, item := range lit.GetList().Values {
+		val.Range(func(i int, item idproto.Literal) error {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
-			fe.renderLiteral(out, item)
-		}
+			fe.renderLiteral(out, &item)
+			return nil
+		})
 		fmt.Fprint(out, "]")
 		return
 	case *idproto.Literal_Object:
 		fmt.Fprint(out, "{")
-		for i, item := range lit.GetObject().Values {
+		val.Range(func(i int, name string, value idproto.Literal) error {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
-			fmt.Fprintf(out, "%s: ", item.GetName())
-			fe.renderLiteral(out, item.Value)
-		}
+			fmt.Fprintf(out, "%s: ", name)
+			fe.renderLiteral(out, &value)
+			return nil
+		})
 		fmt.Fprint(out, "}")
 		return
 	}

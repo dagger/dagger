@@ -246,11 +246,7 @@ func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 var _ dagql.Input = DynamicID{}
 
 func (d DynamicID) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Id{
-			Id: d.id,
-		},
-	}
+	return idproto.NewLiteralID(d.id)
 }
 
 func (d DynamicID) Type() *ast.Type {

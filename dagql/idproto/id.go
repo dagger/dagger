@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	sync "sync"
+	"sync"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/zeebo/xxh3"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func New() *ID {
@@ -16,11 +18,29 @@ func New() *ID {
 	return nil
 }
 
+type ID struct {
+	// TODO: doc why this has to be like it is
+	*idState
+}
+
+type idState struct {
+	raw *RawID_Fields
+
+	// TODO: doc
+	base   *ID
+	args   []*Argument
+	module *Module
+
+	// TODO: doc
+	mutated  bool
+	digestMu sync.Mutex
+}
+
 func (id *ID) Inputs() ([]digest.Digest, error) {
 	seen := map[digest.Digest]struct{}{}
 	var inputs []digest.Digest
-	for _, arg := range id.Args {
-		ins, err := arg.Value.Inputs()
+	for _, arg := range id.args {
+		ins, err := arg.value.Inputs()
 		if err != nil {
 			return nil, err
 		}
@@ -35,54 +55,21 @@ func (id *ID) Inputs() ([]digest.Digest, error) {
 	return inputs, nil
 }
 
-func (lit *Literal) Inputs() ([]digest.Digest, error) {
-	switch x := lit.Value.(type) {
-	case *Literal_Id:
-		dig, err := x.Id.Digest()
-		if err != nil {
-			return nil, err
-		}
-		return []digest.Digest{dig}, nil
-	case *Literal_List:
-		var inputs []digest.Digest
-		for _, v := range x.List.Values {
-			ins, err := v.Inputs()
-			if err != nil {
-				return nil, err
-			}
-			inputs = append(inputs, ins...)
-		}
-		return inputs, nil
-	case *Literal_Object:
-		var inputs []digest.Digest
-		for _, v := range x.Object.Values {
-			ins, err := v.Value.Inputs()
-			if err != nil {
-				return nil, err
-			}
-			inputs = append(inputs, ins...)
-		}
-		return inputs, nil
-	default:
-		return nil, nil
-	}
-}
-
 func (id *ID) Modules() []*Module {
 	allMods := []*Module{}
 	for id != nil {
-		if id.Module != nil {
-			allMods = append(allMods, id.Module)
+		if id.module != nil {
+			allMods = append(allMods, id.module)
 		}
-		for _, arg := range id.Args {
-			allMods = append(allMods, arg.Value.Modules()...)
+		for _, arg := range id.args {
+			allMods = append(allMods, arg.value.Modules()...)
 		}
-		id = id.Base
+		id = id.base
 	}
 	seen := map[digest.Digest]struct{}{}
 	deduped := []*Module{}
 	for _, mod := range allMods {
-		dig, err := mod.Id.Digest()
+		dig, err := mod.id.Digest()
 		if err != nil {
 			panic(err)
 		}
@@ -97,8 +84,8 @@ func (id *ID) Modules() []*Module {
 
 func (id *ID) Path() string {
 	buf := new(bytes.Buffer)
-	if id.Base != nil {
-		fmt.Fprintf(buf, "%s.", id.Base.Path())
+	if id.base != nil {
+		fmt.Fprintf(buf, "%s.", id.base.Path())
 	}
 	fmt.Fprint(buf, id.DisplaySelf())
 	return buf.String()
@@ -106,160 +93,378 @@ func (id *ID) Path() string {
 
 func (id *ID) DisplaySelf() string {
 	buf := new(bytes.Buffer)
-	fmt.Fprintf(buf, "%s", id.Field)
-	for ai, arg := range id.Args {
+	fmt.Fprintf(buf, "%s", id.raw.Field)
+	for ai, arg := range id.args {
 		if ai == 0 {
 			fmt.Fprintf(buf, "(")
 		} else {
 			fmt.Fprintf(buf, ", ")
 		}
-		fmt.Fprintf(buf, "%s: %s", arg.Name, arg.Value.Display())
-		if ai == len(id.Args)-1 {
+		fmt.Fprintf(buf, "%s: %s", arg.raw.Name, arg.value.Display())
+		if ai == len(id.args)-1 {
 			fmt.Fprintf(buf, ")")
 		}
 	}
-	if id.Nth != 0 {
-		fmt.Fprintf(buf, "#%d", id.Nth)
+	if id.raw.Nth != 0 {
+		fmt.Fprintf(buf, "#%d", id.raw.Nth)
 	}
 	return buf.String()
 }
 
 func (id *ID) Display() string {
-	return fmt.Sprintf("%s: %s", id.Path(), id.Type.ToAST())
+	return fmt.Sprintf("%s: %s", id.Path(), id.raw.Type.ToAST())
 }
 
-func (id *ID) WithNth(i int) *ID {
-	cp := id.Clone()
-	cp.Nth = int64(i)
-	return cp
+func (id *ID) SelectNth(nth int) (*ID, error) {
+	cloned, err := id.clone(map[digest.Digest]*ID{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone ID: %w", err)
+	}
+	cloned.raw.Nth = int64(nth)
+	cloned.raw.Type = cloned.raw.Type.Elem
+	cloned.mutated = true
+	return cloned, nil
 }
 
-func (id *ID) SelectNth(i int) {
-	id.Nth = int64(i)
-	id.Type = id.Type.Elem
-}
+func (id *ID) Append(
+	ret *ast.Type,
+	field string,
+	mod *Module,
+	tainted bool,
+	nth int,
+	args ...*Argument,
+) (*ID, error) {
+	newID := &ID{&idState{
+		raw: &RawID_Fields{
+			Type:    NewType(ret),
+			Field:   field,
+			Tainted: tainted,
+			Nth:     int64(nth),
+		},
+		base:    id,
+		module:  mod,
+		args:    make([]*Argument, len(args)),
+		mutated: true,
+	}}
 
-func (id *ID) Append(ret *ast.Type, field string, args ...*Argument) *ID {
-	var tainted bool
-	for _, arg := range args {
+	for i, arg := range args {
+		arg := arg
 		if arg.Tainted() {
-			tainted = true
-			break
+			newID.raw.Tainted = true
 		}
+		newID.args[i] = arg
 	}
 
-	return &ID{
-		Base:    id,
-		Type:    NewType(ret),
-		Field:   field,
-		Args:    args,
-		Tainted: tainted,
-	}
-}
-
-func (id *ID) Rebase(root *ID) *ID {
-	cp := id.Clone()
-	rebase(cp, root)
-	return cp
-}
-
-func rebase(id *ID, root *ID) {
-	if id.Base == nil {
-		id.Base = root
-	} else {
-		rebase(id.Base, root)
-	}
-}
-
-func (id *ID) SetTainted(tainted bool) {
-	id.Tainted = tainted
+	return newID, nil
 }
 
 // Tainted returns true if the ID contains any tainted selectors.
 func (id *ID) IsTainted() bool {
-	if id.Tainted {
+	if id == nil {
+		return false
+	}
+	if id.raw.Tainted {
 		return true
 	}
-	if id.Base != nil {
-		return id.Base.IsTainted()
+	if id.base != nil {
+		return id.base.IsTainted()
 	}
 	return false
 }
 
-// Canonical returns the ID with any contained IDs canonicalized.
-func (id *ID) Canonical() *ID {
-	if id.Meta {
-		return id.Base.Canonical()
+func (id *ID) Base() *ID {
+	if id == nil {
+		return nil
 	}
-	canon := id.Clone()
-	if id.Base != nil {
-		canon.Base = id.Base.Canonical()
-	}
-	// TODO sort args...? is it worth preserving them in the first place? (default answer no)
-	for i, arg := range canon.Args {
-		canon.Args[i] = arg.Canonical()
-	}
-	return canon
+	return id.base
 }
 
-var digestCache *sync.Map
-
-// EnableDigestCache enables caching of digests for IDs.
-//
-// This is not thread-safe and should be called before any IDs are created, or
-// at least digested.
-func EnableDigestCache() {
-	digestCache = new(sync.Map)
+// TODO: Type should probably be wrapped too to protect mutations that impact digest...
+func (id *ID) Type() *Type {
+	return id.raw.Type
 }
 
-// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
-// first.
-func (id *ID) Digest() (digest.Digest, error) {
-	if digestCache != nil {
-		if d, ok := digestCache.Load(id); ok {
-			return d.(digest.Digest), nil
+func (id *ID) Field() string {
+	return id.raw.Field
+}
+
+// TODO: technically this enables mutations of args in-place in the slice...
+func (id *ID) Args() []*Argument {
+	return id.args
+}
+
+func (id *ID) Nth() int64 {
+	return id.raw.Nth
+}
+
+func (id *ID) Module() *Module {
+	return id.module
+}
+
+func (id *ID) UnderlyingTypeName() string {
+	var typeName string
+	elem := id.raw.Type.Elem
+	for typeName == "" {
+		if elem == nil {
+			break
 		}
+		typeName = elem.NamedType
+		elem = elem.Elem
 	}
-	bytes, err := proto.Marshal(id)
-	if err != nil {
-		return "", err
-	}
-	d := digest.FromBytes(bytes)
-	if digestCache != nil {
-		digestCache.Store(id, d)
-	}
-	return d, nil
+	return typeName
 }
 
-func (id *ID) Clone() *ID {
-	return proto.Clone(id).(*ID)
+func (id *ID) Clone() (*ID, error) {
+	return id.clone(map[digest.Digest]*ID{})
+}
+
+func (id *ID) clone(memo map[digest.Digest]*ID) (*ID, error) {
+	if id == nil {
+		return nil, nil
+	}
+
+	// need to ensure digest is up to date to handle corner case
+	// where one ID in the DAG is up to date but another isn't
+	// and the old/new IDs happen to have the same digest
+	dgst, err := id.Digest()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ID digest: %w", err)
+	}
+	if newID, ok := memo[dgst]; ok {
+		return newID, nil
+	}
+
+	newID := &ID{&idState{
+		raw: &RawID_Fields{
+			BaseIDDigest: id.raw.BaseIDDigest,
+			Type:         id.raw.Type,
+			Field:        id.raw.Field,
+			Args:         id.raw.Args,
+			Tainted:      id.raw.Tainted,
+			Meta:         id.raw.Meta,
+			Nth:          id.raw.Nth,
+			Module:       id.raw.Module,
+			Digest:       id.raw.Digest,
+		},
+	}}
+	memo[dgst] = newID
+
+	newID.base, err = id.base.clone(memo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone base ID: %w", err)
+	}
+	newID.module, err = id.module.clone(memo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone module: %w", err)
+	}
+	for _, arg := range id.args {
+		clone, err := arg.clone(memo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to clone argument: %w", err)
+		}
+		newID.args = append(newID.args, clone)
+	}
+
+	return newID, nil
 }
 
 func (id *ID) Encode() (string, error) {
-	proto, err := proto.Marshal(id)
+	rawID, err := id.ToProto()
+	if err != nil {
+		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
+	}
+
+	// TODO: Deterministic is needed so the IdsByDigest map is sorted, but doc message on Deterministic is kind
+	// of scary... Could switch to sorted list and key by index?
+	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(rawID)
 	if err != nil {
 		return "", err
 	}
+
 	return base64.URLEncoding.EncodeToString(proto), nil
+}
+
+func (id *ID) ToProto() (*RawID, error) {
+	rawID := &RawID{
+		IdsByDigest: map[string]*RawID_Fields{},
+	}
+	dgst, err := id.encode(rawID.IdsByDigest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode ID: %w", err)
+	}
+	rawID.TopLevelIDDigest = dgst
+	return rawID, nil
+}
+
+func (id *ID) encode(idsByDigest map[string]*RawID_Fields) (string, error) {
+	if id == nil {
+		return "", nil
+	}
+
+	id.digestMu.Lock()
+	defer id.digestMu.Unlock()
+
+	isUpToDate := id.isUpToDate()
+	if isUpToDate {
+		if _, ok := idsByDigest[id.raw.Digest]; ok {
+			// already been here, exit early
+			return id.raw.Digest, nil
+		}
+		// everything is up to date but we still need to recurse to collect
+		// all the IDs in idsByDigest
+	}
+
+	var err error
+	id.raw.BaseIDDigest, err = id.base.encode(idsByDigest)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode base ID: %w", err)
+	}
+
+	id.raw.Module, err = id.module.encode(idsByDigest)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode module: %w", err)
+	}
+
+	id.raw.Args = make([]*RawArgument, 0, len(id.args))
+	for _, arg := range id.args {
+		encodedArg, err := arg.encode(idsByDigest)
+		if err != nil {
+			return "", fmt.Errorf("failed to encode argument: %w", err)
+		}
+		id.raw.Args = append(id.raw.Args, encodedArg)
+	}
+
+	if isUpToDate {
+		// done recursing to everything, no need to redigest
+		idsByDigest[id.raw.Digest] = id.raw
+		return id.raw.Digest, nil
+	}
+
+	id.raw.Digest = ""
+	// TODO: is Deterministic even needed here?
+	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.raw)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
+	}
+	h := xxh3.New()
+	if _, err := h.Write(pbBytes); err != nil {
+		return "", fmt.Errorf("failed to write ID proto to hash: %w", err)
+	}
+	id.raw.Digest = fmt.Sprintf("xxh3:%x", h.Sum(nil))
+	id.mutated = false
+
+	if _, ok := idsByDigest[id.raw.Digest]; !ok {
+		idsByDigest[id.raw.Digest] = id.raw
+	}
+	return id.raw.Digest, nil
+}
+
+func (id *ID) FromAnyPB(data *anypb.Any) error {
+	var rawID RawID
+	if err := data.UnmarshalTo(&rawID); err != nil {
+		return err
+	}
+	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*idState{})
 }
 
 func (id *ID) Decode(str string) error {
 	bytes, err := base64.URLEncoding.DecodeString(str)
 	if err != nil {
-		return fmt.Errorf("cannot decode ID from %q: %w", str, err)
+		return fmt.Errorf("failed to decode base64: %w", err)
 	}
-	return proto.Unmarshal(bytes, id)
+	var rawID RawID
+	if err := proto.Unmarshal(bytes, &rawID); err != nil {
+		return fmt.Errorf("failed to unmarshal proto: %w", err)
+	}
+
+	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*idState{})
 }
 
-// Canonical returns the argument with any contained IDs canonicalized.
-func (arg *Argument) Canonical() *Argument {
-	return &Argument{
-		Name:  arg.Name,
-		Value: arg.GetValue().Canonical(),
+func (id *ID) decode(
+	dgst string,
+	idsByDigest map[string]*RawID_Fields,
+	memo map[string]*idState,
+) error {
+	if idState, ok := memo[dgst]; ok {
+		id.idState = idState
+		return nil
 	}
+	id.idState = &idState{}
+	memo[dgst] = id.idState
+
+	raw, ok := idsByDigest[dgst]
+	if !ok {
+		return fmt.Errorf("ID digest %q not found", dgst)
+	}
+	if dgst != raw.Digest {
+		// should never happen, just out of caution
+		return fmt.Errorf("ID digest mismatch %q != %q", dgst, raw.Digest)
+	}
+	id.raw = raw
+
+	if id.raw.BaseIDDigest != "" {
+		id.base = new(ID)
+		if err := id.base.decode(id.raw.BaseIDDigest, idsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode base ID: %w", err)
+		}
+	}
+	if id.raw.Module != nil {
+		id.module = new(Module)
+		if err := id.module.decode(id.raw.Module, idsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode module: %w", err)
+		}
+	}
+	for _, arg := range id.raw.Args {
+		if arg == nil {
+			continue
+		}
+		decodedArg := new(Argument)
+		if err := decodedArg.decode(arg, idsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode argument: %w", err)
+		}
+		id.args = append(id.args, decodedArg)
+	}
+
+	return nil
 }
 
-// Tainted returns true if the ID contains any tainted selectors.
-func (arg *Argument) Tainted() bool {
-	return arg.GetValue().Tainted()
+// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
+// first.
+func (id *ID) Digest() (digest.Digest, error) {
+	id.digestMu.Lock()
+	if id.isUpToDate() {
+		id.digestMu.Unlock()
+		return digest.Digest(id.raw.Digest), nil
+	}
+	id.digestMu.Unlock()
+
+	dgst, err := id.encode(map[string]*RawID_Fields{})
+	if err != nil {
+		return "", fmt.Errorf("failed to encode ID: %w", err)
+	}
+	return digest.Digest(dgst), nil
+}
+
+// caller needs to hold id.digestMu
+func (id *ID) isUpToDate() bool {
+	if id == nil {
+		return true
+	}
+
+	switch {
+	case id.mutated:
+		return false
+	case id.raw.Digest == "":
+		return false
+	case (id.base == nil) != (id.raw.BaseIDDigest == ""):
+		// raw.BaseIDDigest was never set when creating a new ID (e.g. with id.Append)
+		return false
+	case (id.module == nil) != (id.raw.Module == nil):
+		// raw.Module was never set when creating a new ID (e.g. with id.Append)
+		return false
+	case len(id.args) != len(id.raw.Args):
+		// raw.Args was never set when creating a new ID (e.g. with id.Append)
+		return false
+	}
+	return true
 }

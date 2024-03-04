@@ -164,6 +164,7 @@ func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars ma
 		if val == nil {
 			continue
 		}
+
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
@@ -268,6 +269,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 	if err != nil {
 		return nil, fmt.Errorf("%s.%s: %w", r.Class.TypeName(), sel.Field, err)
 	}
+
 	val, err = r.Class.Call(ctx, r, sel.Field, args)
 	if err != nil {
 		return nil, err

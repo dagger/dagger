@@ -78,12 +78,17 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		}
 
 		// group any self-calls or Buildkit vertices beneath this vertex
-		ctx, vtx := progrock.Span(ctx, dig.String(), id.Field, opts...)
+		ctx, vtx := progrock.Span(ctx, dig.String(), id.Field(), opts...)
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 
 		// send ID payload to the frontend
-		payload, err := anypb.New(id)
+		idProto, err := id.ToProto()
+		if err != nil {
+			slog.Warn("failed to convert id to proto", "id", id.Display(), "err", err)
+			return next(ctx)
+		}
+		payload, err := anypb.New(idProto)
 		if err != nil {
 			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
 			return next(ctx)
@@ -131,8 +136,8 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(id *idproto.ID) bool {
-	if id.Base == nil {
-		switch id.Field {
+	if id.Base() == nil {
+		switch id.Field() {
 		case "__schema",
 			"currentTypeDefs",
 			"currentFunctionCall",
@@ -142,6 +147,6 @@ func isIntrospection(id *idproto.ID) bool {
 			return false
 		}
 	} else {
-		return isIntrospection(id.Base)
+		return isIntrospection(id.Base())
 	}
 }

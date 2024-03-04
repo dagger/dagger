@@ -39,11 +39,7 @@ func (p JSON) Decoder() dagql.InputDecoder {
 }
 
 func (p JSON) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_String_{
-			String_: string(p),
-		},
-	}
+	return idproto.NewLiteralString(string(p))
 }
 
 func (p JSON) MarshalJSON() ([]byte, error) {
