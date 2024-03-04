@@ -906,6 +906,12 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 type ContainerTerminalOpts struct {
 	// If set, override the container's default terminal command and invoke these command arguments instead.
 	Cmd []string
+	// Provides Dagger access to the executed command.
+	//
+	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
 }
 
 // Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
@@ -915,6 +921,14 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
 		// `cmd` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Cmd) {
 			q = q.Arg("cmd", opts[i].Cmd)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
 		}
 	}
 
@@ -948,9 +962,29 @@ func (r *Container) WithDefaultArgs(args []string) *Container {
 	}
 }
 
+// ContainerWithDefaultTerminalCmdOpts contains options for Container.WithDefaultTerminalCmd
+type ContainerWithDefaultTerminalCmdOpts struct {
+	// Provides Dagger access to the executed command.
+	//
+	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
+}
+
 // Set the default command to invoke for the container's terminal API.
-func (r *Container) WithDefaultTerminalCmd(args []string) *Container {
+func (r *Container) WithDefaultTerminalCmd(args []string, opts ...ContainerWithDefaultTerminalCmdOpts) *Container {
 	q := r.Query.Select("withDefaultTerminalCmd")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+	}
 	q = q.Arg("args", args)
 
 	return &Container{
@@ -1057,7 +1091,7 @@ type ContainerWithExecOpts struct {
 	RedirectStdout string
 	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
-	// Provides dagger access to the executed command.
+	// Provides Dagger access to the executed command.
 	//
 	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool

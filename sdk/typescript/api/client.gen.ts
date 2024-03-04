@@ -202,6 +202,32 @@ export type ContainerTerminalOpts = {
    * If set, override the container's default terminal command and invoke these command arguments instead.
    */
   cmd?: string[]
+
+  /**
+   * Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
+}
+
+export type ContainerWithDefaultTerminalCmdOpts = {
+  /**
+   * Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
 }
 
 export type ContainerWithDirectoryOpts = {
@@ -261,7 +287,7 @@ export type ContainerWithExecOpts = {
   redirectStderr?: string
 
   /**
-   * Provides dagger access to the executed command.
+   * Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
@@ -1785,6 +1811,10 @@ export class Container extends BaseClient {
   /**
    * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
   terminal = (opts?: ContainerTerminalOpts): Terminal => {
     return new Terminal({
@@ -1840,14 +1870,21 @@ export class Container extends BaseClient {
   /**
    * Set the default command to invoke for the container's terminal API.
    * @param args The args of the command.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
-  withDefaultTerminalCmd = (args: string[]): Container => {
+  withDefaultTerminalCmd = (
+    args: string[],
+    opts?: ContainerWithDefaultTerminalCmdOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withDefaultTerminalCmd",
-          args: { args },
+          args: { args, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -1936,7 +1973,7 @@ export class Container extends BaseClient {
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   * @param opts.experimentalPrivilegedNesting Provides dagger access to the executed command.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
