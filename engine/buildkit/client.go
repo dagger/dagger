@@ -63,10 +63,15 @@ type Opts struct {
 	MainClientCallerID string
 	DNSConfig          *oci.DNSConfig
 	Frontends          map[string]bkfrontend.Frontend
+	sharedClientState
+}
 
-	ExecMetadataMu *sync.Mutex
+// these maps are shared across all clients for a given DaggerServer and are
+// mutated by each client
+type sharedClientState struct {
+	execMetadataMu sync.Mutex
 	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
-	RefsMu         *sync.Mutex
+	refsMu         sync.Mutex
 	refs           map[*ref]struct{}
 }
 
@@ -101,16 +106,16 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 
 	// initialize ref+metadata caches if needed
-	client.RefsMu.Lock()
+	client.refsMu.Lock()
 	if client.refs == nil {
 		client.refs = make(map[*ref]struct{})
 	}
-	client.RefsMu.Unlock()
-	client.ExecMetadataMu.Lock()
+	client.refsMu.Unlock()
+	client.execMetadataMu.Lock()
 	if client.execMetadata == nil {
 		client.execMetadata = make(map[digest.Digest]ContainerExecUncachedMetadata)
 	}
-	client.ExecMetadataMu.Unlock()
+	client.execMetadataMu.Unlock()
 
 	session, err := client.newSession(ctx)
 	if err != nil {
@@ -188,14 +193,14 @@ func (c *Client) Close() error {
 	c.job.Discard()
 	c.job.CloseProgress()
 
-	c.RefsMu.Lock()
+	c.refsMu.Lock()
 	for rf := range c.refs {
 		if rf != nil {
 			rf.resultProxy.Release(context.Background())
 		}
 	}
 	c.refs = nil
-	c.RefsMu.Unlock()
+	c.refsMu.Unlock()
 
 	c.containersMu.Lock()
 	var containerReleaseGroup errgroup.Group
@@ -279,7 +284,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			// it's uncached metadata to preserve the same vertex digest.
 			// This results in buildkit's solver de-duping the op, instead of
 			// the scheduler's edge merge.
-			c.ExecMetadataMu.Lock()
+			c.execMetadataMu.Lock()
 			execMeta, ok := c.execMetadata[*execOp.OpDigest]
 			if !ok {
 				execMeta = ContainerExecUncachedMetadata{
@@ -290,7 +295,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 				}
 				c.execMetadata[*execOp.OpDigest] = execMeta
 			}
-			c.ExecMetadataMu.Unlock()
+			c.execMetadataMu.Unlock()
 
 			var err error
 			execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
@@ -353,8 +358,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return nil, err
 	}
 
-	c.RefsMu.Lock()
-	defer c.RefsMu.Unlock()
+	c.refsMu.Lock()
+	defer c.refsMu.Unlock()
 	if res.Ref != nil {
 		c.refs[res.Ref] = struct{}{}
 	}
@@ -492,17 +497,17 @@ func (c *Client) WriteStatusesTo(ctx context.Context, recorder *progrock.Recorde
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
 // This is useful for constructing a result for upstream remote caching.
 func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
-	c.RefsMu.Lock()
+	c.refsMu.Lock()
 	mergeInputs := make([]llb.State, 0, len(c.refs))
 	for r := range c.refs {
 		state, err := r.ToState()
 		if err != nil {
-			c.RefsMu.Unlock()
+			c.refsMu.Unlock()
 			return nil, err
 		}
 		mergeInputs = append(mergeInputs, state)
 	}
-	c.RefsMu.Unlock()
+	c.refsMu.Unlock()
 	llbdef, err := llb.Merge(mergeInputs, llb.WithCustomName("combined session result")).Marshal(ctx)
 	if err != nil {
 		return nil, err

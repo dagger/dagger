@@ -173,8 +173,6 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 			MainClientCallerID:    s.mainClientCallerID,
 			DNSConfig:             e.DNSConfig,
 			Frontends:             e.Frontends,
-			RefsMu:                &sync.Mutex{},
-			ExecMetadataMu:        &sync.Mutex{},
 		},
 		ProgrockSocketPath: progSockPath,
 		Services:           s.services,
