@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"runtime"
@@ -332,9 +333,6 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.Handle("/query", srv)
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		bklog.G(ctx).Debugf("shutting down client %s", clientMetadata.ClientID)
-		defer bklog.G(ctx).Debugf("shut down client %s", clientMetadata.ClientID)
-
 		if len(s.upstreamCacheExporterCfgs) > 0 && clientMetadata.ClientID == s.mainClientCallerID {
 			bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
@@ -356,11 +354,6 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
 			}
 			bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
-		}
-
-		// TODO:(XXX) double-check this is still correct, don't break services across modules
-		if err := s.services.StopClientServices(ctx, clientMetadata); err != nil {
-			bklog.G(ctx).WithError(err).Error("failed to shutdown")
 		}
 	}))
 	s.endpointMu.RLock()
@@ -433,12 +426,16 @@ func (s *DaggerServer) LogMetrics(l *logrus.Entry) *logrus.Entry {
 	return l.WithField(fmt.Sprintf("server-%s-client-count", s.serverID), s.connectedClients)
 }
 
-func (s *DaggerServer) Close() error {
+func (s *DaggerServer) Close(ctx context.Context) error {
 	defer s.closeOnce.Do(func() {
 		close(s.doneCh)
 	})
 
 	var err error
+
+	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
+		slog.Error("failed to stop client services", "error", err)
+	}
 
 	s.clientCallMu.RLock()
 	for _, callCtx := range s.clientCallContext {

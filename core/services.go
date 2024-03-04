@@ -295,11 +295,11 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
 
 // StopClientServices stops all of the services being run by the given client.
 // It is called when a client is closing.
-func (ss *Services) StopClientServices(ctx context.Context, client *engine.ClientMetadata) error {
+func (ss *Services) StopClientServices(ctx context.Context, serverID string) error {
 	ss.l.Lock()
 	var svcs []*RunningService
 	for _, svc := range ss.running {
-		if svc.Key.ServerID == client.ServerID {
+		if svc.Key.ServerID == serverID {
 			svcs = append(svcs, svc)
 		}
 	}

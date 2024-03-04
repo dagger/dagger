@@ -223,7 +223,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			delete(e.servers, opts.ServerID)
 			e.serverMu.Unlock()
 
-			if err := srv.Close(); err != nil {
+			if err := srv.Close(context.WithoutCancel(ctx)); err != nil {
 				bklog.G(ctx).WithError(err).Error("failed to close server")
 			}
 
@@ -396,7 +396,7 @@ func (e *BuildkitController) Close() error {
 	e.serverMu.Unlock()
 
 	for _, s := range servers {
-		s.Close()
+		s.Close(context.Background())
 	}
 	return err
 }
