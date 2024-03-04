@@ -348,7 +348,24 @@ type Container {
     """
     If set, override the container's default terminal command and invoke these command arguments instead.
     """
-    cmd: [String!]
+    cmd: [String!] = []
+
+    """
+    Provides dagger access to the executed command.
+    
+    Do not use this option unless you trust the command being executed; the
+    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    """
+    experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Execute the command with all root capabilities. This is similar to running a
+    command with "sudo" or executing "docker run" with the "--privileged" flag.
+    Containerization does not provide any security guarantees when using this
+    option. It should only be used when absolutely necessary and only with
+    trusted commands.
+    """
+    insecureRootCapabilities: Boolean = false
   ): Terminal!
 
   """Retrieves the user to be set for all commands."""
@@ -366,6 +383,23 @@ type Container {
   withDefaultTerminalCmd(
     """The args of the command."""
     args: [String!]!
+
+    """
+    Provides dagger access to the executed command.
+    
+    Do not use this option unless you trust the command being executed; the
+    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    """
+    experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Execute the command with all root capabilities. This is similar to running a
+    command with "sudo" or executing "docker run" with the "--privileged" flag.
+    Containerization does not provide any security guarantees when using this
+    option. It should only be used when absolutely necessary and only with
+    trusted commands.
+    """
+    insecureRootCapabilities: Boolean = false
   ): Container!
 
   """Retrieves this container plus a directory written at the given path."""
