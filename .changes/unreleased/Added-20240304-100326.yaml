@@ -1,0 +1,6 @@
+kind: Added
+body: Allow passing git URLs to `dagger call` file type args
+time: 2024-03-04T10:03:26.553024737Z
+custom:
+  Author: jedevc
+  PR: "6769"
