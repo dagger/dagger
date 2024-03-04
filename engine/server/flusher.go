@@ -36,10 +36,6 @@ func flushAfterNBytes(n int) func(http.Handler) http.Handler {
 				limit:          n,
 				mu:             &sync.Mutex{},
 			}
-			// TODO: double check rm of this defer and explain
-			// saw panic in engine logs (though no test error?)
-			// https://github.com/golang/go/issues/19959
-			// defer flushWriter.Flush()
 
 			next.ServeHTTP(flushWriter, r)
 		})
