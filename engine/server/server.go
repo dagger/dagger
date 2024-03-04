@@ -136,7 +136,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	secretStore := core.NewSecretStore()
 	authProvider := auth.NewRegistryAuthProvider()
 
-	var cacheImporterCfgs []bkgw.CacheOptionsEntry
+	cacheImporterCfgs := make([]bkgw.CacheOptionsEntry, 0, len(clientMetadata.UpstreamCacheImportConfig))
 	for _, cacheImportCfg := range clientMetadata.UpstreamCacheImportConfig {
 		_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
 		if !ok {
