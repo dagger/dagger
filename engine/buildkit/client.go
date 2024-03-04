@@ -97,11 +97,12 @@ type Client struct {
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
-	closeCtx, cancel := context.WithCancel(context.Background())
+	// override the outer cancel, we will manage cancellation ourselves here
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	client := &Client{
 		Opts:       opts,
 		containers: make(map[bkgw.Container]struct{}),
-		closeCtx:   closeCtx,
+		closeCtx:   ctx,
 		cancel:     cancel,
 	}
 
@@ -117,7 +118,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	client.execMetadataMu.Unlock()
 
-	session, err := client.newSession(ctx)
+	session, err := client.newSession()
 	if err != nil {
 		return nil, err
 	}

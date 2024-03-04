@@ -26,7 +26,6 @@ type Query struct {
 	Buildkit *buildkit.Client
 
 	// The current pipeline.
-	// TODO:(XXX) should this be shared? was the previous behavior technically
 	Pipeline pipeline.Path
 }
 
@@ -70,15 +69,14 @@ type QueryOpts struct {
 }
 
 func NewRoot(ctx context.Context, opts QueryOpts) (*Query, error) {
-	// TODO: double check context won't result in something getting cancelled prematurely
 	bk, err := buildkit.NewClient(ctx, opts.BuildkitOpts)
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 
-	// NOTE: context.Background is used because if the provided context is canceled, buildkit can
+	// NOTE: context.WithoutCancel is used because if the provided context is canceled, buildkit can
 	// leave internal progress contexts open and leak goroutines.
-	bk.WriteStatusesTo(context.Background(), opts.Recorder)
+	bk.WriteStatusesTo(context.WithoutCancel(ctx), opts.Recorder)
 
 	return &Query{
 		QueryOpts: opts,

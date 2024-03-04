@@ -437,7 +437,6 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 
 	s.clientCallMu.RLock()
 	for _, callCtx := range s.clientCallContext {
-		// TODO:(XXX) should we clean up services here too?
 		err = errors.Join(err, callCtx.Root.Buildkit.Close())
 	}
 	s.clientCallMu.RUnlock()
