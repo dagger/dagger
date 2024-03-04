@@ -1738,9 +1738,6 @@ class Test {
 
 			t.Run(`c: String! = "foo"`, func(t *testing.T) {
 				// non-null, with default
-				if tc.sdk == "typescript" {
-					t.Skip("TODO: allow non-null with default in TypeScript")
-				}
 				arg := args.Get("#(name=c)")
 				require.Equal(t, "NON_NULL", arg.Get("type.kind").String())
 				require.Equal(t, "SCALAR", arg.Get("type.ofType.kind").String())
