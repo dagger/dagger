@@ -326,4 +326,56 @@ describe("Invoke typescript function", function () {
       })
     })
   })
+
+  describe("Should correctly handle optional arguments", async function () {
+    it("Should correctly use default and nullable values", async function () {
+      const files = await listFiles(`${rootDirectory}/optionalParameter`)
+
+      // Load function
+      await load(files)
+
+      const scanResult = scan(files)
+
+      // Mocking the fetch from the dagger API
+      const input = {
+        parentName: "HelloWorld",
+        fnName: "foo",
+        parentArgs: {},
+        fnArgs: { a: "foo" },
+      }
+
+      const result = await invoke(scanResult, input)
+
+      // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
+      assert.equal(result, `"foo", , , "foo", null, "bar"`)
+    })
+
+    it("Should correctly use overwritten values", async function () {
+      const files = await listFiles(`${rootDirectory}/optionalParameter`)
+
+      // Load function
+      await load(files)
+
+      const scanResult = scan(files)
+
+      // Mocking the fetch from the dagger API
+      const input = {
+        parentName: "HelloWorld",
+        fnName: "foo",
+        parentArgs: {},
+        fnArgs: {
+          a: "foo",
+          c: "ho",
+          e: "baz",
+          d: "ah",
+          f: null,
+        },
+      }
+
+      const result = await invoke(scanResult, input)
+
+      // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
+      assert.equal(result, `"foo", , "ho", "ah", "baz", null`)
+    })
+  })
 })

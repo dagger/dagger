@@ -28,12 +28,13 @@ export class HelloWorld {
     @func()
     foo(
       a: string,
-      b?: string,
-      c: string = "foo",
-      d: string | null = null,
-      e: string | null = "bar",
+      b: string | null,
+      c?: string,
+      d: string = "foo",
+      e: string | null = null,
+      f: string | null = "bar",
     ): string {
-      return [a, b, c, d, e].map(v => JSON.stringify(v)).join(", ")
+      return [a, b, c, d, e, f].map(v => JSON.stringify(v)).join(", ")
     }
     
     @func()

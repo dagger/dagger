@@ -164,9 +164,8 @@ type OptionalValue = {
 /**
  * Return true if the parameter is optional.
  *
- * This only includes optional value defines with `?` or `<string>|null`.
- * If a value has a default but isn't defined with `?`, it's not considered
- * optional but nullable in the context of Dagger.
+ * This only means optionals marked with `?`, or "nullable" types defined
+ * with `| null`, to match the API's meaning of "optional".
  *
  * If there's a default value, its expression is returned in the result.
  *
@@ -186,7 +185,7 @@ export function isOptional(param: ts.Symbol): OptionalValue {
       // Check for ? notation
       result.optional = parameterDeclaration.questionToken !== undefined
 
-      // Check for `<xx>|null` notation
+      // Check for `<xx>|null` notation to see if the field is nullable
       if (parameterDeclaration.type) {
         if (ts.isUnionTypeNode(parameterDeclaration.type)) {
           for (const _type of parameterDeclaration.type.types) {
