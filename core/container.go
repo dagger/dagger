@@ -43,7 +43,7 @@ var ErrContainerNoExec = errors.New("no command has been executed")
 
 type DefaultTerminalCmdOpts struct {
 	Args []string
-		
+
 	// Provide dagger access to the executed command
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
