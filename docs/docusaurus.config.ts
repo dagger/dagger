@@ -3,7 +3,6 @@ import type * as Preset from "@docusaurus/preset-classic";
 import path from "path";
 import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
-import { GuidesConfig } from "./plugins/docusaurus-plugin-guides";
 
 const config: Config = {
   title: "Dagger",
