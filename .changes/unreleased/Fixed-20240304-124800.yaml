@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix a regression where secrets used with dockerBuild could error out
+time: 2024-03-04T12:48:00.847879836Z
+custom:
+  Author: jedevc
+  PR: "6809"
