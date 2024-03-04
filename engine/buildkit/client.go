@@ -316,10 +316,9 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
 		}
 
-		gw := &filteringGateway{
-			FrontendLLBBridge: c.llbBridge,
-			secretTranslator:  ctx.Value("secret-translator").(func(string) (string, error)),
-		}
+		gw := newFilterGateway(c.llbBridge, req)
+		gw.secretTranslator = ctx.Value("secret-translator").(func(string) (string, error))
+
 		llbRes, err = f.Solve(ctx, gw, c.llbExec, req.FrontendOpt, req.FrontendInputs, c.ID(), c.SessionManager)
 		if err != nil {
 			return nil, err
@@ -807,9 +806,31 @@ func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
 	return true, nil
 }
 
+// filteringGateway is a helper gateway that filters+converts various
+// operations for the frontend
 type filteringGateway struct {
 	bkfrontend.FrontendLLBBridge
+
+	// secretTranslator is a function to convert secret ids. Frontends may
+	// attempt to access secrets by raw IDs, but they may be keyed differently
+	// in the secret store.
 	secretTranslator func(string) (string, error)
+
+	// skipInputs specifies op digests that were part of the request inputs and
+	// so shouldn't be processed.
+	skipInputs map[digest.Digest]struct{}
+}
+
+func newFilterGateway(bridge bkfrontend.FrontendLLBBridge, req bkgw.SolveRequest) *filteringGateway {
+	inputs := map[digest.Digest]struct{}{}
+	for _, inp := range req.FrontendInputs {
+		inputs[digest.FromBytes(inp.Def[len(inp.Def)-1])] = struct{}{}
+	}
+
+	return &filteringGateway{
+		FrontendLLBBridge: bridge,
+		skipInputs:        inputs,
+	}
 }
 
 func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
@@ -819,6 +840,10 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 			return nil, err
 		}
 		if err := dag.Walk(func(dag *OpDAG) error {
+			if _, ok := gw.skipInputs[*dag.OpDigest]; ok {
+				return SkipInputs
+			}
+
 			execOp, ok := dag.AsExec()
 			if !ok {
 				return nil
