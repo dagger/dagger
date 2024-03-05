@@ -1,0 +1,6 @@
+kind: Added
+body: Support privileges and nesting in default terminal command
+time: 2024-03-04T22:45:13.122651+01:00
+custom:
+  Author: TomChv
+  PR: "6805"

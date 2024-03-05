@@ -88,17 +88,13 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 	m.stopCacheMountSync = func(ctx context.Context) error {
 		var eg errgroup.Group
 
-		allCacheMounts := map[string]struct{}{}
+		seenCacheMounts := map[string]struct{}{}
 		core.SeenCacheKeys.Range(func(k any, v any) bool {
-			allCacheMounts[k.(string)] = struct{}{}
+			seenCacheMounts[k.(string)] = struct{}{}
 			return true
 		})
 
-		for _, syncedCacheMount := range syncedCacheMounts {
-			allCacheMounts[syncedCacheMount.Name] = struct{}{}
-		}
-
-		for cacheMountName := range allCacheMounts {
+		for cacheMountName := range seenCacheMounts {
 			cacheMountName := cacheMountName
 			eg.Go(func() error {
 				bklog.G(ctx).Debugf("syncing cache mount remotely %s", cacheMountName)

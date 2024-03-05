@@ -136,9 +136,15 @@ func (dag *OpDAG) walk(f func(*OpDAG) error, memo map[*OpDAG]struct{}) error {
 		return nil
 	}
 	memo[dag] = struct{}{}
-	if err := f(dag); err != nil {
+
+	err := f(dag)
+	if err == SkipInputs {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
+
 	for _, input := range dag.Inputs {
 		if err := input.walk(f, memo); err != nil {
 			return err
@@ -146,6 +152,8 @@ func (dag *OpDAG) walk(f func(*OpDAG) error, memo map[*OpDAG]struct{}) error {
 	}
 	return nil
 }
+
+var SkipInputs = fmt.Errorf("skip inputs") //nolint:stylecheck // Err prefix isn't convention for Walk control errors
 
 // Marshal will convert the dag back to a flat pb.Definition, updating all digests
 // based on any modifications made to the dag.

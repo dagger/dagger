@@ -164,8 +164,8 @@ type OptionalValue = {
 /**
  * Return true if the parameter is optional.
  *
- * This includes both optional value defines with `?` and value that
- * have a default value.
+ * This only means optionals marked with `?`, or "nullable" types defined
+ * with `| null`, to match the API's meaning of "optional".
  *
  * If there's a default value, its expression is returned in the result.
  *
@@ -182,9 +182,20 @@ export function isOptional(param: ts.Symbol): OptionalValue {
 
     // Convert the symbol declaration into Parameter
     if (ts.isParameter(parameterDeclaration)) {
-      result.optional =
-        parameterDeclaration.questionToken !== undefined ||
-        parameterDeclaration.initializer !== undefined
+      // Check for ? notation
+      result.optional = parameterDeclaration.questionToken !== undefined
+
+      // Check for `<xx>|null` notation to see if the field is nullable
+      if (parameterDeclaration.type) {
+        if (ts.isUnionTypeNode(parameterDeclaration.type)) {
+          for (const _type of parameterDeclaration.type.types) {
+            if (_type.getText() === "null") {
+              result.optional = true
+              break
+            }
+          }
+        }
+      }
 
       if (parameterDeclaration.initializer !== undefined) {
         result.defaultValue = formatDefaultValue(

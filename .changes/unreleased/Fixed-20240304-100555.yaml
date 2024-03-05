@@ -1,0 +1,6 @@
+kind: Fixed
+body: Dagger go modules default to the module name instead of "main"
+time: 2024-03-04T10:05:55.625933343Z
+custom:
+  Author: jedevc
+  PR: "6774"

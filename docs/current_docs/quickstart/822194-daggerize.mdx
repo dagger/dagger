@@ -3,13 +3,10 @@ slug: /quickstart/822194/daggerize
 hide_table_of_contents: true
 title: "Daggerize a project"
 ---
-import PartialExperimentalDocs from '../partials/_experimental.mdx';
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # Quickstart
-
-<PartialExperimentalDocs />
 
 ## Daggerize a project
 
@@ -52,7 +49,7 @@ You should see the following:
 ```json
 {
   "name": "greetings-api",
-  "engineVersion": "v0.9.11"
+  "engineVersion": "v0.10.0"
 }
 ```
 
@@ -84,7 +81,7 @@ Once the command completes, look at the `dagger.json` file again. You should see
       "source": "github.com/shykes/daggerverse/hello@7884cbc1941f85a7c714fc7f1bcc5c148842c21e"
     }
   ],
-  "engineVersion": "v0.9.11"
+  "engineVersion": "v0.10.0"
 }
 ```
 
@@ -140,7 +137,7 @@ Then, call the `BuildContainer()` function from the Go builder module to build t
 
 ```shell
 dagger -m golang call \
-  build-container --source=.--args="-C","./hello" \
+  build-container --source=. --args="-C","./hello" \
   publish --address=ttl.sh/my-hello-container-$RANDOM
 ```
 

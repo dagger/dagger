@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix goroutine and memory leaks in engine
+time: 2024-03-05T01:32:26.961330065-08:00
+custom:
+  Author: sipsma
+  PR: "6760"
