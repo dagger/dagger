@@ -1,14 +1,14 @@
 [envs.lint]
 dependencies = [
-    "black>=22.3.0",
-    "ruff>=0.0.218",
+    "black<24",
+    "ruff<0.2",
     "mypy>=0.942",
 ]
 
 [envs.test]
 dependencies = [
     "aiohttp>=3.8.6",
-    "pytest>=7.2.0",
+    "pytest<8",
     "pytest-mock>=3.10.0",
     "pytest-subprocess>=1.4.2",
     "pytest-lazy-fixture>=0.6.3",

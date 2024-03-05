@@ -15,10 +15,10 @@
     "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/api/reference"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.0.1",
-    "@docusaurus/preset-classic": "^3.0.1",
-    "@docusaurus/theme-classic": "^3.0.1",
-    "@docusaurus/theme-mermaid": "^3.0.1",
+    "@docusaurus/core": "^3.1.1",
+    "@docusaurus/preset-classic": "^3.1.1",
+    "@docusaurus/theme-classic": "^3.1.1",
+    "@docusaurus/theme-mermaid": "^3.1.1",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^1.2.1",
     "docusaurus-plugin-image-zoom": "^1.0.1",
@@ -35,8 +35,9 @@
     "typescript": "^5.3.2"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.0.1",
-    "@docusaurus/types": "^3.0.1"
+    "@docusaurus/module-type-aliases": "^3.1.1",
+    "@docusaurus/types": "^3.1.1",
+    "@docusaurus/tsconfig": "^3.1.1"
   },
   "browserslist": {
     "production": [

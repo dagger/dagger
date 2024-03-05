@@ -1,6 +1,0 @@
-kind: Fixed
-body: Correctly handle optional and default values
-time: 2024-02-28T10:19:58.961223+01:00
-custom:
-  Author: TomChv
-  PR: "6766"
