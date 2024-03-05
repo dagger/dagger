@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -22,6 +23,8 @@ type Selection struct {
 	bind  interface{}
 
 	prev *Selection
+
+	client graphql.Client
 }
 
 func (s *Selection) path() []*Selection {
@@ -33,11 +36,18 @@ func (s *Selection) path() []*Selection {
 	return selections
 }
 
+func (s *Selection) Root() *Selection {
+	return &Selection{
+		client: s.client,
+	}
+}
+
 func (s *Selection) SelectWithAlias(alias, name string) *Selection {
 	sel := &Selection{
-		name:  name,
-		prev:  s,
-		alias: alias,
+		name:   name,
+		prev:   s,
+		alias:  alias,
+		client: s.client,
 	}
 	return sel
 }
@@ -147,14 +157,25 @@ func (s *Selection) unpack(data interface{}) error {
 	return nil
 }
 
-func (s *Selection) Execute(ctx context.Context, c graphql.Client) error {
+func (s *Selection) Client(c graphql.Client) *Selection {
+	sel := *s
+	sel.client = c
+	return &sel
+}
+
+func (s *Selection) Execute(ctx context.Context) error {
+	if s.client == nil {
+		debug.PrintStack()
+		return fmt.Errorf("no client configured for selection")
+	}
+
 	query, err := s.Build(ctx)
 	if err != nil {
 		return err
 	}
 
 	var response any
-	err = c.MakeRequest(ctx,
+	err = s.client.MakeRequest(ctx,
 		&graphql.Request{
 			Query: query,
 		},

@@ -202,7 +202,6 @@ The struct definition for the concrete implementation of the interface. e.g.:
 
 	type customIfaceImpl struct {
 		Query  *querybuilder.Selection
-		Client graphql.Client
 		id     *CustomIfaceID
 		str    *string
 		int    *int
@@ -212,7 +211,6 @@ The struct definition for the concrete implementation of the interface. e.g.:
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	return Type().Id(spec.concreteStructName()).StructFunc(func(g *Group) {
 		g.Id("Query").Op("*").Qual("querybuilder", "Selection")
-		g.Id("Client").Qual("graphql", "Client")
 		g.Id("id").Op("*").Id(spec.idTypeName())
 
 		for _, method := range spec.methods {
@@ -231,12 +229,11 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 /*
 The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
 
-	func (r *Client) LoadCustomIfaceFromID(id CustomIfaceID) CustomIface {
+	func LoadCustomIfaceFromID(r *Client, id CustomIfaceID) CustomIface {
 		q := r.Query.Select("loadTestCustomIfaceFromID")
 		q = q.Arg("id", id)
 		return &customIfaceImpl{
 			Query:  q,
-			Client: r.Client,
 		}
 	}
 */
@@ -249,8 +246,7 @@ func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
 			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
 			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
-				Id("Query"):  Id("q"),
-				Id("Client"): Id("r").Dot("Client"),
+				Id("Query"): Id("q"),
 			}))
 		})
 }
@@ -465,7 +461,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 				q := r.Query.Select("void")
 				var response Void
 				q = q.Bind(&response)
-				return q.Execute(ctx, r.Client)
+				return q.Execute(ctx)
 		*/
 
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
@@ -475,7 +471,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		s.Var().Id("response").Add(implTypeCode).Line()
 		s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
 		s.Return(
-			Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")),
+			Id("q").Dot("Execute").Call(Id("ctx")),
 		)
 
 	case *parsedPrimitiveType:
@@ -485,7 +481,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 				q := r.Query.Select("str")
 				var response string
 				q = q.Bind(&response)
-				return response, q.Execute(ctx, r.Client)
+				return response, q.Execute(ctx)
 		*/
 
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
@@ -496,7 +492,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
 		s.Return(
 			Id("response"),
-			Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")),
+			Id("q").Dot("Execute").Call(Id("ctx")),
 		)
 
 	case *parsedIfaceTypeReference, *parsedObjectTypeReference:
@@ -504,7 +500,6 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			Just object type with chained query (no error). e.g.:
 
 				return &customIfaceImpl{
-					Client: r.Client,
 					Query:  q,
 				}
 		*/
@@ -514,8 +509,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			return nil, fmt.Errorf("failed to generate return type code: %w", err)
 		}
 		s.Return(Op("&").Add(implTypeCode).Values(Dict{
-			Id("Query"):  Id("q"),
-			Id("Client"): Id("r").Dot("Client"),
+			Id("Query"): Id("q"),
 		}))
 
 	case *parsedSliceType:
@@ -530,7 +524,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						Id DirectoryID
 					}
 					q = q.Bind(&idResults)
-					err := q.Execute(ctx, r.Client)
+					err := q.Execute(ctx)
 					if err != nil {
 						return nil, err
 					}
@@ -539,8 +533,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &Directory{
-							Query:  querybuilder.Query().Select("loadDirectoryFromID").Arg("id", id),
-							Client: r.Client,
+							Query:  q.Query.Root().Select("loadDirectoryFromID").Arg("id", id),
 						})
 					}
 					return results, nil
@@ -554,7 +547,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Var().Id("idResults").Index().Struct(Id("Id").Id(idScalarName)).Line()
 			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("idResults")).Line()
 
-			s.Id("err").Op(":=").Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")).Line()
+			s.Id("err").Op(":=").Id("q").Dot("Execute").Call(Id("ctx")).Line()
 			s.If(Id("err").Op("!=").Nil()).Block(Return(Nil(), Id("err"))).Line()
 
 			underlyingReturnTypeCode, err := spec.concreteMethodSigTypeCode(returnType.underlying)
@@ -569,8 +562,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
 				g.Id("id").Op(":=").Id("idResult").Dot("Id").Line()
 				d := Dict{
-					Id("Query"):  Id("querybuilder").Dot("Query").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
-					Id("Client"): Id("r").Dot("Client"),
+					Id("Query"): Id("r").Dot("Query").Dot("Root").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
 					// FIXME: this is a nice optimization, but we can't enable
 					// it since the private "id" field can only be accessed on
 					// local structs
@@ -587,7 +579,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 
 					var response []string
 					q = q.Bind(&response)
-					return response, q.Execute(ctx, r.Client)
+					return response, q.Execute(ctx)
 			*/
 
 			implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
@@ -598,7 +590,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			s.Id("q").Op("=").Id("q").Dot("Bind").Call(Op("&").Id("response")).Line()
 			s.Return(
 				Id("response"),
-				Id("q").Dot("Execute").Call(Id("ctx"), Id("r").Dot("Client")),
+				Id("q").Dot("Execute").Call(Id("ctx")),
 			)
 
 		default:

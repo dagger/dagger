@@ -528,9 +528,9 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 
 			var response any
 
-			q := fc.q.Bind(&response)
+			q := fc.q.Bind(&response).Client(dag.GraphQLClient())
 
-			if err := q.Execute(ctx, dag.Client); err != nil {
+			if err := q.Execute(ctx); err != nil {
 				return fmt.Errorf("response from query: %w", err)
 			}
 
