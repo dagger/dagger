@@ -64,7 +64,7 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/aws-codepipeline"
+              "id": "user-guide/ci/aws-codebuild"
             },
             {
               "type": "doc",
