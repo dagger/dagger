@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/containerd/defaults"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
@@ -157,7 +158,7 @@ func (srv *DaggerServer) ServeClientConn(
 	}()
 	srv.clientMu.Unlock()
 
-	conn = newLogicalDeadlineConn(nopCloserConn{conn})
+	conn = newLogicalDeadlineConn(splitWriteConn{nopCloserConn{conn}, defaults.DefaultMaxSendMsgSize * 95 / 100})
 	l := &singleConnListener{conn: conn, closeCh: make(chan struct{})}
 	go func() {
 		<-ctx.Done()
@@ -451,4 +452,30 @@ func (c *withDeadlineConn) SetWriteDeadline(t time.Time) error {
 	}
 
 	return nil
+}
+
+type splitWriteConn struct {
+	net.Conn
+	maxMsgSize int
+}
+
+func (r splitWriteConn) Write(b []byte) (n int, err error) {
+	for {
+		if len(b) == 0 {
+			return
+		}
+
+		var bnext []byte
+		if len(b) > r.maxMsgSize {
+			b, bnext = b[:r.maxMsgSize], b[r.maxMsgSize:]
+		}
+
+		n2, err := r.Conn.Write(b)
+		n += n2
+		if err != nil {
+			return n, err
+		}
+
+		b = bnext
+	}
 }
