@@ -473,9 +473,6 @@ func TestModuleTypescriptOptional(t *testing.T) {
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
 
-//go:embed testdata/modules/typescript/runtime-detection/index.ts
-var runtimeDetection string
-
 func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 	t.Parallel()
 
@@ -485,7 +482,18 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
-		With(sdkSource("typescript", runtimeDetection))
+		With(sdkSource("typescript", `
+			import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+			@object()
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			class RuntimeDetection {
+			  @func()
+			  echoRuntime(): string {
+			    const isBunRuntime = typeof Bun === "object";
+			    return isBunRuntime ? "bun" : "node";
+			  }
+			}
+		`))
 
 	t.Run("should default to node", func(t *testing.T) {
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -526,7 +534,19 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
-			With(sdkSource("typescript", runtimeDetection)).
+			With(sdkSource("typescript", `
+				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+				@object()
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				class RuntimeDetection {
+				  @func()
+				  echoRuntime(): string {
+					const isBunRuntime = typeof Bun === "object";
+					return isBunRuntime ? "bun" : "node";
+				  }
+				}
+			`)).
 			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -539,7 +559,19 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
-			With(sdkSource("typescript", runtimeDetection)).
+			With(sdkSource("typescript", `
+				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+				@object()
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				class RuntimeDetection {
+				  @func()
+				  echoRuntime(): string {
+					const isBunRuntime = typeof Bun === "object";
+					return isBunRuntime ? "bun" : "node";
+				  }
+				}
+			`)).
 			WithExec([]string{"bun", "install", "--cwd", "./dagger"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -552,7 +584,19 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
-			With(sdkSource("typescript", runtimeDetection)).
+			With(sdkSource("typescript", `
+				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+				@object()
+				// eslint-disable-next-line @typescript-eslint/no-unused-vars
+				class RuntimeDetection {
+				  @func()
+				  echoRuntime(): string {
+					const isBunRuntime = typeof Bun === "object";
+					return isBunRuntime ? "bun" : "node";
+				  }
+				}
+			`)).
 			WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
 				Contents: `{
 					"dagger": {
