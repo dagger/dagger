@@ -1,0 +1,35 @@
+---
+slug: /user-guide/573039/cli-cookbook
+---
+
+# CLI Cookbook
+
+## List available functions in a module
+
+To list all the functions available in a module, use `dagger functions`.
+
+For example, list available functions in the `hello` module:
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 functions
+```
+
+## List available arguments for a function
+
+To list all the arguments accepted by a function, use `dagger call FUNCTION-NAME --help`.
+
+For example, list the arguments available for the `build` function in the `golang` module:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --help
+```
+
+## List the contents of a directory returned by a function
+
+## Export a file returned by a function to the host
+
+## Start an interactive terminal for a container returned by a function
+
+## Create a service from a container returned by a function
+
+## Pass a secret to a function as an argument
