@@ -1,12 +1,6 @@
 {
   "name": "dagger",
   "sdk": "go",
-  "dependencies": [
-    {
-      "name": "util",
-      "source": "ci/util"
-    }
-  ],
   "source": "ci",
   "engineVersion": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 }

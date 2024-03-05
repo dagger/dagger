@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"context"
@@ -10,16 +10,16 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
-)
 
-type Util struct{}
+	. "dagger/internal/dagger"
+)
 
 type Repository struct {
 	Directory    *Directory
 	GitDirectory *Directory
 }
 
-func (util *Util) Repository(source *Directory) *Repository {
+func NewRepository(source *Directory) *Repository {
 	gitDir := source.Directory(".git")
 	source = dag.Directory().WithDirectory("/", source, DirectoryWithDirectoryOpts{
 		Exclude: []string{
@@ -218,9 +218,9 @@ func (repo *Repository) DaggerEngine(
 		WithFile("/opt/cni/bin/dnsname", repo.dnsnameBinary(goarch)).
 		WithFile("/usr/local/bin/runc", runcBin(goarch), ContainerWithFileOpts{Permissions: 0o700}).
 		WithDirectory("/usr/local/bin", qemuBins(goarch)).
-		WithFile(distconsts.GoSDKEngineContainerTarballPath, repo.goSDKImageTarBall(goarch)).
-		WithDirectory(filepath.Dir(distconsts.PythonSDKEngineContainerModulePath), repo.pythonSDK()).
-		WithDirectory(filepath.Dir(distconsts.TypescriptSDKEngineContainerModulePath), repo.typescriptSDK(goarch)).
+		With(repo.goSDKContent(ctx, goarch)).
+		With(repo.pythonSDKContent(ctx, goarch)).
+		With(repo.typescriptSDKContent(ctx, goarch)).
 		WithDirectory("/", cniPlugins(goarch, false)).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory()).
 		WithNewFile(engineTomlPath, ContainerWithNewFileOpts{

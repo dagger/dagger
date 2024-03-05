@@ -1,13 +1,19 @@
 package main
 
+import "dagger/util"
+
 type Dagger struct {
-	// XXX: do we need this extra layer of indirection? could we just add this
-	// onto Util directory?
-	Repo *UtilRepository // +private
+	Source *Directory
 }
 
 func New(source *Directory) *Dagger {
 	return &Dagger{
-		Repo: dag.Util().Repository(source),
+		Source: source,
 	}
+}
+
+func (dagger *Dagger) repo() *util.Repository {
+	// XXX: this is a really annoying hack
+	// we should have a better way of consuming types from inside util packages
+	return util.NewRepository(dagger.Source)
 }

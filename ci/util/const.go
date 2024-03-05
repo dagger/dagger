@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"bytes"
@@ -9,7 +9,11 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"golang.org/x/exp/maps"
+
+	"dagger/internal/dagger"
 )
+
+var dag = dagger.Connect()
 
 const (
 	engineServerPath    = "/usr/local/bin/dagger-engine"

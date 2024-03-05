@@ -10,7 +10,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"

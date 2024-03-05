@@ -13,42 +13,52 @@ import (
 func (ci *Dagger) Lint(ctx context.Context) error {
 	_, err := dag.Container().
 		From("golangci/golangci-lint:v1.55-alpine").
-		WithMountedDirectory("/app", ci.Repo.DirectoryForGo()).
+		WithMountedDirectory("/app", ci.repo().DirectoryForGo()).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
 		Sync(ctx)
 	return err
 }
 
-func (ci *Dagger) CLI() *File {
-	return ci.Repo.DaggerBinary()
+func (ci *Dagger) CLI(ctx context.Context) (*File, error) {
+	return ci.repo().DaggerBinary(ctx, "", "", "")
 }
 
-func (ci *Dagger) Engine() *Container {
-	return ci.Repo.DaggerEngine()
+func (ci *Dagger) Engine(ctx context.Context) (*Container, error) {
+	return ci.repo().DaggerEngine(ctx, "", nil, nil)
 }
 
 func (ci *Dagger) Dev(
+	ctx context.Context,
 	target *Directory, // +optional
-) *Container {
+) (*Container, error) {
 	if target == nil {
-		target = ci.Repo.Directory()
+		target = ci.repo().Directory
 	}
 
-	// we can't call terminal here (see below)
-	return ci.Repo.GoBase().
+	binary, err := ci.repo().DaggerBinary(ctx, "", "", "")
+	if err != nil {
+		return nil, err
+	}
+
+	svc, err := ci.EngineService(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ci.repo().GoBase().
 		WithMountedDirectory("/mnt", target).
-		WithMountedFile("/usr/bin/dagger", ci.Repo.DaggerBinary()).
+		WithMountedFile("/usr/bin/dagger", binary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").
-		WithServiceBinding("dagger-engine", ci.Repo.DaggerEngineService("foo")).
+		WithServiceBinding("dagger-engine", svc).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine").
-		WithWorkdir("/mnt")
+		WithWorkdir("/mnt"), nil
 }
 
-func (ci *Dagger) EngineService() *Service {
-	// XXX: this doesn't *really* seem to work (can't connect externally)
-	// ahhhh i think this is actually due to not passing the healthcheck
-	return ci.Repo.DaggerEngineService("foo")
+func (ci *Dagger) EngineService(ctx context.Context) (*Service, error) {
+	return ci.repo().DaggerEngineService(ctx, "foo", nil, nil, "", nil, []string{
+		`grpc=address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
+	})
 }
 
 // Test runs Engine tests
@@ -118,10 +128,14 @@ func (ci *Dagger) testCmd(ctx context.Context) (*Container, error) {
 		"network-name=dagger-dev",
 		"network-cidr=10.88.0.0/16",
 	}
-	devEngine := ci.Repo.DaggerEngine(UtilRepositoryDaggerEngineOpts{
-		ConfigEntries:  configEntries,
-		EntrypointArgs: entrypointArgs,
-	})
+	devEngine, err := ci.repo().DaggerEngine(ctx, "", entrypointArgs, configEntries)
+	if err != nil {
+		return nil, err
+	}
+	devBinary, err := ci.repo().DaggerBinary(ctx, "", "", "")
+	if err != nil {
+		return nil, err
+	}
 
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
@@ -132,7 +146,7 @@ func (ci *Dagger) testCmd(ctx context.Context) (*Container, error) {
 	// These are used by core/integration/remotecache_test.go
 	testEngineUtils := dag.Directory().
 		WithFile("engine.tar", devEngine.AsTarball()).
-		WithFile("dagger", ci.Repo.DaggerBinary(), DirectoryWithFileOpts{
+		WithFile("dagger", devBinary, DirectoryWithFileOpts{
 			Permissions: 0755,
 		})
 
@@ -155,9 +169,9 @@ func (ci *Dagger) testCmd(ctx context.Context) (*Container, error) {
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
-	tests := ci.Repo.GoBase().
+	tests := ci.repo().GoBase().
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.10.0"}).
-		WithMountedDirectory("/app", ci.Repo.Directory()). // need all the source for extension tests
+		WithMountedDirectory("/app", ci.repo().Directory). // need all the source for extension tests
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithWorkdir("/app").
@@ -171,7 +185,7 @@ func (ci *Dagger) testCmd(ctx context.Context) (*Container, error) {
 	}
 
 	return tests.
-			WithMountedFile(cliBinPath, ci.Repo.DaggerBinary()).
+			WithMountedFile(cliBinPath, devBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint),
 		// XXX: ...why is this necessary?
