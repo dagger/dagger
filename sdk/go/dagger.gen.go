@@ -4962,8 +4962,7 @@ func (r *Client) BuiltinContainer(digest string) *Container {
 	q = q.Arg("digest", digest)
 
 	return &Container{
-		Query:  q,
-		Client: r.Client,
+		Query: q,
 	}
 }
 
