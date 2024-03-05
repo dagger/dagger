@@ -1,8 +1,10 @@
 pipeline {
   agent { label 'dagger' }
 
+  // assumes that the Dagger Cloud token
+  // is in a Jenkins credential named DAGGER_CLOUD_TOKEN
   environment {
-   DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
+    DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
   }
 
   stages {

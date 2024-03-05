@@ -9,6 +9,9 @@
     DOCKER_CERT_PATH: '/certs/client'
     DOCKER_DRIVER: overlay2
     DOCKER_VERSION: '20.10.16'
+    # assumes the Dagger Cloud token is
+    # in a masked/protected variable named DAGGER_CLOUD_TOKEN
+    # set via the GitLab UI
     DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
 .dagger:
   extends: [.docker]
