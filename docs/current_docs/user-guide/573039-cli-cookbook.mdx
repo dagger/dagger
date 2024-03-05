@@ -27,7 +27,7 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --help
 Or, to list the arguments available for the return value of the `build` function of the `golang` module, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/golang/example --args "-C","./hello" --help
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/golang/example --args="-C","./hello" --help
 ```
 
 ## List the contents of a directory returned by a function
@@ -37,7 +37,7 @@ To list the contents of a directory returned by a function, use `dagger call FUN
 For example, to list the contents of the directory returned by the `build` function of the `golang` module, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/golang/example --args "-C","./hello" entries
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/golang/example --args="-C","./hello" entries
 ```
 
 ## Export a file or directory returned by a function to the host
@@ -49,13 +49,13 @@ When a function returns a directory, a specific file from the directory can be e
 For example, to export the directory returned by the `build` function of the `golang` module to the `./my-build` directory on the host, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger#main --args ./cmd/dagger export --path ./my-build
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger#main --args=./cmd/dagger export --path=./my-build
 ```
 
 To export the compiled binary file from the directory returned by the `build` function of the `golang` module as `/tmp/my-file` on the host, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger#main --args ./cmd/dagger file --path ./cmd/dagger export --path /tmp/dagger
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger#main --args=./cmd/dagger file --path=./cmd/dagger export --path=/tmp/dagger
 ```
 
 ## Start an interactive terminal for a container returned by a function
@@ -71,7 +71,7 @@ dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=c
 To start the same terminal with the `zsh` shell, use:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay,zsh terminal --cmd zsh
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay,zsh terminal --cmd=zsh
 ```
 
 ## Start a service returned by a function
@@ -89,7 +89,7 @@ dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f
 To start the same service and map MariaDB port 3306 to host port 39000, use:
 
 ```shell
-dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up --ports 39000:3306
+dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up --ports=39000:3306
 ```
 
 To start the same service and map MariaDB port 3306 to a random port on the host, use:
@@ -105,17 +105,17 @@ To pass a secret to a function, source it from a host environment variable (`env
 For example, pass a GitHub access token from an environment variable named `GITHUB_TOKEN` to the `run` function of the `gh` module:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token env:GITHUB_TOKEN --cmd "issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo dagger/dagger"
 ```
 
 Or, pass the token from a host file named `github-token.txt`:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token file:/home/admin/github-token.txt --cmd "issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=file:/home/admin/github-token.txt --cmd="issue list --repo dagger/dagger"
 ```
 
 Or, pass the token from the output of a command executed on the host:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token cmd:"gh auth token" --cmd "issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=cmd:"gh auth token" --cmd="issue list --repo dagger/dagger"
 ```
