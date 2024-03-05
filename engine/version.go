@@ -8,11 +8,10 @@ import (
 )
 
 var (
-	EngineImageRepo = "registry.dagger.io/engine"
-
-	Package = "github.com/dagger/dagger"
-
-	GPUSupportEnvName = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
+	EngineImageRepo              = "registry.dagger.io/engine"
+	CustomEngineImageRepoEnvName = "_EXPERIMENTAL_DAGGER_ENGINE_IMAGE_REPO"
+	Package                      = "github.com/dagger/dagger"
+	GPUSupportEnvName            = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
 // Version holds the complete version number. Filled in at linking time.
@@ -33,11 +32,16 @@ func RunnerHost() (string, error) {
 		return v, nil
 	}
 
+	engineImageRepo := EngineImageRepo
+	if customEngineImageRepo := os.Getenv(CustomEngineImageRepoEnvName); customEngineImageRepo != "" {
+		engineImageRepo = customEngineImageRepo
+	}
+
 	gpuSupportEnabled := os.Getenv(GPUSupportEnvName) != ""
 
 	tag := Version
 	if gpuSupportEnabled {
 		tag += "-gpu"
 	}
-	return fmt.Sprintf("docker-image://%s:%s", EngineImageRepo, tag), nil
+	return fmt.Sprintf("docker-image://%s:%s", engineImageRepo, tag), nil
 }
