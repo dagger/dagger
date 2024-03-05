@@ -52,10 +52,10 @@ For example, to export the directory returned by the `build` function of the `go
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger#main --args=./cmd/dagger export --path=./my-build
 ```
 
-To export the compiled binary file from the directory returned by the `build` function of the `golang` module as `/tmp/dagger` on the host, use:
+To export the compiled binary file from the directory returned by the `build` function of the `golang` module as `/tmp/my-binary` on the host, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger#main --args=./cmd/dagger file --path=./dagger export --path=/tmp/dagger
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger#main --args=./cmd/dagger file --path=./dagger export --path=/tmp/my-binary
 ```
 
 ## Start an interactive terminal for a container returned by a function
