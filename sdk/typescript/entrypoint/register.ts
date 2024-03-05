@@ -9,7 +9,7 @@ import {
 import { ScanResult } from "../introspector/scanner/scan.js"
 import {
   ConstructorTypeDef,
-  FunctionArg,
+  FunctionArgTypeDef,
   FunctionTypedef,
   ListTypeDef,
   ObjectTypeDef,
@@ -94,7 +94,7 @@ function addFunction(fct: FunctionTypedef): Function_ {
  * Register all arguments in the function.
  */
 function addArg(args: {
-  [name: string]: FunctionArg
+  [name: string]: FunctionArgTypeDef
 }): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {
     Object.values(args).forEach((arg) => {

@@ -1,12 +1,12 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
-import { serializeSignature, serializeSymbol } from "./serialize.js"
+import { serializeSymbol } from "./serialize.js"
 import {
   ClassTypeDef,
   ConstructorTypeDef,
   FieldTypeDef,
-  FunctionArg,
+  FunctionArgTypeDef,
   FunctionTypedef,
 } from "./typeDefs.js"
 import {
@@ -18,6 +18,7 @@ import {
   isPublicProperty,
   typeNameToTypedef,
 } from "./utils.js"
+import { Method } from "./abtractions/method.js"
 
 export type ScanResult = {
   module: {
@@ -184,7 +185,7 @@ function introspectConstructor(
   constructor: ts.ConstructorDeclaration,
 ): ConstructorTypeDef {
   const args = constructor.parameters.reduce(
-    (acc: { [name: string]: FunctionArg }, param) => {
+    (acc: { [name: string]: FunctionArgTypeDef }, param) => {
       const paramSymbol = checker.getSymbolAtLocation(param.name)
       if (!paramSymbol) {
         throw new UnknownDaggerError(
@@ -239,35 +240,8 @@ function introspectMethod(
     )
   }
 
-  const methodMetadata = serializeSymbol(checker, methodSymbol)
-  const methodSignature = methodMetadata.type
-    .getCallSignatures()
-    .map((methodSignature) => serializeSignature(checker, methodSignature))[0]
-
-  return {
-    name: methodMetadata.name,
-    description: methodMetadata.description,
-    alias: getAlias(method, "func"),
-    args: methodSignature.params.reduce(
-      (
-        acc: { [name: string]: FunctionArg },
-        { name, typeName, description, optional, defaultValue, isVariadic },
-      ) => {
-        acc[name] = {
-          name,
-          typeDef: typeNameToTypedef(typeName),
-          description,
-          optional,
-          defaultValue,
-          isVariadic,
-        }
-
-        return acc
-      },
-      {},
-    ),
-    returnType: typeNameToTypedef(methodSignature.returnType),
-  }
+  // Todo(TomChv): continue with higher levels
+  return new Method(checker, method).typeDef
 }
 
 /**
