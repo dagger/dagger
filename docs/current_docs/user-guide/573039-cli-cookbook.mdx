@@ -8,7 +8,7 @@ slug: /user-guide/573039/cli-cookbook
 
 To list all the functions available in a module, use `dagger functions`.
 
-For example, list available functions in the `hello` module:
+For example, to list available functions in the `hello` module, use:
 
 ```shell
 dagger -m github.com/shykes/daggerverse/hello@v0.1.2 functions
@@ -16,20 +16,106 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 functions
 
 ## List available arguments for a function
 
-To list all the arguments accepted by a function, use `dagger call FUNCTION-NAME --help`.
+To list all the arguments accepted by a function, use `dagger call FUNCTION-NAME --help`. The `--help` suffix can be added at any point in the `dagger call` command to obtain context-sensitive help.
 
-For example, list the arguments available for the `build` function in the `golang` module:
+For example, to list the arguments available for the `build` function of the `golang` module, use:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --help
 ```
 
+Or, to list the arguments available for the return value of the `build` function of the `golang` module, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/golang/example --args "-C","./hello" --help
+```
+
 ## List the contents of a directory returned by a function
 
-## Export a file returned by a function to the host
+To list the contents of a directory returned by a function, use `dagger call FUNCTION-NAME entries`.
+
+For example, to list the contents of the directory returned by the `build` function of the `golang` module, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/golang/example --args "-C","./hello" entries
+```
+
+## Export a file or directory returned by a function to the host
+
+To export a file or directory returned by a function to the host, use `dagger call FUNCTION-NAME export --path HOST-PATH-FOR-EXPORT`.
+
+When a function returns a directory, a specific file from the directory can be exported to the host with `dagger call FUNCTION-NAME file --path FILE-TO-EXPORT export --path HOST-PATH-FOR-EXPORT`. Note that `FILE-TO-EXPORT` must be specified relative to the directory returned by the function.
+
+For example, to export the directory returned by the `build` function of the `golang` module to the `./my-build` directory on the host, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger#main --args ./cmd/dagger export --path ./my-build
+```
+
+To export the compiled binary file from the directory returned by the `build` function of the `golang` module as `/tmp/my-file` on the host, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger#main --args ./cmd/dagger file --path ./cmd/dagger export --path /tmp/dagger
+```
 
 ## Start an interactive terminal for a container returned by a function
 
-## Create a service from a container returned by a function
+To start an interactive terminal for a container returned by a function, use `dagger call FUNCTION-NAME terminal`. By default, the terminal is started with the `sh` shell, although this can be overridden by adding the `--cmd` argument.
+
+For example, to start an interactive terminal with the Wolfi base container returned by the `container` function of the `wolfi` module, use:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay terminal
+```
+
+To start the same terminal with the `zsh` shell, use:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay,zsh terminal --cmd zsh
+```
+
+## Start a service returned by a function
+
+To start a service returned by a function and have it forward traffic to a specified address via the host, use  `dagger call FUNCTION-NAME up`. If no port information is supplied, all of the service's ports are forwarded.
+
+By default, each port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
+
+For example, to start a MariaDB service on host port 3306 (the default MariaDB port) with the `serve` function of the `mariadb` module, use:
+
+```shell
+dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up
+```
+
+To start the same service and map MariaDB port 3306 to host port 39000, use:
+
+```shell
+dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up --ports 39000:3306
+```
+
+To start the same service and map MariaDB port 3306 to a random port on the host, use:
+
+```shell
+dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up --random
+```
 
 ## Pass a secret to a function as an argument
+
+To pass a secret to a function, source it from a host environment variable (`env:`), the host filesystem (`file:`), or a host command (`cmd:`).
+
+For example, pass a GitHub access token from an environment variable named `GITHUB_TOKEN` to the `run` function of the `gh` module:
+
+```shell
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token env:GITHUB_TOKEN --cmd "issue list --repo dagger/dagger"
+```
+
+Or, pass the token from a host file named `github-token.txt`:
+
+```shell
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token file:/home/admin/github-token.txt --cmd "issue list --repo dagger/dagger"
+```
+
+Or, pass the token from the output of a command executed on the host:
+
+```shell
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token cmd:"gh auth token" --cmd "issue list --repo dagger/dagger"
+```

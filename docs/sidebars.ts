@@ -38,6 +38,12 @@ module.exports = {
       "items": [
         {
           "type": "doc",
+          "label": "CLI Cookbook",
+          "id": "user-guide/cli-cookbook"
+
+        },
+        {
+          "type": "doc",
           "label": "Dagger in CI",
           "id": "user-guide/ci/index"
         },
