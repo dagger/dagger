@@ -43,9 +43,44 @@ module.exports = {
 
         },
         {
-          "type": "doc",
+          "type": "category",
           "label": "Dagger in CI",
-          "id": "user-guide/ci/index"
+          "link": {
+            "type": "doc",
+            "id": "user-guide/ci/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "user-guide/ci/github-actions"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/ci/gitlab"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/ci/circleci"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/ci/jenkins"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/ci/aws-codebuild"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/ci/azure-pipelines"
+            },
+            {
+              "type": "doc",
+              "id": "user-guide/ci/argo-workflows"
+            }
+          ]
         },
         {
           "type": "category",

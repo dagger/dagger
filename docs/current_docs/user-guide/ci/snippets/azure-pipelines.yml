@@ -9,5 +9,11 @@ steps:
 - script: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
   displayName: 'Install Dagger CLI'
 
-- script: dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting Hola --name Daggernauts --shout
+- script: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
   displayName: 'Call Dagger Function'
+  env:
+    # assumes the Dagger Cloud token is
+    # in a secret named DAGGER_CLOUD_TOKEN
+    # set via the Azure Pipeline settings UI/CLI
+    # the secret is then explicitly mapped to the script env
+    DAGGER_CLOUD_TOKEN: $(DAGGER_CLOUD_TOKEN)
