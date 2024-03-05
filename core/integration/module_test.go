@@ -3022,7 +3022,7 @@ type Test struct{}
 
 func (m *Test) Fn(ctx context.Context) string {
 	resp := &graphql.Response{}
-	err := dag.Client.MakeRequest(ctx, &graphql.Request{
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
 		Query: "{host{unixSocket(path:\"/some/sock\"){id}}}",
 	}, resp)
 	if err != nil {
