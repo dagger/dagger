@@ -103,12 +103,12 @@ Because this is a separate package, you can only use the variables/functions/typ
 Only types and functions in the top-level package are part of the public-facing API for the module.
 :::
 
-You can access other Dagger types from a sub-package by importing the generated sub-package `<module>/internal/dagger`:
+You can access other Dagger types from a sub-package by importing the generated sub-package `dagger/<module>/internal/dagger`:
 
 ```go
 // utils/utils.go
 
-import "main/internal/dagger"
+import "dagger/<module>/internal/dagger"
 
 func DoThing(client *dagger.Client) *dagger.Directory {
     // we need to pass *dagger.Client in here, since we don't have access to `dag`
