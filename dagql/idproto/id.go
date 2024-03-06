@@ -21,12 +21,6 @@ func New() *ID {
 // * immutable, can append new IDs to base if modifications needed
 // * digest must always be set
 type ID struct {
-	// TODO: doc why this has to be like it is
-	// TODO: ^^ now that the mutex is gone, maybe it doesn't need to be like it is anymore?
-	*idState
-}
-
-type idState struct {
 	raw *RawID_Fields
 
 	// TODO: doc, or perhaps these can be removed now?
@@ -130,7 +124,7 @@ func (id *ID) Append(
 	nth int,
 	args ...*Argument,
 ) *ID {
-	newID := &ID{&idState{
+	newID := &ID{
 		raw: &RawID_Fields{
 			BaseIDDigest: string(id.Digest()),
 			Type:         NewType(ret),
@@ -142,7 +136,7 @@ func (id *ID) Append(
 		base:   id,
 		module: mod,
 		args:   args,
-	}}
+	}
 
 	if mod != nil {
 		newID.raw.Module = mod.raw
@@ -237,8 +231,7 @@ func (id *ID) Encode() (string, error) {
 		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
 	}
 
-	// TODO: Deterministic is needed so the IdsByDigest map is sorted, but doc message on Deterministic is kind
-	// of scary... Could switch to sorted list and key by index?
+	// Deterministic is strictly needed so the IdsByDigest map is sorted in the serialized proto
 	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(rawID)
 	if err != nil {
 		return "", err
@@ -278,7 +271,7 @@ func (id *ID) FromAnyPB(data *anypb.Any) error {
 	if err := data.UnmarshalTo(&rawID); err != nil {
 		return err
 	}
-	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*idState{})
+	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*ID{})
 }
 
 func (id *ID) Decode(str string) error {
@@ -291,20 +284,23 @@ func (id *ID) Decode(str string) error {
 		return fmt.Errorf("failed to unmarshal proto: %w", err)
 	}
 
-	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*idState{})
+	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*ID{})
 }
 
 func (id *ID) decode(
 	dgst string,
 	idsByDigest map[string]*RawID_Fields,
-	memo map[string]*idState,
+	memo map[string]*ID,
 ) error {
-	if idState, ok := memo[dgst]; ok {
-		id.idState = idState
+	if id == nil {
+		return fmt.Errorf("cannot decode into nil ID")
+	}
+
+	if existingID, ok := memo[dgst]; ok {
+		*id = *existingID
 		return nil
 	}
-	id.idState = &idState{}
-	memo[dgst] = id.idState
+	memo[dgst] = id
 
 	raw, ok := idsByDigest[dgst]
 	if !ok {
@@ -353,7 +349,6 @@ func (id *ID) calcDigest() (string, error) {
 		return "", fmt.Errorf("ID digest already set")
 	}
 
-	// TODO: is Deterministic even needed here?
 	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.raw)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal ID proto: %w", err)

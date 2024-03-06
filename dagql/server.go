@@ -455,7 +455,7 @@ func (s *Server) Load(ctx context.Context, id *idproto.ID) (Object, error) {
 	sel.Nth = int(id.Nth())
 	res, id, err := s.cachedSelect(ctx, base, sel)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load: %w", err)
 	}
 	return s.toSelectable(id, res)
 }
@@ -473,7 +473,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 	for i, sel := range sels {
 		res, id, err = s.cachedSelect(ctx, self, sel)
 		if err != nil {
-			return err
+			return fmt.Errorf("select: %w", err)
 		}
 
 		if _, ok := s.ObjectType(res.Type().Name()); ok {
@@ -645,7 +645,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 
 	val, chainedID, err := s.cachedSelect(ctx, self, sel.Selector)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve: %w", err)
 	}
 
 	if val == nil {

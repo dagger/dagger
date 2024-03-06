@@ -100,7 +100,7 @@ func (lit *Literal) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 func (lit *Literal) decode(
 	raw *RawLiteral,
 	idsByDigest map[string]*RawID_Fields,
-	memo map[string]*idState,
+	memo map[string]*ID,
 ) error {
 	if raw == nil {
 		return nil
@@ -139,9 +139,6 @@ func (lit *Literal) decode(
 			}
 			list = append(list, elemLit)
 		}
-		if len(list) == 0 {
-			return nil
-		}
 		lit.value = &Literal_List{values: list}
 	case *RawLiteral_Object:
 		args := make([]*Argument, 0, len(v.Object.Values))
@@ -157,9 +154,6 @@ func (lit *Literal) decode(
 				raw:   arg,
 				value: fieldLit,
 			})
-		}
-		if len(args) == 0 {
-			return nil
 		}
 		lit.value = &Literal_Object{values: args}
 	default:

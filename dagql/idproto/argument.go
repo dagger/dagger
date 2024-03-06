@@ -42,7 +42,7 @@ func (arg *Argument) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 func (arg *Argument) decode(
 	raw *RawArgument,
 	idsByDigest map[string]*RawID_Fields,
-	memo map[string]*idState,
+	memo map[string]*ID,
 ) error {
 	if raw == nil {
 		return nil

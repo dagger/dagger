@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -84,11 +83,7 @@ func TelemetryFunc(rec *progrock.Recorder) dagql.AroundFunc {
 		id *idproto.ID,
 		next func(context.Context) (dagql.Typed, error),
 	) func(context.Context) (dagql.Typed, error) {
-		dig, err := id.Digest()
-		if err != nil {
-			slog.Error("failed to digest id", "error", err, "id", id.Display())
-			return next
-		}
+		dig := id.Digest()
 		return func(context.Context) (dagql.Typed, error) {
 			vtx := rec.Vertex(dig, id.Display())
 			ctx = ioctx.WithStdout(ctx, vtx.Stdout())

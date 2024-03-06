@@ -34,7 +34,7 @@ func (m *Module) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 func (m *Module) decode(
 	raw *RawModule,
 	idsByDigest map[string]*RawID_Fields,
-	memo map[string]*idState,
+	memo map[string]*ID,
 ) error {
 	if raw == nil {
 		return nil

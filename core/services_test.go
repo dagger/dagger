@@ -300,7 +300,7 @@ func (f *fakeStartable) ID() *idproto.ID {
 	id := idproto.New().Append(&ast.Type{
 		NamedType: "FakeService",
 		NonNull:   true,
-	}, f.name)
+	}, f.name, nil, false, 0)
 	return id
 }
 
