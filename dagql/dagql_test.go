@@ -1653,8 +1653,7 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	pointADgst, err := pointAInst.ID().Digest()
-	assert.NilError(t, err)
+	pointADgst := pointAInst.ID().Digest()
 
 	var pointBInst dagql.Instance[*points.Point]
 	assert.NilError(t, srv.Select(ctx, srv.Root(), &pointBInst,
@@ -1666,8 +1665,7 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	pointBDgst, err := pointBInst.ID().Digest()
-	assert.NilError(t, err)
+	pointBDgst := pointBInst.ID().Digest()
 
 	var lineAInst dagql.Instance[*points.Line]
 	assert.NilError(t, srv.Select(ctx, pointBInst, &lineAInst,
@@ -1678,15 +1676,13 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	lineADgst, err := lineAInst.ID().Digest()
-	assert.NilError(t, err)
+	lineADgst := lineAInst.ID().Digest()
 
 	var pointBFromInst dagql.Instance[*points.Point]
 	assert.NilError(t, srv.Select(ctx, lineAInst, &pointBFromInst,
 		dagql.Selector{Field: "from"},
 	))
-	pointBFromDgst, err := pointBFromInst.ID().Digest()
-	assert.NilError(t, err)
+	pointBFromDgst := pointBFromInst.ID().Digest()
 
 	var lineBInst dagql.Instance[*points.Line]
 	assert.NilError(t, srv.Select(ctx, pointAInst, &lineBInst,
@@ -1697,15 +1693,13 @@ func TestIDFormat(t *testing.T) {
 			},
 		},
 	))
-	lineBDgst, err := lineBInst.ID().Digest()
-	assert.NilError(t, err)
+	lineBDgst := lineBInst.ID().Digest()
 
 	var pointAFromInst dagql.Instance[*points.Point]
 	assert.NilError(t, srv.Select(ctx, lineBInst, &pointAFromInst,
 		dagql.Selector{Field: "from"},
 	))
-	pointAFromDgst, err := pointAFromInst.ID().Digest()
-	assert.NilError(t, err)
+	pointAFromDgst := pointAFromInst.ID().Digest()
 
 	rawID, err := pointAFromInst.ID().ToProto()
 	assert.NilError(t, err)

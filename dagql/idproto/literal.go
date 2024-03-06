@@ -14,16 +14,21 @@ type Literate interface {
 
 type Literal struct {
 	value LiteralValue
+	raw   *RawLiteral
 }
 
 func NewLiteral(value LiteralValue) *Literal {
 	return &Literal{
 		value: value,
+		raw: &RawLiteral{
+			Value: value.raw(),
+		},
 	}
 }
 
 type LiteralValue interface {
-	encode(map[string]*RawID_Fields) (*RawLiteral, error)
+	raw() isRawLiteral_Value
+	gatherIDs(map[string]*RawID_Fields)
 	inputs() ([]digest.Digest, error)
 	modules() []*Module
 	tainted() bool
@@ -85,11 +90,11 @@ func (lit *Literal) ToAST() *ast.Value {
 	return lit.value.toAST()
 }
 
-func (lit *Literal) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
+func (lit *Literal) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	if lit == nil || lit.value == nil {
-		return nil, nil
+		return
 	}
-	return lit.value.encode(idsByDigest)
+	lit.value.gatherIDs(idsByDigest)
 }
 
 func (lit *Literal) decode(
@@ -168,29 +173,29 @@ type Literal_Id struct {
 }
 
 func NewLiteralID(id *ID) *Literal {
-	return &Literal{
-		value: &Literal_Id{id: id},
-	}
+	return NewLiteral(&Literal_Id{id: id})
 }
 
 func (lit *Literal_Id) Value() *ID {
 	return lit.id
 }
 
-func (lit *Literal_Id) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
-	id, err := lit.id.encode(idsByDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode literal ID: %w", err)
-	}
-	return &RawLiteral{Value: &RawLiteral_IdDigest{IdDigest: id}}, nil
+func (lit *Literal_Id) raw() isRawLiteral_Value {
+	return &RawLiteral_IdDigest{IdDigest: lit.id.raw.Digest}
+}
+
+func (lit *Literal_Id) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+	lit.id.gatherIDs(idsByDigest)
 }
 
 func (lit *Literal_Id) inputs() ([]digest.Digest, error) {
-	d, err := lit.id.Digest()
-	if err != nil {
-		return nil, err
-	}
-	return []digest.Digest{d}, nil
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: shouldn't this recurse? or no? check old impl
+	return []digest.Digest{lit.id.Digest()}, nil
 }
 
 func (lit *Literal_Id) modules() []*Module {
@@ -225,9 +230,7 @@ type Literal_List struct {
 }
 
 func NewLiteralList(values ...*Literal) *Literal {
-	return &Literal{
-		value: &Literal_List{values: values},
-	}
+	return NewLiteral(&Literal_List{values: values})
 }
 
 func (lit *Literal_List) Range(fn func(int, Literal) error) error {
@@ -245,16 +248,18 @@ func (lit *Literal_List) Range(fn func(int, Literal) error) error {
 	return nil
 }
 
-func (lit *Literal_List) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
+func (lit *Literal_List) raw() isRawLiteral_Value {
 	list := make([]*RawLiteral, len(lit.values))
 	for i, val := range lit.values {
-		var err error
-		list[i], err = val.encode(idsByDigest)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode list literal: %w", err)
-		}
+		list[i] = val.raw
 	}
-	return &RawLiteral{Value: &RawLiteral_List{List: &List{Values: list}}}, nil
+	return &RawLiteral_List{List: &List{Values: list}}
+}
+
+func (lit *Literal_List) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+	for _, val := range lit.values {
+		val.gatherIDs(idsByDigest)
+	}
 }
 
 func (lit *Literal_List) inputs() ([]digest.Digest, error) {
@@ -323,9 +328,7 @@ type Literal_Object struct {
 }
 
 func NewLiteralObject(values ...*Argument) *Literal {
-	return &Literal{
-		value: &Literal_Object{values: values},
-	}
+	return NewLiteral(&Literal_Object{values: values})
 }
 
 func (lit *Literal_Object) Range(fn func(int, string, Literal) error) error {
@@ -349,16 +352,18 @@ func (lit *Literal_Object) Range(fn func(int, string, Literal) error) error {
 	return nil
 }
 
-func (lit *Literal_Object) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
+func (lit *Literal_Object) raw() isRawLiteral_Value {
 	args := make([]*RawArgument, len(lit.values))
-	for i, arg := range lit.values {
-		var err error
-		args[i], err = arg.encode(idsByDigest)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode object literal: %w", err)
-		}
+	for i, val := range lit.values {
+		args[i] = val.raw
 	}
-	return &RawLiteral{Value: &RawLiteral_Object{Object: &Object{Values: args}}}, nil
+	return &RawLiteral_Object{Object: &Object{Values: args}}
+}
+
+func (lit *Literal_Object) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+	for _, val := range lit.values {
+		val.gatherIDs(idsByDigest)
+	}
 }
 
 func (lit *Literal_Object) inputs() ([]digest.Digest, error) {
@@ -426,9 +431,7 @@ func (lit *Literal_Object) toAST() *ast.Value {
 type Literal_Bool = literalPrimitiveType[*RawLiteral_Bool, bool]
 
 func NewLiteralBool(val bool) *Literal {
-	return &Literal{
-		value: &Literal_Bool{&RawLiteral_Bool{Bool: val}},
-	}
+	return NewLiteral(&Literal_Bool{&RawLiteral_Bool{Bool: val}})
 }
 
 func (rawLit *RawLiteral_Bool) Value() bool {
@@ -442,9 +445,7 @@ func (rawLit *RawLiteral_Bool) astKind() ast.ValueKind {
 type Literal_Enum = literalPrimitiveType[*RawLiteral_Enum, string]
 
 func NewLiteralEnum(val string) *Literal {
-	return &Literal{
-		value: &Literal_Enum{&RawLiteral_Enum{Enum: val}},
-	}
+	return NewLiteral(&Literal_Enum{&RawLiteral_Enum{Enum: val}})
 }
 
 func (rawLit *RawLiteral_Enum) Value() string {
@@ -458,9 +459,7 @@ func (rawLit *RawLiteral_Enum) astKind() ast.ValueKind {
 type Literal_Int = literalPrimitiveType[*RawLiteral_Int, int64]
 
 func NewLiteralInt(val int64) *Literal {
-	return &Literal{
-		value: &Literal_Int{&RawLiteral_Int{Int: val}},
-	}
+	return NewLiteral(&Literal_Int{&RawLiteral_Int{Int: val}})
 }
 
 func (rawLit *RawLiteral_Int) Value() int64 {
@@ -474,9 +473,7 @@ func (rawLit *RawLiteral_Int) astKind() ast.ValueKind {
 type Literal_Float = literalPrimitiveType[*RawLiteral_Float, float64]
 
 func NewLiteralFloat(val float64) *Literal {
-	return &Literal{
-		value: &Literal_Float{&RawLiteral_Float{Float: val}},
-	}
+	return NewLiteral(&Literal_Float{&RawLiteral_Float{Float: val}})
 }
 
 func (rawLit *RawLiteral_Float) Value() float64 {
@@ -490,9 +487,7 @@ func (rawLit *RawLiteral_Float) astKind() ast.ValueKind {
 type Literal_String_ = literalPrimitiveType[*RawLiteral_String_, string]
 
 func NewLiteralString(val string) *Literal {
-	return &Literal{
-		value: &Literal_String_{&RawLiteral_String_{String_: val}},
-	}
+	return NewLiteral(&Literal_String_{&RawLiteral_String_{String_: val}})
 }
 
 func (rawLit *RawLiteral_String_) Value() string {
@@ -506,9 +501,7 @@ func (rawLit *RawLiteral_String_) astKind() ast.ValueKind {
 type Literal_Null = literalPrimitiveType[*RawLiteral_Null, any]
 
 func NewLiteralNull() *Literal {
-	return &Literal{
-		value: &Literal_Null{&RawLiteral_Null{Null: true}},
-	}
+	return NewLiteral(&Literal_Null{&RawLiteral_Null{Null: true}})
 }
 
 func (rawLit *RawLiteral_Null) Value() any {
@@ -524,16 +517,18 @@ type literalPrimitiveType[P interface {
 	Value() T
 	astKind() ast.ValueKind
 }, T comparable] struct {
-	raw P
+	rawVal P
 }
 
 func (lit *literalPrimitiveType[P, T]) Value() T {
-	return lit.raw.Value()
+	return lit.rawVal.Value()
 }
 
-func (lit *literalPrimitiveType[P, T]) encode(_ map[string]*RawID_Fields) (*RawLiteral, error) {
-	return &RawLiteral{Value: lit.raw}, nil
+func (lit *literalPrimitiveType[P, T]) raw() isRawLiteral_Value {
+	return lit.rawVal
 }
+
+func (lit *literalPrimitiveType[P, T]) gatherIDs(_ map[string]*RawID_Fields) {}
 
 func (lit *literalPrimitiveType[P, T]) inputs() ([]digest.Digest, error) {
 	return nil, nil
@@ -549,26 +544,26 @@ func (lit *literalPrimitiveType[P, T]) tainted() bool {
 
 func (lit *literalPrimitiveType[P, T]) display() string {
 	// kludge to special case truncation of strings
-	if lit.raw.astKind() == ast.StringValue {
-		var val any = lit.raw.Value()
+	if lit.rawVal.astKind() == ast.StringValue {
+		var val any = lit.rawVal.Value()
 		return truncate(strconv.Quote(val.(string)), 100)
 	}
-	return fmt.Sprintf("%v", lit.raw.Value())
+	return fmt.Sprintf("%v", lit.rawVal.Value())
 }
 
 func (lit *literalPrimitiveType[P, T]) toInput() any {
-	return lit.raw.Value()
+	return lit.rawVal.Value()
 }
 
 func (lit *literalPrimitiveType[P, T]) toAST() *ast.Value {
-	kind := lit.raw.astKind()
+	kind := lit.rawVal.astKind()
 	var raw string
 	if kind == ast.NullValue {
 		// this teeny kludge allows us to use literalPrimitiveType with Literal_Null
 		// otherwise the raw value would show up as "<nil>"
 		raw = "null"
 	} else {
-		raw = fmt.Sprintf("%v", lit.raw.Value())
+		raw = fmt.Sprintf("%v", lit.rawVal.Value())
 	}
 	return &ast.Value{
 		Raw:  raw,

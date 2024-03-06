@@ -574,10 +574,6 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 		return nil, nil, err
 	}
 	ctx = idToContext(ctx, chainedID)
-	dig, err := chainedID.Digest()
-	if err != nil {
-		return nil, nil, err
-	}
 	doSelect := func(ctx context.Context) (Typed, error) {
 		return self.Select(ctx, sel)
 	}
@@ -588,7 +584,7 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	if chainedID.IsTainted() {
 		val, err = doSelect(ctx)
 	} else {
-		val, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
+		val, err = s.Cache.GetOrInitialize(ctx, chainedID.Digest(), doSelect)
 	}
 	if err != nil {
 		return nil, nil, err

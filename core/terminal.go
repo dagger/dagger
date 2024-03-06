@@ -52,10 +52,7 @@ type TerminalArgs struct {
 }
 
 func (container *Container) Terminal(svcID *idproto.ID, args *TerminalArgs) (*Terminal, http.Handler, error) {
-	termID, err := svcID.Digest()
-	if err != nil {
-		return nil, nil, err
-	}
+	termID := svcID.Digest()
 	endpoint := "terminals/" + termID.Encoded()
 	term := &Terminal{Endpoint: endpoint}
 	return term, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -90,12 +90,7 @@ func (svc *Service) Hostname(ctx context.Context, id *idproto.ID) (string, error
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
 		svc.HostUpstream != "": // container=>host
-		dig, err := id.Digest()
-		if err != nil {
-			return "", err
-		}
-
-		return network.HostHash(dig), nil
+		return network.HostHash(id.Digest()), nil
 	default:
 		return "", errors.New("unknown service type")
 	}
@@ -212,10 +207,7 @@ func (svc *Service) startContainer(
 	forwardStdout func(io.Reader),
 	forwardStderr func(io.Reader),
 ) (running *RunningService, err error) {
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
+	dig := id.Digest()
 
 	host, err := svc.Hostname(ctx, id)
 	if err != nil {
@@ -575,10 +567,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 		closers[i] = closeListener
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
+	dig := id.Digest()
 
 	return &RunningService{
 		Service: svc,
@@ -601,10 +590,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 }
 
 func (svc *Service) startReverseTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, err error) {
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
+	dig := id.Digest()
 
 	host, err := svc.Hostname(ctx, id)
 	if err != nil {

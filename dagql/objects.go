@@ -244,11 +244,7 @@ func (r Instance[T]) Unwrap() Typed {
 
 // String returns the instance in Class@sha256:... format.
 func (r Instance[T]) String() string {
-	dig, err := r.Constructor.Digest()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%s@%s", r.Type().Name(), dig)
+	return fmt.Sprintf("%s@%s", r.Type().Name(), r.Constructor.Digest())
 }
 
 func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, error) {

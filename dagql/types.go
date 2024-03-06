@@ -551,11 +551,7 @@ func (i ID[T]) DecodeInput(val any) (Input, error) {
 
 // String returns the ID in ClassID@sha256:... format.
 func (i ID[T]) String() string {
-	dig, err := i.id.Digest()
-	if err != nil {
-		panic(err) // TODO
-	}
-	return fmt.Sprintf("%s@%s", i.inner.Type().Name(), dig)
+	return fmt.Sprintf("%s@%s", i.inner.Type().Name(), i.id.Digest())
 }
 
 var _ Setter = ID[Typed]{}

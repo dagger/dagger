@@ -166,10 +166,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 
 	callerDigestInputs := []string{}
 	{
-		callerIDDigest, err := caller.Digest() // FIXME(vito) canonicalize, once all that's implemented
-		if err != nil {
-			return nil, fmt.Errorf("failed to get caller digest: %w", err)
-		}
+		callerIDDigest := caller.Digest() // FIXME(vito) canonicalize, once all that's implemented
 		callerDigestInputs = append(callerDigestInputs, callerIDDigest.String())
 	}
 	if !opts.Cache {

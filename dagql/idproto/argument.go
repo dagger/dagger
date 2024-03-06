@@ -12,7 +12,8 @@ type Argument struct {
 func NewArgument(name string, value *Literal) *Argument {
 	return &Argument{
 		raw: &RawArgument{
-			Name: name,
+			Name:  name,
+			Value: value.raw,
 		},
 		value: value,
 	}
@@ -31,17 +32,11 @@ func (arg *Argument) Tainted() bool {
 	return arg.value.Tainted()
 }
 
-func (arg *Argument) encode(idsByDigest map[string]*RawID_Fields) (*RawArgument, error) {
+func (arg *Argument) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	if arg == nil {
-		return nil, nil
+		return
 	}
-
-	var err error
-	arg.raw.Value, err = arg.value.encode(idsByDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode argument value: %w", err)
-	}
-	return arg.raw, nil
+	arg.value.gatherIDs(idsByDigest)
 }
 
 func (arg *Argument) decode(

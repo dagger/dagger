@@ -737,10 +737,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
 				case *idproto.Literal_Id:
-					argVertexID, err := x.Value().Digest()
-					if err != nil {
-						return err
-					}
+					argVertexID := x.Value().Digest()
 					argVtx := fe.db.Vertices[argVertexID.String()]
 					base := x.Value()
 					if baseStep, ok := fe.db.HighLevelStep(x.Value()); ok {

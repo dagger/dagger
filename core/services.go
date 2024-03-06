@@ -93,10 +93,7 @@ func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, e
 		return nil, err
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
+	dig := id.Digest()
 
 	key := ServiceKey{
 		Digest:   dig,
@@ -143,11 +140,7 @@ func (ss *Services) Start(ctx context.Context, id *idproto.ID, svc Startable) (*
 		return nil, err
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
-
+	dig := id.Digest()
 	key := ServiceKey{
 		Digest:   dig,
 		ServerID: clientMetadata.ServerID,
@@ -253,11 +246,7 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
 		return err
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return err
-	}
-
+	dig := id.Digest()
 	key := ServiceKey{
 		Digest:   dig,
 		ServerID: clientMetadata.ServerID,

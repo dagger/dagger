@@ -58,11 +58,7 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 			return next(ctx)
 		}
 
-		dig, err := id.Digest()
-		if err != nil {
-			slog.Warn("failed to digest id", "id", id.Display(), "err", err)
-			return next(ctx)
-		}
+		dig := id.Digest()
 		// TODO: we don't need this for anything yet
 		// inputs, err := id.Inputs()
 		// if err != nil {
@@ -117,12 +113,7 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
 		// instead of the full container().from().[...].stdout() ID
 		if obj, ok := res.(dagql.Object); ok {
-			objDigest, err := obj.ID().Digest()
-			if err != nil {
-				slog.Error("failed to digest object", "id", id.Display(), "err", err)
-			} else {
-				vtx.Output(objDigest)
-			}
+			vtx.Output(obj.ID().Digest())
 		}
 
 		vtx.Done(resolveErr)

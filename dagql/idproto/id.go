@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
-	"sync"
 
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -18,22 +17,22 @@ func New() *ID {
 	return nil
 }
 
+// TODO: doc invariants:
+// * immutable, can append new IDs to base if modifications needed
+// * digest must always be set
 type ID struct {
 	// TODO: doc why this has to be like it is
+	// TODO: ^^ now that the mutex is gone, maybe it doesn't need to be like it is anymore?
 	*idState
 }
 
 type idState struct {
 	raw *RawID_Fields
 
-	// TODO: doc
+	// TODO: doc, or perhaps these can be removed now?
 	base   *ID
 	args   []*Argument
 	module *Module
-
-	// TODO: doc
-	mutated  bool
-	digestMu sync.Mutex
 }
 
 func (id *ID) Inputs() ([]digest.Digest, error) {
@@ -69,10 +68,7 @@ func (id *ID) Modules() []*Module {
 	seen := map[digest.Digest]struct{}{}
 	deduped := []*Module{}
 	for _, mod := range allMods {
-		dig, err := mod.id.Digest()
-		if err != nil {
-			panic(err)
-		}
+		dig := mod.id.Digest()
 		if _, ok := seen[dig]; ok {
 			continue
 		}
@@ -136,22 +132,35 @@ func (id *ID) Append(
 ) *ID {
 	newID := &ID{&idState{
 		raw: &RawID_Fields{
-			Type:    NewType(ret),
-			Field:   field,
-			Tainted: tainted,
-			Nth:     int64(nth),
+			BaseIDDigest: string(id.Digest()),
+			Type:         NewType(ret),
+			Field:        field,
+			Args:         make([]*RawArgument, len(args)),
+			Tainted:      tainted,
+			Nth:          int64(nth),
 		},
 		base:   id,
 		module: mod,
-		args:   make([]*Argument, len(args)),
+		args:   args,
 	}}
 
+	if mod != nil {
+		newID.raw.Module = mod.raw
+	}
+
 	for i, arg := range args {
-		arg := arg
 		if arg.Tainted() {
 			newID.raw.Tainted = true
 		}
-		newID.args[i] = arg
+		newID.raw.Args[i] = arg.raw
+	}
+
+	var err error
+	newID.raw.Digest, err = newID.calcDigest()
+	if err != nil {
+		// TODO: right? something has to be deeply wrong if we
+		// can't marshal proto and hash the bytes
+		panic(err)
 	}
 
 	return newID
@@ -200,6 +209,15 @@ func (id *ID) Module() *Module {
 	return id.module
 }
 
+// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
+// first.
+func (id *ID) Digest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	return digest.Digest(id.raw.Digest)
+}
+
 func (id *ID) UnderlyingTypeName() string {
 	var typeName string
 	elem := id.raw.Type.Elem
@@ -233,75 +251,26 @@ func (id *ID) ToProto() (*RawID, error) {
 	rawID := &RawID{
 		IdsByDigest: map[string]*RawID_Fields{},
 	}
-	dgst, err := id.encode(rawID.IdsByDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode ID: %w", err)
-	}
-	rawID.TopLevelIDDigest = dgst
+	id.gatherIDs(rawID.IdsByDigest)
+	rawID.TopLevelIDDigest = id.raw.Digest
 	return rawID, nil
 }
 
-func (id *ID) encode(idsByDigest map[string]*RawID_Fields) (string, error) {
+func (id *ID) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	if id == nil {
-		return "", nil
+		return
 	}
 
-	id.digestMu.Lock()
-	defer id.digestMu.Unlock()
-
-	isUpToDate := id.isUpToDate()
-	if isUpToDate {
-		if _, ok := idsByDigest[id.raw.Digest]; ok {
-			// already been here, exit early
-			return id.raw.Digest, nil
-		}
-		// everything is up to date but we still need to recurse to collect
-		// all the IDs in idsByDigest
+	if _, ok := idsByDigest[id.raw.Digest]; ok {
+		return
 	}
+	idsByDigest[id.raw.Digest] = id.raw
 
-	var err error
-	id.raw.BaseIDDigest, err = id.base.encode(idsByDigest)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode base ID: %w", err)
-	}
-
-	id.raw.Module, err = id.module.encode(idsByDigest)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode module: %w", err)
-	}
-
-	id.raw.Args = make([]*RawArgument, 0, len(id.args))
+	id.base.gatherIDs(idsByDigest)
+	id.module.gatherIDs(idsByDigest)
 	for _, arg := range id.args {
-		encodedArg, err := arg.encode(idsByDigest)
-		if err != nil {
-			return "", fmt.Errorf("failed to encode argument: %w", err)
-		}
-		id.raw.Args = append(id.raw.Args, encodedArg)
+		arg.gatherIDs(idsByDigest)
 	}
-
-	if isUpToDate {
-		// done recursing to everything, no need to redigest
-		idsByDigest[id.raw.Digest] = id.raw
-		return id.raw.Digest, nil
-	}
-
-	id.raw.Digest = ""
-	// TODO: is Deterministic even needed here?
-	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.raw)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
-	}
-	h := xxh3.New()
-	if _, err := h.Write(pbBytes); err != nil {
-		return "", fmt.Errorf("failed to write ID proto to hash: %w", err)
-	}
-	id.raw.Digest = fmt.Sprintf("xxh3:%x", h.Sum(nil))
-	id.mutated = false
-
-	if _, ok := idsByDigest[id.raw.Digest]; !ok {
-		idsByDigest[id.raw.Digest] = id.raw
-	}
-	return id.raw.Digest, nil
 }
 
 func (id *ID) FromAnyPB(data *anypb.Any) error {
@@ -373,43 +342,26 @@ func (id *ID) decode(
 	return nil
 }
 
-// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
-// first.
-func (id *ID) Digest() (digest.Digest, error) {
-	id.digestMu.Lock()
-	if id.isUpToDate() {
-		id.digestMu.Unlock()
-		return digest.Digest(id.raw.Digest), nil
-	}
-	id.digestMu.Unlock()
-
-	dgst, err := id.encode(map[string]*RawID_Fields{})
-	if err != nil {
-		return "", fmt.Errorf("failed to encode ID: %w", err)
-	}
-	return digest.Digest(dgst), nil
-}
-
-// caller needs to hold id.digestMu
-func (id *ID) isUpToDate() bool {
+// presumes that id.raw.Digest is NOT set already, otherwise that value
+// will be incorrectly included in the digest
+func (id *ID) calcDigest() (string, error) {
 	if id == nil {
-		return true
+		return "", nil
 	}
 
-	switch {
-	case id.mutated:
-		return false
-	case id.raw.Digest == "":
-		return false
-	case (id.base == nil) != (id.raw.BaseIDDigest == ""):
-		// raw.BaseIDDigest was never set when creating a new ID (e.g. with id.Append)
-		return false
-	case (id.module == nil) != (id.raw.Module == nil):
-		// raw.Module was never set when creating a new ID (e.g. with id.Append)
-		return false
-	case len(id.args) != len(id.raw.Args):
-		// raw.Args was never set when creating a new ID (e.g. with id.Append)
-		return false
+	if id.raw.Digest != "" {
+		return "", fmt.Errorf("ID digest already set")
 	}
-	return true
+
+	// TODO: is Deterministic even needed here?
+	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.raw)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
+	}
+	h := xxh3.New()
+	if _, err := h.Write(pbBytes); err != nil {
+		return "", fmt.Errorf("failed to write ID proto to hash: %w", err)
+	}
+
+	return fmt.Sprintf("xxh3:%x", h.Sum(nil)), nil
 }

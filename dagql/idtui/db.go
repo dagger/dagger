@@ -165,20 +165,14 @@ func (db *DB) Step(dig string) (*Step, bool) {
 		}
 	}
 	if outID != nil && outID.Base() != nil {
-		parentDig, err := outID.Base().Digest()
-		if err != nil {
-			return nil, false
-		}
+		parentDig := outID.Base().Digest()
 		step.BaseDigest = db.Simplify(parentDig.String())
 	}
 	return step, true
 }
 
 func (db *DB) HighLevelStep(id *idproto.ID) (*Step, bool) {
-	parentDig, err := id.Digest()
-	if err != nil {
-		return nil, false
-	}
+	parentDig := id.Digest()
 	return db.Step(db.Simplify(parentDig.String()))
 }
 
@@ -288,10 +282,7 @@ func (db *DB) Simplify(dig string) string {
 		}
 	}
 	if simplified {
-		smallestDig, err := smallest.Digest()
-		if err != nil {
-			return dig
-		}
+		smallestDig := smallest.Digest()
 		return db.Simplify(smallestDig.String())
 	}
 	return dig

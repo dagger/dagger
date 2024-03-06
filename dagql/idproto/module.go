@@ -12,8 +12,9 @@ type Module struct {
 func NewModule(id *ID, name, ref string) *Module {
 	return &Module{
 		raw: &RawModule{
-			Name: name,
-			Ref:  ref,
+			Name:     name,
+			Ref:      ref,
+			IdDigest: id.raw.Digest,
 		},
 		id: id,
 	}
@@ -23,17 +24,11 @@ func (m *Module) ID() *ID {
 	return m.id
 }
 
-func (m *Module) encode(idsByDigest map[string]*RawID_Fields) (*RawModule, error) {
+func (m *Module) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	if m == nil {
-		return nil, nil
+		return
 	}
-
-	var err error
-	m.raw.IdDigest, err = m.id.encode(idsByDigest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode module ID: %w", err)
-	}
-	return m.raw, nil
+	m.id.gatherIDs(idsByDigest)
 }
 
 func (m *Module) decode(
