@@ -1,4 +1,4 @@
-package util
+package build
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"dagger/consts"
 	"dagger/internal/dagger"
 	. "dagger/internal/dagger"
 )
@@ -32,7 +33,8 @@ func (repo *Builder) pythonSDKContent(ctx context.Context, platform dagger.Platf
 				ForcedCompression: Uncompressed,
 			})
 
-		sdkDir := dag.Container().From("alpine:"+alpineVersion).
+		sdkDir := dag.Container().
+			From(consts.AlpineImage).
 			WithMountedDirectory("/out", dag.Directory()).
 			WithMountedFile("/sdk.tar", sdkCtrTarball).
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
@@ -73,7 +75,7 @@ func (repo *Builder) typescriptSDKContent(ctx context.Context, platform dagger.P
 				ForcedCompression: Uncompressed,
 			})
 
-		sdkDir := dag.Container().From("alpine:"+alpineVersion).
+		sdkDir := dag.Container().From("alpine:"+consts.AlpineVersion).
 			WithMountedDirectory("/out", dag.Directory()).
 			WithMountedFile("/sdk.tar", sdkCtrTarball).
 			WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
@@ -91,7 +93,7 @@ func (repo *Builder) typescriptSDKContent(ctx context.Context, platform dagger.P
 func (repo *Builder) goSDKContent(ctx context.Context, platform dagger.Platform) WithContainerFunc {
 	return func(ctr *Container) *Container {
 		base := dag.Container(ContainerOpts{Platform: platform}).
-			From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion))
+			From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion))
 
 		sdkCtrTarball := base.
 			WithEnvVariable("GOTOOLCHAIN", "auto").

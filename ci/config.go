@@ -2,14 +2,15 @@ package main
 
 import (
 	"bytes"
-	"dagger/internal/dagger"
-	"dagger/util"
 	"fmt"
 	"sort"
 	"strings"
 	"text/template"
 
 	"golang.org/x/exp/maps"
+
+	"dagger/consts"
+	"dagger/internal/dagger"
 )
 
 const (
@@ -69,7 +70,7 @@ func generateEntrypoint(kvs []string) (*File, error) {
 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
 	buf := new(bytes.Buffer)
 	err := tmpl.Execute(buf, entrypointTmplParams{
-		EngineBin:         util.EngineServerPath,
+		EngineBin:         consts.EngineServerPath,
 		EngineConfig:      engineTomlPath,
 		EntrypointArgs:    opts,
 		EntrypointArgKeys: keys,

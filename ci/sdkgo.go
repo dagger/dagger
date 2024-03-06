@@ -28,7 +28,7 @@ func (t GoSDK) Lint(ctx context.Context) error {
 		return err
 	})
 	eg.Go(func() error {
-		return diffDirectoryF(ctx, "sdk/go", util.GoDirectory(t.Dagger.Source), t.Generate)
+		return util.DiffDirectoryF(ctx, "sdk/go", util.GoDirectory(t.Dagger.Source), t.Generate)
 	})
 	return eg.Wait()
 }

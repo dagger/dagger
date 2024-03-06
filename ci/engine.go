@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
-	"dagger/util"
 	"path/filepath"
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
+
+	"dagger/build"
+	"dagger/util"
 )
 
 type Engine struct {
@@ -30,7 +32,7 @@ func (e *Engine) WithArg(key, value string) *Engine {
 // XXX: maybe we should private this?
 func (e *Engine) Container(ctx context.Context) (*Container, error) {
 	if e.Base == nil {
-		builder, err := util.NewBuilder(ctx, e.Source)
+		builder, err := build.NewBuilder(ctx, e.Source)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +108,7 @@ type CLI struct {
 
 func (e *CLI) File(ctx context.Context) (*File, error) {
 	if e.Base == nil {
-		builder, err := util.NewBuilder(ctx, e.Source)
+		builder, err := build.NewBuilder(ctx, e.Source)
 		if err != nil {
 			return nil, err
 		}

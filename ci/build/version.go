@@ -1,7 +1,8 @@
-package util
+package build
 
 import (
 	"context"
+	"dagger/consts"
 	"dagger/internal/dagger"
 	"fmt"
 	"strings"
@@ -15,7 +16,7 @@ type VersionInfo struct {
 
 func getVersionFromGit(ctx context.Context, dir *dagger.Directory) (*VersionInfo, error) {
 	base := dag.Container().
-		From(fmt.Sprintf("alpine:%s", alpineVersion)).
+		From(consts.AlpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithMountedDirectory("/app/.git", dir).
 		WithWorkdir("/app")
@@ -46,9 +47,9 @@ func (info VersionInfo) EngineVersion() string {
 	return info.TreeHash
 }
 
-func (repo *Builder) CLI(
+func (build *Builder) CLI(
 	ctx context.Context,
 	platform dagger.Platform, // +optional
 ) (*dagger.File, error) {
-	return repo.binary("./cmd/dagger", platform), nil
+	return build.binary("./cmd/dagger", platform), nil
 }

@@ -1,9 +1,12 @@
 package util
 
 import (
+	"dagger/consts"
 	"dagger/internal/dagger"
 	"fmt"
 )
+
+var dag = dagger.Connect()
 
 func GoDirectory(dir *dagger.Directory) *dagger.Directory {
 	return dag.Directory().WithDirectory("/", dir, dagger.DirectoryWithDirectoryOpts{
@@ -40,7 +43,7 @@ func GoDirectory(dir *dagger.Directory) *dagger.Directory {
 func GoBase(dir *dagger.Directory) *dagger.Container {
 	dir = GoDirectory(dir)
 	return dag.Container().
-		From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion)).
+		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 		WithExec([]string{"apk", "add", "build-base"}).
 		WithEnvVariable("CGO_ENABLED", "0").

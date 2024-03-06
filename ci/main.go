@@ -4,7 +4,6 @@ import (
 	"context"
 	"dagger/internal/dagger"
 	"dagger/util"
-	"os"
 	"path/filepath"
 
 	"github.com/dagger/dagger/engine/distconsts"
@@ -184,10 +183,10 @@ func (ci *Dagger) testCmd(ctx context.Context) (*Container, error) {
 		WithServiceBinding("registry", registrySvc)
 
 	// TODO use Container.With() to set this. It'll be much nicer.
-	cacheEnv, set := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")
-	if set {
-		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv)
-	}
+	// cacheEnv, set := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")
+	// if set {
+	// 	tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv)
+	// }
 
 	return tests.
 			WithMountedFile(cliBinPath, devBinary).
