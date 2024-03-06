@@ -8,12 +8,13 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"dagger/internal/dagger"
 	. "dagger/internal/dagger"
 )
 
-func (repo *Repository) pythonSDKContent(ctx context.Context, arch string) WithContainerFunc {
+func (repo *Builder) pythonSDKContent(ctx context.Context, platform dagger.Platform) WithContainerFunc {
 	return func(ctr *Container) *Container {
-		rootfs := dag.Directory().WithDirectory("/", repo.Directory.Directory("sdk/python"), DirectoryWithDirectoryOpts{
+		rootfs := dag.Directory().WithDirectory("/", repo.Source.Directory("sdk/python"), DirectoryWithDirectoryOpts{
 			Include: []string{
 				"pyproject.toml",
 				"src/**/*.py",
@@ -26,7 +27,7 @@ func (repo *Repository) pythonSDKContent(ctx context.Context, arch string) WithC
 
 		sdkCtrTarball := dag.Container().
 			WithRootfs(rootfs).
-			WithFile("/codegen", repo.codegenBinary(arch, "")).
+			WithFile("/codegen", repo.codegenBinary(platform)).
 			AsTarball(ContainerAsTarballOpts{
 				ForcedCompression: Uncompressed,
 			})
@@ -46,9 +47,9 @@ func (repo *Repository) pythonSDKContent(ctx context.Context, arch string) WithC
 	}
 }
 
-func (repo *Repository) typescriptSDKContent(ctx context.Context, arch string) WithContainerFunc {
+func (repo *Builder) typescriptSDKContent(ctx context.Context, platform dagger.Platform) WithContainerFunc {
 	return func(ctr *Container) *Container {
-		rootfs := dag.Directory().WithDirectory("/", repo.Directory.Directory("sdk/typescript"), DirectoryWithDirectoryOpts{
+		rootfs := dag.Directory().WithDirectory("/", repo.Source.Directory("sdk/typescript"), DirectoryWithDirectoryOpts{
 			Include: []string{
 				"**/*.ts",
 				"LICENSE",
@@ -67,7 +68,7 @@ func (repo *Repository) typescriptSDKContent(ctx context.Context, arch string) W
 		})
 		sdkCtrTarball := dag.Container().
 			WithRootfs(rootfs).
-			WithFile("/codegen", repo.codegenBinary(arch, "")).
+			WithFile("/codegen", repo.codegenBinary(platform)).
 			AsTarball(ContainerAsTarballOpts{
 				ForcedCompression: Uncompressed,
 			})
@@ -87,14 +88,14 @@ func (repo *Repository) typescriptSDKContent(ctx context.Context, arch string) W
 	}
 }
 
-func (repo *Repository) goSDKContent(ctx context.Context, arch string) WithContainerFunc {
+func (repo *Builder) goSDKContent(ctx context.Context, platform dagger.Platform) WithContainerFunc {
 	return func(ctr *Container) *Container {
-		base := dag.Container(ContainerOpts{Platform: Platform("linux/" + arch)}).
+		base := dag.Container(ContainerOpts{Platform: platform}).
 			From(fmt.Sprintf("golang:%s-alpine%s", golangVersion, alpineVersion))
 
 		sdkCtrTarball := base.
 			WithEnvVariable("GOTOOLCHAIN", "auto").
-			WithFile("/usr/local/bin/codegen", repo.codegenBinary(arch, "")).
+			WithFile("/usr/local/bin/codegen", repo.codegenBinary(platform)).
 			WithEntrypoint([]string{"/usr/local/bin/codegen"}).
 			AsTarball(ContainerAsTarballOpts{
 				ForcedCompression: Uncompressed,
