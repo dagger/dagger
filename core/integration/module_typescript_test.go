@@ -610,6 +610,18 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
+
+	t.Run("should error if configured runtime is unknown", func(t *testing.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "xyz"
+				}
+			}`,
+		})
+		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.Error(t, err)
+	})
 }
 
 func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {

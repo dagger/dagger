@@ -6,8 +6,8 @@ import (
 	"path"
 
 	"github.com/iancoleman/strcase"
+	"github.com/tidwall/gjson"
 )
-
 
 const (
 	bunVersion  = "1.0.27"
@@ -87,13 +87,13 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 			WithEntrypoint([]string{"bun", entrypointPath}), nil
 	case Node:
 		return ctr.
-		// Install dependencies
-		WithExec([]string{"npm", "install"}).
-		// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
-		// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
-		// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
-		// not useful to display to the user.
-		WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", tsConfigPath, entrypointPath}), nil
+			// Install dependencies
+			WithExec([]string{"npm", "install"}).
+			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
+			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
+			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
+			// not useful to display to the user.
+			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", tsConfigPath, entrypointPath}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
 	}
@@ -230,26 +230,45 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 
 // DetectRuntime returns the runtime(bun or node) detected for the user's module
 // If a runtime is specfied inside the package.json, it will be used.
-// If a package.lock.json is present, node will be used.
+// If a package-lock.json is present, node will be used.
 // If a bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
 func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
-	detectedRuntime, err := dag.Container().
-		From(bunImageRef).
-		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
-		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
-		WithExec([]string{"bun", "/opt/bin/__runtime.detection.ts"}).
-		Stdout(ctx)
+	// Try to detect runtime from package.json
+	source := modSource.ContextDirectory()
+	// read contents of package.json
+	runtime, err := func() (SupportedTSRuntime, error) {
+		json, err := source.File(path.Join(subPath, "package.json")).Contents(ctx)
+		if err != nil {
+			return "", fmt.Errorf("could not read package.json: %w", err)
+		}
 
-	if err != nil {
-		return "", fmt.Errorf("could not detect runtime: %v", err)
+		value := gjson.Get(json, "dagger.runtime").String()
+		if value == "" {
+			return "", fmt.Errorf("no runtime specified in package.json")
+		}
+		return SupportedTSRuntime(value), nil
+	}()
+	if err == nil {
+		switch runtime {
+		case Bun, Node:
+			return runtime, nil
+		default:
+			return "", fmt.Errorf("detected unknown runtime: %v", runtime)
+		}
 	}
 
-	switch detectedRuntime {
-	case string(Bun), string(Node):
-		return SupportedTSRuntime(detectedRuntime), nil
-	default:
-		return "", fmt.Errorf("detected unknown runtime: %v", detectedRuntime)
+	// Try to detect runtime from lock files
+	// TODO: change to ".Exists" when it's added to core
+	if _, err := source.File(path.Join(subPath, "package-lock.json")).Size(ctx); err == nil {
+		return Node, nil
 	}
+
+	// TODO: change to ".Exists" when it's added to core
+	if _, err := source.File(path.Join(subPath, "bun.lockb")).Size(ctx); err == nil {
+		return Bun, nil
+	}
+
+	// Default to node
+	return Node, nil
 }
