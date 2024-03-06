@@ -37,6 +37,7 @@ import (
 	"github.com/moby/buildkit/util/progress/progressui"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 )
@@ -46,6 +47,7 @@ const (
 	entitlementsJobKey = "llb.entitlements"
 )
 
+// Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
 	Worker                bkworker.Worker
 	SessionManager        *bksession.Manager
@@ -63,23 +65,31 @@ type Opts struct {
 	MainClientCallerID string
 	DNSConfig          *oci.DNSConfig
 	Frontends          map[string]bkfrontend.Frontend
+	sharedClientState
+}
+
+// these maps are shared across all clients for a given DaggerServer and are
+// mutated by each client
+type sharedClientState struct {
+	execMetadataMu sync.Mutex
+	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
+	refsMu         sync.Mutex
+	refs           map[*ref]struct{}
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
 
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
-	Opts
+	*Opts
+
+	spanCtx trace.SpanContext
+
 	session   *bksession.Session
 	job       *bksolver.Job
 	llbBridge bkfrontend.FrontendLLBBridge
 	llbExec   executor.Executor
 
-	clientMu              sync.RWMutex
-	clientIDToSecretToken map[string]string
-
-	refs         map[*ref]struct{}
-	refsMu       sync.Mutex
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
@@ -88,24 +98,32 @@ type Client struct {
 	closeCtx context.Context
 	cancel   context.CancelFunc
 	closeMu  sync.RWMutex
-
-	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
-	execMetadataMu sync.Mutex
 }
 
-func NewClient(ctx context.Context, opts Opts) (*Client, error) {
-	closeCtx, cancel := context.WithCancel(context.Background())
+func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
+	// override the outer cancel, we will manage cancellation ourselves here
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	client := &Client{
-		Opts:                  opts,
-		clientIDToSecretToken: make(map[string]string),
-		refs:                  make(map[*ref]struct{}),
-		containers:            make(map[bkgw.Container]struct{}),
-		closeCtx:              closeCtx,
-		cancel:                cancel,
-		execMetadata:          make(map[digest.Digest]ContainerExecUncachedMetadata),
+		Opts:       opts,
+		spanCtx:    trace.SpanContextFromContext(ctx),
+		containers: make(map[bkgw.Container]struct{}),
+		closeCtx:   ctx,
+		cancel:     cancel,
 	}
 
-	session, err := client.newSession(ctx)
+	// initialize ref+metadata caches if needed
+	client.refsMu.Lock()
+	if client.refs == nil {
+		client.refs = make(map[*ref]struct{})
+	}
+	client.refsMu.Unlock()
+	client.execMetadataMu.Lock()
+	if client.execMetadata == nil {
+		client.execMetadata = make(map[digest.Digest]ContainerExecUncachedMetadata)
+	}
+	client.execMetadataMu.Unlock()
+
+	session, err := client.newSession()
 	if err != nil {
 		return nil, err
 	}
@@ -468,37 +486,6 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	}
 	c.containers[ctr] = struct{}{}
 	return ctr, nil
-}
-
-func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) error {
-	c.clientMu.Lock()
-	defer c.clientMu.Unlock()
-	existingToken, ok := c.clientIDToSecretToken[clientID]
-	if ok {
-		if existingToken != secretToken {
-			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
-		}
-		return nil
-	}
-	c.clientIDToSecretToken[clientID] = secretToken
-	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
-	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
-	// Deleting it would make it easier to create race conditions around using the client's session
-	// before it is fully closed.
-	return nil
-}
-
-func (c *Client) VerifyClient(clientID, secretToken string) error {
-	c.clientMu.RLock()
-	defer c.clientMu.RUnlock()
-	existingToken, ok := c.clientIDToSecretToken[clientID]
-	if !ok {
-		return fmt.Errorf("client ID %q not registered", clientID)
-	}
-	if existingToken != secretToken {
-		return fmt.Errorf("client ID %q registered with different secret token", clientID)
-	}
-	return nil
 }
 
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.

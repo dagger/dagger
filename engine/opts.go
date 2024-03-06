@@ -69,6 +69,9 @@ type ClientMetadata struct {
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
 
+	// Export configuration for Buildkit's remote cache
+	UpstreamCacheExportConfig []*controlapi.CacheOptionsEntry
+
 	// Dagger Cloud Token
 	CloudToken string
 

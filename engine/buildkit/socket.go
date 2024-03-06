@@ -10,8 +10,7 @@ import (
 )
 
 type socketProxy struct {
-	spanCtx trace.SpanContext
-	c       *Client
+	c *Client
 }
 
 func (p *socketProxy) Register(srv *grpc.Server) {
@@ -28,7 +27,7 @@ func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) err
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
-	ctx = trace.ContextWithSpanContext(ctx, p.spanCtx) // ensure server's span context is propagated
+	ctx = trace.ContextWithSpanContext(ctx, p.c.spanCtx) // ensure server's span context is propagated
 
 	incomingMD, _ := metadata.FromIncomingContext(ctx)
 	ctx = metadata.NewOutgoingContext(ctx, incomingMD)

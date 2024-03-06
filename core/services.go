@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
@@ -32,7 +31,6 @@ const (
 // Services manages the lifecycle of services, ensuring the same service only
 // runs once per client.
 type Services struct {
-	bk       *buildkit.Client
 	starting map[ServiceKey]*sync.WaitGroup
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
@@ -76,9 +74,8 @@ type ServiceKey struct {
 }
 
 // NewServices returns a new Services.
-func NewServices(bk *buildkit.Client) *Services {
+func NewServices() *Services {
 	return &Services{
-		bk:       bk,
 		starting: map[ServiceKey]*sync.WaitGroup{},
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
@@ -293,11 +290,11 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
 
 // StopClientServices stops all of the services being run by the given client.
 // It is called when a client is closing.
-func (ss *Services) StopClientServices(ctx context.Context, client *engine.ClientMetadata) error {
+func (ss *Services) StopClientServices(ctx context.Context, serverID string) error {
 	ss.l.Lock()
 	var svcs []*RunningService
 	for _, svc := range ss.running {
-		if svc.Key.ServerID == client.ServerID {
+		if svc.Key.ServerID == serverID {
 			svcs = append(svcs, svc)
 		}
 	}

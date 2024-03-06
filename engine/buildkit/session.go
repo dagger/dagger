@@ -16,7 +16,6 @@ import (
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
-	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -30,8 +29,8 @@ const (
 	BuiltinContentOCIStoreName = "dagger-builtin-content"
 )
 
-func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
-	sess, err := bksession.NewSession(ctx, identity.NewID(), "")
+func (c *Client) newSession() (*bksession.Session, error) {
+	sess, err := bksession.NewSession(c.closeCtx, identity.NewID(), "")
 	if err != nil {
 		return nil, err
 	}
@@ -41,10 +40,9 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
-	spanCtx := trace.SpanContextFromContext(ctx)
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
-	sess.Allow(&socketProxy{spanCtx, c})
-	sess.Allow(&authProxy{spanCtx, c})
+	sess.Allow(&socketProxy{c})
+	sess.Allow(&authProxy{c})
 	sess.Allow(&client.AnyDirSource{})
 	sess.Allow(&client.AnyDirTarget{})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
@@ -72,11 +70,10 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	go func() {
 		defer clientConn.Close()
 		defer sess.Close()
-		// this ctx is okay because it's from the "main client" caller, so if it's canceled
-		// then we want to shutdown anyways
-		err := sess.Run(ctx, dialer)
+		// this ctx will be cancelled when Client is closed
+		err := sess.Run(c.closeCtx, dialer)
 		if err != nil {
-			lg := bklog.G(ctx).WithError(err)
+			lg := bklog.G(c.closeCtx).WithError(err)
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 				lg.Debug("client session ended")
 			} else {

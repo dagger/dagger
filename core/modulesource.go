@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
@@ -364,7 +365,9 @@ func (src *GitModuleSource) RefString() string {
 }
 
 func (src *GitModuleSource) Symbolic() string {
-	return filepath.Join(src.CloneURL(), src.RootSubpath)
+	// ignore error since ref is validated upon module initialization
+	p, _ := url.JoinPath(src.CloneURL(), src.RootSubpath)
+	return p
 }
 
 func (src *GitModuleSource) CloneURL() string {

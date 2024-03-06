@@ -5,26 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/tracing"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
@@ -39,11 +29,14 @@ import (
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/trace"
 	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/tracing"
 )
 
 type BuildkitController struct {
@@ -156,7 +149,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).WithError(err).Errorf("failed to get client metadata for session call")
 		return fmt.Errorf("failed to get client metadata for session call: %w", err)
 	}
-
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", opts.ClientID).
 		WithField("client_hostname", opts.ClientHostname).
@@ -179,10 +171,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		e.serverMu.RUnlock()
 		if !ok {
 			return fmt.Errorf("server %q not found", opts.ServerID)
-		}
-		err := srv.bkClient.VerifyClient(opts.ClientID, opts.ClientSecretToken)
-		if err != nil {
-			return fmt.Errorf("failed to verify client: %w", err)
 		}
 		bklog.G(ctx).Debugf("forwarding client to server")
 		err = srv.ServeClientConn(ctx, opts, conn)
@@ -216,75 +204,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	if !ok {
 		bklog.G(ctx).Debugf("initializing new server")
 
-		getSessionCtx, getSessionCancel := context.WithTimeout(ctx, 10*time.Second)
-		defer getSessionCancel()
-		caller, err := e.SessionManager.Get(getSessionCtx, opts.ClientID, false)
+		srv, err = e.newDaggerServer(ctx, opts)
 		if err != nil {
 			e.perServerMu.Unlock(opts.ServerID)
-			return fmt.Errorf("get session: %w", err)
-		}
-		bklog.G(ctx).Debugf("connected new server session")
-
-		secretStore := core.NewSecretStore()
-		authProvider := auth.NewRegistryAuthProvider()
-
-		var cacheImporterCfgs []bkgw.CacheOptionsEntry
-		for _, cacheImportCfg := range opts.UpstreamCacheImportConfig {
-			_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
-			if !ok {
-				e.perServerMu.Unlock(opts.ServerID)
-				return fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
-			}
-			cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
-				Type:  cacheImportCfg.Type,
-				Attrs: cacheImportCfg.Attrs,
-			})
-		}
-
-		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
-			Worker:                e.worker,
-			SessionManager:        e.SessionManager,
-			LLBSolver:             e.llbSolver,
-			GenericSolver:         e.genericSolver,
-			SecretStore:           secretStore,
-			AuthProvider:          authProvider,
-			PrivilegedExecEnabled: e.privilegedExecEnabled,
-			UpstreamCacheImports:  cacheImporterCfgs,
-			MainClientCaller:      caller,
-			MainClientCallerID:    opts.ClientID,
-			DNSConfig:             e.DNSConfig,
-			Frontends:             e.Frontends,
-		})
-		if err != nil {
-			e.perServerMu.Unlock(opts.ServerID)
-			return fmt.Errorf("new Buildkit client: %w", err)
-		}
-
-		bklog.G(ctx).Debugf("initialized new server buildkit client")
-
-		slog.Warn("initializing dagger server with trace", "trace", trace.SpanContextFromContext(ctx).TraceID())
-
-		labels := opts.Labels.
-			WithEngineLabel(e.EngineName).
-			WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
-				e.cacheManager.ID() != cache.LocalCacheID)
-
-		srv, err = NewDaggerServer(
-			ctx,
-			bkClient,
-			e.worker,
-			caller,
-			opts.ServerID,
-			secretStore,
-			authProvider,
-			labels,
-			opts.CloudToken,
-			opts.DoNotTrack,
-			e.TelemetryPubSub,
-		)
-		if err != nil {
-			e.perServerMu.Unlock(opts.ServerID)
-			return fmt.Errorf("new Dagger server: %w", err)
+			return fmt.Errorf("new APIServer: %w", err)
 		}
 		e.serverMu.Lock()
 		e.servers[opts.ServerID] = srv
@@ -299,12 +222,9 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			delete(e.servers, opts.ServerID)
 			e.serverMu.Unlock()
 
-			srv.Close()
-
-			if err := bkClient.Close(); err != nil {
-				bklog.G(ctx).WithError(err).Errorf("failed to close buildkit client for server %s", opts.ServerID)
+			if err := srv.Close(context.WithoutCancel(ctx)); err != nil {
+				bklog.G(ctx).WithError(err).Error("failed to close server")
 			}
-			bklog.G(ctx).Debug("closed buildkit client")
 
 			time.AfterFunc(time.Second, e.throttledGC)
 			bklog.G(ctx).Debug("server removed")
@@ -312,7 +232,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	}
 	e.perServerMu.Unlock(opts.ServerID)
 
-	err = srv.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
+	err = srv.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
 	if err != nil {
 		return fmt.Errorf("failed to register client: %w", err)
 	}
@@ -334,52 +254,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		return fmt.Errorf("wait: %w", err)
 	}
 	return nil
-}
-
-// Solve is currently only used for triggering upstream remote cache exports on a dagger server
-func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveRequest) (*controlapi.SolveResponse, error) {
-	opts, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
-		WithField("client_id", opts.ClientID).
-		WithField("client_hostname", opts.ClientHostname).
-		WithField("server_id", opts.ServerID))
-
-	e.serverMu.RLock()
-	srv, ok := e.servers[opts.ServerID]
-	e.serverMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("unknown server id %q", opts.ServerID)
-	}
-	err = srv.bkClient.VerifyClient(opts.ClientID, opts.ClientSecretToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register client: %w", err)
-	}
-
-	cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(req.Cache.Exports))
-	for i, cacheExportCfg := range req.Cache.Exports {
-		cacheExportCfg := cacheExportCfg
-		exporterFunc, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
-		if !ok {
-			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
-		}
-		cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
-			return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
-		}
-	}
-	if len(cacheExporterFuncs) > 0 {
-		// run cache export instead
-		bklog.G(ctx).Debugf("running cache export for client %s", opts.ClientID)
-		err := srv.bkClient.UpstreamCacheExport(ctx, cacheExporterFuncs)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", opts.ClientID)
-			return &controlapi.SolveResponse{}, err
-		}
-		bklog.G(ctx).Debugf("done running cache export for client %s", opts.ClientID)
-	}
-	return &controlapi.SolveResponse{}, nil
 }
 
 func (e *BuildkitController) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
@@ -511,7 +385,7 @@ func (e *BuildkitController) Close() error {
 	e.serverMu.Unlock()
 
 	for _, s := range servers {
-		s.Close()
+		s.Close(context.Background())
 	}
 	return err
 }
@@ -548,8 +422,11 @@ func (e *BuildkitController) gc() {
 	}
 }
 
+func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveRequest) (*controlapi.SolveResponse, error) {
+	return nil, fmt.Errorf("solve not implemented")
+}
+
 func (e *BuildkitController) Status(req *controlapi.StatusRequest, stream controlapi.Control_StatusServer) error {
-	// we send status updates over progrock session attachables instead
 	return fmt.Errorf("status not implemented")
 }
 

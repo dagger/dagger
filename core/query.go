@@ -21,11 +21,17 @@ import (
 // Query forms the root of the DAG and houses all necessary state and
 // dependencies for evaluating queries.
 type Query struct {
+	QueryOpts
 	Buildkit *buildkit.Client
 
 	// The current pipeline.
 	Pipeline pipeline.Path
+}
 
+var ErrNoCurrentModule = fmt.Errorf("no current module")
+
+// Settings for Query that are shared across all instances for a given DaggerServer
+type QueryOpts struct {
 	Services *Services
 
 	Secrets *SecretStore
@@ -44,27 +50,30 @@ type Query struct {
 	// The DagQL query cache.
 	Cache dagql.Cache
 
+	BuildkitOpts *buildkit.Opts
+
 	// The metadata of client calls.
 	// For the special case of the main client caller, the key is just empty string.
 	// This is never explicitly deleted from; instead it will just be garbage collected
 	// when this server for the session shuts down
-	clientCallContext map[digest.Digest]*ClientCallContext
-	clientCallMu      *sync.RWMutex
+	ClientCallContext map[digest.Digest]*ClientCallContext
+	ClientCallMu      *sync.RWMutex
 
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
-	endpoints  map[string]http.Handler
-	endpointMu *sync.RWMutex
+	Endpoints  map[string]http.Handler
+	EndpointMu *sync.RWMutex
 }
 
-var ErrNoCurrentModule = fmt.Errorf("no current module")
-
-func NewRoot() *Query {
-	return &Query{
-		clientCallContext: map[digest.Digest]*ClientCallContext{},
-		clientCallMu:      &sync.RWMutex{},
-		endpoints:         map[string]http.Handler{},
-		endpointMu:        &sync.RWMutex{},
+func NewRoot(ctx context.Context, opts QueryOpts) (*Query, error) {
+	bk, err := buildkit.NewClient(ctx, opts.BuildkitOpts)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
+
+	return &Query{
+		QueryOpts: opts,
+		Buildkit:  bk,
+	}, nil
 }
 
 func (*Query) Type() *ast.Type {
@@ -83,21 +92,15 @@ func (q Query) Clone() *Query {
 }
 
 func (q *Query) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
-	q.endpointMu.Lock()
-	defer q.endpointMu.Unlock()
-	q.endpoints[path] = handler
+	q.EndpointMu.Lock()
+	defer q.EndpointMu.Unlock()
+	q.Endpoints[path] = handler
 	return nil
 }
 
-func (q *Query) MuxEndpoints(mux *http.ServeMux) {
-	q.endpointMu.RLock()
-	defer q.endpointMu.RUnlock()
-	for path, handler := range q.endpoints {
-		mux.Handle(path, handler)
-	}
-}
-
 type ClientCallContext struct {
+	Root *Query
+
 	// the DAG of modules being served to this client
 	Deps *ModDeps
 
@@ -105,24 +108,6 @@ type ClientCallContext struct {
 	// metadata of that ongoing function call
 	Module *Module
 	FnCall *FunctionCall
-}
-
-func (q *Query) ClientCallContext(clientDigest digest.Digest) (*ClientCallContext, bool) {
-	q.clientCallMu.RLock()
-	defer q.clientCallMu.RUnlock()
-	ctx, ok := q.clientCallContext[clientDigest]
-	return ctx, ok
-}
-
-func (q *Query) InstallDefaultClientContext(deps *ModDeps) {
-	q.clientCallMu.Lock()
-	defer q.clientCallMu.Unlock()
-
-	q.DefaultDeps = deps
-
-	q.clientCallContext[""] = &ClientCallContext{
-		Deps: deps,
-	}
 }
 
 func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Instance[*Module]) error {
@@ -136,9 +121,9 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 
 	mod := modMeta.Self
 
-	q.clientCallMu.Lock()
-	defer q.clientCallMu.Unlock()
-	callCtx, ok := q.clientCallContext[""]
+	q.ClientCallMu.Lock()
+	defer q.ClientCallMu.Unlock()
+	callCtx, ok := q.ClientCallContext[""]
 	if !ok {
 		return fmt.Errorf("client call not found")
 	}
@@ -147,6 +132,7 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 }
 
 func (q *Query) RegisterFunctionCall(
+	ctx context.Context,
 	dgst digest.Digest,
 	deps *ModDeps,
 	mod *Module,
@@ -156,13 +142,18 @@ func (q *Query) RegisterFunctionCall(
 		return fmt.Errorf("cannot register function call with empty digest")
 	}
 
-	q.clientCallMu.Lock()
-	defer q.clientCallMu.Unlock()
-	_, ok := q.clientCallContext[dgst]
+	q.ClientCallMu.Lock()
+	defer q.ClientCallMu.Unlock()
+	_, ok := q.ClientCallContext[dgst]
 	if ok {
 		return nil
 	}
-	q.clientCallContext[dgst] = &ClientCallContext{
+	newRoot, err := NewRoot(ctx, q.QueryOpts)
+	if err != nil {
+		return err
+	}
+	q.ClientCallContext[dgst] = &ClientCallContext{
+		Root:   newRoot,
 		Deps:   deps,
 		Module: mod,
 		FnCall: call,
@@ -179,9 +170,9 @@ func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
 		return nil, fmt.Errorf("%w: main client caller has no module", ErrNoCurrentModule)
 	}
 
-	q.clientCallMu.RLock()
-	defer q.clientCallMu.RUnlock()
-	callCtx, ok := q.clientCallContext[clientMetadata.ModuleCallerDigest]
+	q.ClientCallMu.RLock()
+	defer q.ClientCallMu.RUnlock()
+	callCtx, ok := q.ClientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
@@ -197,9 +188,9 @@ func (q *Query) CurrentFunctionCall(ctx context.Context) (*FunctionCall, error) 
 		return nil, fmt.Errorf("%w: main client caller has no function", ErrNoCurrentModule)
 	}
 
-	q.clientCallMu.RLock()
-	defer q.clientCallMu.RUnlock()
-	callCtx, ok := q.clientCallContext[clientMetadata.ModuleCallerDigest]
+	q.ClientCallMu.RLock()
+	defer q.ClientCallMu.RUnlock()
+	callCtx, ok := q.ClientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
@@ -212,7 +203,7 @@ func (q *Query) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
 	if err != nil {
 		return nil, err
 	}
-	callCtx, ok := q.clientCallContext[clientMetadata.ModuleCallerDigest]
+	callCtx, ok := q.ClientCallContext[clientMetadata.ModuleCallerDigest]
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
 	}
