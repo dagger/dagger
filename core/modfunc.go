@@ -236,7 +236,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *Ca
 		deps = mod.Deps.Prepend(mod)
 	}
 
-	err = mod.Query.RegisterFunctionCall(callerDigest, deps, fn.mod, callMeta,
+	err = mod.Query.RegisterFunctionCall(ctx, callerDigest, deps, fn.mod, callMeta,
 		progrock.FromContext(ctx).Parent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
