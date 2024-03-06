@@ -33,6 +33,12 @@ func (ci *Dagger) Engine() *Engine {
 	}
 }
 
+func (ci *Dagger) SDK() *SDK {
+	return &SDK{
+		Go: &GoSDK{Dagger: ci},
+	}
+}
+
 func (ci *Dagger) Dev(
 	ctx context.Context,
 	target *Directory, // +optional

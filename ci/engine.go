@@ -68,7 +68,10 @@ func (e *Engine) Service(
 	}
 	cacheVolumeName = cacheVolumeName + identity.NewID()
 
-	e = e.WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`)
+	e = e.
+		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
+		WithArg(`network-name`, `dagger-dev`).
+		WithArg(`network-cidr`, `10.88.0.0/16`)
 	devEngine, err := e.Container(ctx)
 	if err != nil {
 		return nil, err
