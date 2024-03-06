@@ -57,7 +57,7 @@ const (
 	codegenBinPath           = "/codegen"
 )
 
-// ModuleRuntime returns a container with the node entrypoint ready to be called.
+// ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
 func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJson)
 	if err != nil {
@@ -210,7 +210,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			ContainerWithExecOpts{SkipEntrypoint: true}), nil
 }
 
-// Base returns a Node container with cache setup for yarn
+// Base returns a Node or Bun container with cache setup for yarn or bun
 func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	switch runtime {
 	case Bun:
@@ -228,6 +228,11 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	}
 }
 
+// DetectRuntime returns the runtime(bun or node) detected for the user's module
+// If a runtime is specfied inside the package.json, it will be used.
+// If a package.lock.json is present, node will be used.
+// If a bun.lockb is present, bun will be used.
+// If none of the above is present, node will be used.
 func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	detectedRuntime, err := dag.Container().
 		From(bunImageRef).
