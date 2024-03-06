@@ -1366,7 +1366,7 @@ func (s *containerSchema) terminal(
 		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
 	}
 
-	if args.ExperimentalPrivilegedNesting == nil{
+	if args.ExperimentalPrivilegedNesting == nil {
 		args.ExperimentalPrivilegedNesting = &ctr.Self.DefaultTerminalCmd.ExperimentalPrivilegedNesting
 	}
 
