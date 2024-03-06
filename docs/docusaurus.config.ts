@@ -123,7 +123,7 @@ const config: Config = {
         alt: "Dagger Logo",
         src: "img/dagger-logo-white.svg",
         height: "50px",
-        href: "https://dagger.io/",
+        href: "https://docs.dagger.io/",
       },
       items: [
         {
