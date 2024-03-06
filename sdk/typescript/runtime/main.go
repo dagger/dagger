@@ -8,6 +8,18 @@ import (
 	"github.com/iancoleman/strcase"
 )
 
+
+const (
+	bunVersion  = "1.0.27"
+	nodeVersion = "21.3"
+
+	nodeImageDigest = "sha256:cacb4e3a208aa34e0f821b56256e446ad984960d4f9aca66c7026e16b87db89f"
+	bunImageDigest  = "sha256:82d3d3b8ad96c4eea45c88167ce46e7e24afc726897d48e48cc6d6bf230c061c"
+
+	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
+	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
+)
+
 type SupportedTSRuntime string
 
 const (
@@ -203,13 +215,13 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	switch runtime {
 	case Bun:
 		return dag.Container().
-			From("oven/bun:1.0.27").
-			WithMountedCache("~/.bun/install/cache", dag.CacheVolume("mod-bun-cache")).
+			From(bunImageRef).
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-$s", bunVersion))).
 			WithoutEntrypoint(), nil
 	case Node:
 		return dag.Container().
-			From("node:21.3-alpine").
-			WithMountedCache("/root/.npm", dag.CacheVolume("mod-npm-cache")).
+			From(nodeImageRef).
+			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
 			WithoutEntrypoint(), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %v", runtime)
@@ -218,7 +230,7 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 
 func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	detectedRuntime, err := dag.Container().
-		From("oven/bun:1.0.27").
+		From(bunImageRef).
 		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
