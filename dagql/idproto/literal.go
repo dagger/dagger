@@ -23,7 +23,6 @@ func NewLiteral(value LiteralValue) *Literal {
 }
 
 type LiteralValue interface {
-	clone(map[digest.Digest]*ID) (LiteralValue, error)
 	encode(map[string]*RawID_Fields) (*RawLiteral, error)
 	inputs() ([]digest.Digest, error)
 	modules() []*Module
@@ -38,20 +37,6 @@ func (lit *Literal) Value() LiteralValue {
 		return nil
 	}
 	return lit.value
-}
-
-func (lit *Literal) clone(memo map[digest.Digest]*ID) (*Literal, error) {
-	if lit == nil || lit.value == nil {
-		return lit, nil
-	}
-
-	newLit := new(Literal)
-	var err error
-	newLit.value, err = lit.value.clone(memo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone literal value: %w", err)
-	}
-	return newLit, nil
 }
 
 func (lit *Literal) Inputs() ([]digest.Digest, error) {
@@ -192,14 +177,6 @@ func (lit *Literal_Id) Value() *ID {
 	return lit.id
 }
 
-func (lit *Literal_Id) clone(memo map[digest.Digest]*ID) (LiteralValue, error) {
-	newID, err := lit.id.clone(memo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone literal ID: %w", err)
-	}
-	return &Literal_Id{id: newID}, nil
-}
-
 func (lit *Literal_Id) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
 	id, err := lit.id.encode(idsByDigest)
 	if err != nil {
@@ -266,18 +243,6 @@ func (lit *Literal_List) Range(fn func(int, Literal) error) error {
 		}
 	}
 	return nil
-}
-
-func (lit *Literal_List) clone(memo map[digest.Digest]*ID) (LiteralValue, error) {
-	list := make([]*Literal, len(lit.values))
-	for i, val := range lit.values {
-		var err error
-		list[i], err = val.clone(memo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone list literal: %w", err)
-		}
-	}
-	return &Literal_List{values: list}, nil
 }
 
 func (lit *Literal_List) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
@@ -382,18 +347,6 @@ func (lit *Literal_Object) Range(fn func(int, string, Literal) error) error {
 		}
 	}
 	return nil
-}
-
-func (lit *Literal_Object) clone(memo map[digest.Digest]*ID) (LiteralValue, error) {
-	args := make([]*Argument, len(lit.values))
-	for i, arg := range lit.values {
-		var err error
-		args[i], err = arg.clone(memo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone object literal: %w", err)
-		}
-	}
-	return &Literal_Object{values: args}, nil
 }
 
 func (lit *Literal_Object) encode(idsByDigest map[string]*RawID_Fields) (*RawLiteral, error) {
@@ -576,10 +529,6 @@ type literalPrimitiveType[P interface {
 
 func (lit *literalPrimitiveType[P, T]) Value() T {
 	return lit.raw.Value()
-}
-
-func (lit literalPrimitiveType[P, T]) clone(_ map[digest.Digest]*ID) (LiteralValue, error) {
-	return &lit, nil
 }
 
 func (lit *literalPrimitiveType[P, T]) encode(_ map[string]*RawID_Fields) (*RawLiteral, error) {

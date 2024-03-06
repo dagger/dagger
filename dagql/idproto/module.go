@@ -2,8 +2,6 @@ package idproto
 
 import (
 	"fmt"
-
-	"github.com/opencontainers/go-digest"
 )
 
 type Module struct {
@@ -23,25 +21,6 @@ func NewModule(id *ID, name, ref string) *Module {
 
 func (m *Module) ID() *ID {
 	return m.id
-}
-
-func (m *Module) clone(memo map[digest.Digest]*ID) (*Module, error) {
-	if m == nil {
-		return nil, nil
-	}
-
-	newMod := &Module{
-		raw: &RawModule{
-			Name: m.raw.Name,
-			Ref:  m.raw.Ref,
-		},
-	}
-	var err error
-	newMod.id, err = m.id.clone(memo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone module ID: %w", err)
-	}
-	return newMod, nil
 }
 
 func (m *Module) encode(idsByDigest map[string]*RawID_Fields) (*RawModule, error) {

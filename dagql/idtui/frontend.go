@@ -732,7 +732,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 			depth++
 			for _, arg := range id.Args() {
 				indent(out, depth)
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name())
 				val := arg.Value().Value()
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {

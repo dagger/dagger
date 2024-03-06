@@ -505,10 +505,7 @@ func (s *Server) Select(ctx context.Context, self Object, dest any, sels ...Sele
 							continue
 						}
 					}
-					nthID, err := id.SelectNth(nth)
-					if err != nil {
-						return err
-					}
+					nthID := id.SelectNth(nth)
 					obj, err := s.toSelectable(nthID, val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
@@ -682,10 +679,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 			if len(sel.Subselections) == 0 {
 				results = append(results, val)
 			} else {
-				nthID, err := chainedID.SelectNth(nth)
-				if err != nil {
-					return nil, err
-				}
+				nthID := chainedID.SelectNth(nth)
 				node, err := s.toSelectable(nthID, val)
 				if err != nil {
 					return nil, fmt.Errorf("instantiate %dth array element: %w", nth, err)
@@ -839,7 +833,7 @@ func (sel Selector) AppendTo(id *idproto.ID, spec FieldSpec) *idproto.ID {
 	if sel.Nth != 0 {
 		astType = astType.Elem
 	}
-	appended, err := id.Append(
+	return id.Append(
 		astType,
 		sel.Field,
 		spec.Module,
@@ -847,10 +841,6 @@ func (sel Selector) AppendTo(id *idproto.ID, spec FieldSpec) *idproto.ID {
 		sel.Nth,
 		idArgs...,
 	)
-	if err != nil {
-		panic(fmt.Errorf("append: %w", err))
-	}
-	return appended
 }
 
 type Inputs []NamedInput

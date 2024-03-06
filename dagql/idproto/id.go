@@ -115,15 +115,15 @@ func (id *ID) Display() string {
 	return fmt.Sprintf("%s: %s", id.Path(), id.raw.Type.ToAST())
 }
 
-func (id *ID) SelectNth(nth int) (*ID, error) {
-	cloned, err := id.clone(map[digest.Digest]*ID{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone ID: %w", err)
-	}
-	cloned.raw.Nth = int64(nth)
-	cloned.raw.Type = cloned.raw.Type.Elem
-	cloned.mutated = true
-	return cloned, nil
+func (id *ID) SelectNth(nth int) *ID {
+	return id.base.Append(
+		id.raw.Type.Elem.ToAST(),
+		id.raw.Field,
+		id.module,
+		id.raw.Tainted,
+		nth,
+		id.args...,
+	)
 }
 
 func (id *ID) Append(
@@ -133,7 +133,7 @@ func (id *ID) Append(
 	tainted bool,
 	nth int,
 	args ...*Argument,
-) (*ID, error) {
+) *ID {
 	newID := &ID{&idState{
 		raw: &RawID_Fields{
 			Type:    NewType(ret),
@@ -141,10 +141,9 @@ func (id *ID) Append(
 			Tainted: tainted,
 			Nth:     int64(nth),
 		},
-		base:    id,
-		module:  mod,
-		args:    make([]*Argument, len(args)),
-		mutated: true,
+		base:   id,
+		module: mod,
+		args:   make([]*Argument, len(args)),
 	}}
 
 	for i, arg := range args {
@@ -155,7 +154,7 @@ func (id *ID) Append(
 		newID.args[i] = arg
 	}
 
-	return newID, nil
+	return newID
 }
 
 // Tainted returns true if the ID contains any tainted selectors.
@@ -212,60 +211,6 @@ func (id *ID) UnderlyingTypeName() string {
 		elem = elem.Elem
 	}
 	return typeName
-}
-
-func (id *ID) Clone() (*ID, error) {
-	return id.clone(map[digest.Digest]*ID{})
-}
-
-func (id *ID) clone(memo map[digest.Digest]*ID) (*ID, error) {
-	if id == nil {
-		return nil, nil
-	}
-
-	// need to ensure digest is up to date to handle corner case
-	// where one ID in the DAG is up to date but another isn't
-	// and the old/new IDs happen to have the same digest
-	dgst, err := id.Digest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get ID digest: %w", err)
-	}
-	if newID, ok := memo[dgst]; ok {
-		return newID, nil
-	}
-
-	newID := &ID{&idState{
-		raw: &RawID_Fields{
-			BaseIDDigest: id.raw.BaseIDDigest,
-			Type:         id.raw.Type,
-			Field:        id.raw.Field,
-			Args:         id.raw.Args,
-			Tainted:      id.raw.Tainted,
-			Meta:         id.raw.Meta,
-			Nth:          id.raw.Nth,
-			Module:       id.raw.Module,
-			Digest:       id.raw.Digest,
-		},
-	}}
-	memo[dgst] = newID
-
-	newID.base, err = id.base.clone(memo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone base ID: %w", err)
-	}
-	newID.module, err = id.module.clone(memo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to clone module: %w", err)
-	}
-	for _, arg := range id.args {
-		clone, err := arg.clone(memo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to clone argument: %w", err)
-		}
-		newID.args = append(newID.args, clone)
-	}
-
-	return newID, nil
 }
 
 func (id *ID) Encode() (string, error) {

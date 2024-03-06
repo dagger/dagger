@@ -100,13 +100,8 @@ func TestBasic(t *testing.T) {
 	}`, &res)
 
 	pointT := (&points.Point{}).Type()
-	expectedID, err := idproto.New().
-		Append(
-			pointT,
-			"point",
-			nil,
-			false,
-			0,
+	expectedID := idproto.New().
+		Append(pointT, "point", nil, false, 0,
 			idproto.NewArgument(
 				"x",
 				idproto.NewLiteralInt(6),
@@ -115,10 +110,8 @@ func TestBasic(t *testing.T) {
 				"y",
 				idproto.NewLiteralInt(7),
 			),
-		)
-	assert.NilError(t, err)
-	expectedID, err = expectedID.Append(pointT, "shiftLeft", nil, false, 0)
-	assert.NilError(t, err)
+		).
+		Append(pointT, "shiftLeft", nil, false, 0)
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -572,13 +565,8 @@ func TestIDsReflectQuery(t *testing.T) {
 	}`, &res)
 
 	pointT := (&points.Point{}).Type()
-	expectedID, err := idproto.New().
-		Append(
-			pointT,
-			"point",
-			nil,
-			false,
-			0,
+	expectedID := idproto.New().
+		Append(pointT, "point", nil, false, 0,
 			idproto.NewArgument(
 				"x",
 				idproto.NewLiteralInt(6),
@@ -587,10 +575,8 @@ func TestIDsReflectQuery(t *testing.T) {
 				"y",
 				idproto.NewLiteralInt(7),
 			),
-		)
-	assert.NilError(t, err)
-	expectedID, err = expectedID.Append(pointT, "shiftLeft", nil, false, 0)
-	assert.NilError(t, err)
+		).
+		Append(pointT, "shiftLeft", nil, false, 0)
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -677,13 +663,8 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 	}`, &res)
 
 	pointT := (&points.Point{}).Type()
-	expectedID, err := idproto.New().
-		Append(
-			pointT,
-			"point",
-			nil,
-			false,
-			0,
+	expectedID := idproto.New().
+		Append(pointT, "point", nil, false, 0,
 			idproto.NewArgument(
 				"x",
 				idproto.NewLiteralInt(6),
@@ -692,22 +673,15 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				"y",
 				idproto.NewLiteralInt(7),
 			),
-		)
-	assert.NilError(t, err)
-	expectedID, err = expectedID.Append(pointT, "loginTag", nil, false, 0)
-	assert.NilError(t, err)
+		).
+		Append(pointT, "loginTag", nil, false, 0)
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 
-	expectedID, err = idproto.New().
-		Append(
-			pointT,
-			"point",
-			nil,
-			false,
-			0,
+	expectedID = idproto.New().
+		Append(pointT, "point", nil, false, 0,
 			idproto.NewArgument(
 				"x",
 				idproto.NewLiteralInt(6),
@@ -716,22 +690,15 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				"y",
 				idproto.NewLiteralInt(7),
 			),
-		)
-	assert.NilError(t, err)
-	expectedID, err = expectedID.Append(pointT, "loginChain", nil, false, 0)
-	assert.NilError(t, err)
+		).
+		Append(pointT, "loginChain", nil, false, 0)
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
-	expectedID, err = idproto.New().
-		Append(
-			pointT,
-			"point",
-			nil,
-			false,
-			0,
+	expectedID = idproto.New().
+		Append(pointT, "point", nil, false, 0,
 			idproto.NewArgument(
 				"x",
 				idproto.NewLiteralInt(6),
@@ -740,16 +707,13 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				"y",
 				idproto.NewLiteralInt(7),
 			),
+		).
+		Append(pointT, "loginTagFalse", nil, false, 0,
+			idproto.NewArgument(
+				"password",
+				idproto.NewLiteralString("hunter2"),
+			),
 		)
-	assert.NilError(t, err)
-	expectedID, err = expectedID.Append(pointT, "loginTagFalse", nil, false, 0,
-		idproto.NewArgument(
-			"password",
-			idproto.NewLiteralString("hunter2"),
-		),
-	)
-	assert.NilError(t, err)
-
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTagFalse.ID, expectedEnc)
