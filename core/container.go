@@ -95,7 +95,7 @@ type Container struct {
 	Focused bool `json:"focused"`
 
 	// The args to invoke when using the terminal api on this container.
-	DefaultTerminalCmd *DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
+	DefaultTerminalCmd DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
