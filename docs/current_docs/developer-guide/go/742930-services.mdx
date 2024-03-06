@@ -1,0 +1,111 @@
+---
+slug: /developer-guide/go/742930/services
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Services"
+---
+
+# Services
+
+Dagger Functions support service containers, enabling users to spin up additional long-running services (as containers) and communicate with those services from Dagger Functions.
+
+This makes it possible to:
+- Instantiate and return services from a Dagger Function, and then:
+  - Use those services in other Dagger Functions (container-to-container networking)
+  - Use those services from the calling host (container-to-host networking)
+- Expose host services for use in a Dagger Function (host-to-container networking).
+
+Some common scenarios for using services with Dagger Functions are:
+
+- Running a database service for local storage or testing
+- Running end-to-end integration tests against a service
+- Running sidecar services
+
+## Service containers
+
+Services instantiated by a Dagger Function run in service containers, which have the following characteristics:
+
+- Each service container has a canonical, content-addressed hostname and an optional set of exposed ports
+- Service containers are started just-in-time, de-duplicated, and stopped when no longer needed
+- Service containers are health checked prior to running clients
+
+## Returning services
+
+A Dagger Function can create and return a service, which can then be used from another Dagger Function or from the calling host. Services in Dagger Functions are returned using the `Service` core type.
+
+Here is an example of a Dagger Function that returns an HTTP service. This service is used by another Dagger Function, which creates a service binding using the alias `www` and then accesses the HTTP service using this alias.
+
+```go file=./snippets/services/return-value/main.go
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get
+```
+
+The result will be:
+
+```shell
+Hello, world!
+```
+
+Services returned by Dagger Functions can also be exposed directly to the host. This enables clients on the host to communicate with services running in Dagger.
+
+One use case is for testing, where you need to be able to spin up ephemeral databases to run tests against. You might also use this to access a web UI in a browser on your desktop.
+
+Here is another example call for the Dagger Function shown previously, this time exposing the HTTP service on host port 9000:
+
+```shell
+dagger call http-service up --ports 9000:8080
+```
+
+This service can then be accessed by clients on the host. Here's an example:
+
+```shell
+curl localhost:9000
+```
+
+The result will be:
+
+```shell
+Hello, world!
+```
+
+:::note
+By default, each service port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument to `dagger call...up` with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
+:::
+
+## Receiving services
+
+Dagger Functions can also receive host services as function arguments of type `Service`, in the form `tcp://<host>:<port>`. This enables client containers in Dagger Functions to communicate with services running on the host.
+
+:::note
+This implies that a service is already listening on a port on the host, out-of-band of Dagger.
+:::
+
+Here is an example of how a container running in a Dagger Function can access and query a MariaDB database service (bound using the alias `db`) running on the host.
+
+```go file=./snippets/services/argument/main.go
+```
+
+Before calling this Dagger Function, use the following command to start a MariaDB database service on the host:
+
+```shell
+docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSWORD=secret  mariadb:10.11.2
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call user-list --host-service=tcp://localhost:3306
+```
+
+The result will be:
+
+```shell
+Host    User
+%       root
+localhost       mariadb.sys
+localhost       root
+```

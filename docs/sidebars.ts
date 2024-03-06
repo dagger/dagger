@@ -169,6 +169,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "developer-guide/go/services"
+            },
+            {
+              "type": "doc",
               "id": "developer-guide/go/dependencies"
             },
             {
