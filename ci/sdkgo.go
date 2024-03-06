@@ -12,7 +12,7 @@ import (
 )
 
 type GoSDK struct {
-	Dagger *Dagger
+	Dagger *Dagger // +private
 }
 
 // Lint lints the Go SDK

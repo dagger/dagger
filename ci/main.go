@@ -21,15 +21,11 @@ func New(source *Directory) *Dagger {
 }
 
 func (ci *Dagger) CLI() *CLI {
-	return &CLI{
-		Source: ci.Source,
-	}
+	return &CLI{Dagger: ci}
 }
 
 func (ci *Dagger) Engine() *Engine {
-	return &Engine{
-		Source: ci.Source,
-	}
+	return &Engine{Dagger: ci}
 }
 
 func (ci *Dagger) SDK() *SDK {

@@ -12,11 +12,11 @@ import (
 )
 
 type Engine struct {
-	Source *Directory
+	Dagger *Dagger // +private
 
 	Base   *Container // +private
-	Args   []string
-	Config []string
+	Args   []string   // +private
+	Config []string   // +private
 }
 
 func (e *Engine) WithConfig(key, value string) *Engine {
@@ -32,7 +32,7 @@ func (e *Engine) WithArg(key, value string) *Engine {
 // XXX: maybe we should private this?
 func (e *Engine) Container(ctx context.Context) (*Container, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Source)
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source)
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +93,7 @@ func (e *Engine) Service(
 func (e *Engine) Lint(ctx context.Context) error {
 	_, err := dag.Container().
 		From("golangci/golangci-lint:v1.55-alpine").
-		WithMountedDirectory("/app", util.GoDirectory(e.Source)).
+		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
 		Sync(ctx)
@@ -101,14 +101,14 @@ func (e *Engine) Lint(ctx context.Context) error {
 }
 
 type CLI struct {
-	Source *Directory
+	Dagger *Dagger // +private
 
 	Base *File // +private
 }
 
 func (e *CLI) File(ctx context.Context) (*File, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Source)
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source)
 		if err != nil {
 			return nil, err
 		}
