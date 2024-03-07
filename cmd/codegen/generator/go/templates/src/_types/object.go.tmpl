@@ -1,7 +1,7 @@
 {{- if ne .Name "Query" }}
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
-	Query *querybuilder.Selection
+	query *querybuilder.Selection
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
@@ -10,7 +10,6 @@ type {{ .Name | FormatName }} struct {
 	{{- end }}
 }
 {{- end }}
-
 
 {{- if . | IsSelfChainable }}
 type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
@@ -23,6 +22,11 @@ func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{
 }
 
 {{- end }}
+
+
+func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $.Name | FormatName }} {
+	return &{{ .Name | FormatName }}{query: q}
+}
 
 {{ range $field := .Fields }}
 {{- if $field.Args.HasOptionals }}
@@ -60,7 +64,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         return *r.{{ $field.Name }}, nil
     }
     {{- end }}
-	q := r.Query.Select("{{ $field.Name }}")
+	q := r.query.Select("{{ $field.Name }}")
 
 	{{- if $field.Args.HasOptionals }}
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -87,7 +91,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- else if $field.TypeRef.IsObject }}
 	{{ $typeName := $field.TypeRef | FormatOutputType }}
 	return &{{ $field.TypeRef | FormatOutputType }} {
-		Query: q,
+		query: q,
 		{{- if eq $typeName "Client" }}
 		client: r.client,
 		{{ end }}
@@ -110,7 +114,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.Query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+              val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
             {{- end }}
             out = append(out, val)
         }

@@ -146,6 +146,7 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 		Add(spec.concreteStructDefCode()).Line().Line().
 		Add(spec.idDefCode()).Line().Line().
 		Add(spec.loadFromIDMethodCode()).Line().Line().
+		Add(spec.withGraphQLQuery()).Line().Line().
 		Add(spec.graphqlTypeMethodCode()).Line().Line().
 		Add(spec.graphqlIDTypeMethodCode()).Line().Line().
 		Add(spec.graphqlIDMethodCode()).Line().Line().
@@ -201,7 +202,7 @@ func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec)
 The struct definition for the concrete implementation of the interface. e.g.:
 
 	type customIfaceImpl struct {
-		Query  *querybuilder.Selection
+		query  *querybuilder.Selection
 		id     *CustomIfaceID
 		str    *string
 		int    *int
@@ -210,7 +211,7 @@ The struct definition for the concrete implementation of the interface. e.g.:
 */
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	return Type().Id(spec.concreteStructName()).StructFunc(func(g *Group) {
-		g.Id("Query").Op("*").Qual("querybuilder", "Selection")
+		g.Id("query").Op("*").Qual("querybuilder", "Selection")
 		g.Id("id").Op("*").Id(spec.idTypeName())
 
 		for _, method := range spec.methods {
@@ -230,10 +231,11 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
 
 	func LoadCustomIfaceFromID(r *Client, id CustomIfaceID) CustomIface {
-		q := r.Query.Select("loadTestCustomIfaceFromID")
+		q = querybuilder.Query().Client(r.GraphQLClient())
+		q = q.Select("loadTestCustomIfaceFromID")
 		q = q.Arg("id", id)
 		return &customIfaceImpl{
-			Query:  q,
+			query:  q,
 		}
 	}
 */
@@ -243,11 +245,29 @@ func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 		Params(Id("r").Op("*").Id("Client"), Id("id").Id(spec.idTypeName())).
 		Params(Id(spec.name)).
 		BlockFunc(func(g *Group) {
-			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
+			g.Id("q").Op(":=").Id("querybuilder").Dot("Query").Call().Dot("Client").Call(Id("r").Dot("GraphQLClient").Call())
+			g.Id("q").Op("=").Id("q").Dot("Select").Call(Lit(loadFromIDGQLFieldName(spec)))
 			g.Id("q").Op("=").Id("q").Dot("Arg").Call(Lit("id"), Id("id"))
 			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
-				Id("Query"): Id("q"),
+				Id("query"): Id("q"),
 			}))
+		})
+}
+
+/*
+The WithGraphQLQuery sets the underlying query for the impl.
+
+	func (r *customIfaceImpl) WithGraphQLQuery(q *querybuilder.Selection) CustomIface {
+		return &customIfaceImpl{query: q}
+	}
+*/
+func (spec *parsedIfaceType) withGraphQLQuery() *Statement {
+	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
+		Id("WithGraphQLQuery").
+		Params(Id("q").Op("*").Id("querybuilder").Dot("Selection")).
+		Params(Id(spec.name)).
+		BlockFunc(func(g *Group) {
+			g.Return(Op("&").Id(spec.concreteStructName()).Values(Dict{Id("query"): Id("q")}))
 		})
 }
 
@@ -387,7 +407,7 @@ The code for the given interface method's concrete implementation attached to co
 implementation struct. e.g.:
 
 	func (r *customIfaceImpl) WithSomeArg(ctx context.Context, someArg string) CustomIface {
-		q := r.Query.Select("withSomeArg")
+		q := r.query.Select("withSomeArg")
 		q = q.Arg("someArg", someArg)
 
 		// concreteMethodExecuteQueryCode...
@@ -433,7 +453,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 		BlockFunc(func(g *Group) {
 			g.Add(spec.concreteMethodCheckCachedFieldCode(method))
 
-			g.Id("q").Op(":=").Id("r").Dot("Query").Dot("Select").Call(Lit(gqlFieldName))
+			g.Id("q").Op(":=").Id("r").Dot("query").Dot("Select").Call(Lit(gqlFieldName))
 			for _, argSpec := range method.argSpecs {
 				if argSpec.typeSpec == nil {
 					// skip context
@@ -458,7 +478,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		/*
 			Void return, just need to return error. e.g.:
 
-				q := r.Query.Select("void")
+				q := r.query.Select("void")
 				var response Void
 				q = q.Bind(&response)
 				return q.Execute(ctx)
@@ -478,7 +498,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		/*
 			Just return the primitive type response + error. e.g.:
 
-				q := r.Query.Select("str")
+				q := r.query.Select("str")
 				var response string
 				q = q.Bind(&response)
 				return response, q.Execute(ctx)
@@ -499,18 +519,14 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 		/*
 			Just object type with chained query (no error). e.g.:
 
-				return &customIfaceImpl{
-					Query:  q,
-				}
+				return (&customIfaceImpl{}).WithGraphQLQuery(q)
 		*/
 
 		implTypeCode, err := spec.concreteMethodImplTypeCode(method.returnSpec)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate return type code: %w", err)
 		}
-		s.Return(Op("&").Add(implTypeCode).Values(Dict{
-			Id("Query"): Id("q"),
-		}))
+		s.Return(Params(Op("&").Add(implTypeCode).Values()).Dot("WithGraphQLQuery").Call(Id("q")))
 
 	case *parsedSliceType:
 		switch underlyingReturnType := returnType.underlying.(type) {
@@ -533,7 +549,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 						id := idResult.Id
 
 						results = append(results, &Directory{
-							Query:  q.Query.Root().Select("loadDirectoryFromID").Arg("id", id),
+							query:  q.query.Root().Select("loadDirectoryFromID").Arg("id", id),
 						})
 					}
 					return results, nil
@@ -560,15 +576,9 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			}
 			s.Var().Id("results").Index().Add(underlyingReturnTypeCode).Line()
 			s.For(List(Id("_"), Id("idResult")).Op(":=").Range().Id("idResults")).BlockFunc(func(g *Group) {
-				g.Id("id").Op(":=").Id("idResult").Dot("Id").Line()
-				d := Dict{
-					Id("Query"): Id("r").Dot("Query").Dot("Root").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id")),
-					// FIXME: this is a nice optimization, but we can't enable
-					// it since the private "id" field can only be accessed on
-					// local structs
-					// Id("id"): Op("&").Id("id"),
-				}
-				g.Id("results").Op("=").Append(Id("results"), Op("&").Add(underlyingImplTypeCode).Values(d))
+				g.Id("id").Op(":=").Id("idResult").Dot("Id")
+				query := Id("r").Dot("query").Dot("Root").Call().Dot("Select").Call(Lit(loadFromIDQueryName)).Dot("Arg").Call(Lit("id"), Id("id"))
+				g.Id("results").Op("=").Append(Id("results"), Params(Op("&").Add(underlyingImplTypeCode).Values()).Dot("WithGraphQLQuery").Call(query))
 			}).Line()
 
 			s.Return(Id("results"), Nil())
