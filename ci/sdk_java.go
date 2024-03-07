@@ -5,6 +5,8 @@ import (
 	"fmt"
 )
 
+// TODO: port java sdk
+
 type JavaSDK struct {
 	Dagger *Dagger // +private
 }

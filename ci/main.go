@@ -34,6 +34,9 @@ func (ci *Dagger) SDK() *SDK {
 		Python:     &PythonSDK{Dagger: ci},
 		Typescript: &TypescriptSDK{Dagger: ci},
 		Rust:       &RustSDK{Dagger: ci},
+		Elixir:     &ElixirSDK{Dagger: ci},
+		PHP:        &PHPSDK{Dagger: ci},
+		Java:       &JavaSDK{Dagger: ci},
 	}
 }
 
