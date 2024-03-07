@@ -7,9 +7,9 @@ import (
 
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/moby/buildkit/identity"
+	"github.com/sourcegraph/conc/pool"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/sync/errgroup"
 )
 
 type PubSub struct {
@@ -49,7 +49,7 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 		byTrace[traceID] = append(byTrace[traceID], s)
 	}
 
-	eg := new(errgroup.Group)
+	eg := pool.New().WithErrors()
 
 	// export to local subscribers
 	for traceID, spans := range byTrace {
@@ -105,7 +105,7 @@ func (ps *PubSub) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error 
 		byTrace[traceID] = append(byTrace[traceID], s)
 	}
 
-	eg := new(errgroup.Group)
+	eg := pool.New().WithErrors()
 
 	// export to local subscribers
 	for traceID, logs := range byTrace {
@@ -145,7 +145,7 @@ func (ps *PubSub) Shutdown(ctx context.Context) error {
 	slog.Debug("shutting down otel pub/sub")
 	ps.spanSubsL.Lock()
 	defer ps.spanSubsL.Unlock()
-	eg := new(errgroup.Group)
+	eg := pool.New().WithErrors()
 	for _, ses := range ps.spanSubs {
 		for _, se := range ses {
 			se := se
