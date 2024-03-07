@@ -60,27 +60,19 @@ func withEngine(
 	params.EngineLogs = Frontend
 
 	if exp, ok := tracing.ConfiguredSpanExporter(ctx); ok {
-		// processor := trace.NewBatchSpanProcessor(exp)
-		// defer func() {
-		// 	slog.Warn("processor flushing")
-		// 	processor.ForceFlush(context.Background())
-		// 	// processor.Shutdown(context.Background())
-		// 	slog.Warn("shutting down")
-		// }()
-		// defer func() {
-		// 	slog.Warn("shutting down exporter")
-		// 	if err := exp.Shutdown(ctx); err != nil {
-		// 		slog.Warn("failed shutting down exporter", "error", err)
-		// 	} else {
-		// 		slog.Warn("done shutting down exporter")
-		// 	}
-		// }()
-		params.EngineTrace = tracing.MultiExporter{
+		params.EngineTrace = tracing.MultiSpanExporter{
 			params.EngineTrace,
 			tracing.FilterLiveSpansExporter{
 				// SpanProcessor: processor,
 				SpanExporter: exp,
 			},
+		}
+	}
+
+	if exp, ok := tracing.ConfiguredLogExporter(ctx); ok {
+		params.EngineLogs = tracing.MultiLogExporter{
+			params.EngineLogs,
+			exp,
 		}
 	}
 

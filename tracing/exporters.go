@@ -4,16 +4,17 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/moby/buildkit/identity"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/sync/errgroup"
 )
 
-type MultiExporter []sdktrace.SpanExporter
+type MultiSpanExporter []sdktrace.SpanExporter
 
-var _ sdktrace.SpanExporter = MultiExporter{}
+var _ sdktrace.SpanExporter = MultiSpanExporter{}
 
-func (m MultiExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (m MultiSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	eg := new(errgroup.Group)
 	for _, e := range m {
 		e := e
@@ -24,7 +25,7 @@ func (m MultiExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnl
 	return eg.Wait()
 }
 
-func (m MultiExporter) Shutdown(ctx context.Context) error {
+func (m MultiSpanExporter) Shutdown(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	for _, e := range m {
 		e := e
@@ -72,4 +73,30 @@ func (exp FilterLiveSpansExporter) ExportSpans(ctx context.Context, spans []sdkt
 	// }
 	// exp.SpanProcessor.ForceFlush(ctx)
 	// return nil
+}
+
+type MultiLogExporter []sdklog.LogExporter
+
+var _ sdklog.LogExporter = MultiLogExporter{}
+
+func (m MultiLogExporter) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+	eg := new(errgroup.Group)
+	for _, e := range m {
+		e := e
+		eg.Go(func() error {
+			return e.ExportLogs(ctx, logs)
+		})
+	}
+	return eg.Wait()
+}
+
+func (m MultiLogExporter) Shutdown(ctx context.Context) error {
+	eg := new(errgroup.Group)
+	for _, e := range m {
+		e := e
+		eg.Go(func() error {
+			return e.Shutdown(ctx)
+		})
+	}
+	return eg.Wait()
 }
