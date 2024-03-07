@@ -201,8 +201,8 @@ func (d DynamicArrayInput) DecodeInput(val any) (Input, error) {
 
 var _ Input = DynamicArrayInput{}
 
-func (d DynamicArrayInput) ToLiteral() *idproto.Literal {
-	literals := make([]*idproto.Literal, 0, len(d.Values))
+func (d DynamicArrayInput) ToLiteral() idproto.Literal {
+	literals := make([]idproto.Literal, 0, len(d.Values))
 	for _, elem := range d.Values {
 		literals = append(literals, elem.ToLiteral())
 	}

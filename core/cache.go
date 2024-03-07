@@ -78,7 +78,7 @@ func (mode CacheSharingMode) Decoder() dagql.InputDecoder {
 	return CacheSharingModes
 }
 
-func (mode CacheSharingMode) ToLiteral() *idproto.Literal {
+func (mode CacheSharingMode) ToLiteral() idproto.Literal {
 	return CacheSharingModes.Literal(mode)
 }
 

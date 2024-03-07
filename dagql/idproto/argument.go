@@ -6,14 +6,14 @@ import (
 
 type Argument struct {
 	raw   *RawArgument
-	value *Literal
+	value Literal
 }
 
-func NewArgument(name string, value *Literal) *Argument {
+func NewArgument(name string, value Literal) *Argument {
 	return &Argument{
 		raw: &RawArgument{
 			Name:  name,
-			Value: value.raw,
+			Value: value.raw(),
 		},
 		value: value,
 	}
@@ -23,7 +23,7 @@ func (arg *Argument) Name() string {
 	return arg.raw.Name
 }
 
-func (arg *Argument) Value() *Literal {
+func (arg *Argument) Value() Literal {
 	return arg.value
 }
 
@@ -50,8 +50,9 @@ func (arg *Argument) decode(
 
 	arg.raw = raw
 	if raw.Value != nil {
-		arg.value = new(Literal)
-		if err := arg.value.decode(raw.Value, idsByDigest, memo); err != nil {
+		var err error
+		arg.value, err = decodeLiteral(raw.Value, idsByDigest, memo)
+		if err != nil {
 			return fmt.Errorf("failed to decode argument value: %w", err)
 		}
 	}

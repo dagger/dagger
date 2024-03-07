@@ -733,7 +733,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 			for _, arg := range id.Args() {
 				indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name())
-				val := arg.Value().Value()
+				val := arg.Value()
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
 				case *idproto.LiteralID:
@@ -788,9 +788,9 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 	return nil
 }
 
-func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
+func (fe *Frontend) renderLiteral(out *termenv.Output, lit idproto.Literal) {
 	var color termenv.Color
-	switch val := lit.Value().(type) {
+	switch val := lit.(type) {
 	case *idproto.LiteralBool:
 		color = termenv.ANSIRed
 	case *idproto.LiteralInt:
@@ -816,7 +816,7 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
-			fe.renderLiteral(out, &item)
+			fe.renderLiteral(out, item)
 			return nil
 		})
 		fmt.Fprint(out, "]")
@@ -828,7 +828,7 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 				fmt.Fprint(out, ", ")
 			}
 			fmt.Fprintf(out, "%s: ", name)
-			fe.renderLiteral(out, &value)
+			fe.renderLiteral(out, value)
 			return nil
 		})
 		fmt.Fprint(out, "}")

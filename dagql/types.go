@@ -178,7 +178,7 @@ func (i Int) Int64() int64 {
 	return int64(i)
 }
 
-func (i Int) ToLiteral() *idproto.Literal {
+func (i Int) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralInt(i.Int64())
 }
 
@@ -265,7 +265,7 @@ func (Float) Decoder() InputDecoder {
 	return Float(0)
 }
 
-func (f Float) ToLiteral() *idproto.Literal {
+func (f Float) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralFloat(f.Float64())
 }
 
@@ -358,7 +358,7 @@ func (Boolean) Decoder() InputDecoder {
 	return Boolean(false)
 }
 
-func (b Boolean) ToLiteral() *idproto.Literal {
+func (b Boolean) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralBool(b.Bool())
 }
 
@@ -437,7 +437,7 @@ func (String) Decoder() InputDecoder {
 	return String("")
 }
 
-func (s String) ToLiteral() *idproto.Literal {
+func (s String) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralString(string(s))
 }
 
@@ -573,7 +573,7 @@ func (i ID[T]) Decoder() InputDecoder {
 	return ID[T]{inner: i.inner}
 }
 
-func (i ID[T]) ToLiteral() *idproto.Literal {
+func (i ID[T]) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralID(i.id)
 }
 
@@ -714,8 +714,8 @@ func (a ArrayInput[I]) DecodeInput(val any) (Input, error) {
 	}
 }
 
-func (i ArrayInput[S]) ToLiteral() *idproto.Literal {
-	lits := make([]*idproto.Literal, 0, len(i))
+func (i ArrayInput[S]) ToLiteral() idproto.Literal {
+	lits := make([]idproto.Literal, 0, len(i))
 	for _, elem := range i {
 		lits = append(lits, elem.ToLiteral())
 	}
@@ -850,7 +850,7 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 	return values
 }
 
-func (e *EnumValues[T]) Literal(val T) *idproto.Literal {
+func (e *EnumValues[T]) Literal(val T) idproto.Literal {
 	return idproto.NewLiteralEnum(string(val))
 }
 

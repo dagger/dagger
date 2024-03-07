@@ -46,7 +46,7 @@ func (p Platform) Decoder() dagql.InputDecoder {
 	return p
 }
 
-func (p Platform) ToLiteral() *idproto.Literal {
+func (p Platform) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralString(platforms.Format(specs.Platform(p)))
 }
 

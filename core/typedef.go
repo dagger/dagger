@@ -245,7 +245,7 @@ func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 
 var _ dagql.Input = DynamicID{}
 
-func (d DynamicID) ToLiteral() *idproto.Literal {
+func (d DynamicID) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralID(d.id)
 }
 
@@ -831,7 +831,7 @@ func (k TypeDefKind) Decoder() dagql.InputDecoder {
 	return TypeDefKinds
 }
 
-func (k TypeDefKind) ToLiteral() *idproto.Literal {
+func (k TypeDefKind) ToLiteral() idproto.Literal {
 	return TypeDefKinds.Literal(k)
 }
 

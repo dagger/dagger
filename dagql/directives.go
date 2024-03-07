@@ -41,7 +41,7 @@ func (DirectiveLocation) Decoder() InputDecoder {
 	return DirectiveLocations
 }
 
-func (d DirectiveLocation) ToLiteral() *idproto.Literal {
+func (d DirectiveLocation) ToLiteral() idproto.Literal {
 	return DirectiveLocations.Literal(d)
 }
 

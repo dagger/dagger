@@ -953,7 +953,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 	return nil
 }
 
-func (input InputObject[T]) ToLiteral() *idproto.Literal {
+func (input InputObject[T]) ToLiteral() idproto.Literal {
 	obj := input.Value
 	args, err := collectLiteralArgs(obj)
 	if err != nil {

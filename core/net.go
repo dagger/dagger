@@ -52,7 +52,7 @@ func (proto NetworkProtocol) Decoder() dagql.InputDecoder {
 	return NetworkProtocols
 }
 
-func (proto NetworkProtocol) ToLiteral() *idproto.Literal {
+func (proto NetworkProtocol) ToLiteral() idproto.Literal {
 	return NetworkProtocols.Literal(proto)
 }
 

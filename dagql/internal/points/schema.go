@@ -59,7 +59,7 @@ func (Direction) Decoder() dagql.InputDecoder {
 	return Directions
 }
 
-func (d Direction) ToLiteral() *idproto.Literal {
+func (d Direction) ToLiteral() idproto.Literal {
 	return Directions.Literal(d)
 }
 

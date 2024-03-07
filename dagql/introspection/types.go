@@ -389,7 +389,7 @@ func (k TypeKind) Decoder() dagql.InputDecoder {
 	return TypeKinds
 }
 
-func (k TypeKind) ToLiteral() *idproto.Literal {
+func (k TypeKind) ToLiteral() idproto.Literal {
 	return TypeKinds.Literal(k)
 }
 
@@ -434,7 +434,7 @@ func (l DirectiveLocation) Decoder() dagql.InputDecoder {
 	return DirectiveLocations
 }
 
-func (l DirectiveLocation) ToLiteral() *idproto.Literal {
+func (l DirectiveLocation) ToLiteral() idproto.Literal {
 	return DirectiveLocations.Literal(l)
 }
 

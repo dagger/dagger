@@ -35,7 +35,7 @@ func (p Void) Decoder() dagql.InputDecoder {
 	return p
 }
 
-func (p Void) ToLiteral() *idproto.Literal {
+func (p Void) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralNull()
 }
 

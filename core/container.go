@@ -1897,7 +1897,7 @@ func (proto ImageLayerCompression) Decoder() dagql.InputDecoder {
 	return ImageLayerCompressions
 }
 
-func (proto ImageLayerCompression) ToLiteral() *idproto.Literal {
+func (proto ImageLayerCompression) ToLiteral() idproto.Literal {
 	return ImageLayerCompressions.Literal(proto)
 }
 
@@ -1925,6 +1925,6 @@ func (proto ImageMediaTypes) Decoder() dagql.InputDecoder {
 	return ImageMediaTypesEnum
 }
 
-func (proto ImageMediaTypes) ToLiteral() *idproto.Literal {
+func (proto ImageMediaTypes) ToLiteral() idproto.Literal {
 	return ImageMediaTypesEnum.Literal(proto)
 }

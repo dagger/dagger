@@ -38,7 +38,7 @@ func (p JSON) Decoder() dagql.InputDecoder {
 	return p
 }
 
-func (p JSON) ToLiteral() *idproto.Literal {
+func (p JSON) ToLiteral() idproto.Literal {
 	return idproto.NewLiteralString(string(p))
 }
 

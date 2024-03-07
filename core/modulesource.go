@@ -39,7 +39,7 @@ func (proto ModuleSourceKind) Decoder() dagql.InputDecoder {
 	return ModuleSourceKindEnum
 }
 
-func (proto ModuleSourceKind) ToLiteral() *idproto.Literal {
+func (proto ModuleSourceKind) ToLiteral() idproto.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 
