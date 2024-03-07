@@ -1,26 +1,8 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
-import { serializeSymbol } from "./serialize.js"
-import {
-  ClassTypeDef,
-  ConstructorTypeDef,
-  FieldTypeDef,
-  FunctionArgTypeDef,
-  FunctionTypedef,
-} from "./typeDefs.js"
-import {
-  getAlias,
-  isFunction,
-  isMainObject,
-  isObject,
-  isOptional,
-  isPublicProperty,
-  typeNameToTypedef,
-} from "./utils.js"
-import { Method } from "./abtractions/method.js"
-import { Property } from "./abtractions/property.js"
-import { Constructor } from "./abtractions/constructor.js"
+import { ClassTypeDef, FunctionTypedef } from "./typeDefs.js"
+import { isMainObject, isObject } from "./utils.js"
 import { Object } from "./abtractions/object.js"
 
 export type ScanResult = {
