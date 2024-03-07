@@ -183,12 +183,6 @@ func (lit *Literal_Id) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 }
 
 func (lit *Literal_Id) inputs() ([]digest.Digest, error) {
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO: shouldn't this recurse? or no? check old impl
 	return []digest.Digest{lit.id.Digest()}, nil
 }
 
@@ -422,134 +416,148 @@ func (lit *Literal_Object) toAST() *ast.Value {
 	return obj
 }
 
-type Literal_Bool = literalPrimitiveType[*RawLiteral_Bool, bool]
+type Literal_Bool = literalPrimitiveType[bool, *RawLiteral_Bool]
 
 func NewLiteralBool(val bool) *Literal {
 	return NewLiteral(&Literal_Bool{&RawLiteral_Bool{Bool: val}})
 }
 
-func (rawLit *RawLiteral_Bool) Value() bool {
+//nolint:unused // it is used in literalPrimitiveValue...?
+func (rawLit *RawLiteral_Bool) value() bool {
 	return rawLit.Bool
 }
 
+//nolint:unused // it is used in literalPrimitiveValue...?
 func (rawLit *RawLiteral_Bool) astKind() ast.ValueKind {
 	return ast.BooleanValue
 }
 
-type Literal_Enum = literalPrimitiveType[*RawLiteral_Enum, string]
+type Literal_Enum = literalPrimitiveType[string, *RawLiteral_Enum]
 
 func NewLiteralEnum(val string) *Literal {
 	return NewLiteral(&Literal_Enum{&RawLiteral_Enum{Enum: val}})
 }
 
-func (rawLit *RawLiteral_Enum) Value() string {
+//nolint:unused // it is used in literalPrimitiveValue...?
+func (rawLit *RawLiteral_Enum) value() string {
 	return rawLit.Enum
 }
 
+//nolint:unused // it is used in literalPrimitiveValue...?
 func (rawLit *RawLiteral_Enum) astKind() ast.ValueKind {
 	return ast.EnumValue
 }
 
-type Literal_Int = literalPrimitiveType[*RawLiteral_Int, int64]
+type Literal_Int = literalPrimitiveType[int64, *RawLiteral_Int]
 
 func NewLiteralInt(val int64) *Literal {
 	return NewLiteral(&Literal_Int{&RawLiteral_Int{Int: val}})
 }
 
-func (rawLit *RawLiteral_Int) Value() int64 {
+//nolint:unused // it is used in literalPrimitiveValue...?
+func (rawLit *RawLiteral_Int) value() int64 {
 	return rawLit.Int
 }
 
+//nolint:unused // it is used in literalPrimitiveValue...?
 func (rawLit *RawLiteral_Int) astKind() ast.ValueKind {
 	return ast.IntValue
 }
 
-type Literal_Float = literalPrimitiveType[*RawLiteral_Float, float64]
+type Literal_Float = literalPrimitiveType[float64, *RawLiteral_Float]
 
 func NewLiteralFloat(val float64) *Literal {
 	return NewLiteral(&Literal_Float{&RawLiteral_Float{Float: val}})
 }
 
-func (rawLit *RawLiteral_Float) Value() float64 {
+//nolint:unused // it is used in literalPrimitiveValue...?
+func (rawLit *RawLiteral_Float) value() float64 {
 	return rawLit.Float
 }
 
+//nolint:unused // it is used in literalPrimitiveValue...?
 func (rawLit *RawLiteral_Float) astKind() ast.ValueKind {
 	return ast.FloatValue
 }
 
-type Literal_String_ = literalPrimitiveType[*RawLiteral_String_, string]
+type Literal_String_ = literalPrimitiveType[string, *RawLiteral_String_]
 
 func NewLiteralString(val string) *Literal {
 	return NewLiteral(&Literal_String_{&RawLiteral_String_{String_: val}})
 }
 
-func (rawLit *RawLiteral_String_) Value() string {
+//nolint:unused // it is used in literalPrimitiveValue...?
+func (rawLit *RawLiteral_String_) value() string {
 	return rawLit.String_
 }
 
+//nolint:unused // it is used in literalPrimitiveValue...?
 func (rawLit *RawLiteral_String_) astKind() ast.ValueKind {
 	return ast.StringValue
 }
 
-type Literal_Null = literalPrimitiveType[*RawLiteral_Null, any]
+type Literal_Null = literalPrimitiveType[any, *RawLiteral_Null]
 
 func NewLiteralNull() *Literal {
 	return NewLiteral(&Literal_Null{&RawLiteral_Null{Null: true}})
 }
 
-func (rawLit *RawLiteral_Null) Value() any {
+//nolint:unused // it is used in literalPrimitiveValue...?
+func (rawLit *RawLiteral_Null) value() any {
 	return nil
 }
 
+//nolint:unused // it is used in literalPrimitiveValue...?
 func (rawLit *RawLiteral_Null) astKind() ast.ValueKind {
 	return ast.NullValue
 }
 
-type literalPrimitiveType[P interface {
+type literalPrimitiveValue[T comparable] interface {
 	isRawLiteral_Value
-	Value() T
+	value() T
 	astKind() ast.ValueKind
-}, T comparable] struct {
-	rawVal P
 }
 
-func (lit *literalPrimitiveType[P, T]) Value() T {
-	return lit.rawVal.Value()
+type literalPrimitiveType[T comparable, V literalPrimitiveValue[T]] struct {
+	rawVal V
 }
 
-func (lit *literalPrimitiveType[P, T]) raw() isRawLiteral_Value {
+func (lit *literalPrimitiveType[T, V]) Value() T {
+	return lit.rawVal.value()
+}
+
+func (lit *literalPrimitiveType[T, V]) raw() isRawLiteral_Value {
 	return lit.rawVal
 }
 
-func (lit *literalPrimitiveType[P, T]) gatherIDs(_ map[string]*RawID_Fields) {}
+func (lit *literalPrimitiveType[T, V]) gatherIDs(_ map[string]*RawID_Fields) {}
 
-func (lit *literalPrimitiveType[P, T]) inputs() ([]digest.Digest, error) {
+func (lit *literalPrimitiveType[T, V]) inputs() ([]digest.Digest, error) {
 	return nil, nil
 }
 
-func (lit *literalPrimitiveType[P, T]) modules() []*Module {
+func (lit *literalPrimitiveType[T, V]) modules() []*Module {
 	return nil
 }
 
-func (lit *literalPrimitiveType[P, T]) tainted() bool {
+func (lit *literalPrimitiveType[T, V]) tainted() bool {
 	return false
 }
 
-func (lit *literalPrimitiveType[P, T]) display() string {
+func (lit *literalPrimitiveType[T, V]) display() string {
 	// kludge to special case truncation of strings
 	if lit.rawVal.astKind() == ast.StringValue {
-		var val any = lit.rawVal.Value()
+		var val any = lit.rawVal.value()
 		return truncate(strconv.Quote(val.(string)), 100)
 	}
-	return fmt.Sprintf("%v", lit.rawVal.Value())
+	return fmt.Sprintf("%v", lit.rawVal.value())
 }
 
-func (lit *literalPrimitiveType[P, T]) toInput() any {
-	return lit.rawVal.Value()
+func (lit *literalPrimitiveType[T, V]) toInput() any {
+	return lit.rawVal.value()
 }
 
-func (lit *literalPrimitiveType[P, T]) toAST() *ast.Value {
+func (lit *literalPrimitiveType[T, V]) toAST() *ast.Value {
 	kind := lit.rawVal.astKind()
 	var raw string
 	if kind == ast.NullValue {
@@ -557,7 +565,7 @@ func (lit *literalPrimitiveType[P, T]) toAST() *ast.Value {
 		// otherwise the raw value would show up as "<nil>"
 		raw = "null"
 	} else {
-		raw = fmt.Sprintf("%v", lit.rawVal.Value())
+		raw = fmt.Sprintf("%v", lit.rawVal.value())
 	}
 	return &ast.Value{
 		Raw:  raw,

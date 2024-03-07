@@ -19,7 +19,7 @@ message RawID {
     string baseIDDigest = 1;
 
     // The GraphQL type of the value.
-    Type type = 2;
+    RawType type = 2;
 
     // GraphQL field name.
     string field = 3;
@@ -47,7 +47,8 @@ message RawID {
     bool meta = 6;
 
     // If the field returns a list, this is the index of the element to select.
-    // Note that this defaults to zero, as IDs always refer to
+    // Note that this defaults to zero, which means there is no selection of
+    // an element in the list. Non-zero indexes are 1-based.
     //
     // Here we're teetering dangerously close to full blown attribute path
     // selection, but we're intentionally limiting ourselves instead to cover
@@ -61,13 +62,16 @@ message RawID {
     // the module ID providing the implementation of the field.
     RawModule module = 8;
 
-    // TODO: doc
+    // A unique digest of these fields
     string digest = 9;
   }
 
-  // TODO: doc
+  // The digest of the ID fields for the "root" of the DAG. All other ID fields
+  // in this message are referenced by this one via their base, args or module.
   string topLevelIDDigest = 9;
-  // TODO: doc
+
+  // Map of ID field digests to the fields they represent. This structure
+  // allows us to deduplicate occurrences of the same field in the DAG.
   map<string, Fields> idsByDigest = 10;
 }
 
@@ -75,7 +79,7 @@ message RawID {
 // loaded to evaluate an ID that uses it. The details of this task are not
 // defined at the protocol layer.
 message RawModule {
-  // The ID that provides the module.
+  // The digest of the ID that provides the module.
   string idDigest = 1;
   // The name of the module.
   string name = 2;
@@ -116,8 +120,8 @@ message Object {
 }
 
 // A GraphQL type.
-message Type {
+message RawType {
   string namedType = 1;
-  Type elem = 2;
+  RawType elem = 2;
   bool nonNull = 3;
 }

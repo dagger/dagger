@@ -1,45 +1,43 @@
 package idproto
 
 import (
-	"fmt"
-	"hash"
-
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+type Type struct {
+	raw *RawType
+}
+
 func NewType(gqlType *ast.Type) *Type {
-	t := &Type{
+	return &Type{raw: newRawType(gqlType)}
+}
+
+func (t *Type) NamedType() string {
+	return t.raw.NamedType
+}
+
+func (t *Type) ToAST() *ast.Type {
+	return t.raw.toAST()
+}
+
+func newRawType(gqlType *ast.Type) *RawType {
+	t := &RawType{
 		NamedType: gqlType.NamedType,
 		NonNull:   gqlType.NonNull,
 	}
 	if gqlType.Elem != nil {
-		t.Elem = NewType(gqlType.Elem)
+		t.Elem = newRawType(gqlType.Elem)
 	}
 	return t
 }
 
-func (t *Type) ToAST() *ast.Type {
+func (t *RawType) toAST() *ast.Type {
 	a := &ast.Type{
 		NamedType: t.NamedType,
 		NonNull:   t.NonNull,
 	}
 	if t.Elem != nil {
-		a.Elem = t.Elem.ToAST()
+		a.Elem = t.Elem.toAST()
 	}
 	return a
-}
-
-func (t *Type) digestInto(h hash.Hash) error {
-	if _, err := h.Write([]byte(t.NamedType)); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(h, "%t", t.NonNull); err != nil {
-		return err
-	}
-	if t.Elem != nil {
-		if err := t.Elem.digestInto(h); err != nil {
-			return err
-		}
-	}
-	return nil
 }

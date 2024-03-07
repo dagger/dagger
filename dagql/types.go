@@ -597,7 +597,7 @@ func (i *ID[T]) Decode(str string) error {
 	if idp.Type() == nil {
 		return fmt.Errorf("expected %q ID, got untyped ID", expectedName)
 	}
-	if idp.Type().NamedType != expectedName {
+	if idp.Type().NamedType() != expectedName {
 		return fmt.Errorf("expected %q ID, got %s ID", expectedName, idp.Type().ToAST())
 	}
 	i.id = &idp

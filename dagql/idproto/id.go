@@ -17,16 +17,94 @@ func New() *ID {
 	return nil
 }
 
-// TODO: doc invariants:
-// * immutable, can append new IDs to base if modifications needed
-// * digest must always be set
+/*
+ID represents a GraphQL value of a certain type, constructed by evaluating
+its contained pipeline. In other words, it represents a
+constructor-addressed value, which may be an object, an array, or a scalar
+value.
+
+It may be binary=>base64-encoded to be used as a GraphQL ID value for
+objects. Alternatively it may be stored in a database and referred to via an
+RFC-6920 ni://sha-256;... URI.
+
+This type wraps the underlying proto type in order to enforce immutability
+of its fields.
+
+IDs are immutable from the consumer's perspective. Rather than mutating an ID,
+methods on ID can be used to create a new ID on top of an existing (immutable)
+Base ID (e.g. Append, SelectNth, etc.).
+*/
 type ID struct {
 	raw *RawID_Fields
 
-	// TODO: doc, or perhaps these can be removed now?
+	// Wrappers around the various raw proto types in ID.raw
 	base   *ID
 	args   []*Argument
 	module *Module
+	typ    *Type
+}
+
+// The ID of the object that the field selection will be evaluated against.
+//
+// If nil, the root Query object is implied.
+func (id *ID) Base() *ID {
+	if id == nil {
+		return nil
+	}
+	return id.base
+}
+
+// The GraphQL type of the value.
+func (id *ID) Type() *Type {
+	return id.typ
+}
+
+// GraphQL field name.
+func (id *ID) Field() string {
+	return id.raw.Field
+}
+
+// GraphQL field arguments, always in alphabetical order.
+// NOTE: use with caution, any inplace writes to elements of the returned slice
+// can corrupt the ID
+func (id *ID) Args() []*Argument {
+	return id.args
+}
+
+// If the field returns a list, this is the index of the element to select.
+// Note that this defaults to zero, which means there is no selection of
+// an element in the list. Non-zero indexes are 1-based.
+func (id *ID) Nth() int64 {
+	return id.raw.Nth
+}
+
+// Tainted returns true if the ID contains any tainted selectors.
+// If true, this Selector is not reproducible.
+func (id *ID) IsTainted() bool {
+	if id == nil {
+		return false
+	}
+	if id.raw.Tainted {
+		return true
+	}
+	if id.base != nil {
+		return id.base.IsTainted()
+	}
+	return false
+}
+
+// The module that provides the implementation of the field, if any.
+func (id *ID) Module() *Module {
+	return id.module
+}
+
+// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
+// first.
+func (id *ID) Digest() digest.Digest {
+	if id == nil {
+		return ""
+	}
+	return digest.Digest(id.raw.Digest)
 }
 
 func (id *ID) Inputs() ([]digest.Digest, error) {
@@ -102,12 +180,12 @@ func (id *ID) DisplaySelf() string {
 }
 
 func (id *ID) Display() string {
-	return fmt.Sprintf("%s: %s", id.Path(), id.raw.Type.ToAST())
+	return fmt.Sprintf("%s: %s", id.Path(), id.typ.ToAST())
 }
 
 func (id *ID) SelectNth(nth int) *ID {
 	return id.base.Append(
-		id.raw.Type.Elem.ToAST(),
+		id.raw.Type.Elem.toAST(),
 		id.raw.Field,
 		id.module,
 		id.raw.Tainted,
@@ -127,7 +205,6 @@ func (id *ID) Append(
 	newID := &ID{
 		raw: &RawID_Fields{
 			BaseIDDigest: string(id.Digest()),
-			Type:         NewType(ret),
 			Field:        field,
 			Args:         make([]*RawArgument, len(args)),
 			Tainted:      tainted,
@@ -136,7 +213,10 @@ func (id *ID) Append(
 		base:   id,
 		module: mod,
 		args:   args,
+		typ:    NewType(ret),
 	}
+
+	newID.raw.Type = newID.typ.raw
 
 	if mod != nil {
 		newID.raw.Module = mod.raw
@@ -152,64 +232,12 @@ func (id *ID) Append(
 	var err error
 	newID.raw.Digest, err = newID.calcDigest()
 	if err != nil {
-		// TODO: right? something has to be deeply wrong if we
-		// can't marshal proto and hash the bytes
+		// something has to be deeply wrong if we can't
+		// marshal proto and hash the bytes
 		panic(err)
 	}
 
 	return newID
-}
-
-// Tainted returns true if the ID contains any tainted selectors.
-func (id *ID) IsTainted() bool {
-	if id == nil {
-		return false
-	}
-	if id.raw.Tainted {
-		return true
-	}
-	if id.base != nil {
-		return id.base.IsTainted()
-	}
-	return false
-}
-
-func (id *ID) Base() *ID {
-	if id == nil {
-		return nil
-	}
-	return id.base
-}
-
-// TODO: Type should probably be wrapped too to protect mutations that impact digest...
-func (id *ID) Type() *Type {
-	return id.raw.Type
-}
-
-func (id *ID) Field() string {
-	return id.raw.Field
-}
-
-// TODO: technically this enables mutations of args in-place in the slice...
-func (id *ID) Args() []*Argument {
-	return id.args
-}
-
-func (id *ID) Nth() int64 {
-	return id.raw.Nth
-}
-
-func (id *ID) Module() *Module {
-	return id.module
-}
-
-// Digest returns the digest of the encoded ID. It does NOT canonicalize the ID
-// first.
-func (id *ID) Digest() digest.Digest {
-	if id == nil {
-		return ""
-	}
-	return digest.Digest(id.raw.Digest)
 }
 
 func (id *ID) UnderlyingTypeName() string {
@@ -234,12 +262,13 @@ func (id *ID) Encode() (string, error) {
 	// Deterministic is strictly needed so the IdsByDigest map is sorted in the serialized proto
 	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(rawID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
 	}
 
 	return base64.URLEncoding.EncodeToString(proto), nil
 }
 
+// NOTE: use with caution, any mutations to the returned proto can corrupt the ID
 func (id *ID) ToProto() (*RawID, error) {
 	rawID := &RawID{
 		IdsByDigest: map[string]*RawID_Fields{},
@@ -333,6 +362,9 @@ func (id *ID) decode(
 			return fmt.Errorf("failed to decode argument: %w", err)
 		}
 		id.args = append(id.args, decodedArg)
+	}
+	if id.raw.Type != nil {
+		id.typ = &Type{raw: id.raw.Type}
 	}
 
 	return nil

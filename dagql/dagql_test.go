@@ -51,14 +51,6 @@ func req(t *testing.T, gql *client.Client, query string, res any) {
 	assert.NilError(t, err)
 }
 
-// TODO:?
-func reqRes[T any](t *testing.T, gql *client.Client, query string, res T) T {
-	t.Helper()
-	err := gql.Post(query, &res)
-	assert.NilError(t, err)
-	return res
-}
-
 func TestBasic(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 
