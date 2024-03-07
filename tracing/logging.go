@@ -26,7 +26,7 @@ func PrettyLogger(dest io.Writer, level slog.Level) *slog.Logger {
 	slogOpts := &tint.Options{
 		TimeFormat: time.TimeOnly,
 		NoColor:    false,
-		Level:      slog.LevelDebug, // TODO
+		Level:      level, // TODO
 	}
 	return slog.New(tint.NewHandler(dest, slogOpts))
 }
