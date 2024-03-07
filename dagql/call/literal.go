@@ -1,9 +1,10 @@
-package idproto
+package call
 
 import (
 	"fmt"
 	"strconv"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -20,8 +21,8 @@ type Literal interface {
 	ToInput() any
 	ToAST() *ast.Value
 
-	raw() *RawLiteral
-	gatherIDs(map[string]*RawID_Fields)
+	pb() *callpbv1.Literal
+	gatherCalls(map[string]*callpbv1.Call)
 }
 
 type LiteralID struct {
@@ -67,12 +68,12 @@ func (lit *LiteralID) ToAST() *ast.Value {
 	}
 }
 
-func (lit *LiteralID) raw() *RawLiteral {
-	return &RawLiteral{Value: &RawLiteral_IdDigest{IdDigest: lit.id.raw.Digest}}
+func (lit *LiteralID) pb() *callpbv1.Literal {
+	return &callpbv1.Literal{Value: &callpbv1.Literal_CallDigest{CallDigest: lit.id.pb.Digest}}
 }
 
-func (lit *LiteralID) gatherIDs(idsByDigest map[string]*RawID_Fields) {
-	lit.id.gatherIDs(idsByDigest)
+func (lit *LiteralID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
+	lit.id.gatherCalls(callsByDigest)
 }
 
 type LiteralList struct {
@@ -159,17 +160,17 @@ func (lit *LiteralList) ToAST() *ast.Value {
 	return list
 }
 
-func (lit *LiteralList) raw() *RawLiteral {
-	list := make([]*RawLiteral, len(lit.values))
+func (lit *LiteralList) pb() *callpbv1.Literal {
+	list := make([]*callpbv1.Literal, len(lit.values))
 	for i, val := range lit.values {
-		list[i] = val.raw()
+		list[i] = val.pb()
 	}
-	return &RawLiteral{Value: &RawLiteral_List{List: &List{Values: list}}}
+	return &callpbv1.Literal{Value: &callpbv1.Literal_List{List: &callpbv1.List{Values: list}}}
 }
 
-func (lit *LiteralList) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (lit *LiteralList) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	for _, val := range lit.values {
-		val.gatherIDs(idsByDigest)
+		val.gatherCalls(callsByDigest)
 	}
 }
 
@@ -190,12 +191,12 @@ func (lit *LiteralObject) Range(fn func(int, string, Literal) error) error {
 			continue
 		}
 		if v.value == nil {
-			if err := fn(i, v.raw.Name, nil); err != nil {
+			if err := fn(i, v.pb.Name, nil); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := fn(i, v.raw.Name, v.value); err != nil {
+		if err := fn(i, v.pb.Name, v.value); err != nil {
 			return err
 		}
 	}
@@ -237,7 +238,7 @@ func (lit *LiteralObject) Display() string {
 		if i > 0 {
 			obj += ","
 		}
-		obj += field.raw.Name + ": " + field.value.Display()
+		obj += field.pb.Name + ": " + field.value.Display()
 	}
 	obj += "}"
 	return obj
@@ -246,7 +247,7 @@ func (lit *LiteralObject) Display() string {
 func (lit *LiteralObject) ToInput() any {
 	obj := make(map[string]any, len(lit.values))
 	for _, field := range lit.values {
-		obj[field.raw.Name] = field.value.ToInput()
+		obj[field.pb.Name] = field.value.ToInput()
 	}
 	return obj
 }
@@ -257,133 +258,69 @@ func (lit *LiteralObject) ToAST() *ast.Value {
 	}
 	for _, field := range lit.values {
 		obj.Children = append(obj.Children, &ast.ChildValue{
-			Name:  field.raw.Name,
+			Name:  field.pb.Name,
 			Value: field.value.ToAST(),
 		})
 	}
 	return obj
 }
 
-func (lit *LiteralObject) raw() *RawLiteral {
-	args := make([]*RawArgument, len(lit.values))
+func (lit *LiteralObject) pb() *callpbv1.Literal {
+	args := make([]*callpbv1.Argument, len(lit.values))
 	for i, val := range lit.values {
-		args[i] = val.raw
+		args[i] = val.pb
 	}
-	return &RawLiteral{Value: &RawLiteral_Object{Object: &Object{Values: args}}}
+	return &callpbv1.Literal{Value: &callpbv1.Literal_Object{Object: &callpbv1.Object{Values: args}}}
 }
 
-func (lit *LiteralObject) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (lit *LiteralObject) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	for _, val := range lit.values {
-		val.gatherIDs(idsByDigest)
+		val.gatherCalls(callsByDigest)
 	}
 }
 
-type LiteralBool = LiteralPrimitiveType[bool, *RawLiteral_Bool]
+type LiteralBool = LiteralPrimitiveType[bool, *callpbv1.Literal_Bool]
 
 func NewLiteralBool(val bool) *LiteralBool {
-	return &LiteralBool{&RawLiteral_Bool{Bool: val}}
+	return &LiteralBool{&callpbv1.Literal_Bool{Bool: val}}
 }
 
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Bool) value() bool {
-	return rawLit.Bool
-}
-
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Bool) astKind() ast.ValueKind {
-	return ast.BooleanValue
-}
-
-type LiteralEnum = LiteralPrimitiveType[string, *RawLiteral_Enum]
+type LiteralEnum = LiteralPrimitiveType[string, *callpbv1.Literal_Enum]
 
 func NewLiteralEnum(val string) *LiteralEnum {
-	return &LiteralEnum{&RawLiteral_Enum{Enum: val}}
+	return &LiteralEnum{&callpbv1.Literal_Enum{Enum: val}}
 }
 
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Enum) value() string {
-	return rawLit.Enum
-}
-
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Enum) astKind() ast.ValueKind {
-	return ast.EnumValue
-}
-
-type LiteralInt = LiteralPrimitiveType[int64, *RawLiteral_Int]
+type LiteralInt = LiteralPrimitiveType[int64, *callpbv1.Literal_Int]
 
 func NewLiteralInt(val int64) *LiteralInt {
-	return &LiteralInt{&RawLiteral_Int{Int: val}}
+	return &LiteralInt{&callpbv1.Literal_Int{Int: val}}
 }
 
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Int) value() int64 {
-	return rawLit.Int
-}
-
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Int) astKind() ast.ValueKind {
-	return ast.IntValue
-}
-
-type LiteralFloat = LiteralPrimitiveType[float64, *RawLiteral_Float]
+type LiteralFloat = LiteralPrimitiveType[float64, *callpbv1.Literal_Float]
 
 func NewLiteralFloat(val float64) *LiteralFloat {
-	return &LiteralFloat{&RawLiteral_Float{Float: val}}
+	return &LiteralFloat{&callpbv1.Literal_Float{Float: val}}
 }
 
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Float) value() float64 {
-	return rawLit.Float
-}
-
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Float) astKind() ast.ValueKind {
-	return ast.FloatValue
-}
-
-type LiteralString = LiteralPrimitiveType[string, *RawLiteral_String_]
+type LiteralString = LiteralPrimitiveType[string, *callpbv1.Literal_String_]
 
 func NewLiteralString(val string) *LiteralString {
-	return &LiteralString{&RawLiteral_String_{String_: val}}
+	return &LiteralString{&callpbv1.Literal_String_{String_: val}}
 }
 
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_String_) value() string {
-	return rawLit.String_
-}
-
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_String_) astKind() ast.ValueKind {
-	return ast.StringValue
-}
-
-type LiteralNull = LiteralPrimitiveType[any, *RawLiteral_Null]
+type LiteralNull = LiteralPrimitiveType[any, *callpbv1.Literal_Null]
 
 func NewLiteralNull() *LiteralNull {
-	return &LiteralNull{&RawLiteral_Null{Null: true}}
+	return &LiteralNull{&callpbv1.Literal_Null{Null: true}}
 }
 
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Null) value() any {
-	return nil
-}
-
-//nolint:unused // it is used in LiteralPrimitiveType...?
-func (rawLit *RawLiteral_Null) astKind() ast.ValueKind {
-	return ast.NullValue
-}
-
-type LiteralPrimitiveType[T comparable, V interface {
-	isRawLiteral_Value
-	value() T
-	astKind() ast.ValueKind
-}] struct {
-	rawVal V
+type LiteralPrimitiveType[T comparable, V callpbv1.LiteralValue[T]] struct {
+	pbVal V
 }
 
 func (lit *LiteralPrimitiveType[T, V]) Value() T {
-	return lit.rawVal.value()
+	return lit.pbVal.Value()
 }
 
 func (lit *LiteralPrimitiveType[T, V]) Inputs() ([]digest.Digest, error) {
@@ -400,26 +337,26 @@ func (lit *LiteralPrimitiveType[T, V]) Tainted() bool {
 
 func (lit *LiteralPrimitiveType[T, V]) Display() string {
 	// kludge to special case truncation of strings
-	if lit.rawVal.astKind() == ast.StringValue {
-		var val any = lit.rawVal.value()
+	if lit.pbVal.ASTKind() == ast.StringValue {
+		var val any = lit.pbVal.Value()
 		return truncate(strconv.Quote(val.(string)), 100)
 	}
-	return fmt.Sprintf("%v", lit.rawVal.value())
+	return fmt.Sprintf("%v", lit.pbVal.Value())
 }
 
 func (lit *LiteralPrimitiveType[T, V]) ToInput() any {
-	return lit.rawVal.value()
+	return lit.pbVal.Value()
 }
 
 func (lit *LiteralPrimitiveType[T, V]) ToAST() *ast.Value {
-	kind := lit.rawVal.astKind()
+	kind := lit.pbVal.ASTKind()
 	var raw string
 	if kind == ast.NullValue {
 		// this teeny kludge allows us to use LiteralPrimitiveType with Literal_Null
-		// otherwise the raw value would show up as "<nil>"
+		// otherwise the raw Value would show up as "<nil>"
 		raw = "null"
 	} else {
-		raw = fmt.Sprintf("%v", lit.rawVal.value())
+		raw = fmt.Sprintf("%v", lit.pbVal.Value())
 	}
 	return &ast.Value{
 		Raw:  raw,
@@ -427,67 +364,67 @@ func (lit *LiteralPrimitiveType[T, V]) ToAST() *ast.Value {
 	}
 }
 
-func (lit *LiteralPrimitiveType[T, V]) raw() *RawLiteral {
-	return &RawLiteral{Value: lit.rawVal}
+func (lit *LiteralPrimitiveType[T, V]) pb() *callpbv1.Literal {
+	return &callpbv1.Literal{Value: lit.pbVal}
 }
 
-func (lit *LiteralPrimitiveType[T, V]) gatherIDs(_ map[string]*RawID_Fields) {}
+func (lit *LiteralPrimitiveType[T, V]) gatherCalls(_ map[string]*callpbv1.Call) {}
 
 func decodeLiteral(
-	raw *RawLiteral,
-	idsByDigest map[string]*RawID_Fields,
+	pb *callpbv1.Literal,
+	callsByDigest map[string]*callpbv1.Call,
 	memo map[string]*ID,
 ) (Literal, error) {
-	if raw == nil {
+	if pb == nil {
 		return nil, nil
 	}
-	switch v := raw.Value.(type) {
-	case *RawLiteral_IdDigest:
-		if v.IdDigest == "" {
+	switch v := pb.Value.(type) {
+	case *callpbv1.Literal_CallDigest:
+		if v.CallDigest == "" {
 			return nil, nil
 		}
-		id := new(ID)
-		if err := id.decode(v.IdDigest, idsByDigest, memo); err != nil {
-			return nil, fmt.Errorf("failed to decode literal ID: %w", err)
+		call := new(ID)
+		if err := call.decode(v.CallDigest, callsByDigest, memo); err != nil {
+			return nil, fmt.Errorf("failed to decode literal Call: %w", err)
 		}
-		return NewLiteralID(id), nil
-	case *RawLiteral_Null:
+		return NewLiteralID(call), nil
+	case *callpbv1.Literal_Null:
 		return NewLiteralNull(), nil
-	case *RawLiteral_Bool:
+	case *callpbv1.Literal_Bool:
 		return NewLiteralBool(v.Bool), nil
-	case *RawLiteral_Enum:
+	case *callpbv1.Literal_Enum:
 		return NewLiteralEnum(v.Enum), nil
-	case *RawLiteral_Int:
+	case *callpbv1.Literal_Int:
 		return NewLiteralInt(v.Int), nil
-	case *RawLiteral_Float:
+	case *callpbv1.Literal_Float:
 		return NewLiteralFloat(v.Float), nil
-	case *RawLiteral_String_:
+	case *callpbv1.Literal_String_:
 		return NewLiteralString(v.String_), nil
-	case *RawLiteral_List:
+	case *callpbv1.Literal_List:
 		list := make([]Literal, 0, len(v.List.Values))
 		for _, val := range v.List.Values {
 			if val == nil || val.Value == nil {
 				continue
 			}
-			elemLit, err := decodeLiteral(val, idsByDigest, memo)
+			elemLit, err := decodeLiteral(val, callsByDigest, memo)
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode list literal: %w", err)
 			}
 			list = append(list, elemLit)
 		}
 		return NewLiteralList(list...), nil
-	case *RawLiteral_Object:
+	case *callpbv1.Literal_Object:
 		args := make([]*Argument, 0, len(v.Object.Values))
 		for _, arg := range v.Object.Values {
 			if arg == nil {
 				continue
 			}
-			fieldLit, err := decodeLiteral(arg.Value, idsByDigest, memo)
+			fieldLit, err := decodeLiteral(arg.Value, callsByDigest, memo)
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode object literal: %w", err)
 			}
 			args = append(args, &Argument{
-				raw:   arg,
+				pb:    arg,
 				value: fieldLit,
 			})
 		}

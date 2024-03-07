@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vito/progrock"
 )
 
@@ -19,7 +19,7 @@ type Step struct {
 	db *DB
 }
 
-func (step *Step) ID() *idproto.ID {
+func (step *Step) ID() *call.ID {
 	return step.db.IDs[step.Digest]
 }
 

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/exp/constraints"
 )
@@ -38,7 +38,7 @@ type ObjectType interface {
 	// IDType returns the scalar type for the object's IDs.
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
-	New(*idproto.ID, Typed) (Object, error)
+	New(*call.ID, Typed) (Object, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
 	ParseField(context.Context, *ast.Field, map[string]any) (Selector, *ast.Type, error)
@@ -61,7 +61,7 @@ type FieldFunc func(context.Context, Object, map[string]Input) (Typed, error)
 
 type IDable interface {
 	// ID returns the ID of the value.
-	ID() *idproto.ID
+	ID() *call.ID
 }
 
 // Object represents an Object in the graph which has an ID and can have
@@ -72,7 +72,7 @@ type Object interface {
 	// ObjectType returns the type of the object.
 	ObjectType() ObjectType
 	// IDFor returns the ID representing the return value of the given field.
-	IDFor(context.Context, Selector) (*idproto.ID, error)
+	IDFor(context.Context, Selector) (*call.ID, error)
 	// Select evaluates the selected field and returns the result.
 	//
 	// The returned value is the raw Typed value returned from the field; it must
@@ -93,7 +93,7 @@ type Input interface {
 	// All Inputs are typed.
 	Typed
 	// All Inputs are able to be represented as a Literal.
-	idproto.Literate
+	call.Literate
 	// All Inputs now how to decode new instances of themselves.
 	Decoder() InputDecoder
 
@@ -178,8 +178,8 @@ func (i Int) Int64() int64 {
 	return int64(i)
 }
 
-func (i Int) ToLiteral() idproto.Literal {
-	return idproto.NewLiteralInt(i.Int64())
+func (i Int) ToLiteral() call.Literal {
+	return call.NewLiteralInt(i.Int64())
 }
 
 func (Int) Type() *ast.Type {
@@ -265,8 +265,8 @@ func (Float) Decoder() InputDecoder {
 	return Float(0)
 }
 
-func (f Float) ToLiteral() idproto.Literal {
-	return idproto.NewLiteralFloat(f.Float64())
+func (f Float) ToLiteral() call.Literal {
+	return call.NewLiteralFloat(f.Float64())
 }
 
 func (f Float) Float64() float64 {
@@ -358,8 +358,8 @@ func (Boolean) Decoder() InputDecoder {
 	return Boolean(false)
 }
 
-func (b Boolean) ToLiteral() idproto.Literal {
-	return idproto.NewLiteralBool(b.Bool())
+func (b Boolean) ToLiteral() call.Literal {
+	return call.NewLiteralBool(b.Bool())
 }
 
 func (b Boolean) Bool() bool {
@@ -437,8 +437,8 @@ func (String) Decoder() InputDecoder {
 	return String("")
 }
 
-func (s String) ToLiteral() idproto.Literal {
-	return idproto.NewLiteralString(string(s))
+func (s String) ToLiteral() call.Literal {
+	return call.NewLiteralString(string(s))
 }
 
 func (s String) MarshalJSON() ([]byte, error) {
@@ -472,17 +472,17 @@ func (s String) SetField(v reflect.Value) error {
 
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
-	id    *idproto.ID
+	id    *call.ID
 	inner T
 }
 
-func NewID[T Typed](id *idproto.ID) ID[T] {
+func NewID[T Typed](id *call.ID) ID[T] {
 	return ID[T]{
 		id: id,
 	}
 }
 
-func NewDynamicID[T Typed](id *idproto.ID, typed T) ID[T] {
+func NewDynamicID[T Typed](id *call.ID, typed T) ID[T] {
 	return ID[T]{
 		id:    id,
 		inner: typed,
@@ -511,7 +511,7 @@ func (i ID[T]) Type() *ast.Type {
 var _ IDable = ID[Typed]{}
 
 // ID returns the ID of the value.
-func (i ID[T]) ID() *idproto.ID {
+func (i ID[T]) ID() *call.ID {
 	return i.id
 }
 
@@ -533,11 +533,11 @@ func (i ID[T]) TypeDefinition() *ast.Definition {
 
 // New creates a new ID with the given value.
 //
-// It accepts either an *idproto.ID or a string. The string is expected to be
-// the base64-encoded representation of an *idproto.ID.
+// It accepts either an *call.ID or a string. The string is expected to be
+// the base64-encoded representation of an *call.ID.
 func (i ID[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
-	case *idproto.ID:
+	case *call.ID:
 		return ID[T]{id: x, inner: i.inner}, nil
 	case string:
 		if err := (&i).Decode(x); err != nil {
@@ -558,7 +558,7 @@ var _ Setter = ID[Typed]{}
 
 func (i ID[T]) SetField(v reflect.Value) error {
 	switch v.Interface().(type) {
-	case *idproto.ID:
+	case *call.ID:
 		v.Set(reflect.ValueOf(i.ID))
 		return nil
 	default:
@@ -573,8 +573,8 @@ func (i ID[T]) Decoder() InputDecoder {
 	return ID[T]{inner: i.inner}
 }
 
-func (i ID[T]) ToLiteral() idproto.Literal {
-	return idproto.NewLiteralID(i.id)
+func (i ID[T]) ToLiteral() call.Literal {
+	return call.NewLiteralID(i.id)
 }
 
 func (i ID[T]) Encode() (string, error) {
@@ -590,7 +590,7 @@ func (i *ID[T]) Decode(str string) error {
 		return fmt.Errorf("cannot decode empty string as ID")
 	}
 	expectedName := i.inner.Type().Name()
-	var idp idproto.ID
+	var idp call.ID
 	if err := idp.Decode(str); err != nil {
 		return err
 	}
@@ -714,12 +714,12 @@ func (a ArrayInput[I]) DecodeInput(val any) (Input, error) {
 	}
 }
 
-func (i ArrayInput[S]) ToLiteral() idproto.Literal {
-	lits := make([]idproto.Literal, 0, len(i))
+func (i ArrayInput[S]) ToLiteral() call.Literal {
+	lits := make([]call.Literal, 0, len(i))
 	for _, elem := range i {
 		lits = append(lits, elem.ToLiteral())
 	}
-	return idproto.NewLiteralList(lits...)
+	return call.NewLiteralList(lits...)
 }
 
 var _ Setter = ArrayInput[Input]{}
@@ -850,8 +850,8 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 	return values
 }
 
-func (e *EnumValues[T]) Literal(val T) idproto.Literal {
-	return idproto.NewLiteralEnum(string(val))
+func (e *EnumValues[T]) Literal(val T) call.Literal {
+	return call.NewLiteralEnum(string(val))
 }
 
 func (e *EnumValues[T]) Lookup(val string) (T, error) {

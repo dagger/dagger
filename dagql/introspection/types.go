@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -389,7 +389,7 @@ func (k TypeKind) Decoder() dagql.InputDecoder {
 	return TypeKinds
 }
 
-func (k TypeKind) ToLiteral() idproto.Literal {
+func (k TypeKind) ToLiteral() call.Literal {
 	return TypeKinds.Literal(k)
 }
 
@@ -434,7 +434,7 @@ func (l DirectiveLocation) Decoder() dagql.InputDecoder {
 	return DirectiveLocations
 }
 
-func (l DirectiveLocation) ToLiteral() idproto.Literal {
+func (l DirectiveLocation) ToLiteral() call.Literal {
 	return DirectiveLocations.Literal(l)
 }
 

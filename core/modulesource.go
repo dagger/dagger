@@ -10,7 +10,7 @@ import (
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -39,7 +39,7 @@ func (proto ModuleSourceKind) Decoder() dagql.InputDecoder {
 	return ModuleSourceKindEnum
 }
 
-func (proto ModuleSourceKind) ToLiteral() idproto.Literal {
+func (proto ModuleSourceKind) ToLiteral() call.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 

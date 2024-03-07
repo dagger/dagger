@@ -9,7 +9,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -39,7 +39,7 @@ func newModFunction(
 	ctx context.Context,
 	root *Query,
 	mod *Module,
-	modID *idproto.ID,
+	modID *call.ID,
 	objDef *ObjectTypeDef,
 	runtime *Container,
 	metadata *Function,
@@ -111,7 +111,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, caller *idproto.ID, opts *CallOpts) (t dagql.Typed, rerr error) {
+func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallOpts) (t dagql.Typed, rerr error) {
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)

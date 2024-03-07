@@ -1,0 +1,127 @@
+syntax = "proto3";
+package dagger;
+
+option go_package = "./callpbv1";
+
+// DAG represents a GraphQL value of a certain type, constructed by evaluating
+// its contained DAG of Calls. In other words, it represents a
+// constructor-addressed value, which may be an object, an array, or a scalar
+// value.
+//
+// It may be binary=>base64-encoded to be used as a GraphQL ID value for
+// objects. Alternatively it may be stored in a database and referred to via an
+// RFC-6920 ni://sha-256;... URI.
+message DAG {
+  // The digest of the Call fields for the "root" of the DAG. All other Call fields
+  // in this message are referenced by this one via their base, args or module.
+  string rootCallDigest = 1;
+
+  // Map of Call digests to the Calls they represent. This structure
+  // allows us to deduplicate occurrences of the same Call in the DAG.
+  map<string, Call> callsByDigest = 2;
+}
+
+message Call {
+  // The Digest of the Call that this Call's field selection will be evaluated against.
+  //
+  // If not present, the root Query Call is implied.
+  string baseCallDigest = 1;
+
+  // The GraphQL type of the call's return value.
+  Type type = 2;
+
+  // GraphQL field name.
+  string field = 3;
+
+  // GraphQL field arguments, always in alphabetical order.
+  repeated Argument args = 4;
+
+  // If true, this Selector is not reproducible.
+  //
+  // TODO: do we need to refer to session/client IDs or anything here? Or is
+  // that all internal? Forcing function is whether this is used as an
+  // in-memory query cache key. But the query cache might be made per-session
+  // or even per-client instead anyway! What buys us the most?
+  bool tainted = 5;
+
+  // If true, this Selector may be omitted from the DAG without changing
+  // the ultimate result.
+  //
+  // This is used to prevent meta-queries like 'pipeline' and 'withFocus' from
+  // busting cache keys when desired.
+  //
+  // It is worth noting that we don't store meta information at this level and
+  // continue to force metadata to be set via GraphQL queries. It makes Calls
+  // always easy to evaluate.
+  bool meta = 6;
+
+  // If the CAll returns a list, this is the index of the element to select.
+  // Note that this defaults to zero, which means there is no selection of
+  // an element in the list. Non-zero indexes are 1-based.
+  //
+  // Here we're teetering dangerously close to full blown attribute path
+  // selection, but we're intentionally limiting ourselves instead to cover
+  // only the common case of returning a list of objects. The only case not
+  // handled is a nested list. Don't do that; have a type instead.
+  int64 nth = 7;
+
+  // The module that provides the implementation of the field.
+  //
+  // The actual usage of this is opaque to the protocol. In Dagger this is
+  // the module providing the implementation of the field.
+  Module module = 8;
+
+  // A unique digest of this Call
+  string digest = 9;
+}
+
+// Module represents a self-contained logical module that can be dynamically
+// loaded to evaluate an Call that uses it. The details of this task are not
+// defined at the protocol layer.
+message Module {
+  // The digest of the Call that provides the module.
+  string callDigest = 1;
+  // The name of the module.
+  string name = 2;
+  // A human-readable ref which may be interpreted by an external system to
+  // yield the same module.
+  string ref = 3;
+}
+
+// A named value passed to a GraphQL field or contained in an input object.
+message Argument {
+  string name = 1;
+  Literal value = 2;
+}
+
+// A value passed to an argument or contained in a list.
+message Literal {
+  oneof value {
+    string callDigest = 1;
+    bool null = 2;
+    bool bool = 3;
+    string enum = 4;
+    int64 int = 5;
+    double float = 6;
+    string string = 7;
+    List list = 8;
+    Object object = 9;
+  }
+}
+
+// A list of values.
+message List {
+  repeated Literal values = 1;
+}
+
+// A series of named values.
+message Object {
+  repeated Argument values = 1;
+}
+
+// A GraphQL type.
+message Type {
+  string namedType = 1;
+  Type elem = 2;
+  bool nonNull = 3;
+}

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
@@ -296,15 +296,15 @@ func newStartable(id string) *fakeStartable {
 	}
 }
 
-func (f *fakeStartable) ID() *idproto.ID {
-	id := idproto.New().Append(&ast.Type{
+func (f *fakeStartable) ID() *call.ID {
+	id := call.New().Append(&ast.Type{
 		NamedType: "FakeService",
 		NonNull:   true,
 	}, f.name, nil, false, 0)
 	return id
 }
 
-func (f *fakeStartable) Start(context.Context, *idproto.ID, bool, func(io.Writer, bkgw.ContainerProcess), func(io.Reader), func(io.Reader)) (*core.RunningService, error) {
+func (f *fakeStartable) Start(context.Context, *call.ID, bool, func(io.Writer, bkgw.ContainerProcess), func(io.Reader), func(io.Reader)) (*core.RunningService, error) {
 	atomic.AddInt32(&f.starts, 1)
 	res := <-f.startResults
 	return res.Started, res.Failed

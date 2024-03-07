@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -87,7 +87,7 @@ func NewServices() *Services {
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
 // is returned.
-func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, error) {
+func (ss *Services) Get(ctx context.Context, id *call.ID) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, e
 type Startable interface {
 	Start(
 		ctx context.Context,
-		id *idproto.ID,
+		id *call.ID,
 		interactive bool,
 		forwardStdin func(io.Writer, bkgw.ContainerProcess),
 		forwardStdout func(io.Reader),
@@ -134,7 +134,7 @@ type Startable interface {
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, id *idproto.ID, svc Startable) (*RunningService, error) {
+func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -240,7 +240,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
+func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err

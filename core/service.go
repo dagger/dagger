@@ -13,7 +13,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
@@ -79,7 +79,7 @@ func (svc *Service) PipelinePath() pipeline.Path {
 	return svc.Query.Pipeline
 }
 
-func (svc *Service) Hostname(ctx context.Context, id *idproto.ID) (string, error) {
+func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
 		upstream, err := svc.Query.Services.Get(ctx, id)
@@ -96,7 +96,7 @@ func (svc *Service) Hostname(ctx context.Context, id *idproto.ID) (string, error
 	}
 }
 
-func (svc *Service) Ports(ctx context.Context, id *idproto.ID) ([]Port, error) {
+func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	switch {
 	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
 		running, err := svc.Query.Services.Get(ctx, id)
@@ -112,7 +112,7 @@ func (svc *Service) Ports(ctx context.Context, id *idproto.ID) ([]Port, error) {
 	}
 }
 
-func (svc *Service) Endpoint(ctx context.Context, id *idproto.ID, port int, scheme string) (string, error) {
+func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme string) (string, error) {
 	var host string
 	var err error
 	switch {
@@ -169,18 +169,18 @@ func (svc *Service) Endpoint(ctx context.Context, id *idproto.ID, port int, sche
 	return endpoint, nil
 }
 
-func (svc *Service) StartAndTrack(ctx context.Context, id *idproto.ID) error {
+func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	_, err := svc.Query.Services.Start(ctx, id, svc)
 	return err
 }
 
-func (svc *Service) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
+func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	return svc.Query.Services.Stop(ctx, id, kill)
 }
 
 func (svc *Service) Start(
 	ctx context.Context,
-	id *idproto.ID,
+	id *call.ID,
 	interactive bool,
 	forwardStdin func(io.Writer, bkgw.ContainerProcess),
 	forwardStdout func(io.Reader),
@@ -201,7 +201,7 @@ func (svc *Service) Start(
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
-	id *idproto.ID,
+	id *call.ID,
 	interactive bool,
 	forwardStdin func(io.Writer, bkgw.ContainerProcess),
 	forwardStdout func(io.Reader),
@@ -498,7 +498,7 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 	return out
 }
 
-func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, rerr error) {
+func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
 	svcCtx, stop := context.WithCancel(context.Background())
 	defer func() {
 		if rerr != nil {
@@ -589,7 +589,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 	}, nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, id *idproto.ID) (running *RunningService, err error) {
+func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (running *RunningService, err error) {
 	dig := id.Digest()
 
 	host, err := svc.Hostname(ctx, id)
@@ -670,7 +670,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *idproto.ID) (run
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	ID       *idproto.ID
+	ID       *call.ID
 	Service  *Service `json:"service"`
 	Hostname string   `json:"hostname"`
 	Aliases  AliasSet `json:"aliases"`

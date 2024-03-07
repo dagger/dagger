@@ -6,7 +6,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -46,8 +46,8 @@ func (p Platform) Decoder() dagql.InputDecoder {
 	return p
 }
 
-func (p Platform) ToLiteral() idproto.Literal {
-	return idproto.NewLiteralString(platforms.Format(specs.Platform(p)))
+func (p Platform) ToLiteral() call.Literal {
+	return call.NewLiteralString(platforms.Format(specs.Platform(p)))
 }
 
 var _ dagql.ScalarType = Platform{}

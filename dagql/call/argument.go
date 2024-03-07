@@ -1,57 +1,59 @@
-package idproto
+package call
 
 import (
 	"fmt"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
 type Argument struct {
-	raw   *RawArgument
+	pb    *callpbv1.Argument
 	value Literal
 }
 
 func NewArgument(name string, value Literal) *Argument {
 	return &Argument{
-		raw: &RawArgument{
+		pb: &callpbv1.Argument{
 			Name:  name,
-			Value: value.raw(),
+			Value: value.pb(),
 		},
 		value: value,
 	}
 }
 
 func (arg *Argument) Name() string {
-	return arg.raw.Name
+	return arg.pb.Name
 }
 
 func (arg *Argument) Value() Literal {
 	return arg.value
 }
 
-// Tainted returns true if the ID contains any tainted selectors.
+// Tainted returns true if the Call contains any tainted selectors.
 func (arg *Argument) Tainted() bool {
 	return arg.value.Tainted()
 }
 
-func (arg *Argument) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (arg *Argument) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if arg == nil {
 		return
 	}
-	arg.value.gatherIDs(idsByDigest)
+	arg.value.gatherCalls(callsByDigest)
 }
 
 func (arg *Argument) decode(
-	raw *RawArgument,
-	idsByDigest map[string]*RawID_Fields,
+	pb *callpbv1.Argument,
+	callsByDigest map[string]*callpbv1.Call,
 	memo map[string]*ID,
 ) error {
-	if raw == nil {
+	if pb == nil {
 		return nil
 	}
 
-	arg.raw = raw
-	if raw.Value != nil {
+	arg.pb = pb
+	if pb.Value != nil {
 		var err error
-		arg.value, err = decodeLiteral(raw.Value, idsByDigest, memo)
+		arg.value, err = decodeLiteral(pb.Value, callsByDigest, memo)
 		if err != nil {
 			return fmt.Errorf("failed to decode argument value: %w", err)
 		}

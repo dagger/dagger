@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
@@ -630,7 +630,7 @@ func (fe *Frontend) View() string {
 }
 
 // DumpID is exposed for troubleshooting.
-func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
+func (fe *Frontend) DumpID(out *termenv.Output, id *call.ID) error {
 	if id.Base() != nil {
 		if err := fe.DumpID(out, id.Base()); err != nil {
 			return err
@@ -689,7 +689,7 @@ const (
 	moduleColor = termenv.ANSIMagenta
 )
 
-func (fe *Frontend) renderIDBase(out *termenv.Output, id *idproto.ID) error {
+func (fe *Frontend) renderIDBase(out *termenv.Output, id *call.ID) error {
 	typeName := id.Type().ToAST().Name()
 	parent := out.String(typeName)
 	if id.Module() != nil {
@@ -699,7 +699,7 @@ func (fe *Frontend) renderIDBase(out *termenv.Output, id *idproto.ID) error {
 	return nil
 }
 
-func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
+func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *call.ID, depth int, inline bool) error {
 	if !inline {
 		indent(out, depth)
 	}
@@ -721,7 +721,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 		fmt.Fprint(out, "(")
 		var needIndent bool
 		for _, arg := range id.Args() {
-			if _, ok := arg.Value().ToInput().(*idproto.ID); ok {
+			if _, ok := arg.Value().ToInput().(*call.ID); ok {
 				needIndent = true
 				break
 			}
@@ -736,7 +736,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 				val := arg.Value()
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
-				case *idproto.LiteralID:
+				case *call.LiteralID:
 					argVertexID := x.Value().Digest()
 					argVtx := fe.db.Vertices[argVertexID.String()]
 					base := x.Value()
@@ -788,31 +788,31 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 	return nil
 }
 
-func (fe *Frontend) renderLiteral(out *termenv.Output, lit idproto.Literal) {
+func (fe *Frontend) renderLiteral(out *termenv.Output, lit call.Literal) {
 	var color termenv.Color
 	switch val := lit.(type) {
-	case *idproto.LiteralBool:
+	case *call.LiteralBool:
 		color = termenv.ANSIRed
-	case *idproto.LiteralInt:
+	case *call.LiteralInt:
 		color = termenv.ANSIRed
-	case *idproto.LiteralFloat:
+	case *call.LiteralFloat:
 		color = termenv.ANSIRed
-	case *idproto.LiteralString:
+	case *call.LiteralString:
 		color = termenv.ANSIYellow
 		if fe.window.Width != -1 && len(val.Value()) > fe.window.Width {
 			display := string(digest.FromString(val.Value()))
 			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(color))
 			return
 		}
-	case *idproto.LiteralID:
+	case *call.LiteralID:
 		color = termenv.ANSIMagenta
-	case *idproto.LiteralEnum:
+	case *call.LiteralEnum:
 		color = termenv.ANSIYellow
-	case *idproto.LiteralNull:
+	case *call.LiteralNull:
 		color = termenv.ANSIBrightBlack
-	case *idproto.LiteralList:
+	case *call.LiteralList:
 		fmt.Fprint(out, "[")
-		val.Range(func(i int, item idproto.Literal) error {
+		val.Range(func(i int, item call.Literal) error {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
@@ -821,9 +821,9 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit idproto.Literal) {
 		})
 		fmt.Fprint(out, "]")
 		return
-	case *idproto.LiteralObject:
+	case *call.LiteralObject:
 		fmt.Fprint(out, "{")
-		val.Range(func(i int, name string, value idproto.Literal) error {
+		val.Range(func(i int, name string, value call.Literal) error {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -78,7 +78,7 @@ func (mode CacheSharingMode) Decoder() dagql.InputDecoder {
 	return CacheSharingModes
 }
 
-func (mode CacheSharingMode) ToLiteral() idproto.Literal {
+func (mode CacheSharingMode) ToLiteral() call.Literal {
 	return CacheSharingModes.Literal(mode)
 }
 

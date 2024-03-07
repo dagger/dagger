@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/gorilla/websocket"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -51,7 +51,7 @@ type TerminalArgs struct {
 	InsecureRootCapabilities *bool `default:"false"`
 }
 
-func (container *Container) Terminal(svcID *idproto.ID, args *TerminalArgs) (*Terminal, http.Handler, error) {
+func (container *Container) Terminal(svcID *call.ID, args *TerminalArgs) (*Terminal, http.Handler, error) {
 	termID := svcID.Digest()
 	endpoint := "terminals/" + termID.Encoded()
 	term := &Terminal{Endpoint: endpoint}
@@ -85,7 +85,7 @@ func (container *Container) Terminal(svcID *idproto.ID, args *TerminalArgs) (*Te
 
 func (container *Container) runTerminal(
 	ctx context.Context,
-	svcID *idproto.ID,
+	svcID *call.ID,
 	conn *websocket.Conn,
 	clientMetadata *engine.ClientMetadata,
 	args *TerminalArgs,

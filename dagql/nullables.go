@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -70,9 +70,9 @@ func (o Optional[I]) Decoder() InputDecoder {
 	return o
 }
 
-func (o Optional[I]) ToLiteral() idproto.Literal {
+func (o Optional[I]) ToLiteral() call.Literal {
 	if !o.Valid {
-		return idproto.NewLiteralNull()
+		return call.NewLiteralNull()
 	}
 	return o.Value.ToLiteral()
 }
@@ -138,9 +138,9 @@ func (o DynamicOptional) Decoder() InputDecoder {
 	return o
 }
 
-func (o DynamicOptional) ToLiteral() idproto.Literal {
+func (o DynamicOptional) ToLiteral() call.Literal {
 	if !o.Valid {
-		return idproto.NewLiteralNull()
+		return call.NewLiteralNull()
 	}
 	return o.Value.ToLiteral()
 }

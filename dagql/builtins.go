@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -201,12 +201,12 @@ func (d DynamicArrayInput) DecodeInput(val any) (Input, error) {
 
 var _ Input = DynamicArrayInput{}
 
-func (d DynamicArrayInput) ToLiteral() idproto.Literal {
-	literals := make([]idproto.Literal, 0, len(d.Values))
+func (d DynamicArrayInput) ToLiteral() call.Literal {
+	literals := make([]call.Literal, 0, len(d.Values))
 	for _, elem := range d.Values {
 		literals = append(literals, elem.ToLiteral())
 	}
-	return idproto.NewLiteralList(literals...)
+	return call.NewLiteralList(literals...)
 }
 
 func (d DynamicArrayInput) Type() *ast.Type {

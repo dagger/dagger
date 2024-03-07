@@ -1,10 +1,11 @@
-package idproto
+package call
 
 import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
 
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/zeebo/xxh3"
@@ -27,17 +28,18 @@ It may be binary=>base64-encoded to be used as a GraphQL ID value for
 objects. Alternatively it may be stored in a database and referred to via an
 RFC-6920 ni://sha-256;... URI.
 
-This type wraps the underlying proto type in order to enforce immutability
-of its fields.
+This type wraps the underlying proto DAG+Call types in order to enforce immutability
+of its fields and give it a name more appropriate for how it's used in the
+context of dagql + the engine.
 
 IDs are immutable from the consumer's perspective. Rather than mutating an ID,
 methods on ID can be used to create a new ID on top of an existing (immutable)
 Base ID (e.g. Append, SelectNth, etc.).
 */
 type ID struct {
-	raw *RawID_Fields
+	pb *callpbv1.Call
 
-	// Wrappers around the various raw proto types in ID.raw
+	// Wrappers around the various proto types in ID.pb
 	base   *ID
 	args   []*Argument
 	module *Module
@@ -61,7 +63,7 @@ func (id *ID) Type() *Type {
 
 // GraphQL field name.
 func (id *ID) Field() string {
-	return id.raw.Field
+	return id.pb.Field
 }
 
 // GraphQL field arguments, always in alphabetical order.
@@ -75,7 +77,7 @@ func (id *ID) Args() []*Argument {
 // Note that this defaults to zero, which means there is no selection of
 // an element in the list. Non-zero indexes are 1-based.
 func (id *ID) Nth() int64 {
-	return id.raw.Nth
+	return id.pb.Nth
 }
 
 // Tainted returns true if the ID contains any tainted selectors.
@@ -84,7 +86,7 @@ func (id *ID) IsTainted() bool {
 	if id == nil {
 		return false
 	}
-	if id.raw.Tainted {
+	if id.pb.Tainted {
 		return true
 	}
 	if id.base != nil {
@@ -104,7 +106,7 @@ func (id *ID) Digest() digest.Digest {
 	if id == nil {
 		return ""
 	}
-	return digest.Digest(id.raw.Digest)
+	return digest.Digest(id.pb.Digest)
 }
 
 func (id *ID) Inputs() ([]digest.Digest, error) {
@@ -161,20 +163,20 @@ func (id *ID) Path() string {
 
 func (id *ID) DisplaySelf() string {
 	buf := new(bytes.Buffer)
-	fmt.Fprintf(buf, "%s", id.raw.Field)
+	fmt.Fprintf(buf, "%s", id.pb.Field)
 	for ai, arg := range id.args {
 		if ai == 0 {
 			fmt.Fprintf(buf, "(")
 		} else {
 			fmt.Fprintf(buf, ", ")
 		}
-		fmt.Fprintf(buf, "%s: %s", arg.raw.Name, arg.value.Display())
+		fmt.Fprintf(buf, "%s: %s", arg.pb.Name, arg.value.Display())
 		if ai == len(id.args)-1 {
 			fmt.Fprintf(buf, ")")
 		}
 	}
-	if id.raw.Nth != 0 {
-		fmt.Fprintf(buf, "#%d", id.raw.Nth)
+	if id.pb.Nth != 0 {
+		fmt.Fprintf(buf, "#%d", id.pb.Nth)
 	}
 	return buf.String()
 }
@@ -185,10 +187,10 @@ func (id *ID) Display() string {
 
 func (id *ID) SelectNth(nth int) *ID {
 	return id.base.Append(
-		id.raw.Type.Elem.toAST(),
-		id.raw.Field,
+		id.pb.Type.Elem.ToAST(),
+		id.pb.Field,
 		id.module,
-		id.raw.Tainted,
+		id.pb.Tainted,
 		nth,
 		id.args...,
 	)
@@ -203,12 +205,12 @@ func (id *ID) Append(
 	args ...*Argument,
 ) *ID {
 	newID := &ID{
-		raw: &RawID_Fields{
-			BaseIDDigest: string(id.Digest()),
-			Field:        field,
-			Args:         make([]*RawArgument, len(args)),
-			Tainted:      tainted,
-			Nth:          int64(nth),
+		pb: &callpbv1.Call{
+			BaseCallDigest: string(id.Digest()),
+			Field:          field,
+			Args:           make([]*callpbv1.Argument, len(args)),
+			Tainted:        tainted,
+			Nth:            int64(nth),
 		},
 		base:   id,
 		module: mod,
@@ -216,21 +218,21 @@ func (id *ID) Append(
 		typ:    NewType(ret),
 	}
 
-	newID.raw.Type = newID.typ.raw
+	newID.pb.Type = newID.typ.pb
 
 	if mod != nil {
-		newID.raw.Module = mod.raw
+		newID.pb.Module = mod.pb
 	}
 
 	for i, arg := range args {
 		if arg.Tainted() {
-			newID.raw.Tainted = true
+			newID.pb.Tainted = true
 		}
-		newID.raw.Args[i] = arg.raw
+		newID.pb.Args[i] = arg.pb
 	}
 
 	var err error
-	newID.raw.Digest, err = newID.calcDigest()
+	newID.pb.Digest, err = newID.calcDigest()
 	if err != nil {
 		// something has to be deeply wrong if we can't
 		// marshal proto and hash the bytes
@@ -241,13 +243,13 @@ func (id *ID) Append(
 }
 
 func (id *ID) Encode() (string, error) {
-	rawID, err := id.ToProto()
+	dagPB, err := id.ToProto()
 	if err != nil {
 		return "", fmt.Errorf("failed to convert ID to proto: %w", err)
 	}
 
-	// Deterministic is strictly needed so the IdsByDigest map is sorted in the serialized proto
-	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(rawID)
+	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto
+	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(dagPB)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
 	}
@@ -256,38 +258,38 @@ func (id *ID) Encode() (string, error) {
 }
 
 // NOTE: use with caution, any mutations to the returned proto can corrupt the ID
-func (id *ID) ToProto() (*RawID, error) {
-	rawID := &RawID{
-		IdsByDigest: map[string]*RawID_Fields{},
+func (id *ID) ToProto() (*callpbv1.DAG, error) {
+	dagPB := &callpbv1.DAG{
+		CallsByDigest: map[string]*callpbv1.Call{},
 	}
-	id.gatherIDs(rawID.IdsByDigest)
-	rawID.TopLevelIDDigest = id.raw.Digest
-	return rawID, nil
+	id.gatherCalls(dagPB.CallsByDigest)
+	dagPB.RootCallDigest = id.pb.Digest
+	return dagPB, nil
 }
 
-func (id *ID) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if id == nil {
 		return
 	}
 
-	if _, ok := idsByDigest[id.raw.Digest]; ok {
+	if _, ok := callsByDigest[id.pb.Digest]; ok {
 		return
 	}
-	idsByDigest[id.raw.Digest] = id.raw
+	callsByDigest[id.pb.Digest] = id.pb
 
-	id.base.gatherIDs(idsByDigest)
-	id.module.gatherIDs(idsByDigest)
+	id.base.gatherCalls(callsByDigest)
+	id.module.gatherCalls(callsByDigest)
 	for _, arg := range id.args {
-		arg.gatherIDs(idsByDigest)
+		arg.gatherCalls(callsByDigest)
 	}
 }
 
 func (id *ID) FromAnyPB(data *anypb.Any) error {
-	var rawID RawID
-	if err := data.UnmarshalTo(&rawID); err != nil {
+	var dagPB callpbv1.DAG
+	if err := data.UnmarshalTo(&dagPB); err != nil {
 		return err
 	}
-	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*ID{})
+	return id.decode(dagPB.RootCallDigest, dagPB.CallsByDigest, map[string]*ID{})
 }
 
 func (id *ID) Decode(str string) error {
@@ -295,17 +297,17 @@ func (id *ID) Decode(str string) error {
 	if err != nil {
 		return fmt.Errorf("failed to decode base64: %w", err)
 	}
-	var rawID RawID
-	if err := proto.Unmarshal(bytes, &rawID); err != nil {
+	var dagPB callpbv1.DAG
+	if err := proto.Unmarshal(bytes, &dagPB); err != nil {
 		return fmt.Errorf("failed to unmarshal proto: %w", err)
 	}
 
-	return id.decode(rawID.TopLevelIDDigest, rawID.IdsByDigest, map[string]*ID{})
+	return id.decode(dagPB.RootCallDigest, dagPB.CallsByDigest, map[string]*ID{})
 }
 
 func (id *ID) decode(
 	dgst string,
-	idsByDigest map[string]*RawID_Fields,
+	callsByDigest map[string]*callpbv1.Call,
 	memo map[string]*ID,
 ) error {
 	if id == nil {
@@ -318,63 +320,63 @@ func (id *ID) decode(
 	}
 	memo[dgst] = id
 
-	raw, ok := idsByDigest[dgst]
+	pb, ok := callsByDigest[dgst]
 	if !ok {
-		return fmt.Errorf("ID digest %q not found", dgst)
+		return fmt.Errorf("call digest %q not found", dgst)
 	}
-	if dgst != raw.Digest {
+	if dgst != pb.Digest {
 		// should never happen, just out of caution
-		return fmt.Errorf("ID digest mismatch %q != %q", dgst, raw.Digest)
+		return fmt.Errorf("call digest mismatch %q != %q", dgst, pb.Digest)
 	}
-	id.raw = raw
+	id.pb = pb
 
-	if id.raw.BaseIDDigest != "" {
+	if id.pb.BaseCallDigest != "" {
 		id.base = new(ID)
-		if err := id.base.decode(id.raw.BaseIDDigest, idsByDigest, memo); err != nil {
-			return fmt.Errorf("failed to decode base ID: %w", err)
+		if err := id.base.decode(id.pb.BaseCallDigest, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode base Call: %w", err)
 		}
 	}
-	if id.raw.Module != nil {
+	if id.pb.Module != nil {
 		id.module = new(Module)
-		if err := id.module.decode(id.raw.Module, idsByDigest, memo); err != nil {
+		if err := id.module.decode(id.pb.Module, callsByDigest, memo); err != nil {
 			return fmt.Errorf("failed to decode module: %w", err)
 		}
 	}
-	for _, arg := range id.raw.Args {
+	for _, arg := range id.pb.Args {
 		if arg == nil {
 			continue
 		}
 		decodedArg := new(Argument)
-		if err := decodedArg.decode(arg, idsByDigest, memo); err != nil {
+		if err := decodedArg.decode(arg, callsByDigest, memo); err != nil {
 			return fmt.Errorf("failed to decode argument: %w", err)
 		}
 		id.args = append(id.args, decodedArg)
 	}
-	if id.raw.Type != nil {
-		id.typ = &Type{raw: id.raw.Type}
+	if id.pb.Type != nil {
+		id.typ = &Type{pb: id.pb.Type}
 	}
 
 	return nil
 }
 
-// presumes that id.raw.Digest is NOT set already, otherwise that value
+// presumes that id.pb.Digest is NOT set already, otherwise that value
 // will be incorrectly included in the digest
 func (id *ID) calcDigest() (string, error) {
 	if id == nil {
 		return "", nil
 	}
 
-	if id.raw.Digest != "" {
-		return "", fmt.Errorf("ID digest already set")
+	if id.pb.Digest != "" {
+		return "", fmt.Errorf("call digest already set")
 	}
 
-	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.raw)
+	pbBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(id.pb)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
+		return "", fmt.Errorf("failed to marshal Call proto: %w", err)
 	}
 	h := xxh3.New()
 	if _, err := h.Write(pbBytes); err != nil {
-		return "", fmt.Errorf("failed to write ID proto to hash: %w", err)
+		return "", fmt.Errorf("failed to write Call proto to hash: %w", err)
 	}
 
 	return fmt.Sprintf("xxh3:%x", h.Sum(nil)), nil

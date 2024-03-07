@@ -7,7 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/vito/progrock"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,14 +15,14 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
+func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	// install tracing at the outermost layer so we don't ignore perf impact of
 	// other telemetry
 	return SpanAroundFunc(ctx, self, id,
 		ProgrockAroundFunc(ctx, self, id, next))
 }
 
-func SpanAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
+func SpanAroundFunc(ctx context.Context, self dagql.Object, id *call.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	return func(ctx context.Context) (dagql.Typed, error) {
 		if isIntrospection(id) {
 			return next(ctx)
@@ -52,7 +52,7 @@ func SpanAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next
 // IDLabel is a label set to "true" for a vertex corresponding to a DagQL ID.
 const IDLabel = "dagger.io/id"
 
-func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
+func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *call.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	return func(ctx context.Context) (dagql.Typed, error) {
 		if isIntrospection(id) {
 			return next(ctx)
@@ -126,7 +126,7 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 //
 // These queries tend to be very large and are not interesting for users to
 // see.
-func isIntrospection(id *idproto.ID) bool {
+func isIntrospection(id *call.ID) bool {
 	if id.Base() == nil {
 		switch id.Field() {
 		case "__schema",

@@ -5,7 +5,7 @@ import (
 	"math"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -59,7 +59,7 @@ func (Direction) Decoder() dagql.InputDecoder {
 	return Directions
 }
 
-func (d Direction) ToLiteral() idproto.Literal {
+func (d Direction) ToLiteral() call.Literal {
 	return Directions.Literal(d)
 }
 

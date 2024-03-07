@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/tracing"
 	"github.com/vito/progrock"
 )
@@ -17,7 +17,7 @@ func init() {
 type DB struct {
 	Epoch, End time.Time
 
-	IDs       map[string]*idproto.ID
+	IDs       map[string]*call.ID
 	Vertices  map[string]*progrock.Vertex
 	Tasks     map[string][]*progrock.VertexTask
 	Outputs   map[string]map[string]struct{}
@@ -31,7 +31,7 @@ func NewDB() *DB {
 		Epoch: time.Now(),  // replaced at runtime
 		End:   time.Time{}, // replaced at runtime
 
-		IDs:       make(map[string]*idproto.ID),
+		IDs:       make(map[string]*call.ID),
 		Vertices:  make(map[string]*progrock.Vertex),
 		Tasks:     make(map[string][]*progrock.VertexTask),
 		OutputOf:  make(map[string]map[string]struct{}),
@@ -47,7 +47,7 @@ func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 	// collect IDs
 	for _, meta := range status.Metas {
 		if meta.Name == "id" {
-			var id idproto.ID
+			var id call.ID
 			if err := id.FromAnyPB(meta.Data); err != nil {
 				return fmt.Errorf("unmarshal payload: %w", err)
 			}
@@ -171,7 +171,7 @@ func (db *DB) Step(dig string) (*Step, bool) {
 	return step, true
 }
 
-func (db *DB) HighLevelStep(id *idproto.ID) (*Step, bool) {
+func (db *DB) HighLevelStep(id *call.ID) (*Step, bool) {
 	parentDig := id.Digest()
 	return db.Step(db.Simplify(parentDig.String()))
 }
@@ -229,20 +229,20 @@ func (*DB) Close() error {
 	return nil
 }
 
-func litSize(lit idproto.Literal) int {
+func litSize(lit call.Literal) int {
 	switch x := lit.(type) {
-	case *idproto.LiteralID:
+	case *call.LiteralID:
 		return idSize(x.Value())
-	case *idproto.LiteralList:
+	case *call.LiteralList:
 		size := 0
-		x.Range(func(_ int, lit idproto.Literal) error {
+		x.Range(func(_ int, lit call.Literal) error {
 			size += litSize(lit)
 			return nil
 		})
 		return size
-	case *idproto.LiteralObject:
+	case *call.LiteralObject:
 		size := 0
-		x.Range(func(_ int, _ string, value idproto.Literal) error {
+		x.Range(func(_ int, _ string, value call.Literal) error {
 			size += litSize(value)
 			return nil
 		})
@@ -251,7 +251,7 @@ func litSize(lit idproto.Literal) int {
 	return 1
 }
 
-func idSize(id *idproto.ID) int {
+func idSize(id *call.ID) int {
 	size := 0
 	for id := id; id != nil; id = id.Base() {
 		size++

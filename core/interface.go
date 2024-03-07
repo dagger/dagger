@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -29,7 +29,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 	}
 
 	// TODO: this seems expensive
-	fromID := func(id *idproto.ID) (dagql.Typed, error) {
+	fromID := func(id *call.ID) (dagql.Typed, error) {
 		deps, err := iface.mod.Query.IDDeps(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("schema: %w", err)
@@ -77,7 +77,7 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 	switch value := value.(type) {
 	case string:
-		var id idproto.ID
+		var id call.ID
 		if err := id.Decode(value); err != nil {
 			return nil, fmt.Errorf("decode ID: %w", err)
 		}
