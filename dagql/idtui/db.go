@@ -57,7 +57,7 @@ func (db *DB) AllTraces() []*Trace {
 		traces = append(traces, traceData)
 	}
 	sort.Slice(traces, func(i, j int) bool {
-		return traces[i].Epoch.Before(traces[j].Epoch)
+		return traces[i].Epoch.After(traces[j].Epoch)
 	})
 	return traces
 }
