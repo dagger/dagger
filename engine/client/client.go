@@ -189,7 +189,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
-	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, c.UserAgent)
+	bkClient, bkInfo, err := newBuildkitClient(connectCtx, remote, c.UserAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
