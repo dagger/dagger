@@ -319,27 +319,33 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"mainClientID", s.mainClientCallerID,
 			"callerID", clientMetadata.ModuleCallerDigest)
 
-		if len(s.upstreamCacheExporterCfgs) > 0 && clientMetadata.ClientID == s.mainClientCallerID {
-			bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
-			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
-			for i, cacheExportCfg := range s.upstreamCacheExporterCfgs {
-				cacheExportCfg := cacheExportCfg
-				cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
-					exporterFunc, ok := s.upstreamCacheExporters[cacheExportCfg.Type]
-					if !ok {
-						return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
+		if clientMetadata.ClientID == s.mainClientCallerID {
+			// Detach all services associated with the server, which will only
+			// synchronously shut them down if we're the last binder.
+			s.services.DetachServerServices(ctx, s.serverID)
+
+			if len(s.upstreamCacheExporterCfgs) > 0 {
+				bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
+				cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
+				for i, cacheExportCfg := range s.upstreamCacheExporterCfgs {
+					cacheExportCfg := cacheExportCfg
+					cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
+						exporterFunc, ok := s.upstreamCacheExporters[cacheExportCfg.Type]
+						if !ok {
+							return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
+						}
+						return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
 					}
-					return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
 				}
+				s.clientCallMu.RLock()
+				bk := s.clientCallContext[""].Root.Buildkit
+				s.clientCallMu.RUnlock()
+				err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
+				if err != nil {
+					bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
+				}
+				bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
 			}
-			s.clientCallMu.RLock()
-			bk := s.clientCallContext[""].Root.Buildkit
-			s.clientCallMu.RUnlock()
-			err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
-			if err != nil {
-				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
-			}
-			bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
 		}
 
 		// Flush all in-flight telemetry when a client shuts down.

@@ -582,7 +582,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *idproto.ID) (running *R
 		Ports: ports,
 		Stop: func(_ context.Context, _ bool) error {
 			stop()
-			svcs.Detach(svcCtx, upstream)
+			go svcs.Detach(svcCtx, upstream) // async to avoid deadlock between stopping/detaching
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
