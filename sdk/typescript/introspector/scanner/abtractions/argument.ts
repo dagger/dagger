@@ -1,7 +1,7 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { TypeDefKind } from "../../../api/client.gen"
+import { TypeDefKind } from "../../../api/client.gen.js"
 import { FunctionArgTypeDef, TypeDef } from "../typeDefs.js"
 import { serializeType } from "../serialize.js"
 import { typeNameToTypedef } from "../utils.js"

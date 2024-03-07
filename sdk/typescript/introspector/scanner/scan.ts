@@ -19,6 +19,9 @@ import {
   typeNameToTypedef,
 } from "./utils.js"
 import { Method } from "./abtractions/method.js"
+import { Property } from "./abtractions/property.js"
+import { Constructor } from "./abtractions/constructor.js"
+import { Object } from "./abtractions/object.js"
 
 export type ScanResult = {
   module: {
@@ -92,156 +95,7 @@ function introspectClass(
   checker: ts.TypeChecker,
   node: ts.ClassDeclaration,
 ): ClassTypeDef {
-  // Throw error if node.name is undefined because we cannot scan its symbol.
-  if (!node.name) {
-    throw new UnknownDaggerError(`could not introspect class: ${node}`, {})
-  }
-
-  // Retrieve class symbol.
-  const classSymbol = checker.getSymbolAtLocation(node.name)
-  if (!classSymbol) {
-    throw new UnknownDaggerError(
-      `could not get class symbol: ${node.name.getText()}`,
-      {},
-    )
-  }
-
-  // Serialize class symbol to extract name and doc.
-  const { name, description } = serializeSymbol(checker, classSymbol)
-
-  // Create metadata object.
-  const metadata: ClassTypeDef = {
-    name,
-    description,
-    constructor: undefined,
-    fields: {},
-    methods: {},
-  }
-
-  // Loop through all members in the class to get their metadata.
-  node.members.forEach((member) => {
-    // Handle constructor
-    if (ts.isConstructorDeclaration(member)) {
-      metadata.constructor = introspectConstructor(checker, member)
-    }
-
-    // Handle method from the class.
-    if (ts.isMethodDeclaration(member) && isFunction(member)) {
-      const fctTypeDef = introspectMethod(checker, member)
-
-      metadata.methods[fctTypeDef.alias ?? fctTypeDef.name] = fctTypeDef
-    }
-
-    // Handle public properties from the class.
-    if (ts.isPropertyDeclaration(member)) {
-      const fieldTypeDef = introspectProperty(checker, member)
-
-      metadata.fields[fieldTypeDef.alias ?? fieldTypeDef.name] = fieldTypeDef
-    }
-  })
-
-  return metadata
-}
-
-/**
- * Introspect a property from a class and return its metadata.
- *
- * This function throws an error if it cannot retrieve the property symbols.
- *
- * @param checker The typescript compiler checker.
- * @param property The method to check.
- */
-function introspectProperty(
-  checker: ts.TypeChecker,
-  property: ts.PropertyDeclaration,
-): FieldTypeDef {
-  const propertySymbol = checker.getSymbolAtLocation(property.name)
-  if (!propertySymbol) {
-    throw new UnknownDaggerError(
-      `could not get property symbol: ${property.name.getText()}`,
-      {},
-    )
-  }
-
-  const { name, typeName, description } = serializeSymbol(
-    checker,
-    propertySymbol,
-  )
-
-  return {
-    name,
-    description,
-    alias: getAlias(property, "field"),
-    typeDef: typeNameToTypedef(typeName),
-    isExposed: isPublicProperty(property),
-  }
-}
-
-/**
- * Introspect the constructor of the class and return its metadata.
- */
-function introspectConstructor(
-  checker: ts.TypeChecker,
-  constructor: ts.ConstructorDeclaration,
-): ConstructorTypeDef {
-  const args = constructor.parameters.reduce(
-    (acc: { [name: string]: FunctionArgTypeDef }, param) => {
-      const paramSymbol = checker.getSymbolAtLocation(param.name)
-      if (!paramSymbol) {
-        throw new UnknownDaggerError(
-          `could not get constructor param: ${param.name.getText()}`,
-          {},
-        )
-      }
-
-      const { name, typeName, description } = serializeSymbol(
-        checker,
-        paramSymbol,
-      )
-      const { optional, defaultValue } = isOptional(paramSymbol)
-
-      acc[name] = {
-        name,
-        description,
-        typeDef: typeNameToTypedef(typeName),
-        optional,
-        defaultValue,
-        isVariadic: false,
-      }
-
-      return acc
-    },
-    {},
-  )
-
-  return { args }
-}
-
-/**
- * Introspect a method from a class and return its metadata.
- *
- * This function first retrieve the symbol of the function signature and then
- * loop on its parameters to get their metadata.
- *
- * This function throws an error if it cannot retrieve the method symbols.
- *
- * @param checker The typescript compiler checker.
- * @param method The method to check.
- */
-function introspectMethod(
-  checker: ts.TypeChecker,
-  method: ts.MethodDeclaration,
-): FunctionTypedef {
-  const methodSymbol = checker.getSymbolAtLocation(method.name)
-  if (!methodSymbol) {
-    throw new UnknownDaggerError(
-      `could not get method symbol: ${method.name.getText()}`,
-      {},
-    )
-  }
-
-  // Todo(TomChv): continue with higher levels
-  return new Method(checker, method).typeDef
+  return new Object(checker, node).typeDef
 }
 
 /**
