@@ -30,7 +30,6 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
 
@@ -681,21 +680,10 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
 
-	slog.Warn("nesting trace", "ctx", trace.SpanContextFromContext(ctx).TraceID())
-
-	// TODO optional? or do we/Buildkit always set it up?
-	// TODO i think this isn't needed since the outermost thing should be
-	// forwarding already
-	// exp, err := otlptracegrpc.New(ctx)
-	// if err != nil {
-	// 	return fmt.Errorf("error creating OTLP exporter: %w", err)
-	// }
-
 	clientParams := client.Params{
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
-		// EngineTrace:     exp,
 	}
 
 	if _, ok := internalEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION"); ok {
