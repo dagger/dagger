@@ -30,7 +30,10 @@ func (ci *Dagger) Engine() *Engine {
 
 func (ci *Dagger) SDK() *SDK {
 	return &SDK{
-		Go: &GoSDK{Dagger: ci},
+		Go:         &GoSDK{Dagger: ci},
+		Python:     &PythonSDK{Dagger: ci},
+		Typescript: &TypescriptSDK{Dagger: ci},
+		Rust:       &RustSDK{Dagger: ci},
 	}
 }
 

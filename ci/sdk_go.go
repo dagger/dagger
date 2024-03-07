@@ -35,27 +35,13 @@ func (t GoSDK) Lint(ctx context.Context) error {
 
 // Test tests the Go SDK
 func (t GoSDK) Test(ctx context.Context) error {
-	engineSvc, err := t.Dagger.Engine().Service(ctx, "sdk-go-test")
-	if err != nil {
-		return err
-	}
-	engineEndpoint, err := engineSvc.Endpoint(ctx, ServiceEndpointOpts{Scheme: "tcp"})
+	ctr, err := t.Dagger.installDagger(ctx, util.GoBase(t.Dagger.Source), "sdk-go-test")
 	if err != nil {
 		return err
 	}
 
-	cliBinary, err := t.Dagger.CLI().File(ctx)
-	if err != nil {
-		return err
-	}
-	cliBinaryPath := "/.dagger-cli"
-
-	output, err := util.GoBase(t.Dagger.Source).
+	output, err := ctr.
 		WithWorkdir("sdk/go").
-		WithServiceBinding("dagger-engine", engineSvc).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint).
-		WithMountedFile(cliBinaryPath, cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
 		WithExec([]string{"go", "test", "-v", "./..."}).
 		Stdout(ctx)
 	if err != nil {
@@ -64,29 +50,14 @@ func (t GoSDK) Test(ctx context.Context) error {
 	return err
 }
 
-// Generate re-generates the SDK API
+// Generate re-generates the Go SDK API
 func (t GoSDK) Generate(ctx context.Context) (*Directory, error) {
-	engineSvc, err := t.Dagger.Engine().Service(ctx, "sdk-go-generate")
-	if err != nil {
-		return nil, err
-	}
-	engineEndpoint, err := engineSvc.Endpoint(ctx, ServiceEndpointOpts{Scheme: "tcp"})
+	ctr, err := t.Dagger.installDagger(ctx, util.GoBase(t.Dagger.Source), "sdk-go-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	cliBinary, err := t.Dagger.CLI().File(ctx)
-	if err != nil {
-		return nil, err
-	}
-	cliBinaryPath := "/.dagger-cli"
-
-	generated := util.GoBase(t.Dagger.Source).
-		WithServiceBinding("dagger-engine", engineSvc).
-		WithMountedFile("/usr/local/bin/dagger", cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint).
-		WithMountedFile(cliBinaryPath, cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
+	generated := ctr.
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		WithExec([]string{"go", "mod", "tidy"}).
