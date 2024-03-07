@@ -94,7 +94,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		upstreamCacheExporters: e.UpstreamCacheExporters,
 	}
 
-	if traceID := trace.SpanContextFromContext(ctx).TraceID(); !traceID.IsValid() {
+	if traceID := trace.SpanContextFromContext(ctx).TraceID(); traceID.IsValid() {
 		s.traceID = traceID
 	} else {
 		slog.Warn("invalid traceID", "traceID", traceID.String())
@@ -311,6 +311,14 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
+
+		slog.Debug("shutting down server",
+			"serverID", s.serverID,
+			"traceID", s.traceID,
+			"clientID", clientMetadata.ClientID,
+			"mainClientID", s.mainClientCallerID,
+			"callerID", clientMetadata.ModuleCallerDigest)
+
 		if len(s.upstreamCacheExporterCfgs) > 0 && clientMetadata.ClientID == s.mainClientCallerID {
 			bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
@@ -332,27 +340,17 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
 			}
 			bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
-
-			// Flush all in-flight telemetry when a main client goes away.
-			//
-			// Awkwardly, we're flushing in-flight telemetry for _all_ clients when
-			// _each_ client goes away. But we're only flushing the PubSub exporter,
-			// which doesn't seem expensive enough to be worth the added complexity
-			// of somehow only flushing a single client. This exporter already
-			// flushes every 100ms anyway, so this really just helps ensure the last
-			// few spans are received.
-			tracing.FlushLiveProcessors(ctx)
-
-			// Drain active /trace connections.
-			//
-			// NB(vito): Technically it should be safe to just let them be
-			// interrupted when the connection dies, but draining/flushing is a pain
-			// in the butt to troubleshoot, so it feels a bit nicer to do it more
-			// methodically. I added this, then learned I don't need it, but if I'm
-			// ever troubleshooting this again I'm likely to just write this code
-			// again, so I kept it.
-			s.pubsub.Drain(s.traceID)
 		}
+
+		// Flush all in-flight telemetry when a client shuts down.
+		//
+		// Awkwardly, we're flushing in-flight telemetry for _all_ clients when
+		// _each_ client goes away. But we're only flushing the PubSub exporter,
+		// which doesn't seem expensive enough to be worth the added complexity
+		// of somehow only flushing a single client. This exporter already
+		// flushes every 100ms anyway, so this really just helps ensure the last
+		// few spans are received.
+		tracing.FlushLiveProcessors(ctx)
 	}))
 
 	mux.Handle("/trace", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

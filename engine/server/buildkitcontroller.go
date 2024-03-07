@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -159,6 +160,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		if rerr != nil {
 			bklog.G(ctx).WithError(rerr).Errorf("session call failed")
 		} else {
+			slog.Debug("session call done", "ctxErr", ctx.Err())
 			bklog.G(ctx).Debugf("session call done")
 		}
 	}()
@@ -187,6 +189,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Debug("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
 		bklog.G(ctx).WithError(err).Debug("session manager handle conn done")
+		slog.Warn("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
 		if err != nil {
 			return fmt.Errorf("handleConn: %w", err)
 		}

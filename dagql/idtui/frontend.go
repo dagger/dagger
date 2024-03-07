@@ -355,6 +355,7 @@ func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) erro
 }
 
 func (fe *Frontend) Shutdown(ctx context.Context) error {
+	// TODO this gets called twice (once for traces, once for logs)
 	if err := fe.db.Shutdown(ctx); err != nil {
 		return err
 	}

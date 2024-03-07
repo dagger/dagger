@@ -370,6 +370,10 @@ func (c *Client) Close(runErr error) (rerr error) {
 
 	c.closeRequests()
 
+	if err := c.telemetry.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("traces: %w", err))
+	}
+
 	if c.internalCancel != nil {
 		c.internalCancel()
 	}
@@ -400,10 +404,6 @@ func (c *Client) Close(runErr error) (rerr error) {
 		c.finishRun(runErr)
 	}
 
-	if err := c.telemetry.Wait(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("traces: %w", err))
-	}
-
 	return rerr
 }
 
@@ -429,7 +429,7 @@ func (c *Client) exportTraces() error {
 	c.telemetry.Go(func() error {
 		defer resp.Body.Close()
 
-		defer slog.Debug("done exporting traces from engine")
+		defer slog.Debug("done exporting traces from engine", "ctxErr", ctx.Err())
 
 		for {
 			var bytesLen int
@@ -484,15 +484,15 @@ func (c *Client) exportLogs() error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("connect to traces: %w", err)
+		return fmt.Errorf("connect to logs: %w", err)
 	}
 
-	slog.Debug("exporting traces from engine")
+	slog.Debug("exporting logs from engine")
 
 	c.telemetry.Go(func() error {
 		defer resp.Body.Close()
 
-		defer slog.Debug("done exporting traces from engine")
+		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
 
 		for {
 			var bytesLen int
@@ -500,7 +500,7 @@ func (c *Client) exportLogs() error {
 				if err == io.EOF {
 					break
 				}
-				return fmt.Errorf("scan trace length indicator: %w", err)
+				return fmt.Errorf("scan logs length indicator: %w", err)
 			}
 			slog.Debug("exporter scanned length", "bytes", bytesLen)
 			if bytesLen == 0 {
@@ -509,11 +509,11 @@ func (c *Client) exportLogs() error {
 			}
 			buf := make([]byte, bytesLen)
 			if _, err := io.ReadFull(resp.Body, buf); err != nil {
-				return fmt.Errorf("read trace payload: %w", err)
+				return fmt.Errorf("read logs payload: %w", err)
 			}
 			var pbRequest collogspb.ExportLogsServiceRequest
 			if err := proto.Unmarshal(buf, &pbRequest); err != nil {
-				return fmt.Errorf("unmarshal trace: %w", err)
+				return fmt.Errorf("unmarshal logs: %w", err)
 			}
 
 			logs := telemetry.TransformPBLogs(pbRequest.GetResourceLogs())

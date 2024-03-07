@@ -13,60 +13,26 @@ import (
 )
 
 type PubSub struct {
-	spanSubs  map[trace.TraceID][]spanSub
+	spanSubs  map[trace.TraceID][]sdktrace.SpanExporter
 	spanSubsL sync.Mutex
-	logSubs   map[trace.TraceID][]logSub
+	logSubs   map[trace.TraceID][]sdklog.LogExporter
 	logSubsL  sync.Mutex
 }
 
 func NewPubSub() *PubSub {
 	return &PubSub{
-		spanSubs: map[trace.TraceID][]spanSub{},
-		logSubs:  map[trace.TraceID][]logSub{},
+		spanSubs: map[trace.TraceID][]sdktrace.SpanExporter{},
+		logSubs:  map[trace.TraceID][]sdklog.LogExporter{},
 	}
-}
-
-type spanSub struct {
-	exp  sdktrace.SpanExporter
-	done chan struct{}
-}
-
-type logSub struct {
-	exp  sdklog.LogExporter
-	done chan struct{}
-}
-
-func (ps *PubSub) Drain(traceID trace.TraceID) {
-	slog.Debug("draining trace", "trace", traceID.String())
-	ps.spanSubsL.Lock()
-	for _, s := range ps.spanSubs[traceID] {
-		close(s.done)
-	}
-	for _, s := range ps.logSubs[traceID] {
-		close(s.done)
-	}
-	ps.spanSubsL.Unlock()
 }
 
 func (ps *PubSub) SubscribeToSpans(ctx context.Context, traceID trace.TraceID, exp sdktrace.SpanExporter) {
 	slog.Debug("subscribing to spans", "trace", traceID.String())
-
-	done := make(chan struct{})
-
 	ps.spanSubsL.Lock()
-	ps.spanSubs[traceID] = append(ps.spanSubs[traceID], spanSub{
-		exp:  exp,
-		done: done,
-	})
+	ps.spanSubs[traceID] = append(ps.spanSubs[traceID], exp)
 	ps.spanSubsL.Unlock()
 	defer ps.unsubSpans(traceID, exp)
-
-	select {
-	case <-done:
-		slog.Debug("pubsub spans drained", "trace", traceID)
-	case <-ctx.Done():
-		slog.Debug("pubsub spans canceled", "trace", traceID)
-	}
+	<-ctx.Done()
 }
 
 var _ sdktrace.SpanExporter = (*PubSub)(nil)
@@ -115,31 +81,17 @@ func (ps *PubSub) SpanSubscribers(session trace.TraceID) []sdktrace.SpanExporter
 	defer ps.spanSubsL.Unlock()
 	subs := ps.spanSubs[session]
 	cp := make([]sdktrace.SpanExporter, len(subs))
-	for i, sub := range subs {
-		cp[i] = sub.exp
-	}
+	copy(cp, subs)
 	return cp
 }
 
 func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, exp sdklog.LogExporter) {
 	slog.Debug("subscribing to logs", "trace", traceID.String())
-
-	done := make(chan struct{})
-
 	ps.logSubsL.Lock()
-	ps.logSubs[traceID] = append(ps.logSubs[traceID], logSub{
-		exp:  exp,
-		done: done,
-	})
+	ps.logSubs[traceID] = append(ps.logSubs[traceID], exp)
 	ps.logSubsL.Unlock()
 	defer ps.unsubLogs(traceID, exp)
-
-	select {
-	case <-done:
-		slog.Debug("pubsub logs drained", "trace", traceID)
-	case <-ctx.Done():
-		slog.Debug("pubsub logs canceled", "trace", traceID)
-	}
+	<-ctx.Done()
 }
 
 var _ sdklog.LogExporter = (*PubSub)(nil)
@@ -185,9 +137,7 @@ func (ps *PubSub) LogSubscribers(session trace.TraceID) []sdklog.LogExporter {
 	defer ps.logSubsL.Unlock()
 	subs := ps.logSubs[session]
 	cp := make([]sdklog.LogExporter, len(subs))
-	for i, sub := range subs {
-		cp[i] = sub.exp
-	}
+	copy(cp, subs)
 	return cp
 }
 
@@ -200,7 +150,7 @@ func (ps *PubSub) Shutdown(ctx context.Context) error {
 		for _, se := range ses {
 			se := se
 			eg.Go(func() error {
-				return se.exp.Shutdown(ctx)
+				return se.Shutdown(ctx)
 			})
 		}
 	}
@@ -210,9 +160,9 @@ func (ps *PubSub) Shutdown(ctx context.Context) error {
 func (ps *PubSub) unsubSpans(traceID trace.TraceID, exp sdktrace.SpanExporter) {
 	slog.Debug("unsubscribing from trace", "trace", traceID.String())
 	ps.spanSubsL.Lock()
-	removed := make([]spanSub, 0, len(ps.spanSubs[traceID])-1)
+	removed := make([]sdktrace.SpanExporter, 0, len(ps.spanSubs[traceID])-1)
 	for _, s := range ps.spanSubs[traceID] {
-		if s.exp != exp {
+		if s != exp {
 			removed = append(removed, s)
 		}
 	}
@@ -221,11 +171,11 @@ func (ps *PubSub) unsubSpans(traceID trace.TraceID, exp sdktrace.SpanExporter) {
 }
 
 func (ps *PubSub) unsubLogs(traceID trace.TraceID, exp sdklog.LogExporter) {
-	slog.Debug("unsubscribing from trace", "trace", traceID.String())
+	slog.Debug("unsubscribing from logs", "trace", traceID.String())
 	ps.logSubsL.Lock()
-	removed := make([]logSub, 0, len(ps.logSubs[traceID])-1)
+	removed := make([]sdklog.LogExporter, 0, len(ps.logSubs[traceID])-1)
 	for _, s := range ps.logSubs[traceID] {
-		if s.exp != exp {
+		if s != exp {
 			removed = append(removed, s)
 		}
 	}
