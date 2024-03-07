@@ -124,6 +124,9 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 			slog.Debug("note: intentionally not sending logs to OTEL_EXPORTER_OTLP_ENDPOINT; set OTEL_EXPORTER_OTLP_LOGS_ENDPOINT if needed")
 			return
 		}
+		if endpoint == "" {
+			return
+		}
 
 		var proto string
 		if v := os.Getenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"); v != "" {
