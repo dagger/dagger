@@ -106,14 +106,12 @@ var _ sdklog.LogExporter = (*DB)(nil)
 
 func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 	for _, log := range logs {
-		spanID := trace.SpanID(log.SpanID)
-
 		// render vterm for TUI
-		_, _ = fmt.Fprint(db.spanLogs(spanID), log.Body().AsString())
+		_, _ = fmt.Fprint(db.spanLogs(log.SpanID), log.Body().AsString())
 
-		if spanID == db.PrimarySpan {
+		if log.SpanID == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
-			db.PrimaryLogs[spanID] = append(db.PrimaryLogs[spanID], log)
+			db.PrimaryLogs[log.SpanID] = append(db.PrimaryLogs[log.SpanID], log)
 		}
 	}
 	return nil
