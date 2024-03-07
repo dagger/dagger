@@ -736,7 +736,7 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 				val := arg.Value().Value()
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
-				case *idproto.Literal_Id:
+				case *idproto.LiteralID:
 					argVertexID := x.Value().Digest()
 					argVtx := fe.db.Vertices[argVertexID.String()]
 					base := x.Value()
@@ -791,26 +791,26 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 	var color termenv.Color
 	switch val := lit.Value().(type) {
-	case *idproto.Literal_Bool:
+	case *idproto.LiteralBool:
 		color = termenv.ANSIRed
-	case *idproto.Literal_Int:
+	case *idproto.LiteralInt:
 		color = termenv.ANSIRed
-	case *idproto.Literal_Float:
+	case *idproto.LiteralFloat:
 		color = termenv.ANSIRed
-	case *idproto.Literal_String_:
+	case *idproto.LiteralString:
 		color = termenv.ANSIYellow
 		if fe.window.Width != -1 && len(val.Value()) > fe.window.Width {
 			display := string(digest.FromString(val.Value()))
 			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(color))
 			return
 		}
-	case *idproto.Literal_Id:
+	case *idproto.LiteralID:
 		color = termenv.ANSIMagenta
-	case *idproto.Literal_Enum:
+	case *idproto.LiteralEnum:
 		color = termenv.ANSIYellow
-	case *idproto.Literal_Null:
+	case *idproto.LiteralNull:
 		color = termenv.ANSIBrightBlack
-	case *idproto.Literal_List:
+	case *idproto.LiteralList:
 		fmt.Fprint(out, "[")
 		val.Range(func(i int, item idproto.Literal) error {
 			if i > 0 {
@@ -821,7 +821,7 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
 		})
 		fmt.Fprint(out, "]")
 		return
-	case *idproto.Literal_Object:
+	case *idproto.LiteralObject:
 		fmt.Fprint(out, "{")
 		val.Range(func(i int, name string, value idproto.Literal) error {
 			if i > 0 {

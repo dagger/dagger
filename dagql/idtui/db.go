@@ -231,16 +231,16 @@ func (*DB) Close() error {
 
 func litSize(lit *idproto.Literal) int {
 	switch x := lit.Value().(type) {
-	case *idproto.Literal_Id:
+	case *idproto.LiteralID:
 		return idSize(x.Value())
-	case *idproto.Literal_List:
+	case *idproto.LiteralList:
 		size := 0
 		x.Range(func(_ int, lit idproto.Literal) error {
 			size += litSize(&lit)
 			return nil
 		})
 		return size
-	case *idproto.Literal_Object:
+	case *idproto.LiteralObject:
 		size := 0
 		x.Range(func(_ int, _ string, value idproto.Literal) error {
 			size += litSize(&value)

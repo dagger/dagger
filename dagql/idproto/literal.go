@@ -114,19 +114,19 @@ func (lit *Literal) decode(
 		if err := id.decode(v.IdDigest, idsByDigest, memo); err != nil {
 			return fmt.Errorf("failed to decode literal ID: %w", err)
 		}
-		lit.value = &Literal_Id{id: id}
+		lit.value = &LiteralID{id: id}
 	case *RawLiteral_Null:
-		lit.value = &Literal_Null{v}
+		lit.value = &LiteralNull{v}
 	case *RawLiteral_Bool:
-		lit.value = &Literal_Bool{v}
+		lit.value = &LiteralBool{v}
 	case *RawLiteral_Enum:
-		lit.value = &Literal_Enum{v}
+		lit.value = &LiteralEnum{v}
 	case *RawLiteral_Int:
-		lit.value = &Literal_Int{v}
+		lit.value = &LiteralInt{v}
 	case *RawLiteral_Float:
-		lit.value = &Literal_Float{v}
+		lit.value = &LiteralFloat{v}
 	case *RawLiteral_String_:
-		lit.value = &Literal_String_{v}
+		lit.value = &LiteralString{v}
 	case *RawLiteral_List:
 		list := make([]*Literal, 0, len(v.List.Values))
 		for _, val := range v.List.Values {
@@ -139,7 +139,7 @@ func (lit *Literal) decode(
 			}
 			list = append(list, elemLit)
 		}
-		lit.value = &Literal_List{values: list}
+		lit.value = &LiteralList{values: list}
 	case *RawLiteral_Object:
 		args := make([]*Argument, 0, len(v.Object.Values))
 		for _, arg := range v.Object.Values {
@@ -155,54 +155,54 @@ func (lit *Literal) decode(
 				value: fieldLit,
 			})
 		}
-		lit.value = &Literal_Object{values: args}
+		lit.value = &LiteralObject{values: args}
 	default:
 		return fmt.Errorf("unknown literal value type %T", v)
 	}
 	return nil
 }
 
-type Literal_Id struct {
+type LiteralID struct {
 	id *ID
 }
 
 func NewLiteralID(id *ID) *Literal {
-	return NewLiteral(&Literal_Id{id: id})
+	return NewLiteral(&LiteralID{id: id})
 }
 
-func (lit *Literal_Id) Value() *ID {
+func (lit *LiteralID) Value() *ID {
 	return lit.id
 }
 
-func (lit *Literal_Id) raw() isRawLiteral_Value {
+func (lit *LiteralID) raw() isRawLiteral_Value {
 	return &RawLiteral_IdDigest{IdDigest: lit.id.raw.Digest}
 }
 
-func (lit *Literal_Id) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (lit *LiteralID) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	lit.id.gatherIDs(idsByDigest)
 }
 
-func (lit *Literal_Id) inputs() ([]digest.Digest, error) {
+func (lit *LiteralID) inputs() ([]digest.Digest, error) {
 	return []digest.Digest{lit.id.Digest()}, nil
 }
 
-func (lit *Literal_Id) modules() []*Module {
+func (lit *LiteralID) modules() []*Module {
 	return lit.id.Modules()
 }
 
-func (lit *Literal_Id) tainted() bool {
+func (lit *LiteralID) tainted() bool {
 	return lit.id.IsTainted()
 }
 
-func (lit *Literal_Id) display() string {
+func (lit *LiteralID) display() string {
 	return fmt.Sprintf("{%s}", lit.id.Display())
 }
 
-func (lit *Literal_Id) toInput() any {
+func (lit *LiteralID) toInput() any {
 	return lit.id
 }
 
-func (lit *Literal_Id) toAST() *ast.Value {
+func (lit *LiteralID) toAST() *ast.Value {
 	enc, err := lit.id.Encode()
 	if err != nil {
 		panic(err)
@@ -213,15 +213,15 @@ func (lit *Literal_Id) toAST() *ast.Value {
 	}
 }
 
-type Literal_List struct {
+type LiteralList struct {
 	values []*Literal
 }
 
 func NewLiteralList(values ...*Literal) *Literal {
-	return NewLiteral(&Literal_List{values: values})
+	return NewLiteral(&LiteralList{values: values})
 }
 
-func (lit *Literal_List) Range(fn func(int, Literal) error) error {
+func (lit *LiteralList) Range(fn func(int, Literal) error) error {
 	for i, v := range lit.values {
 		if v == nil {
 			if err := fn(i, Literal{}); err != nil {
@@ -236,7 +236,7 @@ func (lit *Literal_List) Range(fn func(int, Literal) error) error {
 	return nil
 }
 
-func (lit *Literal_List) raw() isRawLiteral_Value {
+func (lit *LiteralList) raw() isRawLiteral_Value {
 	list := make([]*RawLiteral, len(lit.values))
 	for i, val := range lit.values {
 		list[i] = val.raw
@@ -244,13 +244,13 @@ func (lit *Literal_List) raw() isRawLiteral_Value {
 	return &RawLiteral_List{List: &List{Values: list}}
 }
 
-func (lit *Literal_List) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (lit *LiteralList) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	for _, val := range lit.values {
 		val.gatherIDs(idsByDigest)
 	}
 }
 
-func (lit *Literal_List) inputs() ([]digest.Digest, error) {
+func (lit *LiteralList) inputs() ([]digest.Digest, error) {
 	var inputs []digest.Digest
 	for _, v := range lit.values {
 		ins, err := v.Inputs()
@@ -262,7 +262,7 @@ func (lit *Literal_List) inputs() ([]digest.Digest, error) {
 	return inputs, nil
 }
 
-func (lit *Literal_List) modules() []*Module {
+func (lit *LiteralList) modules() []*Module {
 	mods := []*Module{}
 	for _, val := range lit.values {
 		mods = append(mods, val.Modules()...)
@@ -270,7 +270,7 @@ func (lit *Literal_List) modules() []*Module {
 	return mods
 }
 
-func (lit *Literal_List) tainted() bool {
+func (lit *LiteralList) tainted() bool {
 	for _, val := range lit.values {
 		if val.Tainted() {
 			return true
@@ -279,7 +279,7 @@ func (lit *Literal_List) tainted() bool {
 	return false
 }
 
-func (lit *Literal_List) display() string {
+func (lit *LiteralList) display() string {
 	list := "["
 	for i, val := range lit.values {
 		if i > 0 {
@@ -291,7 +291,7 @@ func (lit *Literal_List) display() string {
 	return list
 }
 
-func (lit *Literal_List) toInput() any {
+func (lit *LiteralList) toInput() any {
 	list := make([]any, len(lit.values))
 	for i, val := range lit.values {
 		list[i] = val.ToInput()
@@ -299,7 +299,7 @@ func (lit *Literal_List) toInput() any {
 	return list
 }
 
-func (lit *Literal_List) toAST() *ast.Value {
+func (lit *LiteralList) toAST() *ast.Value {
 	list := &ast.Value{
 		Kind: ast.ListValue,
 	}
@@ -311,15 +311,15 @@ func (lit *Literal_List) toAST() *ast.Value {
 	return list
 }
 
-type Literal_Object struct {
+type LiteralObject struct {
 	values []*Argument
 }
 
 func NewLiteralObject(values ...*Argument) *Literal {
-	return NewLiteral(&Literal_Object{values: values})
+	return NewLiteral(&LiteralObject{values: values})
 }
 
-func (lit *Literal_Object) Range(fn func(int, string, Literal) error) error {
+func (lit *LiteralObject) Range(fn func(int, string, Literal) error) error {
 	for i, v := range lit.values {
 		if v == nil {
 			if err := fn(i, "", Literal{}); err != nil {
@@ -340,7 +340,7 @@ func (lit *Literal_Object) Range(fn func(int, string, Literal) error) error {
 	return nil
 }
 
-func (lit *Literal_Object) raw() isRawLiteral_Value {
+func (lit *LiteralObject) raw() isRawLiteral_Value {
 	args := make([]*RawArgument, len(lit.values))
 	for i, val := range lit.values {
 		args[i] = val.raw
@@ -348,13 +348,13 @@ func (lit *Literal_Object) raw() isRawLiteral_Value {
 	return &RawLiteral_Object{Object: &Object{Values: args}}
 }
 
-func (lit *Literal_Object) gatherIDs(idsByDigest map[string]*RawID_Fields) {
+func (lit *LiteralObject) gatherIDs(idsByDigest map[string]*RawID_Fields) {
 	for _, val := range lit.values {
 		val.gatherIDs(idsByDigest)
 	}
 }
 
-func (lit *Literal_Object) inputs() ([]digest.Digest, error) {
+func (lit *LiteralObject) inputs() ([]digest.Digest, error) {
 	var inputs []digest.Digest
 	for _, v := range lit.values {
 		ins, err := v.value.Inputs()
@@ -366,7 +366,7 @@ func (lit *Literal_Object) inputs() ([]digest.Digest, error) {
 	return inputs, nil
 }
 
-func (lit *Literal_Object) modules() []*Module {
+func (lit *LiteralObject) modules() []*Module {
 	mods := []*Module{}
 	for _, arg := range lit.values {
 		mods = append(mods, arg.value.Modules()...)
@@ -374,7 +374,7 @@ func (lit *Literal_Object) modules() []*Module {
 	return mods
 }
 
-func (lit *Literal_Object) tainted() bool {
+func (lit *LiteralObject) tainted() bool {
 	for _, arg := range lit.values {
 		if arg.Tainted() {
 			return true
@@ -383,7 +383,7 @@ func (lit *Literal_Object) tainted() bool {
 	return false
 }
 
-func (lit *Literal_Object) display() string {
+func (lit *LiteralObject) display() string {
 	obj := "{"
 	for i, field := range lit.values {
 		if i > 0 {
@@ -395,7 +395,7 @@ func (lit *Literal_Object) display() string {
 	return obj
 }
 
-func (lit *Literal_Object) toInput() any {
+func (lit *LiteralObject) toInput() any {
 	obj := make(map[string]any, len(lit.values))
 	for _, field := range lit.values {
 		obj[field.raw.Name] = field.value.ToInput()
@@ -403,7 +403,7 @@ func (lit *Literal_Object) toInput() any {
 	return obj
 }
 
-func (lit *Literal_Object) toAST() *ast.Value {
+func (lit *LiteralObject) toAST() *ast.Value {
 	obj := &ast.Value{
 		Kind: ast.ObjectValue,
 	}
@@ -416,10 +416,10 @@ func (lit *Literal_Object) toAST() *ast.Value {
 	return obj
 }
 
-type Literal_Bool = literalPrimitiveType[bool, *RawLiteral_Bool]
+type LiteralBool = literalPrimitiveType[bool, *RawLiteral_Bool]
 
 func NewLiteralBool(val bool) *Literal {
-	return NewLiteral(&Literal_Bool{&RawLiteral_Bool{Bool: val}})
+	return NewLiteral(&LiteralBool{&RawLiteral_Bool{Bool: val}})
 }
 
 //nolint:unused // it is used in literalPrimitiveValue...?
@@ -432,10 +432,10 @@ func (rawLit *RawLiteral_Bool) astKind() ast.ValueKind {
 	return ast.BooleanValue
 }
 
-type Literal_Enum = literalPrimitiveType[string, *RawLiteral_Enum]
+type LiteralEnum = literalPrimitiveType[string, *RawLiteral_Enum]
 
 func NewLiteralEnum(val string) *Literal {
-	return NewLiteral(&Literal_Enum{&RawLiteral_Enum{Enum: val}})
+	return NewLiteral(&LiteralEnum{&RawLiteral_Enum{Enum: val}})
 }
 
 //nolint:unused // it is used in literalPrimitiveValue...?
@@ -448,10 +448,10 @@ func (rawLit *RawLiteral_Enum) astKind() ast.ValueKind {
 	return ast.EnumValue
 }
 
-type Literal_Int = literalPrimitiveType[int64, *RawLiteral_Int]
+type LiteralInt = literalPrimitiveType[int64, *RawLiteral_Int]
 
 func NewLiteralInt(val int64) *Literal {
-	return NewLiteral(&Literal_Int{&RawLiteral_Int{Int: val}})
+	return NewLiteral(&LiteralInt{&RawLiteral_Int{Int: val}})
 }
 
 //nolint:unused // it is used in literalPrimitiveValue...?
@@ -464,10 +464,10 @@ func (rawLit *RawLiteral_Int) astKind() ast.ValueKind {
 	return ast.IntValue
 }
 
-type Literal_Float = literalPrimitiveType[float64, *RawLiteral_Float]
+type LiteralFloat = literalPrimitiveType[float64, *RawLiteral_Float]
 
 func NewLiteralFloat(val float64) *Literal {
-	return NewLiteral(&Literal_Float{&RawLiteral_Float{Float: val}})
+	return NewLiteral(&LiteralFloat{&RawLiteral_Float{Float: val}})
 }
 
 //nolint:unused // it is used in literalPrimitiveValue...?
@@ -480,10 +480,10 @@ func (rawLit *RawLiteral_Float) astKind() ast.ValueKind {
 	return ast.FloatValue
 }
 
-type Literal_String_ = literalPrimitiveType[string, *RawLiteral_String_]
+type LiteralString = literalPrimitiveType[string, *RawLiteral_String_]
 
 func NewLiteralString(val string) *Literal {
-	return NewLiteral(&Literal_String_{&RawLiteral_String_{String_: val}})
+	return NewLiteral(&LiteralString{&RawLiteral_String_{String_: val}})
 }
 
 //nolint:unused // it is used in literalPrimitiveValue...?
@@ -496,10 +496,10 @@ func (rawLit *RawLiteral_String_) astKind() ast.ValueKind {
 	return ast.StringValue
 }
 
-type Literal_Null = literalPrimitiveType[any, *RawLiteral_Null]
+type LiteralNull = literalPrimitiveType[any, *RawLiteral_Null]
 
 func NewLiteralNull() *Literal {
-	return NewLiteral(&Literal_Null{&RawLiteral_Null{Null: true}})
+	return NewLiteral(&LiteralNull{&RawLiteral_Null{Null: true}})
 }
 
 //nolint:unused // it is used in literalPrimitiveValue...?
