@@ -5592,7 +5592,8 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q = q.Arg("name", name)
 
 	return &Client{
-		Query: q,
+		Query:  q,
+		client: r.client,
 	}
 }
 
