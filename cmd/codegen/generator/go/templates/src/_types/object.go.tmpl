@@ -25,7 +25,12 @@ func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{
 
 
 func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ $.Name | FormatName }} {
-	return &{{ .Name | FormatName }}{query: q}
+	return &{{ .Name | FormatName }}{
+		query: q,
+		{{- if eq .Name "Query" }}
+		client: r.client,
+		{{ end }}
+	}
 }
 
 {{ range $field := .Fields }}

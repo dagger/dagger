@@ -244,7 +244,9 @@ type CacheVolume struct {
 }
 
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
-	return &CacheVolume{query: q}
+	return &CacheVolume{
+		query: q,
+	}
 }
 
 // A unique identifier for this CacheVolume.
@@ -314,7 +316,9 @@ func (r *Container) With(f WithContainerFunc) *Container {
 }
 
 func (r *Container) WithGraphQLQuery(q *querybuilder.Selection) *Container {
-	return &Container{query: q}
+	return &Container{
+		query: q,
+	}
 }
 
 // Turn the container into a Service.
@@ -1688,7 +1692,9 @@ type CurrentModule struct {
 }
 
 func (r *CurrentModule) WithGraphQLQuery(q *querybuilder.Selection) *CurrentModule {
-	return &CurrentModule{query: q}
+	return &CurrentModule{
+		query: q,
+	}
 }
 
 // A unique identifier for this CurrentModule.
@@ -1809,7 +1815,9 @@ func (r *Directory) With(f WithDirectoryFunc) *Directory {
 }
 
 func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
-	return &Directory{query: q}
+	return &Directory{
+		query: q,
+	}
 }
 
 // DirectoryAsModuleOpts contains options for Directory.AsModule
@@ -2199,7 +2207,9 @@ type EnvVariable struct {
 }
 
 func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
-	return &EnvVariable{query: q}
+	return &EnvVariable{
+		query: q,
+	}
 }
 
 // A unique identifier for this EnvVariable.
@@ -2280,7 +2290,9 @@ type FieldTypeDef struct {
 }
 
 func (r *FieldTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *FieldTypeDef {
-	return &FieldTypeDef{query: q}
+	return &FieldTypeDef{
+		query: q,
+	}
 }
 
 // A doc string for the field, if any.
@@ -2379,7 +2391,9 @@ func (r *File) With(f WithFileFunc) *File {
 }
 
 func (r *File) WithGraphQLQuery(q *querybuilder.Selection) *File {
-	return &File{query: q}
+	return &File{
+		query: q,
+	}
 }
 
 // Retrieves the contents of the file.
@@ -2524,7 +2538,9 @@ func (r *Function) With(f WithFunctionFunc) *Function {
 }
 
 func (r *Function) WithGraphQLQuery(q *querybuilder.Selection) *Function {
-	return &Function{query: q}
+	return &Function{
+		query: q,
+	}
 }
 
 // Arguments accepted by the function, if any.
@@ -2688,7 +2704,9 @@ type FunctionArg struct {
 }
 
 func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
-	return &FunctionArg{query: q}
+	return &FunctionArg{
+		query: q,
+	}
 }
 
 // A default value to use for this argument when not explicitly set by the caller, if any.
@@ -2791,7 +2809,9 @@ type FunctionCall struct {
 }
 
 func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall {
-	return &FunctionCall{query: q}
+	return &FunctionCall{
+		query: q,
+	}
 }
 
 // A unique identifier for this FunctionCall.
@@ -2930,7 +2950,9 @@ type FunctionCallArgValue struct {
 }
 
 func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCallArgValue {
-	return &FunctionCallArgValue{query: q}
+	return &FunctionCallArgValue{
+		query: q,
+	}
 }
 
 // A unique identifier for this FunctionCallArgValue.
@@ -3015,7 +3037,9 @@ func (r *GeneratedCode) With(f WithGeneratedCodeFunc) *GeneratedCode {
 }
 
 func (r *GeneratedCode) WithGraphQLQuery(q *querybuilder.Selection) *GeneratedCode {
-	return &GeneratedCode{query: q}
+	return &GeneratedCode{
+		query: q,
+	}
 }
 
 // The directory containing the generated code.
@@ -3120,7 +3144,9 @@ type GitModuleSource struct {
 }
 
 func (r *GitModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *GitModuleSource {
-	return &GitModuleSource{query: q}
+	return &GitModuleSource{
+		query: q,
+	}
 }
 
 // The URL from which the source's git repo can be cloned.
@@ -3246,7 +3272,9 @@ type GitRef struct {
 }
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
-	return &GitRef{query: q}
+	return &GitRef{
+		query: q,
+	}
 }
 
 // The resolved commit id at this ref.
@@ -3337,7 +3365,9 @@ type GitRepository struct {
 }
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
-	return &GitRepository{query: q}
+	return &GitRepository{
+		query: q,
+	}
 }
 
 // Returns details of a branch.
@@ -3428,7 +3458,9 @@ type Host struct {
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
-	return &Host{query: q}
+	return &Host{
+		query: q,
+	}
 }
 
 // HostDirectoryOpts contains options for Host.Directory
@@ -3603,7 +3635,9 @@ type InputTypeDef struct {
 }
 
 func (r *InputTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InputTypeDef {
-	return &InputTypeDef{query: q}
+	return &InputTypeDef{
+		query: q,
+	}
 }
 
 // Static fields defined on this input object, if any.
@@ -3703,7 +3737,9 @@ type InterfaceTypeDef struct {
 }
 
 func (r *InterfaceTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *InterfaceTypeDef {
-	return &InterfaceTypeDef{query: q}
+	return &InterfaceTypeDef{
+		query: q,
+	}
 }
 
 // The doc string for the interface, if any.
@@ -3828,7 +3864,9 @@ type Label struct {
 }
 
 func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
-	return &Label{query: q}
+	return &Label{
+		query: q,
+	}
 }
 
 // A unique identifier for this Label.
@@ -3905,7 +3943,9 @@ type ListTypeDef struct {
 }
 
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
-	return &ListTypeDef{query: q}
+	return &ListTypeDef{
+		query: q,
+	}
 }
 
 // The type of the elements in the list.
@@ -3966,7 +4006,9 @@ type LocalModuleSource struct {
 }
 
 func (r *LocalModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *LocalModuleSource {
-	return &LocalModuleSource{query: q}
+	return &LocalModuleSource{
+		query: q,
+	}
 }
 
 // The directory containing everything needed to load load and use the module.
@@ -4051,7 +4093,9 @@ func (r *Module) With(f WithModuleFunc) *Module {
 }
 
 func (r *Module) WithGraphQLQuery(q *querybuilder.Selection) *Module {
-	return &Module{query: q}
+	return &Module{
+		query: q,
+	}
 }
 
 // Modules used by this module.
@@ -4377,7 +4421,9 @@ type ModuleDependency struct {
 }
 
 func (r *ModuleDependency) WithGraphQLQuery(q *querybuilder.Selection) *ModuleDependency {
-	return &ModuleDependency{query: q}
+	return &ModuleDependency{
+		query: q,
+	}
 }
 
 // A unique identifier for this ModuleDependency.
@@ -4466,7 +4512,9 @@ func (r *ModuleSource) With(f WithModuleSourceFunc) *ModuleSource {
 }
 
 func (r *ModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSource {
-	return &ModuleSource{query: q}
+	return &ModuleSource{
+		query: q,
+	}
 }
 
 // If the source is a of kind git, the git source representation of it.
@@ -4774,7 +4822,9 @@ type ObjectTypeDef struct {
 }
 
 func (r *ObjectTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ObjectTypeDef {
-	return &ObjectTypeDef{query: q}
+	return &ObjectTypeDef{
+		query: q,
+	}
 }
 
 // The function used to construct new instances of this object, if any
@@ -4943,7 +4993,9 @@ type Port struct {
 }
 
 func (r *Port) WithGraphQLQuery(q *querybuilder.Selection) *Port {
-	return &Port{query: q}
+	return &Port{
+		query: q,
+	}
 }
 
 // The port description.
@@ -5048,7 +5100,10 @@ func (r *Client) With(f WithClientFunc) *Client {
 }
 
 func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
-	return &Client{query: q}
+	return &Client{
+		query:  q,
+		client: r.client,
+	}
 }
 
 // Retrieves a content-addressed blob.
@@ -5769,7 +5824,9 @@ type Secret struct {
 }
 
 func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
-	return &Secret{query: q}
+	return &Secret{
+		query: q,
+	}
 }
 
 // A unique identifier for this Secret.
@@ -5838,7 +5895,9 @@ type Service struct {
 }
 
 func (r *Service) WithGraphQLQuery(q *querybuilder.Selection) *Service {
-	return &Service{query: q}
+	return &Service{
+		query: q,
+	}
 }
 
 // ServiceEndpointOpts contains options for Service.Endpoint
@@ -6031,7 +6090,9 @@ type Socket struct {
 }
 
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
-	return &Socket{query: q}
+	return &Socket{
+		query: q,
+	}
 }
 
 // A unique identifier for this Socket.
@@ -6083,7 +6144,9 @@ type Terminal struct {
 }
 
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
-	return &Terminal{query: q}
+	return &Terminal{
+		query: q,
+	}
 }
 
 // A unique identifier for this Terminal.
@@ -6157,7 +6220,9 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 }
 
 func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
-	return &TypeDef{query: q}
+	return &TypeDef{
+		query: q,
+	}
 }
 
 // If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
