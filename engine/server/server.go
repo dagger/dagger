@@ -479,6 +479,16 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 		slog.Error("failed to stop client services", "error", err)
 	}
 
+	// Flush all in-flight telemetry when a main client goes away.
+	//
+	// Awkwardly, we're flushing in-flight telemetry for _all_ clients when
+	// _each_ client goes away. But we're only flushing the PubSub exporter,
+	// which doesn't seem expensive enough to be worth the added complexity
+	// of somehow only flushing a single client. This exporter already
+	// flushes every 100ms anyway, so this really just helps ensure the last
+	// few spans are received.
+	tracing.FlushLiveProcessors(ctx)
+
 	s.clientCallMu.RLock()
 	for _, callCtx := range s.clientCallContext {
 		err = errors.Join(err, callCtx.Root.Buildkit.Close())
