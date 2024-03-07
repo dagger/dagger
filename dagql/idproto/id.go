@@ -240,19 +240,6 @@ func (id *ID) Append(
 	return newID
 }
 
-func (id *ID) UnderlyingTypeName() string {
-	var typeName string
-	elem := id.raw.Type.Elem
-	for typeName == "" {
-		if elem == nil {
-			break
-		}
-		typeName = elem.NamedType
-		elem = elem.Elem
-	}
-	return typeName
-}
-
 func (id *ID) Encode() (string, error) {
 	rawID, err := id.ToProto()
 	if err != nil {
