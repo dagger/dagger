@@ -12,57 +12,63 @@ option go_package = "./callpbv1";
 // objects. Alternatively it may be stored in a database and referred to via an
 // RFC-6920 ni://sha-256;... URI.
 message DAG {
-  // The digest of the Call fields for the "root" of the DAG. All other Call fields
-  // in this message are referenced by this one via their base, args or module.
-  string rootCallDigest = 1;
+  // The digest of the Call representing the "root" of the DAG. All other Calls
+  // in this message are referenced through the root Call's receiver, args or
+  // module.
+  string rootDigest = 1;
 
   // Map of Call digests to the Calls they represent. This structure
   // allows us to deduplicate occurrences of the same Call in the DAG.
   map<string, Call> callsByDigest = 2;
 }
 
+// Call represents a function call, including all inputs necessary to call it
+// again, a hint as to whether you can expect the same result, and the GraphQL
+// return type for runtime type checking.
+//
+// In GraphQL terms, Call corresponds to a field selection against an object.
 message Call {
-  // The Digest of the Call that this Call's field selection will be evaluated against.
-  //
-  // If not present, the root Query Call is implied.
-  string baseCallDigest = 1;
+  // The receiving object for the Call's field selection. If specified, this is
+  // the digest of the Call that returns the receiver. If not specified, Query
+  // is implied.
+  string receiverDigest = 1;
 
   // The GraphQL type of the call's return value.
   Type type = 2;
 
-  // GraphQL field name.
+  // The GraphQL field name to select.
   string field = 3;
 
-  // GraphQL field arguments, always in alphabetical order.
+  // The arguments to pass to the GraphQL field selection. The order matters;
+  // if it changes, the digest changes. For optimal readability hese should
+  // ideally be in the order defined in the schema.
   repeated Argument args = 4;
 
-  // If true, this Selector is not reproducible.
-  //
-  // TODO: do we need to refer to session/client IDs or anything here? Or is
-  // that all internal? Forcing function is whether this is used as an
-  // in-memory query cache key. But the query cache might be made per-session
-  // or even per-client instead anyway! What buys us the most?
+  // If true, this Call is not reproducible; repeated evaluations may return
+  // different values.
   bool tainted = 5;
 
-  // If true, this Selector may be omitted from the DAG without changing
-  // the ultimate result.
+  // If true, this Call may be omitted from the DAG without changing
+  // the final result.
   //
-  // This is used to prevent meta-queries like 'pipeline' and 'withFocus' from
-  // busting cache keys when desired.
+  // This may be used to prevent meta-queries from busting cache keys when
+  // desired, if Calls are used as a cache key for persistence.
   //
   // It is worth noting that we don't store meta information at this level and
   // continue to force metadata to be set via GraphQL queries. It makes Calls
   // always easy to evaluate.
   bool meta = 6;
 
-  // If the CAll returns a list, this is the index of the element to select.
-  // Note that this defaults to zero, which means there is no selection of
-  // an element in the list. Non-zero indexes are 1-based.
+  // If the field selection returns a list, this is the index of the element to
+  // return from the Call. This value is 1-indexed, hence being call nth (1st,
+  // not 0th). At the same time that this is set, the Call's Type must also be
+  // changed to its Elem. If the type does not have an Elem.
   //
   // Here we're teetering dangerously close to full blown attribute path
   // selection, but we're intentionally limiting ourselves instead to cover
   // only the common case of returning a list of objects. The only case not
-  // handled is a nested list. Don't do that; have a type instead.
+  // handled is a nested list. Don't do that; return a list of typed values
+  // instead.
   int64 nth = 7;
 
   // The module that provides the implementation of the field.
@@ -71,7 +77,8 @@ message Call {
   // the module providing the implementation of the field.
   Module module = 8;
 
-  // A unique digest of this Call
+  // A unique digest of this Call. Note that this must not be set when
+  // calculating the Call's digest.
   string digest = 9;
 }
 
@@ -119,7 +126,7 @@ message Object {
   repeated Argument values = 1;
 }
 
-// A GraphQL type.
+// A GraphQL type reference.
 message Type {
   string namedType = 1;
   Type elem = 2;

@@ -206,7 +206,7 @@ func (id *ID) Append(
 ) *ID {
 	newID := &ID{
 		pb: &callpbv1.Call{
-			BaseCallDigest: string(id.Digest()),
+			ReceiverDigest: string(id.Digest()),
 			Field:          field,
 			Args:           make([]*callpbv1.Argument, len(args)),
 			Tainted:        tainted,
@@ -263,7 +263,7 @@ func (id *ID) ToProto() (*callpbv1.DAG, error) {
 		CallsByDigest: map[string]*callpbv1.Call{},
 	}
 	id.gatherCalls(dagPB.CallsByDigest)
-	dagPB.RootCallDigest = id.pb.Digest
+	dagPB.RootDigest = id.pb.Digest
 	return dagPB, nil
 }
 
@@ -289,7 +289,7 @@ func (id *ID) FromAnyPB(data *anypb.Any) error {
 	if err := data.UnmarshalTo(&dagPB); err != nil {
 		return err
 	}
-	return id.decode(dagPB.RootCallDigest, dagPB.CallsByDigest, map[string]*ID{})
+	return id.decode(dagPB.RootDigest, dagPB.CallsByDigest, map[string]*ID{})
 }
 
 func (id *ID) Decode(str string) error {
@@ -302,7 +302,7 @@ func (id *ID) Decode(str string) error {
 		return fmt.Errorf("failed to unmarshal proto: %w", err)
 	}
 
-	return id.decode(dagPB.RootCallDigest, dagPB.CallsByDigest, map[string]*ID{})
+	return id.decode(dagPB.RootDigest, dagPB.CallsByDigest, map[string]*ID{})
 }
 
 func (id *ID) decode(
@@ -330,9 +330,9 @@ func (id *ID) decode(
 	}
 	id.pb = pb
 
-	if id.pb.BaseCallDigest != "" {
+	if id.pb.ReceiverDigest != "" {
 		id.base = new(ID)
-		if err := id.base.decode(id.pb.BaseCallDigest, callsByDigest, memo); err != nil {
+		if err := id.base.decode(id.pb.ReceiverDigest, callsByDigest, memo); err != nil {
 			return fmt.Errorf("failed to decode base Call: %w", err)
 		}
 	}
