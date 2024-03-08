@@ -32,11 +32,11 @@ func (e *Engine) WithArg(key, value string) *Engine {
 // XXX: maybe we should private this?
 func (e *Engine) Container(ctx context.Context) (*Container, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source)
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64")
 		if err != nil {
 			return nil, err
 		}
-		e.Base, err = builder.Engine(ctx, "linux/amd64")
+		e.Base, err = builder.Engine(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -108,11 +108,11 @@ type CLI struct {
 
 func (e *CLI) File(ctx context.Context) (*File, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source)
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64")
 		if err != nil {
 			return nil, err
 		}
-		e.Base, err = builder.CLI(ctx, "linux/amd64")
+		e.Base, err = builder.CLI(ctx)
 		if err != nil {
 			return nil, err
 		}

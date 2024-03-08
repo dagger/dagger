@@ -526,36 +526,36 @@ func (r *Dagger) UnmarshalJSON(bs []byte) error {
 
 func (r CLI) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Source *Directory
+		Dagger *Dagger
 		Base   *File
 	}
-	concrete.Source = r.Source
+	concrete.Dagger = r.Dagger
 	concrete.Base = r.Base
 	return json.Marshal(&concrete)
 }
 
 func (r *CLI) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Source *Directory
+		Dagger *Dagger
 		Base   *File
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
-	r.Source = concrete.Source
+	r.Dagger = concrete.Dagger
 	r.Base = concrete.Base
 	return nil
 }
 
 func (r Engine) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Source *Directory
+		Dagger *Dagger
 		Base   *Container
 		Args   []string
 		Config []string
 	}
-	concrete.Source = r.Source
+	concrete.Dagger = r.Dagger
 	concrete.Base = r.Base
 	concrete.Args = r.Args
 	concrete.Config = r.Config
@@ -564,7 +564,7 @@ func (r Engine) MarshalJSON() ([]byte, error) {
 
 func (r *Engine) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Source *Directory
+		Dagger *Dagger
 		Base   *Container
 		Args   []string
 		Config []string
@@ -573,7 +573,7 @@ func (r *Engine) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	r.Source = concrete.Source
+	r.Dagger = concrete.Dagger
 	r.Base = concrete.Base
 	r.Args = concrete.Args
 	r.Config = concrete.Config
@@ -582,21 +582,45 @@ func (r *Engine) UnmarshalJSON(bs []byte) error {
 
 func (r SDK) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Go *GoSDK
+		Go         *GoSDK
+		Python     *PythonSDK
+		Typescript *TypescriptSDK
+		Elixir     *ElixirSDK
+		Rust       *RustSDK
+		Java       *JavaSDK
+		PHP        *PHPSDK
 	}
 	concrete.Go = r.Go
+	concrete.Python = r.Python
+	concrete.Typescript = r.Typescript
+	concrete.Elixir = r.Elixir
+	concrete.Rust = r.Rust
+	concrete.Java = r.Java
+	concrete.PHP = r.PHP
 	return json.Marshal(&concrete)
 }
 
 func (r *SDK) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Go *GoSDK
+		Go         *GoSDK
+		Python     *PythonSDK
+		Typescript *TypescriptSDK
+		Elixir     *ElixirSDK
+		Rust       *RustSDK
+		Java       *JavaSDK
+		PHP        *PHPSDK
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
 	r.Go = concrete.Go
+	r.Python = concrete.Python
+	r.Typescript = concrete.Typescript
+	r.Elixir = concrete.Elixir
+	r.Rust = concrete.Rust
+	r.Java = concrete.Java
+	r.PHP = concrete.PHP
 	return nil
 }
 
@@ -609,6 +633,126 @@ func (r GoSDK) MarshalJSON() ([]byte, error) {
 }
 
 func (r *GoSDK) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dagger = concrete.Dagger
+	return nil
+}
+
+func (r PythonSDK) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	concrete.Dagger = r.Dagger
+	return json.Marshal(&concrete)
+}
+
+func (r *PythonSDK) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dagger = concrete.Dagger
+	return nil
+}
+
+func (r TypescriptSDK) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	concrete.Dagger = r.Dagger
+	return json.Marshal(&concrete)
+}
+
+func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dagger = concrete.Dagger
+	return nil
+}
+
+func (r ElixirSDK) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	concrete.Dagger = r.Dagger
+	return json.Marshal(&concrete)
+}
+
+func (r *ElixirSDK) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dagger = concrete.Dagger
+	return nil
+}
+
+func (r RustSDK) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	concrete.Dagger = r.Dagger
+	return json.Marshal(&concrete)
+}
+
+func (r *RustSDK) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dagger = concrete.Dagger
+	return nil
+}
+
+func (r JavaSDK) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	concrete.Dagger = r.Dagger
+	return json.Marshal(&concrete)
+}
+
+func (r *JavaSDK) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Dagger = concrete.Dagger
+	return nil
+}
+
+func (r PHPSDK) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Dagger *Dagger
+	}
+	concrete.Dagger = r.Dagger
+	return json.Marshal(&concrete)
+}
+
+func (r *PHPSDK) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Dagger *Dagger
 	}
@@ -679,6 +823,278 @@ func main() {
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	switch parentName {
+	case "Engine":
+		switch fnName {
+		case "WithConfig":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var key string
+			if inputArgs["key"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
+				}
+			}
+			var value string
+			if inputArgs["value"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
+				}
+			}
+			return (*Engine).WithConfig(&parent, key, value), nil
+		case "WithArg":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var key string
+			if inputArgs["key"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
+				}
+			}
+			var value string
+			if inputArgs["value"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
+				}
+			}
+			return (*Engine).WithArg(&parent, key, value), nil
+		case "Container":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Engine).Container(&parent, ctx)
+		case "Service":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			return (*Engine).Service(&parent, ctx, name)
+		case "Lint":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Engine).Lint(&parent, ctx)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "PythonSDK":
+		switch fnName {
+		case "Lint":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PythonSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PythonSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PythonSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return nil, (*PythonSDK).Publish(&parent, ctx, tag)
+		case "Bump":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*PythonSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "JavaSDK":
+		switch fnName {
+		case "Lint":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*JavaSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*JavaSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*JavaSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return nil, (*JavaSDK).Publish(&parent, ctx, tag)
+		case "Bump":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*JavaSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "PHPSDK":
+		switch fnName {
+		case "Lint":
+			var parent PHPSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PHPSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent PHPSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PHPSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent PHPSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PHPSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent PHPSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			var dryRun bool
+			if inputArgs["dryRun"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
+				}
+			}
+			var gitRepo string
+			if inputArgs["gitRepo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitRepo"]), &gitRepo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitRepo", err))
+				}
+			}
+			var gitUserName string
+			if inputArgs["gitUserName"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitUserName"]), &gitUserName)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitUserName", err))
+				}
+			}
+			var gitUserEmail string
+			if inputArgs["gitUserEmail"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["gitUserEmail"]), &gitUserEmail)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitUserEmail", err))
+				}
+			}
+			var githubToken *Secret
+			if inputArgs["githubToken"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["githubToken"]), &githubToken)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubToken", err))
+				}
+			}
+			return nil, (*PHPSDK).Publish(&parent, ctx, tag, dryRun, gitRepo, gitUserName, gitUserEmail, githubToken)
+		case "Bump":
+			var parent PHPSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*PHPSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
 	case "Dagger":
 		switch fnName {
 		case "CLI":
@@ -763,81 +1179,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*CLI).File(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "Engine":
-		switch fnName {
-		case "WithConfig":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var key string
-			if inputArgs["key"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
-				}
-			}
-			var value string
-			if inputArgs["value"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
-				}
-			}
-			return (*Engine).WithConfig(&parent, key, value), nil
-		case "WithArg":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var key string
-			if inputArgs["key"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
-				}
-			}
-			var value string
-			if inputArgs["value"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
-				}
-			}
-			return (*Engine).WithArg(&parent, key, value), nil
-		case "Container":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Engine).Container(&parent, ctx)
-		case "Service":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			return (*Engine).Service(&parent, ctx, name)
-		case "Lint":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Engine).Lint(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -930,6 +1271,182 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "TypescriptSDK":
+		switch fnName {
+		case "Lint":
+			var parent TypescriptSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*TypescriptSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent TypescriptSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*TypescriptSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent TypescriptSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*TypescriptSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent TypescriptSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return nil, (*TypescriptSDK).Publish(&parent, ctx, tag)
+		case "Bump":
+			var parent TypescriptSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*TypescriptSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "ElixirSDK":
+		switch fnName {
+		case "Lint":
+			var parent ElixirSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*ElixirSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent ElixirSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*ElixirSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent ElixirSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*ElixirSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent ElixirSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return nil, (*ElixirSDK).Publish(&parent, ctx, tag)
+		case "Bump":
+			var parent ElixirSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*ElixirSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "RustSDK":
+		switch fnName {
+		case "Lint":
+			var parent RustSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent RustSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*RustSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent RustSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*RustSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent RustSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			var dryRun bool
+			if inputArgs["dryRun"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
+				}
+			}
+			var cargoRegistryToken *Secret
+			if inputArgs["cargoRegistryToken"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["cargoRegistryToken"]), &cargoRegistryToken)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg cargoRegistryToken", err))
+				}
+			}
+			return nil, (*RustSDK).Publish(&parent, ctx, tag, dryRun, cargoRegistryToken)
+		case "Bump":
+			var parent RustSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*RustSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
 	case "":
 		return dag.Module().
 			WithObject(
@@ -968,8 +1485,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				dag.TypeDef().WithObject("CLI").
 					WithFunction(
 						dag.Function("File",
-							dag.TypeDef().WithObject("File"))).
-					WithField("Source", dag.TypeDef().WithObject("Directory"))).
+							dag.TypeDef().WithObject("File")))).
 			WithObject(
 				dag.TypeDef().WithObject("Engine").
 					WithFunction(
@@ -993,13 +1509,16 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("Lint",
 							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
-							WithDescription("Lint lints the engine")).
-					WithField("Source", dag.TypeDef().WithObject("Directory")).
-					WithField("Args", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(StringKind))).
-					WithField("Config", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(StringKind)))).
+							WithDescription("Lint lints the engine"))).
 			WithObject(
 				dag.TypeDef().WithObject("SDK").
-					WithField("Go", dag.TypeDef().WithObject("GoSDK"))).
+					WithField("Go", dag.TypeDef().WithObject("GoSDK")).
+					WithField("Python", dag.TypeDef().WithObject("PythonSDK")).
+					WithField("Typescript", dag.TypeDef().WithObject("TypescriptSDK")).
+					WithField("Elixir", dag.TypeDef().WithObject("ElixirSDK")).
+					WithField("Rust", dag.TypeDef().WithObject("RustSDK")).
+					WithField("Java", dag.TypeDef().WithObject("JavaSDK")).
+					WithField("PHP", dag.TypeDef().WithObject("PHPSDK"))).
 			WithObject(
 				dag.TypeDef().WithObject("GoSDK").
 					WithFunction(
@@ -1013,7 +1532,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					WithFunction(
 						dag.Function("Generate",
 							dag.TypeDef().WithObject("Directory")).
-							WithDescription("Generate re-generates the SDK API")).
+							WithDescription("Generate re-generates the Go SDK API")).
 					WithFunction(
 						dag.Function("Publish",
 							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
@@ -1028,8 +1547,158 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("Bump",
 							dag.TypeDef().WithObject("Directory")).
 							WithDescription("Bump the Go SDK's Engine dependency").
-							WithArg("version", dag.TypeDef().WithKind(StringKind))).
-					WithField("Dagger", dag.TypeDef().WithObject("Dagger"))), nil
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("PythonSDK").
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Lint lints the Python SDK")).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Test tests the Python SDK")).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Generate re-generates the Python SDK API")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Publish publishes the Python SDK").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind))).
+					WithFunction(
+						dag.Function("Bump",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Bump the Python SDK's Engine dependency").
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("TypescriptSDK").
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Lint lints the Typescript SDK")).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Test tests the Typescript SDK")).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Generate re-generates the Typescript SDK API")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Publish publishes the Typescript SDK").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind))).
+					WithFunction(
+						dag.Function("Bump",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Bump the Typescript SDK's Engine dependency").
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("ElixirSDK").
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Lint lints the Elixir SDK")).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Test tests the Elixir SDK")).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Generate re-generates the Elixir SDK API")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Publish publishes the Elixir SDK").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind))).
+					WithFunction(
+						dag.Function("Bump",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Bump the Elixir SDK's Engine dependency").
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("RustSDK").
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Lint lints the Rust SDK")).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Test tests the Rust SDK")).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Generate re-generates the Rust SDK API")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Publish publishes the Rust SDK").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind)).
+							WithArg("dryRun", dag.TypeDef().WithKind(BooleanKind).WithOptional(true)).
+							WithArg("cargoRegistryToken", dag.TypeDef().WithObject("Secret").WithOptional(true))).
+					WithFunction(
+						dag.Function("Bump",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Bump the Rust SDK's Engine dependency").
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("JavaSDK").
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Lint lints the Java SDK")).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Test tests the Java SDK")).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Generate re-generates the Java SDK API")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Publish publishes the Java SDK").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind))).
+					WithFunction(
+						dag.Function("Bump",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Bump the Java SDK's Engine dependency").
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))).
+			WithObject(
+				dag.TypeDef().WithObject("PHPSDK").
+					WithFunction(
+						dag.Function("Lint",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Lint lints the PHP SDK")).
+					WithFunction(
+						dag.Function("Test",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Test tests the PHP SDK")).
+					WithFunction(
+						dag.Function("Generate",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Generate re-generates the PHP SDK API")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
+							WithDescription("Publish publishes the PHP SDK").
+							WithArg("tag", dag.TypeDef().WithKind(StringKind)).
+							WithArg("dryRun", dag.TypeDef().WithKind(BooleanKind).WithOptional(true)).
+							WithArg("gitRepo", dag.TypeDef().WithKind(StringKind).WithOptional(true), FunctionWithArgOpts{DefaultValue: JSON("\"https://github.com/dagger/dagger-php-sdk.git\"")}).
+							WithArg("gitUserName", dag.TypeDef().WithKind(StringKind).WithOptional(true), FunctionWithArgOpts{DefaultValue: JSON("\"dagger-ci\"")}).
+							WithArg("gitUserEmail", dag.TypeDef().WithKind(StringKind).WithOptional(true), FunctionWithArgOpts{DefaultValue: JSON("\"hello@dagger.io\"")}).
+							WithArg("githubToken", dag.TypeDef().WithObject("Secret").WithOptional(true))).
+					WithFunction(
+						dag.Function("Bump",
+							dag.TypeDef().WithObject("Directory")).
+							WithDescription("Bump the PHP SDK's Engine dependency").
+							WithArg("version", dag.TypeDef().WithKind(StringKind)))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}

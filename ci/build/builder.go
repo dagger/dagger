@@ -10,6 +10,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"dagger/consts"
 	"dagger/internal/dagger"
@@ -22,14 +23,27 @@ var dag = dagger.Connect()
 type Builder struct {
 	Source *Directory
 
-	Version *VersionInfo
+	Version      *VersionInfo
+	Platform     dagger.Platform
+	PlatformSpec *ocispecs.Platform
 }
 
-func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
+func NewBuilder(ctx context.Context, source *Directory, platform dagger.Platform) (*Builder, error) {
 	// XXX: can we make this lazy?
 	version, err := getVersionFromGit(ctx, source.Directory(".git"))
 	if err != nil {
 		return nil, err
+	}
+
+	var platformSpec ocispecs.Platform
+	if platform == "" {
+		platformSpec = platforms.DefaultSpec()
+		platform = dagger.Platform(platforms.Format(platformSpec))
+	} else {
+		platformSpec, err = platforms.Parse(string(platform))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	source = dag.Directory().WithDirectory("/", source, DirectoryWithDirectoryOpts{
@@ -67,17 +81,16 @@ func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
 	})
 
 	return &Builder{
-		Source:  source,
-		Version: version,
+		Source:       source,
+		Version:      version,
+		Platform:     platform,
+		PlatformSpec: &platformSpec,
 	}, nil
 }
 
-func (build *Builder) Engine(
-	ctx context.Context,
-	platform dagger.Platform, // +optional
-) (*Container, error) {
+func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 	container := dag.
-		Container(ContainerOpts{Platform: platform}).
+		Container(ContainerOpts{Platform: build.Platform}).
 		From(consts.AlpineImage).
 		// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
 		// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
@@ -95,53 +108,43 @@ func (build *Builder) Engine(
 			"iptables", "ip6tables", "dnsmasq",
 		}).
 		WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER").
-		WithFile(consts.EngineServerPath, build.engineBinary(platform)).
-		WithFile(consts.EngineShimPath, build.shimBinary(platform)).
-		WithFile("/usr/bin/dialstdio", build.dialstdioBinary(platform)).
+		WithFile(consts.EngineServerPath, build.engineBinary()).
+		WithFile(consts.EngineShimPath, build.shimBinary()).
+		WithFile("/usr/bin/dialstdio", build.dialstdioBinary()).
 		WithExec([]string{"ln", "-s", "/usr/bin/dialstdio", "/usr/bin/buildctl"}).
-		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary(platform)).
-		WithFile("/usr/local/bin/runc", runcBin(platform), ContainerWithFileOpts{Permissions: 0o700}).
-		WithDirectory("/usr/local/bin", qemuBins(platform)).
-		With(build.goSDKContent(ctx, platform)).
-		With(build.pythonSDKContent(ctx, platform)).
-		With(build.typescriptSDKContent(ctx, platform)).
-		WithDirectory("/", cniPlugins(platform, false)).
+		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
+		WithFile("/usr/local/bin/runc", build.runcBin(), ContainerWithFileOpts{Permissions: 0o700}).
+		WithDirectory("/usr/local/bin", build.qemuBins()).
+		With(build.goSDKContent(ctx)).
+		With(build.pythonSDKContent(ctx)).
+		With(build.typescriptSDKContent(ctx)).
+		WithDirectory("/", build.cniPlugins(false)).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 	return container, nil
 }
 
-func (build *Builder) codegenBinary(platform dagger.Platform) *File {
-	return build.binary("./cmd/codegen", platform)
+func (build *Builder) codegenBinary() *File {
+	return build.binary("./cmd/codegen")
 }
 
-func (build *Builder) engineBinary(platform dagger.Platform) *File {
-	return build.binary("./cmd/engine", platform)
+func (build *Builder) engineBinary() *File {
+	return build.binary("./cmd/engine")
 }
 
-func (build *Builder) shimBinary(platform dagger.Platform) *File {
-	return build.binary("./cmd/shim", platform)
+func (build *Builder) shimBinary() *File {
+	return build.binary("./cmd/shim")
 }
 
-func (build *Builder) dnsnameBinary(platform dagger.Platform) *File {
-	return build.binary("./cmd/dnsname", platform)
+func (build *Builder) dnsnameBinary() *File {
+	return build.binary("./cmd/dnsname")
 }
 
-func (build *Builder) dialstdioBinary(platform dagger.Platform) *File {
-	return build.binary("./cmd/dialstdio", platform)
+func (build *Builder) dialstdioBinary() *File {
+	return build.binary("./cmd/dialstdio")
 }
 
-func (build *Builder) binary(
-	pkg string,
-	platform dagger.Platform,
-) *File {
-	base := util.GoBase(build.Source)
-	if p, err := platforms.Parse(string(platform)); err == nil {
-		base = base.WithEnvVariable("GOOS", p.OS)
-		base = base.WithEnvVariable("GOARCH", p.Architecture)
-		if p.Variant != "" {
-			base = base.WithEnvVariable("GOARM", p.Variant)
-		}
-	}
+func (build *Builder) binary(pkg string) *File {
+	base := util.GoBase(build.Source).With(build.goPlatformEnv)
 
 	ldflags := []string{
 		"-s", "-w",
@@ -162,19 +165,14 @@ func (build *Builder) binary(
 	return result
 }
 
-func runcBin(platform dagger.Platform) *File {
-	p, err := platforms.Parse(string(platform))
-	if err != nil {
-		p = platforms.DefaultSpec()
-	}
-
+func (build *Builder) runcBin() *File {
 	// We build runc from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	buildCtr := dag.Container().
 		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
-		WithEnvVariable("GOARCH", p.Architecture).
+		With(build.goPlatformEnv).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
-		WithEnvVariable("TARGETPLATFORM", string(platform)).
+		WithEnvVariable("TARGETPLATFORM", string(build.Platform)).
 		WithEnvVariable("CGO_ENABLED", "1").
 		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
 		WithDirectory("/", dag.Container().From("tonistiigi/xx:1.2.1").Rootfs()).
@@ -199,19 +197,14 @@ func runcBin(platform dagger.Platform) *File {
 		File("runc")
 }
 
-func qemuBins(platform dagger.Platform) *Directory {
+func (build *Builder) qemuBins() *Directory {
 	return dag.
-		Container(ContainerOpts{Platform: platform}).
+		Container(ContainerOpts{Platform: build.Platform}).
 		From(consts.QemuBinImage).
 		Rootfs()
 }
 
-func cniPlugins(platform dagger.Platform, gpuSupportEnabled bool) *Directory {
-	p, err := platforms.Parse(string(platform))
-	if err != nil {
-		p = platforms.DefaultSpec()
-	}
-
+func (build *Builder) cniPlugins(gpuSupportEnabled bool) *Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	// If GPU support is enabled use a Debian image:
@@ -230,7 +223,7 @@ func cniPlugins(platform dagger.Platform, gpuSupportEnabled bool) *Directory {
 		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build")).
 		WithMountedDirectory("/src", dag.Git("github.com/containernetworking/plugins").Tag(consts.CniVersion).Tree()).
 		WithWorkdir("/src").
-		WithEnvVariable("GOARCH", p.Architecture)
+		With(build.goPlatformEnv)
 
 	pluginDir := dag.Directory()
 	for _, pluginPath := range []string{
@@ -247,4 +240,14 @@ func cniPlugins(platform dagger.Platform, gpuSupportEnabled bool) *Directory {
 	}
 
 	return pluginDir
+}
+
+func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
+	ctr = ctr.WithEnvVariable("GOOS", build.PlatformSpec.OS)
+	ctr = ctr.WithEnvVariable("GOARCH", build.PlatformSpec.Architecture)
+	switch build.PlatformSpec.Architecture {
+	case "arm", "arm64":
+		ctr = ctr.WithEnvVariable("GOARM", build.PlatformSpec.Variant)
+	}
+	return ctr
 }
