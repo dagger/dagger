@@ -17,6 +17,8 @@ type Engine struct {
 	Base   *Container // +private
 	Args   []string   // +private
 	Config []string   // +private
+
+	GPUSupport bool // +private
 }
 
 func (e *Engine) WithConfig(key, value string) *Engine {
@@ -29,10 +31,22 @@ func (e *Engine) WithArg(key, value string) *Engine {
 	return e
 }
 
+func (e *Engine) WithGPUSupport() *Engine {
+	e.GPUSupport = true
+	e.Base = nil
+	return e
+}
+
 // XXX: maybe we should private this?
 func (e *Engine) Container(ctx context.Context) (*Container, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64")
+		opts := build.BuilderOpts{}
+		if e.GPUSupport {
+			opts.Base = "ubuntu"
+			opts.GPUSupport = true
+		}
+
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64", &opts)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +122,7 @@ type CLI struct {
 
 func (e *CLI) File(ctx context.Context) (*File, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64")
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64", nil)
 		if err != nil {
 			return nil, err
 		}

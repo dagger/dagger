@@ -26,10 +26,17 @@ type Builder struct {
 	Version      *VersionInfo
 	Platform     dagger.Platform
 	PlatformSpec *ocispecs.Platform
+
+	BuilderOpts
 }
 
-func NewBuilder(ctx context.Context, source *Directory, platform dagger.Platform) (*Builder, error) {
-	// XXX: can we make this lazy?
+type BuilderOpts struct {
+	Base       string
+	GPUSupport bool
+}
+
+func NewBuilder(ctx context.Context, source *Directory, platform dagger.Platform, opts *BuilderOpts) (*Builder, error) {
+	// FIXME: can we make this lazy?
 	version, err := getVersionFromGit(ctx, source.Directory(".git"))
 	if err != nil {
 		return nil, err
@@ -80,34 +87,58 @@ func NewBuilder(ctx context.Context, source *Directory, platform dagger.Platform
 		},
 	})
 
+	if opts == nil {
+		opts = &BuilderOpts{}
+	}
 	return &Builder{
 		Source:       source,
 		Version:      version,
 		Platform:     platform,
 		PlatformSpec: &platformSpec,
+		BuilderOpts:  *opts,
 	}, nil
 }
 
 func (build *Builder) Engine(ctx context.Context) (*Container, error) {
-	container := dag.
-		Container(ContainerOpts{Platform: build.Platform}).
-		From(consts.AlpineImage).
-		// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
-		// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
-		// gives us.
-		// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
-		// modules that fix this problem and always result in the latest apk packages for the given alpine
-		// version being used (with optimal caching).
-		WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
-		WithExec([]string{"apk", "upgrade"}).
-		WithExec([]string{
-			"apk", "add", "--no-cache",
-			// for Buildkit
-			"git", "openssh", "pigz", "xz",
-			// for CNI
-			"iptables", "ip6tables", "dnsmasq",
-		}).
-		WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER").
+	var base *dagger.Container
+	switch build.Base {
+	case "alpine", "":
+		base = dag.
+			Container(ContainerOpts{Platform: build.Platform}).
+			From(consts.AlpineImage).
+			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
+			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
+			// gives us.
+			// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
+			// modules that fix this problem and always result in the latest apk packages for the given alpine
+			// version being used (with optimal caching).
+			WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
+			WithExec([]string{"apk", "upgrade"}).
+			WithExec([]string{
+				"apk", "add", "--no-cache",
+				// for Buildkit
+				"git", "openssh", "pigz", "xz",
+				// for CNI
+				"iptables", "ip6tables", "dnsmasq",
+			}).
+			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
+	case "ubuntu":
+		base = dag.Container(dagger.ContainerOpts{Platform: build.Platform}).
+			From("ubuntu:"+consts.UbuntuVersion).
+			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
+			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
+			WithExec([]string{"apt-get", "update"}).
+			WithExec([]string{
+				"apt-get", "install", "-y",
+				"iptables", "git", "dnsmasq-base", "network-manager",
+				"gpg", "curl",
+			}).
+			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
+	default:
+		return nil, fmt.Errorf("unsupported engine base %q", build.Base)
+	}
+
+	ctr := base.
 		WithFile(consts.EngineServerPath, build.engineBinary()).
 		WithFile(consts.EngineShimPath, build.shimBinary()).
 		WithFile("/usr/bin/dialstdio", build.dialstdioBinary()).
@@ -118,9 +149,22 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 		With(build.goSDKContent(ctx)).
 		With(build.pythonSDKContent(ctx)).
 		With(build.typescriptSDKContent(ctx)).
-		WithDirectory("/", build.cniPlugins(false)).
+		WithDirectory("/", build.cniPlugins()).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
-	return container, nil
+
+	if build.GPUSupport {
+		if build.Base != "ubuntu" {
+			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu", build.Base)
+		}
+		if build.PlatformSpec.Architecture != "amd64" {
+			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "ubuntu", build.PlatformSpec.Architecture)
+		}
+		ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
+		ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
+		ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+	}
+
+	return ctr, nil
 }
 
 func (build *Builder) codegenBinary() *File {
@@ -204,19 +248,20 @@ func (build *Builder) qemuBins() *Directory {
 		Rootfs()
 }
 
-func (build *Builder) cniPlugins(gpuSupportEnabled bool) *Directory {
+func (build *Builder) cniPlugins() *Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	// If GPU support is enabled use a Debian image:
 	ctr := dag.Container()
-	if gpuSupportEnabled {
+	switch build.Base {
+	case "alpine", "":
+		ctr = ctr.From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
+			WithExec([]string{"apk", "add", "build-base", "go", "git"})
+	case "ubuntu":
 		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
 		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
-	} else {
-		ctr = ctr.From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
-			WithExec([]string{"apk", "add", "build-base", "go", "git"})
 	}
 
 	ctr = ctr.WithMountedCache("/root/go/pkg/mod", dag.CacheVolume("go-mod")).

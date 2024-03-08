@@ -42,13 +42,20 @@ func (ci *Dagger) SDK() *SDK {
 
 func (ci *Dagger) Dev(
 	ctx context.Context,
-	target *Directory, // +optional
+	// +optional
+	target *Directory,
+	// +optional
+	experimentalGPUSupport bool,
 ) (*Container, error) {
 	if target == nil {
 		target = dag.Directory()
 	}
 
-	svc, err := ci.Engine().Service(ctx, "foo")
+	engine := ci.Engine()
+	if experimentalGPUSupport {
+		engine = engine.WithGPUSupport()
+	}
+	svc, err := engine.Service(ctx, "dev")
 	if err != nil {
 		return nil, err
 	}
