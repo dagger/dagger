@@ -17,7 +17,7 @@ import (
 type Client struct {
 	conn engineconn.EngineConn
 
-	Query  *querybuilder.Selection
+	query  *querybuilder.Selection
 	client graphql.Client
 }
 
@@ -75,7 +75,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	c := &Client{
-		Query:  querybuilder.Query().Client(gql),
+		query:  querybuilder.Query().Client(gql),
 		client: gql,
 		conn:   conn,
 	}
