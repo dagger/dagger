@@ -1698,24 +1698,24 @@ func TestIDFormat(t *testing.T) {
 
 	assert.Equal(t, len(pbDag.CallsByDigest), 6)
 
-	assert.Equal(t, pbDag.RootCallDigest, pointAFromDgst.String())
-	pointAFromIDFields, ok := pbDag.CallsByDigest[pbDag.RootCallDigest]
+	assert.Equal(t, pbDag.RootDigest, pointAFromDgst.String())
+	pointAFromIDFields, ok := pbDag.CallsByDigest[pbDag.RootDigest]
 	assert.Check(t, ok)
 	assert.Equal(t, pointAFromIDFields.Field, "from")
 	assert.Equal(t, len(pointAFromIDFields.Args), 0)
 
-	assert.Equal(t, pointAFromIDFields.BaseCallDigest, lineBDgst.String())
-	lineBIDFields, ok := pbDag.CallsByDigest[pointAFromIDFields.BaseCallDigest]
+	assert.Equal(t, pointAFromIDFields.ReceiverDigest, lineBDgst.String())
+	lineBIDFields, ok := pbDag.CallsByDigest[pointAFromIDFields.ReceiverDigest]
 	assert.Check(t, ok)
 	assert.Equal(t, lineBIDFields.Field, "line")
 	assert.Equal(t, len(lineBIDFields.Args), 1)
 
-	assert.Equal(t, lineBIDFields.BaseCallDigest, pointADgst.String())
-	pointAIDFields, ok := pbDag.CallsByDigest[lineBIDFields.BaseCallDigest]
+	assert.Equal(t, lineBIDFields.ReceiverDigest, pointADgst.String())
+	pointAIDFields, ok := pbDag.CallsByDigest[lineBIDFields.ReceiverDigest]
 	assert.Check(t, ok)
 	assert.Equal(t, pointAIDFields.Field, "point")
 	assert.Equal(t, len(pointAIDFields.Args), 2)
-	assert.Equal(t, pointAIDFields.BaseCallDigest, "")
+	assert.Equal(t, pointAIDFields.ReceiverDigest, "")
 
 	lineBArg := lineBIDFields.Args[0]
 	assert.Equal(t, lineBArg.Name, "to")
@@ -1725,14 +1725,14 @@ func TestIDFormat(t *testing.T) {
 	assert.Equal(t, pointBFromIDFields.Field, "from")
 	assert.Equal(t, len(pointBFromIDFields.Args), 0)
 
-	assert.Equal(t, pointBFromIDFields.BaseCallDigest, lineADgst.String())
-	lineAIDFields, ok := pbDag.CallsByDigest[pointBFromIDFields.BaseCallDigest]
+	assert.Equal(t, pointBFromIDFields.ReceiverDigest, lineADgst.String())
+	lineAIDFields, ok := pbDag.CallsByDigest[pointBFromIDFields.ReceiverDigest]
 	assert.Check(t, ok)
 	assert.Equal(t, lineAIDFields.Field, "line")
 	assert.Equal(t, len(lineAIDFields.Args), 1)
 
-	assert.Equal(t, lineAIDFields.BaseCallDigest, pointBDgst.String())
-	pointBIDFields, ok := pbDag.CallsByDigest[lineAIDFields.BaseCallDigest]
+	assert.Equal(t, lineAIDFields.ReceiverDigest, pointBDgst.String())
+	pointBIDFields, ok := pbDag.CallsByDigest[lineAIDFields.ReceiverDigest]
 	assert.Check(t, ok)
 	assert.Equal(t, pointBIDFields.Field, "point")
 	assert.Equal(t, len(pointBIDFields.Args), 2)
