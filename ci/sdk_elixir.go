@@ -110,13 +110,13 @@ func (t ElixirSDK) Publish(
 	args := []string{"mix", "hex.publish", "--yes"}
 	if dryRun {
 		args = append(args, "--dry-run")
-		ctr = ctr.WithExec(args)
-	} else {
-		ctr = ctr.
-			WithSecretVariable("HEX_API_KEY", hexAPIKey).
-			WithExec(args)
 	}
-	_, err = ctr.Sync(ctx)
+
+	_, err = ctr.
+		WithSecretVariable("HEX_API_KEY", hexAPIKey).
+		WithExec(args).
+		Sync(ctx)
+
 	return err
 }
 
