@@ -3,10 +3,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
- "bytes"
-    "text/template"
+	"text/template"
 )
 
 type Markdown struct{}
@@ -60,7 +60,7 @@ func (m *Markdown) Lint(
 		return nil, err
 	}
 	return &Report{
-		JSON: raw,
+		JSON:   raw,
 		Source: source,
 	}, nil
 }
@@ -112,18 +112,18 @@ func (r *Report) Files(ctx context.Context) (*Directory, error) {
 // A single lint check
 type Check struct {
 	// +private
-	Report *Report
-    FileName        string   `json:"fileName"`
-    LineNumber      int      `json:"lineNumber"`
-    RuleNames       []string `json:"ruleNames"`
-    RuleDescription string   `json:"ruleDescription"`
-    RuleInformation string   `json:"ruleInformation"`
-    ErrorDetail     string  `json:"errorDetail"`
-    ErrorContext    string   `json:"errorContext"`
-    //ErrorRange      *string  `json:"errorRange"` // Assuming errorRange is a string or null
-//    FixInfo         struct {
-//        InsertText string `json:"insertText"`
-//    } `json:"fixInfo"`
+	Report          *Report
+	FileName        string   `json:"fileName"`
+	LineNumber      int      `json:"lineNumber"`
+	RuleNames       []string `json:"ruleNames"`
+	RuleDescription string   `json:"ruleDescription"`
+	RuleInformation string   `json:"ruleInformation"`
+	ErrorDetail     string   `json:"errorDetail"`
+	ErrorContext    string   `json:"errorContext"`
+	// ErrorRange      *string  `json:"errorRange"` // Assuming errorRange is a string or null
+	// FixInfo         struct {
+	// 	InsertText string `json:"insertText"`
+	// } `json:"fixInfo"`
 }
 
 // JSON-encoded check
@@ -146,7 +146,6 @@ func (c *Check) Fix() *File {
 	return new(Markdown).Fix(c.Report.Source).File(c.FileName)
 }
 
-
 func (c *Check) Diff(ctx context.Context) (string, error) {
 	return dag.
 		Wolfi().
@@ -158,14 +157,14 @@ func (c *Check) Diff(ctx context.Context) (string, error) {
 }
 
 func (c *Check) Format(text string) (string, error) {
-    tmpl, err := template.New("markdown.lint.check.format").Parse(text)
-    if err != nil {
-        return "", err
-    }
-    var buf bytes.Buffer
-    err = tmpl.Execute(&buf, c)
-    if err != nil {
-        return "", err
-    }
-    return buf.String(), nil
+	tmpl, err := template.New("markdown.lint.check.format").Parse(text)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, c)
+	if err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }
