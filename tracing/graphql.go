@@ -7,7 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/vito/progrock"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,14 +15,14 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
+func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	// install tracing at the outermost layer so we don't ignore perf impact of
 	// other telemetry
 	return SpanAroundFunc(ctx, self, id,
 		ProgrockAroundFunc(ctx, self, id, next))
 }
 
-func SpanAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
+func SpanAroundFunc(ctx context.Context, self dagql.Object, id *call.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	return func(ctx context.Context) (dagql.Typed, error) {
 		if isIntrospection(id) {
 			return next(ctx)
@@ -52,17 +52,13 @@ func SpanAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next
 // IDLabel is a label set to "true" for a vertex corresponding to a DagQL ID.
 const IDLabel = "dagger.io/id"
 
-func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
+func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *call.ID, next func(context.Context) (dagql.Typed, error)) func(context.Context) (dagql.Typed, error) {
 	return func(ctx context.Context) (dagql.Typed, error) {
 		if isIntrospection(id) {
 			return next(ctx)
 		}
 
-		dig, err := id.Digest()
-		if err != nil {
-			slog.Warn("failed to digest id", "id", id.Display(), "err", err)
-			return next(ctx)
-		}
+		dig := id.Digest()
 		// TODO: we don't need this for anything yet
 		// inputs, err := id.Inputs()
 		// if err != nil {
@@ -78,12 +74,17 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		}
 
 		// group any self-calls or Buildkit vertices beneath this vertex
-		ctx, vtx := progrock.Span(ctx, dig.String(), id.Field, opts...)
+		ctx, vtx := progrock.Span(ctx, dig.String(), id.Field(), opts...)
 		ctx = ioctx.WithStdout(ctx, vtx.Stdout())
 		ctx = ioctx.WithStderr(ctx, vtx.Stderr())
 
 		// send ID payload to the frontend
-		payload, err := anypb.New(id)
+		idProto, err := id.ToProto()
+		if err != nil {
+			slog.Warn("failed to convert id to proto", "id", id.Display(), "err", err)
+			return next(ctx)
+		}
+		payload, err := anypb.New(idProto)
 		if err != nil {
 			slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
 			return next(ctx)
@@ -112,12 +113,7 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
 		// instead of the full container().from().[...].stdout() ID
 		if obj, ok := res.(dagql.Object); ok {
-			objDigest, err := obj.ID().Digest()
-			if err != nil {
-				slog.Error("failed to digest object", "id", id.Display(), "err", err)
-			} else {
-				vtx.Output(objDigest)
-			}
+			vtx.Output(obj.ID().Digest())
 		}
 
 		vtx.Done(resolveErr)
@@ -130,9 +126,9 @@ func ProgrockAroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID, 
 //
 // These queries tend to be very large and are not interesting for users to
 // see.
-func isIntrospection(id *idproto.ID) bool {
-	if id.Base == nil {
-		switch id.Field {
+func isIntrospection(id *call.ID) bool {
+	if id.Base() == nil {
+		switch id.Field() {
 		case "__schema",
 			"currentTypeDefs",
 			"currentFunctionCall",
@@ -142,6 +138,6 @@ func isIntrospection(id *idproto.ID) bool {
 			return false
 		}
 	} else {
-		return isIntrospection(id.Base)
+		return isIntrospection(id.Base())
 	}
 }

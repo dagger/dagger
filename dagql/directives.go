@@ -1,7 +1,7 @@
 package dagql
 
 import (
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -41,7 +41,7 @@ func (DirectiveLocation) Decoder() InputDecoder {
 	return DirectiveLocations
 }
 
-func (d DirectiveLocation) ToLiteral() *idproto.Literal {
+func (d DirectiveLocation) ToLiteral() call.Literal {
 	return DirectiveLocations.Literal(d)
 }
 

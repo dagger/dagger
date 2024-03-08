@@ -16,7 +16,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -2682,7 +2682,7 @@ class Foo {
 			require.NoError(t, err)
 			id := gjson.Get(out, "foo.set.id").String()
 
-			var idp idproto.ID
+			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
 			require.Equal(t, idp.Display(), `foo.set(data: "abc"): Foo!`)
@@ -2814,7 +2814,7 @@ class Foo {
 			out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			id := gjson.Get(out, "foo.sayHello.id").String()
-			var idp idproto.ID
+			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
 			require.Equal(t, idp.Display(), `foo.sayHello(name: "world"): FooMessage!`)

@@ -30,10 +30,7 @@ func GetLocalSecretAccessor(ctx context.Context, parent *Query, name string) (st
 	}
 	var d digest.Digest
 	if m != nil {
-		d, err = m.Source.ID().Digest()
-		if err != nil {
-			return "", err
-		}
+		d = m.Source.ID().Digest()
 	}
 	return NewSecretAccessor(name, d.String()), nil
 }

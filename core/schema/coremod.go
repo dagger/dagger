@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -222,7 +222,7 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	if !ok {
 		return nil, fmt.Errorf("expected string, got %T", value)
 	}
-	var idp idproto.ID
+	var idp call.ID
 	if err := idp.Decode(id); err != nil {
 		return nil, err
 	}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -35,12 +35,8 @@ func (p Void) Decoder() dagql.InputDecoder {
 	return p
 }
 
-func (p Void) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Null{
-			Null: true,
-		},
-	}
+func (p Void) ToLiteral() call.Literal {
+	return call.NewLiteralNull()
 }
 
 var _ dagql.ScalarType = Void{}
