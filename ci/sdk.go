@@ -36,6 +36,7 @@ func (dagger *Dagger) installDagger(ctx context.Context, ctr *dagger.Container, 
 		WithServiceBinding("dagger-engine", engineSvc).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint).
 		WithMountedFile(cliBinaryPath, cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath)
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
+		WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
 	return ctr, nil
 }
