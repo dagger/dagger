@@ -175,6 +175,9 @@ type ModuleID string
 // The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
 type ModuleSourceID string
 
+// The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
+type ModuleSourceViewID string
+
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 type ObjectTypeDefID string
 
@@ -4622,6 +4625,16 @@ func (r *ModuleSource) Directory(path string) *Directory {
 	}
 }
 
+// TODO
+func (r *ModuleSource) Exclude(ctx context.Context) ([]string, error) {
+	q := r.Query.Select("exclude")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A unique identifier for this ModuleSource.
 func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
 	if r.id != nil {
@@ -4660,6 +4673,16 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// TODO
+func (r *ModuleSource) Include(ctx context.Context) ([]string, error) {
+	q := r.Query.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The kind of source (e.g. local, git, etc.)
@@ -4725,6 +4748,28 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	}
 }
 
+// ModuleSourceResolveDirectoryFromCallerOpts contains options for ModuleSource.ResolveDirectoryFromCaller
+type ModuleSourceResolveDirectoryFromCallerOpts struct {
+	// TODO
+	ViewName string
+}
+
+// TODO
+func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSourceResolveDirectoryFromCallerOpts) *Directory {
+	q := r.Query.Select("resolveDirectoryFromCaller")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `viewName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ViewName) {
+			q = q.Arg("viewName", opts[i].ViewName)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		Query: q,
+	}
+}
+
 // Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
 func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
 	q := r.query.Select("resolveFromCaller")
@@ -4760,6 +4805,49 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// TODO
+func (r *ModuleSource) View(name string) *ModuleSourceView {
+	q := r.Query.Select("view")
+	q = q.Arg("name", name)
+
+	return &ModuleSourceView{
+		Query: q,
+	}
+}
+
+// TODO
+func (r *ModuleSource) Views(ctx context.Context) ([]ModuleSourceView, error) {
+	q := r.Query.Select("views")
+
+	q = q.Select("id")
+
+	type views struct {
+		Id ModuleSourceViewID
+	}
+
+	convert := func(fields []views) []ModuleSourceView {
+		out := []ModuleSourceView{}
+
+		for i := range fields {
+			val := ModuleSourceView{id: &fields[i].Id}
+			val.Query = q.Root().Select("loadModuleSourceViewFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []views
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // Update the module source with a new context directory. Only valid for local sources.
 func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
 	assertNotNil("dir", dir)
@@ -4778,6 +4866,26 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *Modul
 
 	return &ModuleSource{
 		query: q,
+	}
+}
+
+// TODO
+func (r *ModuleSource) WithExclude(exclude []string) *ModuleSource {
+	q := r.Query.Select("withExclude")
+	q = q.Arg("exclude", exclude)
+
+	return &ModuleSource{
+		Query: q,
+	}
+}
+
+// TODO
+func (r *ModuleSource) WithInclude(include []string) *ModuleSource {
+	q := r.Query.Select("withInclude")
+	q = q.Arg("include", include)
+
+	return &ModuleSource{
+		Query: q,
 	}
 }
 
@@ -4809,6 +4917,88 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	return &ModuleSource{
 		query: q,
 	}
+}
+
+// TODO
+func (r *ModuleSource) WithView(name string, include []string) *ModuleSource {
+	q := r.Query.Select("withView")
+	q = q.Arg("name", name)
+	q = q.Arg("include", include)
+
+	return &ModuleSource{
+		Query: q,
+	}
+}
+
+// TODO
+type ModuleSourceView struct {
+	Query *querybuilder.Selection
+
+	id   *ModuleSourceViewID
+	name *string
+}
+
+// A unique identifier for this ModuleSourceView.
+func (r *ModuleSourceView) ID(ctx context.Context) (ModuleSourceViewID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.Query.Select("id")
+
+	var response ModuleSourceViewID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleSourceView) XXX_GraphQLType() string {
+	return "ModuleSourceView"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleSourceView) XXX_GraphQLIDType() string {
+	return "ModuleSourceViewID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleSourceView) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ModuleSourceView) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// TODO
+func (r *ModuleSourceView) Include(ctx context.Context) ([]string, error) {
+	q := r.Query.Select("include")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// TODO
+func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.Query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A definition of a custom object defined in a Module.
@@ -5604,6 +5794,16 @@ func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 
 	return &ModuleSource{
 		query: q,
+	}
+}
+
+// Load a ModuleSourceView from its ID.
+func (r *Client) LoadModuleSourceViewFromID(id ModuleSourceViewID) *ModuleSourceView {
+	q := r.Query.Select("loadModuleSourceViewFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleSourceView{
+		Query: q,
 	}
 }
 

@@ -856,6 +856,49 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			return inst, fmt.Errorf("failed to set dependency: %w", err)
 		}
 	}
+	if src.WithInclude != nil {
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withInclude",
+				Args: []dagql.NamedInput{
+					{Name: "include", Value: asArrayInput(src.WithInclude, dagql.NewString)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set include: %w", err)
+		}
+	}
+	if src.WithExclude != nil {
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withExclude",
+				Args: []dagql.NamedInput{
+					{Name: "exclude", Value: asArrayInput(src.WithExclude, dagql.NewString)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set exclude: %w", err)
+		}
+	}
+	if src.WithViews != nil {
+		for _, view := range src.WithViews {
+			err = s.dag.Select(ctx, inst, &inst,
+				dagql.Selector{
+					Field: "withView",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(view.Name)},
+						{Name: "include", Value: asArrayInput(view.Include, dagql.NewString)},
+					},
+				},
+			)
+			if err != nil {
+				return inst, fmt.Errorf("failed to set view: %w", err)
+			}
+		}
+	}
+
 	return inst, err
 }
 
@@ -1050,4 +1093,208 @@ func callerHostFindUpContext(
 		return "", false, nil
 	}
 	return callerHostFindUpContext(ctx, bk, filepath.Dir(curDirPath))
+}
+
+func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Path     string
+		ViewName *string
+	},
+) (inst dagql.Instance[*core.Directory], err error) {
+	path := args.Path
+	if !filepath.IsAbs(path) {
+		stat, err := src.Query.Buildkit.StatCallerHostPath(ctx, path, true)
+		if err != nil {
+			return inst, fmt.Errorf("failed to stat caller path: %w", err)
+		}
+		path = stat.Path
+	}
+
+	/* TODO: rm this probably, too confusing especially w/ git modules
+	// load the base module include/excludes, make them relative to path
+	_, sourceRootAbsPath, err := s.resolveContextPathFromCaller(ctx, src)
+	if err != nil {
+		return inst, fmt.Errorf("failed to resolve context path from caller: %w", err)
+	}
+	includes, err := src.Include(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module config includes: %w", err)
+	}
+	if err := rebaseRelPaths(includes, sourceRootAbsPath, path); err != nil {
+		return inst, fmt.Errorf("failed to rebase includes: %w", err)
+	}
+	excludes, err := src.Exclude(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module config excludes: %w", err)
+	}
+	if err := rebaseRelPaths(excludes, sourceRootAbsPath, path); err != nil {
+		return inst, fmt.Errorf("failed to rebase excludes: %w", err)
+	}
+	*/
+
+	var includes []string
+	if args.ViewName != nil {
+		view, err := src.ViewByName(ctx, *args.ViewName)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get view: %w", err)
+		}
+		includes = view.Include
+	}
+
+	/* TODO rm if unused
+	// be sure to always include the path itself at least
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: double check this....
+	if len(includes) > 0 {
+		includes = append(includes, ".")
+	}
+	*/
+
+	pipelineName := fmt.Sprintf("load local directory module arg %s", path)
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
+	_, desc, err := src.Query.Buildkit.LocalImport(
+		ctx, subRecorder, src.Query.Platform.Spec(),
+		path,
+		nil,
+		includes,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to import local directory module arg: %w", err)
+	}
+	return core.LoadBlob(ctx, s.dag, desc)
+}
+
+/* TODO: rm if unused
+func rebaseRelPaths(
+	relPaths []string,
+	baseAbsPath string,
+	newAbsPath string,
+) error {
+	for i, relPath := range relPaths {
+		if !filepath.IsAbs(relPath) {
+			return fmt.Errorf("path %q is not absolute", relPath)
+		}
+		absPath := filepath.Join(baseAbsPath, relPath)
+		var err error
+		relPath, err = filepath.Rel(newAbsPath, absPath)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %s", err)
+		}
+		if !filepath.IsLocal(relPath) {
+			// skip paths that go outside the newAbsPath tree
+			continue
+		}
+		relPaths[i] = relPath
+	}
+	return nil
+}
+*/
+
+func (s *moduleSchema) moduleSourceInclude(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]string, error) {
+	if src.WithInclude != nil {
+		return src.WithInclude, nil
+	}
+	return src.Include(ctx)
+}
+
+func (s *moduleSchema) moduleSourceWithInclude(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Include []string
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+	if args.Include == nil {
+		args.Include = []string{}
+	}
+	src.WithInclude = args.Include
+	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceExclude(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]string, error) {
+	if src.WithExclude != nil {
+		return src.WithExclude, nil
+	}
+	return src.Exclude(ctx)
+}
+
+func (s *moduleSchema) moduleSourceWithExclude(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Exclude []string
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+	if args.Exclude == nil {
+		args.Exclude = []string{}
+	}
+	src.WithExclude = args.Exclude
+	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceViews(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]*core.ModuleSourceView, error) {
+	return src.Views(ctx)
+}
+
+func (s *moduleSchema) moduleSourceView(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Name string
+	},
+) (*core.ModuleSourceView, error) {
+	return src.ViewByName(ctx, args.Name)
+}
+
+func (s *moduleSchema) moduleSourceWithView(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Name    string
+		Include []string
+	},
+) (*core.ModuleSource, error) {
+	view := &core.ModuleSourceView{
+		&modules.ModuleConfigView{
+			Name:    args.Name,
+			Include: args.Include,
+		},
+	}
+	src.WithViews = append(src.WithViews, view)
+	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceViewName(
+	ctx context.Context,
+	view *core.ModuleSourceView,
+	args struct{},
+) (string, error) {
+	return view.Name, nil
+}
+
+func (s *moduleSchema) moduleSourceViewInclude(
+	ctx context.Context,
+	view *core.ModuleSourceView,
+	args struct{},
+) ([]string, error) {
+	return view.Include, nil
 }

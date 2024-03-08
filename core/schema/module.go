@@ -143,6 +143,53 @@ func (s *moduleSchema) Install() {
 		dagql.Func("resolveContextPathFromCaller", s.moduleSourceResolveContextPathFromCaller).
 			Impure(`Queries live caller-specific data from their filesystem.`).
 			Doc(`The path to the module source's context directory on the caller's filesystem. Only valid for local sources.`),
+
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO: doc all below
+		dagql.Func("include", s.moduleSourceInclude).
+			Doc(`TODO`),
+
+		dagql.Func("withInclude", s.moduleSourceWithInclude).
+			ArgDoc("include", `TODO`).
+			Doc(`TODO`),
+
+		dagql.Func("exclude", s.moduleSourceExclude).
+			Doc(`TODO`),
+
+		dagql.Func("withExclude", s.moduleSourceWithExclude).
+			ArgDoc("exclude", `TODO`).
+			Doc(`TODO`),
+
+		dagql.Func("resolveDirectoryFromCaller", s.moduleSourceResolveDirectoryFromCaller).
+			Impure(`Queries live caller-specific data from their filesystem.`).
+			ArgDoc("path", `TODO`).
+			ArgDoc("viewName", `TODO`).
+			Doc(`TODO`),
+
+		dagql.Func("views", s.moduleSourceViews).
+			Doc(`TODO`),
+
+		dagql.Func("view", s.moduleSourceView).
+			ArgDoc("name", `TODO`).
+			Doc(`TODO`),
+
+		dagql.Func("withView", s.moduleSourceWithView).
+			ArgDoc("name", `TODO`).
+			ArgDoc("include", `TODO`).
+			Doc(`TODO`),
+	}.Install(s.dag)
+
+	dagql.Fields[*core.ModuleSourceView]{
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO: doc all below
+		dagql.Func("name", s.moduleSourceViewName).
+			Doc(`TODO`),
+		dagql.Func("include", s.moduleSourceViewInclude).
+			Doc(`TODO`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.LocalModuleSource]{}.Install(s.dag)
@@ -916,6 +963,36 @@ func (s *moduleSchema) updateDaggerConfig(
 	}
 	if sourceRelSubpath != "." {
 		modCfg.Source = sourceRelSubpath
+	}
+
+	include, err := src.Self.Include(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get include: %w", err)
+	}
+	modCfg.Include = include
+	if len(include) == 0 {
+		// prefer nil over empty slice
+		modCfg.Include = nil
+	}
+	exclude, err := src.Self.Exclude(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get exclude: %w", err)
+	}
+	modCfg.Exclude = exclude
+	if len(exclude) == 0 {
+		modCfg.Exclude = nil
+	}
+
+	views, err := src.Self.Views(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get views: %w", err)
+	}
+	modCfg.Views = nil
+	for _, view := range views {
+		if len(view.Include) == 0 {
+			continue
+		}
+		modCfg.Views = append(modCfg.Views, view.ModuleConfigView)
 	}
 
 	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(mod.DependencyConfig))

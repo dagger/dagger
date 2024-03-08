@@ -30,6 +30,12 @@ type ModuleConfig struct {
 
 	// The version of the engine this module was last updated with.
 	EngineVersion string `json:"engineVersion,omitempty"`
+
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	Views []*ModuleConfigView `json:"views,omitempty"`
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
@@ -100,4 +106,9 @@ func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
 	}
 	*depCfg = ModuleConfigDependency(tmp)
 	return nil
+}
+
+type ModuleConfigView struct {
+	Name    string   `json:"name"`
+	Include []string `json:"include,omitempty"`
 }
