@@ -1,8 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.21.6
-
-toolchain go1.21.7
+go 1.21
 
 replace dagger.io/dagger => ./sdk/go
 
