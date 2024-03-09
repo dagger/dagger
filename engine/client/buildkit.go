@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/dagger/dagger/engine"
@@ -20,28 +19,7 @@ const (
 	envDaggerCloudCachetoken = "_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN"
 )
 
-func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
-	driver, err := drivers.GetDriver(remote.Scheme)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var cloudToken string
-	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
-		cloudToken = v
-	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
-		cloudToken = v
-	}
-
-	connector, err := driver.Provision(ctx, remote, &drivers.DriverOpts{
-		UserAgent:        userAgent,
-		DaggerCloudToken: cloudToken,
-		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
+func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.Connector) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
 	opts := []bkclient.ClientOpt{
 		// TODO verify?
 		bkclient.WithTracerProvider(otel.GetTracerProvider()),

@@ -246,14 +246,19 @@ var liveProcessors []LiveSpanProcessor
 
 // FlushLiveProcessors assists with draining live telemetry data just before a
 // client goes away.
+//
+// NB: this is often called in scenarios where e.g. one client goes away. It
+// may seem weird that we're flushing everyone's events instead of just that
+// client's, but it really doesn't matter much; live processors flush every
+// 100ms already, and clients don't go away that often.
 func FlushLiveProcessors(ctx context.Context) {
-	slog.Warn("flushing live processors")
+	slog.Debug("flushing live processors")
 	for _, proc := range liveProcessors {
 		if err := proc.ForceFlush(ctx); err != nil {
 			slog.Error("failed to flush live spans", "error", err)
 		}
 	}
-	slog.Warn("done flushing live processors")
+	slog.Debug("done flushing live processors")
 }
 
 // Logger returns a logger with the given name.

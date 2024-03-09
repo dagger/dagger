@@ -1,4 +1,4 @@
-package tracing
+package telemetry
 
 import (
 	"context"
@@ -26,13 +26,14 @@ func NewPubSub() *PubSub {
 	}
 }
 
-func (ps *PubSub) SubscribeToSpans(ctx context.Context, traceID trace.TraceID, exp sdktrace.SpanExporter) {
+func (ps *PubSub) SubscribeToSpans(ctx context.Context, traceID trace.TraceID, exp sdktrace.SpanExporter) error {
 	slog.Debug("subscribing to spans", "trace", traceID.String())
 	ps.spanSubsL.Lock()
 	ps.spanSubs[traceID] = append(ps.spanSubs[traceID], exp)
 	ps.spanSubsL.Unlock()
 	defer ps.unsubSpans(traceID, exp)
 	<-ctx.Done()
+	return nil
 }
 
 var _ sdktrace.SpanExporter = (*PubSub)(nil)
@@ -85,13 +86,14 @@ func (ps *PubSub) SpanSubscribers(session trace.TraceID) []sdktrace.SpanExporter
 	return cp
 }
 
-func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, exp sdklog.LogExporter) {
+func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, exp sdklog.LogExporter) error {
 	slog.Debug("subscribing to logs", "trace", traceID.String())
 	ps.logSubsL.Lock()
 	ps.logSubs[traceID] = append(ps.logSubs[traceID], exp)
 	ps.logSubsL.Unlock()
 	defer ps.unsubLogs(traceID, exp)
 	<-ctx.Done()
+	return nil
 }
 
 var _ sdklog.LogExporter = (*PubSub)(nil)

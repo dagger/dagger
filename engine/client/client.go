@@ -22,6 +22,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/containerd/containerd/defaults"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
@@ -39,15 +40,14 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
@@ -94,7 +94,8 @@ type Client struct {
 	closeRequests context.CancelFunc
 	closeMu       sync.RWMutex
 
-	telemetry *errgroup.Group
+	telemetry     *errgroup.Group
+	telemetryConn *grpc.ClientConn
 
 	httpClient *http.Client
 	bkClient   *bkclient.Client
@@ -189,7 +190,57 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
-	bkClient, bkInfo, err := newBuildkitClient(connectCtx, remote, c.UserAgent)
+	driver, err := drivers.GetDriver(remote.Scheme)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var cloudToken string
+	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
+		cloudToken = v
+	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
+		cloudToken = v
+	}
+
+	connector, err := driver.Provision(ctx, remote, &drivers.DriverOpts{
+		UserAgent:        c.UserAgent,
+		DaggerCloudToken: cloudToken,
+		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Open a separate connection for telemetry.
+	telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return connector.Connect(c.internalCtx)
+		}),
+		// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
+		// Shrinking IDs might help.
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, nil, fmt.Errorf("grpc dial: %w", err)
+	}
+	c.telemetryConn = telemetryConn
+
+	c.telemetry = new(errgroup.Group)
+
+	if c.EngineTrace != nil {
+		if err := c.exportTraces(telemetry.NewTracesSourceClient(telemetryConn)); err != nil {
+			return nil, nil, fmt.Errorf("export traces: %w", err)
+		}
+	}
+
+	if c.EngineLogs != nil {
+		if err := c.exportLogs(telemetry.NewLogsSourceClient(telemetryConn)); err != nil {
+			return nil, nil, fmt.Errorf("export logs: %w", err)
+		}
+	}
+
+	bkClient, bkInfo, err := newBuildkitClient(connectCtx, remote, connector)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
@@ -315,20 +366,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	sessionSpan.End()
 
-	c.telemetry = new(errgroup.Group)
-
-	if c.EngineTrace != nil {
-		if err := c.exportTraces(); err != nil {
-			return nil, nil, fmt.Errorf("export traces: %w", err)
-		}
-	}
-
-	if c.EngineLogs != nil {
-		if err := c.exportLogs(); err != nil {
-			return nil, nil, fmt.Errorf("export logs: %w", err)
-		}
-	}
-
 	var cloudURL string
 	tel := telemetry.New()
 	if tel.Enabled() {
@@ -370,10 +407,6 @@ func (c *Client) Close(runErr error) (rerr error) {
 
 	c.closeRequests()
 
-	if err := c.telemetry.Wait(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("traces: %w", err))
-	}
-
 	if c.internalCancel != nil {
 		c.internalCancel()
 	}
@@ -399,6 +432,14 @@ func (c *Client) Close(runErr error) (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
+	if err := c.telemetryConn.Close(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("close telemetry conn: %w", err))
+	}
+
+	if err := c.telemetry.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("traces: %w", err))
+	}
+
 	// finalize the run, sending the error result upstream
 	if c.finishRun != nil {
 		c.finishRun(runErr)
@@ -407,52 +448,35 @@ func (c *Client) Close(runErr error) (rerr error) {
 	return rerr
 }
 
-func (c *Client) exportTraces() error {
+func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	req, innerErr := http.NewRequestWithContext(ctx, "GET", "http://dagger/trace", nil)
-	if innerErr != nil {
-		return fmt.Errorf("new request: %w", innerErr)
-	}
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
 
-	req.SetBasicAuth(c.SecretToken, "")
-
-	resp, err := c.httpClient.Do(req)
+	spans, err := tracesClient.Subscribe(ctx, &telemetry.TelemetryRequest{
+		TraceId: []byte(traceID[:]),
+	})
 	if err != nil {
-		return fmt.Errorf("connect to traces: %w", err)
+		return fmt.Errorf("subscribe to spans: %w", err)
 	}
 
-	slog.Debug("exporting traces from engine")
+	slog.Debug("exporting spans from engine")
 
 	c.telemetry.Go(func() error {
-		defer resp.Body.Close()
-
-		defer slog.Debug("done exporting traces from engine", "ctxErr", ctx.Err())
+		defer slog.Debug("done exporting spans from engine", "ctxErr", ctx.Err())
 
 		for {
-			var bytesLen int
-			if _, err := fmt.Fscanf(resp.Body, "%d\n", &bytesLen); err != nil {
-				if err == io.EOF {
-					break
+			data, err := spans.Recv()
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
 				}
-				return fmt.Errorf("scan trace length indicator: %w", err)
+				return fmt.Errorf("recv log: %w", err)
 			}
-			slog.Debug("exporter scanned length", "bytes", bytesLen)
-			if bytesLen == 0 {
-				slog.Debug("got 0-length response; skipping")
-				continue
-			}
-			buf := make([]byte, bytesLen)
-			if _, err := io.ReadFull(resp.Body, buf); err != nil {
-				return fmt.Errorf("read trace payload: %w", err)
-			}
-			var pbRequest coltracepb.ExportTraceServiceRequest
-			if err := proto.Unmarshal(buf, &pbRequest); err != nil {
-				return fmt.Errorf("unmarshal trace: %w", err)
-			}
-			spans := transform.Spans(pbRequest.ResourceSpans)
+
+			spans := transform.Spans(data.GetResourceSpans())
 
 			slog.Debug("exporting spans from engine", "len", len(spans))
 			for _, span := range spans {
@@ -463,68 +487,47 @@ func (c *Client) exportTraces() error {
 				return fmt.Errorf("export %d spans: %w", len(spans), err)
 			}
 		}
-
-		return nil
 	})
 
 	return nil
 }
 
-func (c *Client) exportLogs() error {
+func (c *Client) exportLogs(logsClient telemetry.LogsSourceClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	req, innerErr := http.NewRequestWithContext(ctx, "GET", "http://dagger/logs", nil)
-	if innerErr != nil {
-		return fmt.Errorf("new request: %w", innerErr)
-	}
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
 
-	req.SetBasicAuth(c.SecretToken, "")
-
-	resp, err := c.httpClient.Do(req)
+	logs, err := logsClient.Subscribe(ctx, &telemetry.TelemetryRequest{
+		TraceId: []byte(traceID[:]),
+	})
 	if err != nil {
-		return fmt.Errorf("connect to logs: %w", err)
+		return fmt.Errorf("subscribe to logs: %w", err)
 	}
 
 	slog.Debug("exporting logs from engine")
 
 	c.telemetry.Go(func() error {
-		defer resp.Body.Close()
-
 		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
 
 		for {
-			var bytesLen int
-			if _, err := fmt.Fscanf(resp.Body, "%d\n", &bytesLen); err != nil {
-				if err == io.EOF {
-					break
+			data, err := logs.Recv()
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
 				}
-				return fmt.Errorf("scan logs length indicator: %w", err)
-			}
-			slog.Debug("exporter scanned length", "bytes", bytesLen)
-			if bytesLen == 0 {
-				slog.Debug("got 0-length response; skipping")
-				continue
-			}
-			buf := make([]byte, bytesLen)
-			if _, err := io.ReadFull(resp.Body, buf); err != nil {
-				return fmt.Errorf("read logs payload: %w", err)
-			}
-			var pbRequest collogspb.ExportLogsServiceRequest
-			if err := proto.Unmarshal(buf, &pbRequest); err != nil {
-				return fmt.Errorf("unmarshal logs: %w", err)
+				return fmt.Errorf("recv log: %w", err)
 			}
 
-			logs := telemetry.TransformPBLogs(pbRequest.GetResourceLogs())
+			logs := telemetry.TransformPBLogs(data.GetResourceLogs())
+
 			slog.Debug("exporting logs from engine", "len", len(logs))
 
-			if err := c.Params.EngineLogs.ExportLogs(ctx, logs); err != nil {
+			if err := c.EngineLogs.ExportLogs(ctx, logs); err != nil {
 				return fmt.Errorf("export %d logs: %w", len(logs), err)
 			}
 		}
-
-		return nil
 	})
 
 	return nil

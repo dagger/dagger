@@ -37,7 +37,6 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/tracing"
 )
 
 type BuildkitController struct {
@@ -67,7 +66,7 @@ type BuildkitControllerOpts struct {
 	Entitlements           []string
 	EngineName             string
 	Frontends              map[string]frontend.Frontend
-	TelemetryPubSub        *tracing.PubSub
+	TelemetryPubSub        *telemetry.PubSub
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	DNSConfig              *oci.DNSConfig
@@ -373,8 +372,12 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
-	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{Exporter: e.TelemetryPubSub})
-	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{Exporter: e.TelemetryPubSub})
+	traceSrv := &telemetry.TraceServer{PubSub: e.TelemetryPubSub}
+	logsSrv := &telemetry.LogsServer{PubSub: e.TelemetryPubSub}
+	tracev1.RegisterTraceServiceServer(server, traceSrv)
+	telemetry.RegisterTracesSourceServer(server, traceSrv)
+	logsv1.RegisterLogsServiceServer(server, logsSrv)
+	telemetry.RegisterLogsSourceServer(server, logsSrv)
 }
 
 func (e *BuildkitController) Close() error {

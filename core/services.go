@@ -289,30 +289,6 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
 	}
 }
 
-// DetachServerServices detaches from all of the services being run by the
-// given server. It is called when a client is closing.
-func (ss *Services) DetachServerServices(ctx context.Context, serverID string) {
-	slog.Debug("detaching server services", "server", serverID)
-
-	ss.l.Lock()
-	wg := new(sync.WaitGroup)
-	for _, svc := range ss.running {
-		svc := svc
-		if svc.Key.ServerID == serverID {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ss.Detach(ctx, svc)
-			}()
-		}
-	}
-	ss.l.Unlock()
-
-	wg.Wait()
-
-	slog.Debug("done detaching server services", "server", serverID)
-}
-
 // StopClientServices stops all of the services being run by the given server.
 // It is called when a server is closing.
 func (ss *Services) StopClientServices(ctx context.Context, serverID string) error {
@@ -335,6 +311,10 @@ func (ss *Services) StopClientServices(ctx context.Context, serverID string) err
 			if err := ss.stop(ctx, svc, true); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
+			// wait for the service to fully terminate so we see its otel span complete
+			if err := svc.Wait(ctx); err != nil {
+				slog.Warn("service wait error, possibly benign", "error", err)
+			}
 			return nil
 		})
 	}
@@ -348,9 +328,12 @@ func (ss *Services) StopClientServices(ctx context.Context, serverID string) err
 func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
 
+	slog := slog.With("service", svc.Host, "bindings", ss.bindings[svc.Key])
+
 	running, found := ss.running[svc.Key]
 	if !found {
 		ss.l.Unlock()
+		slog.Debug("detach: service not running")
 		// not even running; ignore
 		return
 	}
@@ -359,15 +342,20 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	if ss.bindings[svc.Key] > 0 {
 		ss.l.Unlock()
+		slog.Debug("detach: service still has binders")
 		// detached, but other instances still active
 		return
 	}
 
 	ss.l.Unlock()
 
+	slog.Debug("detach: stopping")
+
 	// block; caller determines whether to wait. we want to block when we're
 	// shutting down to ensure events are fully flushed.
 	ss.stopGraceful(ctx, running, TerminateGracePeriod)
+
+	slog.Debug("detach: stopped")
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {

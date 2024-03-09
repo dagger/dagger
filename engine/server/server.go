@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
 	"github.com/dagger/dagger/tracing"
@@ -63,7 +64,7 @@ type DaggerServer struct {
 
 	services *core.Services
 
-	pubsub    *tracing.PubSub
+	pubsub    *telemetry.PubSub
 	analytics analytics.Tracker
 
 	doneCh    chan struct{}
@@ -312,17 +313,22 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 
-		slog.Debug("shutting down server",
+		slog := slog.With(
+			"isMainClient", clientMetadata.ClientID == s.mainClientCallerID,
+			"isModule", clientMetadata.ModuleCallerDigest != "",
 			"serverID", s.serverID,
 			"traceID", s.traceID,
 			"clientID", clientMetadata.ClientID,
 			"mainClientID", s.mainClientCallerID,
 			"callerID", clientMetadata.ModuleCallerDigest)
 
+		slog.Debug("shutting down server")
+		defer slog.Debug("done shutting down server")
+
 		if clientMetadata.ClientID == s.mainClientCallerID {
 			// Detach all services associated with the server, which will only
 			// synchronously shut them down if we're the last binder.
-			s.services.DetachServerServices(ctx, s.serverID)
+			s.services.StopClientServices(ctx, s.serverID)
 
 			if len(s.upstreamCacheExporterCfgs) > 0 {
 				bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
@@ -348,54 +354,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Flush all in-flight telemetry when a client shuts down.
-		//
-		// Awkwardly, we're flushing in-flight telemetry for _all_ clients when
-		// _each_ client goes away. But we're only flushing the PubSub exporter,
-		// which doesn't seem expensive enough to be worth the added complexity
-		// of somehow only flushing a single client. This exporter already
-		// flushes every 100ms anyway, so this really just helps ensure the last
-		// few spans are received.
 		tracing.FlushLiveProcessors(ctx)
-	}))
-
-	mux.Handle("/trace", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "streaming unsupported", http.StatusNotImplemented)
-			return
-		}
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		exp, err := otlptrace.New(ctx, &chunkedTraceClient{
-			w: w,
-			f: flusher,
-		})
-		if err != nil {
-			slog.Warn("failed to create exporter", "err", err)
-			http.Error(w, "failed to create exporter", http.StatusInternalServerError)
-			return
-		}
-		s.pubsub.SubscribeToSpans(ctx, s.traceID, exp)
-	}))
-
-	mux.Handle("/logs", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "streaming unsupported", http.StatusNotImplemented)
-			return
-		}
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		exp := &chunkedLogsClient{
-			w: w,
-			f: flusher,
-		}
-		if err := exp.Start(ctx); err != nil {
-			slog.Warn("failed to emit first chunk", "err", err)
-			return
-		}
-		s.pubsub.SubscribeToLogs(ctx, s.traceID, exp)
 	}))
 
 	s.endpointMu.RLock()
@@ -475,19 +434,11 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 
 	var err error
 
-	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
-		slog.Error("failed to stop client services", "error", err)
-	}
+	slog.Debug("server closing; stopping client services and flushing", "server", s.serverID, "trace", s.traceID)
 
-	// Flush all in-flight telemetry when a main client goes away.
-	//
-	// Awkwardly, we're flushing in-flight telemetry for _all_ clients when
-	// _each_ client goes away. But we're only flushing the PubSub exporter,
-	// which doesn't seem expensive enough to be worth the added complexity
-	// of somehow only flushing a single client. This exporter already
-	// flushes every 100ms anyway, so this really just helps ensure the last
-	// few spans are received.
-	tracing.FlushLiveProcessors(ctx)
+	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
+		err = errors.Join(err, fmt.Errorf("stop client services: %w", err))
+	}
 
 	s.clientCallMu.RLock()
 	for _, callCtx := range s.clientCallContext {
@@ -497,6 +448,8 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 
 	// close the analytics recorder
 	err = errors.Join(err, s.analytics.Close())
+
+	tracing.FlushLiveProcessors(ctx)
 
 	return err
 }

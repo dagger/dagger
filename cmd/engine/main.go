@@ -229,7 +229,7 @@ func main() { //nolint:gocyclo
 		ctx, cancel := context.WithCancel(appcontext.Context())
 		defer cancel()
 
-		pubsub := tracing.NewPubSub()
+		pubsub := telemetry.NewPubSub()
 
 		tracing.Init(ctx, tracing.Config{
 			Detect: true,
@@ -676,7 +676,7 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubsub *tracing.PubSub) (*server.BuildkitController, cache.Manager, error) {
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubsub *telemetry.PubSub) (*server.BuildkitController, cache.Manager, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
 		return nil, nil, err
@@ -900,10 +900,10 @@ func parseBoolOrAuto(s string) (*bool, error) {
 }
 
 // Run a separate gRPC serving _only_ the trace/log exporter services.
-func runOtelController(p string, pubsub *tracing.PubSub) error {
+func runOtelController(p string, pubsub *telemetry.PubSub) error {
 	server := grpc.NewServer()
-	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{Exporter: pubsub})
-	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{Exporter: pubsub})
+	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{PubSub: pubsub})
+	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{PubSub: pubsub})
 	uid := os.Getuid()
 	l, err := sys.GetLocalListener(p, uid, uid)
 	if err != nil {
