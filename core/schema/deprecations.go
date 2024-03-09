@@ -11,5 +11,5 @@ func (PipelineLabel) TypeName() string {
 }
 
 func (PipelineLabel) TypeDescription() string {
-	return "DEPRECATED. Key value object that represents a pipeline label."
+	return "Key value object that represents a pipeline label."
 }

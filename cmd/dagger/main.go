@@ -55,9 +55,9 @@ func init() {
 	logrus.StandardLogger().SetOutput(io.Discard)
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Show more information for debugging")
 
-	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
+	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "show debug logs and full verbosity")
 
 	for _, fl := range []string{"workdir"} {
 		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {

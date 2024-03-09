@@ -159,7 +159,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		if rerr != nil {
 			bklog.G(ctx).WithError(rerr).Errorf("session call failed")
 		} else {
-			slog.Debug("session call done", "ctxErr", ctx.Err())
 			bklog.G(ctx).Debugf("session call done")
 		}
 	}()

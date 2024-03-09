@@ -12,9 +12,10 @@ The Dagger CLI provides a command-line interface to Dagger.
 ### Options
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -62,7 +63,6 @@ dagger call lint stdout
 ### Options
 
 ```
-      --focus           Only show output for focused commands (default true)
       --json            Present result as JSON
   -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
   -o, --output string   Path in the host to save the result to
@@ -71,9 +71,10 @@ dagger call lint stdout
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -102,16 +103,16 @@ dagger config -m github.com/dagger/hello-dagger
 ### Options
 
 ```
-      --focus        Only show output for focused commands (default true)
   -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -145,7 +146,6 @@ dagger develop [flags]
 ### Options
 
 ```
-      --focus           Only show output for focused commands (default true)
   -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
       --sdk string      New SDK for the module
       --source string   Directory to store the module implementation source code in
@@ -154,9 +154,10 @@ dagger develop [flags]
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -182,16 +183,16 @@ dagger functions [flags] [FUNCTION]...
 ### Options
 
 ```
-      --focus        Only show output for focused commands (default true)
   -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -238,9 +239,10 @@ dagger init --name=hello --sdk=python --source=some/subdir
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -268,7 +270,6 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 ### Options
 
 ```
-      --focus         Only show output for focused commands (default true)
   -m, --mod string    Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
   -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
@@ -276,9 +277,10 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -296,9 +298,10 @@ dagger login [flags]
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -316,9 +319,10 @@ dagger logout [flags]
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -364,7 +368,6 @@ EOF
 
 ```
       --doc string        Read query from file (defaults to reading from stdin)
-      --focus             Only show output for focused commands (default true)
   -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
       --var strings       List of query variables, in key=value format
       --var-json string   Query variables in JSON format (overrides --var)
@@ -373,9 +376,10 @@ EOF
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -426,9 +430,10 @@ dagger run python main.py
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -446,9 +451,10 @@ dagger version [flags]
 ### Options inherited from parent commands
 
 ```
-      --debug             Show more information for debugging
+  -d, --debug             show debug logs and full verbosity
       --progress string   progress output format (auto, plain, tty) (default "auto")
   -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
