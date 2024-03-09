@@ -403,6 +403,9 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 		}
 	}
 	if fe.logsView.Primary != nil && !fe.done {
+		if renderedAny {
+			fmt.Fprintln(out)
+		}
 		fe.renderLogs(out, fe.logsView.Primary, -1)
 		renderedAny = true
 	}
