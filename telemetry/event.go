@@ -3,7 +3,7 @@ package telemetry
 import (
 	"time"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 const eventVersion = "2023-02-28.01"
@@ -82,8 +82,8 @@ var _ Payload = CallPayload{}
 type CallPayload struct {
 	ID string `json:"id"`
 
-	ProtobufPayload []byte        `json:"protobuf_payload"`
-	ReturnType      *idproto.Type `json:"return_type"`
+	ProtobufPayload []byte     `json:"protobuf_payload"`
+	ReturnType      *call.Type `json:"return_type"`
 
 	ReceiverID string    `json:"receiver_id,omitempty"`
 	Function   string    `json:"function"`
@@ -97,7 +97,7 @@ type CallPayload struct {
 	Nth     int64 `json:"nth,omitempty"`
 }
 
-// CallLiteral is a different representation of idproto.Literal where IDs are
+// CallLiteral is a different representation of call.Literal where IDs are
 // referred to by their digest, instead of included wholesale.
 type CallLiteral struct {
 	ID     *string        `json:"id,omitempty"`

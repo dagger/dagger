@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -52,7 +52,7 @@ func (proto NetworkProtocol) Decoder() dagql.InputDecoder {
 	return NetworkProtocols
 }
 
-func (proto NetworkProtocol) ToLiteral() *idproto.Literal {
+func (proto NetworkProtocol) ToLiteral() call.Literal {
 	return NetworkProtocols.Literal(proto)
 }
 

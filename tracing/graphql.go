@@ -7,28 +7,35 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
-func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
+func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
 	if isIntrospection(id) {
 		return ctx, dagql.NoopDone
 	}
 
 	var base string
-	if id.Base == nil {
+	if id.Base() == nil {
 		base = "Query"
 	} else {
-		base = id.Base.Type.ToAST().Name()
+		base = id.Base().Type().ToAST().Name()
 	}
-	spanName := fmt.Sprintf("%s.%s", base, id.Field)
+	spanName := fmt.Sprintf("%s.%s", base, id.Field())
 
-	payload, err := anypb.New(id)
+	idPb, err := id.ToProto()
+	if err != nil {
+		slog.Warn("failed to convert id to proto", "id", id.Display(), "err", err)
+		return ctx, dagql.NoopDone
+	}
+
+	payload, err := anypb.New(idPb)
 	if err != nil {
 		slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
 		return ctx, dagql.NoopDone
@@ -76,7 +83,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID) (context
 		// NB: so long as the simplifying process rejects larger IDs, this
 		// shouldn't be necessary, but it seems like a good idea to just never even
 		// consider it.
-		isLoader := strings.HasPrefix(id.Field, "load") && strings.HasSuffix(id.Field, "FromID")
+		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 
 		// record an object result as an output of this vertex
 		//
@@ -84,13 +91,8 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID) (context
 		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
 		// instead of the full container().from().[...].stdout() ID
 		if obj, ok := res.(dagql.Object); ok && !isLoader {
-			objDigest, err := obj.ID().Digest()
-			if err != nil {
-				slog.Error("failed to digest object", "id", id.Display(), "err", err)
-			} else {
-				// TODO maybe this should be an event?
-				span.SetAttributes(attribute.String(DagOutputAttr, objDigest.String()))
-			}
+			objDigest := obj.ID().Digest()
+			span.SetAttributes(attribute.String(DagOutputAttr, objDigest.String()))
 		}
 	}
 }
@@ -99,9 +101,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *idproto.ID) (context
 //
 // These queries tend to be very large and are not interesting for users to
 // see.
-func isIntrospection(id *idproto.ID) bool {
-	if id.Base == nil {
-		switch id.Field {
+func isIntrospection(id *call.ID) bool {
+	if id.Base() == nil {
+		switch id.Field() {
 		case "__schema",
 			"currentTypeDefs",
 			"currentFunctionCall",
@@ -111,6 +113,6 @@ func isIntrospection(id *idproto.ID) bool {
 			return false
 		}
 	} else {
-		return isIntrospection(id.Base)
+		return isIntrospection(id.Base())
 	}
 }

@@ -7,12 +7,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idproto"
-	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/telemetry/sdklog"
+	"github.com/dagger/dagger/tracing"
 )
 
 type DB struct {
@@ -26,7 +27,7 @@ type DB struct {
 	PrimarySpan trace.SpanID
 	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
 
-	IDs       map[string]*idproto.ID
+	IDs       map[string]*call.ID
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
@@ -43,7 +44,7 @@ func NewDB() *DB {
 		LogWidth:    -1,
 		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
 
-		IDs:       make(map[string]*idproto.ID),
+		IDs:       make(map[string]*call.ID),
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
@@ -178,7 +179,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 	for _, attr := range attrs {
 		switch attr.Key {
 		case tracing.DagIDBlobAttr:
-			var id idproto.ID
+			var id call.ID
 			if err := id.Decode(attr.Value.AsString()); err != nil {
 				slog.Warn("failed to decode id", "err", err)
 				continue
@@ -187,25 +188,20 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 			spanData.Call = &id
 
 			if id.Base != nil {
-				dig, err := id.Base.Digest()
-				if err != nil {
-					slog.Warn("failed to get base digest", "id", id.DisplaySelf(), "err", err)
-				} else {
-					spanData.ReceiverDigest = db.Simplify(dig.String())
-				}
+				spanData.ReceiverDigest = db.Simplify(id.Base().Digest().String())
 			}
 
 			// Seeing loadFooFromID is only really interesting if it actually
 			// resulted in evaluating the ID, so we set Passthrough, which will only
 			// show its children.
-			if id.Field == fmt.Sprintf("load%sFromID", id.Type.ToAST().Name()) {
+			if id.Field() == fmt.Sprintf("load%sFromID", id.Type().ToAST().Name()) {
 				spanData.Passthrough = true
 			}
 
 			// We also don't care about seeing the id field selection itself, since
 			// it's more noisy and confusing than helpful. We'll still show all the
 			// spans leadning up to it, just not the ID selection.
-			if id.Field == "id" {
+			if id.Field() == "id" {
 				spanData.Ignore = true
 			}
 
@@ -311,25 +307,17 @@ func (db *DB) maybeRecordTask(span sdktrace.ReadOnlySpan) {
 	}
 }
 
-func (db *DB) HighLevelCall(id *idproto.ID) (*idproto.ID, bool) {
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, false
-	}
-	call, ok := db.IDs[db.Simplify(dig.String())]
+func (db *DB) HighLevelCall(id *call.ID) (*call.ID, bool) {
+	call, ok := db.IDs[db.Simplify(id.Digest().String())]
 	return call, ok
 }
 
-func (db *DB) HighLevelSpan(id *idproto.ID) (*Span, bool) {
+func (db *DB) HighLevelSpan(id *call.ID) (*Span, bool) {
 	hl, ok := db.HighLevelCall(id)
 	if !ok {
 		return nil, false
 	}
-	dig, err := hl.Digest()
-	if err != nil {
-		return nil, false
-	}
-	return db.MostInterestingSpan(dig.String()), true
+	return db.MostInterestingSpan(hl.Digest().String()), true
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
@@ -387,33 +375,35 @@ func (*DB) Close() error {
 	return nil
 }
 
-func litSize(lit *idproto.Literal) int {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_Id:
-		return idSize(x.Id)
-	case *idproto.Literal_List:
+func litSize(lit call.Literal) int {
+	switch x := lit.(type) {
+	case *call.LiteralID:
+		return idSize(x.Value())
+	case *call.LiteralList:
 		size := 0
-		for _, lit := range x.List.Values {
+		x.Range(func(_ int, lit call.Literal) error {
 			size += litSize(lit)
-		}
+			return nil
+		})
 		return size
-	case *idproto.Literal_Object:
+	case *call.LiteralObject:
 		size := 0
-		for _, field := range x.Object.Values {
-			size += litSize(field.Value)
-		}
+		x.Range(func(_ int, _ string, value call.Literal) error {
+			size += litSize(value)
+			return nil
+		})
 		return size
 	}
 	return 1
 }
 
-func idSize(id *idproto.ID) int {
+func idSize(id *call.ID) int {
 	size := 0
-	for id := id; id != nil; id = id.Base {
+	for id := id; id != nil; id = id.Base() {
 		size++
-		size += len(id.Args)
-		for _, arg := range id.Args {
-			size += litSize(arg.Value)
+		size += len(id.Args())
+		for _, arg := range id.Args() {
+			size += litSize(arg.Value())
 		}
 	}
 	return size
@@ -438,10 +428,7 @@ func (db *DB) Simplify(dig string) string {
 		}
 	}
 	if simplified {
-		smallestDig, err := smallest.Digest()
-		if err != nil {
-			return dig
-		}
+		smallestDig := smallest.Digest()
 		return db.Simplify(smallestDig.String())
 	}
 	return dig

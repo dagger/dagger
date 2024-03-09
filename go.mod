@@ -73,7 +73,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.17.0
-	github.com/tonistiigi/fsutil v0.0.0-20230825212630-f09800878302
+	github.com/tonistiigi/fsutil v0.0.0-20240301111122-7525a1af2bb5
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/urfave/cli v1.22.14
 	github.com/vektah/gqlparser/v2 v2.5.10

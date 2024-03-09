@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -84,7 +84,7 @@ func (t *ModuleObjectType) TypeDef() *TypeDef {
 }
 
 type Callable interface {
-	Call(context.Context, *idproto.ID, *CallOpts) (dagql.Typed, error)
+	Call(context.Context, *call.ID, *CallOpts) (dagql.Typed, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
 }
@@ -369,7 +369,7 @@ type CallableField struct {
 	Return ModType
 }
 
-func (f *CallableField) Call(ctx context.Context, id *idproto.ID, opts *CallOpts) (dagql.Typed, error) {
+func (f *CallableField) Call(ctx context.Context, id *call.ID, opts *CallOpts) (dagql.Typed, error) {
 	val, ok := opts.ParentVal[f.Field.OriginalName]
 	if !ok {
 		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentVal)

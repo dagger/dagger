@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -214,13 +214,13 @@ func (*FunctionArg) TypeDescription() string {
 
 type DynamicID struct {
 	typeName string
-	id       *idproto.ID
+	id       *call.ID
 }
 
 var _ dagql.IDable = DynamicID{}
 
 // ID returns the ID of the value.
-func (d DynamicID) ID() *idproto.ID {
+func (d DynamicID) ID() *call.ID {
 	return d.id
 }
 
@@ -235,13 +235,13 @@ var _ dagql.InputDecoder = DynamicID{}
 func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 	switch x := val.(type) {
 	case string:
-		var idp idproto.ID
+		var idp call.ID
 		if err := idp.Decode(x); err != nil {
 			return nil, fmt.Errorf("decode %q ID: %w", d.typeName, err)
 		}
 		d.id = &idp
 		return d, nil
-	case *idproto.ID:
+	case *call.ID:
 		d.id = x
 		return d, nil
 	default:
@@ -251,12 +251,8 @@ func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
 
 var _ dagql.Input = DynamicID{}
 
-func (d DynamicID) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_Id{
-			Id: d.id,
-		},
-	}
+func (d DynamicID) ToLiteral() call.Literal {
+	return call.NewLiteralID(d.id)
 }
 
 func (d DynamicID) Type() *ast.Type {
@@ -841,7 +837,7 @@ func (k TypeDefKind) Decoder() dagql.InputDecoder {
 	return TypeDefKinds
 }
 
-func (k TypeDefKind) ToLiteral() *idproto.Literal {
+func (k TypeDefKind) ToLiteral() call.Literal {
 	return TypeDefKinds.Literal(k)
 }
 

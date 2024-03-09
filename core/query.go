@@ -10,7 +10,7 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -273,14 +273,14 @@ func (q *Query) NewHostService(upstream string, ports []PortForward) *Service {
 //
 // The returned ModDeps extends the inner DefaultDeps with all modules found in
 // the ID, loaded by using the DefaultDeps schema.
-func (q *Query) IDDeps(ctx context.Context, id *idproto.ID) (*ModDeps, error) {
+func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 	bootstrap, err := q.DefaultDeps.Schema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}
 	deps := q.DefaultDeps
 	for _, modID := range id.Modules() {
-		mod, err := dagql.NewID[*Module](modID.Id).Load(ctx, bootstrap)
+		mod, err := dagql.NewID[*Module](modID.ID()).Load(ctx, bootstrap)
 		if err != nil {
 			return nil, fmt.Errorf("load source mod: %w", err)
 		}
