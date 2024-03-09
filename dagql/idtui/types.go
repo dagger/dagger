@@ -136,11 +136,11 @@ func (row *TraceRow) IsInteresting(verbosity int) bool {
 		// show errors always
 		return true
 	}
-	if step.IsInternal() && verbosity < 3 {
+	if step.IsInternal() && verbosity < 2 {
 		// internal steps are, by definition, not interesting
 		return false
 	}
-	if step.Duration() < TooFastThreshold && verbosity < 2 {
+	if step.Duration() < TooFastThreshold && verbosity < 3 {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}

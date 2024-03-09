@@ -550,7 +550,7 @@ func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) err
 		fe.renderLogs(out, row.Span, depth)
 		depth++
 	}
-	if !row.Span.Encapsulate {
+	if !row.Span.Encapsulate || fe.Verbosity >= 2 {
 		for _, child := range row.Children {
 			if err := fe.renderRow(out, child, depth); err != nil {
 				return err
