@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -450,6 +451,30 @@ func TestModuleDaggerInit(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, ents, "main.go")
 	})
+
+	t.Run("works inside subdir of other module", func(t *testing.T) {
+		// verifies find-up logic does NOT kick in here
+		t.Parallel()
+		c, ctx := connect(t)
+
+		ctr := goGitBase(t, c).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=a", "--sdk=go", ".")).
+			WithWorkdir("/work/subdir").
+			With(daggerExec("init", "--name=b", "--sdk=go", "--source=.", ".")).
+			WithNewFile("./main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			type B struct {}
+
+			func (m *B) Fn() string { return "yo" }
+			`,
+			}).
+			With(daggerCall("fn"))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo", strings.TrimSpace(out))
+	})
 }
 
 func TestModuleDaggerDevelop(t *testing.T) {
@@ -459,7 +484,7 @@ func TestModuleDaggerDevelop(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
 
-		ctr := c.Container().From(golangImage).
+		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
@@ -480,42 +505,53 @@ func TestModuleDaggerDevelop(t *testing.T) {
 			With(daggerExec("install", "./dep"))
 
 		// should be able to invoke dep without name+sdk set yet
-		out, err := ctr.With(daggerCallAt("dep", "fn")).Stdout(ctx)
+		out, err := base.With(daggerCallAt("dep", "fn")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi from dep", strings.TrimSpace(out))
 
-		// now add an sdk+source
-		ctr = ctr.
-			With(daggerExec("develop", "--sdk", "go", "--source", "cool/subdir")).
-			WithNewFile("/work/cool/subdir/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+		// test develop from source root and from subdir (in which case find-up should kick in)
+		for _, wd := range []string{"/work", "/work/from/some/otherdir"} {
+			wd := wd
+			t.Run(wd, func(t *testing.T) {
+				t.Parallel()
 
-			import "context"
+				sourceDir, err := filepath.Rel(wd, "/work/cool/subdir")
+				require.NoError(t, err)
 
-			type Work struct {}
+				ctr := base.
+					WithWorkdir(wd).
+					With(daggerExec("develop", "--sdk", "go", "--source", sourceDir)).
+					WithNewFile("/work/cool/subdir/main.go", dagger.ContainerWithNewFileOpts{
+						Contents: `package main
 
-			func (m *Work) Fn(ctx context.Context) (string, error) {
-				depStr, err := dag.Dep().Fn(ctx)
-				if err != nil {
-					return "", err
-				}
-				return "hi from work " + depStr, nil
-			}
-			`,
+					import "context"
+
+					type Work struct {}
+
+					func (m *Work) Fn(ctx context.Context) (string, error) {
+						depStr, err := dag.Dep().Fn(ctx)
+						if err != nil {
+							return "", err
+						}
+						return "hi from work " + depStr, nil
+					}
+					`,
+					})
+
+				// should be able to invoke it directly now
+				out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
+
+				// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
+
+				_, err = ctr.With(daggerExec("develop", "--sdk", "python")).Sync(ctx)
+				require.ErrorContains(t, err, `cannot update module SDK that has already been set to "go"`)
+
+				_, err = ctr.With(daggerExec("develop", "--source", "blahblahblaha/blah")).Sync(ctx)
+				require.ErrorContains(t, err, `cannot update module source path that has already been set to "cool/subdir"`)
 			})
-
-		// should be able to invoke it directly now
-		out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
-
-		// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
-
-		_, err = ctr.With(daggerExec("develop", "--sdk", "python")).Sync(ctx)
-		require.ErrorContains(t, err, `cannot update module SDK that has already been set to "go"`)
-
-		_, err = ctr.With(daggerExec("develop", "--source", "blahblahblaha/blah")).Sync(ctx)
-		require.ErrorContains(t, err, `cannot update module source path that has already been set to "cool/subdir"`)
+		}
 	})
 
 	t.Run("source is made rel to source root by engine", func(t *testing.T) {
@@ -652,7 +688,7 @@ func TestModuleDaggerInstall(t *testing.T) {
 		})
 	})
 
-	t.Run("install dep from weird places", func(t *testing.T) {
+	t.Run("install dep from various places", func(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
 
@@ -688,6 +724,17 @@ func TestModuleDaggerInstall(t *testing.T) {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "../subdir/dep")).
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from src subdir with findup", func(t *testing.T) {
+			t.Parallel()
+			out, err := base.
+				WithWorkdir("/work/test/some/other/dir").
+				With(daggerExec("install", "../../../../subdir/dep")).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -839,21 +886,57 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 	})
 }
 
+// test the `dagger config` command
 func TestModuleDaggerConfig(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
-	out, err := c.Container().From(golangImage).
+	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go", "test")).
-		With(daggerExec("config", "-m", "test")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Regexp(t, `Name:\s+test`, out)
-	require.Regexp(t, `SDK:\s+go`, out)
-	require.Regexp(t, `Root Directory:\s+/work`, out)
-	require.Regexp(t, `Source Directory:\s+/work/test`, out)
+		With(daggerExec("init", "--name=test", "--sdk=go", "test"))
+
+	for _, tc := range []struct {
+		name       string
+		workdir    string
+		modFlagVal string
+	}{
+		{
+			name:    "from source root",
+			workdir: "/work/test",
+		},
+		{
+			name:       "from source root parent",
+			workdir:    "/work",
+			modFlagVal: "test",
+		},
+		{
+			// find-up should work
+			name:    "from subdir",
+			workdir: "/work/test/some/subdir",
+		},
+		{
+			// not sure why anyone would do this, but it should work
+			name:       "from subdir with mod flag",
+			workdir:    "/work/test/some/subdir",
+			modFlagVal: "..",
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			out, err := ctr.
+				WithWorkdir(tc.workdir).
+				With(daggerExec("config", "-m", tc.modFlagVal)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Regexp(t, `Name:\s+test`, out)
+			require.Regexp(t, `SDK:\s+go`, out)
+			require.Regexp(t, `Root Directory:\s+/work`, out)
+			require.Regexp(t, `Source Directory:\s+/work/test`, out)
+		})
+	}
 }
 
 func TestModuleIncludeExclude(t *testing.T) {
