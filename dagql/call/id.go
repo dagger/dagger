@@ -56,6 +56,13 @@ func (id *ID) Base() *ID {
 	return id.base
 }
 
+// The root Call of the ID, with its Digest set. Exposed so that Calls can be
+// streamed over the wire one-by-one, rather than emitting full DAGs, which
+// would involve a ton of duplication.
+func (id *ID) Call() *callpbv1.Call {
+	return id.pb
+}
+
 // The GraphQL type of the value.
 func (id *ID) Type() *Type {
 	return id.typ

@@ -2,15 +2,12 @@ package tracing
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"strings"
 
-	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -29,23 +26,14 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 	}
 	spanName := fmt.Sprintf("%s.%s", base, id.Field())
 
-	idPb, err := id.ToProto()
+	callAttr, err := id.Call().Encode()
 	if err != nil {
-		slog.Warn("failed to convert id to proto", "id", id.Display(), "err", err)
+		slog.Warn("failed to encode call", "id", id.Display(), "err", err)
 		return ctx, dagql.NoopDone
 	}
-
-	payload, err := anypb.New(idPb)
-	if err != nil {
-		slog.Warn("failed to anypb.New(id)", "id", id.Display(), "err", err)
-		return ctx, dagql.NoopDone
-	}
-	dig := digest.FromBytes(payload.GetValue())
-	payload.GetTypeUrl()
 	attrs := []attribute.KeyValue{
-		attribute.String(DagDigestAttr, dig.String()),
-		attribute.String(DagIDTypeAttr, payload.GetTypeUrl()),
-		attribute.String(DagIDBlobAttr, base64.StdEncoding.EncodeToString(payload.GetValue())),
+		attribute.String(DagDigestAttr, id.Digest().String()),
+		attribute.String(DagCallAttr, callAttr),
 	}
 	if idInputs, err := id.Inputs(); err != nil {
 		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)

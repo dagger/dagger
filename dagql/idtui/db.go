@@ -11,7 +11,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/tracing"
 )
@@ -27,7 +27,7 @@ type DB struct {
 	PrimarySpan trace.SpanID
 	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
 
-	IDs       map[string]*call.ID
+	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
@@ -44,7 +44,7 @@ func NewDB() *DB {
 		LogWidth:    -1,
 		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
 
-		IDs:       make(map[string]*call.ID),
+		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
@@ -176,38 +176,36 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 	for _, attr := range attrs {
 		switch attr.Key {
-		case tracing.DagIDBlobAttr:
-			var id call.ID
-			if err := id.Decode(attr.Value.AsString()); err != nil {
+		case tracing.DagCallAttr:
+			var call callpbv1.Call
+			if err := call.Decode(attr.Value.AsString()); err != nil {
 				slog.Warn("failed to decode id", "err", err)
 				continue
 			}
 
-			spanData.Call = &id
+			spanData.Call = &call
 
-			if id.Base != nil {
-				spanData.ReceiverDigest = db.Simplify(id.Base().Digest().String())
-			}
+			spanData.ReceiverDigest = db.Simplify(call.ReceiverDigest)
 
 			// Seeing loadFooFromID is only really interesting if it actually
 			// resulted in evaluating the ID, so we set Passthrough, which will only
 			// show its children.
-			if id.Field() == fmt.Sprintf("load%sFromID", id.Type().ToAST().Name()) {
+			if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
 				spanData.Passthrough = true
 			}
 
 			// We also don't care about seeing the id field selection itself, since
 			// it's more noisy and confusing than helpful. We'll still show all the
 			// spans leadning up to it, just not the ID selection.
-			if id.Field() == "id" {
+			if call.Field == "id" {
 				spanData.Ignore = true
 			}
 
 			if digest != "" {
-				db.IDs[digest] = &id
+				db.Calls[digest] = &call
 			}
 
-		case tracing.LLBOpBlobAttr:
+		case tracing.LLBOpAttr:
 			// TODO
 
 		case tracing.CachedAttr:
@@ -305,17 +303,12 @@ func (db *DB) maybeRecordTask(span sdktrace.ReadOnlySpan) {
 	}
 }
 
-func (db *DB) HighLevelCall(id *call.ID) (*call.ID, bool) {
-	call, ok := db.IDs[db.Simplify(id.Digest().String())]
-	return call, ok
+func (db *DB) HighLevelCall(id *callpbv1.Call) *callpbv1.Call {
+	return db.MustCall(db.Simplify(id.Digest))
 }
 
-func (db *DB) HighLevelSpan(id *call.ID) (*Span, bool) {
-	hl, ok := db.HighLevelCall(id)
-	if !ok {
-		return nil, false
-	}
-	return db.MostInterestingSpan(hl.Digest().String()), true
+func (db *DB) HighLevelSpan(id *callpbv1.Call) *Span {
+	return db.MostInterestingSpan(db.HighLevelCall(id).Digest)
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
@@ -373,35 +366,41 @@ func (*DB) Close() error {
 	return nil
 }
 
-func litSize(lit call.Literal) int {
-	switch x := lit.(type) {
-	case *call.LiteralID:
-		return idSize(x.Value())
-	case *call.LiteralList:
+func (db *DB) MustCall(dig string) *callpbv1.Call {
+	call, ok := db.Calls[dig]
+	if !ok {
+		panic(fmt.Sprintf("no call for %s", dig))
+	}
+	return call
+}
+
+func (db *DB) litSize(lit *callpbv1.Literal) int {
+	switch x := lit.GetValue().(type) {
+	case *callpbv1.Literal_CallDigest:
+		return db.idSize(db.MustCall(x.CallDigest))
+	case *callpbv1.Literal_List:
 		size := 0
-		x.Range(func(_ int, lit call.Literal) error {
-			size += litSize(lit)
-			return nil
-		})
+		for _, lit := range x.List.GetValues() {
+			size += db.litSize(lit)
+		}
 		return size
-	case *call.LiteralObject:
+	case *callpbv1.Literal_Object:
 		size := 0
-		x.Range(func(_ int, _ string, value call.Literal) error {
-			size += litSize(value)
-			return nil
-		})
+		for _, lit := range x.Object.GetValues() {
+			size += db.litSize(lit.GetValue())
+		}
 		return size
 	}
 	return 1
 }
 
-func idSize(id *call.ID) int {
+func (db *DB) idSize(id *callpbv1.Call) int {
 	size := 0
-	for id := id; id != nil; id = id.Base() {
+	for id := id; id != nil; id = db.Calls[id.ReceiverDigest] {
 		size++
-		size += len(id.Args())
-		for _, arg := range id.Args() {
-			size += litSize(arg.Value())
+		size += len(id.Args)
+		for _, arg := range id.Args {
+			size += db.litSize(arg.GetValue())
 		}
 	}
 	return size
@@ -412,22 +411,21 @@ func (db *DB) Simplify(dig string) string {
 	if !ok {
 		return dig
 	}
-	var smallest = db.IDs[dig]
-	var smallestSize = idSize(smallest)
+	var smallestDig = dig
+	var smallestSize = db.idSize(db.MustCall(smallestDig))
 	var simplified bool
 	for creatorDig := range creators {
-		creator, ok := db.IDs[creatorDig]
+		creator, ok := db.Calls[creatorDig]
 		if ok {
-			if size := idSize(creator); smallest == nil || size < smallestSize {
-				smallest = creator
+			if size := db.idSize(creator); size < smallestSize {
+				smallestDig = creatorDig
 				smallestSize = size
 				simplified = true
 			}
 		}
 	}
 	if simplified {
-		smallestDig := smallest.Digest()
-		return db.Simplify(smallestDig.String())
+		return db.Simplify(smallestDig)
 	}
 	return dig
 }

@@ -10,18 +10,26 @@ const (
 	CanceledAttr = "dagger.io/dag.canceled"
 	InternalAttr = "dagger.io/dag.internal"
 
-	TaskParentAttr = "task.parent" // TODO remove
+	DagCallAttr = "dagger.io/dag.call"
 
-	// TODO remove, or ideally use someday (e.g. image fetching)
+	LLBOpAttr = "dagger.io/llb.op"
+
+	// Applied to the root span to make it clear that it's the trace we care
+	// about, in the event of orphaned spans.
+	UIPrimaryAttr = "dagger.io/ui.primary"
+
+	// Hide child spans by default.
+	UIEncapsulateAttr = "dagger.io/ui.encapsulate"
+
+	// The following are theoretical, if/when we want to express the same
+	// concepts from Progrock.
+
+	// The parent span of this task. Might not need this at all, if we want to
+	// just rely on span parent, but the thinking is the span parent could be
+	// pretty brittle.
+	TaskParentAttr = "dagger.io/task.parent"
+
+	// Progress bars.
 	ProgressCurrentAttr = "dagger.io/progress.current"
 	ProgressTotalAttr   = "dagger.io/progress.total"
-
-	DagIDBlobAttr = "dagger.io/id.blob"
-	DagIDTypeAttr = "dagger.io/id.type"
-
-	LLBOpBlobAttr = "dagger.io/op.blob"
-	LLBOpTypeAttr = "dagger.io/op.type"
-
-	UIPrimaryAttr     = "dagger.io/ui.primary"
-	UIEncapsulateAttr = "dagger.io/ui.encapsulate"
 )

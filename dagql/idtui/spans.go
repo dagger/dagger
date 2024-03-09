@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -18,7 +18,7 @@ type Span struct {
 
 	Digest string
 
-	Call           *call.ID
+	Call           *callpbv1.Call
 	ReceiverDigest string
 
 	Internal bool
@@ -35,8 +35,8 @@ type Span struct {
 	trace *Trace
 }
 
-func (span *Span) Base() (*call.ID, bool) {
-	return span.db.HighLevelCall(span.Call.Base())
+func (span *Span) Base() *callpbv1.Call {
+	return span.db.HighLevelCall(span.db.MustCall(span.Call.ReceiverDigest))
 }
 
 func (span *Span) SimpleReceiver() string {
@@ -52,9 +52,6 @@ func (span *Span) Logs() *Vterm {
 }
 
 func (span *Span) Name() string {
-	if span.Call != nil {
-		return span.Call.DisplaySelf()
-	}
 	return span.ReadOnlySpan.Name()
 }
 

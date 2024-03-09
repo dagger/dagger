@@ -220,6 +220,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		// Shrinking IDs might help.
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+		// Uncomment to measure telemetry traffic.
+		// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
+		// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, nil, fmt.Errorf("grpc dial: %w", err)

@@ -367,12 +367,12 @@ func Close() {
 		closer := closer // it's a pre-1.22 ting
 		wg.Add(1)
 		go func() {
-			slog.Warn("closing", "signal", closer.signal)
+			slog.Debug("closing", "signal", closer.signal)
 			defer wg.Done()
 			if err := closer.close(flushCtx); err != nil {
 				slog.Error("failed to close", "signal", closer.signal, "error", err)
 			}
-			slog.Warn("closed", "signal", closer.signal)
+			slog.Debug("closed", "signal", closer.signal)
 		}()
 	}
 	wg.Wait()
