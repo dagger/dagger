@@ -17,22 +17,53 @@ type PubSub struct {
 	spanSubsL sync.Mutex
 	logSubs   map[trace.TraceID][]sdklog.LogExporter
 	logSubsL  sync.Mutex
+	traces    map[trace.TraceID]*activeTrace
+	tracesL   sync.Mutex
 }
 
 func NewPubSub() *PubSub {
 	return &PubSub{
 		spanSubs: map[trace.TraceID][]sdktrace.SpanExporter{},
 		logSubs:  map[trace.TraceID][]sdklog.LogExporter{},
+		traces:   map[trace.TraceID]*activeTrace{},
 	}
+}
+
+func (ps *PubSub) Drain(id trace.TraceID) {
+	ps.tracesL.Lock()
+	trace, ok := ps.traces[id]
+	if ok {
+		trace.cond.L.Lock()
+		trace.draining = true
+		trace.cond.Broadcast()
+		trace.cond.L.Unlock()
+	}
+	ps.tracesL.Unlock()
+}
+
+func (ps *PubSub) initTrace(id trace.TraceID) *activeTrace {
+	if t, ok := ps.traces[id]; ok {
+		return t
+	}
+	t := &activeTrace{
+		id:          id,
+		cond:        sync.NewCond(&sync.Mutex{}),
+		activeSpans: map[trace.SpanID]struct{}{},
+	}
+	ps.traces[id] = t
+	return t
 }
 
 func (ps *PubSub) SubscribeToSpans(ctx context.Context, traceID trace.TraceID, exp sdktrace.SpanExporter) error {
 	slog.Debug("subscribing to spans", "trace", traceID.String())
+	ps.tracesL.Lock()
+	trace := ps.initTrace(traceID)
+	ps.tracesL.Unlock()
 	ps.spanSubsL.Lock()
 	ps.spanSubs[traceID] = append(ps.spanSubs[traceID], exp)
 	ps.spanSubsL.Unlock()
 	defer ps.unsubSpans(traceID, exp)
-	<-ctx.Done()
+	trace.wait(ctx)
 	return nil
 }
 
@@ -44,11 +75,34 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 	slog.Debug("exporting spans to pubsub", "call", export, "spans", len(spans))
 
 	byTrace := map[trace.TraceID][]sdktrace.ReadOnlySpan{}
+	conds := map[trace.TraceID]*sync.Cond{}
+
+	ps.tracesL.Lock()
 	for _, s := range spans {
 		traceID := s.SpanContext().TraceID()
-		slog.Debug("pubsub exporting span", "call", export, "trace", traceID.String(), "id", s.SpanContext().SpanID(), "span", s.Name(), "status", s.Status().Code, "endTime", s.EndTime())
+		spanID := s.SpanContext().SpanID()
+
+		slog.Debug("pubsub exporting span",
+			"call", export,
+			"trace", traceID.String(),
+			"id", spanID,
+			"span", s.Name(),
+			"status", s.Status().Code,
+			"endTime", s.EndTime())
+
 		byTrace[traceID] = append(byTrace[traceID], s)
+
+		activeTrace := ps.initTrace(traceID)
+
+		if s.EndTime().Before(s.StartTime()) {
+			activeTrace.startSpan(spanID)
+		} else {
+			activeTrace.finishSpan(spanID)
+		}
+
+		conds[traceID] = activeTrace.cond
 	}
+	ps.tracesL.Unlock()
 
 	eg := pool.New().WithErrors()
 
@@ -74,6 +128,11 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 		})
 	}
 
+	// notify anyone waiting to drain
+	for _, cond := range conds {
+		cond.Broadcast()
+	}
+
 	return eg.Wait()
 }
 
@@ -88,11 +147,12 @@ func (ps *PubSub) SpanSubscribers(session trace.TraceID) []sdktrace.SpanExporter
 
 func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, exp sdklog.LogExporter) error {
 	slog.Debug("subscribing to logs", "trace", traceID.String())
+	trace := ps.initTrace(traceID)
 	ps.logSubsL.Lock()
 	ps.logSubs[traceID] = append(ps.logSubs[traceID], exp)
 	ps.logSubsL.Unlock()
 	defer ps.unsubLogs(traceID, exp)
-	<-ctx.Done()
+	trace.wait(ctx)
 	return nil
 }
 
@@ -183,4 +243,61 @@ func (ps *PubSub) unsubLogs(traceID trace.TraceID, exp sdklog.LogExporter) {
 	}
 	ps.logSubs[traceID] = removed
 	ps.logSubsL.Unlock()
+}
+
+// activeTrace keeps track of in-flight spans so that we can wait for them all
+// to complete, ensuring we don't drop the last few spans, which ruins an
+// entire trace.
+type activeTrace struct {
+	id          trace.TraceID
+	activeSpans map[trace.SpanID]struct{}
+	draining    bool
+	cond        *sync.Cond
+}
+
+func (trace *activeTrace) drain() {
+	trace.cond.L.Lock()
+	trace.draining = true
+	trace.cond.Broadcast()
+	trace.cond.L.Unlock()
+}
+
+func (trace *activeTrace) startSpan(id trace.SpanID) {
+	trace.cond.L.Lock()
+	trace.activeSpans[id] = struct{}{}
+	trace.cond.L.Unlock()
+}
+
+func (trace *activeTrace) finishSpan(id trace.SpanID) {
+	trace.cond.L.Lock()
+	delete(trace.activeSpans, id)
+	trace.cond.L.Unlock()
+}
+
+func (trace *activeTrace) wait(ctx context.Context) {
+	slog := slog.With("trace", trace.id.String())
+
+	go func() {
+		// wake up the loop below if ctx context is interrupted
+		<-ctx.Done()
+		trace.cond.Broadcast()
+	}()
+
+	trace.cond.L.Lock()
+	for !trace.draining || len(trace.activeSpans) > 0 {
+		slog = slog.With(
+			"draining", trace.draining,
+			"activeSpans", len(trace.activeSpans),
+		)
+		if ctx.Err() != nil {
+			slog.Debug("wait interrupted")
+			break
+		}
+		if trace.draining {
+			slog.Debug("waiting for spans", "activeSpans", len(trace.activeSpans))
+		}
+		trace.cond.Wait()
+	}
+	slog.Debug("done waiting", "ctxErr", ctx.Err())
+	trace.cond.L.Unlock()
 }

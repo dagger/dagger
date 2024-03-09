@@ -435,12 +435,8 @@ func (c *Client) Close(runErr error) (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	if err := c.telemetryConn.Close(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("close telemetry conn: %w", err))
-	}
-
-	if err := c.telemetry.Wait(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("traces: %w", err))
+	if err := c.flushTelemetry(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
 	}
 
 	// finalize the run, sending the error result upstream
@@ -451,15 +447,32 @@ func (c *Client) Close(runErr error) (rerr error) {
 	return rerr
 }
 
+func (c *Client) flushTelemetry() error {
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	flusher := telemetry.NewFlusherClient(c.telemetryConn)
+
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	if _, err := flusher.Flush(ctx, &telemetry.TelemetryRequest{
+		TraceId: traceID[:],
+	}); err != nil {
+		return fmt.Errorf("flush: %w", err)
+	}
+
+	return c.telemetry.Wait()
+}
+
 func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
 	traceID := trace.SpanContextFromContext(ctx).TraceID()
-
 	spans, err := tracesClient.Subscribe(ctx, &telemetry.TelemetryRequest{
-		TraceId: []byte(traceID[:]),
+		TraceId: traceID[:],
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe to spans: %w", err)
@@ -501,9 +514,8 @@ func (c *Client) exportLogs(logsClient telemetry.LogsSourceClient) error {
 	ctx := context.WithoutCancel(c.internalCtx)
 
 	traceID := trace.SpanContextFromContext(ctx).TraceID()
-
 	logs, err := logsClient.Subscribe(ctx, &telemetry.TelemetryRequest{
-		TraceId: []byte(traceID[:]),
+		TraceId: traceID[:],
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe to logs: %w", err)
