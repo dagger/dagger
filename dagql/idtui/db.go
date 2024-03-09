@@ -185,8 +185,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 			spanData.Call = &call
 
-			spanData.ReceiverDigest = db.Simplify(call.ReceiverDigest)
-
 			// Seeing loadFooFromID is only really interesting if it actually
 			// resulted in evaluating the ID, so we set Passthrough, which will only
 			// show its children.
@@ -303,12 +301,8 @@ func (db *DB) maybeRecordTask(span sdktrace.ReadOnlySpan) {
 	}
 }
 
-func (db *DB) HighLevelCall(id *callpbv1.Call) *callpbv1.Call {
-	return db.MustCall(db.Simplify(id.Digest))
-}
-
-func (db *DB) HighLevelSpan(id *callpbv1.Call) *Span {
-	return db.MostInterestingSpan(db.HighLevelCall(id).Digest)
+func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
+	return db.MostInterestingSpan(db.Simplify(call).Digest)
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
@@ -369,7 +363,18 @@ func (*DB) Close() error {
 func (db *DB) MustCall(dig string) *callpbv1.Call {
 	call, ok := db.Calls[dig]
 	if !ok {
-		panic(fmt.Sprintf("no call for %s", dig))
+		// Sometimes may see a call's digest before the call itself.
+		//
+		// The loadFooFromID APIs for example will emit their call via their span
+		// before loading the ID, and its ID argument will just be a digest like
+		// anything else.
+		return &callpbv1.Call{
+			Field: "unknown",
+			Type: &callpbv1.Type{
+				NamedType: "Void",
+			},
+			Digest: dig,
+		}
 	}
 	return call
 }
@@ -406,28 +411,28 @@ func (db *DB) idSize(id *callpbv1.Call) int {
 	return size
 }
 
-func (db *DB) Simplify(dig string) string {
-	creators, ok := db.OutputOf[dig]
+func (db *DB) Simplify(call *callpbv1.Call) (smallest *callpbv1.Call) {
+	smallest = call
+	creators, ok := db.OutputOf[call.Digest]
 	if !ok {
-		return dig
+		return
 	}
-	var smallestDig = dig
-	var smallestSize = db.idSize(db.MustCall(smallestDig))
+	var smallestSize = db.idSize(smallest)
 	var simplified bool
 	for creatorDig := range creators {
 		creator, ok := db.Calls[creatorDig]
 		if ok {
 			if size := db.idSize(creator); size < smallestSize {
-				smallestDig = creatorDig
+				smallest = creator
 				smallestSize = size
 				simplified = true
 			}
 		}
 	}
 	if simplified {
-		return db.Simplify(smallestDig)
+		return db.Simplify(smallest)
 	}
-	return dig
+	return
 }
 
 func getAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bool) {

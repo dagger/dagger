@@ -647,7 +647,7 @@ func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Cal
 				val := arg.GetValue()
 				fmt.Fprint(out, " ")
 				if argDig := val.GetCallDigest(); argDig != "" {
-					argCall := fe.db.HighLevelCall(fe.db.MustCall(argDig))
+					argCall := fe.db.Simplify(fe.db.MustCall(argDig))
 					span := fe.db.MostInterestingSpan(argDig)
 					if err := fe.renderCall(out, span, argCall, depth-1, true); err != nil {
 						return err

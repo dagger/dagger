@@ -169,7 +169,7 @@ func (row *TraceRow) setRunning() {
 	}
 }
 
-func WalkSteps(steps []*Span, f func(*TraceRow)) {
+func WalkSteps(spans []*Span, f func(*TraceRow)) {
 	var lastRow *TraceRow
 	seen := map[trace.SpanID]bool{}
 	var walk func(*Span, *TraceRow)
@@ -188,8 +188,8 @@ func WalkSteps(steps []*Span, f func(*TraceRow)) {
 			Span:   span,
 			Parent: parent,
 		}
-		if span.ReceiverDigest != "" && lastRow != nil {
-			row.Chained = span.SimpleReceiver() == lastRow.Span.Digest
+		if base, ok := span.Base(); ok && lastRow != nil {
+			row.Chained = base.Digest == lastRow.Span.Digest
 		}
 		if span.IsRunning() {
 			row.setRunning()
@@ -202,7 +202,7 @@ func WalkSteps(steps []*Span, f func(*TraceRow)) {
 		}
 		lastRow = row
 	}
-	for _, step := range steps {
+	for _, step := range spans {
 		walk(step, nil)
 	}
 }

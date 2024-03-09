@@ -18,8 +18,7 @@ type Span struct {
 
 	Digest string
 
-	Call           *callpbv1.Call
-	ReceiverDigest string
+	Call *callpbv1.Call
 
 	Internal bool
 	Cached   bool
@@ -36,6 +35,9 @@ type Span struct {
 }
 
 func (span *Span) Base() (*callpbv1.Call, bool) {
+	if span.Call == nil {
+		return nil, false
+	}
 	if span.Call.ReceiverDigest == "" {
 		return nil, false
 	}
@@ -43,11 +45,7 @@ func (span *Span) Base() (*callpbv1.Call, bool) {
 	if !ok {
 		return nil, false
 	}
-	return span.db.HighLevelCall(call), true
-}
-
-func (span *Span) SimpleReceiver() string {
-	return span.db.Simplify(span.ReceiverDigest)
+	return span.db.Simplify(call), true
 }
 
 func (step *Span) IsRunning() bool {

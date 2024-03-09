@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var (
@@ -49,9 +50,14 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 	}
 
 	srv := &http.Server{
-		Handler: handler,
+		Handler: otelhttp.NewHandler(handler, "listen", otelhttp.WithSpanNameFormatter(func(o string, r *http.Request) string {
+			return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
+		})),
 		// Gosec G112: prevent slowloris attacks
 		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
 	}
 
 	go func() {
