@@ -35,9 +35,7 @@ export class Bin implements EngineConn {
   private cliVersion?: string
 
   private readonly cacheDir = path.join(
-    `${
-      process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache
-    }`,
+    `${process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache}`,
     "dagger",
   )
 
@@ -81,13 +79,8 @@ export class Bin implements EngineConn {
 
     // Create a temporary bin file path
     this.createCacheDir()
-    const tmpBinDownloadDir = fs.mkdtempSync(
-      path.join(this.cacheDir, `temp-${this.getRandomId()}`),
-    )
-    const tmpBinPath = this.buildOsExePath(
-      tmpBinDownloadDir,
-      this.DAGGER_CLI_BIN_PREFIX,
-    )
+    const tmpBinDownloadDir = fs.mkdtempSync(path.join(this.cacheDir, `temp-${this.getRandomId()}`))
+    const tmpBinPath = this.buildOsExePath(tmpBinDownloadDir, this.DAGGER_CLI_BIN_PREFIX)
 
     try {
       // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
@@ -97,19 +90,16 @@ export class Bin implements EngineConn {
       )
       const expectedChecksum = await this.expectedChecksum()
       if (actualChecksum !== expectedChecksum) {
-        throw new Error(
-          `checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`,
-        )
+        throw new Error(`checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`)
       }
       fs.chmodSync(tmpBinPath, 0o700)
       fs.renameSync(tmpBinPath, binPath)
       fs.rmSync(tmpBinDownloadDir, { recursive: true })
     } catch (e) {
       fs.rmSync(tmpBinDownloadDir, { recursive: true })
-      throw new InitEngineSessionBinaryError(
-        `failed to download dagger cli binary: ${e}`,
-        { cause: e as Error },
-      )
+      throw new InitEngineSessionBinaryError(`failed to download dagger cli binary: ${e}`, {
+        cause: e as Error,
+      })
     }
 
     // Remove all temporary binary files
@@ -119,10 +109,7 @@ export class Bin implements EngineConn {
       const files = fs.readdirSync(this.cacheDir)
       files.forEach((file) => {
         const filePath = path.join(this.cacheDir, file)
-        if (
-          filePath === binPath ||
-          !file.startsWith(this.DAGGER_CLI_BIN_PREFIX)
-        ) {
+        if (filePath === binPath || !file.startsWith(this.DAGGER_CLI_BIN_PREFIX)) {
           return
         }
 
@@ -166,10 +153,7 @@ export class Bin implements EngineConn {
    * runEngineSession execute the engine binary and set up a GraphQL client that
    * target this engine.
    */
-  private async runEngineSession(
-    binPath: string,
-    opts: ConnectOpts,
-  ): Promise<GraphQLClient> {
+  private async runEngineSession(binPath: string, opts: ConnectOpts): Promise<GraphQLClient> {
     const args = [binPath, "session"]
 
     const sdkVersion = this.getSDKVersion()
@@ -219,10 +203,9 @@ export class Bin implements EngineConn {
       new Promise((_, reject) => {
         setTimeout(() => {
           reject(
-            new EngineSessionConnectionTimeoutError(
-              "Engine connection timeout",
-              { timeOutDuration },
-            ),
+            new EngineSessionConnectionTimeoutError("Engine connection timeout", {
+              timeOutDuration,
+            }),
           )
         }, timeOutDuration).unref() // long timeout to account for extensions, though that should be optimized in future
       }),
@@ -244,10 +227,9 @@ export class Bin implements EngineConn {
       if (connectParams.port && connectParams.session_token) {
         return connectParams
       }
-      throw new EngineSessionConnectParamsParseError(
-        `invalid connect params: ${line}`,
-        { parsedLine: line },
-      )
+      throw new EngineSessionConnectParamsParseError(`invalid connect params: ${line}`, {
+        parsedLine: line,
+      })
     }
 
     // Need to find a better way to handle this part
@@ -291,10 +273,7 @@ export class Bin implements EngineConn {
    * of the base engine session as constant and the engine identifier.
    */
   private buildBinPath(): string {
-    return this.buildOsExePath(
-      this.cacheDir,
-      `${this.DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`,
-    )
+    return this.buildOsExePath(this.cacheDir, `${this.DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`)
   }
 
   /**
@@ -343,18 +322,14 @@ export class Bin implements EngineConn {
     if (this.normalizedOS() === "windows") {
       ext = "zip"
     }
-    return `dagger_v${
-      this.cliVersion
-    }_${this.normalizedOS()}_${this.normalizedArch()}.${ext}`
+    return `dagger_v${this.cliVersion}_${this.normalizedOS()}_${this.normalizedArch()}.${ext}`
   }
 
   private cliArchiveURL(): string {
     if (OVERRIDE_CLI_URL) {
       return OVERRIDE_CLI_URL
     }
-    return `https://${CLI_HOST}/dagger/releases/${
-      this.cliVersion
-    }/${this.cliArchiveName()}`
+    return `https://${CLI_HOST}/dagger/releases/${this.cliVersion}/${this.cliArchiveName()}`
   }
 
   private cliChecksumURL(): string {
@@ -368,9 +343,7 @@ export class Bin implements EngineConn {
     // download checksums.txt
     const checksums = await fetch(this.cliChecksumURL())
     if (!checksums.ok) {
-      throw new Error(
-        `failed to download checksums.txt from ${this.cliChecksumURL()}`,
-      )
+      throw new Error(`failed to download checksums.txt from ${this.cliChecksumURL()}`)
     }
     const checksumsText = await checksums.text()
     // iterate over lines filling in map of filename -> checksum
@@ -386,9 +359,7 @@ export class Bin implements EngineConn {
     const checksumMap = await this.checksumMap()
     const expectedChecksum = checksumMap.get(this.cliArchiveName())
     if (!expectedChecksum) {
-      throw new Error(
-        `failed to find checksum for ${this.cliArchiveName()} in checksums.txt`,
-      )
+      throw new Error(`failed to find checksum for ${this.cliArchiveName()} in checksums.txt`)
     }
     return expectedChecksum
   }
@@ -397,19 +368,14 @@ export class Bin implements EngineConn {
     // extract the dagger binary in the cli archive and return the archive of the .zip for windows and .tar.gz for other plateforms
     const archiveResp = await fetch(this.cliArchiveURL())
     if (!archiveResp.ok) {
-      throw new Error(
-        `failed to download dagger cli archive from ${this.cliArchiveURL()}`,
-      )
+      throw new Error(`failed to download dagger cli archive from ${this.cliArchiveURL()}`)
     }
     if (!archiveResp.body) {
       throw new Error("archive response body is null")
     }
 
     // create a temporary file to store the archive
-    const archivePath = path.join(
-      destDir,
-      os === "windows" ? "dagger.zip" : "dagger.tar.gz",
-    )
+    const archivePath = path.join(destDir, os === "windows" ? "dagger.zip" : "dagger.tar.gz")
     const archiveFile = fs.createWriteStream(archivePath)
     await new Promise((resolve, reject) => {
       archiveResp.body?.pipe(archiveFile)

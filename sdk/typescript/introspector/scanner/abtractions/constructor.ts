@@ -1,7 +1,7 @@
 import ts from "typescript"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { Argument } from "./argument.js"
-import { ConstructorTypeDef } from "../typeDefs.js"
+import { Argument, Arguments } from "./argument.js"
+import { ConstructorTypeDef, FunctionArgTypeDef } from "../typeDefs.js"
 
 export class Constructor {
   private checker: ts.TypeChecker
@@ -13,31 +13,47 @@ export class Constructor {
     this.declaration = declaration
   }
 
-  get arguments(): Argument[] {
-    return this.declaration.parameters.map((param) => {
+  get name(): string {
+    return ""
+  }
+
+  get arguments(): Arguments {
+    return this.declaration.parameters.reduce((acc: Arguments, param) => {
       const symbol = this.checker.getSymbolAtLocation(param.name)
       if (!symbol) {
-        throw new UnknownDaggerError(
-          `could not get constructor param: ${param.name.getText()}`,
-          {},
-        )
+        throw new UnknownDaggerError(`could not get constructor param: ${param.name.getText()}`, {})
       }
 
-      return new Argument(this.checker, symbol)
-    })
+      const argument = new Argument(this.checker, symbol)
+
+      acc[argument.name] = argument
+
+      return acc
+    }, {})
   }
 
   // TODO(TomChv): replace with `ToJson` method
   // after the refactor is complete.
   get typeDef(): ConstructorTypeDef {
     return {
-      args: this.arguments.reduce(
-        (acc, arg) => ({
-          ...acc,
-          [arg.name]: arg.typeDef,
-        }),
+      args: Object.entries(this.arguments).reduce(
+        (acc: { [name: string]: FunctionArgTypeDef }, [name, arg]) => {
+          acc[name] = arg.typeDef
+
+          return acc
+        },
         {},
       ),
     }
+  }
+
+  toJSON() {
+    return {
+      args: this.arguments,
+    }
+  }
+
+  getArgOrder(): string[] {
+    return Object.keys(this.arguments)
   }
 }

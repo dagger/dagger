@@ -1,13 +1,15 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { Argument } from "./argument.js"
+import { Argument, Arguments } from "./argument.js"
 import { serializeType } from "../serialize.js"
 import { typeNameToTypedef } from "../utils.js"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { FunctionArgTypeDef, FunctionTypedef, TypeDef } from "../typeDefs.js"
 
 const METHOD_DECORATOR = "func"
+
+export type Methods = { [name: string]: Method }
 
 /**
  * Method is an abstraction of a function or method.
@@ -41,20 +43,14 @@ export class Method {
 
     const methodSymbol = checker.getSymbolAtLocation(method.name)
     if (!methodSymbol) {
-      throw new UnknownDaggerError(
-        `could not get method symbol: ${method.name.getText()}`,
-        {},
-      )
+      throw new UnknownDaggerError(`could not get method symbol: ${method.name.getText()}`, {})
     }
 
     this.symbol = methodSymbol
 
     const signature = checker.getSignatureFromDeclaration(method)
     if (!signature) {
-      throw new UnknownDaggerError(
-        `could not get method signature: ${method.name.getText()}`,
-        {},
-      )
+      throw new UnknownDaggerError(`could not get method signature: ${method.name.getText()}`, {})
     }
 
     this.signature = signature
@@ -73,9 +69,7 @@ export class Method {
   }
 
   get description(): string {
-    return ts.displayPartsToString(
-      this.symbol.getDocumentationComment(this.checker),
-    )
+    return ts.displayPartsToString(this.symbol.getDocumentationComment(this.checker))
   }
 
   /**
@@ -96,37 +90,51 @@ export class Method {
     return JSON.parse(aliasArg.getText().replace(/'/g, '"'))
   }
 
-  get arguments(): Argument[] {
-    return this.signature.parameters.map((param) => {
-      return new Argument(this.checker, param)
-    })
+  get arguments(): Arguments {
+    return this.signature.parameters.reduce((acc: Arguments, param) => {
+      const argument = new Argument(this.checker, param)
+
+      acc[argument.name] = argument
+
+      return acc
+    }, {})
   }
 
   /**
    * Return the type of the return value in a Dagger TypeDef format.
    */
   get returnType(): TypeDef<TypeDefKind> {
-    return typeNameToTypedef(
-      serializeType(this.checker, this.signature.getReturnType()),
-    )
+    return typeNameToTypedef(serializeType(this.checker, this.signature.getReturnType()))
   }
 
-  // TODO(TomChv): replace with `ToJson` method
-  // after the refactor is complete.
   get typeDef(): FunctionTypedef {
     return {
       name: this.name,
       description: this.description,
       alias: this.alias,
-      returnType: this.returnType,
-      args: this.arguments.reduce(
-        (acc: { [name: string]: FunctionArgTypeDef }, arg) => {
-          acc[arg.name] = arg.typeDef
+      args: Object.entries(this.arguments).reduce(
+        (acc: { [name: string]: FunctionArgTypeDef }, [name, arg]) => {
+          acc[name] = arg.typeDef
 
           return acc
         },
         {},
       ),
+      returnType: this.returnType,
     }
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      description: this.description,
+      alias: this.alias,
+      arguments: this.arguments,
+      returnType: this.returnType,
+    }
+  }
+
+  getArgOrder(): string[] {
+    return Object.keys(this.arguments)
   }
 }

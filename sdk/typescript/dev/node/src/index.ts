@@ -1,12 +1,4 @@
-import {
-  dag,
-  Container,
-  Directory,
-  object,
-  func,
-  field,
-  CacheVolume,
-} from "@dagger.io/dagger"
+import { dag, Container, Directory, object, func, field, CacheVolume } from "@dagger.io/dagger"
 
 import { Commands } from "./commands"
 
@@ -37,10 +29,7 @@ class Node {
     this.container = this.container
       .withWorkdir(workdir)
       .withDirectory(workdir, source)
-      .withMountedCache(
-        `${workdir}/node_modules`,
-        cache ?? dag.cacheVolume("node-modules"),
-      )
+      .withMountedCache(`${workdir}/node_modules`, cache ?? dag.cacheVolume("node-modules"))
 
     return this
   }
@@ -73,10 +62,7 @@ class Node {
   withNpm(cache?: CacheVolume): Node {
     this.container = this.container
       .withEntrypoint(["npm"])
-      .withMountedCache(
-        "/root/.npm",
-        cache ?? dag.cacheVolume(`node-module-npm`),
-      )
+      .withMountedCache("/root/.npm", cache ?? dag.cacheVolume(`node-module-npm`))
 
     return this
   }
@@ -92,10 +78,7 @@ class Node {
     this.container = this.container
       .withExec(["npm", "install", "-g", "pnpm"])
       .withEntrypoint(["pnpm"])
-      .withMountedCache(
-        "/pnpm/store",
-        cache ?? dag.cacheVolume(`node-module-pnpm`),
-      )
+      .withMountedCache("/pnpm/store", cache ?? dag.cacheVolume(`node-module-pnpm`))
 
     return this
   }

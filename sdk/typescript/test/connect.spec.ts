@@ -97,9 +97,7 @@ describe("TypeScript sdk Connect", function () {
 
     await connect(
       async (client) => {
-        const authorization = JSON.stringify(
-          client["_ctx"]["_client"]?.requestConfig.headers,
-        )
+        const authorization = JSON.stringify(client["_ctx"]["_client"]?.requestConfig.headers)
 
         assert.equal(
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -173,9 +171,7 @@ describe("TypeScript sdk Connect", function () {
         bin._overrideCLIURL(cliURL)
         const checksumsUrl = process.env._INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL
         if (!checksumsUrl) {
-          throw new Error(
-            "Missing override checksums URL when overriding CLI URL",
-          )
+          throw new Error("Missing override checksums URL when overriding CLI URL")
         }
         bin._overrideCLIChecksumsURL(checksumsUrl)
       }
@@ -209,28 +205,24 @@ describe("TypeScript sdk Connect", function () {
 
         const basePath = `dagger/releases/${CLI_VERSION}`
 
-        const server = http.createServer(
-          (req: http.IncomingMessage, res: http.ServerResponse) => {
-            if (req.url === `/${basePath}/checksums.txt`) {
-              res.writeHead(200, { "Content-Type": "text/plain" })
-              res.end(checksumFileContents)
-            } else if (req.url === `/${basePath}/${archiveName}`) {
-              res.writeHead(200, { "Content-Type": "application/gzip" })
-              res.end(fs.readFileSync(tempArchivePath))
-            } else {
-              res.writeHead(404)
-              res.end()
-            }
-          },
-        )
+        const server = http.createServer((req: http.IncomingMessage, res: http.ServerResponse) => {
+          if (req.url === `/${basePath}/checksums.txt`) {
+            res.writeHead(200, { "Content-Type": "text/plain" })
+            res.end(checksumFileContents)
+          } else if (req.url === `/${basePath}/${archiveName}`) {
+            res.writeHead(200, { "Content-Type": "application/gzip" })
+            res.end(fs.readFileSync(tempArchivePath))
+          } else {
+            res.writeHead(404)
+            res.end()
+          }
+        })
 
         await new Promise<void>((resolve) => {
           server
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
-              bin._overrideCLIURL(
-                `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`,
-              )
+              bin._overrideCLIURL(`http://${addr.address}:${addr.port}/${basePath}/${archiveName}`)
               bin._overrideCLIChecksumsURL(
                 `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`,
               )

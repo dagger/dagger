@@ -6,6 +6,8 @@ import { FunctionArgTypeDef, TypeDef } from "../typeDefs.js"
 import { serializeType } from "../serialize.js"
 import { typeNameToTypedef } from "../utils.js"
 
+export type Arguments = { [name: string]: Argument }
+
 /**
  * Argument is an abstraction of a function argument.
  *
@@ -56,9 +58,7 @@ export class Argument {
   }
 
   get description(): string {
-    return ts.displayPartsToString(
-      this.symbol.getDocumentationComment(this.checker),
-    )
+    return ts.displayPartsToString(this.symbol.getDocumentationComment(this.checker))
   }
 
   /**
@@ -66,16 +66,10 @@ export class Argument {
    */
   get type(): TypeDef<TypeDefKind> {
     if (!this.symbol.valueDeclaration) {
-      throw new UnknownDaggerError(
-        "could not find symbol value declaration",
-        {},
-      )
+      throw new UnknownDaggerError("could not find symbol value declaration", {})
     }
 
-    const type = this.checker.getTypeOfSymbolAtLocation(
-      this.symbol,
-      this.symbol.valueDeclaration,
-    )
+    const type = this.checker.getTypeOfSymbolAtLocation(this.symbol, this.symbol.valueDeclaration)
 
     const typeName = serializeType(this.checker, type)
 
@@ -99,11 +93,7 @@ export class Argument {
    * - It's nullable (e.g. `foo: <type> | null`).
    */
   get isOptional(): boolean {
-    return (
-      this.param.questionToken !== undefined ||
-      this.isVariadic ||
-      this.isNullable
-    )
+    return this.param.questionToken !== undefined || this.isVariadic || this.isNullable
   }
 
   /**
@@ -146,6 +136,18 @@ export class Argument {
     }
   }
 
+  toJSON() {
+    return {
+      name: this.name,
+      description: this.description,
+      type: this.type,
+      isVariadic: this.isVariadic,
+      isNullable: this.isNullable,
+      isOptional: this.isOptional,
+      defaultValue: this.defaultValue,
+    }
+  }
+
   /**
    * The TypeScript Compiler API returns the raw default value as it is written
    * by the user.
@@ -158,8 +160,7 @@ export class Argument {
    * @param value The value to format.
    */
   private formatDefaultValue(value: string): string {
-    const isSingleQuoteString = (): boolean =>
-      value.startsWith("'") && value.endsWith("'")
+    const isSingleQuoteString = (): boolean => value.startsWith("'") && value.endsWith("'")
 
     if (isSingleQuoteString()) {
       return `"${value.slice(1, value.length - 1)}"`

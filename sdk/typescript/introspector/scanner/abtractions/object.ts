@@ -2,17 +2,21 @@ import ts from "typescript"
 
 import { Constructor } from "./constructor.js"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { Method } from "./method.js"
-import { Property } from "./property.js"
+import { Method, Methods } from "./method.js"
+import { Properties, Property } from "./property.js"
 import { ClassTypeDef, FieldTypeDef, FunctionTypedef } from "../typeDefs.js"
 import { isFunction } from "../utils.js"
 
-export class Object {
+export type DaggerObjects = { [name: string]: DaggerObject }
+
+export class DaggerObject {
   private checker: ts.TypeChecker
 
   private class: ts.ClassDeclaration
 
   private symbol: ts.Symbol
+
+  public file: ts.SourceFile
 
   /**
    *
@@ -22,15 +26,13 @@ export class Object {
    * @throws UnknownDaggerError If the class doesn't have a name.
    * @throws UnknownDaggerError If the class doesn't have a symbol.
    */
-  constructor(checker: ts.TypeChecker, classDeclaration: ts.ClassDeclaration) {
+  constructor(checker: ts.TypeChecker, file: ts.SourceFile, classDeclaration: ts.ClassDeclaration) {
     this.checker = checker
     this.class = classDeclaration
+    this.file = file
 
     if (!classDeclaration.name) {
-      throw new UnknownDaggerError(
-        `could not introspect class: ${classDeclaration}`,
-        {},
-      )
+      throw new UnknownDaggerError(`could not introspect class: ${classDeclaration}`, {})
     }
 
     const classSymbol = checker.getSymbolAtLocation(classDeclaration.name)
@@ -49,9 +51,7 @@ export class Object {
   }
 
   get description(): string {
-    return ts.displayPartsToString(
-      this.symbol.getDocumentationComment(this.checker),
-    )
+    return ts.displayPartsToString(this.symbol.getDocumentationComment(this.checker))
   }
 
   get _constructor(): Constructor | undefined {
@@ -65,25 +65,30 @@ export class Object {
       return undefined
     }
 
-    return new Constructor(
-      this.checker,
-      constructor as ts.ConstructorDeclaration,
-    )
+    return new Constructor(this.checker, constructor as ts.ConstructorDeclaration)
   }
 
-  get methods(): Method[] {
+  get methods(): Methods {
     return this.class.members
       .filter((member) => ts.isMethodDeclaration(member) && isFunction(member))
-      .map((member) => new Method(this.checker, member as ts.MethodDeclaration))
+      .reduce((acc: Methods, member) => {
+        const method = new Method(this.checker, member as ts.MethodDeclaration)
+
+        acc[method.alias ?? method.name] = method
+
+        return acc
+      }, {})
   }
 
-  get properties(): Property[] {
+  get properties(): Properties {
     return this.class.members
       .filter((member) => ts.isPropertyDeclaration(member))
-      .map(
-        (member) =>
-          new Property(this.checker, member as ts.PropertyDeclaration),
-      )
+      .reduce((acc: Properties, member) => {
+        const property = new Property(this.checker, member as ts.PropertyDeclaration)
+
+        acc[property.alias ?? property.name] = property
+        return acc
+      }, {})
   }
 
   // TODO(TomChv): replace with `ToJson` method
@@ -93,20 +98,30 @@ export class Object {
       name: this.name,
       description: this.description,
       constructor: this._constructor?.typeDef,
-      methods: this.methods.reduce(
-        (acc: { [name: string]: FunctionTypedef }, method) => {
-          acc[method.alias ?? method.name] = method.typeDef
+      methods: Object.entries(this.methods).reduce(
+        (acc: { [name: string]: FunctionTypedef }, [name, method]) => {
+          acc[name] = method.typeDef
           return acc
         },
         {},
       ),
-      fields: this.properties.reduce(
-        (acc: { [name: string]: FieldTypeDef }, property) => {
-          acc[property.alias ?? property.name] = property.typeDef
+      fields: Object.entries(this.properties).reduce(
+        (acc: { [name: string]: FieldTypeDef }, [name, property]) => {
+          acc[name] = property.typeDef
           return acc
         },
         {},
       ),
+    }
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      description: this.description,
+      constructor: this._constructor,
+      methods: this.methods,
+      properties: this.properties,
     }
   }
 }

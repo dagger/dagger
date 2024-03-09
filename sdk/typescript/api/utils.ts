@@ -23,33 +23,27 @@ function buildArgs(args: any): string {
       return JSON.stringify(value).replace(/['"]+/g, "")
     }
 
-    return JSON.stringify(value).replace(
-      /\{"[a-zA-Z]+":|,"[a-zA-Z]+":/gi,
-      (str) => {
-        return str.replace(/"/g, "")
-      },
-    )
+    return JSON.stringify(value).replace(/\{"[a-zA-Z]+":|,"[a-zA-Z]+":/gi, (str) => {
+      return str.replace(/"/g, "")
+    })
   }
 
   if (args === undefined || args === null) {
     return ""
   }
 
-  const formattedArgs = Object.entries(args).reduce(
-    (acc: any, [key, value]) => {
-      // Ignore internal metadata key
-      if (key === "__metadata") {
-        return acc
-      }
-
-      if (value !== undefined && value !== null) {
-        acc.push(`${key}: ${formatValue(key, value as string)}`)
-      }
-
+  const formattedArgs = Object.entries(args).reduce((acc: any, [key, value]) => {
+    // Ignore internal metadata key
+    if (key === "__metadata") {
       return acc
-    },
-    [],
-  )
+    }
+
+    if (value !== undefined && value !== null) {
+      acc.push(`${key}: ${formatValue(key, value as string)}`)
+    }
+
+    return acc
+  }, [])
 
   if (formattedArgs.length === 0) {
     return ""
@@ -62,10 +56,7 @@ function buildArgs(args: any): string {
  * Find QueryTree, convert them into GraphQl query
  * then compute and return the result to the appropriate field
  */
-async function computeNestedQuery(
-  query: QueryTree[],
-  client: GraphQLClient,
-): Promise<void> {
+async function computeNestedQuery(query: QueryTree[], client: GraphQLClient): Promise<void> {
   // Check if there is a nested queryTree to be executed
   const isQueryTree = (value: any) => value["_queryTree"] !== undefined
 
@@ -147,10 +138,7 @@ export function buildQuery(q: QueryTree[]): string {
  * @param client | GraphQLClient
  * @returns
  */
-export async function computeQuery<T>(
-  q: QueryTree[],
-  client: GraphQLClient,
-): Promise<T> {
+export async function computeQuery<T>(q: QueryTree[], client: GraphQLClient): Promise<T> {
   await computeNestedQuery(q, client)
 
   const query = buildQuery(q)
@@ -175,10 +163,9 @@ export function queryFlatten<T>(response: any): T {
   if (keys.length != 1) {
     // Dagger is currently expecting to only return one value
     // If the response is nested in a way were more than one object is nested inside throw an error
-    throw new TooManyNestedObjectsError(
-      "Too many nested objects inside graphql response",
-      { response: response },
-    )
+    throw new TooManyNestedObjectsError("Too many nested objects inside graphql response", {
+      response: response,
+    })
   }
 
   const nestedKey = keys[0]
@@ -191,10 +178,7 @@ export function queryFlatten<T>(response: any): T {
  * return a flatten result
  * @hidden
  */
-export async function compute<T>(
-  query: string,
-  client: GraphQLClient,
-): Promise<T> {
+export async function compute<T>(query: string, client: GraphQLClient): Promise<T> {
   let computeQuery: Awaited<T>
   try {
     computeQuery = await client.request(gql`
@@ -230,10 +214,9 @@ export async function compute<T>(
     }
 
     // Just throw the unknown error
-    throw new UnknownDaggerError(
-      "Encountered an unknown error while requesting data via graphql",
-      { cause: e },
-    )
+    throw new UnknownDaggerError("Encountered an unknown error while requesting data via graphql", {
+      cause: e,
+    })
   }
 
   return queryFlatten(computeQuery)

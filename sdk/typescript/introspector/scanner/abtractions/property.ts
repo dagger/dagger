@@ -8,6 +8,8 @@ import { TypeDefKind } from "../../../api/client.gen.js"
 
 const PROPERTY_DECORATOR = "field"
 
+export type Properties = { [name: string]: Property }
+
 /**
  * Property is an abstraction of a class property.
  *
@@ -36,10 +38,7 @@ export class Property {
 
     const propertySymbol = checker.getSymbolAtLocation(property.name)
     if (!propertySymbol) {
-      throw new UnknownDaggerError(
-        `could not get property symbol: ${property.name.getText()}`,
-        {},
-      )
+      throw new UnknownDaggerError(`could not get property symbol: ${property.name.getText()}`, {})
     }
 
     this.symbol = propertySymbol
@@ -58,9 +57,7 @@ export class Property {
   }
 
   get description(): string {
-    return ts.displayPartsToString(
-      this.symbol.getDocumentationComment(this.checker),
-    )
+    return ts.displayPartsToString(this.symbol.getDocumentationComment(this.checker))
   }
 
   /**
@@ -86,16 +83,10 @@ export class Property {
    */
   get type(): TypeDef<TypeDefKind> {
     if (!this.symbol.valueDeclaration) {
-      throw new UnknownDaggerError(
-        "could not find symbol value declaration",
-        {},
-      )
+      throw new UnknownDaggerError("could not find symbol value declaration", {})
     }
 
-    const type = this.checker.getTypeOfSymbolAtLocation(
-      this.symbol,
-      this.symbol.valueDeclaration,
-    )
+    const type = this.checker.getTypeOfSymbolAtLocation(this.symbol, this.symbol.valueDeclaration)
 
     const typeName = serializeType(this.checker, type)
 
@@ -114,6 +105,16 @@ export class Property {
       description: this.description,
       alias: this.alias,
       typeDef: this.type,
+      isExposed: this.isExposed,
+    }
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      description: this.description,
+      alias: this.alias,
+      type: this.type,
       isExposed: this.isExposed,
     }
   }

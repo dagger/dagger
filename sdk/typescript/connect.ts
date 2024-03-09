@@ -22,10 +22,7 @@ export type CallbackFct = (client: Client) => Promise<void>
  * )
  * ```
  */
-export async function connection(
-  fct: () => Promise<void>,
-  cfg: ConnectOpts = {},
-) {
+export async function connection(fct: () => Promise<void>, cfg: ConnectOpts = {}) {
   await defaultContext.connection(cfg)
 
   await fct().finally(() => close())
@@ -43,10 +40,7 @@ export function close() {
  * GraphQL client to execute query on it through its callback.
  * This implementation is based on the existing Go SDK.
  */
-export async function connect(
-  cb: CallbackFct,
-  config: ConnectOpts = {},
-): Promise<void> {
+export async function connect(cb: CallbackFct, config: ConnectOpts = {}): Promise<void> {
   const ctx = new Context()
   const client = new Client({ ctx: ctx })
 

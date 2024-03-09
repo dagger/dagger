@@ -33,6 +33,7 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "mocha",
+    "test:generate-scan": "tsx ./introspector/test/testdata/generate_expected_scan.ts",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --fix .",
     "docs:lint": "yarn eslint -c .eslintrc-docs.cjs --max-warnings=0 --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/current_docs",
