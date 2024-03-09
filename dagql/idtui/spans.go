@@ -35,8 +35,15 @@ type Span struct {
 	trace *Trace
 }
 
-func (span *Span) Base() *callpbv1.Call {
-	return span.db.HighLevelCall(span.db.MustCall(span.Call.ReceiverDigest))
+func (span *Span) Base() (*callpbv1.Call, bool) {
+	if span.Call.ReceiverDigest == "" {
+		return nil, false
+	}
+	call, ok := span.db.Calls[span.Call.ReceiverDigest]
+	if !ok {
+		return nil, false
+	}
+	return span.db.HighLevelCall(call), true
 }
 
 func (span *Span) SimpleReceiver() string {
