@@ -40,7 +40,12 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
   const args = await loadArgs(method, ctx)
   const parentState = await loadParentState(object, ctx)
 
-  let result = await registry.getResult(object.name, method.name, parentState, args)
+  let result = await registry.getResult(
+    object.name,
+    method.name,
+    parentState,
+    args,
+  )
 
   if (result) {
     // Handle alias serialization by getting the return type to load
@@ -48,7 +53,8 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
     if (!isConstructor(method)) {
       const retType = method.returnType
       if (retType.kind === TypeDefKind.ObjectKind) {
-        object = module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
+        object =
+          module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
       }
     }
 

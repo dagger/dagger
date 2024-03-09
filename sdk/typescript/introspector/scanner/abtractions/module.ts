@@ -10,7 +10,11 @@ export class DaggerModule {
 
   public name: string
 
-  constructor(checker: ts.TypeChecker, name = "", files: readonly ts.SourceFile[]) {
+  constructor(
+    checker: ts.TypeChecker,
+    name = "",
+    files: readonly ts.SourceFile[],
+  ) {
     this.checker = checker
     this.files = files.filter((file) => !file.isDeclarationFile)
     this.name = toPascalCase(name)
@@ -33,7 +37,9 @@ export class DaggerModule {
   }
 
   get description(): string | undefined {
-    const mainObject = Object.values(this.objects).find((object) => object.name === this.name)
+    const mainObject = Object.values(this.objects).find(
+      (object) => object.name === this.name,
+    )
     if (!mainObject) {
       return undefined
     }

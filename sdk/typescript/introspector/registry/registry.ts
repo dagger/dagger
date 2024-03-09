@@ -65,8 +65,16 @@ export class Registry {
    */
   func = (
     alias?: string,
-  ): ((target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => void) => {
-    return (target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor) => {
+  ): ((
+    target: object,
+    propertyKey: string | symbol,
+    descriptor: PropertyDescriptor,
+  ) => void) => {
+    return (
+      target: object,
+      propertyKey: string | symbol,
+      descriptor: PropertyDescriptor,
+    ) => {
       // The logic is done in the object constructor since it's not possible to
       // access the class parent's name from a method constructor without calling
       // the method itself
@@ -84,11 +92,19 @@ export class Registry {
    * @param state The current state of the class
    * @param inputs The input to send to the method to call
    */
-  async getResult(object: string, method: string, state: State, inputs: Args): Promise<any> {
+  async getResult(
+    object: string,
+    method: string,
+    state: State,
+    inputs: Args,
+  ): Promise<any> {
     // Retrieve the resolver class from its key
     const resolver = Reflect.getMetadata(object, this) as RegistryClass
     if (!resolver) {
-      throw new UnknownDaggerError(`${object} is not register as a resolver`, {})
+      throw new UnknownDaggerError(
+        `${object} is not register as a resolver`,
+        {},
+      )
     }
 
     // If method is nil, apply the constructor.
@@ -102,7 +118,10 @@ export class Registry {
     // Safety check to make sure the method called exist in the class
     // to avoid the app to crash brutally.
     if (!r[method]) {
-      throw new UnknownDaggerError(`${method} is not registered in the resolver ${object}`, {})
+      throw new UnknownDaggerError(
+        `${method} is not registered in the resolver ${object}`,
+        {},
+      )
     }
 
     // Apply state to the class

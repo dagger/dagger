@@ -21,7 +21,10 @@ export class Constructor {
     return this.declaration.parameters.reduce((acc: Arguments, param) => {
       const symbol = this.checker.getSymbolAtLocation(param.name)
       if (!symbol) {
-        throw new UnknownDaggerError(`could not get constructor param: ${param.name.getText()}`, {})
+        throw new UnknownDaggerError(
+          `could not get constructor param: ${param.name.getText()}`,
+          {},
+        )
       }
 
       const argument = new Argument(this.checker, symbol)

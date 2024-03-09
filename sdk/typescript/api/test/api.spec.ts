@@ -64,7 +64,10 @@ describe("TypeScript SDK api", function () {
   })
 
   it("Build one query with multiple arguments", function () {
-    const tree = new Client().container().from("alpine:3.16.2").withExec(["apk", "add", "curl"])
+    const tree = new Client()
+      .container()
+      .from("alpine:3.16.2")
+      .withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
@@ -87,7 +90,11 @@ describe("TypeScript SDK api", function () {
     connect(async (client: Client) => {
       const image = await client
         .container({
-          id: await client.container().from("alpine:3.16.2").withExec(["apk", "add", "yarn"]).id(),
+          id: await client
+            .container()
+            .from("alpine:3.16.2")
+            .withExec(["apk", "add", "yarn"])
+            .id(),
         })
         .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
         .withExec(["echo", "foo bar"])
@@ -142,7 +149,10 @@ describe("TypeScript SDK api", function () {
   it("Test awaited Field Immutability", async function () {
     this.timeout(60000)
     await connect(async (client: Client) => {
-      const image = client.container().from("alpine:3.16.2").withExec(["echo", "hello", "world"])
+      const image = client
+        .container()
+        .from("alpine:3.16.2")
+        .withExec(["echo", "hello", "world"])
 
       const a = await image.withExec(["echo", "foobar"]).stdout()
       assert.strictEqual(a, "foobar\n")
@@ -229,7 +239,10 @@ describe("TypeScript SDK api", function () {
         .from("alpine:3.16.2")
         .withDirectory(
           "/",
-          client.directory().withNewFile("testout", stdout).withNewFile("testerr", stderr),
+          client
+            .directory()
+            .withNewFile("testout", stdout)
+            .withNewFile("testerr", stderr),
         )
         .withExec(args)
 
@@ -259,10 +272,15 @@ describe("TypeScript SDK api", function () {
       const base = client.container().from("alpine:3.16.2")
 
       // short circuit
-      assert.rejects(() => base.withExec(["foobar"]).sync(), GraphQLRequestError)
+      assert.rejects(
+        () => base.withExec(["foobar"]).sync(),
+        GraphQLRequestError,
+      )
 
       // chaining
-      const out = await (await base.withExec(["echo", "foobaz"]).sync()).stdout()
+      const out = await (
+        await base.withExec(["echo", "foobaz"]).sync()
+      ).stdout()
       assert.strictEqual(out, "foobaz\n")
     })
   })
@@ -303,7 +321,10 @@ describe("TypeScript SDK api", function () {
     this.timeout(60000)
 
     await connect(async (client) => {
-      const alpine = client.container().from("alpine:3.16.2").withEnvVariable("FOO", "")
+      const alpine = client
+        .container()
+        .from("alpine:3.16.2")
+        .withEnvVariable("FOO", "")
 
       const out = await alpine.withExec(["printenv", "FOO"]).stdout()
       assert.strictEqual(out, "\n")

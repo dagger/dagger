@@ -18,11 +18,17 @@ export async function load(files: string[]): Promise<void> {
   await Promise.all(files.map(async (f) => await import(f)))
 }
 
-export function loadInvokedObject(module: DaggerModule, parentName: string): DaggerObject {
+export function loadInvokedObject(
+  module: DaggerModule,
+  parentName: string,
+): DaggerObject {
   return module.objects[parentName]
 }
 
-export async function loadParentState(object: DaggerObject, ctx: InvokeCtx): Promise<Args> {
+export async function loadParentState(
+  object: DaggerObject,
+  ctx: InvokeCtx,
+): Promise<Args> {
   const parentState: Args = {}
 
   for (const [key, value] of Object.entries(ctx.parentArgs)) {
@@ -48,7 +54,10 @@ export function loadInvokedMethod(
   return object.methods[ctx.fnName]
 }
 
-export async function loadArgs(method: Method | Constructor, ctx: InvokeCtx): Promise<Args> {
+export async function loadArgs(
+  method: Method | Constructor,
+  ctx: InvokeCtx,
+): Promise<Args> {
   const args: Args = {}
 
   // Load arguments
@@ -72,7 +81,11 @@ export async function loadArgs(method: Method | Constructor, ctx: InvokeCtx): Pr
     }
 
     // If the argument is nullable and the loaded arg is undefined with no default value, we set it to null.
-    if (argument.isNullable && loadedArg === undefined && !argument.defaultValue) {
+    if (
+      argument.isNullable &&
+      loadedArg === undefined &&
+      !argument.defaultValue
+    ) {
       args[argName] = null
       continue
     }
@@ -88,7 +101,10 @@ export async function loadArgs(method: Method | Constructor, ctx: InvokeCtx): Pr
  *
  * Note: The JSON.parse() is required to remove extra quotes
  */
-export async function loadValue(value: any, type: TypeDef<TypeDefKind>): Promise<any> {
+export async function loadValue(
+  value: any,
+  type: TypeDef<TypeDefKind>,
+): Promise<any> {
   // If value is undefinied, return it directly.
   if (value === undefined) {
     return value
@@ -98,7 +114,8 @@ export async function loadValue(value: any, type: TypeDef<TypeDefKind>): Promise
     case TypeDefKind.ListKind:
       return Promise.all(
         value.map(
-          async (v: any) => await loadValue(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
+          async (v: any) =>
+            await loadValue(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
         ),
       )
     case TypeDefKind.ObjectKind: {
@@ -139,7 +156,9 @@ export async function loadResult(
 
   // Handle arrays
   if (Array.isArray(result)) {
-    result = await Promise.all(result.map(async (r) => await loadResult(r, module, object)))
+    result = await Promise.all(
+      result.map(async (r) => await loadResult(r, module, object)),
+    )
 
     return result
   }
@@ -149,20 +168,28 @@ export async function loadResult(
     const state: any = {}
 
     for (const [key, value] of Object.entries(result)) {
-      const property = Object.values(object.properties).find((p) => p.name === key)
+      const property = Object.values(object.properties).find(
+        (p) => p.name === key,
+      )
       if (!property) {
         throw new Error(`could not find result property ${key}`)
       }
 
       if (property.type.kind === TypeDefKind.ObjectKind) {
         const referencedObject =
-          module.objects[(property.type as TypeDef<TypeDefKind.ObjectKind>).name]
+          module.objects[
+            (property.type as TypeDef<TypeDefKind.ObjectKind>).name
+          ]
         if (referencedObject) {
           object = referencedObject
         }
       }
 
-      state[property.alias ?? property.name] = await loadResult(value, module, object)
+      state[property.alias ?? property.name] = await loadResult(
+        value,
+        module,
+        object,
+      )
     }
 
     return state

@@ -1,7 +1,8 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
 import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
-interface EngineSessionConnectionTimeoutErrorOptions extends DaggerSDKErrorOptions {
+interface EngineSessionConnectionTimeoutErrorOptions
+  extends DaggerSDKErrorOptions {
   timeOutDuration: number
 }
 
@@ -20,7 +21,10 @@ export class EngineSessionConnectionTimeoutError extends DaggerSDKError {
   /**
    * @hidden
    */
-  constructor(message: string, options: EngineSessionConnectionTimeoutErrorOptions) {
+  constructor(
+    message: string,
+    options: EngineSessionConnectionTimeoutErrorOptions,
+  ) {
     super(message, options)
     this.timeOutDuration = options.timeOutDuration
   }

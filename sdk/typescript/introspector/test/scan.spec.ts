@@ -69,7 +69,10 @@ describe("scan static TypeScript", function () {
       const files = await listFiles(`${rootDirectory}/${test.directory}`)
       const result = scan(files, test.directory)
       const jsonResult = JSON.stringify(result, null, 2)
-      const expected = fs.readFileSync(`${rootDirectory}/${test.directory}/expected.json`, "utf-8")
+      const expected = fs.readFileSync(
+        `${rootDirectory}/${test.directory}/expected.json`,
+        "utf-8",
+      )
 
       assert.deepEqual(JSON.parse(jsonResult), JSON.parse(expected))
     })

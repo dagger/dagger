@@ -30,11 +30,12 @@ export type ListTypeDef = BaseTypeDef & {
  * If it's type of kind list, it transforms the BaseTypeDef into an ObjectTypeDef.
  * If it's a type of kind list, it transforms the BaseTypeDef into a ListTypeDef.
  */
-export type TypeDef<T extends BaseTypeDef["kind"]> = T extends TypeDefKind.ObjectKind
-  ? ObjectTypeDef
-  : T extends TypeDefKind.ListKind
-    ? ListTypeDef
-    : BaseTypeDef
+export type TypeDef<T extends BaseTypeDef["kind"]> =
+  T extends TypeDefKind.ObjectKind
+    ? ObjectTypeDef
+    : T extends TypeDefKind.ListKind
+      ? ListTypeDef
+      : BaseTypeDef
 
 /**
  * The type of field in a class

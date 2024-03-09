@@ -43,14 +43,20 @@ export class Method {
 
     const methodSymbol = checker.getSymbolAtLocation(method.name)
     if (!methodSymbol) {
-      throw new UnknownDaggerError(`could not get method symbol: ${method.name.getText()}`, {})
+      throw new UnknownDaggerError(
+        `could not get method symbol: ${method.name.getText()}`,
+        {},
+      )
     }
 
     this.symbol = methodSymbol
 
     const signature = checker.getSignatureFromDeclaration(method)
     if (!signature) {
-      throw new UnknownDaggerError(`could not get method signature: ${method.name.getText()}`, {})
+      throw new UnknownDaggerError(
+        `could not get method signature: ${method.name.getText()}`,
+        {},
+      )
     }
 
     this.signature = signature
@@ -69,7 +75,9 @@ export class Method {
   }
 
   get description(): string {
-    return ts.displayPartsToString(this.symbol.getDocumentationComment(this.checker))
+    return ts.displayPartsToString(
+      this.symbol.getDocumentationComment(this.checker),
+    )
   }
 
   /**
@@ -104,7 +112,9 @@ export class Method {
    * Return the type of the return value in a Dagger TypeDef format.
    */
   get returnType(): TypeDef<TypeDefKind> {
-    return typeNameToTypedef(serializeType(this.checker, this.signature.getReturnType()))
+    return typeNameToTypedef(
+      serializeType(this.checker, this.signature.getReturnType()),
+    )
   }
 
   get typeDef(): FunctionTypedef {

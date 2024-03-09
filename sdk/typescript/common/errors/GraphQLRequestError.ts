@@ -1,4 +1,7 @@
-import { GraphQLRequestContext, GraphQLResponse } from "graphql-request/build/esm/types.js"
+import {
+  GraphQLRequestContext,
+  GraphQLResponse,
+} from "graphql-request/build/esm/types.js"
 
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
 import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"

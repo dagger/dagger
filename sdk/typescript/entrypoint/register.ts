@@ -19,7 +19,10 @@ import {
 /**
  * Register the module files and returns its ID
  */
-export async function register(files: string[], module: DaggerModule): Promise<ModuleID> {
+export async function register(
+  files: string[],
+  module: DaggerModule,
+): Promise<ModuleID> {
   // Get a new module that we will fill in with all the types
   let mod = dag.module_()
 
@@ -43,14 +46,20 @@ export async function register(files: string[], module: DaggerModule): Promise<M
     // Register all fields that belong to this object
     Object.values(object.properties).forEach((field) => {
       if (field.isExposed) {
-        typeDef = typeDef.withField(field.alias ?? field.name, addTypeDef(field.typeDef.typeDef), {
-          description: field.description,
-        })
+        typeDef = typeDef.withField(
+          field.alias ?? field.name,
+          addTypeDef(field.typeDef.typeDef),
+          {
+            description: field.description,
+          },
+        )
       }
     })
 
     if (object._constructor) {
-      typeDef = typeDef.withConstructor(addConstructor(object._constructor.typeDef, typeDef))
+      typeDef = typeDef.withConstructor(
+        addConstructor(object._constructor.typeDef, typeDef),
+      )
     }
 
     // Add it to the module object
@@ -64,7 +73,10 @@ export async function register(files: string[], module: DaggerModule): Promise<M
 /**
  * Bind a constructor to the given object.
  */
-function addConstructor(constructor: ConstructorTypeDef, owner: TypeDef): Function_ {
+function addConstructor(
+  constructor: ConstructorTypeDef,
+  owner: TypeDef,
+): Function_ {
   return dag.function_("", owner).with(addArg(constructor.args))
 }
 
@@ -81,7 +93,9 @@ function addFunction(fct: FunctionTypedef): Function_ {
 /**
  * Register all arguments in the function.
  */
-function addArg(args: { [name: string]: FunctionArgTypeDef }): (fct: Function_) => Function_ {
+function addArg(args: {
+  [name: string]: FunctionArgTypeDef
+}): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {
     Object.values(args).forEach((arg) => {
       const opts: FunctionWithArgOpts = {

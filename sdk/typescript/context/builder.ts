@@ -8,7 +8,9 @@ import { Context } from "./context.js"
  *
  * Initialize a default client context from environment.
  */
-export async function initDefaultContext(cfg: ConnectOpts = {}): Promise<Context> {
+export async function initDefaultContext(
+  cfg: ConnectOpts = {},
+): Promise<Context> {
   let ctx = new Context()
 
   // Prefer DAGGER_SESSION_PORT if set
@@ -16,7 +18,9 @@ export async function initDefaultContext(cfg: ConnectOpts = {}): Promise<Context
   if (daggerSessionPort) {
     const sessionToken = process.env["DAGGER_SESSION_TOKEN"]
     if (!sessionToken) {
-      throw new Error("DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT")
+      throw new Error(
+        "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT",
+      )
     }
 
     if (cfg.Workdir && cfg.Workdir !== "") {

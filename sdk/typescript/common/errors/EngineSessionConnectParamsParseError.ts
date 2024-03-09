@@ -1,7 +1,8 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
 import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
-interface EngineSessionConnectParamsParseErrorOptions extends DaggerSDKErrorOptions {
+interface EngineSessionConnectParamsParseErrorOptions
+  extends DaggerSDKErrorOptions {
   parsedLine: string
 }
 
@@ -20,7 +21,10 @@ export class EngineSessionConnectParamsParseError extends DaggerSDKError {
   /**
    * @hidden
    */
-  constructor(message: string, options: EngineSessionConnectParamsParseErrorOptions) {
+  constructor(
+    message: string,
+    options: EngineSessionConnectParamsParseErrorOptions,
+  ) {
     super(message, options)
     this.parsedLine = options.parsedLine
   }

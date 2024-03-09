@@ -26,13 +26,20 @@ export class DaggerObject {
    * @throws UnknownDaggerError If the class doesn't have a name.
    * @throws UnknownDaggerError If the class doesn't have a symbol.
    */
-  constructor(checker: ts.TypeChecker, file: ts.SourceFile, classDeclaration: ts.ClassDeclaration) {
+  constructor(
+    checker: ts.TypeChecker,
+    file: ts.SourceFile,
+    classDeclaration: ts.ClassDeclaration,
+  ) {
     this.checker = checker
     this.class = classDeclaration
     this.file = file
 
     if (!classDeclaration.name) {
-      throw new UnknownDaggerError(`could not introspect class: ${classDeclaration}`, {})
+      throw new UnknownDaggerError(
+        `could not introspect class: ${classDeclaration}`,
+        {},
+      )
     }
 
     const classSymbol = checker.getSymbolAtLocation(classDeclaration.name)
@@ -51,7 +58,9 @@ export class DaggerObject {
   }
 
   get description(): string {
-    return ts.displayPartsToString(this.symbol.getDocumentationComment(this.checker))
+    return ts.displayPartsToString(
+      this.symbol.getDocumentationComment(this.checker),
+    )
   }
 
   get _constructor(): Constructor | undefined {
@@ -65,7 +74,10 @@ export class DaggerObject {
       return undefined
     }
 
-    return new Constructor(this.checker, constructor as ts.ConstructorDeclaration)
+    return new Constructor(
+      this.checker,
+      constructor as ts.ConstructorDeclaration,
+    )
   }
 
   get methods(): Methods {
@@ -84,7 +96,10 @@ export class DaggerObject {
     return this.class.members
       .filter((member) => ts.isPropertyDeclaration(member))
       .reduce((acc: Properties, member) => {
-        const property = new Property(this.checker, member as ts.PropertyDeclaration)
+        const property = new Property(
+          this.checker,
+          member as ts.PropertyDeclaration,
+        )
 
         acc[property.alias ?? property.name] = property
         return acc

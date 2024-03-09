@@ -241,7 +241,9 @@ describe("Registry", function () {
 
       @registry.func()
       async bar(): Promise<string> {
-        return (await this.ctr?.withExec(["echo", "-n", this.msg]).stdout()) || ""
+        return (
+          (await this.ctr?.withExec(["echo", "-n", this.msg]).stdout()) || ""
+        )
       }
     }
 
@@ -297,7 +299,12 @@ describe("Registry", function () {
     )
     assert.deepEqual(constructorResult, { msg: "Dagger" })
 
-    const result = await registry.getResult("HelloWorld", "sayHi", constructorResult, {})
+    const result = await registry.getResult(
+      "HelloWorld",
+      "sayHi",
+      constructorResult,
+      {},
+    )
     assert.deepEqual(result, "Hello Dagger")
   })
 
@@ -314,7 +321,12 @@ describe("Registry", function () {
       }
     }
 
-    const defaultResult = await registry.getResult("HelloWorld", "sayHi", {}, {})
+    const defaultResult = await registry.getResult(
+      "HelloWorld",
+      "sayHi",
+      {},
+      {},
+    )
     assert.deepEqual(defaultResult, "foobar")
 
     const result = await registry.getResult(

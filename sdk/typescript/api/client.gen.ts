@@ -1072,7 +1072,10 @@ export class CacheVolume extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }, _id?: CacheVolumeID) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: CacheVolumeID,
+  ) {
     super(parent)
 
     this._id = _id
@@ -1417,7 +1420,10 @@ export class Container extends BaseClient {
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
    */
-  export = async (path: string, opts?: ContainerExportOpts): Promise<boolean> => {
+  export = async (
+    path: string,
+    opts?: ContainerExportOpts,
+  ): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
@@ -1695,7 +1701,10 @@ export class Container extends BaseClient {
    *
    * Defaults to OCI, which is largely compatible with most recent registries, but Docker may be needed for older registries without OCI support.
    */
-  publish = async (address: string, opts?: ContainerPublishOpts): Promise<string> => {
+  publish = async (
+    address: string,
+    opts?: ContainerPublishOpts,
+  ): Promise<string> => {
     if (this._publish) {
       return this._publish
     }
@@ -1916,7 +1925,10 @@ export class Container extends BaseClient {
    * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
    * @param opts.keepDefaultArgs Don't remove the default arguments when setting the entrypoint.
    */
-  withEntrypoint = (args: string[], opts?: ContainerWithEntrypointOpts): Container => {
+  withEntrypoint = (
+    args: string[],
+    opts?: ContainerWithEntrypointOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1992,7 +2004,10 @@ export class Container extends BaseClient {
    * @param opts.description Optional port description
    * @param opts.experimentalSkipHealthcheck Skip the health check when run as a service.
    */
-  withExposedPort = (port: number, opts?: ContainerWithExposedPortOpts): Container => {
+  withExposedPort = (
+    port: number,
+    opts?: ContainerWithExposedPortOpts,
+  ): Container => {
     const metadata: Metadata = {
       protocol: { is_enum: true },
     }
@@ -2020,7 +2035,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withFile = (path: string, source: File, opts?: ContainerWithFileOpts): Container => {
+  withFile = (
+    path: string,
+    source: File,
+    opts?: ContainerWithFileOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2044,7 +2063,11 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withFiles = (path: string, sources: File[], opts?: ContainerWithFilesOpts): Container => {
+  withFiles = (
+    path: string,
+    sources: File[],
+    opts?: ContainerWithFilesOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2258,7 +2281,11 @@ export class Container extends BaseClient {
    * @param username The username of the registry's account (e.g., "Dagger").
    * @param secret The API key, password or token to authenticate to this registry.
    */
-  withRegistryAuth = (address: string, username: string, secret: Secret): Container => {
+  withRegistryAuth = (
+    address: string,
+    username: string,
+    secret: Secret,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -2445,7 +2472,10 @@ export class Container extends BaseClient {
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
-  withoutExposedPort = (port: number, opts?: ContainerWithoutExposedPortOpts): Container => {
+  withoutExposedPort = (
+    port: number,
+    opts?: ContainerWithoutExposedPortOpts,
+  ): Container => {
     const metadata: Metadata = {
       protocol: { is_enum: true },
     }
@@ -2996,7 +3026,11 @@ export class Directory extends BaseClient {
    * @param source Identifier of the file to copy.
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
    */
-  withFile = (path: string, source: File, opts?: DirectoryWithFileOpts): Directory => {
+  withFile = (
+    path: string,
+    source: File,
+    opts?: DirectoryWithFileOpts,
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3015,7 +3049,11 @@ export class Directory extends BaseClient {
    * @param sources Identifiers of the files to copy.
    * @param opts.permissions Permission given to the copied files (e.g., 0600).
    */
-  withFiles = (path: string, sources: File[], opts?: DirectoryWithFilesOpts): Directory => {
+  withFiles = (
+    path: string,
+    sources: File[],
+    opts?: DirectoryWithFilesOpts,
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3033,7 +3071,10 @@ export class Directory extends BaseClient {
    * @param path Location of the directory created (e.g., "/logs").
    * @param opts.permissions Permission granted to the created directory (e.g., 0777).
    */
-  withNewDirectory = (path: string, opts?: DirectoryWithNewDirectoryOpts): Directory => {
+  withNewDirectory = (
+    path: string,
+    opts?: DirectoryWithNewDirectoryOpts,
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3052,7 +3093,11 @@ export class Directory extends BaseClient {
    * @param contents Content of the written file (e.g., "Hello world!").
    * @param opts.permissions Permission given to the copied file (e.g., 0600).
    */
-  withNewFile = (path: string, contents: string, opts?: DirectoryWithNewFileOpts): Directory => {
+  withNewFile = (
+    path: string,
+    contents: string,
+    opts?: DirectoryWithNewFileOpts,
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -3657,7 +3702,11 @@ export class Function_ extends BaseClient {
    * @param opts.description A doc string for the argument, if any
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
    */
-  withArg = (name: string, typeDef: TypeDef, opts?: FunctionWithArgOpts): Function_ => {
+  withArg = (
+    name: string,
+    typeDef: TypeDef,
+    opts?: FunctionWithArgOpts,
+  ): Function_ => {
     return new Function_({
       queryTree: [
         ...this._queryTree,
@@ -4099,7 +4148,10 @@ export class GeneratedCode extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }, _id?: GeneratedCodeID) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GeneratedCodeID,
+  ) {
     super(parent)
 
     this._id = _id
@@ -4483,7 +4535,10 @@ export class GitRepository extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }, _id?: GitRepositoryID) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: GitRepositoryID,
+  ) {
     super(parent)
 
     this._id = _id
@@ -4588,7 +4643,10 @@ export class Host extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }, _id?: HostID) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: HostID,
+  ) {
     super(parent)
 
     this._id = _id
@@ -5090,7 +5148,10 @@ export class ListTypeDef extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }, _id?: ListTypeDefID) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ListTypeDefID,
+  ) {
     super(parent)
 
     this._id = _id
@@ -6571,7 +6632,12 @@ export class Client extends BaseClient {
    * @param mediaType Media type of the blob
    * @param uncompressed Digest of the uncompressed blob
    */
-  blob = (digest: string, size: number, mediaType: string, uncompressed: string): Directory => {
+  blob = (
+    digest: string,
+    size: number,
+    mediaType: string,
+    uncompressed: string,
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -7000,7 +7066,9 @@ export class Client extends BaseClient {
   /**
    * Load a FunctionCallArgValue from its ID.
    */
-  loadFunctionCallArgValueFromID = (id: FunctionCallArgValueID): FunctionCallArgValue => {
+  loadFunctionCallArgValueFromID = (
+    id: FunctionCallArgValueID,
+  ): FunctionCallArgValue => {
     return new FunctionCallArgValue({
       queryTree: [
         ...this._queryTree,
@@ -7192,7 +7260,9 @@ export class Client extends BaseClient {
   /**
    * Load a LocalModuleSource from its ID.
    */
-  loadLocalModuleSourceFromID = (id: LocalModuleSourceID): LocalModuleSource => {
+  loadLocalModuleSourceFromID = (
+    id: LocalModuleSourceID,
+  ): LocalModuleSource => {
     return new LocalModuleSource({
       queryTree: [
         ...this._queryTree,
@@ -7406,7 +7476,10 @@ export class Client extends BaseClient {
    * @param refString The string ref representation of the module source
    * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
    */
-  moduleSource = (refString: string, opts?: ClientModuleSourceOpts): ModuleSource => {
+  moduleSource = (
+    refString: string,
+    opts?: ClientModuleSourceOpts,
+  ): ModuleSource => {
     return new ModuleSource({
       queryTree: [
         ...this._queryTree,
@@ -7795,7 +7868,10 @@ export class Socket extends BaseClient {
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(parent?: { queryTree?: QueryTree[]; ctx: Context }, _id?: SocketID) {
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: SocketID,
+  ) {
     super(parent)
 
     this._id = _id
@@ -8058,7 +8134,11 @@ export class TypeDef extends BaseClient {
    * @param typeDef The type of the field
    * @param opts.description A doc string for the field, if any
    */
-  withField = (name: string, typeDef: TypeDef, opts?: TypeDefWithFieldOpts): TypeDef => {
+  withField = (
+    name: string,
+    typeDef: TypeDef,
+    opts?: TypeDefWithFieldOpts,
+  ): TypeDef => {
     return new TypeDef({
       queryTree: [
         ...this._queryTree,
