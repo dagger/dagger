@@ -6,6 +6,7 @@ import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
 import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
+import { Args } from "../introspector/registry/registry.js"
 
 /**
  * Import all given typescript files so that trigger their decorators
@@ -21,6 +22,21 @@ export function loadInvokedObject(module: DaggerModule, parentName: string): Dag
   return module.objects[parentName]
 }
 
+export async function loadParentState(object: DaggerObject, ctx: InvokeCtx): Promise<Args> {
+  const parentState: Args = {}
+
+  for (const [key, value] of Object.entries(ctx.parentArgs)) {
+    const property = object.properties[key]
+    if (!property) {
+      throw new Error(`could not find parent property ${key}`)
+    }
+
+    parentState[property.name] = await loadValue(value, property.type)
+  }
+
+  return parentState
+}
+
 export function loadInvokedMethod(
   object: DaggerObject,
   ctx: InvokeCtx,
@@ -32,12 +48,47 @@ export function loadInvokedMethod(
   return object.methods[ctx.fnName]
 }
 
+export async function loadArgs(method: Method | Constructor, ctx: InvokeCtx): Promise<Args> {
+  const args: Args = {}
+
+  // Load arguments
+  for (const argName of method.getArgOrder()) {
+    const argument = method.arguments[argName]
+    if (!argument) {
+      throw new Error(`could not find argument ${argName}`)
+    }
+
+    const loadedArg = await loadValue(ctx.fnArgs[argName], argument.type)
+
+    // If the argument is variadic, we need to load each args independently
+    // so it's correctly propagated when it's sent to the function.
+    // Note: variadic args are always last in the list of args.
+    if (argument.isVariadic) {
+      for (const [i, arg] of (loadedArg ?? []).entries()) {
+        args[`${argName}${i}`] = arg
+      }
+
+      continue
+    }
+
+    // If the argument is nullable and the loaded arg is undefined with no default value, we set it to null.
+    if (argument.isNullable && loadedArg === undefined && !argument.defaultValue) {
+      args[argName] = null
+      continue
+    }
+
+    args[argName] = loadedArg
+  }
+
+  return args
+}
+
 /**
- * This function load the argument as a Dagger type.
+ * This function load the value as a Dagger type.
  *
  * Note: The JSON.parse() is required to remove extra quotes
  */
-export async function loadArg(value: any, type: TypeDef<TypeDefKind>): Promise<any> {
+export async function loadValue(value: any, type: TypeDef<TypeDefKind>): Promise<any> {
   // If value is undefinied, return it directly.
   if (value === undefined) {
     return value
@@ -47,7 +98,7 @@ export async function loadArg(value: any, type: TypeDef<TypeDefKind>): Promise<a
     case TypeDefKind.ListKind:
       return Promise.all(
         value.map(
-          async (v: any) => await loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
+          async (v: any) => await loadValue(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
         ),
       )
     case TypeDefKind.ObjectKind: {
@@ -100,7 +151,7 @@ export async function loadResult(
     for (const [key, value] of Object.entries(result)) {
       const property = Object.values(object.properties).find((p) => p.name === key)
       if (!property) {
-        throw new Error(`could not find property ${key}`)
+        throw new Error(`could not find result property ${key}`)
       }
 
       if (property.type.kind === TypeDefKind.ObjectKind) {
