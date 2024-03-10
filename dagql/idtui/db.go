@@ -245,9 +245,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 			}
 
 		case "rpc.service":
-			if attr.Value.AsString() == "moby.buildkit.v1.Control" {
-				spanData.Passthrough = true
-			}
+			spanData.Passthrough = true
 		}
 	}
 }
