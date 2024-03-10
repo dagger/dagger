@@ -379,4 +379,49 @@ describe("Invoke typescript function", function () {
       assert.equal(result, `"foo", null, "ho", "ah", "baz", null`)
     })
   })
+
+  it("Should correctly handle object arguments", async function () {
+    const files = await listFiles(`${rootDirectory}/objectParam`)
+
+    // Load function
+    await load(files)
+
+    const scanResult = scan(files)
+
+    const inputUpper = {
+      parentName: "ObjectParam",
+      fnName: "upper",
+      parentArgs: {},
+      fnArgs: {
+        msg: { content: "hello world" },
+      },
+    }
+
+    const resultUpper = await invoke(scanResult, inputUpper)
+
+    // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
+    assert.equal(resultUpper.content, "HELLO WORLD")
+
+    const inputUppers = {
+      parentName: "ObjectParam",
+      fnName: "uppers",
+      parentArgs: {},
+      fnArgs: {
+        msg: [
+          { content: "hello world" },
+          { content: "hello Dagger" },
+          { content: "hello Universe" },
+        ],
+      },
+    }
+
+    const resultUppers = await invoke(scanResult, inputUppers)
+
+    // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
+    assert.deepEqual(resultUppers, [
+      { content: "HELLO WORLD" },
+      { content: "HELLO DAGGER" },
+      { content: "HELLO UNIVERSE" },
+    ])
+  })
 })

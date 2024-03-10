@@ -1,9 +1,7 @@
-import { TypeDefKind } from "../api/client.gen.js"
 import { registry } from "../introspector/registry/registry.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
 import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
-import { TypeDef } from "../introspector/scanner/typeDefs.js"
 import { InvokeCtx } from "./context.js"
 import {
   loadResult,
@@ -11,6 +9,7 @@ import {
   loadInvokedObject,
   loadArgs,
   loadParentState,
+  loadObjectReturnType,
 } from "./load.js"
 
 function isConstructor(method: Method | Constructor): method is Constructor {
@@ -51,11 +50,7 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
     // Handle alias serialization by getting the return type to load
     // if the function called isn't a constructor.
     if (!isConstructor(method)) {
-      const retType = method.returnType
-      if (retType.kind === TypeDefKind.ObjectKind) {
-        object =
-          module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
-      }
+      object = loadObjectReturnType(module, object, method)
     }
 
     result = await loadResult(result, module, object)

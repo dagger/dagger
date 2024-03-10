@@ -62,6 +62,10 @@ describe("scan static TypeScript", function () {
       name: "Should correctly scan alias",
       directory: "alias",
     },
+    {
+      name: "Should correctly serialize object param",
+      directory: "objectParam",
+    },
   ]
 
   for (const test of testCases) {

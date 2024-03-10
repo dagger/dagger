@@ -1,0 +1,109 @@
+{
+  "name": "ObjectParam",
+  "objects": {
+    "Message": {
+      "name": "Message",
+      "description": "",
+      "constructor": {
+        "args": {
+          "content": {
+            "name": "content",
+            "description": "",
+            "type": {
+              "kind": "STRING_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false
+          }
+        }
+      },
+      "methods": {},
+      "properties": {
+        "content": {
+          "name": "content",
+          "description": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "ObjectParam": {
+      "name": "ObjectParam",
+      "description": "",
+      "methods": {
+        "sayHello": {
+          "name": "sayHello",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Message"
+          }
+        },
+        "upper": {
+          "name": "upper",
+          "description": "",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Message"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Message"
+          }
+        },
+        "uppers": {
+          "name": "uppers",
+          "description": "",
+          "arguments": {
+            "msg": {
+              "name": "msg",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "OBJECT_KIND",
+                  "name": "Message"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "OBJECT_KIND",
+              "name": "Message"
+            }
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

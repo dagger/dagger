@@ -18,29 +18,17 @@ export async function load(files: string[]): Promise<void> {
   await Promise.all(files.map(async (f) => await import(f)))
 }
 
+/**
+ * Return the object invoked from the module.
+ *
+ * @param module The module to load the object from.
+ * @param parentName The name of the parent object.
+ */
 export function loadInvokedObject(
   module: DaggerModule,
   parentName: string,
 ): DaggerObject {
   return module.objects[parentName]
-}
-
-export async function loadParentState(
-  object: DaggerObject,
-  ctx: InvokeCtx,
-): Promise<Args> {
-  const parentState: Args = {}
-
-  for (const [key, value] of Object.entries(ctx.parentArgs)) {
-    const property = object.properties[key]
-    if (!property) {
-      throw new Error(`could not find parent property ${key}`)
-    }
-
-    parentState[property.name] = await loadValue(value, property.type)
-  }
-
-  return parentState
 }
 
 export function loadInvokedMethod(
@@ -54,6 +42,12 @@ export function loadInvokedMethod(
   return object.methods[ctx.fnName]
 }
 
+/**
+ * Load the values of the arguments from the context.
+ *
+ * @param method Method to load the arguments from.
+ * @param ctx The context of the invocation.
+ */
 export async function loadArgs(
   method: Method | Constructor,
   ctx: InvokeCtx,
@@ -97,6 +91,30 @@ export async function loadArgs(
 }
 
 /**
+ * Load the state of the parent object from the context.
+ *
+ * @param object The object to load the parent state from.
+ * @param ctx The context of the invocation.
+ */
+export async function loadParentState(
+  object: DaggerObject,
+  ctx: InvokeCtx,
+): Promise<Args> {
+  const parentState: Args = {}
+
+  for (const [key, value] of Object.entries(ctx.parentArgs)) {
+    const property = object.properties[key]
+    if (!property) {
+      throw new Error(`could not find parent property ${key}`)
+    }
+
+    parentState[property.name] = await loadValue(value, property.type)
+  }
+
+  return parentState
+}
+
+/**
  * This function load the value as a Dagger type.
  *
  * Note: The JSON.parse() is required to remove extra quotes
@@ -133,7 +151,7 @@ export async function loadValue(
       // TODO(supports subfields serialization)
       return value
     }
-    // Cannot use , to specify multiple matching case so instead we use fallthrough.
+    // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
     case TypeDefKind.BooleanKind:
@@ -141,6 +159,40 @@ export async function loadValue(
       return value
     default:
       throw new Error(`unsupported type ${type.kind}`)
+  }
+}
+
+/**
+ * Load the object type from the return type of the method.
+ * This covers the case where the return type is an other object of the module.
+ * For example: `msg(): Message` where message is an object of the module.
+ *
+ * @param module  The module to load the object from.
+ * @param object The current object to load the return type from.
+ * @param method The method to load the return type from.
+ */
+export function loadObjectReturnType(
+  module: DaggerModule,
+  object: DaggerObject,
+  method: Method,
+): DaggerObject {
+  const retType = method.returnType
+
+  switch (retType.kind) {
+    case TypeDefKind.ListKind: {
+      // Loop until we find the original object type.
+      // This way we handle the list of list (e.g Object[][][]...[])
+      let listType = retType
+      while (listType.kind === TypeDefKind.ListKind) {
+        listType = (listType as TypeDef<TypeDefKind.ListKind>).typeDef
+      }
+
+      return module.objects[(listType as TypeDef<TypeDefKind.ObjectKind>).name]
+    }
+    case TypeDefKind.ObjectKind:
+      return module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
+    default:
+      return object
   }
 }
 
