@@ -60,12 +60,15 @@ func withEngine(
 	params.EngineLogs = Frontend
 
 	if exp, ok := tracing.ConfiguredSpanExporter(ctx); ok {
-		params.EngineTrace = tracing.MultiSpanExporter{
-			params.EngineTrace,
-			tracing.FilterLiveSpansExporter{
+		if !tracing.ForceLiveTrace {
+			exp = tracing.FilterLiveSpansExporter{
 				// SpanProcessor: processor,
 				SpanExporter: exp,
-			},
+			}
+		}
+		params.EngineTrace = tracing.MultiSpanExporter{
+			params.EngineTrace,
+			exp,
 		}
 	}
 

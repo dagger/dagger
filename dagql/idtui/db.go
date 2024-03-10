@@ -91,6 +91,10 @@ func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) er
 			traceData.Epoch = span.StartTime()
 		}
 
+		if span.EndTime().Before(span.StartTime()) {
+			traceData.IsRunning = true
+		}
+
 		if span.EndTime().After(traceData.End) {
 			slog.Debug("new end", "old", traceData.End, "new", span.EndTime())
 			traceData.End = span.EndTime()
@@ -316,7 +320,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if span.EndTime().IsZero() {
+		if span.IsRunning() {
 			return span
 		}
 		switch {

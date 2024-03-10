@@ -244,6 +244,8 @@ func NewLiveSpanProcessor(exp sdktrace.SpanExporter) LiveSpanProcessor {
 
 var liveProcessors []LiveSpanProcessor
 
+var ForceLiveTrace = os.Getenv("FORCE_LIVE_TRACE") != ""
+
 // FlushLiveProcessors assists with draining live telemetry data just before a
 // client goes away.
 //
@@ -289,7 +291,11 @@ func Init(ctx context.Context, cfg Config) {
 
 	if cfg.Detect {
 		if exp, ok := ConfiguredSpanExporter(ctx); ok {
-			cfg.BatchedTraceExporters = append(cfg.BatchedTraceExporters, exp)
+			if ForceLiveTrace {
+				cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, exp)
+			} else {
+				cfg.BatchedTraceExporters = append(cfg.BatchedTraceExporters, exp)
+			}
 		}
 		if exp, ok := ConfiguredLogExporter(ctx); ok {
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, exp)

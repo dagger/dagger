@@ -11,6 +11,7 @@ import (
 type Trace struct {
 	ID         trace.TraceID
 	Epoch, End time.Time
+	IsRunning  bool
 	db         *DB
 }
 
@@ -148,7 +149,7 @@ func (row *TraceRow) IsInteresting(verbosity int) bool {
 		// show things once they've been running for a while
 		return true
 	}
-	if verbosity >= 1 || step.EndTime().IsZero() || time.Since(step.EndTime()) < GCThreshold {
+	if verbosity >= 1 || step.IsRunning() || time.Since(step.EndTime()) < GCThreshold {
 		// show things that just completed, to reduce flicker
 		return true
 	}

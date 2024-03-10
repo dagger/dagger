@@ -48,8 +48,9 @@ func (span *Span) Base() (*callpbv1.Call, bool) {
 	return span.db.Simplify(call), true
 }
 
-func (step *Span) IsRunning() bool {
-	return step.EndTime().Before(step.StartTime())
+func (span *Span) IsRunning() bool {
+	inner := span.ReadOnlySpan
+	return inner.EndTime().Before(inner.StartTime())
 }
 
 func (span *Span) Logs() *Vterm {
@@ -79,30 +80,30 @@ func (span *Span) Err() error {
 	return nil
 }
 
-func (step *Span) IsInternal() bool {
-	return step.Internal
+func (span *Span) IsInternal() bool {
+	return span.Internal
 }
 
 func (span *Span) Duration() time.Duration {
+	inner := span.ReadOnlySpan
 	var dur time.Duration
 	if span.IsRunning() {
-		dur = time.Since(span.StartTime())
+		dur = time.Since(inner.StartTime())
 	} else {
-		dur = span.EndTime().Sub(span.StartTime())
+		dur = inner.EndTime().Sub(inner.StartTime())
 	}
 	return dur
 }
 
-func (step *Span) EndTime() time.Time {
-	inner := step.ReadOnlySpan.EndTime()
-	if inner.IsZero() {
+func (span *Span) EndTime() time.Time {
+	if span.IsRunning() {
 		return time.Now()
 	}
-	return inner
+	return span.ReadOnlySpan.EndTime()
 }
 
-func (step *Span) IsBefore(other *Span) bool {
-	return step.StartTime().Before(other.StartTime())
+func (span *Span) IsBefore(other *Span) bool {
+	return span.StartTime().Before(other.StartTime())
 }
 
 func (span *Span) Children() []*Span {
@@ -132,6 +133,9 @@ type SpanBar struct {
 func (span *Span) Bar() SpanBar {
 	epoch := span.trace.Epoch
 	end := span.trace.End
+	if span.trace.IsRunning {
+		end = time.Now()
+	}
 	total := end.Sub(epoch)
 
 	started := span.StartTime()
