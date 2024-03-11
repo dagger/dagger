@@ -485,7 +485,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 		With(sdkSource("typescript", `
 			import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 			@object()
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
 			class RuntimeDetection {
 			  @func()
 			  echoRuntime(): string {
@@ -538,7 +537,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
 				@object()
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
 				class RuntimeDetection {
 				  @func()
 				  echoRuntime(): string {
@@ -563,7 +561,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
 				@object()
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
 				class RuntimeDetection {
 				  @func()
 				  echoRuntime(): string {
@@ -588,7 +585,6 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
 				@object()
-				// eslint-disable-next-line @typescript-eslint/no-unused-vars
 				class RuntimeDetection {
 				  @func()
 				  echoRuntime(): string {
