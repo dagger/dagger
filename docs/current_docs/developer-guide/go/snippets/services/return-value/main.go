@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-
-	"dagger.io/dagger/dag"
 )
 
 type MyModule struct{}
 
+// starts and returns an HTTP service
 func (m *MyModule) HttpService() *Service {
 	return dag.Container().
 		From("python").
@@ -18,6 +17,7 @@ func (m *MyModule) HttpService() *Service {
 		AsService()
 }
 
+// sends a request to an HTTP service and returns the response
 func (m *MyModule) Get(ctx context.Context) string {
 	val, err := dag.Container().
 		From("alpine").

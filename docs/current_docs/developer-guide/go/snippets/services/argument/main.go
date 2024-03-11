@@ -6,6 +6,7 @@ import (
 
 type MyModule struct{}
 
+// sends a query to a MariaDB service received as input and returns the response
 func (m *MyModule) UserList(ctx context.Context, hostService *Service) string {
 	out, err := dag.Container().
 		From("mariadb:10.11.2").
