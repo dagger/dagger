@@ -10,7 +10,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
@@ -90,7 +90,6 @@ type zoomState struct {
 func New() *Frontend {
 	logs := NewVterm()
 	profile := ui.ColorProfile()
-	idproto.EnableDigestCache()
 	return &Frontend{
 		db: NewDB(),
 
@@ -631,9 +630,9 @@ func (fe *Frontend) View() string {
 }
 
 // DumpID is exposed for troubleshooting.
-func (fe *Frontend) DumpID(out *termenv.Output, id *idproto.ID) error {
-	if id.Base != nil {
-		if err := fe.DumpID(out, id.Base); err != nil {
+func (fe *Frontend) DumpID(out *termenv.Output, id *call.ID) error {
+	if id.Base() != nil {
+		if err := fe.DumpID(out, id.Base()); err != nil {
 			return err
 		}
 	}
@@ -690,17 +689,17 @@ const (
 	moduleColor = termenv.ANSIMagenta
 )
 
-func (fe *Frontend) renderIDBase(out *termenv.Output, id *idproto.ID) error {
-	typeName := id.Type.ToAST().Name()
+func (fe *Frontend) renderIDBase(out *termenv.Output, id *call.ID) error {
+	typeName := id.Type().ToAST().Name()
 	parent := out.String(typeName)
-	if id.Module != nil {
+	if id.Module() != nil {
 		parent = parent.Foreground(moduleColor)
 	}
 	fmt.Fprint(out, parent.String())
 	return nil
 }
 
-func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idproto.ID, depth int, inline bool) error {
+func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *call.ID, depth int, inline bool) error {
 	if !inline {
 		indent(out, depth)
 	}
@@ -709,20 +708,20 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 		fe.renderStatus(out, vtx)
 	}
 
-	if id.Base != nil {
-		if err := fe.renderIDBase(out, id.Base); err != nil {
+	if id.Base() != nil {
+		if err := fe.renderIDBase(out, id.Base()); err != nil {
 			return err
 		}
 		fmt.Fprint(out, ".")
 	}
 
-	fmt.Fprint(out, out.String(id.Field).Bold())
+	fmt.Fprint(out, out.String(id.Field()).Bold())
 
-	if len(id.Args) > 0 {
+	if len(id.Args()) > 0 {
 		fmt.Fprint(out, "(")
 		var needIndent bool
-		for _, arg := range id.Args {
-			if _, ok := arg.Value.ToInput().(*idproto.ID); ok {
+		for _, arg := range id.Args() {
+			if _, ok := arg.Value().ToInput().(*call.ID); ok {
 				needIndent = true
 				break
 			}
@@ -731,27 +730,24 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 			fmt.Fprintln(out)
 			depth++
 			depth++
-			for _, arg := range id.Args {
+			for _, arg := range id.Args() {
 				indent(out, depth)
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name)
-				val := arg.Value.GetValue()
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.Name())
+				val := arg.Value()
 				fmt.Fprint(out, " ")
 				switch x := val.(type) {
-				case *idproto.Literal_Id:
-					argVertexID, err := x.Id.Digest()
-					if err != nil {
-						return err
-					}
+				case *call.LiteralID:
+					argVertexID := x.Value().Digest()
 					argVtx := fe.db.Vertices[argVertexID.String()]
-					base := x.Id
-					if baseStep, ok := fe.db.HighLevelStep(x.Id); ok {
+					base := x.Value()
+					if baseStep, ok := fe.db.HighLevelStep(x.Value()); ok {
 						base = baseStep.ID()
 					}
 					if err := fe.renderID(out, argVtx, base, depth-1, true); err != nil {
 						return err
 					}
 				default:
-					fe.renderLiteral(out, arg.Value)
+					fe.renderLiteral(out, arg.Value())
 					fmt.Fprintln(out)
 				}
 			}
@@ -759,18 +755,18 @@ func (fe *Frontend) renderID(out *termenv.Output, vtx *progrock.Vertex, id *idpr
 			indent(out, depth)
 			depth-- //nolint:ineffassign
 		} else {
-			for i, arg := range id.Args {
+			for i, arg := range id.Args() {
 				if i > 0 {
 					fmt.Fprint(out, ", ")
 				}
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name)
-				fe.renderLiteral(out, arg.Value)
+				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.Name())
+				fe.renderLiteral(out, arg.Value())
 			}
 		}
 		fmt.Fprint(out, ")")
 	}
 
-	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
+	typeStr := out.String(": " + id.Type().ToAST().String()).Faint()
 	fmt.Fprint(out, typeStr)
 
 	if vtx != nil {
@@ -792,47 +788,49 @@ func (fe *Frontend) renderVertex(out *termenv.Output, vtx *progrock.Vertex, dept
 	return nil
 }
 
-func (fe *Frontend) renderLiteral(out *termenv.Output, lit *idproto.Literal) {
+func (fe *Frontend) renderLiteral(out *termenv.Output, lit call.Literal) {
 	var color termenv.Color
-	switch val := lit.GetValue().(type) {
-	case *idproto.Literal_Bool:
+	switch val := lit.(type) {
+	case *call.LiteralBool:
 		color = termenv.ANSIRed
-	case *idproto.Literal_Int:
+	case *call.LiteralInt:
 		color = termenv.ANSIRed
-	case *idproto.Literal_Float:
+	case *call.LiteralFloat:
 		color = termenv.ANSIRed
-	case *idproto.Literal_String_:
+	case *call.LiteralString:
 		color = termenv.ANSIYellow
-		if fe.window.Width != -1 && len(val.String_) > fe.window.Width {
-			display := string(digest.FromString(val.String_))
+		if fe.window.Width != -1 && len(val.Value()) > fe.window.Width {
+			display := string(digest.FromString(val.Value()))
 			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(color))
 			return
 		}
-	case *idproto.Literal_Id:
+	case *call.LiteralID:
 		color = termenv.ANSIMagenta
-	case *idproto.Literal_Enum:
+	case *call.LiteralEnum:
 		color = termenv.ANSIYellow
-	case *idproto.Literal_Null:
+	case *call.LiteralNull:
 		color = termenv.ANSIBrightBlack
-	case *idproto.Literal_List:
+	case *call.LiteralList:
 		fmt.Fprint(out, "[")
-		for i, item := range lit.GetList().Values {
+		val.Range(func(i int, item call.Literal) error {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
 			fe.renderLiteral(out, item)
-		}
+			return nil
+		})
 		fmt.Fprint(out, "]")
 		return
-	case *idproto.Literal_Object:
+	case *call.LiteralObject:
 		fmt.Fprint(out, "{")
-		for i, item := range lit.GetObject().Values {
+		val.Range(func(i int, name string, value call.Literal) error {
 			if i > 0 {
 				fmt.Fprint(out, ", ")
 			}
-			fmt.Fprintf(out, "%s: ", item.GetName())
-			fe.renderLiteral(out, item.Value)
-		}
+			fmt.Fprintf(out, "%s: ", name)
+			fe.renderLiteral(out, value)
+			return nil
+		})
 		fmt.Fprint(out, "}")
 		return
 	}

@@ -10,14 +10,14 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	dag *dagql.Server
+	Dag *dagql.Server
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -72,7 +72,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 
 	case core.TypeDefKindObject:
-		_, ok := m.dag.ObjectType(typeDef.AsObject.Value.Name)
+		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}
@@ -97,7 +97,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.dag)
+	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.Dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
 	}
@@ -222,11 +222,11 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	if !ok {
 		return nil, fmt.Errorf("expected string, got %T", value)
 	}
-	var idp idproto.ID
+	var idp call.ID
 	if err := idp.Decode(id); err != nil {
 		return nil, err
 	}
-	val, err := obj.coreMod.dag.Load(ctx, &idp)
+	val, err := obj.coreMod.Dag.Load(ctx, &idp)
 	if err != nil {
 		return nil, fmt.Errorf("CoreModObject.load %s: %w", idp.Display(), err)
 	}

@@ -1,4 +1,4 @@
-package schema
+package server
 
 import (
 	"net/http"
@@ -36,7 +36,6 @@ func flushAfterNBytes(n int) func(http.Handler) http.Handler {
 				limit:          n,
 				mu:             &sync.Mutex{},
 			}
-			defer flushWriter.Flush()
 
 			next.ServeHTTP(flushWriter, r)
 		})

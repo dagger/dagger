@@ -5,7 +5,7 @@ go 1.21
 replace dagger.io/dagger => ./sdk/go
 
 require (
-	dagger.io/dagger v0.10.0
+	dagger.io/dagger v0.10.1
 	github.com/99designs/gqlgen v0.17.41
 	github.com/Khan/genqlient v0.6.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
@@ -73,7 +73,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.17.0
-	github.com/tonistiigi/fsutil v0.0.0-20230825212630-f09800878302
+	github.com/tonistiigi/fsutil v0.0.0-20240301111122-7525a1af2bb5
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/urfave/cli v1.22.14
 	github.com/vektah/gqlparser/v2 v2.5.10

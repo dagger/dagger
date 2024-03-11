@@ -5,64 +5,18 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/stretchr/testify/require"
 )
 
-func TestNamespaceObjects(t *testing.T) {
-	t.Parallel()
-
-	testCases := []struct {
-		testCase  string
-		namespace string
-		obj       string
-		result    string
-	}{
-		{
-			testCase:  "namespace",
-			namespace: "Foo",
-			obj:       "Bar",
-			result:    "FooBar",
-		},
-		{
-			testCase:  "namespace into camel case",
-			namespace: "foo",
-			obj:       "bar-baz",
-			result:    "FooBarBaz",
-		},
-		{
-			testCase:  "don't namespace when equal",
-			namespace: "foo",
-			obj:       "Foo",
-			result:    "Foo",
-		},
-		{
-			testCase:  "don't namespace when prefixed",
-			namespace: "foo",
-			obj:       "FooBar",
-			result:    "FooBar",
-		},
-		{
-			testCase:  "still namespace when prefixed if not full",
-			namespace: "foo",
-			obj:       "Foobar",
-			result:    "FooFoobar",
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.testCase, func(t *testing.T) {
-			result := namespaceObject(tc.obj, tc.namespace)
-			require.Equal(t, tc.result, result)
-		})
-	}
-}
-
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
-	api, err := New(ctx, InitializeArgs{})
-	require.NoError(t, err)
-	require.NotNil(t, api.root)
-
-	typeDefs, err := api.root.DefaultDeps.TypeDefs(ctx)
+	root := &core.Query{}
+	dag := dagql.NewServer(root)
+	coreMod := &CoreMod{Dag: dag}
+	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
+	require.NoError(t, coreMod.Install(ctx, dag))
+	typeDefs, err := coreModDeps.TypeDefs(ctx)
 	require.NoError(t, err)
 
 	typeByName := make(map[string]*core.TypeDef)

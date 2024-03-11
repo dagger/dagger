@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -38,12 +38,8 @@ func (p JSON) Decoder() dagql.InputDecoder {
 	return p
 }
 
-func (p JSON) ToLiteral() *idproto.Literal {
-	return &idproto.Literal{
-		Value: &idproto.Literal_String_{
-			String_: string(p),
-		},
-	}
+func (p JSON) ToLiteral() call.Literal {
+	return call.NewLiteralString(string(p))
 }
 
 func (p JSON) MarshalJSON() ([]byte, error) {

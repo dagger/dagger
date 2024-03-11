@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -164,6 +164,7 @@ func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars ma
 		if val == nil {
 			continue
 		}
+
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)
@@ -180,7 +181,7 @@ func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars ma
 }
 
 // New returns a new instance of the class.
-func (cls Class[T]) New(id *idproto.ID, val Typed) (Object, error) {
+func (cls Class[T]) New(id *call.ID, val Typed) (Object, error) {
 	self, ok := val.(T)
 	if !ok {
 		// NB: Nullable values should already be unwrapped by now.
@@ -204,10 +205,10 @@ func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string
 
 // Instance is an instance of an Object type.
 type Instance[T Typed] struct {
-	Constructor *idproto.ID
+	Constructor *call.ID
 	Self        T
 	Class       Class[T]
-	Module      *idproto.ID
+	Module      *call.ID
 }
 
 var _ Typed = Instance[Typed]{}
@@ -225,7 +226,7 @@ func (r Instance[T]) ObjectType() ObjectType {
 }
 
 // ID returns the ID of the instance.
-func (r Instance[T]) ID() *idproto.ID {
+func (r Instance[T]) ID() *call.ID {
 	return r.Constructor
 }
 
@@ -243,14 +244,10 @@ func (r Instance[T]) Unwrap() Typed {
 
 // String returns the instance in Class@sha256:... format.
 func (r Instance[T]) String() string {
-	dig, err := r.Constructor.Digest()
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%s@%s", r.Type().Name(), dig)
+	return fmt.Sprintf("%s@%s", r.Type().Name(), r.Constructor.Digest())
 }
 
-func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*idproto.ID, error) {
+func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*call.ID, error) {
 	field, ok := r.Class.Field(sel.Field)
 	if !ok {
 		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
@@ -268,6 +265,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 	if err != nil {
 		return nil, fmt.Errorf("%s.%s: %w", r.Class.TypeName(), sel.Field, err)
 	}
+
 	val, err = r.Class.Call(ctx, r, sel.Field, args)
 	if err != nil {
 		return nil, err
@@ -378,7 +376,7 @@ type FieldSpec struct {
 	// DeprecatedReason deprecates the field and provides a reason.
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
-	Module *idproto.Module
+	Module *call.Module
 }
 
 func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
