@@ -48,10 +48,14 @@ You should see the following:
 
 ```json
 {
-  "name": "greetings-api",
-  "engineVersion": "v0.10.0"
+  "name": "example",
+  "engineVersion": "v0.10.1"
 }
 ```
+
+:::note
+By default, the module name is derived from the name of the directory in which it is initialized. To use a different name, add the `--name` argument to the `dagger init` call - for example, `dagger init --name=my-module`.
+:::
 
 Finally, commit the file to your repository:
 
@@ -74,14 +78,16 @@ Once the command completes, look at the `dagger.json` file again. You should see
 
 ```json
 {
-  "name": "greetings-api",
+  "name": "example",
+  "sdk": "go",
   "dependencies": [
     {
       "name": "hello",
-      "source": "github.com/shykes/daggerverse/hello@7884cbc1941f85a7c714fc7f1bcc5c148842c21e"
+      "source": "github.com/shykes/daggerverse/hello@3d608cb5e6b4b18036a471400bc4e6c753f229d7"
     }
   ],
-  "engineVersion": "v0.10.0"
+  "source": "dagger",
+  "engineVersion": "v0.10.1"
 }
 ```
 
