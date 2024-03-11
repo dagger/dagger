@@ -1,9 +1,4 @@
-import {
-  dag,
-  object,
-  func,
-  Service
-} from "@dagger.io/dagger"
+import { dag, object, func, Service } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -12,12 +7,13 @@ class MyModule {
    */
   @func()
   httpService(): Service {
-    return dag.container()
+    return dag
+      .container()
       .from("python")
       .withDirectory(
         "/srv",
         dag.directory().withNewFile("index.html", "Hello, world!"),
-        )
+      )
       .withWorkdir("/srv")
       .withExec(["python", "-m", "http.server", "8080"])
       .withExposedPort(8080)
@@ -29,11 +25,11 @@ class MyModule {
    */
   @func()
   async get(): Promise<string> {
-    return await dag.container()
+    return await dag
+      .container()
       .from("alpine")
       .withServiceBinding("www", this.httpService())
       .withExec(["wget", "-O-", "http://www:8080"])
       .stdout()
   }
-
 }
