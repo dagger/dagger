@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
@@ -141,8 +142,9 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, err
 	}
 
-	ctr = ctr. // Add sdk directory without runtime nor codegen binary
-			WithMountedDirectory(sdkSrc, t.SDKSourceDir).
+	ctr = ctr.
+		// Add sdk directory without runtime nor codegen binary
+		WithMountedDirectory(sdkSrc, t.SDKSourceDir).
 		// Add codegen binary into a special path
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Add template directory
@@ -183,9 +185,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			// if not: copy the template and replace QuickStart with the module name
 			WithExec([]string{"sh", "-c",
 				"if [ -f package.json ]; then  bun install ./sdk  --dev  && bun /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
-			},
-				ContainerWithExecOpts{SkipEntrypoint: true},
-			)
+			})
 	case Node:
 		base = base.
 			WithExec([]string{"npm", "install", "-g", "tsx"}).
@@ -194,9 +194,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			// if not: copy the template and replace QuickStart with the module name
 			WithExec([]string{"sh", "-c",
 				"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
-			},
-				ContainerWithExecOpts{SkipEntrypoint: true},
-			)
+			})
 	default:
 		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
 	}
@@ -207,7 +205,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// This cover the case where there's a package.json but no src directory.
 		WithExec([]string{"sh", "-c",
 			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
-			ContainerWithExecOpts{SkipEntrypoint: true}), nil
+		), nil
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
@@ -230,43 +228,38 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 
 // DetectRuntime returns the runtime(bun or node) detected for the user's module
 // If a runtime is specfied inside the package.json, it will be used.
-// If a package-lock.json is present, node will be used.
+// If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
 // If a bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
 func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	// Try to detect runtime from package.json
-	source := modSource.ContextDirectory()
+	source := modSource.ContextDirectory().Directory(subPath)
+	
 	// read contents of package.json
-	runtime, err := func() (SupportedTSRuntime, error) {
-		json, err := source.File(path.Join(subPath, "package.json")).Contents(ctx)
-		if err != nil {
-			return "", fmt.Errorf("could not read package.json: %w", err)
-		}
-
-		value := gjson.Get(json, "dagger.runtime").String()
-		if value == "" {
-			return "", fmt.Errorf("no runtime specified in package.json")
-		}
-		return SupportedTSRuntime(value), nil
-	}()
+	json, err := source.File("package.json").Contents(ctx)
 	if err == nil {
-		switch runtime {
-		case Bun, Node:
-			return runtime, nil
-		default:
-			return "", fmt.Errorf("detected unknown runtime: %v", runtime)
+		value := gjson.Get(json, "dagger.runtime").String()
+		if value != "" {
+			switch runtime := SupportedTSRuntime(value); runtime {
+			case Bun, Node:
+				return runtime, nil
+			default:
+				return "", fmt.Errorf("detected unknown runtime: %v", runtime)
+			}
 		}
 	}
 
 	// Try to detect runtime from lock files
-	// TODO: change to ".Exists" when it's added to core
-	if _, err := source.File(path.Join(subPath, "package-lock.json")).Size(ctx); err == nil {
-		return Node, nil
-	}
-
-	// TODO: change to ".Exists" when it's added to core
-	if _, err := source.File(path.Join(subPath, "bun.lockb")).Size(ctx); err == nil {
-		return Bun, nil
+	entries, err := source.Entries(ctx)
+	if err == nil {
+		if slices.Contains(entries, "package-lock.json") ||
+			slices.Contains(entries, "yarn.lock") ||
+			slices.Contains(entries, "pnpm-lock.yaml") {
+			return Node, nil
+		}
+		if slices.Contains(entries, "bun.lockb") {
+			return Bun, nil
+		}
 	}
 
 	// Default to node
