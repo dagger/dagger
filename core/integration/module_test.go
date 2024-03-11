@@ -2335,9 +2335,9 @@ class Foo {
   @field()
   unsetFile?: File
 
-  constructor(con: Container, usetFile?: File) {
+  constructor(con: Container, unsetFile?: File) {
     this.con = con
-    this.usetFile = usetFile
+    this.unsetFile = unsetFile
   }
 }
 
