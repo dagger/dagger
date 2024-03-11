@@ -11,6 +11,12 @@ class MyModule:
             dag.container()
             .from_("mariadb:10.11.2")
             .with_service_binding("db", host_service)
-            .with_exec(["/bin/sh", "-c", "/usr/bin/mysql --user=root --password=secret --host=db -e 'SELECT Host, User FROM mysql.user'"])
+            .with_exec(
+                [
+                    "/bin/sh",
+                    "-c",
+                    "/usr/bin/mysql --user=root --password=secret --host=db -e 'SELECT Host, User FROM mysql.user'",
+                ]
+            )
             .stdout()
         )

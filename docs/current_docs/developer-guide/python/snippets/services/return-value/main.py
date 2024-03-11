@@ -10,7 +10,9 @@ class MyModule:
         return (
             dag.container()
             .from_("python")
-            .with_directory("/srv", dag.directory().with_new_file("index.html", "Hello, world!"))
+            .with_directory(
+                "/srv", dag.directory().with_new_file("index.html", "Hello, world!")
+            )
             .with_workdir("/srv")
             .with_exec(["python", "-m", "http.server", "8080"])
             .with_exposed_port(8080)

@@ -1,4 +1,9 @@
-import { dag, Container, Directory, object, func, Service } from "@dagger.io/dagger"
+import {
+  dag,
+  object,
+  func,
+  Service
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -9,7 +14,10 @@ class MyModule {
   httpService(): Service {
     return dag.container()
       .from("python")
-      .withDirectory("/srv", dag.directory().withNewFile("index.html", "Hello, world!"))
+      .withDirectory(
+        "/srv",
+        dag.directory().withNewFile("index.html", "Hello, world!"),
+        )
       .withWorkdir("/srv")
       .withExec(["python", "-m", "http.server", "8080"])
       .withExposedPort(8080)
