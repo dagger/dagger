@@ -302,6 +302,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ParentClientIDs:           c.ParentClientIDs,
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
+				UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
 				Labels:                    c.labels,
 				ModuleCallerDigest:        c.ModuleCallerDigest,
 				CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
@@ -383,17 +384,6 @@ func (c *Client) Close() (rerr error) {
 		// already closed
 		return nil
 	default:
-	}
-
-	if len(c.upstreamCacheExportOptions) > 0 {
-		cacheExportCtx, cacheExportCancel := context.WithTimeout(c.internalCtx, 600*time.Second)
-		defer cacheExportCancel()
-		_, err := c.bkClient.ControlClient().Solve(cacheExportCtx, &controlapi.SolveRequest{
-			Cache: controlapi.CacheOptions{
-				Exports: c.upstreamCacheExportOptions,
-			},
-		})
-		rerr = errors.Join(rerr, err)
 	}
 
 	c.closeRequests()

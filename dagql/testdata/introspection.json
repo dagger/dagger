@@ -129,6 +129,20 @@
             "deprecationReason": ""
           },
           {
+            "name": "from",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Point"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          },
+          {
             "name": "id",
             "description": "A unique identifier for this Line.",
             "type": {
@@ -150,6 +164,20 @@
               "ofType": {
                 "kind": "SCALAR",
                 "name": "Float"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": ""
+          },
+          {
+            "name": "to",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Point"
               }
             },
             "args": [],

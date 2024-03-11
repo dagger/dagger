@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -11,7 +10,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/internal/pipes"
 	"github.com/dagger/dagger/dagql/internal/points"
 	"github.com/dagger/dagger/dagql/introspection"
@@ -81,14 +80,10 @@ func TelemetryFunc(rec *progrock.Recorder) dagql.AroundFunc {
 	return func(
 		ctx context.Context,
 		obj dagql.Object,
-		id *idproto.ID,
+		id *call.ID,
 		next func(context.Context) (dagql.Typed, error),
 	) func(context.Context) (dagql.Typed, error) {
-		dig, err := id.Digest()
-		if err != nil {
-			slog.Error("failed to digest id", "error", err, "id", id.Display())
-			return next
-		}
+		dig := id.Digest()
 		return func(context.Context) (dagql.Typed, error) {
 			vtx := rec.Vertex(dig, id.Display())
 			ctx = ioctx.WithStdout(ctx, vtx.Stdout())

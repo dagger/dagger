@@ -1349,7 +1349,7 @@ func (s *containerSchema) withDefaultTerminalCmd(
 	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
 	ctr = ctr.Clone()
-	ctr.DefaultTerminalCmd = &args.DefaultTerminalCmdOpts
+	ctr.DefaultTerminalCmd = args.DefaultTerminalCmdOpts
 	return ctr, nil
 }
 

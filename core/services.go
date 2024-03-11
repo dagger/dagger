@@ -7,9 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
@@ -33,7 +32,6 @@ const (
 // Services manages the lifecycle of services, ensuring the same service only
 // runs once per client.
 type Services struct {
-	bk       *buildkit.Client
 	starting map[ServiceKey]*sync.WaitGroup
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
@@ -77,9 +75,8 @@ type ServiceKey struct {
 }
 
 // NewServices returns a new Services.
-func NewServices(bk *buildkit.Client) *Services {
+func NewServices() *Services {
 	return &Services{
-		bk:       bk,
 		starting: map[ServiceKey]*sync.WaitGroup{},
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
@@ -90,16 +87,13 @@ func NewServices(bk *buildkit.Client) *Services {
 // starting, it waits for it and either returns the running service or an error
 // if it failed to start. If the service is not running or starting, an error
 // is returned.
-func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, error) {
+func (ss *Services) Get(ctx context.Context, id *call.ID) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
+	dig := id.Digest()
 
 	key := ServiceKey{
 		Digest:   dig,
@@ -128,7 +122,7 @@ func (ss *Services) Get(ctx context.Context, id *idproto.ID) (*RunningService, e
 type Startable interface {
 	Start(
 		ctx context.Context,
-		id *idproto.ID,
+		id *call.ID,
 		interactive bool,
 		forwardStdin func(io.Writer, bkgw.ContainerProcess),
 		forwardStdout func(io.Reader),
@@ -140,17 +134,13 @@ type Startable interface {
 // service is already running, it is returned immediately. If the service is
 // already starting, it waits for it to finish and returns the running service.
 // If the service failed to start, it tries again.
-func (ss *Services) Start(ctx context.Context, id *idproto.ID, svc Startable) (*RunningService, error) {
+func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return nil, err
-	}
-
+	dig := id.Digest()
 	key := ServiceKey{
 		Digest:   dig,
 		ServerID: clientMetadata.ServerID,
@@ -250,17 +240,13 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 }
 
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
+func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	dig, err := id.Digest()
-	if err != nil {
-		return err
-	}
-
+	dig := id.Digest()
 	key := ServiceKey{
 		Digest:   dig,
 		ServerID: clientMetadata.ServerID,
@@ -298,11 +284,11 @@ func (ss *Services) Stop(ctx context.Context, id *idproto.ID, kill bool) error {
 
 // StopClientServices stops all of the services being run by the given client.
 // It is called when a client is closing.
-func (ss *Services) StopClientServices(ctx context.Context, client *engine.ClientMetadata) error {
+func (ss *Services) StopClientServices(ctx context.Context, serverID string) error {
 	ss.l.Lock()
 	var svcs []*RunningService
 	for _, svc := range ss.running {
-		if svc.Key.ServerID == client.ServerID {
+		if svc.Key.ServerID == serverID {
 			svcs = append(svcs, svc)
 		}
 	}

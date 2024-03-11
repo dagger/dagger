@@ -1,9 +1,23 @@
 import React from "react";
 import styles from "@site/src/css/tag.module.scss";
 
-export default function Tag({label, onTagClick, onCloseClick, removable}) {
+export default function Tag({
+  label,
+  onTagClick,
+  onCloseClick,
+  removable,
+}: {
+  label: string;
+  onTagClick?: () => void;
+  onCloseClick?: () => void;
+  removable?: boolean;
+}) {
   return (
-    <div onClick={onTagClick} className={styles.tag} style={{cursor: removable ? "initial" : "pointer"}}>
+    <div
+      onClick={onTagClick}
+      className={styles.tag}
+      style={{ cursor: removable ? "initial" : "pointer" }}
+    >
       <span>{label}</span>
       {removable && (
         <div className={styles.close} onClick={onCloseClick}>

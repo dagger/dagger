@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/tracing"
 	"github.com/vito/progrock"
 )
@@ -17,7 +17,7 @@ func init() {
 type DB struct {
 	Epoch, End time.Time
 
-	IDs       map[string]*idproto.ID
+	IDs       map[string]*call.ID
 	Vertices  map[string]*progrock.Vertex
 	Tasks     map[string][]*progrock.VertexTask
 	Outputs   map[string]map[string]struct{}
@@ -31,7 +31,7 @@ func NewDB() *DB {
 		Epoch: time.Now(),  // replaced at runtime
 		End:   time.Time{}, // replaced at runtime
 
-		IDs:       make(map[string]*idproto.ID),
+		IDs:       make(map[string]*call.ID),
 		Vertices:  make(map[string]*progrock.Vertex),
 		Tasks:     make(map[string][]*progrock.VertexTask),
 		OutputOf:  make(map[string]map[string]struct{}),
@@ -47,8 +47,8 @@ func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
 	// collect IDs
 	for _, meta := range status.Metas {
 		if meta.Name == "id" {
-			var id idproto.ID
-			if err := meta.Data.UnmarshalTo(&id); err != nil {
+			var id call.ID
+			if err := id.FromAnyPB(meta.Data); err != nil {
 				return fmt.Errorf("unmarshal payload: %w", err)
 			}
 			db.IDs[meta.Vertex] = &id
@@ -146,7 +146,7 @@ func (db *DB) Step(dig string) (*Step, bool) {
 	}
 	outID := db.IDs[dig]
 	switch {
-	case outID != nil && outID.Field == "id":
+	case outID != nil && outID.Field() == "id":
 		// ignore 'id' field selections, they're everywhere and not interesting
 		return nil, false
 	case !step.HasStarted():
@@ -164,21 +164,15 @@ func (db *DB) Step(dig string) (*Step, bool) {
 			}
 		}
 	}
-	if outID != nil && outID.Base != nil {
-		parentDig, err := outID.Base.Digest()
-		if err != nil {
-			return nil, false
-		}
+	if outID != nil && outID.Base() != nil {
+		parentDig := outID.Base().Digest()
 		step.BaseDigest = db.Simplify(parentDig.String())
 	}
 	return step, true
 }
 
-func (db *DB) HighLevelStep(id *idproto.ID) (*Step, bool) {
-	parentDig, err := id.Digest()
-	if err != nil {
-		return nil, false
-	}
+func (db *DB) HighLevelStep(id *call.ID) (*Step, bool) {
+	parentDig := id.Digest()
 	return db.Step(db.Simplify(parentDig.String()))
 }
 
@@ -235,33 +229,35 @@ func (*DB) Close() error {
 	return nil
 }
 
-func litSize(lit *idproto.Literal) int {
-	switch x := lit.Value.(type) {
-	case *idproto.Literal_Id:
-		return idSize(x.Id)
-	case *idproto.Literal_List:
+func litSize(lit call.Literal) int {
+	switch x := lit.(type) {
+	case *call.LiteralID:
+		return idSize(x.Value())
+	case *call.LiteralList:
 		size := 0
-		for _, lit := range x.List.Values {
+		x.Range(func(_ int, lit call.Literal) error {
 			size += litSize(lit)
-		}
+			return nil
+		})
 		return size
-	case *idproto.Literal_Object:
+	case *call.LiteralObject:
 		size := 0
-		for _, field := range x.Object.Values {
-			size += litSize(field.Value)
-		}
+		x.Range(func(_ int, _ string, value call.Literal) error {
+			size += litSize(value)
+			return nil
+		})
 		return size
 	}
 	return 1
 }
 
-func idSize(id *idproto.ID) int {
+func idSize(id *call.ID) int {
 	size := 0
-	for id := id; id != nil; id = id.Base {
+	for id := id; id != nil; id = id.Base() {
 		size++
-		size += len(id.Args)
-		for _, arg := range id.Args {
-			size += litSize(arg.Value)
+		size += len(id.Args())
+		for _, arg := range id.Args() {
+			size += litSize(arg.Value())
 		}
 	}
 	return size
@@ -286,10 +282,7 @@ func (db *DB) Simplify(dig string) string {
 		}
 	}
 	if simplified {
-		smallestDig, err := smallest.Digest()
-		if err != nil {
-			return dig
-		}
+		smallestDig := smallest.Digest()
 		return db.Simplify(smallestDig.String())
 	}
 	return dig

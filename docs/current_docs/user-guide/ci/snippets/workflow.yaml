@@ -28,18 +28,16 @@ spec:
       container:
         image: alpine:latest
         command: ["sh", "-c"]
-        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=./cmd/dagger"]
+        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=."]
         workingDir: /work
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
           value: "unix:///var/run/dagger/buildkitd.sock"
-        // highlight-start
         - name: "DAGGER_CLOUD_TOKEN"
           valueFrom:
             secretKeyRef:
               name: dagger-cloud
               key: token
-        // highlight-end
         volumeMounts:
           - name: dagger-conn
             mountPath: /var/run/dagger

@@ -1,5 +1,12 @@
 version: 0.2
 
+env:
+  secrets-manager:
+    # assumes that the Dagger Cloud token is
+    # in a secret with key dagger_cloud_token
+    # set in AWS Secrets Manager
+    DAGGER_CLOUD_TOKEN: "arn:aws:secretsmanager:...:dagger_cloud_token"
+
 phases:
   pre_build:
     commands:
@@ -9,4 +16,4 @@ phases:
   build:
     commands:
       - echo "Calling Dagger Function"
-      - dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting Hola --name Daggernauts --shout
+      - dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.

@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -38,7 +39,7 @@ func (proto ModuleSourceKind) Decoder() dagql.InputDecoder {
 	return ModuleSourceKindEnum
 }
 
-func (proto ModuleSourceKind) ToLiteral() *idproto.Literal {
+func (proto ModuleSourceKind) ToLiteral() call.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 
@@ -364,7 +365,9 @@ func (src *GitModuleSource) RefString() string {
 }
 
 func (src *GitModuleSource) Symbolic() string {
-	return filepath.Join(src.CloneURL(), src.RootSubpath)
+	// ignore error since ref is validated upon module initialization
+	p, _ := url.JoinPath(src.CloneURL(), src.RootSubpath)
+	return p
 }
 
 func (src *GitModuleSource) CloneURL() string {

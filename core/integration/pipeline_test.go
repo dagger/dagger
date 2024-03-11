@@ -14,6 +14,27 @@ func TestPipeline(t *testing.T) {
 
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
+	t.Run("client pipeline", func(t *testing.T) {
+		t.Parallel()
+
+		var logs safeBuffer
+		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+
+		_, err := c.
+			Pipeline("client pipeline").
+			Container().
+			From(alpineImage).
+			WithExec([]string{"echo", cacheBuster}).
+			Sync(ctx)
+
+		require.NoError(t, err)
+
+		require.NoError(t, c.Close()) // close + flush logs
+
+		t.Log(logs.String())
+		require.Contains(t, logs.String(), "client pipeline")
+	})
+
 	t.Run("container pipeline", func(t *testing.T) {
 		t.Parallel()
 
@@ -86,6 +107,14 @@ func TestPipeline(t *testing.T) {
 		require.Contains(t, logs.String(), "service "+hostname)
 		require.Regexp(t, `start python -m http.server.*DONE`, logs.String())
 	})
+}
+
+func TestPipelineGraphQLClient(t *testing.T) {
+	t.Parallel()
+
+	c, _ := connect(t)
+	require.NotNil(t, c.GraphQLClient())
+	require.NotNil(t, c.Pipeline("client pipeline").GraphQLClient())
 }
 
 func TestInternalVertexes(t *testing.T) {
