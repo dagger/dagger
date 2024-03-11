@@ -806,7 +806,9 @@ type filteringGateway struct {
 func newFilterGateway(bridge bkfrontend.FrontendLLBBridge, req bkgw.SolveRequest) *filteringGateway {
 	inputs := map[digest.Digest]struct{}{}
 	for _, inp := range req.FrontendInputs {
-		inputs[digest.FromBytes(inp.Def[len(inp.Def)-1])] = struct{}{}
+		for _, def := range inp.Def {
+			inputs[digest.FromBytes(def)] = struct{}{}
+		}
 	}
 
 	return &filteringGateway{

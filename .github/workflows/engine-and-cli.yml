@@ -56,8 +56,8 @@ jobs:
     # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
     runs-on: dagger-runner-2c-8g
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"

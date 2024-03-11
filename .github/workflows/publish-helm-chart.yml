@@ -9,9 +9,9 @@ jobs:
     # only run this on push events, not in PRs
     if: github.event_name == 'push' && github.repository == 'dagger/dagger'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
 
