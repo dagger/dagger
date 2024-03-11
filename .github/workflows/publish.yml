@@ -23,8 +23,8 @@ jobs:
     # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
     runs-on: dagger-runner-16c-64g
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
@@ -131,9 +131,9 @@ jobs:
           echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
           colima start --mount-type 9p
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
 
@@ -183,7 +183,7 @@ jobs:
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
@@ -204,7 +204,7 @@ jobs:
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
       - name: "Test Go SDK"
@@ -227,7 +227,7 @@ jobs:
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
@@ -274,7 +274,7 @@ jobs:
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
