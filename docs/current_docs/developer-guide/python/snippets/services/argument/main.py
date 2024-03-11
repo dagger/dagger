@@ -1,11 +1,12 @@
 import dagger
 from dagger import dag, function, object_type
 
+
 @object_type
 class MyModule:
     @function
     async def user_list(self, host_service: dagger.Service) -> str:
-        """Sends a query to a MariaDB service received as input and returns the response"""
+        """Sends a query to a MariaDB service received as input and returns the response."""
         return await (
             dag.container()
             .from_("mariadb:10.11.2")
