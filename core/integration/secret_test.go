@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -120,7 +120,7 @@ func TestSecretSet(t *testing.T) {
 
 	idEnc, err := ctr.ID(ctx)
 	require.NoError(t, err)
-	var idp idproto.ID
+	var idp call.ID
 	require.NoError(t, idp.Decode(string(idEnc)))
 	require.NotContains(t, idp.Display(), secretValue)
 

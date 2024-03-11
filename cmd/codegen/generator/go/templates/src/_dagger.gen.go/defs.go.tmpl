@@ -115,7 +115,7 @@ func (e *ExecError) Unwrap() error {
 
 {{ if IsModuleCode }}
 type Client struct {
-	Query *querybuilder.Selection
+	query *querybuilder.Selection
 	client graphql.Client
 }
 
@@ -124,7 +124,7 @@ var dag *Client
 func init() {
 	gqlClient, q := getClientParams()
 	dag = &Client{
-		Query: q.Client(gqlClient),
+		query: q.Client(gqlClient),
 		client: gqlClient,
 	}
 }

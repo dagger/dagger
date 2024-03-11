@@ -20,7 +20,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
@@ -95,7 +95,7 @@ type Container struct {
 	Focused bool `json:"focused"`
 
 	// The args to invoke when using the terminal api on this container.
-	DefaultTerminalCmd *DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
+	DefaultTerminalCmd DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
@@ -1670,7 +1670,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, id *idproto.ID, svc *Service, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, id *call.ID, svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
 	host, err := svc.Hostname(ctx, id)
@@ -1897,7 +1897,7 @@ func (proto ImageLayerCompression) Decoder() dagql.InputDecoder {
 	return ImageLayerCompressions
 }
 
-func (proto ImageLayerCompression) ToLiteral() *idproto.Literal {
+func (proto ImageLayerCompression) ToLiteral() call.Literal {
 	return ImageLayerCompressions.Literal(proto)
 }
 
@@ -1925,6 +1925,6 @@ func (proto ImageMediaTypes) Decoder() dagql.InputDecoder {
 	return ImageMediaTypesEnum
 }
 
-func (proto ImageMediaTypes) ToLiteral() *idproto.Literal {
+func (proto ImageMediaTypes) ToLiteral() call.Literal {
 	return ImageMediaTypesEnum.Literal(proto)
 }
