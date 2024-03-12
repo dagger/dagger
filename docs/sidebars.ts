@@ -104,6 +104,11 @@ module.exports = {
               "id": "user-guide/cloud/org-administration"
             }
           ]
+        },
+        {
+          "type": "doc",
+          "id": "user-guide/troubleshooting",
+          "label": "Troubleshooting"
         }
       ]
     },
