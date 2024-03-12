@@ -547,7 +547,7 @@ func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client) (any, error) 
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
-	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true)
+	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module configuration: %w", err)
 	}
@@ -578,7 +578,7 @@ func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client) (any, e
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}
-	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true)
+	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module configuration: %w", err)
 	}
