@@ -339,7 +339,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	ctx, span := Tracer().Start(ctx, "initialize", tracing.Encapsulate())
 	defer tracing.End(span, func() error { return rerr })
 
-	modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
+	modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
 	}

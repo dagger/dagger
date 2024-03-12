@@ -1,5 +1,5 @@
 /**
- * An Alpine Module for testing purpose only.
+ * A State Module with Alpine implementation for testing purpose only.
  * 
  * Warning: Do not reproduce in production.
  */
@@ -8,10 +8,10 @@ import { dag, Container } from '../../../../api/client.gen.js'
 
 
 /**
- * Alpine module
+ * State module
  */
 @object()
-export class Alpine {
+export class State {
     private version = "3.16.2"
 
     protected user = "root"
@@ -30,7 +30,7 @@ export class Alpine {
      * @param version version to use (default to: 3.16.2)
      */
     @func()
-    base(version?: string): Alpine {
+    base(version?: string): State {
         if (version) {
             this.version = version
         }
@@ -41,7 +41,7 @@ export class Alpine {
     }
 
     @func()
-    install(pkgs: string[]): Alpine {
+    install(pkgs: string[]): State {
         this.packages.push(...pkgs)
 
         return this

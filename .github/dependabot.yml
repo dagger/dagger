@@ -2,83 +2,78 @@ version: 2
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
-    schedule:
-      interval: "monthly"
+    schedule: &schedule-weekly
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "area/engine"
       - "area/cli"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
+    groups:
+      engine:
 
   - package-ecosystem: "gomod"
     directory: "/internal/mage"
-    schedule:
-      interval: "monthly"
+    schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
       - "area/ci"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
+    groups:
+      engine-tools:
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
-    schedule:
-      interval: "monthly"
+    schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
       - "sdk/typescript"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+    groups:
+      sdk-typescript:
 
   - package-ecosystem: "npm"
     directory: "/website"
-    schedule:
-      interval: "monthly"
+    schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
       - "area/docs"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+    groups:
+      website:
 
   - package-ecosystem: "gomod"
     directory: "/sdk/go"
-    schedule:
-      interval: "monthly"
+    schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
       - "sdk/go"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+    groups:
+      sdk-go:
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
-    schedule:
-      interval: "monthly"
+    schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
       - "sdk/python"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
-
-  # ignore all npm dependencies in sdk/rust
-  - package-ecosystem: "npm"
-    directory: "/sdk/rust"
-    schedule:
-      interval: "monthly"
-    ignore:
-      - dependency-name: "*"
+    groups:
+      sdk-python:
 
   - package-ecosystem: "maven"
     directory: "/sdk/java"
-    schedule:
-      interval: "monthly"
+    schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
       - "sdk/java"
@@ -87,3 +82,11 @@ updates:
         update-types: ["version-update:semver-patch"]
       # ignore maven dependencies (API, plugins, etc)
       - dependency-name: "org.apache.maven*"
+    groups:
+      sdk-java:
+
+  # ignore all npm dependencies in sdk/rust
+  - package-ecosystem: "npm"
+    directory: "/sdk/rust"
+    ignore:
+      - dependency-name: "*"

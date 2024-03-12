@@ -1,0 +1,51 @@
+{
+  "name": "MultiArgs",
+  "objects": {
+    "MultiArgs": {
+      "name": "MultiArgs",
+      "description": "",
+      "methods": {
+        "compute": {
+          "name": "compute",
+          "description": "",
+          "arguments": {
+            "a": {
+              "name": "a",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "b": {
+              "name": "b",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "c": {
+              "name": "c",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "INTEGER_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

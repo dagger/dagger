@@ -1,0 +1,31 @@
+{
+  "name": "HelloWorld",
+  "objects": {
+    "HelloWorld": {
+      "name": "HelloWorld",
+      "description": "HelloWorld class",
+      "methods": {
+        "helloWorld": {
+          "name": "helloWorld",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

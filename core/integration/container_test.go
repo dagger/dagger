@@ -241,11 +241,13 @@ CMD cat /secret
 		// src is a directory that has a secret dependency in it's build graph
 		src := c.Container().
 			From(alpineImage).
-			WithExec([]string{"apk", "add", "git"}).
-			WithDirectory("/src", c.Directory()).
 			WithWorkdir("/src").
-			WithMountedSecret("/run/my-secret", sec).
-			WithExec([]string{`sh`, `-c`, `echo "FROM alpine" > Dockerfile`}).
+			WithMountedSecret("/run/secret", sec).
+			WithExec([]string{"cat", "/run/secret"}).
+			WithNewFile("Dockerfile", dagger.ContainerWithNewFileOpts{Contents: `
+			FROM alpine
+			COPY / /
+			`}).
 			Directory("/src")
 
 		// building src should only transform the secrets from the raw

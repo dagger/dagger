@@ -20,6 +20,10 @@ By creating your own Dagger Module and installing other modules into it, you can
 
 To see this in action, create a custom Dagger Module that uses two other Dagger Modules to build your project, add it to a custom container image of your choice, and publish the result to a registry.
 
+:::note
+The steps below assume that you have already [Daggerized the example Go project repository](./822194-daggerize.mdx) by initializing a new Dagger Module and installing the Go builder module as a dependency. If not, complete those steps before proceeding.
+:::
+
 ### Bootstrap a module template
 
 Begin by running `dagger develop` to bootstrap a module template in one of the supported programming languages:
@@ -31,7 +35,7 @@ Begin by running `dagger develop` to bootstrap a module template in one of the s
 dagger develop --sdk=go
 ```
 
-This will generate a `dagger.json` module file, an initial `dagger/main.go` source file, as well as a generated `dagger/dagger.gen.go` and `dagger/querybuilder` directory for the generated module code.
+This will generate a `dagger.json` module file, an initial `dagger/main.go` source file, as well as a generated `dagger/dagger.gen.go` and `dagger/internal` directory for the generated module code.
 
 </TabItem>
 <TabItem value="Python">
@@ -53,6 +57,10 @@ This will generate a `dagger.json` module file, initial `dagger/src/index.ts`, `
 
 </TabItem>
 </Tabs>
+
+:::note
+The class/type definitions in the generated module code are derived from the module name.
+:::
 
 ### Install another dependency
 

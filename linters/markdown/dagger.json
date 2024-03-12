@@ -1,0 +1,12 @@
+{
+  "name": "markdown",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "wolfi",
+      "source": "github.com/shykes/daggerverse/wolfi@f1481924568b8b317ab3854ded7c62028e484e2e"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.10.0"
+}

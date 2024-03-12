@@ -4,10 +4,10 @@
 import { func, object } from '../../../decorators/decorators.js'
 
 /**
- * HelloWorld class
+ * PrivateMethod class
  */
 @object()
-export class HelloWorld {
+export class PrivateMethod {
     private privateGreeting(name: string): string {
         return `Private hello ${name}`
     }

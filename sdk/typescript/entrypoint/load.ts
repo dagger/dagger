@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { dag, TypeDefKind } from "../api/client.gen.js"
-import { ScanResult } from "../introspector/scanner/scan.js"
 import { TypeDef } from "../introspector/scanner/typeDefs.js"
+import { InvokeCtx } from "./context.js"
+import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
+import { Method } from "../introspector/scanner/abtractions/method.js"
+import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
+import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
+import { Args } from "../introspector/registry/registry.js"
 
 /**
  * Import all given typescript files so that trigger their decorators
@@ -14,255 +19,107 @@ export async function load(files: string[]): Promise<void> {
 }
 
 /**
- * Load the order of arguments for a given function from the scan result.
+ * Return the object invoked from the module.
  *
- * @param scanResult The result of the scan.
- * @param parentName The name of the class.
- * @param fnName The name of the function.
- *
- * @returns An array of strings representing the order of arguments.
+ * @param module The module to load the object from.
+ * @param parentName The name of the parent object.
  */
-export function loadArgOrder(
-  scanResult: ScanResult,
+export function loadInvokedObject(
+  module: DaggerModule,
   parentName: string,
-  fnName: string,
-): string[] {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    throw new Error(`could not find class ${parentName}`)
+): DaggerObject {
+  return module.objects[parentName]
+}
+
+export function loadInvokedMethod(
+  object: DaggerObject,
+  ctx: InvokeCtx,
+): (Method | Constructor) | undefined {
+  if (ctx.fnName === "") {
+    return object._constructor
   }
 
-  // Call for the constructor
-  if (fnName === "") {
-    return Object.keys(classTypeDef.constructor?.args ?? {})
-  }
-
-  const methodTypeDef = classTypeDef.methods[fnName]
-  if (!methodTypeDef) {
-    throw new Error(`could not find method ${fnName}`)
-  }
-
-  return Object.keys(methodTypeDef.args)
+  return object.methods[ctx.fnName]
 }
 
 /**
- * Load the argument for the given function and check if it's variadic.
+ * Load the values of the arguments from the context.
  *
- * @param scanResult The result of the scan.
- * @param parentName The name of the class.
- * @param fnName The name of the function.
- * @param argName The name of the argument.
- *
- * @returns True if the argument is variadic, false otherwise.
+ * @param method Method to load the arguments from.
+ * @param ctx The context of the invocation.
  */
-export function isArgVariadic(
-  scanResult: ScanResult,
-  parentName: string,
-  fnName: string,
-  argName: string,
-): boolean {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    throw new Error(`could not find class ${parentName}`)
-  }
+export async function loadArgs(
+  method: Method | Constructor,
+  ctx: InvokeCtx,
+): Promise<Args> {
+  const args: Args = {}
 
-  // It's not possible to have variadic arguments in the constructor.
-  if (fnName === "") {
-    return false
-  }
-
-  const methodTypeDef = classTypeDef.methods[fnName]
-  if (!methodTypeDef) {
-    throw new Error(`could not find method ${fnName}`)
-  }
-
-  return methodTypeDef.args[argName].isVariadic
-}
-
-/**
- * Load the argument type from the scan result.
- *
- * @param scanResult Result of the scan
- * @param parentName Class called
- * @param fnName Function called
- * @param argName Argument name
- * @returns The type of the argument
- */
-export function loadArgType(
-  scanResult: ScanResult,
-  parentName: string,
-  fnName: string,
-  argName: string,
-): TypeDef<TypeDefKind> {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    throw new Error(`could not find class ${parentName}`)
-  }
-
-  // Call for the constructor
-  if (fnName === "") {
-    const argTypeDef = classTypeDef.constructor?.args[argName]
-    if (!argTypeDef) {
-      throw new Error(`could not find argument ${argName} type in constructor`)
+  // Load arguments
+  for (const argName of method.getArgOrder()) {
+    const argument = method.arguments[argName]
+    if (!argument) {
+      throw new Error(`could not find argument ${argName}`)
     }
 
-    return argTypeDef.typeDef
-  }
+    const loadedArg = await loadValue(ctx.fnArgs[argName], argument.type)
 
-  const methodTypeDef = classTypeDef.methods[fnName]
-  if (!methodTypeDef) {
-    throw new Error(`could not find method ${fnName}`)
-  }
-
-  const argTypeDef = methodTypeDef.args[argName]
-  if (!argTypeDef) {
-    throw new Error(`could not find argument ${argName} type`)
-  }
-
-  return argTypeDef.typeDef
-}
-
-/**
- * Load the property type from the scan result.
- *
- * @param scanResult Result of the scan
- * @param parentName Class called
- * @param propertyName property of the class
- * @returns the type of the property
- */
-export function loadPropertyType(
-  scanResult: ScanResult,
-  parentName: string,
-  propertyName: string,
-): TypeDef<TypeDefKind> {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    throw new Error(`could not find class ${parentName}`)
-  }
-
-  const propertyTypeDef = classTypeDef.fields[propertyName]
-  if (!propertyTypeDef) {
-    throw new Error(`could not find property ${propertyName} type`)
-  }
-
-  return propertyTypeDef.typeDef
-}
-
-/**
- * Load the true name from the scan result
- *
- * @param scanResult Result of the scan
- * @param parentName Class called
- * @param alias exposed name
- * @param kind location of the alias
- */
-export function loadName(
-  scanResult: ScanResult,
-  parentName: string,
-  alias: string,
-  kind: "field" | "function" | "object",
-): string {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    throw new Error(`could not find class ${parentName}`)
-  }
-
-  switch (kind) {
-    case "object": {
-      return classTypeDef.name
-    }
-    case "function": {
-      // Handle constructor
-      if (alias === "") {
-        return ""
+    // If the argument is variadic, we need to load each args independently
+    // so it's correctly propagated when it's sent to the function.
+    // Note: variadic args are always last in the list of args.
+    if (argument.isVariadic) {
+      for (const [i, arg] of (loadedArg ?? []).entries()) {
+        args[`${argName}${i}`] = arg
       }
 
-      const methodTypeDef = classTypeDef.methods[alias]
-      if (!methodTypeDef) {
-        throw new Error(`could not find method ${alias} type`)
-      }
-
-      return methodTypeDef.name
+      continue
     }
-    case "field": {
-      const propertyTypeDef = classTypeDef.fields[alias]
-      if (!propertyTypeDef) {
-        throw new Error(`could not find property ${alias}`)
-      }
 
-      return propertyTypeDef.name
+    // If the argument is nullable and the loaded arg is undefined with no default value, we set it to null.
+    if (
+      argument.isNullable &&
+      loadedArg === undefined &&
+      !argument.defaultValue
+    ) {
+      args[argName] = null
+      continue
     }
+
+    args[argName] = loadedArg
   }
+
+  return args
 }
 
 /**
- * Load the alias from the true property name.
- * If not found, return the original alias because it's not
- * a registered field.
+ * Load the state of the parent object from the context.
  *
- * @param scanResult Result of the scan
- * @param parentName Class called
- * @param alias exposed name
+ * @param object The object to load the parent state from.
+ * @param ctx The context of the invocation.
  */
-export function loadResultAlias(
-  scanResult: ScanResult,
-  parentName: string,
-  alias: string,
-): string {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    return alias
+export async function loadParentState(
+  object: DaggerObject,
+  ctx: InvokeCtx,
+): Promise<Args> {
+  const parentState: Args = {}
+
+  for (const [key, value] of Object.entries(ctx.parentArgs)) {
+    const property = object.properties[key]
+    if (!property) {
+      throw new Error(`could not find parent property ${key}`)
+    }
+
+    parentState[property.name] = await loadValue(value, property.type)
   }
 
-  const fieldTypeDef = Object.values(classTypeDef.fields).find(
-    (field) => field.name === alias,
-  )
-  if (!fieldTypeDef) {
-    return alias
-  }
-
-  return fieldTypeDef.alias ?? fieldTypeDef.name
+  return parentState
 }
 
 /**
- * Return the eventual parent name of a field if its return type is a
- * registered object.
- * If not found, return the original parent name.
- *
- * @param scanResult The result of the scan.
- * @param parentName Original parent name
- * @param alias The field alias
- */
-export function loadAliasParentName(
-  scanResult: ScanResult,
-  parentName: string,
-  alias: string,
-): string {
-  const classTypeDef = scanResult.classes[parentName]
-  if (!classTypeDef) {
-    return parentName
-  }
-
-  const fieldTypeDef = Object.values(classTypeDef.fields).find(
-    (field) => field.name === alias,
-  )
-  if (!fieldTypeDef) {
-    return parentName
-  }
-
-  if (fieldTypeDef.typeDef.kind === TypeDefKind.ObjectKind) {
-    return (fieldTypeDef.typeDef as TypeDef<TypeDefKind.ObjectKind>).name
-  }
-
-  return parentName
-}
-
-/**
- * This function load the argument as a Dagger type.
+ * This function load the value as a Dagger type.
  *
  * Note: The JSON.parse() is required to remove extra quotes
  */
-export async function loadArg(
+export async function loadValue(
   value: any,
   type: TypeDef<TypeDefKind>,
 ): Promise<any> {
@@ -276,7 +133,7 @@ export async function loadArg(
       return Promise.all(
         value.map(
           async (v: any) =>
-            await loadArg(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
+            await loadValue(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
         ),
       )
     case TypeDefKind.ObjectKind: {
@@ -294,7 +151,7 @@ export async function loadArg(
       // TODO(supports subfields serialization)
       return value
     }
-    // Cannot use , to specify multiple matching case so instead we use fallthrough.
+    // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
     case TypeDefKind.BooleanKind:
@@ -306,17 +163,43 @@ export async function loadArg(
 }
 
 /**
- * Load subfields of the result and IDable object.
+ * Load the object type from the return type of the method.
+ * This covers the case where the return type is an other object of the module.
+ * For example: `msg(): Message` where message is an object of the module.
  *
- * @param result The result of the invocation.
- * @param scanResult The result of the scan.
- * @param parentName The name of the parent object.
- * @returns Loaded result.
+ * @param module  The module to load the object from.
+ * @param object The current object to load the return type from.
+ * @param method The method to load the return type from.
  */
+export function loadObjectReturnType(
+  module: DaggerModule,
+  object: DaggerObject,
+  method: Method,
+): DaggerObject {
+  const retType = method.returnType
+
+  switch (retType.kind) {
+    case TypeDefKind.ListKind: {
+      // Loop until we find the original object type.
+      // This way we handle the list of list (e.g Object[][][]...[])
+      let listType = retType
+      while (listType.kind === TypeDefKind.ListKind) {
+        listType = (listType as TypeDef<TypeDefKind.ListKind>).typeDef
+      }
+
+      return module.objects[(listType as TypeDef<TypeDefKind.ObjectKind>).name]
+    }
+    case TypeDefKind.ObjectKind:
+      return module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
+    default:
+      return object
+  }
+}
+
 export async function loadResult(
   result: any,
-  scanResult: ScanResult,
-  parentName: string,
+  module: DaggerModule,
+  object: DaggerObject,
 ): Promise<any> {
   // Handle IDable objects
   if (result && typeof result?.id === "function") {
@@ -326,7 +209,7 @@ export async function loadResult(
   // Handle arrays
   if (Array.isArray(result)) {
     result = await Promise.all(
-      result.map(async (r) => await loadResult(r, scanResult, parentName)),
+      result.map(async (r) => await loadResult(r, module, object)),
     )
 
     return result
@@ -337,15 +220,33 @@ export async function loadResult(
     const state: any = {}
 
     for (const [key, value] of Object.entries(result)) {
-      state[loadResultAlias(scanResult, parentName, key)] = await loadResult(
+      const property = Object.values(object.properties).find(
+        (p) => p.name === key,
+      )
+      if (!property) {
+        throw new Error(`could not find result property ${key}`)
+      }
+
+      if (property.type.kind === TypeDefKind.ObjectKind) {
+        const referencedObject =
+          module.objects[
+            (property.type as TypeDef<TypeDefKind.ObjectKind>).name
+          ]
+        if (referencedObject) {
+          object = referencedObject
+        }
+      }
+
+      state[property.alias ?? property.name] = await loadResult(
         value,
-        scanResult,
-        loadAliasParentName(scanResult, parentName, key),
+        module,
+        object,
       )
     }
 
-    result = state
+    return state
   }
 
+  // Handle primitive types
   return result
 }

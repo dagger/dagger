@@ -93,7 +93,7 @@ dagger config -m github.com/dagger/hello-dagger
 		ctx := cmd.Context()
 
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
+			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true, true)
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)
 			}
@@ -173,7 +173,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 				}
 			}
 
-			modConf, err := getModuleConfigurationForSourceRef(ctx, dag, srcRootPath, false)
+			modConf, err := getModuleConfigurationForSourceRef(ctx, dag, srcRootPath, false, false)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -242,7 +242,7 @@ var moduleInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, false)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -366,7 +366,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, false)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -458,7 +458,7 @@ forced), to avoid mistakingly depending on uncommitted files.
 			log := tracing.GlobalLogger(ctx)
 
 			dag := engineClient.Dagger()
-			modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
@@ -601,7 +601,10 @@ func getExplicitModuleSourceRef() (string, bool) {
 func getDefaultModuleConfiguration(
 	ctx context.Context,
 	dag *dagger.Client,
-	// if true, will resolve local sources from the caller
+	// if doFindUp is true, then the nearest module in parent dirs (up to the context root)
+	// will be used
+	doFindUp bool,
+	// if resolveFromCaller is true, will resolve local sources from the caller
 	// before returning the source. This should be set false
 	// if the caller wants to mutate configuration (sdk/dependency/etc.)
 	// since those changes require the source be resolved after
@@ -614,13 +617,14 @@ func getDefaultModuleConfiguration(
 		srcRefStr = moduleURLDefault
 	}
 
-	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr, resolveFromCaller)
+	return getModuleConfigurationForSourceRef(ctx, dag, srcRefStr, doFindUp, resolveFromCaller)
 }
 
 func getModuleConfigurationForSourceRef(
 	ctx context.Context,
 	dag *dagger.Client,
 	srcRefStr string,
+	doFindUp bool,
 	resolveFromCaller bool,
 ) (*configuredModule, error) {
 	conf := &configuredModule{}
@@ -632,19 +636,22 @@ func getModuleConfigurationForSourceRef(
 		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
 	}
 
-	if conf.SourceKind == dagger.LocalSource {
-		// first check if this is a named module from the default find-up dagger.json
-		// TODO: can move this to engine now?
-		cwd, err := os.Getwd()
+	if conf.SourceKind == dagger.GitSource {
+		conf.ModuleSourceConfigExists, err = conf.Source.ConfigExists(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current working directory: %w", err)
+			return nil, fmt.Errorf("failed to check if module config exists: %w", err)
 		}
-		defaultConfigDir, foundDefaultConfig, err := findUp(cwd)
+		return conf, nil
+	}
+
+	if doFindUp {
+		// need to check if this is a named module from the *default* dagger.json found-up from the cwd
+		defaultFindupConfigDir, defaultFindupExists, err := findUp(moduleURLDefault)
 		if err != nil {
-			return nil, fmt.Errorf("error trying to find config path for %s: %s", cwd, err)
+			return nil, fmt.Errorf("error trying to find default config path for: %w", err)
 		}
-		if foundDefaultConfig {
-			configPath := filepath.Join(defaultConfigDir, modules.Filename)
+		if defaultFindupExists {
+			configPath := filepath.Join(defaultFindupConfigDir, modules.Filename)
 			contents, err := os.ReadFile(configPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
@@ -653,61 +660,66 @@ func getModuleConfigurationForSourceRef(
 			if err := json.Unmarshal(contents, &modCfg); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
 			}
-			if namedDep, ok := modCfg.DependencyByName(srcRefStr); ok {
-				src := dag.ModuleSource(namedDep.Source)
-				kind, err := src.Kind(ctx)
+
+			namedDep, ok := modCfg.DependencyByName(srcRefStr)
+			if ok {
+				depSrc := dag.ModuleSource(namedDep.Source)
+				depKind, err := depSrc.Kind(ctx)
 				if err != nil {
 					return nil, err
 				}
-				if kind == dagger.GitSource {
-					return getModuleConfigurationForSourceRef(ctx, dag, namedDep.Source, resolveFromCaller)
+				depSrcRef := namedDep.Source
+				if depKind == dagger.LocalSource {
+					depSrcRef = filepath.Join(defaultFindupConfigDir, namedDep.Source)
 				}
-				depPath := filepath.Join(defaultConfigDir, namedDep.Source)
-				srcRefStr = depPath
+				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller)
 			}
 		}
 
-		conf.LocalRootSourcePath, err = filepath.Abs(srcRefStr)
+		findupConfigDir, findupExists, err := findUp(srcRefStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
+			return nil, fmt.Errorf("error trying to find config path for %s: %w", srcRefStr, err)
 		}
+		if !findupExists {
+			return nil, fmt.Errorf("no %s found in directory %s or any parents up to git root", modules.Filename, srcRefStr)
+		}
+		srcRefStr = findupConfigDir
+	}
 
-		if filepath.IsAbs(srcRefStr) {
-			srcRefStr, err = filepath.Rel(cwd, srcRefStr)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get relative path for %s: %w", srcRefStr, err)
-			}
-		}
-		if err := os.MkdirAll(srcRefStr, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory for %s: %w", srcRefStr, err)
-		}
-		conf.Source = dag.ModuleSource(srcRefStr)
-
-		conf.LocalContextPath, err = conf.Source.ResolveContextPathFromCaller(ctx)
+	conf.LocalRootSourcePath, err = filepath.Abs(srcRefStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
+	}
+	if filepath.IsAbs(srcRefStr) {
+		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get local root path: %w", err)
+			return nil, fmt.Errorf("failed to get current working directory: %w", err)
 		}
-		_, err = os.Lstat(filepath.Join(conf.LocalRootSourcePath, modules.Filename))
-		conf.ModuleSourceConfigExists = err == nil
-
-		if resolveFromCaller {
-			conf.Source = conf.Source.ResolveFromCaller()
-		}
-	} else {
-		conf.ModuleSourceConfigExists, err = conf.Source.ConfigExists(ctx)
+		srcRefStr, err = filepath.Rel(cwd, srcRefStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check if module config exists: %w", err)
+			return nil, fmt.Errorf("failed to get relative path for %s: %w", srcRefStr, err)
 		}
+	}
+	if err := os.MkdirAll(srcRefStr, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory for %s: %w", srcRefStr, err)
+	}
+	conf.Source = dag.ModuleSource(srcRefStr)
+
+	conf.LocalContextPath, err = conf.Source.ResolveContextPathFromCaller(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local root path: %w", err)
+	}
+	_, err = os.Lstat(filepath.Join(conf.LocalRootSourcePath, modules.Filename))
+	conf.ModuleSourceConfigExists = err == nil
+
+	if resolveFromCaller {
+		conf.Source = conf.Source.ResolveFromCaller()
 	}
 
 	return conf, nil
 }
 
 func findUp(curDirPath string) (string, bool, error) {
-	if !filepath.IsAbs(curDirPath) {
-		return "", false, fmt.Errorf("path is not absolute: %s", curDirPath)
-	}
-
 	configPath := filepath.Join(curDirPath, modules.Filename)
 	stat, err := os.Lstat(configPath)
 	switch {
@@ -725,16 +737,20 @@ func findUp(curDirPath string) (string, bool, error) {
 	}
 
 	// didn't exist, try parent unless we've hit "/" or a git repo checkout root
-	if curDirPath == "/" {
-		return curDirPath, false, nil
+	curDirAbsPath, err := filepath.Abs(curDirPath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get absolute path for %s: %s", curDirPath, err)
+	}
+	if curDirAbsPath == "/" {
+		return "", false, nil
 	}
 
 	_, err = os.Lstat(filepath.Join(curDirPath, ".git"))
 	if err == nil {
-		return curDirPath, false, nil
+		return "", false, nil
 	}
 
-	parentDirPath := filepath.Dir(curDirPath)
+	parentDirPath := filepath.Join(curDirPath, "..")
 	return findUp(parentDirPath)
 }
 
@@ -751,7 +767,7 @@ func optionalModCmdWrapper(
 			SecretToken: presetSecretToken,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			_, explicitModRefSet := getExplicitModuleSourceRef()
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true)
+			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true, true)
 			if err != nil {
 				if !explicitModRefSet {
 					// the user didn't explicitly try to run with a module, so just run in default mode
