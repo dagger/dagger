@@ -306,7 +306,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w: %s", err, output)
 	}
-	_, imageID, ok := strings.Cut(string(output), "sha256:")
+	_, imageID, ok := strings.Cut(string(output), "Loaded image: sha256:")
 	if !ok {
 		return fmt.Errorf("unexpected output from docker load: %s", output)
 	}
@@ -317,7 +317,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		imageID,
 		imageName,
 	).CombinedOutput(); err != nil {
-		return fmt.Errorf("docker tag: %w: %s", err, output)
+		return fmt.Errorf("docker tag %s %s: %w: %s", imageID, imageName, err, output)
 	}
 
 	if output, err := exec.CommandContext(ctx, "docker",
