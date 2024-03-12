@@ -8,7 +8,11 @@ title: "Find functions on the Daggerverse"
 
 ## Find functions on the Daggerverse
 
-As you've seen in previous sections, functions are designed to be easily shared and reused: all you need it the git URL of a module, and you can call all the functions from that module.
+Dagger's superpower is its community. All around the world, Daggernauts are encoding their expertise into Dagger Functions, and sharing them for anyone to reuse. Here are a few examples to try:
+
+- Publish a container to the `ttlsh` registry: `dagger -m github.com/shykes/daggerverse/ttlsh call publish --ctr=alpine:latest`
+- Play a game of yamlinvaders: `dagger -m github.com/sipsma/daggerverse/yamlinvaders call play terminal`
+- Scan a container image for vulnerabilities: `dagger -m github.com/jpadams/daggerverse/trivy scan-image call --image-ref=alpine/git:latest`
 
 But how to find useful modules? Enter *the Daggerverse*.
 
@@ -20,7 +24,9 @@ Using the Daggerverse is optional, and does not change how you use Dagger. If yo
 
 Here are a few modules to explore:
 
-- [Publish a container to the ttlsh registry](https://daggerverse.dev/mod/github.com/shykes/daggerverse/ttlsh): `dagger -m github.com/shykes/daggerverse/ttlsh call publish --ctr=alpine:latest`
-- [Play a game of yamlinvaders](https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders): `dagger -m github.com/sipsma/daggerverse/yamlinvaders call play terminal`
-- [Stitch videos together](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch): `wget -q https://download.samplelib.com/mp4/sample-5s.mp4 && wget -q https://download.samplelib.com/mp4/sample-10s.mp4 && dagger -m github.com/marcosnils/daggerverse/videostitch@main call -o output.mp4 stitch --src-dir=.`
-- [Scan a container image for vulnerabilities](https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy): `dagger -m github.com/jpadams/daggerverse/trivy scan-image call --image-ref=alpine/git:latest`
+- [Scan a container image for vulnerabilities](https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy)
+- [Stitch videos together](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch)
+- [Build a Go project](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/golang)
+- [Generate GIFs of interactive terminal sessions](https://daggerverse.dev/mod/github.com/shykes/daggerverse/termcast)
+- [Integrate with Terraform](https://daggerverse.dev/mod/github.com/Excoriate/daggerverse/terraform)
+- [Play a game of yamlinvaders](https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders)
