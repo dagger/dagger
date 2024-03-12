@@ -25,7 +25,7 @@ func (m *MyModule) Get(ctx context.Context) string {
 		WithExec([]string{"wget", "-O-", "http://www:8080"}).
 		Stdout(ctx)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	return val
 }
