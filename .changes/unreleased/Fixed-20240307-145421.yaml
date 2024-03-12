@@ -1,6 +1,0 @@
-kind: Fixed
-body: Prevent glob from returning duplicate directories
-time: 2024-03-07T14:54:21.164668866Z
-custom:
-  Author: jedevc
-  PR: "6852"
