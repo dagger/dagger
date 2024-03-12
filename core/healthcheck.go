@@ -78,7 +78,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 
 	proc, err := container.Start(ctx, bkgw.StartRequest{
 		Args:   args,
-		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
+		Env:    append(tracing.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
 		Stdout: nopCloser{stdout},
 		Stderr: nopCloser{stderr},
 	})

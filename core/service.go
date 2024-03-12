@@ -337,6 +337,7 @@ func (svc *Service) startContainer(
 
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, proxyEnvList(execOp.Meta.ProxyEnv)...)
+	env = append(env, tracing.PropagationEnv(ctx)...)
 	if interactive {
 		env = append(env, ShimEnableTTYEnvVar+"=1")
 	}
