@@ -10,8 +10,10 @@ type MyModule struct{}
 func (m *MyModule) HttpService() *Service {
 	return dag.Container().
 		From("python").
-		WithDirectory("/srv", dag.Directory().WithNewFile("index.html", "Hello, world!")).
 		WithWorkdir("/srv").
+		WithNewFile("index.html", ContainerWithNewFileOpts{
+			Contents: "Hello, world!",
+		}).
 		WithExec([]string{"python", "-m", "http.server", "8080"}).
 		WithExposedPort(8080).
 		AsService()

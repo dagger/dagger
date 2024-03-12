@@ -10,11 +10,8 @@ class MyModule {
     return dag
       .container()
       .from("python")
-      .withDirectory(
-        "/srv",
-        dag.directory().withNewFile("index.html", "Hello, world!"),
-      )
       .withWorkdir("/srv")
+      .withNewFile("index.html", { contents: "Hello, world!" })
       .withExec(["python", "-m", "http.server", "8080"])
       .withExposedPort(8080)
       .asService()
