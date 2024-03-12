@@ -19,24 +19,53 @@
   # redirect old FAQ index page
   from = "/162770/faq"
   to = "/faq"
-  status = 302
+  status = 301
 
 [[redirects]]
   # redirect old quickstart index page
   from = "/648215/quickstart"
   to = "/quickstart"
-  status = 302
+  status = 301
 
 [[redirects]]
   # redirect temporary zenith labs page to current docs
   from = "/labs/project-zenith"
   to = "/"
-  status = 302
+  status = 301
 
 [[redirects]]
   # redirect temporary zenith page to current docs
   from = "/zenith"
   to = "/"
+  status = 301
+
+[[redirects]]
+  # redirect user guide index to user manual index
+  from = "/user-guide"
+  to = "/manuals/user"
+  status = 301
+
+[[redirects]]
+  # redirect user guide pages to user manual
+  from = "/user-guide/*"
+  to = "/manuals/user/:splat"
+  status = 301
+
+[[redirects]]
+  # redirect developer guide index to developer manual index
+  from = "/developer-guide"
+  to = "/manuals/developer"
+  status = 301
+
+[[redirects]]
+  # redirect developer guide pages to developer manual
+  from = "/developer-guide/*"
+  to = "/manuals/developer/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/guides/*"
+  to = "/tutorials/:splat"
   status = 301
 
 [[redirects]]
@@ -405,11 +434,6 @@
 [[redirects]]
   from = "/cookbook"
   to = "https://archive.docs.dagger.io/0.9/cookbook"
-  status = 301
-
-[[redirects]]
-  from = "/guides"
-  to = "https://archive.docs.dagger.io/0.9/guides"
   status = 301
 
 [[redirects]]

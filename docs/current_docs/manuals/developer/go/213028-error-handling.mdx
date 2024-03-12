@@ -1,0 +1,40 @@
+---
+slug: /manuals/developer/go/213028/error-handling
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Error Handling"
+---
+
+
+# Error Handling
+
+
+Error handling in Go modules follows typical Go error patterns with explicit `error` return values and `if err != nil` checks. You can also use error handling to verify user input.
+
+Here is an example module with a function `divide()`, that throws an error if the denominator is zero:
+
+```go file=./snippets/error-handling/main.go
+```
+Here is an example call for this module:
+
+```shell
+dagger call divide --a=4 --b=2
+```
+
+The result will be:
+
+```shell
+2
+```
+
+Here is another example call for this module, this time dividing by zero:
+
+```shell
+dagger call divide --a=4 --b=0
+```
+
+The result will be:
+
+```shell
+cannot divide by zero
+```

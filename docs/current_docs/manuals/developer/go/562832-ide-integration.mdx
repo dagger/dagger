@@ -1,0 +1,37 @@
+---
+slug: /manuals/developer/go/562832/ide-integration
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "IDE Integration"
+---
+
+
+# IDE Integration
+
+
+To get your IDE to recognize the Dagger Go module:
+
+- Run `dagger develop` to generate all the local Go files locally. You can choose to omit these from your version control system if you like, they aren't required to run your module.
+- [Configure your `go.work` file](./882081-module-structure.mdx#go-workspaces) to include the path to your module.
+
+When you generate a Dagger Module for the first time, Dagger will create a `go.mod` file just for the module. If the module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse the IDE.
+
+If there is already a `go.mod` in the parent directory that you would like to use instead, delete the newly-generated `go.mod` and `go.sum` and Dagger will use the parent one instead. This is not advisable if your Dagger Module has certain dependencies that are not relevant to your core product, since most consumers will prefer a narrower set of dependencies.
+
+To keep the generated `go.mod` file and edit your Dagger Module in the same IDE session as your project code, one option is to set up a [Go workspace](https://go.dev/doc/tutorial/workspaces):
+
+```shell
+# in the root of your repository
+go work init
+go work use ./
+go work use ./path/to/mod
+```
+
+After restarting the IDE, you should be able to use IDE features such as go-to-definition, even when editing `dagger/main.go` from the project root.
+
+In most cases, `go.work` should not be committed to the repository, so it is advisable to add it to the project's `.gitignore` file:
+
+```shell
+echo go.work >> .gitignore
+echo go.work.sum >> .gitignore
+```

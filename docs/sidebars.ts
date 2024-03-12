@@ -28,10 +28,10 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "User Guide",
+      "label": "User Manual",
       "link": {
         "type": "doc",
-        "id": "user-guide/index"
+        "id": "manuals/user/index"
       },
       "collapsible": true,
       "collapsed": true,
@@ -41,38 +41,38 @@ module.exports = {
           "label": "Dagger in CI",
           "link": {
             "type": "doc",
-            "id": "user-guide/ci/index"
+            "id": "manuals/user/ci/index"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
             {
               "type": "doc",
-              "id": "user-guide/ci/github-actions"
+              "id": "manuals/user/ci/github-actions"
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/gitlab"
+              "id": "manuals/user/ci/gitlab"
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/circleci"
+              "id": "manuals/user/ci/circleci"
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/jenkins"
+              "id": "manuals/user/ci/jenkins"
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/aws-codebuild"
+              "id": "manuals/user/ci/aws-codebuild"
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/azure-pipelines"
+              "id": "manuals/user/ci/azure-pipelines"
             },
             {
               "type": "doc",
-              "id": "user-guide/ci/argo-workflows"
+              "id": "manuals/user/ci/argo-workflows"
             }
           ]
         },
@@ -81,7 +81,7 @@ module.exports = {
           "label": "Dagger Cloud",
           "link": {
             "type": "doc",
-            "id": "user-guide/cloud/index"
+            "id": "manuals/user/cloud/index"
           },
           "collapsible": true,
           "collapsed": true,
@@ -89,19 +89,19 @@ module.exports = {
             {
               "type": "doc",
               "label": "Get Started",
-              "id": "user-guide/cloud/get-started"
+              "id": "manuals/user/cloud/get-started"
             },
             {
               "type": "doc",
-              "id": "user-guide/cloud/user-interface"
+              "id": "manuals/user/cloud/user-interface"
             },
             {
               "type": "doc",
-              "id": "user-guide/cloud/roles-permissions"
+              "id": "manuals/user/cloud/roles-permissions"
             },
             {
               "type": "doc",
-              "id": "user-guide/cloud/org-administration"
+              "id": "manuals/user/cloud/org-administration"
             }
           ]
         }
@@ -109,12 +109,12 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Developer Guide",
+      "label": "Developer Manual",
       "collapsible": true,
       "collapsed": true,
       "link": {
         "type": "doc",
-        "id": "developer-guide/index"
+        "id": "manuals/developer/index"
       },
       "items": [
         {
@@ -122,24 +122,24 @@ module.exports = {
           "label": "Overview",
           "link": {
             "type": "doc",
-            "id": "developer-guide/overview/index"
+            "id": "manuals/developer/overview/index"
           },
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/overview/modules-vs-functions"
+              "id": "manuals/developer/overview/modules-vs-functions"
             },
             {
               "type": "doc",
-              "id": "developer-guide/overview/architecture"
+              "id": "manuals/developer/overview/architecture"
             },
             {
               "type": "doc",
-              "id": "developer-guide/overview/execution-environment"
+              "id": "manuals/developer/overview/execution-environment"
             },
             {
               "type": "doc",
-              "id": "developer-guide/overview/dependencies"
+              "id": "manuals/developer/overview/dependencies"
             }
           ]
         },
@@ -148,64 +148,64 @@ module.exports = {
           "label": "Developing with Go",
           "link": {
             "type": "doc",
-            "id": "developer-guide/go/index"
+            "id": "manuals/developer/go/index"
           },
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/go/first-module"
+              "id": "manuals/developer/go/first-module"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/functions"
+              "id": "manuals/developer/go/functions"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/documentation"
+              "id": "manuals/developer/go/documentation"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/secrets"
+              "id": "manuals/developer/go/secrets"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/dependencies"
+              "id": "manuals/developer/go/dependencies"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/chaining"
+              "id": "manuals/developer/go/chaining"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/constructor"
+              "id": "manuals/developer/go/constructor"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/interfaces"
+              "id": "manuals/developer/go/interfaces"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/visibility"
+              "id": "manuals/developer/go/visibility"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/custom-types"
+              "id": "manuals/developer/go/custom-types"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/error-handling"
+              "id": "manuals/developer/go/error-handling"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/module-structure"
+              "id": "manuals/developer/go/module-structure"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/ide-integration"
+              "id": "manuals/developer/go/ide-integration"
             },
             {
               "type": "doc",
-              "id": "developer-guide/go/debugging"
+              "id": "manuals/developer/go/debugging"
             },
             {
               "type": "link",
@@ -219,68 +219,68 @@ module.exports = {
           "label": "Developing with Python",
           "link": {
             "type": "doc",
-            "id": "developer-guide/python/index"
+            "id": "manuals/developer/python/index"
           },
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/python/first-module"
+              "id": "manuals/developer/python/first-module"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/functions"
+              "id": "manuals/developer/python/functions"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/documentation"
+              "id": "manuals/developer/python/documentation"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/secrets"
+              "id": "manuals/developer/python/secrets"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/dependencies"
+              "id": "manuals/developer/python/dependencies"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/chaining"
+              "id": "manuals/developer/python/chaining"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/constructor"
+              "id": "manuals/developer/python/constructor"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/attribute-functions"
+              "id": "manuals/developer/python/attribute-functions"
             },
               {
               "type": "doc",
-              "id": "developer-guide/python/custom-types"
+              "id": "manuals/developer/python/custom-types"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/name-overrides"
+              "id": "manuals/developer/python/name-overrides"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/error-handling"
+              "id": "manuals/developer/python/error-handling"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/module-structure"
+              "id": "manuals/developer/python/module-structure"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/python-dependencies"
+              "id": "manuals/developer/python/python-dependencies"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/ide-integration"
+              "id": "manuals/developer/python/ide-integration"
             },
             {
               "type": "doc",
-              "id": "developer-guide/python/debugging"
+              "id": "manuals/developer/python/debugging"
             },
             {
               "type": "link",
@@ -294,72 +294,72 @@ module.exports = {
           "label": "Developing with TypeScript",
           "link": {
             "type": "doc",
-            "id": "developer-guide/typescript/index"
+            "id": "manuals/developer/typescript/index"
           },
           "items": [
             {
               "type": "doc",
-              "id": "developer-guide/typescript/first-module"
+              "id": "manuals/developer/typescript/first-module"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/functions"
+              "id": "manuals/developer/typescript/functions"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/documentation"
+              "id": "manuals/developer/typescript/documentation"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/secrets"
+              "id": "manuals/developer/typescript/secrets"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/dependencies"
+              "id": "manuals/developer/typescript/dependencies"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/chaining"
+              "id": "manuals/developer/typescript/chaining"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/constructor"
+              "id": "manuals/developer/typescript/constructor"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/custom-types"
+              "id": "manuals/developer/typescript/custom-types"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/decorators"
+              "id": "manuals/developer/typescript/decorators"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/aliases"
+              "id": "manuals/developer/typescript/aliases"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/visibility"
+              "id": "manuals/developer/typescript/visibility"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/error-handling"
+              "id": "manuals/developer/typescript/error-handling"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/module-structure"
+              "id": "manuals/developer/typescript/module-structure"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/typescript-dependencies"
+              "id": "manuals/developer/typescript/typescript-dependencies"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/ide-integration"
+              "id": "manuals/developer/typescript/ide-integration"
             },
             {
               "type": "doc",
-              "id": "developer-guide/typescript/debugging"
+              "id": "manuals/developer/typescript/debugging"
             },
             {
               "type": "doc",
@@ -369,18 +369,13 @@ module.exports = {
           ]
         },
         {
-          "type": "doc",
-          "id": "guides",
-          "label": "Guides"
-        },
-        {
           "type": "link",
           "label": "API Reference",
           "href": "https://docs.dagger.io/api/reference"
         },
         {
           "type": "doc",
-          "id": "developer-guide/known-issues"
+          "id": "manuals/developer/known-issues"
         }
       ]
     },
@@ -388,6 +383,11 @@ module.exports = {
       "type": "doc",
       "label": "CLI Reference",
       "id": "reference/cli"
+    },
+    {
+      "type": "doc",
+      "id": "tutorials",
+      "label": "Tutorials"
     },
     {
       "type": "doc",
