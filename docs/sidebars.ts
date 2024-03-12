@@ -107,7 +107,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "user-guide/troubleshooting",
+          "id": "manuals/user/troubleshooting",
           "label": "Troubleshooting"
         }
       ]
