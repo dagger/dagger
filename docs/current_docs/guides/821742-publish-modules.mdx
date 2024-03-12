@@ -21,7 +21,7 @@ This guide assumes that:
 
 ## Process
 
-Two processes are available to publish your Dagger Module to the Daggerverse, manual and automatically on use.
+Two processes are available to publish your Dagger Module to the Daggerverse, manual and automatic on use.
 
 ### Manual publishing
 
@@ -56,7 +56,7 @@ To manually publish a module to the Daggerverse, follow the steps below:
 
 ### Publishing on use
 
-Every time that a user executes a `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger Module (here, a remote module is defined as a module whose location is specified by a URL like `github.com/USERNAME/daggerverse/...`), that Dagger Module will automatically be published to the Daggerverse.
+Every time that a user executes `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger Module (here, a remote module is defined as a module whose location is specified by a URL like `github.com/USERNAME/daggerverse/...`), that Dagger Module will automatically be published to the Daggerverse.
 
 #### Notes
 
@@ -64,14 +64,14 @@ Under this process, it is possible for some Dagger Modules to appear in the Dagg
 
 ## Semantic versioning
 
-Dagger Module should be versioned according to [semantic versioning principles](https://semver.org/). This means that the published module reference should be tagged with a pattern matching `vMAJOR.MINOR.PATCH`, such as `v1.2.3`.
+Dagger Modules should be versioned according to [semantic versioning principles](https://semver.org/). This means that the published module reference should be tagged with a pattern matching `vMAJOR.MINOR.PATCH`, such as `v1.2.3`.
 
 :::important
-At this time, only version numbers matching the `vMAJOR.MINOR.PATCH` semantic versioning pattern are considered valid.
+At this time, only version numbers matching the `vMAJOR.MINOR.PATCH` versioning pattern are considered valid.
 :::
 
 In monorepos of modules, modules can be independently versioned by prefixing the tag with the subpath. For example a module named `foo` can be tagged with `foo/v1.2.3` and referenced as `github.com/USERNAME/REPOSITORY/foo@v1.2.3`.
 
 ## Conclusion
 
-This guide described the two processes available to add your module to the [Daggerverse](https://daggerverse.dev). More information is available on the [Daggerverse publishing page](https://daggerverse.dev/publish).
+This guide described the two processes available to add your modules to the [Daggerverse](https://daggerverse.dev), and also explained how to version your modules according to semantic versioning principles.
