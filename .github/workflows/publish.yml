@@ -15,7 +15,6 @@ on:
       - sdk/go/internal/engineconn/version.gen.go
       - sdk/python/src/dagger/_engine/_version.py
       - sdk/typescript/provisioning/default.ts
-      - sdk/rust/src/crates/dagger-sdk/src/core/mod.rs
 
 jobs:
   publish:
@@ -162,9 +161,6 @@ jobs:
           cd sdk/typescript
           yarn install
           yarn test -g 'Automatic Provisioned CLI Binary'
-
-      - name: "Setup Rust"
-        uses: dtolnay/rust-toolchain@stable
 
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
