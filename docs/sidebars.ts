@@ -370,6 +370,11 @@ module.exports = {
         },
         {
           "type": "doc",
+          "label": "Publish Modules",
+          "id": "guides/publish-modules"
+        },
+        {
+          "type": "doc",
           "id": "guides",
           "label": "Guides"
         },
@@ -382,7 +387,8 @@ module.exports = {
           "type": "doc",
           "id": "developer-guide/known-issues"
         }
-      ]
+      ],
+
     },
     {
       "type": "doc",
