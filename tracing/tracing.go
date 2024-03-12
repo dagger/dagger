@@ -148,11 +148,20 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 
 		switch proto {
 		case "http/protobuf", "http":
-			configuredLogExporter = otlploghttp.NewClient(otlploghttp.Config{
+			cfg := otlploghttp.Config{
 				Endpoint: u.Host,
 				URLPath:  u.Path,
 				Insecure: u.Scheme != "https",
-			})
+				Headers:  map[string]string{},
+			}
+			if headers := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"); headers != "" {
+				for _, header := range strings.Split(headers, ",") {
+					name, value, _ := strings.Cut(header, "=")
+					cfg.Headers[name] = value
+				}
+			}
+			configuredLogExporter = otlploghttp.NewClient(cfg)
+
 		case "grpc":
 			opts := []otlploggrpc.Option{
 				otlploggrpc.WithEndpointURL(endpoint),
