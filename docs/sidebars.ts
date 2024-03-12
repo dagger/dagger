@@ -104,6 +104,11 @@ module.exports = {
               "id": "manuals/user/cloud/org-administration"
             }
           ]
+        },
+        {
+          "type": "doc",
+          "id": "user-guide/troubleshooting",
+          "label": "Troubleshooting"
         }
       ]
     },
@@ -369,6 +374,11 @@ module.exports = {
           ]
         },
         {
+          "type": "doc",
+          "label": "Publish Modules",
+          "id": "tutorials/publish-modules"
+        },
+        {
           "type": "link",
           "label": "API Reference",
           "href": "https://docs.dagger.io/api/reference"
@@ -377,7 +387,8 @@ module.exports = {
           "type": "doc",
           "id": "manuals/developer/known-issues"
         }
-      ]
+      ],
+
     },
     {
       "type": "doc",

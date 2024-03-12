@@ -1,0 +1,50 @@
+{
+  "name": "VoidReturn",
+  "objects": {
+    "VoidReturn": {
+      "name": "VoidReturn",
+      "description": "VoidReturn class",
+      "methods": {
+        "helloWorld": {
+          "name": "helloWorld",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        },
+        "asyncHelloWorld": {
+          "name": "asyncHelloWorld",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

@@ -1,0 +1,221 @@
+{
+  "name": "OptionalParameter",
+  "objects": {
+    "OptionalParameter": {
+      "name": "OptionalParameter",
+      "description": "OptionalParameter class",
+      "methods": {
+        "helloWorld": {
+          "name": "helloWorld",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "isTrue": {
+          "name": "isTrue",
+          "description": "",
+          "arguments": {
+            "value": {
+              "name": "value",
+              "description": "",
+              "type": {
+                "kind": "BOOLEAN_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "BOOLEAN_KIND"
+          }
+        },
+        "add": {
+          "name": "add",
+          "description": "",
+          "arguments": {
+            "a": {
+              "name": "a",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "0"
+            },
+            "b": {
+              "name": "b",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "0"
+            }
+          },
+          "returnType": {
+            "kind": "INTEGER_KIND"
+          }
+        },
+        "sayBool": {
+          "name": "sayBool",
+          "description": "",
+          "arguments": {
+            "value": {
+              "name": "value",
+              "description": "",
+              "type": {
+                "kind": "BOOLEAN_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "false"
+            }
+          },
+          "returnType": {
+            "kind": "BOOLEAN_KIND"
+          }
+        },
+        "foo": {
+          "name": "foo",
+          "description": "",
+          "arguments": {
+            "a": {
+              "name": "a",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "b": {
+              "name": "b",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": true,
+              "isOptional": true
+            },
+            "c": {
+              "name": "c",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true
+            },
+            "d": {
+              "name": "d",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "\"foo\""
+            },
+            "e": {
+              "name": "e",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": true,
+              "isOptional": true,
+              "defaultValue": "null"
+            },
+            "f": {
+              "name": "f",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": true,
+              "isOptional": true,
+              "defaultValue": "\"bar\""
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "array": {
+          "name": "array",
+          "description": "",
+          "arguments": {
+            "a": {
+              "name": "a",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "b": {
+              "name": "b",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "c": {
+              "name": "c",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": true,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

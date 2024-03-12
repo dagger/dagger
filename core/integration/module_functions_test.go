@@ -97,6 +97,20 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
+	t.Run("top-level from subdir", func(t *testing.T) {
+		// find-up should kick in
+		out, err := ctr.
+			WithWorkdir("/work/some/subdir").
+			With(daggerFunctions()).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		require.Contains(t, lines, "fn-a   doc for FnA")
+		require.Contains(t, lines, "fn-b   doc for FnB")
+		require.Contains(t, lines, "fn-c   doc for FnC")
+		require.Contains(t, lines, "prim   doc for Prim")
+	})
+
 	t.Run("return core object", func(t *testing.T) {
 		out, err := ctr.With(daggerFunctions("fn-a")).Stdout(ctx)
 		require.NoError(t, err)

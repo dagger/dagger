@@ -1,0 +1,55 @@
+{
+  "name": "Constructor",
+  "objects": {
+    "HelloWorld": {
+      "name": "HelloWorld",
+      "description": "HelloWorld class",
+      "constructor": {
+        "args": {
+          "name": {
+            "name": "name",
+            "description": "",
+            "type": {
+              "kind": "STRING_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false,
+            "defaultValue": "\"world\""
+          }
+        }
+      },
+      "methods": {
+        "sayHello": {
+          "name": "sayHello",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {
+        "name": {
+          "name": "name",
+          "description": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": false
+        }
+      }
+    }
+  }
+}

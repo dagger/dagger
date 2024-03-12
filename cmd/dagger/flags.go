@@ -357,7 +357,7 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to read secret file %q: %w", v.sourceVal, err)
 		}
-		plaintext = string(filePlaintext)
+		plaintext = strings.TrimSpace(string(filePlaintext))
 
 	case commandSecretSource:
 		// #nosec G204
@@ -365,7 +365,7 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to run secret command %q: %w", v.sourceVal, err)
 		}
-		plaintext = string(stdoutBytes)
+		plaintext = strings.TrimSpace(string(stdoutBytes))
 
 	default:
 		return nil, fmt.Errorf("unsupported secret arg source: %q", v.secretSource)
@@ -547,7 +547,7 @@ func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client) (any, error) 
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
-	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true)
+	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module configuration: %w", err)
 	}
@@ -578,7 +578,7 @@ func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client) (any, e
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}
-	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true)
+	modConf, err := getModuleConfigurationForSourceRef(ctx, dag, v.ref, true, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get module configuration: %w", err)
 	}

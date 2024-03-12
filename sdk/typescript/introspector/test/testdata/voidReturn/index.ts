@@ -1,10 +1,10 @@
 import { func, object } from '../../../decorators/decorators.js'
 
 /**
- * HelloWorld class
+ * VoidReturn class
  */
 @object()
-export class HelloWorld {
+export class VoidReturn {
     @func()
     helloWorld(name: string): void {
         console.log(`hello ${name}`)

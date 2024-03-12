@@ -1080,3 +1080,18 @@ func TestModuleCallGitMod(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
 }
+
+func TestModuleCallFindup(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=foo", "--sdk=go")).
+		WithWorkdir("/work/some/subdir").
+		With(daggerCall("container-echo", "--string-arg", "yo", "stdout")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "yo", strings.TrimSpace(out))
+}

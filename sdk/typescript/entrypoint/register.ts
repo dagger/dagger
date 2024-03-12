@@ -6,10 +6,10 @@ import {
   TypeDef,
   TypeDefKind,
 } from "../api/client.gen.js"
-import { ScanResult } from "../introspector/scanner/scan.js"
+import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
 import {
   ConstructorTypeDef,
-  FunctionArg,
+  FunctionArgTypeDef,
   FunctionTypedef,
   ListTypeDef,
   ObjectTypeDef,
@@ -21,34 +21,34 @@ import {
  */
 export async function register(
   files: string[],
-  scanResult: ScanResult,
+  module: DaggerModule,
 ): Promise<ModuleID> {
   // Get a new module that we will fill in with all the types
   let mod = dag.module_()
 
   // Add module description if any.
-  if (scanResult.module.description) {
-    mod = mod.withDescription(scanResult.module.description)
+  if (module.description) {
+    mod = mod.withDescription(module.description)
   }
 
   // For each class scanned, register its type, method and properties in the module.
-  Object.values(scanResult.classes).forEach((modClass) => {
+  Object.values(module.objects).forEach((object) => {
     // Register the class Typedef object in Dagger
-    let typeDef = dag.typeDef().withObject(modClass.name, {
-      description: modClass.description,
+    let typeDef = dag.typeDef().withObject(object.name, {
+      description: object.description,
     })
 
     // Register all functions (methods) to this object
-    Object.values(modClass.methods).forEach((method) => {
-      typeDef = typeDef.withFunction(addFunction(method))
+    Object.values(object.methods).forEach((method) => {
+      typeDef = typeDef.withFunction(addFunction(method.typeDef))
     })
 
     // Register all fields that belong to this object
-    Object.values(modClass.fields).forEach((field) => {
+    Object.values(object.properties).forEach((field) => {
       if (field.isExposed) {
         typeDef = typeDef.withField(
           field.alias ?? field.name,
-          addTypeDef(field.typeDef),
+          addTypeDef(field.typeDef.typeDef),
           {
             description: field.description,
           },
@@ -56,9 +56,9 @@ export async function register(
       }
     })
 
-    if (modClass.constructor) {
+    if (object._constructor) {
       typeDef = typeDef.withConstructor(
-        addConstructor(modClass.constructor, typeDef),
+        addConstructor(object._constructor.typeDef, typeDef),
       )
     }
 
@@ -94,7 +94,7 @@ function addFunction(fct: FunctionTypedef): Function_ {
  * Register all arguments in the function.
  */
 function addArg(args: {
-  [name: string]: FunctionArg
+  [name: string]: FunctionArgTypeDef
 }): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {
     Object.values(args).forEach((arg) => {
