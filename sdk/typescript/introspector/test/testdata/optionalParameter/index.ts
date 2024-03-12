@@ -1,10 +1,10 @@
 import { func, object } from '../../../decorators/decorators.js'
 
 /**
- * HelloWorld class
+ * OptionalParameter class
  */
 @object()
-export class HelloWorld {
+export class OptionalParameter {
     @func()
     helloWorld(name?: string): string {
         return `hello world ${name}`

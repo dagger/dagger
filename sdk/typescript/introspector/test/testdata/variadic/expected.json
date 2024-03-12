@@ -1,0 +1,120 @@
+{
+  "name": "Variadic",
+  "objects": {
+    "Variadic": {
+      "name": "Variadic",
+      "description": "",
+      "methods": {
+        "fullVariadicStr": {
+          "name": "fullVariadicStr",
+          "description": "",
+          "arguments": {
+            "vars": {
+              "name": "vars",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "semiVariadicStr": {
+          "name": "semiVariadicStr",
+          "description": "",
+          "arguments": {
+            "separator": {
+              "name": "separator",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "vars": {
+              "name": "vars",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "fullVariadicNum": {
+          "name": "fullVariadicNum",
+          "description": "",
+          "arguments": {
+            "vars": {
+              "name": "vars",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "INTEGER_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "INTEGER_KIND"
+          }
+        },
+        "semiVariadicNum": {
+          "name": "semiVariadicNum",
+          "description": "",
+          "arguments": {
+            "mul": {
+              "name": "mul",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "vars": {
+              "name": "vars",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "INTEGER_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "INTEGER_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}
