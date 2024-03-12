@@ -149,7 +149,7 @@ describe("TypeScript sdk Connect", function () {
     }
   })
 
-  describe.skip("Automatic Provisioned CLI Binary", function () {
+  describe("Automatic Provisioned CLI Binary", function () {
     let oldEnv: string
     let tempDir: string
     let cacheDir: string
