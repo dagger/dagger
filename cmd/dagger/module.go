@@ -653,75 +653,84 @@ func getModuleConfigurationForSourceRef(
 		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
 	}
 
-	if conf.SourceKind == dagger.LocalSource {
-		if doFindUp {
-			findupConfigDir, ok, err := findUp(srcRefStr)
-			if err != nil {
-				return nil, fmt.Errorf("error trying to find config path for %s: %s", srcRefStr, err)
-			}
-			if ok {
-				srcRefStr = findupConfigDir
-
-				// check if this is a named module from the find-up dagger.json
-				configPath := filepath.Join(findupConfigDir, modules.Filename)
-				contents, err := os.ReadFile(configPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
-				}
-				var modCfg modules.ModuleConfig
-				if err := json.Unmarshal(contents, &modCfg); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
-				}
-				if namedDep, ok := modCfg.DependencyByName(srcRefStr); ok {
-					src := dag.ModuleSource(namedDep.Source)
-					kind, err := src.Kind(ctx)
-					if err != nil {
-						return nil, err
-					}
-					if kind == dagger.GitSource {
-						return getModuleConfigurationForSourceRef(ctx, dag, namedDep.Source, doFindUp, resolveFromCaller)
-					}
-					depPath := filepath.Join(findupConfigDir, namedDep.Source)
-					srcRefStr = depPath
-				}
-			}
-		}
-
-		conf.LocalRootSourcePath, err = filepath.Abs(srcRefStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
-		}
-
-		if filepath.IsAbs(srcRefStr) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get current working directory: %w", err)
-			}
-			srcRefStr, err = filepath.Rel(cwd, srcRefStr)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get relative path for %s: %w", srcRefStr, err)
-			}
-		}
-		if err := os.MkdirAll(srcRefStr, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory for %s: %w", srcRefStr, err)
-		}
-		conf.Source = dag.ModuleSource(srcRefStr)
-
-		conf.LocalContextPath, err = conf.Source.ResolveContextPathFromCaller(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get local root path: %w", err)
-		}
-		_, err = os.Lstat(filepath.Join(conf.LocalRootSourcePath, modules.Filename))
-		conf.ModuleSourceConfigExists = err == nil
-
-		if resolveFromCaller {
-			conf.Source = conf.Source.ResolveFromCaller()
-		}
-	} else {
+	if conf.SourceKind == dagger.GitSource {
 		conf.ModuleSourceConfigExists, err = conf.Source.ConfigExists(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if module config exists: %w", err)
 		}
+		return conf, nil
+	}
+
+	if doFindUp {
+		// need to check if this is a named module from the *default* dagger.json found-up from the cwd
+		defaultFindupConfigDir, defaultFindupExists, err := findUp(moduleURLDefault)
+		if err != nil {
+			return nil, fmt.Errorf("error trying to find default config path for: %w", err)
+		}
+		if defaultFindupExists {
+			configPath := filepath.Join(defaultFindupConfigDir, modules.Filename)
+			contents, err := os.ReadFile(configPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read %s: %w", configPath, err)
+			}
+			var modCfg modules.ModuleConfig
+			if err := json.Unmarshal(contents, &modCfg); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
+			}
+
+			namedDep, ok := modCfg.DependencyByName(srcRefStr)
+			if ok {
+				depSrc := dag.ModuleSource(namedDep.Source)
+				depKind, err := depSrc.Kind(ctx)
+				if err != nil {
+					return nil, err
+				}
+				depSrcRef := namedDep.Source
+				if depKind == dagger.LocalSource {
+					depSrcRef = filepath.Join(defaultFindupConfigDir, namedDep.Source)
+				}
+				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller)
+			}
+		}
+
+		findupConfigDir, findupExists, err := findUp(srcRefStr)
+		if err != nil {
+			return nil, fmt.Errorf("error trying to find config path for %s: %w", srcRefStr, err)
+		}
+		if !findupExists {
+			return nil, fmt.Errorf("no %s found in directory %s or any parents up to git root", modules.Filename, srcRefStr)
+		}
+		srcRefStr = findupConfigDir
+	}
+
+	conf.LocalRootSourcePath, err = filepath.Abs(srcRefStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for %s: %w", srcRefStr, err)
+	}
+	if filepath.IsAbs(srcRefStr) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current working directory: %w", err)
+		}
+		srcRefStr, err = filepath.Rel(cwd, srcRefStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path for %s: %w", srcRefStr, err)
+		}
+	}
+	if err := os.MkdirAll(srcRefStr, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create directory for %s: %w", srcRefStr, err)
+	}
+	conf.Source = dag.ModuleSource(srcRefStr)
+
+	conf.LocalContextPath, err = conf.Source.ResolveContextPathFromCaller(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local root path: %w", err)
+	}
+	_, err = os.Lstat(filepath.Join(conf.LocalRootSourcePath, modules.Filename))
+	conf.ModuleSourceConfigExists = err == nil
+
+	if resolveFromCaller {
+		conf.Source = conf.Source.ResolveFromCaller()
 	}
 
 	return conf, nil
