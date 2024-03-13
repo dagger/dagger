@@ -369,19 +369,7 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "id": "manuals/administrator/integrations/github-actions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/gitlab"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/circleci"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/jenkins"
+              "id": "manuals/administrator/integrations/argo-workflows"
             },
             {
               "type": "doc",
@@ -393,15 +381,27 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/administrator/integrations/argo-workflows"
+              "id": "manuals/administrator/integrations/circleci"
             },
             {
               "type": "doc",
-              "id": "manuals/administrator/integrations/tekton"
+              "id": "manuals/administrator/integrations/github-actions"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/gitlab"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/jenkins"
             },
             {
               "type": "doc",
               "id": "manuals/administrator/integrations/kubernetes"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/tekton"
             }
           ]
         },
