@@ -19,7 +19,12 @@ message TelemetryRequest {
 };
 
 service Flusher {
-  rpc Flush (TelemetryRequest) returns (FlushResponse) {}
+  rpc Flush (FlushRequest) returns (FlushResponse) {}
 }
+
+message FlushRequest {
+  bytes trace_id = 1;
+  bool immediate = 2;
+};
 
 message FlushResponse {};

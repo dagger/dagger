@@ -29,9 +29,9 @@ type Flusher struct {
 	*UnimplementedFlusherServer
 }
 
-func (f *Flusher) Flush(ctx context.Context, req *TelemetryRequest) (*FlushResponse, error) {
+func (f *Flusher) Flush(ctx context.Context, req *FlushRequest) (*FlushResponse, error) {
 	tracing.FlushLiveProcessors(ctx)
-	f.PubSub.Drain(trace.TraceID(req.GetTraceId()))
+	f.PubSub.Drain(trace.TraceID(req.GetTraceId()), req.Immediate)
 	return &FlushResponse{}, nil
 }
 

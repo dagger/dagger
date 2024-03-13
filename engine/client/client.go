@@ -456,8 +456,9 @@ func (c *Client) flushTelemetry() error {
 	flusher := telemetry.NewFlusherClient(c.telemetryConn)
 
 	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	if _, err := flusher.Flush(ctx, &telemetry.TelemetryRequest{
-		TraceId: traceID[:],
+	if _, err := flusher.Flush(ctx, &telemetry.FlushRequest{
+		TraceId:   traceID[:],
+		Immediate: c.internalCtx.Err() != nil,
 	}); err != nil {
 		return fmt.Errorf("flush: %w", err)
 	}
@@ -494,9 +495,10 @@ func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
 
 			spans := transform.Spans(data.GetResourceSpans())
 
-			slog.Debug("exporting spans from engine", "len", len(spans))
+			slog.Debug("received spans from engine", "len", len(spans))
+
 			for _, span := range spans {
-				slog.Debug("exporting span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
+				slog.Debug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
 			}
 
 			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
@@ -537,7 +539,7 @@ func (c *Client) exportLogs(logsClient telemetry.LogsSourceClient) error {
 
 			logs := telemetry.TransformPBLogs(data.GetResourceLogs())
 
-			slog.Debug("exporting logs from engine", "len", len(logs))
+			slog.Debug("received logs from engine", "len", len(logs))
 
 			if err := c.EngineLogs.ExportLogs(ctx, logs); err != nil {
 				return fmt.Errorf("export %d logs: %w", len(logs), err)

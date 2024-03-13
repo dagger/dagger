@@ -29,12 +29,13 @@ func NewPubSub() *PubSub {
 	}
 }
 
-func (ps *PubSub) Drain(id trace.TraceID) {
+func (ps *PubSub) Drain(id trace.TraceID, immediate bool) {
 	ps.tracesL.Lock()
 	trace, ok := ps.traces[id]
 	if ok {
 		trace.cond.L.Lock()
 		trace.draining = true
+		trace.drainImmediately = immediate
 		trace.cond.Broadcast()
 		trace.cond.L.Unlock()
 	}
@@ -249,10 +250,11 @@ func (ps *PubSub) unsubLogs(traceID trace.TraceID, exp sdklog.LogExporter) {
 // to complete, ensuring we don't drop the last few spans, which ruins an
 // entire trace.
 type activeTrace struct {
-	id          trace.TraceID
-	activeSpans map[trace.SpanID]struct{}
-	draining    bool
-	cond        *sync.Cond
+	id               trace.TraceID
+	activeSpans      map[trace.SpanID]struct{}
+	draining         bool
+	drainImmediately bool
+	cond             *sync.Cond
 }
 
 func (trace *activeTrace) drain() {
@@ -291,6 +293,10 @@ func (trace *activeTrace) wait(ctx context.Context) {
 		)
 		if ctx.Err() != nil {
 			slog.Debug("wait interrupted")
+			break
+		}
+		if trace.drainImmediately {
+			slog.Debug("draining immediately")
 			break
 		}
 		if trace.draining {

@@ -47,14 +47,13 @@ type FilterLiveSpansExporter struct {
 // ExportSpans passes each span to the span processor's OnEnd hook so that it
 // can be batched and emitted more efficiently.
 func (exp FilterLiveSpansExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	export := identity.NewID()
-
+	batch := identity.NewID()
 	filtered := make([]sdktrace.ReadOnlySpan, 0, len(spans))
 	for _, span := range spans {
 		if span.StartTime().After(span.EndTime()) {
-			slog.Debug("skipping unfinished span", "export", export, "span", span.Name(), "id", span.SpanContext().SpanID())
+			slog.Debug("skipping unfinished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
 		} else {
-			slog.Debug("keeping finished span", "export", export, "span", span.Name(), "id", span.SpanContext().SpanID())
+			slog.Debug("keeping finished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
 			filtered = append(filtered, span)
 		}
 	}
