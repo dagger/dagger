@@ -86,7 +86,11 @@ type Params struct {
 
 type Client struct {
 	Params
-	eg             *errgroup.Group
+
+	rootCtx context.Context
+
+	eg *errgroup.Group
+
 	internalCtx    context.Context
 	internalCancel context.CancelFunc
 
@@ -125,6 +129,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	if c.ServerID == "" {
 		c.ServerID = identity.NewID()
 	}
+
+	// keep the root ctx around so we can detect whether we've been interrupted,
+	// so we can drain immediately in that scenario
+	c.rootCtx = ctx
 
 	// NB: decouple from the originator's cancel ctx
 	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
@@ -440,7 +448,8 @@ func (c *Client) Close(runErr error) (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	if err := c.flushTelemetry(); err != nil {
+	// Wait for telemetry to finish draining
+	if err := c.telemetry.Wait(); err != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
 	}
 
@@ -450,25 +459,6 @@ func (c *Client) Close(runErr error) (rerr error) {
 	}
 
 	return rerr
-}
-
-func (c *Client) flushTelemetry() error {
-	ctx := context.WithoutCancel(c.internalCtx)
-
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	flusher := telemetry.NewFlusherClient(c.telemetryConn)
-
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	if _, err := flusher.Flush(ctx, &telemetry.FlushRequest{
-		TraceId:   traceID[:],
-		Immediate: c.internalCtx.Err() != nil,
-	}); err != nil {
-		return fmt.Errorf("flush: %w", err)
-	}
-
-	return c.telemetry.Wait()
 }
 
 func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
@@ -566,6 +556,12 @@ func (c *Client) shutdownServer() error {
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
 	if err != nil {
 		return fmt.Errorf("new request: %w", err)
+	}
+
+	if c.rootCtx.Err() != nil {
+		req.URL.RawQuery = url.Values{
+			"immediate": []string{"true"},
+		}.Encode()
 	}
 
 	req.SetBasicAuth(c.SecretToken, "")

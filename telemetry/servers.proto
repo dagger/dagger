@@ -17,14 +17,3 @@ service LogsSource {
 message TelemetryRequest {
   bytes trace_id = 1;
 };
-
-service Flusher {
-  rpc Flush (FlushRequest) returns (FlushResponse) {}
-}
-
-message FlushRequest {
-  bytes trace_id = 1;
-  bool immediate = 2;
-};
-
-message FlushResponse {};

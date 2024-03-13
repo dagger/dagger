@@ -20,20 +20,7 @@ import (
 
 	"github.com/dagger/dagger/telemetry/sdklog"
 	logtransform "github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
-	"github.com/dagger/dagger/tracing"
 )
-
-type Flusher struct {
-	PubSub *PubSub
-
-	*UnimplementedFlusherServer
-}
-
-func (f *Flusher) Flush(ctx context.Context, req *FlushRequest) (*FlushResponse, error) {
-	tracing.FlushLiveProcessors(ctx)
-	f.PubSub.Drain(trace.TraceID(req.GetTraceId()), req.Immediate)
-	return &FlushResponse{}, nil
-}
 
 type TraceServer struct {
 	PubSub *PubSub

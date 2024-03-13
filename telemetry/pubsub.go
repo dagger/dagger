@@ -289,6 +289,7 @@ func (trace *activeTrace) wait(ctx context.Context) {
 	for !trace.draining || len(trace.activeSpans) > 0 {
 		slog = slog.With(
 			"draining", trace.draining,
+			"immediate", trace.drainImmediately,
 			"activeSpans", len(trace.activeSpans),
 		)
 		if ctx.Err() != nil {

@@ -377,7 +377,6 @@ func (e *BuildkitController) Register(server *grpc.Server) {
 	telemetry.RegisterTracesSourceServer(server, traceSrv)
 	logsv1.RegisterLogsServiceServer(server, logsSrv)
 	telemetry.RegisterLogsSourceServer(server, logsSrv)
-	telemetry.RegisterFlusherServer(server, &telemetry.Flusher{PubSub: e.TelemetryPubSub})
 }
 
 func (e *BuildkitController) Close() error {

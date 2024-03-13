@@ -313,7 +313,10 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
 
+		immediate := req.URL.Query().Get("immediate") == "true"
+
 		slog := slog.With(
+			"isImmediate", immediate,
 			"isMainClient", clientMetadata.ClientID == s.mainClientCallerID,
 			"isModule", clientMetadata.ModuleCallerDigest != "",
 			"serverID", s.serverID,
@@ -329,6 +332,9 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Detach all services associated with the server, which will only
 			// synchronously shut them down if we're the last binder.
 			s.services.StopClientServices(ctx, s.serverID)
+
+			// Start draining telemetry
+			s.pubsub.Drain(s.traceID, immediate)
 
 			if len(s.upstreamCacheExporterCfgs) > 0 {
 				bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
