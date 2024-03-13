@@ -83,11 +83,9 @@ This Dagger Engine DaemonSet configuration is designed to:
 
 ## Step 5: Test the deployment
 
-TODO
+At this point, the deployment is configured and ready for use. Test it by triggering the GitHub Actions workflow, by committing a new change to the source code repository. Your CI pipelines will be now be connected to your Dagger Engines.
 
-At this point, the deployment is configured and ready for use. Test it by triggering the GitHub Actions workflow, by committing a new change to the source code repository. Your CI pipelines will be now connected to your Dagger Engines.
-
-If you don't already have a GitHub repository, clone the [Dagger open source repository](https://github.com/dagger/dagger) and add the sample GitHub actions workflow shown below to it. Refer to the inline comments for configuration you may wish to change.
+If you don't already have a GitHub repository, clone the [Dagger open source repository](https://github.com/dagger/dagger) and add the sample GitHub actions workflow shown below to it. The workflow uses the Dagger for GitHub Action to execute a Dagger Function that builds a Go binary of the Dagger CLI. Refer to the inline comments for configuration you may wish to change.
 
 ```yaml title=".github/workflows/dagger-on-kubernetes.yaml" file=./snippets/eks-github-karpenter/github_workflow.yml
 ```
