@@ -13,7 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"github.com/vito/midterm"
 	"github.com/vito/progrock/ui"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
@@ -45,7 +44,6 @@ type Frontend struct {
 
 	// updated by Run
 	program     *tea.Program
-	in          *swappableWriter
 	out         *termenv.Output
 	run         func(context.Context) error
 	runCtx      context.Context
@@ -55,9 +53,10 @@ type Frontend struct {
 	err         error
 
 	// updated as events are written
-	db       *DB
-	eof      bool
-	logsView *LogsView
+	db           *DB
+	eof          bool
+	backgrounded bool
+	logsView     *LogsView
 
 	// global logs
 	messagesView *Vterm
@@ -73,11 +72,6 @@ type Frontend struct {
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
-}
-
-type zoomState struct {
-	Input  io.Writer
-	Output *midterm.Terminal
 }
 
 func New() *Frontend {
@@ -152,13 +146,6 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 	// NOTE: establish color cache before we start consuming stdin
 	fe.out = ui.NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
-	// in order to allow the TUI to receive user input but _also_ allow an
-	// interactive terminal to receive keyboard input, we pipe the user input
-	// to an io.Writer that can have its destination swapped between the TUI
-	// and the remote terminal.
-	inR, inW := io.Pipe()
-	fe.in = &swappableWriter{original: inW}
-
 	// Bubbletea will just receive an `io.Reader` for its input rather than the
 	// raw TTY *os.File, so we need to set up the TTY ourselves.
 	ttyFd := int(tty.Fd())
@@ -169,12 +156,6 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 	fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
 	defer fe.restore()
 
-	// start piping from the TTY to our swappable writer.
-	go io.Copy(fe.in, tty) //nolint: errcheck
-
-	// support scrollable viewport
-	// fe.out.EnableMouseCellMotion()
-
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
 	// set up ctx cancellation so the TUI can interrupt via keypresses
@@ -182,7 +163,7 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
-		tea.WithInput(inR),
+		tea.WithInput(tty),
 		tea.WithOutput(fe.out),
 		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
 		// counter-productive.
@@ -280,20 +261,6 @@ func (fe *Frontend) renderPrimaryOutput() error {
 	return nil
 }
 
-func (fe *Frontend) redirectStdin(st *zoomState) {
-	if st == nil {
-		fe.in.Restore()
-		// restore scrolling as we transition back to the DAG UI, since an app
-		// may have disabled it
-		// fe.out.EnableMouseCellMotion()
-	} else {
-		// disable mouse events, can't assume zoomed input wants it (might be
-		// regular shell like sh)
-		// fe.out.DisableMouseCellMotion()
-		fe.in.SetOverride(st.Input)
-	}
-}
-
 func findTTY() (*os.File, bool) {
 	// some of these may be redirected
 	for _, f := range []*os.File{os.Stderr, os.Stdout, os.Stdin} {
@@ -302,31 +269,6 @@ func findTTY() (*os.File, bool) {
 		}
 	}
 	return nil, false
-}
-
-type swappableWriter struct {
-	original io.Writer
-	override io.Writer
-	sync.Mutex
-}
-
-func (w *swappableWriter) SetOverride(to io.Writer) {
-	w.Lock()
-	w.override = to
-	w.Unlock()
-}
-
-func (w *swappableWriter) Restore() {
-	w.SetOverride(nil)
-}
-
-func (w *swappableWriter) Write(p []byte) (int, error) {
-	w.Lock()
-	defer w.Unlock()
-	if w.override != nil {
-		return w.override.Write(p)
-	}
-	return w.original.Write(p)
 }
 
 var _ sdktrace.SpanExporter = (*Frontend)(nil)
@@ -372,6 +314,20 @@ func (fe *Frontend) Close() error {
 	return nil
 }
 
+type backgroundMsg struct {
+	cmd  tea.ExecCommand
+	errs chan<- error
+}
+
+func (fe *Frontend) Background(cmd tea.ExecCommand) error {
+	errs := make(chan error, 1)
+	fe.program.Send(backgroundMsg{
+		cmd:  cmd,
+		errs: errs,
+	})
+	return <-errs
+}
+
 func (fe *Frontend) Render(out *termenv.Output) error {
 	fe.recalculateView()
 	if _, err := fe.renderProgress(out); err != nil {
@@ -412,20 +368,6 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 	return renderedAny, nil
 }
 
-func (fe *Frontend) renderZoomed(out *termenv.Output, st *zoomState) (bool, error) {
-	var renderedAny bool
-	for i := 0; i < st.Output.UsedHeight(); i++ {
-		if i > 0 {
-			fmt.Fprintln(out)
-		}
-		if err := st.Output.RenderLine(out, i); err != nil {
-			return renderedAny, err
-		}
-		renderedAny = true
-	}
-	return renderedAny, nil
-}
-
 var _ tea.Model = (*Frontend)(nil)
 
 func (fe *Frontend) Init() tea.Cmd {
@@ -449,6 +391,8 @@ func (fe *Frontend) spawn() (msg tea.Msg) {
 	return doneMsg{fe.run(fe.runCtx)}
 }
 
+type backgroundDoneMsg struct{}
+
 func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case doneMsg: // run finished
@@ -466,6 +410,16 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if fe.done {
 			return fe, tea.Quit
 		}
+		return fe, nil
+
+	case backgroundMsg:
+		fe.backgrounded = true
+		return fe, tea.Exec(msg.cmd, func(err error) tea.Msg {
+			msg.errs <- err
+			return backgroundDoneMsg{}
+		})
+
+	case backgroundDoneMsg:
 		return fe, nil
 
 	case tea.KeyMsg:
@@ -517,6 +471,11 @@ func (fe *Frontend) View() string {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	view := fe.view.String()
+	if fe.backgrounded {
+		// if we've been backgrounded, show nothing, so a user's shell session
+		// doesn't have any garbage before/after
+		return ""
+	}
 	if fe.done && fe.eof {
 		// print nothing; make way for the pristine output in the final render
 		return ""
