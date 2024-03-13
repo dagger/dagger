@@ -65,10 +65,14 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 		if v := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"); v != "" {
 			endpoint = v
 		} else if v := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); v != "" {
-			endpoint, err = url.JoinPath(v, "v1", "traces")
-			if err != nil {
-				slog.Warn("failed to join path", "error", err)
-				return
+			if proto == "http/protobuf" {
+				endpoint, err = url.JoinPath(v, "v1", "traces")
+				if err != nil {
+					slog.Warn("failed to join path", "error", err)
+					return
+				}
+			} else {
+				endpoint = v
 			}
 		}
 
