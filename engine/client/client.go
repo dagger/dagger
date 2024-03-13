@@ -344,6 +344,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
+		if ctx.Err() != nil {
+			fmt.Fprintln(connectStderr, "Giving up:", ctx.Err())
+			return backoff.Permanent(ctx.Err())
+		}
+
 		nextBackoff := bo.NextBackOff()
 		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
 		defer cancel()
