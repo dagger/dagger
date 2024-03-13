@@ -28,6 +28,8 @@ spec:
       container:
         image: alpine:latest
         command: ["sh", "-c"]
+        # assumes a Go project
+        # modify to use different function(s) as needed
         args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=."]
         workingDir: /work
         env:

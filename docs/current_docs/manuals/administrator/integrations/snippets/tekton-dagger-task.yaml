@@ -38,6 +38,8 @@ spec:
         - name: DAGGER_CLOUD_TOKEN
           value: $(params.dagger-cloud-token)
   steps:
+  # assumes a Go project
+  # modify to use different function(s) as needed
   - name: read
     image: docker:dind
     workingDir: $(workspaces.source.path)

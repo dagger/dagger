@@ -87,14 +87,10 @@ TODO
 
 At this point, the deployment is configured and ready for use. Test it by triggering the GitHub Actions workflow, by committing a new change to the source code repository. Your CI pipelines will be now connected to your Dagger Engines.
 
-If you don't already have a GitHub repository, clone the [repository for the Dagger starter application](https://github.com/dagger/hello-dagger) and add the sample GitHub actions workflow shown below to it. Refer to the inline comments for configuration you may wish to change.
+If you don't already have a GitHub repository, clone the [Dagger open source repository](https://github.com/dagger/dagger) and add the sample GitHub actions workflow shown below to it. Refer to the inline comments for configuration you may wish to change.
 
 ```yaml title=".github/workflows/dagger-on-kubernetes.yaml" file=./snippets/eks-github-karpenter/github_workflow.yml
 ```
-
-:::note
-Remember to add the `ci/index.mjs` file containing the Dagger pipeline too. Alternatively, pick your preferred language and adapt the GitHub Actions workflow example above.
-:::
 
 :::tip
 To validate that your Dagger Engines are working as expected, you can check your Dagger Cloud dashboard, which shows detailed information about your pipeline executions.

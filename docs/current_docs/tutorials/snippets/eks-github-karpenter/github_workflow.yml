@@ -16,21 +16,16 @@ jobs:
     # 👆 Uncomment line above & comment line below 👇 if you want to run this on GitHub Runners instead
     runs-on: dagger-runner
     steps:
-      # https://github.com/actions/checkout
-      - name: Checkout code
-        uses: actions/checkout@v3
-      # https://github.com/actions/setup-node
-      - name: Setup Node.JS
-        uses: actions/setup-node@v3
+      - uses: actions/checkout@v3
+      -
+        name: Call Dagger Function
+        uses: dagger/dagger-for-github@v5
         with:
-          node-version: 18
-          cache: npm
-      - name: Install Dagger CLI
-        run: |
-          mkdir -p ~/.local/bin
-          cd ~/.local
-          curl -L https://dl.dagger.io/dagger/install.sh | sh
-      - name: Run Dagger pipeline
-        run: |
-          npm install
-          dagger run node ci/index.mjs
+          version: "0.10.2"
+          verb: call
+          module: github.com/kpenfound/dagger-modules/golang@v0.1.5
+          args: build --project=. --args=./cmd/dagger
+          # assumes the Dagger Cloud token is in
+          # a repository secret named DAGGER_CLOUD_TOKEN
+          # set via the GitHub UI/CLI
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}

@@ -21,6 +21,8 @@
 build:
   extends: [.dagger]
   script:
+    # assumes a Go project
+    # modify to use different function(s) as needed
     - dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
     # for ephemeral runners only: override the default docker stop timeout and
     # give the Dagger Engine more time to push cache data to Dagger Cloud

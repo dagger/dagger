@@ -16,8 +16,8 @@ jobs:
           name: Install Dagger CLI
           command: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
       - run:
-          # assumes the Dagger Cloud token is
-          # in a project environment variable named DAGGER_CLOUD_TOKEN
+          # assumes a Go project
+          # modify to use different function(s) as needed
           name: Call Dagger Function
           command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
       # for ephemeral runners only: override the default docker stop timeout and
@@ -30,3 +30,6 @@ workflows:
   dagger:
     jobs:
       - build
+
+# assumes the Dagger Cloud token is
+# in a project environment variable named DAGGER_CLOUD_TOKEN

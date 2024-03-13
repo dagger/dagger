@@ -13,6 +13,8 @@ phases:
       - echo "Installing Dagger CLI"
       - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 
+  # assumes a Go project
+  # modify to use different function(s) as needed
   build:
     commands:
       - echo "Calling Dagger Function"
