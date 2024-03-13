@@ -397,6 +397,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manuals/administrator/integrations/openshift"
+            },
+            {
+              "type": "doc",
               "id": "manuals/administrator/integrations/kubernetes"
             },
             {

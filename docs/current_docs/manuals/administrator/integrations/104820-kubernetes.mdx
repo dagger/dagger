@@ -122,7 +122,7 @@ In this architecture:
 ![Kubernetes architecture with shared cache](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-cache.png)
 
 :::tip
-See a specific [implementation of the above pattern using GitHub Actions, Amazon Elastic Kubernetes Service (EKS), Karpenter and Dagger Cloud](../../../tutorials/934191-eks-github-karpenter.mdx).
+Read a detailed tutorial explaining how to implement the above pattern with [Dagger and GitHub Actions, Amazon Elastic Kubernetes Service (EKS), Karpenter and Dagger Cloud](../../../tutorials/934191-eks-github-karpenter.mdx).
 :::
 
 ## Recommendations
@@ -135,4 +135,4 @@ The Dagger Engine cache is used to store intermediate build artifacts, which can
 
 #### Runner nodes appropriately sized for your workloads
 
-Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8GB of RAM is a good place to start. One approach is to set up the GitHub Actions runners with various sizes so that the Dagger Engine can consume resources from the runners on the same node if needed.
+Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8GB of RAM is a good place to start. One approach is to set up the CI runners with various sizes so that the Dagger Engine can consume resources from the runners on the same node if needed.
