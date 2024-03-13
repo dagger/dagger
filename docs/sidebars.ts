@@ -39,46 +39,6 @@ module.exports = {
       "items": [
         {
           "type": "category",
-          "label": "Dagger in CI",
-          "link": {
-            "type": "doc",
-            "id": "user-guide/ci/index"
-          },
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            {
-              "type": "doc",
-              "id": "user-guide/ci/github-actions"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/gitlab"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/circleci"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/jenkins"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/aws-codebuild"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/azure-pipelines"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/argo-workflows"
-            }
-          ]
-        },
-        {
-          "type": "category",
           "label": "Dagger Cloud",
           "link": {
             "type": "doc",
@@ -95,14 +55,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "user-guide/cloud/user-interface"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/cloud/roles-permissions"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/cloud/org-administration"
             }
           ]
         },
@@ -394,7 +346,91 @@ module.exports = {
           "id": "developer-guide/known-issues"
         }
       ],
-
+    },
+    {
+      "type": "category",
+      "label": "Administrator Manual",
+      "link": {
+        "type": "doc",
+        "id": "manuals/administrator/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "category",
+          "label": "Integrations",
+          "link": {
+            "type": "doc",
+            "id": "manuals/administrator/integrations/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/github-actions"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/gitlab"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/circleci"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/jenkins"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/aws-codebuild"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/azure-pipelines"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/argo-workflows"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/tekton"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/integrations/kubernetes"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Dagger Cloud",
+          "link": {
+            "type": "doc",
+            "id": "manuals/administrator/cloud/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manuals/administrator/cloud/roles-permissions"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/cloud/organizations"
+            }
+          ]
+        },
+        {
+          "type": "doc",
+          "label": "Tutorials",
+          "id": "manuals/administrator/tutorials"
+        },
+      ]
     },
     {
       "type": "doc",

@@ -1,0 +1,138 @@
+---
+slug: /manuals/administrator/104820/kubernetes
+---
+
+# Kubernetes
+
+## Deployment with Helm
+
+Dagger provides a Helm chart to create a Dagger Engine DaemonSet on a Kubernetes cluster. A DaemonSet ensures that all matching nodes run an instance of Dagger Engine.
+
+The following command uses the Dagger Helm chart to create a Dagger Engine DaemonSet on the cluster:
+
+```shell
+helm upgrade --install --namespace=dagger --create-namespace \
+    dagger oci://registry.dagger.io/dagger-helm
+```
+
+This Dagger Engine DaemonSet configuration is designed to:
+
+- best utilize local Non-Volatile Memory Express (NVMe) hard drives of the worker nodes
+- reduce the amount of network latency and bandwidth requirements
+- simplify routing of Dagger SDK and CLI requests
+
+Wait for the Dagger Engine to become ready:
+
+```shell
+kubectl wait --for condition=Ready --timeout=60s pod \
+    --selector=name=dagger-dagger-helm-engine --namespace=dagger
+```
+
+Find more information on what was deployed using the following command:
+
+```shell
+kubectl describe daemonset/dagger-dagger-helm-engine --namespace=dagger
+```
+
+Get a Dagger Engine pod name:
+
+```shell
+DAGGER_ENGINE_POD_NAME="$(kubectl get pod \
+    --selector=name=dagger-dagger-helm-engine --namespace=dagger \
+    --output=jsonpath='{.items[0].metadata.name}')"
+export DAGGER_ENGINE_POD_NAME
+```
+
+Next, set the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable so that the Dagger CLI knows to connect to the Dagger Engine that you deployed as a Kubernetes pod:
+
+```shell
+_EXPERIMENTAL_DAGGER_RUNNER_HOST="kube-pod://$DAGGER_ENGINE_POD_NAME?namespace=dagger"
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST
+```
+
+Finally, run an operation that shows the kernel info of the Kubernetes node where this Dagger Engine runs:
+
+```shell
+dagger query <<EOF
+{
+    container {
+        from(address:"alpine") {
+            withExec(args: ["uname", "-a"]) { stdout }
+        }
+    }
+}
+EOF
+```
+
+For more complex scenarios, refer to the following sections.
+
+## Architecture patterns
+
+This section describe a few common architecture patterns to consider when setting up a Continuous Integration (CI) environment using Dagger on Kubernetes.
+
+### Base pattern: Persistent nodes
+
+The base pattern consists of persistent Kubernetes nodes with ephemeral CI runners.
+
+The minimum required components are:
+
+- *Kubernetes cluster*, consisting of support nodes and runner nodes.
+  - Runner nodes host CI runners and Dagger Engines.
+  - Support nodes host support and management tools, such as certificate management, runner controller & other functions.
+- *Certificates manager*, required by Runner controller for Admission Webhook.
+- *Runner controller*, responsible for managing CI runners in response to CI job requests.
+  - CI runners are the workhorses of a CI/CD system. They execute the jobs that are defined in the CI/CD pipeline.
+- *Dagger Engine* on each runner node, running alongside one or more CI runners.
+  - Responsible for running Dagger pipelines and caching intermediate and final build artifacts.
+
+In this architecture:
+
+- Kubernetes nodes are persistent.
+- CI runners are ephemeral.
+- Each CI runner has access only to the cache of the local Dagger Engine.
+- The Dagger Engine is deployed as a DaemonSet, to use resources in the most efficient manner and enable reuse of the local Dagger Engine cache to the greatest extent possible.
+
+![Kubernetes base architecture](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-base.png)
+
+### Optimization 1: Ephemeral, auto-scaled nodes
+
+The base architecture pattern described previously can be optimized by the addition of a *node auto-scaler*. This can automatically adjust the size of node groups based on the current workload. If there are a lot of CI jobs running, the auto-scaler can automatically add more runner nodes to the cluster to handle the increased workload. Conversely, if there are few jobs running, it can remove unnecessary runner nodes.
+
+This optimization reduces the total compute cost since runner nodes are added & removed based on the number of concurrent CI jobs.
+
+In this architecture:
+
+- Kubernetes nodes provisioned on-demand start with a "clean" Dagger Engine containing no cached data.
+- Cached build artifacts from subsequent runs will persist only for the lifetime of the runner node.
+
+![Kubernetes architecture with ephmeral nodes](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-ephemeral.png)
+
+### Optimization 2: Shared Cloud Cache
+
+The previous pattern makes it possible to scale the Dagger deployment, but comes with the following trade-offs:
+
+1. Runner nodes are automatically de-provisioned when they are not needed. During de-provisioning, the Dagger Engines get deleted too. As a result, data and operations cached in previous runs will be deleted and subsequent runs will not benefit from previous runs. To resolve this, the cached data and operations are stored in a *cloud caching service* and made available to new Dagger Engines when they are provisioned.
+2. The deployment will only scale to a certain point, given that each Dagger Engine can only scale vertically to provide better performance. In order to make the system horizontally scalable, a caching service makes the same data and operations available to as many Dagger Engines as needed.
+
+In this architecture:
+
+- A shared cloud cache stores data from all Dagger Engines running in the cluster.
+- Auto-provisioned nodes start with access to cached data of previous runs.
+
+![Kubernetes architecture with shared cache](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-cache.png)
+
+:::tip
+See a specific [implementation of the above pattern using GitHub Actions, Amazon Elastic Kubernetes Service (EKS), Karpenter and Dagger Cloud](../../../tutorials/934191-eks-github-karpenter.mdx).
+:::
+
+## Recommendations
+
+When deploying Dagger on a Kubernetes cluster, it's important to understand the design constraints you're operating under, so you can optimize your configuration to suit your workload requirements. Here are two key recommendations.
+
+#### Runner nodes with moderate to large NVMe drives
+
+The Dagger Engine cache is used to store intermediate build artifacts, which can significantly speed up your CI jobs. However, this cache can grow very large over time. By choosing nodes with large NVMe drives, you ensure that there is plenty of space for this cache. NVMe drives are also much faster than traditional SSDs, which can further improve performance. These types of drives are usually ephemeral to the node and much less expensive relative to EBS-type volumes.
+
+#### Runner nodes appropriately sized for your workloads
+
+Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8GB of RAM is a good place to start. One approach is to set up the GitHub Actions runners with various sizes so that the Dagger Engine can consume resources from the runners on the same node if needed.

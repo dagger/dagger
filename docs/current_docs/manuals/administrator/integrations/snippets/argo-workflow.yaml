@@ -18,13 +18,13 @@ spec:
           - name: project-source
             path: /work
             git:
-              repo: https://github.com/dagger/dagger.git
+              repo: YOUR_REPOSITORY_URL_HERE
               revision: "main"
           - name: dagger-cli
             path: /usr/local/bin
             mode: 0755
             http:
-              url: https://github.com/dagger/dagger/releases/download/v0.10.0/dagger_v0.10.0_linux_arm64.tar.gz
+              url: https://github.com/dagger/dagger/releases/download/v0.10.2/dagger_v0.10.2_linux_arm64.tar.gz
       container:
         image: alpine:latest
         command: ["sh", "-c"]
@@ -33,6 +33,8 @@ spec:
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
           value: "unix:///var/run/dagger/buildkitd.sock"
+          # assumes the Dagger Cloud token is
+          # in a Kubernetes secret named dagger-cloud
         - name: "DAGGER_CLOUD_TOKEN"
           valueFrom:
             secretKeyRef:
