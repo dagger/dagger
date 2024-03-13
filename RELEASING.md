@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-March%205,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-March%2012,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -10,6 +10,12 @@ This describes how to release Dagger:
 - [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
+- [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
+- [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
+- [🐙 dagger-for-github ⏱ `2mins`](#-dagger-for-github--2mins#)
+- [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins#)
+- [❄️ nix ⏱ `2mins`](#-nix--2mins#)
+- [⚙️ CI ⏱ `2mins`](#-ci--2mins)
 
 This is a high-level diagram of how all the pieces fit together:
 
@@ -18,7 +24,8 @@ flowchart TB
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
     playground["🛝 Playground"]
-    repo -.-> docs & playground
+    ci["⚙️ CI"]
+    repo -.-> docs & playground & ci
 
     subgraph Dagger
         engine("🚙 Engine")
@@ -29,19 +36,23 @@ flowchart TB
 
     S3["🗄 dl.dagger.io/dagger"]
     brew-tap["🐙 github.com/dagger/homebrew-tap"]
-    cli --> S3 --> brew-tap
+    github-action["🐙 github.com/dagger/dagger-for-github"]
+    nix["❄️ github.com/dagger/nix"]
+    cli --> S3 --> brew-tap & github-action & nix
 
     registry["📦 registry.dagger.io/engine"]
     ghcr["🐙 ghcr.io/dagger/engine"]
     engine --> ghcr --> registry
 
-
     go["🐹 Go SDK"]
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
     go-pkg["🐹 dagger.io/dagger"]
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
+    daggerverse["🌌 Daggerverse"]
+    cloud["☁️ Dagger Cloud"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
+    go-pkg -.-> daggerverse & cloud
     registry -.- S3 -.- go & python & typescript & elixir
 
     python["🐍 Python SDK"]
@@ -70,7 +81,7 @@ effort. The first step is to let the team know what is going to happen,
 preferably a few days in advance so that they can react. To do this:
 
 - [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
-      e.g. [`v0.10.1 Milestone`](https://github.com/dagger/dagger/milestone/38)
+      e.g. [`v0.10.1 Milestone`](https://github.com/dagger/dagger/milestone/39)
 - [ ] Create a new post in [Discord #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
       e.g. [`v0.10.1 release - 5th March 2024`](https://discord.com/channels/707636530424053791/1214152722136301589/1214152722136301589)
 
@@ -132,7 +143,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.10.1.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.10.2.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -259,8 +270,8 @@ go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require gi
 go mod tidy
 cd ../..
 
-# Check that the most important workflow works locally:
-go run main.go -w ../.. engine:test
+# Check that the most important workflow works locally (requires local Docker):
+./hack/make engine:test
 
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
@@ -269,12 +280,9 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.10.1 sh
 # mv ~/.local/bin/dagger{,-0.10.1}
 dagger version | grep ${ENGINE_VERSION:?must be set}
-cd ../..
 dagger run ./hack/make engine:test
 ```
 
-- [ ] Check with `@gerhard` that our dagger-runners have been updated to the
-      just-released Dagger Engine image
 - [ ] After you confirm that our internal tooling works with the new Go SDK
       release, [🐙
       github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
@@ -467,17 +475,38 @@ production deployment via Netlify as follows:
 The [Dagger Playground](https://play.dagger.cloud) is set to automatically
 update once there's a new release of the Dagger Engine.
 
-Follow these steps to verify the Playground Dagger version:
+- [ ] Mention in the release thread on Discord that Playground can be updated
+  to the just-released version. cc @marcosnils @matipan @gerhard
 
-1. Login with your GitHub account at https://play.dagger.cloud
-2. Open your browser's Developer Tools, and then the **Network** tab
-3. Click the **Execute query** button
-4. Click in the `/playgrounds` POST request row in the **Network** tab
-5. Verify that the `X-Dagger-Engine` response header value matches the just-released Engine version
+## 🌌 Daggerverse ⏱ `2mins`
 
-## 🌌 Daggerverse
+- [ ] Mention in the release thread on Discord that Playground can be updated
+  to the just-released version. cc @marcosnils @matipan @grouville
 
-This is documented internally, ping @jpadams, @vito or anyone who knows about Daggerverse deployment.
+## ☁️ Dagger Cloud ⏱ `2mins`
+
+- [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
+  to the just-released version. cc @marcosnils @matipan @sipsma
+
+## 🐙 dagger-for-github ⏱ `2mins`
+
+- [ ] Mention in the release thread on Discord that Dagger for GitHub can be
+  updated to the just-released version. cc @jpadams @gerhard
+
+## 🍺 dagger Homebrew ⏱ `2mins`
+
+- [ ] Check that Dagger Homebrew formula has been updated to latest, e.g.
+  [dagger 0.10.2](https://github.com/Homebrew/homebrew-core/pull/165904)
+
+## ❄️ nix ⏱ `2mins`
+
+- [ ] Check that Dagger nix flake has been updated to latest, e.g. [dagger: ->
+  v0.10.2](https://github.com/dagger/nix/commit/26a1fee07e8b466b30da6be53c5e8f1566c33797)
+
+## ⚙️ CI ⏱ `2mins`
+
+- [ ] Mention in the release thread on Discord that our CI can be updated to
+  the just-released version. cc @gerhard @matipan
 
 ## Last step
 
