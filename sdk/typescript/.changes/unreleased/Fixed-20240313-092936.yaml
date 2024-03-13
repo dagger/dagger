@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix issue with objects as field not correctly serialiazed
+time: 2024-03-13T09:29:36.920581Z
+custom:
+  Author: TomChv
+  PR: "6877"
