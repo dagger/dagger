@@ -43,7 +43,9 @@ func ApplyHTTPEnvConfigs(cfg Config) Config {
 func getOptionsFromEnv() []GenericOption {
 	opts := []GenericOption{}
 
-	tlsConf := &tls.Config{}
+	tlsConf := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
 	DefaultEnvOptionsReader.Apply(
 		envconfig.WithURL("ENDPOINT", func(u *url.URL) {
 			opts = append(opts, withEndpointScheme(u))

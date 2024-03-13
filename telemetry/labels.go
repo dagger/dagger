@@ -489,7 +489,7 @@ func (flag LabelFlag) Set(s string) error {
 	return nil
 }
 
-func (labels LabelFlag) Type() string {
+func (flag LabelFlag) Type() string {
 	return "labels"
 }
 

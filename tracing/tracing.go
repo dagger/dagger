@@ -83,7 +83,8 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 			configuredSpanExporter, err = otlptracehttp.New(ctx,
 				otlptracehttp.WithEndpointURL(endpoint))
 		case "grpc":
-			u, err := url.Parse(endpoint)
+			var u *url.URL
+			u, err = url.Parse(endpoint)
 			if err != nil {
 				slog.Warn("bad OTLP logs endpoint %q: %w", endpoint, err)
 				return

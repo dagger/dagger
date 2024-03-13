@@ -21,6 +21,7 @@ func CreateTLSConfig(certBytes []byte) (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		RootCAs: cp,
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    cp,
 	}, nil
 }

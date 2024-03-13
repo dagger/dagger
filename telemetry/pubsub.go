@@ -257,13 +257,6 @@ type activeTrace struct {
 	cond             *sync.Cond
 }
 
-func (trace *activeTrace) drain() {
-	trace.cond.L.Lock()
-	trace.draining = true
-	trace.cond.Broadcast()
-	trace.cond.L.Unlock()
-}
-
 func (trace *activeTrace) startSpan(id trace.SpanID) {
 	trace.cond.L.Lock()
 	trace.activeSpans[id] = struct{}{}

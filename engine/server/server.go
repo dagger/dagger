@@ -438,26 +438,26 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 		close(s.doneCh)
 	})
 
-	var err error
+	var errs error
 
 	slog.Debug("server closing; stopping client services and flushing", "server", s.serverID, "trace", s.traceID)
 
 	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
-		err = errors.Join(err, fmt.Errorf("stop client services: %w", err))
+		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
 
 	s.clientCallMu.RLock()
 	for _, callCtx := range s.clientCallContext {
-		err = errors.Join(err, callCtx.Root.Buildkit.Close())
+		errs = errors.Join(errs, callCtx.Root.Buildkit.Close())
 	}
 	s.clientCallMu.RUnlock()
 
 	// close the analytics recorder
-	err = errors.Join(err, s.analytics.Close())
+	errs = errors.Join(errs, s.analytics.Close())
 
 	tracing.FlushLiveProcessors(ctx)
 
-	return err
+	return errs
 }
 
 func (s *DaggerServer) Wait(ctx context.Context) error {

@@ -121,6 +121,10 @@ func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 	return nil
 }
 
+func (db *DB) Shutdown(ctx context.Context) error {
+	return nil // noop
+}
+
 func (db *DB) spanLogs(id trace.SpanID) *Vterm {
 	term, found := db.Logs[id]
 	if !found {
@@ -131,10 +135,6 @@ func (db *DB) spanLogs(id trace.SpanID) *Vterm {
 		db.Logs[id] = term
 	}
 	return term
-}
-
-func (fe *DB) Shutdown(ctx context.Context) error {
-	return nil // noop
 }
 
 func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {

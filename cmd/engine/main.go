@@ -65,7 +65,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
@@ -90,8 +89,6 @@ func init() {
 		os.Exit(0)
 	}
 }
-
-var propagators = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 
 type workerInitializerOpt struct {
 	config         *config.Config
@@ -394,7 +391,6 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(_ *cli.Context) error {
-		tel.Close()
 		tracing.Close()
 		return nil
 	}

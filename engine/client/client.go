@@ -173,34 +173,62 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	connectSpanOpts := []trace.SpanStartOption{
-		tracing.Encapsulate(),
-	}
-	if params.ModuleCallerDigest != "" {
-		connectSpanOpts = append(connectSpanOpts, tracing.Internal())
-	}
-	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	connectCtx, span := Tracer().Start(ctx, "connect", connectSpanOpts...)
-	defer tracing.End(span, func() error { return rerr })
-	connectCtx, connectStdout, connectStderr := tracing.WithStdioToOtel(connectCtx, InstrumentationLibrary)
-
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
-
 	c.upstreamCacheImportOptions, c.upstreamCacheExportOptions, err = allCacheConfigsFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 
+	connectSpanOpts := []trace.SpanStartOption{
+		tracing.Encapsulate(),
+	}
+
+	if c.Params.ModuleCallerDigest != "" {
+		connectSpanOpts = append(connectSpanOpts, tracing.Internal())
+	}
+
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	connectCtx, span := Tracer().Start(ctx, "connect", connectSpanOpts...)
+	defer tracing.End(span, func() error { return rerr })
+
+	if err := c.startEngine(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("start engine: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			c.bkClient.Close()
+		}
+	}()
+
+	if err := c.startSession(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("start session: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			c.bkSession.Close()
+		}
+	}()
+
+	if err := c.daggerConnect(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
+	return c, ctx, nil
+}
+
+func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	remote, err := url.Parse(c.RunnerHost)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse runner host: %w", err)
+		return fmt.Errorf("parse runner host: %w", err)
 	}
 
 	driver, err := drivers.GetDriver(remote.Scheme)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	var cloudToken string
@@ -216,7 +244,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 	})
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	// Open a separate connection for telemetry.
@@ -233,55 +261,54 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, nil, fmt.Errorf("grpc dial: %w", err)
+		return fmt.Errorf("telemetry grpc dial: %w", err)
 	}
 	c.telemetryConn = telemetryConn
-
 	c.telemetry = new(errgroup.Group)
 
 	if c.EngineTrace != nil {
 		if err := c.exportTraces(telemetry.NewTracesSourceClient(telemetryConn)); err != nil {
-			return nil, nil, fmt.Errorf("export traces: %w", err)
+			return fmt.Errorf("export traces: %w", err)
 		}
 	}
 
 	if c.EngineLogs != nil {
 		if err := c.exportLogs(telemetry.NewLogsSourceClient(telemetryConn)); err != nil {
-			return nil, nil, fmt.Errorf("export logs: %w", err)
+			return fmt.Errorf("export logs: %w", err)
 		}
 	}
 
-	bkClient, bkInfo, err := newBuildkitClient(connectCtx, remote, connector)
+	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
 	if err != nil {
-		return nil, nil, fmt.Errorf("new client: %w", err)
+		return fmt.Errorf("new client: %w", err)
 	}
 
 	c.bkClient = bkClient
-	defer func() {
-		if rerr != nil {
-			c.bkClient.Close()
-		}
-	}()
 
 	if c.EngineNameCallback != nil {
 		engineName := fmt.Sprintf("%s (version %s)", bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
 		c.EngineNameCallback(engineName)
 	}
 
+	return nil
+}
+
+func (c *Client) startSession(ctx context.Context) (rerr error) {
+	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
+	defer tracing.End(sessionSpan, func() error { return rerr })
+
+	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, InstrumentationLibrary)
+
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, nil, fmt.Errorf("get hostname: %w", err)
+		return fmt.Errorf("get hostname: %w", err)
 	}
 	c.hostname = hostname
-
-	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	_, sessionSpan := Tracer().Start(connectCtx, "starting session")
-	defer tracing.End(sessionSpan, func() error { return rerr })
 
 	sharedKey := ""
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("new s: %w", err)
+		return fmt.Errorf("new session: %w", err)
 	}
 	c.bkSession = bkSession
 	defer func() {
@@ -353,7 +380,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
 		if ctx.Err() != nil {
-			fmt.Fprintln(connectStderr, "Giving up:", ctx.Err())
+			fmt.Fprintln(stderr, "Giving up:", ctx.Err())
 			return backoff.Permanent(ctx.Err())
 		}
 
@@ -368,32 +395,19 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			// only show errors once the time between attempts exceeds this threshold, otherwise common
 			// cases of 1 or 2 retries become too noisy
 			if nextBackoff > time.Second {
-				fmt.Fprintln(connectStderr, "Failed to connect; retrying...", innerErr)
+				fmt.Fprintln(stderr, "Failed to connect; retrying...", innerErr)
 			}
 		} else {
-			fmt.Fprintln(connectStdout, "OK!")
+			fmt.Fprintln(stdout, "OK!")
 		}
 
 		return innerErr
 	}, backoff.WithContext(bo, connectRetryCtx))
 	if err != nil {
-		return nil, nil, fmt.Errorf("connect: %w", err)
+		return fmt.Errorf("poll: %w", err)
 	}
 
-	sessionSpan.End()
-
-	var cloudURL string
-	tel := telemetry.New()
-	if tel.Enabled() {
-		cloudURL = tel.URL()
-		c.CloudURLCallback(cloudURL)
-	}
-
-	if err := c.daggerConnect(ctx); err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
-	}
-
-	return c, ctx, nil
+	return nil
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {

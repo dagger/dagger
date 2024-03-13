@@ -105,11 +105,6 @@ func (s *logStreamExporter) Shutdown(ctx context.Context) error {
 func TransformPBLogs(resLogs []*otlplogsv1.ResourceLogs) []*sdklog.LogData {
 	logs := []*sdklog.LogData{}
 	for _, rl := range resLogs {
-		attrs := rl.GetResource().GetAttributes()
-		attrKV := make([]attribute.KeyValue, 0, len(attrs))
-		for _, kv := range rl.GetResource().GetAttributes() {
-			attrKV = append(attrKV, attribute.String(kv.GetKey(), kv.GetValue().GetStringValue()))
-		}
 		res := resource.NewWithAttributes(rl.GetSchemaUrl(), attrKVs(rl.GetResource().GetAttributes())...)
 		for _, scopeLog := range rl.GetScopeLogs() {
 			scope := scopeLog.GetScope()

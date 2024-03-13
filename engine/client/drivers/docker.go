@@ -165,7 +165,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	cmd.Args = append(cmd.Args, imageRef, "--debug")
 
 	if output, err := traceExec(ctx, cmd); err != nil {
-		if !isContainerAlreadyInUseOutput(string(output)) {
+		if !isContainerAlreadyInUseOutput(output) {
 			return nil, errors.Wrapf(err, "failed to run container: %s", output)
 		}
 	}
@@ -189,7 +189,7 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 		if output, err := traceExec(ctx, exec.CommandContext(ctx,
 			"docker", "rm", "-fv", engine,
 		)); err != nil {
-			if !strings.Contains(string(output), "already in progress") {
+			if !strings.Contains(output, "already in progress") {
 				log.Warn("failed to remove old container", "container", engine, "error", err)
 			}
 		}
@@ -199,7 +199,7 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
 	defer tracing.End(span, func() error { return rerr })
-	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, "")
+	_, stdout, stderr := tracing.WithStdioToOtel(ctx, "")
 	outBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdout, outBuf)
 	cmd.Stdout = stderr

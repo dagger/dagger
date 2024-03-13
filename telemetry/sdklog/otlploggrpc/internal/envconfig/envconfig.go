@@ -91,7 +91,7 @@ func WithURL(n string, fn func(*url.URL)) func(e *EnvOptionsReader) {
 		if v, ok := e.GetEnvValue(n); ok {
 			u, err := url.Parse(v)
 			if err != nil {
-				slog.Error("parse url", "error", "input", v)
+				slog.Error("parse url", "error", err, "input", v)
 				return
 			}
 			fn(u)

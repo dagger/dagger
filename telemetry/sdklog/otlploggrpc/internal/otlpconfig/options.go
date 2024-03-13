@@ -117,7 +117,7 @@ func NewGRPCConfig(opts ...GRPCOption) Config {
 		cfg.DialOptions = append(cfg.DialOptions, grpc.WithDefaultServiceConfig(cfg.ServiceConfig))
 	}
 	// Priroritize GRPCCredentials over Insecure (passing both is an error).
-	if cfg.Traces.GRPCCredentials != nil {
+	if cfg.Traces.GRPCCredentials != nil { //nolint: gocritic
 		cfg.DialOptions = append(cfg.DialOptions, grpc.WithTransportCredentials(cfg.Traces.GRPCCredentials))
 	} else if cfg.Traces.Insecure {
 		cfg.DialOptions = append(cfg.DialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))

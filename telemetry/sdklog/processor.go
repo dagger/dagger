@@ -43,6 +43,6 @@ func (p *simpleLogProcessor) OnEmit(ctx context.Context, log *LogData) {
 	}
 }
 
-func (bsp *simpleLogProcessor) Shutdown(ctx context.Context) error {
+func (p *simpleLogProcessor) Shutdown(ctx context.Context) error {
 	return nil
 }

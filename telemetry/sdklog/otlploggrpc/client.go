@@ -209,8 +209,8 @@ func (c *Client) ExportLogs(ctx context.Context, logDatas []*sdklog.LogData) err
 }
 
 // Shutdown is an alias for Stop.
-func (d *Client) Shutdown(ctx context.Context) error {
-	return d.Stop(ctx)
+func (c *Client) Shutdown(ctx context.Context) error {
+	return c.Stop(ctx)
 }
 
 // exportContext returns a copy of parent with an appropriate deadline and
