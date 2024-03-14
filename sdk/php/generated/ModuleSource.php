@@ -96,6 +96,15 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The global path filters used when loading the module source, if any.
+     */
+    public function include(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('include');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'include');
+    }
+
+    /**
      * The kind of source (e.g. local, git, etc.)
      */
     public function kind(): ModuleSourceKind
@@ -142,6 +151,19 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Load a directory from the caller optionally with a given view applied.
+     */
+    public function resolveDirectoryFromCaller(string $path, ?string $viewName = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveDirectoryFromCaller');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $viewName) {
+        $innerQueryBuilder->setArgument('viewName', $viewName);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
      */
     public function resolveFromCaller(): ModuleSource
@@ -169,6 +191,25 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve a named view defined for this module source.
+     */
+    public function view(string $name): ModuleSourceView
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('view');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleSourceView($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
+     */
+    public function views(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('views');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'views');
+    }
+
+    /**
      * Update the module source with a new context directory. Only valid for local sources.
      */
     public function withContextDirectory(DirectoryId|Directory $dir): ModuleSource
@@ -185,6 +226,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
         $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with new global include filters.
+     */
+    public function withInclude(array $patterns): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInclude');
+        $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -215,6 +266,17 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceSubpath');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new named view.
+     */
+    public function withView(string $name, array $patterns): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withView');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

@@ -109,6 +109,15 @@ defmodule Dagger.ModuleSource do
   )
 
   (
+    @doc "The global path filters used when loading the module source, if any."
+    @spec include(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
+    def include(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "include")
+      execute(selection, module_source.client)
+    end
+  )
+
+  (
     @doc "The kind of source (e.g. local, git, etc.)"
     @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
     def kind(%__MODULE__{} = module_source) do
@@ -155,6 +164,24 @@ defmodule Dagger.ModuleSource do
   )
 
   (
+    @doc "Load a directory from the caller optionally with a given view applied.\n\n## Required Arguments\n\n* `path` - The path on the caller's filesystem to load.\n\n## Optional Arguments\n\n* `view_name` - If set, the name of the view to apply to the path."
+    @spec resolve_directory_from_caller(t(), Dagger.String.t(), keyword()) :: Dagger.Directory.t()
+    def resolve_directory_from_caller(%__MODULE__{} = module_source, path, optional_args \\ []) do
+      selection = select(module_source.selection, "resolveDirectoryFromCaller")
+      selection = arg(selection, "path", path)
+
+      selection =
+        if is_nil(optional_args[:view_name]) do
+          selection
+        else
+          arg(selection, "viewName", optional_args[:view_name])
+        end
+
+      %Dagger.Directory{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
     @doc "Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources."
     @spec resolve_from_caller(t()) :: Dagger.ModuleSource.t()
     def resolve_from_caller(%__MODULE__{} = module_source) do
@@ -182,6 +209,36 @@ defmodule Dagger.ModuleSource do
   )
 
   (
+    @doc "Retrieve a named view defined for this module source.\n\n## Required Arguments\n\n* `name` - The name of the view to retrieve."
+    @spec view(t(), Dagger.String.t()) :: Dagger.ModuleSourceView.t()
+    def view(%__MODULE__{} = module_source, name) do
+      selection = select(module_source.selection, "view")
+      selection = arg(selection, "name", name)
+      %Dagger.ModuleSourceView{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions."
+    @spec views(t()) :: {:ok, [Dagger.ModuleSourceView.t()]} | {:error, term()}
+    def views(%__MODULE__{} = module_source) do
+      selection = select(module_source.selection, "views")
+      selection = select(selection, "id name patterns")
+
+      with {:ok, data} <- execute(selection, module_source.client) do
+        {:ok,
+         data
+         |> Enum.map(fn value ->
+           elem_selection = Dagger.Core.QueryBuilder.Selection.query()
+           elem_selection = select(elem_selection, "loadModuleSourceViewFromID")
+           elem_selection = arg(elem_selection, "id", value["id"])
+           %Dagger.ModuleSourceView{selection: elem_selection, client: module_source.client}
+         end)}
+      end
+    end
+  )
+
+  (
     @doc "Update the module source with a new context directory. Only valid for local sources.\n\n## Required Arguments\n\n* `dir` - The directory to set as the context directory."
     @spec with_context_directory(t(), Dagger.Directory.t()) :: Dagger.ModuleSource.t()
     def with_context_directory(%__MODULE__{} = module_source, dir) do
@@ -202,6 +259,16 @@ defmodule Dagger.ModuleSource do
     def with_dependencies(%__MODULE__{} = module_source, dependencies) do
       selection = select(module_source.selection, "withDependencies")
       selection = arg(selection, "dependencies", dependencies)
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "Update the module source with new global include filters.\n\n## Required Arguments\n\n* `patterns` - The patterns to set as the include filters."
+    @spec with_include(t(), [Dagger.String.t()]) :: Dagger.ModuleSource.t()
+    def with_include(%__MODULE__{} = module_source, patterns) do
+      selection = select(module_source.selection, "withInclude")
+      selection = arg(selection, "patterns", patterns)
       %Dagger.ModuleSource{selection: selection, client: module_source.client}
     end
   )
@@ -232,6 +299,17 @@ defmodule Dagger.ModuleSource do
     def with_source_subpath(%__MODULE__{} = module_source, path) do
       selection = select(module_source.selection, "withSourceSubpath")
       selection = arg(selection, "path", path)
+      %Dagger.ModuleSource{selection: selection, client: module_source.client}
+    end
+  )
+
+  (
+    @doc "Update the module source with a new named view.\n\n## Required Arguments\n\n* `name` - The name of the view to set.\n* `patterns` - The patterns to set as the view filters."
+    @spec with_view(t(), Dagger.String.t(), [Dagger.String.t()]) :: Dagger.ModuleSource.t()
+    def with_view(%__MODULE__{} = module_source, name, patterns) do
+      selection = select(module_source.selection, "withView")
+      selection = arg(selection, "name", name)
+      selection = arg(selection, "patterns", patterns)
       %Dagger.ModuleSource{selection: selection, client: module_source.client}
     end
   )

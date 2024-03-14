@@ -4625,16 +4625,6 @@ func (r *ModuleSource) Directory(path string) *Directory {
 	}
 }
 
-// TODO
-func (r *ModuleSource) Exclude(ctx context.Context) ([]string, error) {
-	q := r.query.Select("exclude")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // A unique identifier for this ModuleSource.
 func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
 	if r.id != nil {
@@ -4675,7 +4665,7 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// TODO
+// The global path filters used when loading the module source, if any.
 func (r *ModuleSource) Include(ctx context.Context) ([]string, error) {
 	q := r.query.Select("include")
 
@@ -4750,11 +4740,11 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 
 // ModuleSourceResolveDirectoryFromCallerOpts contains options for ModuleSource.ResolveDirectoryFromCaller
 type ModuleSourceResolveDirectoryFromCallerOpts struct {
-	// TODO
+	// If set, the name of the view to apply to the path.
 	ViewName string
 }
 
-// TODO
+// Load a directory from the caller optionally with a given view applied.
 func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSourceResolveDirectoryFromCallerOpts) *Directory {
 	q := r.query.Select("resolveDirectoryFromCaller")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -4805,7 +4795,7 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// Retrieve a named view defined for this module source.
 func (r *ModuleSource) View(name string) *ModuleSourceView {
 	q := r.query.Select("view")
 	q = q.Arg("name", name)
@@ -4815,7 +4805,7 @@ func (r *ModuleSource) View(name string) *ModuleSourceView {
 	}
 }
 
-// TODO
+// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
 func (r *ModuleSource) Views(ctx context.Context) ([]ModuleSourceView, error) {
 	q := r.query.Select("views")
 
@@ -4869,20 +4859,10 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *Modul
 	}
 }
 
-// TODO
-func (r *ModuleSource) WithExclude(exclude []string) *ModuleSource {
-	q := r.query.Select("withExclude")
-	q = q.Arg("exclude", exclude)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// TODO
-func (r *ModuleSource) WithInclude(include []string) *ModuleSource {
+// Update the module source with new global include filters.
+func (r *ModuleSource) WithInclude(patterns []string) *ModuleSource {
 	q := r.query.Select("withInclude")
-	q = q.Arg("include", include)
+	q = q.Arg("patterns", patterns)
 
 	return &ModuleSource{
 		query: q,
@@ -4919,7 +4899,7 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	}
 }
 
-// TODO
+// Update the module source with a new named view.
 func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	q := r.query.Select("withView")
 	q = q.Arg("name", name)
@@ -4930,7 +4910,7 @@ func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	}
 }
 
-// TODO
+// A named set of path filters that can be applied to directory arguments provided to functions.
 type ModuleSourceView struct {
 	query *querybuilder.Selection
 
@@ -4984,7 +4964,7 @@ func (r *ModuleSourceView) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// TODO
+// The name of the view
 func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
@@ -4997,7 +4977,7 @@ func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// TODO
+// The patterns of the view used to filter paths
 func (r *ModuleSourceView) Patterns(ctx context.Context) ([]string, error) {
 	q := r.query.Select("patterns")
 

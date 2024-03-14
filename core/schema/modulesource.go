@@ -1137,22 +1137,22 @@ func (s *moduleSchema) moduleSourceWithInclude(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
-		Include []string
+		Patterns []string
 	},
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
-	if args.Include == nil {
-		args.Include = []string{}
+	if args.Patterns == nil {
+		args.Patterns = []string{}
 	}
 
-	for _, p := range args.Include {
+	for _, p := range args.Patterns {
 		p = strings.TrimPrefix(p, "!")
 		if filepath.IsAbs(p) {
 			return nil, fmt.Errorf("include path %q cannot be absolute", p)
 		}
 	}
 
-	src.WithInclude = args.Include
+	src.WithInclude = args.Patterns
 	return src, nil
 }
 

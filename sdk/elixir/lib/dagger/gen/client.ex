@@ -502,6 +502,17 @@ defmodule Dagger.Client do
   )
 
   (
+    @doc "Load a ModuleSourceView from its ID.\n\n## Required Arguments\n\n* `id` -"
+    @spec load_module_source_view_from_id(t(), Dagger.ModuleSourceView.t()) ::
+            Dagger.ModuleSourceView.t()
+    def load_module_source_view_from_id(%__MODULE__{} = query, id) do
+      selection = select(query.selection, "loadModuleSourceViewFromID")
+      selection = arg(selection, "id", id)
+      %Dagger.ModuleSourceView{selection: selection, client: query.client}
+    end
+  )
+
+  (
     @doc "Load a ObjectTypeDef from its ID.\n\n## Required Arguments\n\n* `id` -"
     @spec load_object_type_def_from_id(t(), Dagger.ObjectTypeDef.t()) :: Dagger.ObjectTypeDef.t()
     def load_object_type_def_from_id(%__MODULE__{} = query, object_type_def) do

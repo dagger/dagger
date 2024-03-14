@@ -483,10 +483,5 @@ func (v *ModuleSourceView) Type() *ast.Type {
 }
 
 func (v *ModuleSourceView) TypeDescription() string {
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	return "TODO"
+	return "A named set of path filters that can be applied to directory arguments provided to functions."
 }

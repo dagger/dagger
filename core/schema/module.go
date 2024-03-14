@@ -144,45 +144,37 @@ func (s *moduleSchema) Install() {
 			Impure(`Queries live caller-specific data from their filesystem.`).
 			Doc(`The path to the module source's context directory on the caller's filesystem. Only valid for local sources.`),
 
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO: doc all below
 		dagql.Func("include", s.moduleSourceInclude).
-			Doc(`TODO`),
+			Doc(`The global path filters used when loading the module source, if any.`),
 
 		dagql.Func("withInclude", s.moduleSourceWithInclude).
-			ArgDoc("include", `TODO`).
-			Doc(`TODO`),
+			ArgDoc("patterns", `The patterns to set as the include filters.`).
+			Doc(`Update the module source with new global include filters.`),
 
 		dagql.Func("resolveDirectoryFromCaller", s.moduleSourceResolveDirectoryFromCaller).
 			Impure(`Queries live caller-specific data from their filesystem.`).
-			ArgDoc("path", `TODO`).
-			ArgDoc("viewName", `TODO`).
-			Doc(`TODO`),
+			ArgDoc("path", `The path on the caller's filesystem to load.`).
+			ArgDoc("viewName", `If set, the name of the view to apply to the path.`).
+			Doc(`Load a directory from the caller optionally with a given view applied.`),
 
 		dagql.Func("views", s.moduleSourceViews).
-			Doc(`TODO`),
+			Doc(`The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.`),
 
 		dagql.Func("view", s.moduleSourceView).
-			ArgDoc("name", `TODO`).
-			Doc(`TODO`),
+			ArgDoc("name", `The name of the view to retrieve.`).
+			Doc(`Retrieve a named view defined for this module source.`),
 
 		dagql.Func("withView", s.moduleSourceWithView).
-			ArgDoc("name", `TODO`).
-			ArgDoc("patterns", `TODO`).
-			Doc(`TODO`),
+			ArgDoc("name", `The name of the view to set.`).
+			ArgDoc("patterns", `The patterns to set as the view filters.`).
+			Doc(`Update the module source with a new named view.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleSourceView]{
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO: doc all below
 		dagql.Func("name", s.moduleSourceViewName).
-			Doc(`TODO`),
+			Doc(`The name of the view`),
 		dagql.Func("patterns", s.moduleSourceViewPatterns).
-			Doc(`TODO`),
+			Doc(`The patterns of the view used to filter paths`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.LocalModuleSource]{}.Install(s.dag)

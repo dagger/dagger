@@ -780,6 +780,13 @@ export type ModuleDependencyID = string & { __ModuleDependencyID: never }
  */
 export type ModuleID = string & { __ModuleID: never }
 
+export type ModuleSourceResolveDirectoryFromCallerOpts = {
+  /**
+   * If set, the name of the view to apply to the path.
+   */
+  viewName?: string
+}
+
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -792,6 +799,11 @@ export enum ModuleSourceKind {
   GitSource = "GIT_SOURCE",
   LocalSource = "LOCAL_SOURCE",
 }
+/**
+ * The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
+ */
+export type ModuleSourceViewID = string & { __ModuleSourceViewID: never }
+
 /**
  * Transport layer network protocol associated to a port.
  */
@@ -6013,6 +6025,23 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * The global path filters used when loading the module source, if any.
+   */
+  include = async (): Promise<string[]> => {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "include",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
    * The kind of source (e.g. local, git, etc.)
    */
   kind = async (): Promise<ModuleSourceKind> => {
@@ -6114,6 +6143,27 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Load a directory from the caller optionally with a given view applied.
+   * @param path The path on the caller's filesystem to load.
+   * @param opts.viewName If set, the name of the view to apply to the path.
+   */
+  resolveDirectoryFromCaller = (
+    path: string,
+    opts?: ModuleSourceResolveDirectoryFromCallerOpts,
+  ): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "resolveDirectoryFromCaller",
+          args: { path, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
    */
   resolveFromCaller = (): ModuleSource => {
@@ -6171,6 +6221,61 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Retrieve a named view defined for this module source.
+   * @param name The name of the view to retrieve.
+   */
+  view = (name: string): ModuleSourceView => {
+    return new ModuleSourceView({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "view",
+          args: { name },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
+   */
+  views = async (): Promise<ModuleSourceView[]> => {
+    type views = {
+      id: ModuleSourceViewID
+    }
+
+    const response: Awaited<views[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "views",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new ModuleSourceView(
+          {
+            queryTree: [
+              {
+                operation: "loadModuleSourceViewFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+
+  /**
    * Update the module source with a new context directory. Only valid for local sources.
    * @param dir The directory to set as the context directory.
    */
@@ -6198,6 +6303,23 @@ export class ModuleSource extends BaseClient {
         {
           operation: "withDependencies",
           args: { dependencies },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Update the module source with new global include filters.
+   * @param patterns The patterns to set as the include filters.
+   */
+  withInclude = (patterns: string[]): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withInclude",
+          args: { patterns },
         },
       ],
       ctx: this._ctx,
@@ -6256,12 +6378,111 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Update the module source with a new named view.
+   * @param name The name of the view to set.
+   * @param patterns The patterns to set as the view filters.
+   */
+  withView = (name: string, patterns: string[]): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withView",
+          args: { name, patterns },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Call the provided function with current ModuleSource.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
    */
   with = (arg: (param: ModuleSource) => ModuleSource) => {
     return arg(this)
+  }
+}
+
+/**
+ * A named set of path filters that can be applied to directory arguments provided to functions.
+ */
+export class ModuleSourceView extends BaseClient {
+  private readonly _id?: ModuleSourceViewID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ModuleSourceViewID,
+    _name?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this ModuleSourceView.
+   */
+  id = async (): Promise<ModuleSourceViewID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ModuleSourceViewID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the view
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The patterns of the view used to filter paths
+   */
+  patterns = async (): Promise<string[]> => {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "patterns",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 }
 
@@ -7316,6 +7537,22 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadModuleSourceFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a ModuleSourceView from its ID.
+   */
+  loadModuleSourceViewFromID = (id: ModuleSourceViewID): ModuleSourceView => {
+    return new ModuleSourceView({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadModuleSourceViewFromID",
           args: { id },
         },
       ],
