@@ -411,6 +411,23 @@ module.exports = {
         },
         {
           "type": "category",
+          "label": "Dagger Engine",
+          "link": {
+            "type": "doc",
+            "id": "manuals/administrator/engine/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Custom Runner",
+              "id": "manuals/administrator/engine/custom-runner"
+            }
+          ]
+        },
+        {
+          "type": "category",
           "label": "Dagger Cloud",
           "link": {
             "type": "doc",

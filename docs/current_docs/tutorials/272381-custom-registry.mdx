@@ -1,0 +1,50 @@
+---
+slug: /tutorials/272381/custom-registry
+displayed_sidebar: "current"
+authors: ["Erik Sipsma"]
+toc_max_heading_level: 2
+date: "2024-03-14"
+---
+
+# Configure a Custom Registry Mirror for Dagger
+
+## Introduction
+
+This tutorial outlines how  to configure the Dagger Engine to use a different registry mirror for container images instead of the default (Docker Hub)
+
+### Step 1: Configure the registry mirror
+
+Create a file named `engine.toml` that contains the registry mirror:
+
+```toml
+debug = true
+insecure-entitlements = ["security.insecure"]
+
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
+```
+
+### Step 2: Configure the Dagger Engine
+
+Manually start the Dagger Engine with the custom `engine.toml`:
+
+```shell
+docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.10.2
+```
+
+### Step 3: Test the configuration
+
+Execute the following commands to test the configuration
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://customized-dagger-engine
+dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+```
+
+You should see the specified `hello-world` container being pulled from the mirror instead of from Docker Hub.
+
+## Conclusion
+
+Use the following resources to learn more about the topics discussed in this tutorial:
+
+- Use a [custom Dagger Engine runner](../manuals/administrator/engine/472258-custom-runner.mdx)
