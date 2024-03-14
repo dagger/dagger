@@ -227,20 +227,23 @@ export async function loadResult(
         throw new Error(`could not find result property ${key}`)
       }
 
+      let referencedObject: DaggerObject | undefined = undefined
       if (property.type.kind === TypeDefKind.ObjectKind) {
-        const referencedObject =
+        referencedObject =
           module.objects[
             (property.type as TypeDef<TypeDefKind.ObjectKind>).name
           ]
-        if (referencedObject) {
-          object = referencedObject
-        }
+      }
+
+      // If there's no referenced object, we use the current object.
+      if (!referencedObject) {
+        referencedObject = object
       }
 
       state[property.alias ?? property.name] = await loadResult(
         value,
         module,
-        object,
+        referencedObject,
       )
     }
 

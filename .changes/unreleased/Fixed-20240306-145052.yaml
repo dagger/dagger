@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix panic on unset default terminal arg
-time: 2024-03-06T14:50:52.215901+01:00
-custom:
-  Author: TomChv
-  PR: "6838"

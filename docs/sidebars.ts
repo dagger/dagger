@@ -23,6 +23,7 @@ module.exports = {
         "quickstart/containers",
         "quickstart/daggerize",
         "quickstart/custom-function",
+        "quickstart/daggerverse",
         "quickstart/conclusion"
       ]
     },

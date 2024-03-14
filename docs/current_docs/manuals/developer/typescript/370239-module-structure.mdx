@@ -58,18 +58,22 @@ Due to TypeScript limitations, it is not possible to split your main class modul
 
 ```typescript
 // src/index.ts
-import { field, object } from "@dagger.io/dagger"
+import { func, object } from "@dagger.io/dagger"
 
 import { Test } from "./test" // in src/test.ts
 import { Lint } from "./lint" // in src/lint.ts
 
 @object()
 class MyModule {
-  @field()
-  test: Test = new Test()
+  @func()
+  test(): Test {
+    return new Test()
+  }
 
-  @field()
-  lint: Lint = new Lint()
+  @func()
+  lint(): Lint {
+    return new Lint()
+  }
 }
 ```
 
