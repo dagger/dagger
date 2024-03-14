@@ -889,7 +889,7 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 					Field: "withView",
 					Args: []dagql.NamedInput{
 						{Name: "name", Value: dagql.String(view.Name)},
-						{Name: "include", Value: asArrayInput(view.Include, dagql.NewString)},
+						{Name: "patterns", Value: asArrayInput(view.Patterns, dagql.NewString)},
 					},
 				},
 			)
@@ -1112,48 +1112,14 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		path = stat.Path
 	}
 
-	/* TODO: rm this probably, too confusing especially w/ git modules
-	// load the base module include/excludes, make them relative to path
-	_, sourceRootAbsPath, err := s.resolveContextPathFromCaller(ctx, src)
-	if err != nil {
-		return inst, fmt.Errorf("failed to resolve context path from caller: %w", err)
-	}
-	includes, err := src.Include(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module config includes: %w", err)
-	}
-	if err := rebaseRelPaths(includes, sourceRootAbsPath, path); err != nil {
-		return inst, fmt.Errorf("failed to rebase includes: %w", err)
-	}
-	excludes, err := src.Exclude(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module config excludes: %w", err)
-	}
-	if err := rebaseRelPaths(excludes, sourceRootAbsPath, path); err != nil {
-		return inst, fmt.Errorf("failed to rebase excludes: %w", err)
-	}
-	*/
-
 	var includes []string
 	if args.ViewName != nil {
 		view, err := src.ViewByName(ctx, *args.ViewName)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get view: %w", err)
 		}
-		includes = view.Include
+		includes = view.Patterns
 	}
-
-	/* TODO rm if unused
-	// be sure to always include the path itself at least
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO: double check this....
-	if len(includes) > 0 {
-		includes = append(includes, ".")
-	}
-	*/
 
 	pipelineName := fmt.Sprintf("load local directory module arg %s", path)
 	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
@@ -1169,40 +1135,11 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	return core.LoadBlob(ctx, s.dag, desc)
 }
 
-/* TODO: rm if unused
-func rebaseRelPaths(
-	relPaths []string,
-	baseAbsPath string,
-	newAbsPath string,
-) error {
-	for i, relPath := range relPaths {
-		if !filepath.IsAbs(relPath) {
-			return fmt.Errorf("path %q is not absolute", relPath)
-		}
-		absPath := filepath.Join(baseAbsPath, relPath)
-		var err error
-		relPath, err = filepath.Rel(newAbsPath, absPath)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path: %s", err)
-		}
-		if !filepath.IsLocal(relPath) {
-			// skip paths that go outside the newAbsPath tree
-			continue
-		}
-		relPaths[i] = relPath
-	}
-	return nil
-}
-*/
-
 func (s *moduleSchema) moduleSourceInclude(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct{},
 ) ([]string, error) {
-	if src.WithInclude != nil {
-		return src.WithInclude, nil
-	}
 	return src.Include(ctx)
 }
 
@@ -1217,6 +1154,11 @@ func (s *moduleSchema) moduleSourceWithInclude(
 	if args.Include == nil {
 		args.Include = []string{}
 	}
+	for _, include := range args.Include {
+		if filepath.IsAbs(include) {
+			return nil, fmt.Errorf("include path %q cannot be absolute", include)
+		}
+	}
 	src.WithInclude = args.Include
 	return src, nil
 }
@@ -1226,9 +1168,6 @@ func (s *moduleSchema) moduleSourceExclude(
 	src *core.ModuleSource,
 	args struct{},
 ) ([]string, error) {
-	if src.WithExclude != nil {
-		return src.WithExclude, nil
-	}
 	return src.Exclude(ctx)
 }
 
@@ -1242,6 +1181,11 @@ func (s *moduleSchema) moduleSourceWithExclude(
 	src = src.Clone()
 	if args.Exclude == nil {
 		args.Exclude = []string{}
+	}
+	for _, exclude := range args.Exclude {
+		if filepath.IsAbs(exclude) {
+			return nil, fmt.Errorf("exclude path %q cannot be absolute", exclude)
+		}
 	}
 	src.WithExclude = args.Exclude
 	return src, nil
@@ -1269,14 +1213,19 @@ func (s *moduleSchema) moduleSourceWithView(
 	ctx context.Context,
 	src *core.ModuleSource,
 	args struct {
-		Name    string
-		Include []string
+		Name     string
+		Patterns []string
 	},
 ) (*core.ModuleSource, error) {
+	for _, p := range args.Patterns {
+		if filepath.IsAbs(p) {
+			return nil, fmt.Errorf("include path %q cannot be absolute", p)
+		}
+	}
 	view := &core.ModuleSourceView{
-		&modules.ModuleConfigView{
-			Name:    args.Name,
-			Include: args.Include,
+		ModuleConfigView: &modules.ModuleConfigView{
+			Name:     args.Name,
+			Patterns: args.Patterns,
 		},
 	}
 	src.WithViews = append(src.WithViews, view)
@@ -1291,10 +1240,10 @@ func (s *moduleSchema) moduleSourceViewName(
 	return view.Name, nil
 }
 
-func (s *moduleSchema) moduleSourceViewInclude(
+func (s *moduleSchema) moduleSourceViewPatterns(
 	ctx context.Context,
 	view *core.ModuleSourceView,
 	args struct{},
 ) ([]string, error) {
-	return view.Include, nil
+	return view.Patterns, nil
 }

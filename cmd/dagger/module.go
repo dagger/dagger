@@ -60,6 +60,7 @@ func init() {
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
+	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")

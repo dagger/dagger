@@ -177,7 +177,7 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withView", s.moduleSourceWithView).
 			ArgDoc("name", `TODO`).
-			ArgDoc("include", `TODO`).
+			ArgDoc("patterns", `TODO`).
 			Doc(`TODO`),
 	}.Install(s.dag)
 
@@ -188,7 +188,7 @@ func (s *moduleSchema) Install() {
 		// TODO: doc all below
 		dagql.Func("name", s.moduleSourceViewName).
 			Doc(`TODO`),
-		dagql.Func("include", s.moduleSourceViewInclude).
+		dagql.Func("patterns", s.moduleSourceViewPatterns).
 			Doc(`TODO`),
 	}.Install(s.dag)
 
@@ -989,7 +989,7 @@ func (s *moduleSchema) updateDaggerConfig(
 	}
 	modCfg.Views = nil
 	for _, view := range views {
-		if len(view.Include) == 0 {
+		if len(view.Patterns) == 0 {
 			continue
 		}
 		modCfg.Views = append(modCfg.Views, view.ModuleConfigView)

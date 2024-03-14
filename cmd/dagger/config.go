@@ -2,20 +2,25 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
 )
 
+var configJSONOutput bool
+
 func init() {
-	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	configCmd.PersistentFlags().BoolVar(&configJSONOutput, "json", false, "output in JSON format")
 	configCmd.AddGroup(moduleGroup)
 
 	configCmd.AddCommand(
@@ -35,54 +40,52 @@ dagger config -m github.com/dagger/hello-dagger
 	),
 	Args:    cobra.NoArgs,
 	GroupID: moduleGroup.ID,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
+	RunE: configSubcmdRun(func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) (err error) {
+		ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
+		defer func() { vtx.Done(err) }()
+		cmd.SetContext(ctx)
+		setCmdOutput(cmd, vtx)
 
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { vtx.Done(err) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, vtx)
-
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true, true)
+		if configJSONOutput {
+			cfgContents, err := modConf.Source.Directory(".").File(modules.Filename).Contents(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to load module: %w", err)
+				return fmt.Errorf("failed to read module config: %w", err)
 			}
-			if !modConf.FullyInitialized() {
-				return fmt.Errorf("module must be fully initialized")
-			}
-			mod := modConf.Source.AsModule()
+			cmd.OutOrStdout().Write([]byte(cfgContents))
+			return nil
+		}
 
-			name, err := mod.Name(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module name: %w", err)
-			}
-			sdk, err := mod.SDK(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module SDK: %w", err)
-			}
+		mod := modConf.Source.AsModule()
 
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Name:",
-				name,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"SDK:",
-				sdk,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Root Directory:",
-				modConf.LocalContextPath,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Source Directory:",
-				modConf.LocalRootSourcePath,
-			)
+		name, err := mod.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get module name: %w", err)
+		}
+		sdk, err := mod.SDK(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get module SDK: %w", err)
+		}
 
-			return tw.Flush()
-		})
-	},
+		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+		fmt.Fprintf(tw, "%s\t%s\n",
+			"Name:",
+			name,
+		)
+		fmt.Fprintf(tw, "%s\t%s\n",
+			"SDK:",
+			sdk,
+		)
+		fmt.Fprintf(tw, "%s\t%s\n",
+			"Root Directory:",
+			modConf.LocalContextPath,
+		)
+		fmt.Fprintf(tw, "%s\t%s\n",
+			"Source Directory:",
+			modConf.LocalRootSourcePath,
+		)
+
+		return tw.Flush()
+	}).RunE,
 }
 
 var configIncludeCmd = configSubcmd{
@@ -90,26 +93,29 @@ var configIncludeCmd = configSubcmd{
 	Short: "Get or set the include paths of a Dagger module",
 	Long:  "Get or set the include paths of a Dagger module. By default, print the include paths of the specified module.",
 
-	GetExample: `dagger config -m ./path/to/module include`,
+	GetExample: `dagger config include`,
 	GetCmd: func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) error {
 		include, err := modConf.Source.Include(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get include paths: %w", err)
 		}
-		return printFunctionResult(cmd.OutOrStdout(), include)
+
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(include, "", "  ")
+			if err != nil {
+				return err
+			}
+			cmd.OutOrStdout().Write(bs)
+			return nil
+		}
+		fmt.Fprint(cmd.OutOrStdout(), strings.Join(include, "\n"))
+		return nil
 	},
 
-	SetExample: `dagger config -m ./path/to/module include set **/*.txt ./some/path`,
+	SetExample:        `dagger config include set '**/*.txt' ./some/path`,
+	SetPositionalArgs: cobra.MinimumNArgs(1),
 	SetCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
-		// TODO: validation engine-side
-		// TODO: validation engine-side
-		// TODO: validation engine-side
-
 		include := args
-		if len(include) == 0 {
-			return fmt.Errorf("no include paths provided")
-		}
-
 		updatedMod := modConf.Source.WithInclude(include).AsModule()
 		updatedInclude, err := updatedMod.Source().Include(ctx)
 		if err != nil {
@@ -123,20 +129,27 @@ var configIncludeCmd = configSubcmd{
 			return fmt.Errorf("failed to update include paths: %w", err)
 		}
 
-		return printFunctionResult(cmd.OutOrStdout(), updatedInclude)
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(updatedInclude, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		fmt.Fprint(w, termenv.String(`"include" updated to:`).Bold())
+		fmt.Fprintf(w, "\n\n%s\n", strings.Join(updatedInclude, "\n"))
+		return nil
 	},
 
-	AppendExample: `dagger config -m ./path/to/module include append ./some/path ./some/other/path`,
-	AppendCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
-		// TODO: validation engine-side
-		// TODO: validation engine-side
-		// TODO: validation engine-side
-
+	AddExample:        `dagger config include add ./some/path ./some/other/path`,
+	AddPositionalArgs: cobra.MinimumNArgs(1),
+	AddCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
 		include, err := modConf.Source.Include(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get current include paths: %w", err)
 		}
-		// TODO: dedupe paths engine-side
 		include = append(include, args...)
 
 		updatedMod := modConf.Source.WithInclude(include).AsModule()
@@ -152,14 +165,25 @@ var configIncludeCmd = configSubcmd{
 			return fmt.Errorf("failed to update include paths: %w", err)
 		}
 
-		return printFunctionResult(cmd.OutOrStdout(), updatedInclude)
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(updatedInclude, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		fmt.Fprint(w, termenv.String(`"include" updated to:`).Bold())
+		fmt.Fprintf(w, "\n\n%s\n", strings.Join(updatedInclude, "\n"))
+		return nil
 	},
 
-	ClearExample: strings.TrimSpace(`
-dagger config -m ./path/to/module include clear
-dagger config -m ./path/to/module include clear ./some/path **/*.txt
+	RemoveExample: strings.TrimSpace(`
+dagger config include remove
+dagger config include remove ./some/path '**/*.txt'
 `),
-	ClearCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
+	RemoveCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
 		var updatedIncludes []string
 		if len(args) > 0 {
 			curIncludes, err := modConf.Source.Include(ctx)
@@ -188,74 +212,110 @@ dagger config -m ./path/to/module include clear ./some/path **/*.txt
 		if err != nil {
 			return fmt.Errorf("failed to update include paths: %w", err)
 		}
-
-		return printFunctionResult(cmd.OutOrStdout(), updatedIncludes)
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(updatedIncludes, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		if len(args) > 0 {
+			fmt.Fprint(w, termenv.String(`"include" updated to:`).Bold())
+			fmt.Fprintf(w, "\n\n%s\n", strings.Join(updatedIncludes, "\n"))
+		}
+		return nil
 	},
 }.Command()
 
 var configViewsCmd = configSubcmd{
-	Use: "views",
-	// TODO:
-	// TODO:
-	// TODO:
-	Short: "TODO",
-	Long:  "TODO",
+	Use:   "views [name]",
+	Short: "Get or set the views of a Dagger module",
+	Long:  "Get or set the views of a Dagger module. By default, print the views of the specified module.",
 	PersistentFlags: func(fs *pflag.FlagSet) {
 		fs.StringP("name", "n", "", "The name of the view to get or set")
 	},
 
-	GetExample: `dagger config -m ./path/to/module views`,
+	GetExample: strings.TrimSpace(`
+dagger config views
+dagger config views -n my-view
+`),
 	GetCmd: func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) error {
 		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return fmt.Errorf("failed to get view name: %w", err)
 		}
+
 		if name == "" {
 			// print'em all
 			views, err := modConf.Source.Views(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get views: %w", err)
 			}
-			viewMap := make(map[string][]string)
+			viewMap := make(map[string][]string, len(views))
+			viewStrs := make([]string, 0, len(views))
 			for _, view := range views {
 				name, err := view.Name(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to get view name: %w", err)
 				}
-				viewMap[name], err = view.Include(ctx)
+				patterns, err := view.Patterns(ctx)
 				if err != nil {
-					return fmt.Errorf("failed to get view include: %w", err)
+					return fmt.Errorf("failed to get view patterns: %w", err)
 				}
+				viewMap[name] = patterns
+				viewStrs = append(viewStrs, fmt.Sprintf("%s\n%s\n",
+					termenv.String(fmt.Sprintf("%q", name)).Bold().Underline(),
+					strings.Join(patterns, "\n"),
+				))
 			}
-			return printFunctionResult(cmd.OutOrStdout(), viewMap)
+
+			if configJSONOutput {
+				bs, err := json.MarshalIndent(viewMap, "", "  ")
+				if err != nil {
+					return err
+				}
+				cmd.OutOrStdout().Write(bs)
+				return nil
+			}
+			w := cmd.OutOrStdout()
+			fmt.Fprint(w, strings.Join(viewStrs, "\n"))
+			return nil
 		}
 
-		includes, err := modConf.Source.View(name).Include(ctx)
+		patterns, err := modConf.Source.View(name).Patterns(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get view include: %w", err)
+			return fmt.Errorf("failed to get view patterns: %w", err)
 		}
 
-		// TODO: make output look nice
-		return printFunctionResult(cmd.OutOrStdout(), map[string][]string{name: includes})
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(patterns, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		fmt.Fprint(w, strings.Join(patterns, "\n"))
+		return nil
 	},
 
-	SetExample: `dagger config -m ./path/to/module views set --name my-view **/*.txt ./some/path`,
+	SetExample:        `dagger config views set -n my-view '**/*.txt' ./some/path`,
+	SetPositionalArgs: cobra.MinimumNArgs(1),
 	SetCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
 		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return fmt.Errorf("failed to get view name: %w", err)
 		}
 		if name == "" {
-			return fmt.Errorf("view name must be provided")
+			cmd.Help()
+			return fmt.Errorf("--name (-n) is required")
 		}
 
-		include := args
-		if len(include) == 0 {
-			return fmt.Errorf("no include paths provided")
-		}
-
-		updatedMod := modConf.Source.WithView(name, include).AsModule()
-		updatedView, err := updatedMod.Source().View(name).Include(ctx)
+		updatedMod := modConf.Source.WithView(name, args).AsModule()
+		updatedView, err := updatedMod.Source().View(name).Patterns(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get view: %w", err)
 		}
@@ -267,31 +327,40 @@ var configViewsCmd = configSubcmd{
 			return fmt.Errorf("failed to update view paths: %w", err)
 		}
 
-		// TODO: make output look nice
-		return printFunctionResult(cmd.OutOrStdout(), map[string][]string{
-			name: updatedView,
-		})
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(updatedView, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		fmt.Fprint(w, termenv.String(fmt.Sprintf("View %q set to:\n", name)).Bold().Underline())
+		fmt.Fprint(w, strings.Join(updatedView, "\n"))
+		return nil
 	},
 
-	AppendExample: `dagger config -m ./path/to/module views append --name my-view ./some/path ./some/other/path`,
-	AppendCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
+	AddExample:        `dagger config views add -n my-view ./some/path ./some/other/path`,
+	AddPositionalArgs: cobra.MinimumNArgs(1),
+	AddCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
 		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return fmt.Errorf("failed to get view name: %w", err)
 		}
 		if name == "" {
-			return fmt.Errorf("view name must be provided")
+			cmd.Help()
+			return fmt.Errorf("--name (-n) is required")
 		}
 
-		viewInclude, err := modConf.Source.View(name).Include(ctx)
+		viewPatterns, err := modConf.Source.View(name).Patterns(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get current include paths: %w", err)
 		}
-		// TODO: dedupe paths engine-side
-		viewInclude = append(viewInclude, args...)
+		viewPatterns = append(viewPatterns, args...)
 
-		updatedMod := modConf.Source.WithView(name, viewInclude).AsModule()
-		updatedView, err := updatedMod.Source().View(name).Include(ctx)
+		updatedMod := modConf.Source.WithView(name, viewPatterns).AsModule()
+		updatedView, err := updatedMod.Source().View(name).Patterns(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get updated view paths: %w", err)
 		}
@@ -303,47 +372,56 @@ var configViewsCmd = configSubcmd{
 			return fmt.Errorf("failed to update view paths: %w", err)
 		}
 
-		// TODO: make output look nice
-		return printFunctionResult(cmd.OutOrStdout(), map[string][]string{
-			name: updatedView,
-		})
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(updatedView, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		fmt.Fprint(w, termenv.String(fmt.Sprintf("View %q updated to:\n", name)).Bold().Underline())
+		fmt.Fprint(w, strings.Join(updatedView, "\n"))
+		return nil
 	},
 
-	ClearExample: strings.TrimSpace(`
-dagger config -m ./path/to/module view clear --name my-view
-dagger config -m ./path/to/module include clear --name my-view ./some/path **/*.txt
+	RemoveExample: strings.TrimSpace(`
+dagger config views remove -n my-view
+dagger config views remove -n my-view ./some/path '**/*.txt'
 `),
-	ClearCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
+	RemoveCmd: func(ctx context.Context, cmd *cobra.Command, args []string, modConf *configuredModule) error {
 		name, err := cmd.Flags().GetString("name")
 		if err != nil {
 			return fmt.Errorf("failed to get view name: %w", err)
 		}
 		if name == "" {
-			return fmt.Errorf("view name must be provided")
+			cmd.Help()
+			return fmt.Errorf("--name (-n) is required")
 		}
 
-		var updatedIncludes []string
+		var updatedPatterns []string
 		if len(args) > 0 {
-			curIncludes, err := modConf.Source.View(name).Include(ctx)
+			curPatterns, err := modConf.Source.View(name).Patterns(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get current view paths: %w", err)
 			}
 			// just be n^2, there will never be 1000s of includes, right? right?!
-			for _, curInclude := range curIncludes {
+			for _, curPattern := range curPatterns {
 				keep := true
 				for _, arg := range args {
-					if curInclude == arg {
+					if curPattern == arg {
 						keep = false
 						break
 					}
 				}
 				if keep {
-					updatedIncludes = append(updatedIncludes, curInclude)
+					updatedPatterns = append(updatedPatterns, curPattern)
 				}
 			}
 		}
 
-		updatedMod := modConf.Source.WithView(name, updatedIncludes).AsModule()
+		updatedMod := modConf.Source.WithView(name, updatedPatterns).AsModule()
 		_, err = updatedMod.
 			GeneratedContextDiff().
 			Export(ctx, modConf.LocalContextPath)
@@ -351,8 +429,22 @@ dagger config -m ./path/to/module include clear --name my-view ./some/path **/*.
 			return fmt.Errorf("failed to update view: %w", err)
 		}
 
-		// TODO: make output look nice
-		return printFunctionResult(cmd.OutOrStdout(), updatedIncludes)
+		w := cmd.OutOrStdout()
+		if configJSONOutput {
+			bs, err := json.MarshalIndent(updatedPatterns, "", "  ")
+			if err != nil {
+				return err
+			}
+			w.Write(bs)
+			return nil
+		}
+		if len(args) > 0 {
+			fmt.Fprint(w, termenv.String(fmt.Sprintf("View %q updated to:\n", name)).Bold().Underline())
+			fmt.Fprint(w, strings.Join(updatedPatterns, "\n"))
+		} else {
+			fmt.Fprint(w, termenv.String(fmt.Sprintf("View %q removed", name)).Bold())
+		}
+		return nil
 	},
 }.Command()
 
@@ -362,17 +454,21 @@ type configSubcmd struct {
 	Long            string
 	PersistentFlags func(*pflag.FlagSet)
 
-	GetCmd     configSubcmdRun
-	GetExample string
+	GetCmd            configSubcmdRun
+	GetExample        string
+	GetPositionalArgs cobra.PositionalArgs
 
-	SetCmd     configSubcmdRun
-	SetExample string
+	SetCmd            configSubcmdRun
+	SetExample        string
+	SetPositionalArgs cobra.PositionalArgs
 
-	AppendCmd     configSubcmdRun
-	AppendExample string
+	AddCmd            configSubcmdRun
+	AddExample        string
+	AddPositionalArgs cobra.PositionalArgs
 
-	ClearCmd     configSubcmdRun
-	ClearExample string
+	RemoveCmd            configSubcmdRun
+	RemoveExample        string
+	RemovePositionalArgs cobra.PositionalArgs
 }
 
 func (c configSubcmd) Command() *cobra.Command {
@@ -388,6 +484,7 @@ func (c configSubcmd) Command() *cobra.Command {
 		Short:   c.Short,
 		Long:    c.Long,
 		GroupID: moduleGroup.ID,
+		Args:    c.GetPositionalArgs,
 		RunE:    c.GetCmd.RunE,
 	}
 	examples := []string{c.GetExample}
@@ -398,11 +495,12 @@ func (c configSubcmd) Command() *cobra.Command {
 
 	if c.SetCmd != nil {
 		setCmd := &cobra.Command{
-			Use: "set",
 			// TODO: make these specific based on the parent
+			Use:     "set",
 			Short:   "Set the configuration value",
 			Long:    "Set the configuration value",
-			Example: "TODO",
+			Example: c.SetExample,
+			Args:    c.SetPositionalArgs,
 			RunE:    c.SetCmd.LocalOnlyRunE,
 		}
 		cmd.AddCommand(setCmd)
@@ -413,38 +511,40 @@ func (c configSubcmd) Command() *cobra.Command {
 		examples = append(examples, c.SetExample)
 	}
 
-	if c.AppendCmd != nil {
-		appendCmd := &cobra.Command{
-			Use: "append",
+	if c.AddCmd != nil {
+		addCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Short:   "Append a value to the configuration",
-			Long:    "Append a value to the configuration",
-			Example: "TODO",
-			RunE:    c.AppendCmd.LocalOnlyRunE,
+			Use:     "add",
+			Short:   "Add a value to the configuration",
+			Long:    "Add a value to the configuration",
+			Example: c.AddExample,
+			Args:    c.AddPositionalArgs,
+			RunE:    c.AddCmd.LocalOnlyRunE,
 		}
-		cmd.AddCommand(appendCmd)
+		cmd.AddCommand(addCmd)
 
-		if c.AppendExample == "" {
-			panic("AppendExample is not set for " + c.Use)
+		if c.AddExample == "" {
+			panic("AddExample is not set for " + c.Use)
 		}
-		examples = append(examples, c.AppendExample)
+		examples = append(examples, c.AddExample)
 	}
 
-	if c.ClearCmd != nil {
+	if c.RemoveCmd != nil {
 		removeCmd := &cobra.Command{
-			Use: "clear",
+			Use: "remove",
 			// TODO: make these specific based on the parent
-			Short:   "Clear a value from the configuration",
-			Long:    "Clear a value from the configuration",
-			Example: "TODO",
-			RunE:    c.ClearCmd.LocalOnlyRunE,
+			Short:   "Remove a value from the configuration",
+			Long:    "Remove a value from the configuration",
+			Example: c.RemoveExample,
+			Args:    c.RemovePositionalArgs,
+			RunE:    c.RemoveCmd.LocalOnlyRunE,
 		}
 		cmd.AddCommand(removeCmd)
 
-		if c.ClearExample == "" {
-			panic("ClearExample is not set for " + c.Use)
+		if c.RemoveExample == "" {
+			panic("RemoveExample is not set for " + c.Use)
 		}
-		examples = append(examples, c.ClearExample)
+		examples = append(examples, c.RemoveExample)
 	}
 
 	cmd.Example = strings.Join(examples, "\n")

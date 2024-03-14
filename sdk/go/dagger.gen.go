@@ -4627,7 +4627,7 @@ func (r *ModuleSource) Directory(path string) *Directory {
 
 // TODO
 func (r *ModuleSource) Exclude(ctx context.Context) ([]string, error) {
-	q := r.Query.Select("exclude")
+	q := r.query.Select("exclude")
 
 	var response []string
 
@@ -4677,7 +4677,7 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 
 // TODO
 func (r *ModuleSource) Include(ctx context.Context) ([]string, error) {
-	q := r.Query.Select("include")
+	q := r.query.Select("include")
 
 	var response []string
 
@@ -4756,7 +4756,7 @@ type ModuleSourceResolveDirectoryFromCallerOpts struct {
 
 // TODO
 func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSourceResolveDirectoryFromCallerOpts) *Directory {
-	q := r.Query.Select("resolveDirectoryFromCaller")
+	q := r.query.Select("resolveDirectoryFromCaller")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `viewName` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ViewName) {
@@ -4766,7 +4766,7 @@ func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSou
 	q = q.Arg("path", path)
 
 	return &Directory{
-		Query: q,
+		query: q,
 	}
 }
 
@@ -4807,17 +4807,17 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 
 // TODO
 func (r *ModuleSource) View(name string) *ModuleSourceView {
-	q := r.Query.Select("view")
+	q := r.query.Select("view")
 	q = q.Arg("name", name)
 
 	return &ModuleSourceView{
-		Query: q,
+		query: q,
 	}
 }
 
 // TODO
 func (r *ModuleSource) Views(ctx context.Context) ([]ModuleSourceView, error) {
-	q := r.Query.Select("views")
+	q := r.query.Select("views")
 
 	q = q.Select("id")
 
@@ -4830,7 +4830,7 @@ func (r *ModuleSource) Views(ctx context.Context) ([]ModuleSourceView, error) {
 
 		for i := range fields {
 			val := ModuleSourceView{id: &fields[i].Id}
-			val.Query = q.Root().Select("loadModuleSourceViewFromID").Arg("id", fields[i].Id)
+			val.query = q.Root().Select("loadModuleSourceViewFromID").Arg("id", fields[i].Id)
 			out = append(out, val)
 		}
 
@@ -4871,21 +4871,21 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *Modul
 
 // TODO
 func (r *ModuleSource) WithExclude(exclude []string) *ModuleSource {
-	q := r.Query.Select("withExclude")
+	q := r.query.Select("withExclude")
 	q = q.Arg("exclude", exclude)
 
 	return &ModuleSource{
-		Query: q,
+		query: q,
 	}
 }
 
 // TODO
 func (r *ModuleSource) WithInclude(include []string) *ModuleSource {
-	q := r.Query.Select("withInclude")
+	q := r.query.Select("withInclude")
 	q = q.Arg("include", include)
 
 	return &ModuleSource{
-		Query: q,
+		query: q,
 	}
 }
 
@@ -4920,22 +4920,28 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 }
 
 // TODO
-func (r *ModuleSource) WithView(name string, include []string) *ModuleSource {
-	q := r.Query.Select("withView")
+func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
+	q := r.query.Select("withView")
 	q = q.Arg("name", name)
-	q = q.Arg("include", include)
+	q = q.Arg("patterns", patterns)
 
 	return &ModuleSource{
-		Query: q,
+		query: q,
 	}
 }
 
 // TODO
 type ModuleSourceView struct {
-	Query *querybuilder.Selection
+	query *querybuilder.Selection
 
 	id   *ModuleSourceViewID
 	name *string
+}
+
+func (r *ModuleSourceView) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSourceView {
+	return &ModuleSourceView{
+		query: q,
+	}
 }
 
 // A unique identifier for this ModuleSourceView.
@@ -4943,7 +4949,7 @@ func (r *ModuleSourceView) ID(ctx context.Context) (ModuleSourceViewID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
-	q := r.Query.Select("id")
+	q := r.query.Select("id")
 
 	var response ModuleSourceViewID
 
@@ -4979,23 +4985,23 @@ func (r *ModuleSourceView) MarshalJSON() ([]byte, error) {
 }
 
 // TODO
-func (r *ModuleSourceView) Include(ctx context.Context) ([]string, error) {
-	q := r.Query.Select("include")
+func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
 
-	var response []string
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
 
 // TODO
-func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.Query.Select("name")
+func (r *ModuleSourceView) Patterns(ctx context.Context) ([]string, error) {
+	q := r.query.Select("patterns")
 
-	var response string
+	var response []string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5799,11 +5805,11 @@ func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 
 // Load a ModuleSourceView from its ID.
 func (r *Client) LoadModuleSourceViewFromID(id ModuleSourceViewID) *ModuleSourceView {
-	q := r.Query.Select("loadModuleSourceViewFromID")
+	q := r.query.Select("loadModuleSourceViewFromID")
 	q = q.Arg("id", id)
 
 	return &ModuleSourceView{
-		Query: q,
+		query: q,
 	}
 }
 

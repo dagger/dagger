@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
@@ -293,35 +294,39 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 }
 
 func (src *ModuleSource) Include(ctx context.Context) ([]string, error) {
-	if src.WithInclude != nil {
-		return src.WithInclude, nil
+	includes := src.WithInclude
+	if includes == nil {
+		cfg, ok, err := src.ModuleConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("module config: %w", err)
+		}
+		if !ok {
+			return nil, nil
+		}
+		includes = cfg.Include
 	}
 
-	cfg, ok, err := src.ModuleConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("module config: %w", err)
-	}
-	if !ok {
-		return nil, nil
-	}
-
-	return cfg.Include, nil
+	slices.Sort(includes)
+	includes = slices.Compact(includes)
+	return includes, nil
 }
 
 func (src *ModuleSource) Exclude(ctx context.Context) ([]string, error) {
-	if src.WithExclude != nil {
-		return src.WithExclude, nil
+	excludes := src.WithExclude
+	if excludes == nil {
+		cfg, ok, err := src.ModuleConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("module config: %w", err)
+		}
+		if !ok {
+			return nil, nil
+		}
+		excludes = cfg.Exclude
 	}
 
-	cfg, ok, err := src.ModuleConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("module config: %w", err)
-	}
-	if !ok {
-		return nil, nil
-	}
-
-	return cfg.Exclude, nil
+	slices.Sort(excludes)
+	excludes = slices.Compact(excludes)
+	return excludes, nil
 }
 
 func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {
@@ -347,6 +352,13 @@ func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error)
 		}
 	}
 
+	for _, view := range views {
+		slices.Sort(view.Patterns)
+		view.Patterns = slices.Compact(view.Patterns)
+	}
+	slices.SortFunc(views, func(a, b *ModuleSourceView) int {
+		return strings.Compare(a.Name, b.Name)
+	})
 	return views, nil
 }
 

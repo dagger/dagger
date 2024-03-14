@@ -31,10 +31,8 @@ type ModuleConfig struct {
 	// The version of the engine this module was last updated with.
 	EngineVersion string `json:"engineVersion,omitempty"`
 
-	// TODO: doc
-	// TODO: doc
-	// TODO: doc
-	// TODO: doc
+	// Named views defined for this module, which are sets of directory filters that can be applied to
+	// directory arguments provided to functions.
 	Views []*ModuleConfigView `json:"views,omitempty"`
 }
 
@@ -109,6 +107,6 @@ func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
 }
 
 type ModuleConfigView struct {
-	Name    string   `json:"name"`
-	Include []string `json:"include,omitempty"`
+	Name     string   `json:"name"`
+	Patterns []string `json:"patterns,omitempty"`
 }
