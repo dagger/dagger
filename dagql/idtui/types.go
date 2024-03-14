@@ -131,31 +131,6 @@ const (
 	GCThreshold      = 1 * time.Second
 )
 
-func (row *TraceRow) IsInteresting(verbosity int) bool {
-	step := row.Span
-	if step.Err() != nil {
-		// show errors always
-		return true
-	}
-	if step.IsInternal() && verbosity < 2 {
-		// internal steps are, by definition, not interesting
-		return false
-	}
-	if step.Duration() < TooFastThreshold && verbosity < 3 {
-		// ignore fast steps; signal:noise is too poor
-		return false
-	}
-	if row.IsRunning {
-		// show things once they've been running for a while
-		return true
-	}
-	if verbosity >= 1 || step.IsRunning() || time.Since(step.EndTime()) < GCThreshold {
-		// show things that just completed, to reduce flicker
-		return true
-	}
-	return false
-}
-
 func (row *TraceRow) Depth() int {
 	if row.Parent == nil {
 		return 0

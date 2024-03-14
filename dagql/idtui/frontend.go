@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
@@ -199,7 +200,7 @@ func (fe *Frontend) finalRender() error {
 		fmt.Fprintln(out, fe.messagesBuf.String())
 	}
 
-	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
+	if fe.Plain || fe.Debug || fe.Verbosity > 0 || fe.err != nil {
 		if renderedAny, err := fe.renderProgress(out); err != nil {
 			return err
 		} else if renderedAny {
@@ -351,7 +352,7 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 		return false, nil
 	}
 	for _, row := range fe.logsView.Body {
-		if fe.Debug || row.IsInteresting(fe.Verbosity) {
+		if fe.Debug || fe.ShouldShow(row) {
 			if err := fe.renderRow(out, row, 0); err != nil {
 				return renderedAny, err
 			}
@@ -366,6 +367,31 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 		renderedAny = true
 	}
 	return renderedAny, nil
+}
+
+func (fe *Frontend) ShouldShow(row *TraceRow) bool {
+	span := row.Span
+	if span.Err() != nil {
+		// show errors always
+		return true
+	}
+	if span.IsInternal() && fe.Verbosity < 2 {
+		// internal steps are, by definition, not interesting
+		return false
+	}
+	if span.Duration() < TooFastThreshold && fe.Verbosity < 3 {
+		// ignore fast steps; signal:noise is too poor
+		return false
+	}
+	if row.IsRunning {
+		return true
+	}
+	if time.Since(span.EndTime()) < GCThreshold ||
+		fe.Plain ||
+		fe.Verbosity >= 1 {
+		return true
+	}
+	return false
 }
 
 var _ tea.Model = (*Frontend)(nil)
@@ -501,7 +527,7 @@ func (fe *Frontend) DumpID(out *termenv.Output, id *call.ID) error {
 }
 
 func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
-	if !row.IsInteresting(fe.Verbosity) && !fe.Debug {
+	if !fe.ShouldShow(row) && !fe.Debug {
 		return nil
 	}
 	if !row.Span.Passthrough {

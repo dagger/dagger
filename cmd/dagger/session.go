@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/google/uuid"
@@ -69,44 +69,34 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	port := l.Addr().(*net.TCPAddr).Port
 
-	runnerHost, err := engine.RunnerHost()
-	if err != nil {
-		return err
-	}
-
-	sess, _, err := client.Connect(ctx, client.Params{
+	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken.String(),
-		RunnerHost:  runnerHost,
 		UserAgent:   labelsFlag.Labels.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent(),
-	})
-	if err != nil {
-		return err
-	}
-	defer sess.Close(nil)
-
-	srv := http.Server{
-		Handler:           sess,
-		ReadHeaderTimeout: 30 * time.Second,
-	}
-
-	paramBytes, err := json.Marshal(connectParams{
-		Port:         port,
-		SessionToken: sessionToken.String(),
-	})
-	if err != nil {
-		return err
-	}
-	paramBytes = append(paramBytes, '\n')
-	go func() {
-		if _, err := os.Stdout.Write(paramBytes); err != nil {
-			panic(err)
+	}, func(ctx context.Context, sess *client.Client) error {
+		srv := http.Server{
+			Handler:           sess,
+			ReadHeaderTimeout: 30 * time.Second,
 		}
-	}()
 
-	err = srv.Serve(l)
-	// if error is "use of closed network connection", it's expected
-	if err != nil && !errors.Is(err, net.ErrClosed) {
-		return err
-	}
-	return nil
+		paramBytes, err := json.Marshal(connectParams{
+			Port:         port,
+			SessionToken: sessionToken.String(),
+		})
+		if err != nil {
+			return err
+		}
+		paramBytes = append(paramBytes, '\n')
+		go func() {
+			if _, err := os.Stdout.Write(paramBytes); err != nil {
+				panic(err)
+			}
+		}()
+
+		err = srv.Serve(l)
+		// if error is "use of closed network connection", it's expected
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			return err
+		}
+		return nil
+	})
 }
