@@ -61,7 +61,7 @@ const config: Config = {
       {
         versions: [
           {
-            guidesPath: "./current_docs/guides",
+            guidesPath: "./current_docs/tutorials",
             versionName: "current",
           },
         ],

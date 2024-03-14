@@ -4,6 +4,8 @@ slug: /manuals/administrator/engine/472258/custom-runner
 
 # Use a Custom Runner
 
+## Overview
+
 A runner is the "backend" of the Dagger Engine where containers are actually executed.
 
 Runners are responsible for:
@@ -33,14 +35,14 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
 ## Execution Requirements
 
 1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute pipelines.
-  - For example, this will be granted when using the `--privileged` flag of `docker run`.
-  - There is an issue for [supporting rootless execution](https://github.com/dagger/dagger/issues/1287).
+    - For example, this will be granted when using the `--privileged` flag of `docker run`.
+    - There is an issue for [supporting rootless execution](https://github.com/dagger/dagger/issues/1287).
 1. The runner container should be given a volume at `/var/lib/dagger`.
-  - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
-  - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`
-1. The container image comes with a default entrypoint which should be used to start the runner, no extra arguments are needed.
+    - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
+    - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`.
+1. The container image comes with a default entrypoint which should be used to start the runner; no extra arguments are needed.
 1. The container image comes with a default config file at `/etc/dagger/engine.toml`
-  - The `insecure-entitlements = ["security.insecure"]` setting enables use of the `InsecureRootCapabilities` flag in `WithExec`. Removing that line will result in an error when trying to use that flag.
+    - The `insecure-entitlements = ["security.insecure"]` setting enables use of the `InsecureRootCapabilities` flag in `WithExec`. Removing that line will result in an error when trying to use that flag.
 
 ## Configuration
 
@@ -54,7 +56,7 @@ This can be accomplished by building a custom engine image using the Dagger Engi
 
 By default, the Dagger Engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
 
-This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`
+This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`.
 
 ### Registry Mirrors
 
@@ -82,15 +84,15 @@ After the runner starts up, the CLI needs to connect to it. In the default situa
 However, if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable is set, then the CLI will instead connect to the endpoint specified there. This environment variable currently accepts values in the following format:
 
 1. `docker-container://<container name>` - Connect to the runner inside the given Docker container.
-  - Requires the `docker` CLI to be present and usable. Will result in shelling out to `docker exec`.
+    - Requires the `docker` CLI to be present and usable. Will result in shelling out to `docker exec`.
 1. `docker-image://<container image reference>` - Start the runner in Docker using the provided container image, pulling it locally if needed
-  - Requires the Docker CLI to be present and usable.
+    - Requires the Docker CLI to be present and usable.
 1. `podman-container://<container name>` - Connect to the runner inside the given Podman container.
 1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given Kubernetes pod.
-  - Query strings params like context and namespace are optional.
+    - Query strings params like context and namespace are optional.
 1. `unix://<path to unix socket>` - Connect to the runner over the provided UNIX socket.
 1. `tcp://<address:port>` - Connect to the runner over TCP using the provided address and port.
 
 :::warning
-Dagger itself does not set up any encryption of data sent over the wire, so it relies on the underlying connection type to implement this when needed. If you are using a connection type that does not provide encryption, then all queries and responses will be sent in plaintext over the wire from the Dagger CLI to the runner.
+Dagger itself does not set up any encryption of data sent over the wire. It relies on the underlying connection type to implement this when needed. If you are using a connection type that does not provide encryption, then all queries and responses will be sent in plaintext over the wire from the Dagger CLI to the runner.
 :::

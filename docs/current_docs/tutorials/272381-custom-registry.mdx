@@ -12,7 +12,7 @@ date: "2024-03-14"
 
 This tutorial outlines how  to configure the Dagger Engine to use a different registry mirror for container images instead of the default (Docker Hub)
 
-### Step 1: Configure the registry mirror
+## Step 1: Configure the registry mirror
 
 Create a file named `engine.toml` that contains the registry mirror:
 
@@ -24,7 +24,7 @@ insecure-entitlements = ["security.insecure"]
   mirrors = ["mirror.gcr.io"]
 ```
 
-### Step 2: Configure the Dagger Engine
+## Step 2: Configure the Dagger Engine
 
 Manually start the Dagger Engine with the custom `engine.toml`:
 
@@ -32,7 +32,7 @@ Manually start the Dagger Engine with the custom `engine.toml`:
 docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.10.2
 ```
 
-### Step 3: Test the configuration
+## Step 3: Test the configuration
 
 Execute the following commands to test the configuration
 
