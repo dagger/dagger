@@ -1,0 +1,37 @@
+---
+slug: /manuals/user/cli/798669/functions
+---
+
+# Explore Functions
+
+Dagger Functions are regular code, written in a supported programming language, and run in containers. At runtime, the Dagger Engine compiles each of your functions into a special container, and exposes a custom GraphQL API for calling them.
+
+All Dagger Functions can be called from the Dagger CLI. You can use the Dagger CLI to call any function, either from your local filesystem or straight from a Git repository. Dagger Functions can be called interactively, from a shell script, or from a CI configuration.
+
+The Dagger CLI introspects the target module's GraphQL API, and exposes all available functions and their arguments as subcommands and flags, respectively. All of these can be explored with the familiar `--help` argument.
+
+## List available functions in a module
+
+To list all the functions available in a module, use `dagger functions`.
+
+For example, to list available functions in the `hello` module, use:
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 functions
+```
+
+## List available arguments for a function
+
+To list all the arguments accepted by a function, use `dagger call FUNCTION-NAME --help`. The `--help` suffix can be added at any point in the `dagger call` command to obtain context-sensitive help.
+
+For example, to list the arguments available for the `build` function of the `golang` module, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --help
+```
+
+Or, to list the arguments available for the return value of the `build` function of the `golang` module, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/golang/example --args="-C","./hello" --help
+```

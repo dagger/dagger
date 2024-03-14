@@ -1,0 +1,21 @@
+---
+slug: /manuals/user/cli/539863/containers
+---
+
+# Work with Containers
+
+## Start an interactive terminal for a container returned by a function
+
+To start an interactive terminal for a container returned by a function, use `dagger call FUNCTION-NAME terminal`. By default, the terminal is started with the `sh` shell, although this can be overridden by adding the `--cmd` argument.
+
+For example, to start an interactive terminal with the Wolfi base container returned by the `container` function of the `wolfi` module, use:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay terminal
+```
+
+To start the same terminal with the `zsh` shell, use:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay,zsh terminal --cmd=zsh
+```
