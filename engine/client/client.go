@@ -660,12 +660,6 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	defer cancel()
 
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	if !traceID.IsValid() {
-		// panic("huh")
-		slog.Warn("serving HTTP without a trace", "ctx", traceID, "method", r.Method, "path", r.URL.Path)
-	}
-
 	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
 		if !ok || username != c.SecretToken {
