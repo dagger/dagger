@@ -689,6 +689,9 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 
 		// rebase user defined include/exclude relative to context
 		for _, path := range localDep.modCfg.Include {
+			isExclude := strings.HasPrefix(path, "!")
+			path = strings.TrimPrefix(path, "!")
+
 			absPath := filepath.Join(sourceRootAbsPath, path)
 			relPath, err := filepath.Rel(contextAbsPath, absPath)
 			if err != nil {
@@ -697,18 +700,11 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			if !filepath.IsLocal(relPath) {
 				return inst, fmt.Errorf("local module dep source include path %q escapes context %q", relPath, contextAbsPath)
 			}
-			includeSet[relPath] = struct{}{}
-		}
-		for _, path := range localDep.modCfg.Exclude {
-			absPath := filepath.Join(sourceRootAbsPath, path)
-			relPath, err := filepath.Rel(contextAbsPath, absPath)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get relative path of config exclude: %s", err)
+			if isExclude {
+				excludeSet[relPath] = struct{}{}
+			} else {
+				includeSet[relPath] = struct{}{}
 			}
-			if !filepath.IsLocal(relPath) {
-				return inst, fmt.Errorf("local module dep source exclude path %q escapes context %q", relPath, contextAbsPath)
-			}
-			excludeSet[relPath] = struct{}{}
 		}
 
 		// always include the config file
@@ -867,19 +863,6 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 		)
 		if err != nil {
 			return inst, fmt.Errorf("failed to set include: %w", err)
-		}
-	}
-	if src.WithExclude != nil {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withExclude",
-				Args: []dagql.NamedInput{
-					{Name: "exclude", Value: asArrayInput(src.WithExclude, dagql.NewString)},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set exclude: %w", err)
 		}
 	}
 	if src.WithViews != nil {
@@ -1113,12 +1096,19 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	}
 
 	var includes []string
+	var excludes []string
 	if args.ViewName != nil {
 		view, err := src.ViewByName(ctx, *args.ViewName)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get view: %w", err)
 		}
-		includes = view.Patterns
+		for _, p := range view.Patterns {
+			if strings.HasPrefix(p, "!") {
+				excludes = append(excludes, p[1:])
+			} else {
+				includes = append(includes, p)
+			}
+		}
 	}
 
 	pipelineName := fmt.Sprintf("load local directory module arg %s", path)
@@ -1126,7 +1116,7 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	_, desc, err := src.Query.Buildkit.LocalImport(
 		ctx, subRecorder, src.Query.Platform.Spec(),
 		path,
-		nil,
+		excludes,
 		includes,
 	)
 	if err != nil {
@@ -1154,40 +1144,15 @@ func (s *moduleSchema) moduleSourceWithInclude(
 	if args.Include == nil {
 		args.Include = []string{}
 	}
-	for _, include := range args.Include {
-		if filepath.IsAbs(include) {
-			return nil, fmt.Errorf("include path %q cannot be absolute", include)
+
+	for _, p := range args.Include {
+		p = strings.TrimPrefix(p, "!")
+		if filepath.IsAbs(p) {
+			return nil, fmt.Errorf("include path %q cannot be absolute", p)
 		}
 	}
+
 	src.WithInclude = args.Include
-	return src, nil
-}
-
-func (s *moduleSchema) moduleSourceExclude(
-	ctx context.Context,
-	src *core.ModuleSource,
-	args struct{},
-) ([]string, error) {
-	return src.Exclude(ctx)
-}
-
-func (s *moduleSchema) moduleSourceWithExclude(
-	ctx context.Context,
-	src *core.ModuleSource,
-	args struct {
-		Exclude []string
-	},
-) (*core.ModuleSource, error) {
-	src = src.Clone()
-	if args.Exclude == nil {
-		args.Exclude = []string{}
-	}
-	for _, exclude := range args.Exclude {
-		if filepath.IsAbs(exclude) {
-			return nil, fmt.Errorf("exclude path %q cannot be absolute", exclude)
-		}
-	}
-	src.WithExclude = args.Exclude
 	return src, nil
 }
 
@@ -1218,6 +1183,7 @@ func (s *moduleSchema) moduleSourceWithView(
 	},
 ) (*core.ModuleSource, error) {
 	for _, p := range args.Patterns {
+		p = strings.TrimSpace(p)
 		if filepath.IsAbs(p) {
 			return nil, fmt.Errorf("include path %q cannot be absolute", p)
 		}

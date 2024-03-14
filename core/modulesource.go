@@ -59,7 +59,6 @@ type ModuleSource struct {
 	WithSDK           string
 	WithSourceSubpath string
 	WithInclude       []string
-	WithExclude       []string
 	WithViews         []*ModuleSourceView
 }
 
@@ -97,11 +96,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 	if src.WithInclude != nil {
 		cp.WithInclude = make([]string, len(src.WithInclude))
 		copy(cp.WithInclude, src.WithInclude)
-	}
-
-	if src.WithExclude != nil {
-		cp.WithExclude = make([]string, len(src.WithExclude))
-		copy(cp.WithExclude, src.WithExclude)
 	}
 
 	if src.WithViews != nil {
@@ -309,24 +303,6 @@ func (src *ModuleSource) Include(ctx context.Context) ([]string, error) {
 	slices.Sort(includes)
 	includes = slices.Compact(includes)
 	return includes, nil
-}
-
-func (src *ModuleSource) Exclude(ctx context.Context) ([]string, error) {
-	excludes := src.WithExclude
-	if excludes == nil {
-		cfg, ok, err := src.ModuleConfig(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("module config: %w", err)
-		}
-		if !ok {
-			return nil, nil
-		}
-		excludes = cfg.Exclude
-	}
-
-	slices.Sort(excludes)
-	excludes = slices.Compact(excludes)
-	return excludes, nil
 }
 
 func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {

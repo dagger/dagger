@@ -155,13 +155,6 @@ func (s *moduleSchema) Install() {
 			ArgDoc("include", `TODO`).
 			Doc(`TODO`),
 
-		dagql.Func("exclude", s.moduleSourceExclude).
-			Doc(`TODO`),
-
-		dagql.Func("withExclude", s.moduleSourceWithExclude).
-			ArgDoc("exclude", `TODO`).
-			Doc(`TODO`),
-
 		dagql.Func("resolveDirectoryFromCaller", s.moduleSourceResolveDirectoryFromCaller).
 			Impure(`Queries live caller-specific data from their filesystem.`).
 			ArgDoc("path", `TODO`).
@@ -971,16 +964,8 @@ func (s *moduleSchema) updateDaggerConfig(
 	}
 	modCfg.Include = include
 	if len(include) == 0 {
-		// prefer nil over empty slice
+		// prefer nil over empty array
 		modCfg.Include = nil
-	}
-	exclude, err := src.Self.Exclude(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get exclude: %w", err)
-	}
-	modCfg.Exclude = exclude
-	if len(exclude) == 0 {
-		modCfg.Exclude = nil
 	}
 
 	views, err := src.Self.Views(ctx)

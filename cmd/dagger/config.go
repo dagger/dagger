@@ -241,6 +241,7 @@ var configViewsCmd = configSubcmd{
 dagger config views
 dagger config views -n my-view
 `),
+	GetPositionalArgs: cobra.NoArgs,
 	GetCmd: func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) error {
 		name, err := cmd.Flags().GetString("name")
 		if err != nil {
@@ -531,8 +532,8 @@ func (c configSubcmd) Command() *cobra.Command {
 
 	if c.RemoveCmd != nil {
 		removeCmd := &cobra.Command{
-			Use: "remove",
 			// TODO: make these specific based on the parent
+			Use:     "remove",
 			Short:   "Remove a value from the configuration",
 			Long:    "Remove a value from the configuration",
 			Example: c.RemoveExample,
