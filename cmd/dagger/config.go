@@ -93,6 +93,8 @@ var configIncludeCmd = configSubcmd{
 	Short: "Get or set the include paths of a Dagger module",
 	Long:  "Get or set the include paths of a Dagger module. By default, print the include paths of the specified module.",
 
+	Hidden: true,
+
 	GetExample: `dagger config include`,
 	GetCmd: func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) error {
 		include, err := modConf.Source.Include(ctx)
@@ -236,6 +238,8 @@ var configViewsCmd = configSubcmd{
 	PersistentFlags: func(fs *pflag.FlagSet) {
 		fs.StringP("name", "n", "", "The name of the view to get or set")
 	},
+
+	Hidden: true,
 
 	GetExample: strings.TrimSpace(`
 dagger config views
@@ -454,6 +458,7 @@ type configSubcmd struct {
 	Short           string
 	Long            string
 	PersistentFlags func(*pflag.FlagSet)
+	Hidden          bool
 
 	GetCmd            configSubcmdRun
 	GetExample        string
@@ -487,6 +492,7 @@ func (c configSubcmd) Command() *cobra.Command {
 		GroupID: moduleGroup.ID,
 		Args:    c.GetPositionalArgs,
 		RunE:    c.GetCmd.RunE,
+		Hidden:  c.Hidden,
 	}
 	examples := []string{c.GetExample}
 
@@ -503,6 +509,7 @@ func (c configSubcmd) Command() *cobra.Command {
 			Example: c.SetExample,
 			Args:    c.SetPositionalArgs,
 			RunE:    c.SetCmd.LocalOnlyRunE,
+			Hidden:  c.Hidden,
 		}
 		cmd.AddCommand(setCmd)
 
@@ -521,6 +528,7 @@ func (c configSubcmd) Command() *cobra.Command {
 			Example: c.AddExample,
 			Args:    c.AddPositionalArgs,
 			RunE:    c.AddCmd.LocalOnlyRunE,
+			Hidden:  c.Hidden,
 		}
 		cmd.AddCommand(addCmd)
 
@@ -539,6 +547,7 @@ func (c configSubcmd) Command() *cobra.Command {
 			Example: c.RemoveExample,
 			Args:    c.RemovePositionalArgs,
 			RunE:    c.RemoveCmd.LocalOnlyRunE,
+			Hidden:  c.Hidden,
 		}
 		cmd.AddCommand(removeCmd)
 
