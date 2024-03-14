@@ -56,6 +56,7 @@ const config: Config = {
   plugins: [
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
+    /*
     [
       path.resolve(__dirname, "plugins/docusaurus-plugin-guides/index.ts"),
       {
@@ -67,6 +68,7 @@ const config: Config = {
         ],
       },
     ],
+    */
     [
       "posthog-docusaurus",
       {
