@@ -463,8 +463,10 @@ func (c *Client) Close(runErr error) (rerr error) {
 	}
 
 	// Wait for telemetry to finish draining
-	if err := c.telemetry.Wait(); err != nil {
-		rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
+	if c.telemetry != nil {
+		if err := c.telemetry.Wait(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
+		}
 	}
 
 	// finalize the run, sending the error result upstream
