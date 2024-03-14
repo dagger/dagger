@@ -414,7 +414,12 @@ module.exports = {
         {
           "type": "doc",
           "label": "Publish Modules",
-          "id": "tutorials/publish-modules"
+          "id": "manuals/developer/tutorials/publish-modules"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/tutorials/index",
+          "label": "Tutorials"
         },
         {
           "type": "link",
@@ -432,11 +437,6 @@ module.exports = {
       "type": "doc",
       "label": "CLI Reference",
       "id": "reference/cli"
-    },
-    {
-      "type": "doc",
-      "id": "tutorials",
-      "label": "Tutorials"
     },
     {
       "type": "doc",

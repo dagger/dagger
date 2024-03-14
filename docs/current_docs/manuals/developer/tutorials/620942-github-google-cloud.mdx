@@ -8,10 +8,10 @@ date: "2024-02-27"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
-import PartialGoogleCloudServiceAcountKeySetup from '../partials/_google_cloud_service_account_key_setup.mdx';
-import PartialGoogleCloudApiSetup from '../partials/_google_cloud_api_setup.mdx';
-import PartialGoogleCloudRunSetup from '../partials/_google_cloud_run_setup.mdx';
-import PartialGoogleArtifactRegistrySetup from '../partials/_google_artifact_registry_setup.mdx';
+import PartialGoogleCloudServiceAcountKeySetup from '../../../partials/_google_cloud_service_account_key_setup.mdx';
+import PartialGoogleCloudApiSetup from '../../../partials/_google_cloud_api_setup.mdx';
+import PartialGoogleCloudRunSetup from '../../../partials/_google_cloud_run_setup.mdx';
+import PartialGoogleArtifactRegistrySetup from '../../../partials/_google_artifact_registry_setup.mdx';
 
 # Use Dagger with GitHub Actions and Google Cloud
 
@@ -31,7 +31,7 @@ This guide assumes that:
 
 - You have a basic understanding of GitHub Actions. If not, [learn about GitHub Actions](https://docs.github.com/en/actions).
 - You are familiar with programming in Go, Python or TypeScript.
-- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../329058-install.mdx).
+- You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../../../329058-install.mdx).
 - You have Docker (or an equivalent container runtime) installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Google Cloud account and a Google Cloud project with billing enabled. If not, [register for a Google Cloud account](https://cloud.google.com/), [create a Google Cloud project](https://console.cloud.google.com/project) and [enable billing](https://support.google.com/cloud/answer/6293499#enable-billing).
 - You have a GitHub account and a GitHub repository containing a Node.js Web application. This repository should also be cloned locally in your development environment. If not, [register for a GitHub account](https://github.com/signup), [install the GitHub CLI](https://github.com/cli/cli#installation) and follow the steps in Appendix A to [create and populate a local and GitHub repository with an example Express application](#appendix-a-create-a-github-repository-with-an-example-express-application).
