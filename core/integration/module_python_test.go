@@ -45,12 +45,12 @@ func TestModulePythonInit(t *testing.T) {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("respects existing pyproject.toml", func(t *testing.T) {
+	t.Run("doesn't init files with existing pyproject.toml", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("pyproject.toml", dagger.ContainerWithNewFileOpts{
@@ -60,19 +60,10 @@ func TestModulePythonInit(t *testing.T) {
                     version = "0.0.0"
                 `),
 			}).
-			With(daggerExec("init", "--name=hasPyproject", "--sdk=python"))
+			With(daggerFunctions()).
+			Sync(ctx)
 
-		out, err := modGen.
-			With(daggerQuery(`{hasPyproject{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"hasPyproject":{"containerEcho":{"stdout":"hello\n"}}}`, out)
-
-		t.Run("preserves module name", func(t *testing.T) {
-			generated, err := modGen.File("pyproject.toml").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, generated, `name = "has-pyproject"`)
-		})
+		require.Error(t, err)
 	})
 
 	t.Run("respects existing main.py", func(t *testing.T) {
@@ -84,9 +75,6 @@ func TestModulePythonInit(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/src/main/__init__.py", dagger.ContainerWithNewFileOpts{
-				Contents: "from . import notmain\n",
-			}).
-			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
 				Contents: heredoc.Doc(`
                     from dagger import function
 
@@ -95,7 +83,7 @@ func TestModulePythonInit(t *testing.T) {
                         return "Hello, world!"
                 `),
 			}).
-			With(daggerExec("init", "--source=.", "--name=hasMainPy", "--sdk=python")).
+			With(daggerExec("init", "--name=hasMainPy", "--sdk=python", "--source=.")).
 			With(daggerQuery(`{hasMainPy{hello}}`)).
 			Stdout(ctx)
 
