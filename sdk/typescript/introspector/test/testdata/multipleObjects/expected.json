@@ -1,0 +1,51 @@
+{
+  "name": "MultipleObjects",
+  "description": "Foo object module\n\nCompose of bar but its file description should be ignore.",
+  "objects": {
+    "Bar": {
+      "name": "Bar",
+      "description": "Bar class",
+      "methods": {
+        "exec": {
+          "name": "exec",
+          "description": "Execute the command and return its result",
+          "arguments": {
+            "cmd": {
+              "name": "cmd",
+              "description": "Command to execute",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    },
+    "MultipleObjects": {
+      "name": "MultipleObjects",
+      "description": "Foo class",
+      "methods": {
+        "bar": {
+          "name": "bar",
+          "description": "Return Bar object",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Bar"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/idproto"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/gorilla/websocket"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -39,11 +39,20 @@ func (term *Terminal) WebsocketURL() string {
 	return fmt.Sprintf("ws://dagger/%s", term.Endpoint)
 }
 
-func (container *Container) Terminal(svcID *idproto.ID, args []string) (*Terminal, http.Handler, error) {
-	termID, err := svcID.Digest()
-	if err != nil {
-		return nil, nil, err
-	}
+type TerminalArgs struct {
+	Cmd []string `default:"[]"`
+
+	// Provide dagger access to the executed command
+	// Do not use this option unless you trust the command being executed.
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	ExperimentalPrivilegedNesting *bool `default:"false"`
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities *bool `default:"false"`
+}
+
+func (container *Container) Terminal(svcID *call.ID, args *TerminalArgs) (*Terminal, http.Handler, error) {
+	termID := svcID.Digest()
 	endpoint := "terminals/" + termID.Encoded()
 	term := &Terminal{Endpoint: endpoint}
 	return term, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,16 +85,18 @@ func (container *Container) Terminal(svcID *idproto.ID, args []string) (*Termina
 
 func (container *Container) runTerminal(
 	ctx context.Context,
-	svcID *idproto.ID,
+	svcID *call.ID,
 	conn *websocket.Conn,
 	clientMetadata *engine.ClientMetadata,
-	args []string,
+	args *TerminalArgs,
 ) error {
 	container = container.Clone()
 
 	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:           args,
-		SkipEntrypoint: true,
+		Args:                          args.Cmd,
+		SkipEntrypoint:                true,
+		ExperimentalPrivilegedNesting: *args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      *args.InsecureRootCapabilities,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create container for interactive terminal: %w", err)

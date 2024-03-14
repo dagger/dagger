@@ -12,7 +12,7 @@ import { Bar } from './bar.js'
  * Foo class
  */
 @object()
-export class Foo {
+export class MultipleObjects {
     /**
      * Return Bar object
      */

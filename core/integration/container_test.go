@@ -224,7 +224,7 @@ CMD echo "stage2"
 				`FROM golang:1.18.2-alpine
 WORKDIR /src
 RUN --mount=type=secret,id=my-secret,required=true test "$(cat /run/secrets/my-secret)" = "barbar"
-RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret  /secret
+RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /secret
 CMD cat /secret
 `)
 
@@ -233,6 +233,27 @@ CMD cat /secret
 		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "***")
+	})
+
+	t.Run("with input build secrets", func(t *testing.T) {
+		sec := c.SetSecret("my-secret", "barbar")
+
+		// src is a directory that has a secret dependency in it's build graph
+		src := c.Container().
+			From(alpineImage).
+			WithWorkdir("/src").
+			WithMountedSecret("/run/secret", sec).
+			WithExec([]string{"cat", "/run/secret"}).
+			WithNewFile("Dockerfile", dagger.ContainerWithNewFileOpts{Contents: `
+			FROM alpine
+			COPY / /
+			`}).
+			Directory("/src")
+
+		// building src should only transform the secrets from the raw
+		// Dockerfile, not from the src input
+		_, err := src.DockerBuild().Sync(ctx)
+		require.NoError(t, err)
 	})
 
 	t.Run("just build, don't execute", func(t *testing.T) {

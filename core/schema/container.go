@@ -294,7 +294,7 @@ func (s *containerSchema) Install() {
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
 			ArgDoc("experimentalPrivilegedNesting",
-				`Provides dagger access to the executed command.`,
+				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
 				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
 				FILESYSTEM.`).
@@ -441,11 +441,33 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withDefaultTerminalCmd", s.withDefaultTerminalCmd).
 			Doc(`Set the default command to invoke for the container's terminal API.`).
-			ArgDoc("args", `The args of the command.`),
+			ArgDoc("args", `The args of the command.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+			FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+			running a command with "sudo" or executing "docker run" with the
+			"--privileged" flag. Containerization does not provide any security
+			guarantees when using this option. It should only be used when
+			absolutely necessary and only with trusted commands.`),
 
 		dagql.NodeFunc("terminal", s.terminal).
 			Doc(`Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
-			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`),
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+		the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+		FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+		running a command with "sudo" or executing "docker run" with the
+		"--privileged" flag. Containerization does not provide any security
+		guarantees when using this option. It should only be used when
+		absolutely necessary and only with trusted commands.`),
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
@@ -1317,39 +1339,47 @@ func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Contain
 	return child, nil
 }
 
+type containerWithDefaultTerminalCmdArgs struct {
+	core.DefaultTerminalCmdOpts
+}
+
 func (s *containerSchema) withDefaultTerminalCmd(
 	ctx context.Context,
 	ctr *core.Container,
-	args struct {
-		Args []string
-	},
+	args containerWithDefaultTerminalCmdArgs,
 ) (*core.Container, error) {
 	ctr = ctr.Clone()
-	ctr.DefaultTerminalCmd = args.Args
+	ctr.DefaultTerminalCmd = args.DefaultTerminalCmdOpts
 	return ctr, nil
+}
+
+type containerTerminalArgs struct {
+	core.TerminalArgs
 }
 
 func (s *containerSchema) terminal(
 	ctx context.Context,
 	ctr dagql.Instance[*core.Container],
-	args struct {
-		Cmd *[]string
-	},
+	args containerTerminalArgs,
 ) (*core.Terminal, error) {
-	var shellArgs []string
-	if args.Cmd != nil {
-		shellArgs = *args.Cmd
-	} else {
-		// if no override args specified, use default shell
-		shellArgs = ctr.Self.DefaultTerminalCmd
+	if args.Cmd == nil || len(args.Cmd) == 0 {
+		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
+	}
+
+	if args.ExperimentalPrivilegedNesting == nil {
+		args.ExperimentalPrivilegedNesting = &ctr.Self.DefaultTerminalCmd.ExperimentalPrivilegedNesting
+	}
+
+	if args.InsecureRootCapabilities == nil {
+		args.InsecureRootCapabilities = &ctr.Self.DefaultTerminalCmd.InsecureRootCapabilities
 	}
 
 	// if still no args, default to sh
-	if len(shellArgs) == 0 {
-		shellArgs = []string{"sh"}
+	if len(args.Cmd) == 0 {
+		args.Cmd = []string{"sh"}
 	}
 
-	term, handler, err := ctr.Self.Terminal(ctr.ID(), shellArgs)
+	term, handler, err := ctr.Self.Terminal(ctr.ID(), &args.TerminalArgs)
 	if err != nil {
 		return nil, err
 	}

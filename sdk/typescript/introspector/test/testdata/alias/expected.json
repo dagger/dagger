@@ -1,0 +1,198 @@
+{
+  "name": "Alias",
+  "objects": {
+    "Bar": {
+      "name": "Bar",
+      "description": "",
+      "constructor": {
+        "args": {
+          "baz": {
+            "name": "baz",
+            "description": "",
+            "type": {
+              "kind": "STRING_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false,
+            "defaultValue": "\"baz\""
+          },
+          "foo": {
+            "name": "foo",
+            "description": "",
+            "type": {
+              "kind": "INTEGER_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false,
+            "defaultValue": "4"
+          }
+        }
+      },
+      "methods": {
+        "zoo": {
+          "name": "za",
+          "description": "",
+          "alias": "zoo",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {
+        "bar": {
+          "name": "baz",
+          "description": "",
+          "alias": "bar",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "oof": {
+          "name": "foo",
+          "description": "",
+          "alias": "oof",
+          "type": {
+            "kind": "INTEGER_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "Alias": {
+      "name": "Alias",
+      "description": "",
+      "constructor": {
+        "args": {
+          "ctr": {
+            "name": "ctr",
+            "description": "",
+            "type": {
+              "kind": "OBJECT_KIND",
+              "name": "Container"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": true
+          }
+        }
+      },
+      "methods": {
+        "testBar": {
+          "name": "bar",
+          "description": "",
+          "alias": "testBar",
+          "arguments": {},
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Bar"
+          }
+        },
+        "bar": {
+          "name": "customBar",
+          "description": "",
+          "alias": "bar",
+          "arguments": {
+            "baz": {
+              "name": "baz",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            },
+            "foo": {
+              "name": "foo",
+              "description": "",
+              "type": {
+                "kind": "INTEGER_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "Bar"
+          }
+        },
+        "version": {
+          "name": "displayVersion",
+          "description": "",
+          "alias": "version",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "greet": {
+          "name": "helloWorld",
+          "description": "",
+          "alias": "greet",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        },
+        "customGreet": {
+          "name": "customHelloWorld",
+          "description": "",
+          "alias": "customGreet",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {
+        "prefix": {
+          "name": "gretingPrefix",
+          "description": "",
+          "alias": "prefix",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "container": {
+          "name": "ctr",
+          "description": "",
+          "alias": "container",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Container"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  }
+}

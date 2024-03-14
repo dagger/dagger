@@ -47,8 +47,6 @@ export class ExecError extends DaggerSDKError {
   }
 
   toString(): string {
-    return `${super.toString()}\nStdout:\n${this.stdout}\nStderr:\n${
-      this.stderr
-    }`
+    return `${super.toString()}\nStdout:\n${this.stdout}\nStderr:\n${this.stderr}`
   }
 }

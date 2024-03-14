@@ -1,22 +1,19 @@
-import { TypeDefKind } from "../api/client.gen.js"
-import { Args, registry } from "../introspector/registry/registry.js"
-import { ScanResult } from "../introspector/scanner/scan.js"
-import { TypeDef } from "../introspector/scanner/typeDefs.js"
+import { registry } from "../introspector/registry/registry.js"
+import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
+import { Method } from "../introspector/scanner/abtractions/method.js"
+import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
+import { InvokeCtx } from "./context.js"
 import {
-  loadArgOrder,
-  loadArg,
-  loadArgType,
-  loadPropertyType,
   loadResult,
-  isArgVariadic,
-  loadName,
+  loadInvokedMethod,
+  loadInvokedObject,
+  loadArgs,
+  loadParentState,
+  loadObjectReturnType,
 } from "./load.js"
 
-export type InvokeCtx = {
-  parentName: string
-  fnName: string
-  parentArgs: Args
-  fnArgs: Args
+function isConstructor(method: Method | Constructor): method is Constructor {
+  return method.name === ""
 }
 
 /**
@@ -28,58 +25,35 @@ export type InvokeCtx = {
  * @param parentArgs The arguments of the parent object.
  * @param fnArgs The arguments of the function to call.
  */
-export async function invoke(
-  scanResult: ScanResult,
-  { parentName, fnName, parentArgs, fnArgs }: InvokeCtx,
-): // eslint-disable-next-line @typescript-eslint/no-explicit-any
-Promise<any> {
-  const args: Args = {}
-
-  // Load function arguments in the right order
-  for (const argName of loadArgOrder(scanResult, parentName, fnName)) {
-    const loadedArg = await loadArg(
-      fnArgs[argName],
-      loadArgType(scanResult, parentName, fnName, argName),
-    )
-
-    if (isArgVariadic(scanResult, parentName, fnName, argName)) {
-      // If the argument is variadic, we need to load each args independently
-      // so it's correctly propagated when it's sent to the function.
-      // Note: variadic args are always last in the list of args.
-      for (const [i, arg] of (loadedArg ?? []).entries()) {
-        args[`${argName}${i}`] = arg
-      }
-    } else {
-      args[argName] = loadedArg
-    }
+export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
+  let object = loadInvokedObject(module, ctx.parentName)
+  if (!object) {
+    throw new Error(`could not find object ${ctx.parentName}`)
   }
 
-  // Load parent state
-  for (const [key, value] of Object.entries(parentArgs)) {
-    parentArgs[loadName(scanResult, parentName, key, "field")] = await loadArg(
-      value,
-      loadPropertyType(scanResult, parentName, key),
-    )
+  const method = loadInvokedMethod(object, ctx)
+  if (!method) {
+    throw new Error(`could not find method ${ctx.fnName}`)
   }
+
+  const args = await loadArgs(method, ctx)
+  const parentState = await loadParentState(object, ctx)
 
   let result = await registry.getResult(
-    loadName(scanResult, parentName, parentName, "object"),
-    loadName(scanResult, parentName, fnName, "function"),
-    parentArgs,
+    object.name,
+    method.name,
+    parentState,
     args,
   )
 
   if (result) {
     // Handle alias serialization by getting the return type to load
     // if the function called isn't a constructor.
-    if (fnName !== "") {
-      const retType = scanResult.classes[parentName].methods[fnName].returnType
-      if (retType.kind === TypeDefKind.ObjectKind) {
-        parentName = (retType as TypeDef<TypeDefKind.ObjectKind>).name
-      }
+    if (!isConstructor(method)) {
+      object = loadObjectReturnType(module, object, method)
     }
 
-    result = await loadResult(result, scanResult, parentName)
+    result = await loadResult(result, module, object)
   }
 
   return result

@@ -177,7 +177,9 @@ export function queryFlatten<T>(response: any): T {
     // If the response is nested in a way were more than one object is nested inside throw an error
     throw new TooManyNestedObjectsError(
       "Too many nested objects inside graphql response",
-      { response: response },
+      {
+        response: response,
+      },
     )
   }
 
@@ -232,7 +234,9 @@ export async function compute<T>(
     // Just throw the unknown error
     throw new UnknownDaggerError(
       "Encountered an unknown error while requesting data via graphql",
-      { cause: e },
+      {
+        cause: e,
+      },
     )
   }
 

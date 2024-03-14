@@ -366,7 +366,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	ctx, vtx := progrock.Span(ctx, idtui.InitVertex, "initialize")
 	defer func() { vtx.Done(rerr) }()
 
-	modConf, err := getDefaultModuleConfiguration(ctx, dag, true)
+	modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
 	}
@@ -528,9 +528,9 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 
 			var response any
 
-			q := fc.q.Bind(&response)
+			q := fc.q.Bind(&response).Client(dag.GraphQLClient())
 
-			if err := q.Execute(ctx, dag.Client); err != nil {
+			if err := q.Execute(ctx); err != nil {
 				return fmt.Errorf("response from query: %w", err)
 			}
 

@@ -451,7 +451,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `cmd` - If set, override the container's default terminal command and invoke these command arguments instead."
+    @doc "Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).\n\n\n\n## Optional Arguments\n\n* `cmd` - If set, override the container's default terminal command and invoke these command arguments instead.\n* `experimental_privileged_nesting` - Provides Dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."
     @spec terminal(t(), keyword()) :: Dagger.Terminal.t()
     def terminal(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "terminal")
@@ -461,6 +461,24 @@ defmodule Dagger.Container do
           selection
         else
           arg(selection, "cmd", optional_args[:cmd])
+        end
+
+      selection =
+        if is_nil(optional_args[:experimental_privileged_nesting]) do
+          selection
+        else
+          arg(
+            selection,
+            "experimentalPrivilegedNesting",
+            optional_args[:experimental_privileged_nesting]
+          )
+        end
+
+      selection =
+        if is_nil(optional_args[:insecure_root_capabilities]) do
+          selection
+        else
+          arg(selection, "insecureRootCapabilities", optional_args[:insecure_root_capabilities])
         end
 
       %Dagger.Terminal{selection: selection, client: container.client}
@@ -487,11 +505,30 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Set the default command to invoke for the container's terminal API.\n\n## Required Arguments\n\n* `args` - The args of the command."
-    @spec with_default_terminal_cmd(t(), [Dagger.String.t()]) :: Dagger.Container.t()
-    def with_default_terminal_cmd(%__MODULE__{} = container, args) do
+    @doc "Set the default command to invoke for the container's terminal API.\n\n## Required Arguments\n\n* `args` - The args of the command.\n\n## Optional Arguments\n\n* `experimental_privileged_nesting` - Provides Dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."
+    @spec with_default_terminal_cmd(t(), [Dagger.String.t()], keyword()) :: Dagger.Container.t()
+    def with_default_terminal_cmd(%__MODULE__{} = container, args, optional_args \\ []) do
       selection = select(container.selection, "withDefaultTerminalCmd")
       selection = arg(selection, "args", args)
+
+      selection =
+        if is_nil(optional_args[:experimental_privileged_nesting]) do
+          selection
+        else
+          arg(
+            selection,
+            "experimentalPrivilegedNesting",
+            optional_args[:experimental_privileged_nesting]
+          )
+        end
+
+      selection =
+        if is_nil(optional_args[:insecure_root_capabilities]) do
+          selection
+        else
+          arg(selection, "insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -573,7 +610,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\nIf empty, the container's default command is used.\n\n## Optional Arguments\n\n* `skip_entrypoint` - If the container has an entrypoint, ignore it for args rather than using it to wrap them.\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provides dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."
+    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\nIf empty, the container's default command is used.\n\n## Optional Arguments\n\n* `skip_entrypoint` - If the container has an entrypoint, ignore it for args rather than using it to wrap them.\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provides Dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command with \"sudo\" or executing \"docker run\" with the \"--privileged\" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands."
     @spec with_exec(t(), [Dagger.String.t()], keyword()) :: Dagger.Container.t()
     def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
       selection = select(container.selection, "withExec")
