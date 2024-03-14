@@ -5703,7 +5703,7 @@ func sdkSourceFile(sdk string) string {
 	case "go":
 		return "dagger/main.go"
 	case "python":
-		return "dagger/src/main.py"
+		return "dagger/src/main/__init__.py"
 	case "typescript":
 		return "dagger/src/index.ts"
 	default:
