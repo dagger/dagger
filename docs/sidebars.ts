@@ -39,46 +39,6 @@ module.exports = {
       "items": [
         {
           "type": "category",
-          "label": "Dagger in CI",
-          "link": {
-            "type": "doc",
-            "id": "manuals/user/ci/index"
-          },
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/github-actions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/gitlab"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/circleci"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/jenkins"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/aws-codebuild"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/azure-pipelines"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/ci/argo-workflows"
-            }
-          ]
-        },
-        {
-          "type": "category",
           "label": "Dagger CLI",
           "link": {
             "type": "doc",
