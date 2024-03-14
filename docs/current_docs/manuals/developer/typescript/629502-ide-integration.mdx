@@ -1,0 +1,23 @@
+---
+slug: /manuals/developer/typescript/629502/ide-integration
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "IDE Integration"
+---
+
+
+# IDE Integration
+
+
+When opening the generated `dagger/src/main.py` in an IDE, most IDEs will automatically recognize the `@dagger.io/dagger` package, so long as the `tsconfig.json` file has a path configured on it.
+
+For Dagger Modules initialized using `dagger init`, the default template is already configured this way:
+
+```json
+    "experimentalDecorators": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk"]
+    }
+```
+
+This configuration doesn't require separate installation of the dependency to enable type-hinting or other IDE features.
