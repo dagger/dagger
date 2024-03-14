@@ -92,14 +92,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/user/cloud/user-interface"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/cloud/roles-permissions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/cloud/org-administration"
             }
           ]
         },
