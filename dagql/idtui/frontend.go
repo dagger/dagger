@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -462,7 +461,7 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
 		case "ctrl+\\": // SIGQUIT
 			fe.restore()
-			syscall.Kill(syscall.Getpid(), syscall.SIGQUIT)
+			sigquit()
 			return fe, nil
 		default:
 			return fe, nil
