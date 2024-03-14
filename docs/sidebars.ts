@@ -79,6 +79,43 @@ module.exports = {
         },
         {
           "type": "category",
+          "label": "Dagger CLI",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/cli/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Function Inspection",
+              "id": "manuals/user/cli/functions"
+            },
+            {
+              "type": "doc",
+              "label": "Directories and Files",
+              "id": "manuals/user/cli/directories-files"
+            },
+            {
+              "type": "doc",
+              "label": "Containers",
+              "id": "manuals/user/cli/containers"
+            },
+            {
+              "type": "doc",
+              "label": "Services",
+              "id": "manuals/user/cli/services"
+            },
+            {
+              "type": "doc",
+              "label": "Secrets",
+              "id": "manuals/user/cli/secrets"
+            }
+          ]
+        },
+        {
+          "type": "category",
           "label": "Dagger Cloud",
           "link": {
             "type": "doc",
