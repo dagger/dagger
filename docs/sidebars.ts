@@ -29,6 +29,66 @@ module.exports = {
     },
     {
       "type": "category",
+      "label": "Integrations",
+      "link": {
+        "type": "doc",
+        "id": "integrations/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "id": "integrations/argo-workflows"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/aws-codebuild"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/azure-pipelines"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/containerd"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/circleci"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/github-actions"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/gitlab"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/jenkins"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/openshift"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/podman"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/kubernetes"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/tekton"
+        }
+      ]
+    },
+    {
+      "type": "category",
       "label": "User Guide",
       "link": {
         "type": "doc",
@@ -357,66 +417,6 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
-        {
-          "type": "category",
-          "label": "Integrations",
-          "link": {
-            "type": "doc",
-            "id": "manuals/administrator/integrations/index"
-          },
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/argo-workflows"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/aws-codebuild"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/azure-pipelines"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/containerd"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/circleci"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/github-actions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/gitlab"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/jenkins"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/openshift"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/podman"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/kubernetes"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/administrator/integrations/tekton"
-            }
-          ]
-        },
         {
           "type": "category",
           "label": "Dagger Engine",

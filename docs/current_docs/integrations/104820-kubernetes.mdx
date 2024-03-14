@@ -1,5 +1,5 @@
 ---
-slug: /manuals/administrator/104820/kubernetes
+slug: /integrations/104820/kubernetes
 ---
 
 # Kubernetes
@@ -92,7 +92,7 @@ In this architecture:
 - Each CI runner has access only to the cache of the local Dagger Engine.
 - The Dagger Engine is deployed as a DaemonSet, to use resources in the most efficient manner and enable reuse of the local Dagger Engine cache to the greatest extent possible.
 
-![Kubernetes base architecture](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-base.png)
+![Kubernetes base architecture](/img/current_docs/integrations/kubernetes-pattern-base.png)
 
 ### Optimization 1: Ephemeral, auto-scaled nodes
 
@@ -105,7 +105,7 @@ In this architecture:
 - Kubernetes nodes provisioned on-demand start with a "clean" Dagger Engine containing no cached data.
 - Cached build artifacts from subsequent runs will persist only for the lifetime of the runner node.
 
-![Kubernetes architecture with ephmeral nodes](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-ephemeral.png)
+![Kubernetes architecture with ephmeral nodes](/img/current_docs/integrations/kubernetes-pattern-ephemeral.png)
 
 ### Optimization 2: Shared Cloud Cache
 
@@ -119,10 +119,10 @@ In this architecture:
 - A shared cloud cache stores data from all Dagger Engines running in the cluster.
 - Auto-provisioned nodes start with access to cached data of previous runs.
 
-![Kubernetes architecture with shared cache](/img/current_docs/manuals/administrator/integrations/kubernetes-pattern-cache.png)
+![Kubernetes architecture with shared cache](/img/current_docs/integrations/kubernetes-pattern-cache.png)
 
 :::tip
-Read a detailed tutorial explaining how to implement the above pattern with [Dagger and GitHub Actions, Amazon Elastic Kubernetes Service (EKS), Karpenter and Dagger Cloud](../tutorials/934191-eks-github-karpenter.mdx).
+Read a detailed tutorial explaining how to implement the above pattern with [Dagger and GitHub Actions, Amazon Elastic Kubernetes Service (EKS), Karpenter and Dagger Cloud](../manuals/administrator/tutorials/934191-eks-github-karpenter.mdx).
 :::
 
 ## Recommendations
