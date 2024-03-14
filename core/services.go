@@ -300,10 +300,6 @@ func (ss *Services) StopClientServices(ctx context.Context, serverID string) err
 			if err := ss.stop(ctx, svc, true); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
-			// wait for the service to fully terminate so we see its otel span complete
-			if err := svc.Wait(ctx); err != nil {
-				slog.Warn("service wait error, possibly benign", "error", err)
-			}
 			return nil
 		})
 	}
