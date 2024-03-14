@@ -429,17 +429,17 @@ module.exports = {
             }
           ]
         },
-        {
-          "type": "doc",
-          "label": "Tutorials",
-          "id": "manuals/administrator/tutorials"
-        },
       ]
     },
     {
       "type": "doc",
       "label": "CLI Reference",
       "id": "reference/cli"
+    },
+    {
+      "type": "doc",
+      "id": "tutorials",
+      "label": "Tutorials"
     },
     {
       "type": "doc",
