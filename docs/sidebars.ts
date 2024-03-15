@@ -462,12 +462,7 @@ module.exports = {
               "id": "manuals/administrator/cloud/organizations"
             }
           ]
-        },
-        {
-          "type": "doc",
-          "id": "manuals/administrator/tutorials/index",
-          "label": "Tutorials"
-        },
+        }
       ]
     },
     {
