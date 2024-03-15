@@ -500,6 +500,12 @@ func (c configSubcmd) Command() *cobra.Command {
 		c.PersistentFlags(cmd.PersistentFlags())
 	}
 
+	if c.Hidden {
+		cmd.Annotations = map[string]string{
+			"experimental": "true",
+		}
+	}
+
 	if c.SetCmd != nil {
 		setCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
