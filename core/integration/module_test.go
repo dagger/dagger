@@ -1421,6 +1421,14 @@ class Test:
     foo: str = field(default="foo")
 `,
 				},
+				{
+					file: "pyproject.toml",
+					contents: `
+                        [project]
+                        name = "main"
+                        version = "0.0.0"
+                        `,
+				},
 			},
 		},
 		{
@@ -1753,7 +1761,7 @@ class Test {
 
 			c, ctx := connect(t)
 
-			modGen := modInit(ctx, t, c, tc.sdk, tc.source)
+			modGen := modInit(t, c, tc.sdk, tc.source)
 
 			q := heredoc.Doc(`
                 query {
@@ -1978,7 +1986,7 @@ class Test {
 			t.Parallel()
 			c, ctx := connect(t)
 
-			out, err := modInit(ctx, t, c, tc.sdk, tc.source).
+			out, err := modInit(t, c, tc.sdk, tc.source).
 				With(daggerQuery(`{test{repeater(msg:"echo!", times: 3){render}}}`)).
 				Stdout(ctx)
 
@@ -3805,7 +3813,7 @@ class Test {
 			t.Run(tc.sdk, func(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
-				ctr := modInit(ctx, t, c, tc.sdk, tc.source)
+				ctr := modInit(t, c, tc.sdk, tc.source)
 
 				out, err := ctr.With(daggerCall("--foo=abc", "--baz=x,y,z", "--dir=.", "foo")).Stdout(ctx)
 				require.NoError(t, err)
@@ -4295,13 +4303,7 @@ def potato_%d() -> str:
 `, i, i)
 		}
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("./src/main.py", dagger.ContainerWithNewFileOpts{
-				Contents: mainSrc,
-			}).
-			With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=python"))
+		modGen := pythonModInit(t, c, mainSrc)
 
 		var eg errgroup.Group
 		for i := 0; i < funcCount; i++ {
@@ -4559,7 +4561,7 @@ func TestModuleReservedWords(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)
 
-					_, err := modInit(ctx, t, c, tc.sdk, tc.source).
+					_, err := modInit(t, c, tc.sdk, tc.source).
 						With(daggerQuery(`{test{fn(id:"no")}}`)).
 						Sync(ctx)
 
@@ -5673,7 +5675,7 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	}
 }
 
-func modInit(ctx context.Context, t *testing.T, c *dagger.Client, sdk, contents string) *dagger.Container {
+func modInit(t *testing.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
