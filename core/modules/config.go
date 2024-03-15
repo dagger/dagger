@@ -34,6 +34,9 @@ type ModuleConfig struct {
 	// Named views defined for this module, which are sets of directory filters that can be applied to
 	// directory arguments provided to functions.
 	Views []*ModuleConfigView `json:"views,omitempty"`
+
+	// Whether to automatically generate a .gitignore file for this module.
+	AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {

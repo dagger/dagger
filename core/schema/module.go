@@ -863,9 +863,17 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	}
 
 	// update .gitignore
+	automaticGitignoreSetting, err := src.Self.AutomaticGitignore(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get automatic gitignore setting: %w", err)
+	}
+	writeGitignore := true // default to true if not set
+	if automaticGitignoreSetting != nil {
+		writeGitignore = *automaticGitignoreSetting
+	}
 	// (linter thinks this chunk of code is too similar to the above, but not clear abstraction is worth it)
 	//nolint:dupl
-	if len(generatedCode.VCSIgnoredPaths) > 0 {
+	if writeGitignore && len(generatedCode.VCSIgnoredPaths) > 0 {
 		gitIgnorePath := filepath.Join(sourceSubpath, ".gitignore")
 		var gitIgnoreContents []byte
 		gitIgnoreFile, err := baseContext.Self.File(ctx, gitIgnorePath)

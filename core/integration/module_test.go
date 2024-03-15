@@ -541,6 +541,11 @@ func TestModuleGit(t *testing.T) {
 				"/internal/dagger/**",
 				"/internal/querybuilder/**",
 			},
+			gitIgnoredFiles: []string{
+				"/dagger.gen.go",
+				"/internal/dagger",
+				"/internal/querybuilder",
+			},
 		},
 		{
 			sdk: "python",
@@ -583,15 +588,36 @@ func TestModuleGit(t *testing.T) {
 					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated\n", fileName))
 				}
 			})
-			if len(tc.gitIgnoredFiles) > 0 {
-				t.Run("configures .gitignore", func(t *testing.T) {
-					ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
-					require.NoError(t, err)
-					for _, fileName := range tc.gitIgnoredFiles {
-						require.Contains(t, ignore, fileName)
-					}
-				})
-			}
+
+			t.Run("configures .gitignore", func(t *testing.T) {
+				ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
+				require.NoError(t, err)
+				for _, fileName := range tc.gitIgnoredFiles {
+					require.Contains(t, ignore, fileName)
+				}
+			})
+
+			t.Run("does not configure .gitignore if disabled", func(t *testing.T) {
+				modGen := goGitBase(t, c).
+					With(daggerExec("init", "--name=bare"))
+
+				// TODO: use dagger config to set this once support is added there
+				modCfgContents, err := modGen.File("dagger.json").Contents(ctx)
+				require.NoError(t, err)
+				modCfg := &modules.ModuleConfig{}
+				require.NoError(t, json.Unmarshal([]byte(modCfgContents), modCfg))
+				autoGitignore := false
+				modCfg.AutomaticGitignore = &autoGitignore
+				modCfgBytes, err := json.Marshal(modCfg)
+				require.NoError(t, err)
+
+				modGen = modGen.WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
+					Contents: string(modCfgBytes),
+				}).With(daggerExec("develop", "--sdk=go"))
+
+				_, err = modGen.File("dagger/.gitignore").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+			})
 		})
 	}
 }
