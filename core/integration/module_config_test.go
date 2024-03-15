@@ -47,6 +47,7 @@ func TestModuleConfigs(t *testing.T) {
 		require.Equal(t, "test", modCfg.Name)
 		require.Equal(t, "go", modCfg.SDK)
 		require.Equal(t, []string{"!blah", "foo"}, modCfg.Include)
+		//nolint:staticcheck // SA1019 deprecated
 		require.Empty(t, modCfg.Exclude)
 		require.Len(t, modCfg.Dependencies, 1)
 		require.Equal(t, "foo", modCfg.Dependencies[0].Source)

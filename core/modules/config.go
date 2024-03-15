@@ -21,6 +21,7 @@ type ModuleConfig struct {
 
 	// Deprecated: Use Include patterns with a leading ! to exclude files. Any setting here
 	// will be automatically converted to an Include pattern.
+	//
 	// Paths to explicitly exclude from the module, relative to the configuration file.
 	Exclude []string `json:"exclude,omitempty"`
 
