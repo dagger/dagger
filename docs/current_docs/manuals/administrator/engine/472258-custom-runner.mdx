@@ -4,8 +4,6 @@ slug: /manuals/administrator/472258/custom-runner
 
 # Use a Custom Runner
 
-## Overview
-
 A runner is the "backend" of the Dagger Engine where containers are actually executed.
 
 Runners are responsible for:
@@ -24,6 +22,10 @@ The consolidated steps to use a custom runner are:
 - Start the runner image in your target of choice, [requirements](#execution-requirements) and [configuration](#configuration) in mind.
 - Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [a value pointing to your target](#connection-interface).
 - Call `dagger call` or execute SDK code directly with that environment variable set.
+
+:::note
+The `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable is experimental and may change in future.
+:::
 
 ## Distribution and Versioning
 
@@ -57,29 +59,6 @@ This can be accomplished by building a custom engine image using the Dagger Engi
 By default, the Dagger Engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
 
 This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`.
-
-### Registry Mirrors
-
-To use a registry mirror, append the configuration to `/etc/dagger/engine.toml` using this format:
-
-```toml
-[registry."docker.io"]
-  mirrors = ["mirror.gcr.io"]
-```
-
-This configuration can be repeated for multiple registries and mirrors:
-
-```toml
-[registry."docker.io"]
-  mirrors = ["mirror.a.com", "mirror.b.com"]
-
-[registry."some.other.registry.com"]
-  mirrors = ["mirror.foo.com", "mirror.bar.com"]
-```
-
-:::tip
-Read a detailed tutorial explaining how to [configure a custom registry mirror for the Dagger Engine](../tutorials/272381-custom-registry.mdx).
-:::
 
 ### Connection Interface
 

@@ -6,17 +6,35 @@ slug: /integrations/728101/tekton
 
 The following code sample demonstrates how to integrate Dagger with Tekton.
 
-Tekton Pipeline:
+:::note
+This Tekton sample assumes that the `git-clone` Task from Tekton Hub is already installed. This Task adds repository cloning capabilities to the Tekton Pipeline. To install the `git-clone` Task, use the following command:
+
+```shell
+tkn hub install task git-clone
+```
+:::
+
+The following Tekton Pipeline checks out the project into a Tekton Workspace and runs the `dagger` Tekton Task:
 
 ```yaml title="git-pipeline.yaml" file=./snippets/tekton-git-pipeline.yaml
 ```
 
-Tekton Task:
+The following Tekton Task installs the Dagger CLI and calls a Dagger Function. In this Tekton Task, the Dagger Engine runs as a sidecar and shares a socket with the Task itself. The Task uses `dind` as its runtime in order to have Docker available.
 
 ```yaml title="dagger-task.yaml" file=./snippets/tekton-dagger-task.yaml
 ```
 
-Tekton PipelineRun:
+The following Tekton PipelineRun runs the Tekton Pipeline:
 
 ```yaml title="git-pipeline-run.yaml" file=./snippets/tekton-git-pipeline-run.yaml
 ```
+
+To apply the configuration and run the Tekton Pipeline, use the following commands:
+
+```shell
+kubectl apply -f dagger-task.yaml
+kubectl apply -f git-pipeline-yaml
+kubectl create -f git-pipeline-run.yaml
+```
+
+To see the logs from the PipelineRun, obtain the PipelineRun name from the output and run `tkn pipelinerun logs clone-read-run-<id> -f`.

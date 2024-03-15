@@ -71,15 +71,15 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "integrations/kubernetes"
+        },
+        {
+          "type": "doc",
           "id": "integrations/openshift"
         },
         {
           "type": "doc",
           "id": "integrations/podman"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/kubernetes"
         },
         {
           "type": "doc",
@@ -418,6 +418,10 @@ module.exports = {
       "collapsed": true,
       "items": [
         {
+          "type": "doc",
+          "id": "manuals/administrator/ci"
+        },
+        {
           "type": "category",
           "label": "Dagger Engine",
           "link": {
@@ -431,6 +435,11 @@ module.exports = {
               "type": "doc",
               "label": "Custom Runner",
               "id": "manuals/administrator/engine/custom-runner"
+            },
+            {
+              "type": "doc",
+              "label": "Custom Registry",
+              "id": "manuals/administrator/engine/custom-registry"
             }
           ]
         },
