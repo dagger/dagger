@@ -86,6 +86,9 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 
 	env := os.Environ()
 
+	// detect $TRACEPARENT set by 'dagger run'
+	ctx = fallbackSpanContext(ctx)
+
 	// propagate trace context to the child process (i.e. for Dagger-in-Dagger)
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)

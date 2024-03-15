@@ -203,8 +203,9 @@ func main() {
 			Detect: true,
 			Resource: resource.NewWithAttributes(
 				semconv.SchemaURL,
-				semconv.ServiceNameKey.String("dagger-cli"),
-				semconv.ServiceVersionKey.String(engine.Version),
+				semconv.ServiceName("dagger-cli"),
+				semconv.ServiceVersion(engine.Version),
+				semconv.ProcessCommandArgs(os.Args...),
 			),
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend},
 			LiveLogExporters:   []sdklog.LogExporter{Frontend},

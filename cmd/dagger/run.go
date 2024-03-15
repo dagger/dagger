@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/tracing"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -103,11 +104,15 @@ func run(ctx context.Context, args []string) error {
 		}
 		defer sessionL.Close()
 
+		env := os.Environ()
 		sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
-		os.Setenv("DAGGER_SESSION_PORT", sessionPort)
-		os.Setenv("DAGGER_SESSION_TOKEN", sessionToken)
+		env = append(env, "DAGGER_SESSION_PORT="+sessionPort)
+		env = append(env, "DAGGER_SESSION_TOKEN="+sessionToken)
+		env = append(env, tracing.PropagationEnv(ctx)...)
 
 		subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
+
+		subCmd.Env = env
 
 		// allow piping to the command
 		subCmd.Stdin = os.Stdin
@@ -117,7 +122,14 @@ func run(ctx context.Context, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		go http.Serve(sessionL, engineClient) //nolint:gosec
+		srv := &http.Server{ //nolint:gosec
+			Handler: engineClient,
+			BaseContext: func(listener net.Listener) context.Context {
+				return ctx
+			},
+		}
+
+		go srv.Serve(sessionL)
 
 		var cmdErr error
 		if !silent {
