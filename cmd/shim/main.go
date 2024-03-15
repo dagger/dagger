@@ -27,7 +27,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"golang.org/x/sys/unix"
@@ -189,10 +188,6 @@ func shim() (returnExitCode int) {
 	// wrong with the logging setup.
 	slog.SetDefault(tracing.PrettyLogger(os.Stderr, slog.LevelWarn))
 
-	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
-		ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
-	}
-
 	traceCfg := tracing.Config{
 		Detect: false, // false, since we want "live" exporting
 		Resource: resource.NewWithAttributes(
@@ -208,7 +203,7 @@ func shim() (returnExitCode int) {
 		traceCfg.LiveLogExporters = append(traceCfg.LiveLogExporters, exp)
 	}
 
-	tracing.Init(ctx, traceCfg)
+	ctx = tracing.Init(ctx, traceCfg)
 	defer tracing.Close()
 
 	ctx, stdoutOtel, stderrOtel := tracing.WithStdioToOtel(ctx, "dagger.io/shim")

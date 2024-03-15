@@ -36,6 +36,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -244,6 +245,10 @@ func (s *DaggerServer) ServeClientConn(
 
 func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// propagate span context from the client (i.e. for Dagger-in-Dagger)
+	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(r.Header))
+
 	errorOut := func(err error, code int) {
 		bklog.G(ctx).WithError(err).Error("failed to serve request")
 		http.Error(w, err.Error(), code)

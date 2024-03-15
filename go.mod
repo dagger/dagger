@@ -104,7 +104,7 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/koron-go/prefixw v1.0.0
 	github.com/lmittmann/tint v1.0.4
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.45.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.24.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.24.0
 	go.opentelemetry.io/otel/log v0.0.1-alpha

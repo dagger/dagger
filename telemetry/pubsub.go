@@ -163,9 +163,11 @@ func (ps *PubSub) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error 
 	slog.Debug("exporting logs to pub/sub", "logs", len(logs))
 
 	byTrace := map[trace.TraceID][]*sdklog.LogData{}
-	for _, s := range logs {
-		traceID := s.TraceID
-		byTrace[traceID] = append(byTrace[traceID], s)
+	for _, log := range logs {
+		// NB: break glass if stuck troubleshooting otel  stuff
+		// slog.Debug("exporting logs", "trace", log.Body().AsString())
+		traceID := log.TraceID
+		byTrace[traceID] = append(byTrace[traceID], log)
 	}
 
 	eg := pool.New().WithErrors()

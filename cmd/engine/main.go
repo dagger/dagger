@@ -228,7 +228,7 @@ func main() { //nolint:gocyclo
 
 		pubsub := telemetry.NewPubSub()
 
-		tracing.Init(ctx, tracing.Config{
+		ctx = tracing.Init(ctx, tracing.Config{
 			Detect: true,
 			Resource: resource.NewWithAttributes(
 				semconv.SchemaURL,

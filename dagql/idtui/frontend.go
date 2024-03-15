@@ -94,6 +94,13 @@ func New() *Frontend {
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
+	// redirect slog to the logs pane
+	level := slog.LevelWarn
+	if fe.Debug {
+		level = slog.LevelDebug
+	}
+	slog.SetDefault(tracing.PrettyLogger(fe.messagesW, level))
+
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
 	tty, isTTY := findTTY()
@@ -136,13 +143,6 @@ func (fe *Frontend) ConnectedToCloud(cloudURL string) {
 }
 
 func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
-	// redirect slog to the logs pane
-	level := slog.LevelWarn
-	if fe.Debug {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(tracing.PrettyLogger(fe.messagesW, level))
-
 	// NOTE: establish color cache before we start consuming stdin
 	fe.out = ui.NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
@@ -358,7 +358,7 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 			renderedAny = true
 		}
 	}
-	if fe.logsView.Primary != nil && !fe.done {
+	if fe.Plain || (fe.logsView.Primary != nil && !fe.done) {
 		if renderedAny {
 			fmt.Fprintln(out)
 		}
@@ -572,7 +572,12 @@ func (fe *Frontend) renderLogs(out *termenv.Output, span *Span, depth int) {
 		if depth != -1 {
 			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
 		}
-		logs.SetHeight(fe.window.Height / 3)
+		if fe.Plain {
+			// print full logs in plain mode
+			logs.SetHeight(logs.UsedHeight())
+		} else {
+			logs.SetHeight(fe.window.Height / 3)
+		}
 		fmt.Fprint(out, logs.View())
 	}
 }

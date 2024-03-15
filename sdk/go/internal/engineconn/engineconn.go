@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/Khan/genqlient/graphql"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type EngineConn interface {
@@ -73,6 +74,10 @@ func defaultHTTPClient(p *ConnectParams) *http.Client {
 	return &http.Client{
 		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			r.SetBasicAuth(p.SessionToken, "")
+
+			// propagate span context to the server (i.e. for Dagger-in-Dagger)
+			propagation.TraceContext{}.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
+
 			return dialTransport.RoundTrip(r)
 		}),
 	}

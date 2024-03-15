@@ -285,10 +285,13 @@ func Logger(name string) log.Logger {
 // Init sets up the global OpenTelemetry providers tracing, logging, and
 // someday metrics providers. It is called by the CLI, the engine, and the
 // container shim, so it needs to be versatile.
-func Init(ctx context.Context, cfg Config) {
-	ctx = context.WithoutCancel(ctx)
-
+func Init(ctx context.Context, cfg Config) context.Context {
 	slog.Debug("initializing telemetry")
+
+	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
+		slog.Debug("found TRACEPARENT", "value", p)
+		ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
+	}
 
 	// Set up a text map propagator so that things, well, propagate. The default
 	// is a noop.
@@ -316,41 +319,43 @@ func Init(ctx context.Context, cfg Config) {
 		}
 	}
 
-	// Set up a tracing provider if configured.
-	if len(cfg.LiveTraceExporters) > 0 || len(cfg.BatchedTraceExporters) > 0 {
-		traceOpts := []sdktrace.TracerProviderOption{
-			sdktrace.WithResource(cfg.Resource),
-		}
-		for _, exporter := range cfg.LiveTraceExporters {
-			processor := NewLiveSpanProcessor(exporter)
-			traceOpts = append(traceOpts, sdktrace.WithSpanProcessor(processor))
-			liveProcessors = append(liveProcessors, processor)
-		}
-		for _, exporter := range cfg.BatchedTraceExporters {
-			traceOpts = append(traceOpts, sdktrace.WithBatcher(exporter))
-		}
-		tp := inflight.NewProxyTraceProvider(
-			sdktrace.NewTracerProvider(traceOpts...),
-			func(s trace.Span) { // OnUpdate
-				if ro, ok := s.(sdktrace.ReadOnlySpan); ok && s.IsRecording() {
-					for _, processor := range liveProcessors {
-						processor.OnUpdate(ro)
-					}
-				}
-			},
-		)
-		tracerProvider = tp
-
-		// Register our TracerProvider as the global so any imported
-		// instrumentation in the future will default to using it.
-		otel.SetTracerProvider(tracerProvider)
-
-		// Make sure we flush everything on Close().
-		closers = append(closers, closer{
-			signal: "tracing",
-			close:  tp.Shutdown,
-		})
+	traceOpts := []sdktrace.TracerProviderOption{
+		sdktrace.WithResource(cfg.Resource),
 	}
+
+	for _, exporter := range cfg.LiveTraceExporters {
+		processor := NewLiveSpanProcessor(exporter)
+		traceOpts = append(traceOpts, sdktrace.WithSpanProcessor(processor))
+		liveProcessors = append(liveProcessors, processor)
+	}
+	for _, exporter := range cfg.BatchedTraceExporters {
+		traceOpts = append(traceOpts, sdktrace.WithBatcher(exporter))
+	}
+
+	inflightProvider := inflight.NewProxyTraceProvider(
+		sdktrace.NewTracerProvider(traceOpts...),
+		func(s trace.Span) { // OnUpdate
+			if ro, ok := s.(sdktrace.ReadOnlySpan); ok && s.IsRecording() {
+				for _, processor := range liveProcessors {
+					processor.OnUpdate(ro)
+				}
+			}
+		},
+	)
+	tracerProvider = inflightProvider
+
+	// Register our TracerProvider as the global so any imported instrumentation
+	// in the future will default to using it.
+	//
+	// NB: this is also necessary so that we can establish a root span, otherwise
+	// telemetry doesn't work.
+	otel.SetTracerProvider(tracerProvider)
+
+	// Make sure we flush everything on Close().
+	closers = append(closers, closer{
+		signal: "tracing",
+		close:  inflightProvider.Shutdown,
+	})
 
 	// Set up a log provider if configured.
 	if len(cfg.LiveLogExporters) > 0 {
@@ -372,6 +377,8 @@ func Init(ctx context.Context, cfg Config) {
 			close:  lp.Shutdown,
 		})
 	}
+
+	return ctx
 }
 
 // Close shuts down the global OpenTelemetry providers, flushing any remaining

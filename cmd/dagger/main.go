@@ -199,7 +199,7 @@ func main() {
 	if err := Frontend.Run(ctx, func(ctx context.Context) error {
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		tracing.Init(ctx, tracing.Config{
+		ctx = tracing.Init(ctx, tracing.Config{
 			Detect: true,
 			Resource: resource.NewWithAttributes(
 				semconv.SchemaURL,
@@ -211,24 +211,22 @@ func main() {
 		})
 		defer tracing.Close()
 
-		// start a root span immediately so we're sure everything is captured. its
-		// name is intentionally insignificant; we want to make sure we never leak
-		// any secrets accidentally passed as plaintext arguments, so we just use
-		// the root command name.
+		parentCtx := trace.SpanContextFromContext(ctx)
+
+		// Set the full command string as the name of the root span.
 		//
-		// also, with dagger call there's a lot going on before we even have the
-		// command to run, and we need to trace that too, so it seems like there's
-		// no way to get a sufficiently descriptive command name without risking
-		// leaked credentials.
-		//
-		// EDIT: screw it, seeing the full command is helpful. just don't pass creds
-		// in plaintext - use a secret or env var, which you should already be
-		// doing for various reasons.
-		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "), trace.WithAttributes(
-			attribute.Bool(tracing.UIPrimaryAttr, true)))
+		// If you pass credentials in plaintext, yes, they will be leaked; don't do
+		// that, since they will also be leaked in various other places (like the
+		// process tree). Use Secret arguments instead.
+		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "),
+			trace.WithAttributes(attribute.Bool(tracing.UIPrimaryAttr, true)))
 		defer span.End()
 
-		slog.Debug("established root trace", "trace", span.SpanContext().TraceID())
+		slog.Debug("established root span",
+			"parent", parentCtx.SpanID(),
+			"span", span.SpanContext().SpanID(),
+			"trace", span.SpanContext().TraceID(),
+		)
 
 		ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, "dagger")
 		rootCmd.SetOut(stdout)
