@@ -247,35 +247,41 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	// Open a separate connection for telemetry.
-	telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-			return connector.Connect(c.internalCtx)
-		}),
-		// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
-		// Shrinking IDs might help.
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
-		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
-		// Uncomment to measure telemetry traffic.
-		// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
-		// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return fmt.Errorf("telemetry grpc dial: %w", err)
-	}
-	c.telemetryConn = telemetryConn
-	c.telemetry = new(errgroup.Group)
-
-	if c.EngineTrace != nil {
-		if err := c.exportTraces(telemetry.NewTracesSourceClient(telemetryConn)); err != nil {
-			return fmt.Errorf("export traces: %w", err)
+	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+		// Open a separate connection for telemetry.
+		telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return connector.Connect(c.internalCtx)
+			}),
+			// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
+			// Shrinking IDs might help.
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
+			grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+			// Uncomment to measure telemetry traffic.
+			// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
+			// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return fmt.Errorf("telemetry grpc dial: %w", err)
 		}
-	}
+		c.telemetryConn = telemetryConn
+		c.telemetry = new(errgroup.Group)
 
-	if c.EngineLogs != nil {
-		if err := c.exportLogs(telemetry.NewLogsSourceClient(telemetryConn)); err != nil {
-			return fmt.Errorf("export logs: %w", err)
+		if c.EngineTrace != nil {
+			if err := c.exportTraces(telemetry.NewTracesSourceClient(telemetryConn)); err != nil {
+				return fmt.Errorf("export traces: %w", err)
+			}
 		}
+
+		if c.EngineLogs != nil {
+			if err := c.exportLogs(telemetry.NewLogsSourceClient(telemetryConn)); err != nil {
+				return fmt.Errorf("export logs: %w", err)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("attach to telemetry: %w", err)
 	}
 
 	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
@@ -374,40 +380,42 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		DisableKeepAlives: true,
 	}}
 
-	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = 10 * time.Millisecond
-	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
-	defer connectRetryCancel()
-	err = backoff.Retry(func() error {
-		if ctx.Err() != nil {
-			fmt.Fprintln(stderr, "Giving up:", ctx.Err())
-			return backoff.Permanent(ctx.Err())
-		}
-
-		nextBackoff := bo.NextBackOff()
-		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
-		defer cancel()
-
+	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
 		// Make an introspection request, since those get ignored by telemetry and
 		// we don't want this to show up, since it's just a health check.
-		innerErr := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
-		if innerErr != nil {
+		err := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
+		if err != nil {
 			// only show errors once the time between attempts exceeds this threshold, otherwise common
 			// cases of 1 or 2 retries become too noisy
-			if nextBackoff > time.Second {
-				fmt.Fprintln(stderr, "Failed to connect; retrying...", innerErr)
+			if elapsed > time.Second {
+				fmt.Fprintln(stderr, "Failed to connect; retrying...", err)
 			}
 		} else {
 			fmt.Fprintln(stdout, "OK!")
 		}
-
-		return innerErr
-	}, backoff.WithContext(bo, connectRetryCtx))
-	if err != nil {
-		return fmt.Errorf("poll: %w", err)
+		return err
+	}); err != nil {
+		return fmt.Errorf("poll for session: %w", err)
 	}
 
 	return nil
+}
+
+func retry(ctx context.Context, fn func(time.Duration, context.Context) error) error {
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 10 * time.Millisecond
+	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
+	defer connectRetryCancel()
+	start := time.Now()
+	return backoff.Retry(func() error {
+		if ctx.Err() != nil {
+			return backoff.Permanent(ctx.Err())
+		}
+		nextBackoff := bo.NextBackOff()
+		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
+		defer cancel()
+		return fn(time.Since(start), ctx)
+	}, backoff.WithContext(bo, connectRetryCtx))
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
