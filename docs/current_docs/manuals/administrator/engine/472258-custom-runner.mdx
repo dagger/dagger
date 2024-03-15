@@ -32,13 +32,11 @@ The `_EXPERIMENTAL_DAGGER_RUNNER_HOST` variable is experimental and may change i
 The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 - Tags are made for the version of each release.
-- For example, the [`v0.3.7` release](https://github.com/dagger/dagger/releases/tag/v0.3.7) has a corresponding image at `registry.dagger.io/engine:v0.3.7`
+- For example, the [`v0.10.2` release](https://github.com/dagger/dagger/releases/tag/v0.10.2) has a corresponding image at `registry.dagger.io/engine:v0.10.2`
 
 ## Execution Requirements
 
-1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute pipelines.
-    - For example, this will be granted when using the `--privileged` flag of `docker run`.
-    - There is an issue for [supporting rootless execution](https://github.com/dagger/dagger/issues/1287).
+1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute pipelines. For example, this will be granted when using the `--privileged` flag of `docker run`.
 1. The runner container should be given a volume at `/var/lib/dagger`.
     - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
     - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`.
