@@ -54,7 +54,7 @@
 [[redirects]]
   # redirect CI pages from user manual
   from = "/user-guide/ci"
-  to = "/manuals/administrator/integrations"
+  to = "/integrations"
   status = 301
 
 [[redirects]]
