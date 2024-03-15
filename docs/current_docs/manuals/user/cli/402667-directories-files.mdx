@@ -4,7 +4,13 @@ slug: /manuals/user/cli/402667/directories-files
 
 # Work with Directories and Files
 
-FIXME add concepts
+Dager Functions can take directories and files as arguments, and also return them. For example, a function that builds binaries could take a directory as argument (the source code) and return another directory (containing binaries) or a file (the built binary).
+
+Directories can be either local (a directory on the host filesystem) or remote (a remote Git address).
+
+Directories and files are represented as `Directory` and `File` objects, which come with additional built-in functions for interacting with their respective objects. For example, a `Directory` object exposes an `Entries` function which returns a list of files and directories at the given path, while a `File` object exposes `Contents`, `Name`, `Size` functions to return the file contents, file name, and file size respectively.
+
+Both `Directory` and `File` objects expose an `Export` function, which can be used to write the corresponding object to the host.
 
 ## List the contents of a directory returned by a function
 
@@ -18,9 +24,9 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project
 
 ## Export a file or directory returned by a function to the host
 
-To export a file or directory returned by a function to the host, use `dagger call FUNCTION-NAME export --path HOST-PATH-FOR-EXPORT`.
+To export a file or directory returned by a function to the host, use `dagger call FUNCTION-NAME export --path=HOST-PATH-FOR-EXPORT`.
 
-When a function returns a directory, a specific file from the directory can be exported to the host with `dagger call FUNCTION-NAME file --path FILE-TO-EXPORT export --path HOST-PATH-FOR-EXPORT`. Note that `FILE-TO-EXPORT` must be specified relative to the directory returned by the function.
+When a function returns a directory, a specific file from the directory can be exported to the host with `dagger call FUNCTION-NAME file --path=FILE-TO-EXPORT export --path=HOST-PATH-FOR-EXPORT`. Note that `FILE-TO-EXPORT` must be specified relative to the directory returned by the function.
 
 For example, to export the directory returned by the `build` function of the `golang` module to the `./my-build` directory on the host, use:
 

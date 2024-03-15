@@ -4,8 +4,25 @@ slug: /manuals/user/cli/539863/containers
 
 # Work with Containers
 
-FIXME add concepts
+Dager Functions can accept, return and pass containers between themselves, just like regular variables. Containers are represented using the `Container` type, which provides a complete API for building, running and distributing containers.
 
+To pass a container argument to a Dagger Function from the command-line, add the corresponding flag followed by the address of an OCI image. The Dagger CLI will dynamically pull the image, and pass the resulting `Container` object as argument to the function.
+
+`Container` objects expose a number of useful functions. For example, every `Container` object exposes an `AsService` function, which turns the container into a service, and a `Publish` function, which publishes the container as a new image to a specified container registry. Containers can be also be imported from, and exported to, OCI tarballs via the `Import` and `Export` functions, respectively.
+
+:::tip
+A `Container` in Dagger is not just a string referencing an image on a remote registry; it is the actual state of a container, managed by the Dagger Engine, and passed to and from functions just like other variables. This makes it easy to assemble complex pipelines where container state flows from function to function, in just a few lines of code.
+:::
+
+## Publish a container returned by a function
+
+To publish a container as an image returned by a function, use `dagger call FUNCTION-NAME publish` and pass the registry address to the function using the `--address` argument.
+
+For example, to publish a Wolfi base container returned by the `container` function of the `wolfi` module to the `ttl.sh` registry, use:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container publish --address=ttl.sh/my-wolfi
+```
 
 ## Start an interactive terminal for a container returned by a function
 
@@ -21,4 +38,14 @@ To start the same terminal with the `zsh` shell, use:
 
 ```shell
 dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay,zsh terminal --cmd=zsh
+```
+
+## Export a container returned by a function to the host
+
+To export a container returned by a function to the host as an OCI tarball, use `dagger call FUNCTION-NAME export --path=HOST-PATH-FOR-EXPORT`
+
+For example, to export a Wolfi base container returned by the `container` function of the `wolfi` module as an OCI tarball named `./tarball` on the host, use:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container export --path=./tarball
 ```
