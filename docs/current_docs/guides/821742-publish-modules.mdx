@@ -21,7 +21,7 @@ This guide assumes that:
 
 ## Process
 
-Two processes are available to publish your Dagger Module to the Daggerverse, manual and automatically on use.
+Two processes are available to publish your Dagger Module to the Daggerverse, manual and automatic on use.
 
 ### Manual publishing
 
@@ -39,7 +39,7 @@ To manually publish a module to the Daggerverse, follow the steps below:
     git push origin main
     ```
 
-    Dagger is agnostic to repository layout, and any number of Dagger Modules can peacefully coexist in a rpeository. It’s up to you how to organize your module’s source code in Git. Some like to publish each module as a dedicated repository; others like to organize all their modules together, with the git repository acting as a "catalog". These repositories are often named "daggerverse" by convention.
+    Dagger is agnostic to repository layout, and any number of Dagger Modules can peacefully coexist in a repository. It’s up to you how to organize your module’s source code in Git. Some like to publish each module as a dedicated repository; others like to organize all their modules together, with the git repository acting as a "catalog". These repositories are often named "daggerverse" by convention.
 
 1. Navigate to the [Daggerverse](https://daggerverse.dev) and click the `Publish` button. On the resulting page, paste the URL to the GitHub repository containing your module in the format `github.com/USERNAME/REPOSITORY[/SUBPATH][@VERSION]`.
 
@@ -49,29 +49,29 @@ To manually publish a module to the Daggerverse, follow the steps below:
 
 1. Click "Publish" to have your Dagger Module published to the Daggerverse. This process may take a few minutes. Once complete, your Dagger Module will appear in the Daggerverse module listing.
 
-#### Notes
-
+:::important
 - Currently, only URLs beginning with `github.com` are supported.
 - The Daggerverse only fetches publicly available information from GitHub. Modules are not hosted on the Daggerverse. If you need a module removed from the Daggerverse for some reason, let the Dagger team know in [Discord](https://discord.gg/dagger-io).
+:::
 
 ### Publishing on use
 
-Every time that a user executes a `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger Module (here, a remote module is defined as a module whose location is specified by a URL like `github.com/USERNAME/daggerverse/...`), that Dagger Module will automatically be published to the Daggerverse.
+Every time that a user executes `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger Module (here, a remote module is defined as a module whose location is specified by a URL like `github.com/USERNAME/daggerverse/...`), that Dagger Module will automatically be published to the Daggerverse.
 
-#### Notes
-
+:::note
 Under this process, it is possible for some Dagger Modules to appear in the Daggerverse even when they're not fully ready. An example of this is when the module developer is developing the module in a local development environment and pushing work-in-progress to the Git repository. In this case, as soon as the module developer tags the module with a [valid semantic version number](#semantic-versioning), the module will be considered released and the latest version will be published to the Daggerverse.
+:::
 
 ## Semantic versioning
 
-Dagger Module should be versioned according to [semantic versioning principles](https://semver.org/). This means that the published module reference should be tagged with a pattern matching `vMAJOR.MINOR.PATCH`, such as `v1.2.3`.
+Dagger Modules should be versioned according to [semantic versioning principles](https://semver.org/). This means that the published module reference should be tagged with a pattern matching `vMAJOR.MINOR.PATCH`, such as `v1.2.3`.
 
 :::important
-At this time, only version numbers matching the `vMAJOR.MINOR.PATCH` semantic versioning pattern are considered valid.
+At this time, only version numbers matching the `vMAJOR.MINOR.PATCH` versioning pattern are considered valid.
 :::
 
 In monorepos of modules, modules can be independently versioned by prefixing the tag with the subpath. For example a module named `foo` can be tagged with `foo/v1.2.3` and referenced as `github.com/USERNAME/REPOSITORY/foo@v1.2.3`.
 
 ## Conclusion
 
-This guide described the two processes available to add your module to the [Daggerverse](https://daggerverse.dev). More information is available on the [Daggerverse publishing page](https://daggerverse.dev/publish).
+This guide described the two processes available to add your modules to the [Daggerverse](https://daggerverse.dev), and also explained how to version your modules according to semantic versioning principles.

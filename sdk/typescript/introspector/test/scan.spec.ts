@@ -66,6 +66,10 @@ describe("scan static TypeScript", function () {
       name: "Should correctly serialize object param",
       directory: "objectParam",
     },
+    {
+      name: "Should correctly scan multiple objects as fields",
+      directory: "multipleObjectsAsFields",
+    },
   ]
 
   for (const test of testCases) {

@@ -175,6 +175,52 @@ describe("Invoke typescript function", function () {
     )
   })
 
+  it("Should correctly handle multiple objets as fields", async function () {
+    this.timeout(60000)
+
+    const files = await listFiles(`${rootDirectory}/multipleObjectsAsFields`)
+
+    // Load function
+    await load(files)
+
+    const scanResult = scan(files)
+
+    const constructorInput = {
+      parentName: "MultipleObjectsAsFields",
+      fnName: "", // call constructor
+      parentArgs: {},
+      fnArgs: {},
+    }
+
+    const constructorResult = await invoke(scanResult, constructorInput)
+    // Verify object instanciation
+    assert.notStrictEqual(undefined, constructorResult)
+    assert.notStrictEqual(undefined, constructorResult.test)
+    assert.notStrictEqual(undefined, constructorResult.lint)
+
+    // Call echo method
+    const invokeTestEcho = {
+      parentName: "Test",
+      fnName: "echo",
+      parentArgs: {},
+      fnArgs: {},
+    }
+
+    const testEchoResult = await invoke(scanResult, invokeTestEcho)
+    assert.strictEqual("world", testEchoResult)
+
+    // Call echo method
+    const invokeLintEcho = {
+      parentName: "Lint",
+      fnName: "echo",
+      parentArgs: {},
+      fnArgs: {},
+    }
+
+    const lintEchoResult = await invoke(scanResult, invokeLintEcho)
+    assert.strictEqual("world", lintEchoResult)
+  })
+
   describe("Should correctly invoke variadic functions", async function () {
     this.timeout(60000)
 
