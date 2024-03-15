@@ -155,7 +155,6 @@ func (m *PythonSdk) WithBase() *PythonSdk {
 		uv := base.
 			WithEnvVariable("PYTHONDONTWRITEBYTECODE", "1").
 			WithMountedFile("/reqs.txt", dag.CurrentModule().Source().File("requirements.txt")).
-			WithExec([]string{"sh", "-c", "which pip"}).
 			WithExec([]string{"pip", "install", "-r", "/reqs.txt"}).
 			File("/usr/local/bin/uv")
 		base = base.

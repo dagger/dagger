@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -124,7 +123,7 @@ func TestModulePythonSignatures(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         from collections.abc import Sequence
         from typing import Optional
 
@@ -262,7 +261,7 @@ func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         import dagger
         from dagger import field, function, object_type
 
@@ -328,7 +327,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated
 
             from dagger import Doc, function, object_type
@@ -386,7 +385,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from dataclasses import field as datafield
             from typing import Annotated
 
@@ -431,7 +430,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -459,7 +458,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -499,7 +498,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -528,7 +527,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -557,7 +556,7 @@ func TestModulePythonNameOverrides(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         from typing import Annotated
 
         from dagger import Arg, Doc, field, function, object_type
@@ -584,7 +583,7 @@ func TestModulePythonReturnSelf(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	out, err := pythonModInit(ctx, t, c, `
+	out, err := pythonModInit(t, c, `
         from typing import Self
 
         from dagger import field, function, object_type
@@ -770,7 +769,7 @@ func TestModulePythonScalarKind(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := pythonModInit(ctx, t, c, `
+	_, err := pythonModInit(t, c, `
         import dagger
         from dagger import dag, function, object_type
 
@@ -791,7 +790,7 @@ func TestModulePythonEnumKind(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := pythonModInit(ctx, t, c, `
+	_, err := pythonModInit(t, c, `
         import dagger
         from dagger import dag, function, object_type
 
@@ -811,6 +810,6 @@ func pythonSource(contents string) dagger.WithContainerFunc {
 	return sdkSource("python", contents)
 }
 
-func pythonModInit(ctx context.Context, t *testing.T, c *dagger.Client, source string) *dagger.Container {
-	return modInit(ctx, t, c, "python", source)
+func pythonModInit(t *testing.T, c *dagger.Client, source string) *dagger.Container {
+	return modInit(t, c, "python", source)
 }
