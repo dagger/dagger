@@ -197,16 +197,21 @@ func main() {
 	ctx := context.Background()
 
 	if err := Frontend.Run(ctx, func(ctx context.Context) error {
+		attrs := []attribute.KeyValue{
+			semconv.ServiceName("dagger-cli"),
+			semconv.ServiceVersion(engine.Version),
+			semconv.ProcessCommandArgs(os.Args...),
+		}
+
+		for k, v := range telemetry.LoadDefaultLabels(workdir, engine.Version) {
+			attrs = append(attrs, attribute.String(k, v))
+		}
+
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx = tracing.Init(ctx, tracing.Config{
-			Detect: true,
-			Resource: resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.ServiceName("dagger-cli"),
-				semconv.ServiceVersion(engine.Version),
-				semconv.ProcessCommandArgs(os.Args...),
-			),
+			Detect:             true,
+			Resource:           resource.NewWithAttributes(semconv.SchemaURL, attrs...),
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend},
 			LiveLogExporters:   []sdklog.LogExporter{Frontend},
 		})
