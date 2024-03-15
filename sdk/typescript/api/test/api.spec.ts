@@ -4,7 +4,6 @@ import fs from "fs"
 
 import {
   ExecError,
-  GraphQLRequestError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
 import {
@@ -272,10 +271,7 @@ describe("TypeScript SDK api", function () {
       const base = client.container().from("alpine:3.16.2")
 
       // short circuit
-      assert.rejects(
-        () => base.withExec(["foobar"]).sync(),
-        GraphQLRequestError,
-      )
+      await assert.rejects(base.withExec(["foobar"]).sync(), ExecError)
 
       // chaining
       const out = await (
