@@ -196,7 +196,7 @@ func main() {
 
 	ctx := context.Background()
 
-	if err := Frontend.Run(ctx, func(ctx context.Context) error {
+	if err := Frontend.Run(ctx, func(ctx context.Context) (rerr error) {
 		attrs := []attribute.KeyValue{
 			semconv.ServiceName("dagger-cli"),
 			semconv.ServiceVersion(engine.Version),
@@ -226,7 +226,7 @@ func main() {
 		// process tree). Use Secret arguments instead.
 		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "),
 			trace.WithAttributes(attribute.Bool(tracing.UIPrimaryAttr, true)))
-		defer span.End()
+		defer tracing.End(span, func() error { return rerr })
 
 		slog.Debug("established root span",
 			"parent", parentCtx.SpanID(),
