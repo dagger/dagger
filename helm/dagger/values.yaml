@@ -28,18 +28,18 @@ engine:
     ### You can also use a specific git sha from https://github.com/dagger/dagger/commits/main/
     # tag: PICK_A_CUSTOM_VERSION
     pullPolicy: IfNotPresent
-    ### Set taints & tolerations for this workload
-    # tolerations:
-    #   - effect: NoSchedule
-    #     key: dagger-runner
-    #     operator: Exists
-    # affinity:
-    #   nodeAffinity:
-    #     requiredDuringSchedulingIgnoredDuringExecution:
-    #       nodeSelectorTerms:
-    #       - matchExpressions:
-    #         - key: actions-runner
-    #           operator: Exists
+  ### Set taints & tolerations for this workload
+  # tolerations:
+  #   - effect: NoSchedule
+  #     key: dagger-runner
+  #     operator: Exists
+  # affinity:
+  #   nodeAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #       - matchExpressions:
+  #         - key: actions-runner
+  #           operator: Exists
   readinessProbeSettings: 
     initialDelaySeconds: 5
     timeoutSeconds: 30
