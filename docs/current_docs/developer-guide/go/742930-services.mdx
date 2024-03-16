@@ -35,7 +35,7 @@ A Dagger Function can create and return a service, which can then be used from a
 
 Here is an example of a Dagger Function that returns an HTTP service. This service is used by another Dagger Function, which creates a service binding using the alias `www` and then accesses the HTTP service using this alias.
 
-```go file=./snippets/services/return-value/main.go
+```go file=./snippets/services/bind-services/main.go
 ```
 
 Here is an example call for this Dagger Function:
@@ -86,7 +86,7 @@ This implies that a service is already listening on a port on the host, out-of-b
 
 Here is an example of how a container running in a Dagger Function can access and query a MariaDB database service (bound using the alias `db`) running on the host.
 
-```go file=./snippets/services/argument/main.go
+```go file=./snippets/services/expose-host-services-to-dagger/main.go
 ```
 
 Before calling this Dagger Function, use the following command to start a MariaDB database service on the host:
