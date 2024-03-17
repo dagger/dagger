@@ -1,0 +1,51 @@
+---
+slug: /manuals/developer/python/817138/custom-types
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Custom Types"
+---
+
+
+# Custom Types
+
+
+A Dagger Module can have multiple object types defined. It's important to
+understand though, that they are only accessible through chaining, starting
+from a function in the main object.
+
+Here is an example of a "github" module, with a function named `dagger_organization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
+
+```python file=./snippets/custom-types/main.py
+```
+
+Remember that the [`dagger.field`][dag-field] descriptors expose getter functions
+without arguments, for their [attributes](./944887-attribute-functions.mdx).
+
+:::note
+When the Dagger Engine extends the Dagger API schema with these types, it prefixes
+their names with the name of the main object:
+- Github
+- GithubAccount
+- GithubOrganization
+
+This is to prevent possible naming conflicts when loading multiple modules,
+which is reflected in code generation (for example, when using this module in
+another one as a dependency).
+:::
+
+Here's an example of calling this module to get all member URLs:
+
+```shell
+dagger call dagger-organization members url
+```
+
+The result will be:
+
+```shell
+https://github.com/jane
+https://github.com/john
+```
+
+[dag-field]: https://dagger-io.readthedocs.io/en/sdk-python-v0.9.11/module.html#dagger.field
