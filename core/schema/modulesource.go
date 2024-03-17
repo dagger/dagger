@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -26,11 +27,7 @@ type moduleSourceArgs struct {
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
 	parsed := parseRefString(args.RefString)
-	modPath, modVersion, hasVersion, isGitHub := parsed.modPath, parsed.modVersion, parsed.hasVersion, parsed.isGitHub
-
-	if !hasVersion && isGitHub && args.Stable {
-		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
-	}
+	modPath, modVersion, hasVersion := parsed.modPath, parsed.modVersion, parsed.hasVersion
 
 	src := &core.ModuleSource{
 		Query: query,
@@ -47,18 +44,14 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		})
 
 	case core.ModuleSourceKindGit:
-		if !isGitHub {
-			return nil, fmt.Errorf("for now, only github.com/ paths are supported: %q", args.RefString)
-		}
-
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
-		segments := strings.SplitN(modPath, "/", 4)
+		segments := strings.Split(modPath, "/")
 		if len(segments) < 3 {
-			return nil, fmt.Errorf("invalid github.com path: %s", modPath)
+			return nil, fmt.Errorf("invalid vcs module path path: %s", modPath)
 		}
 
-		src.AsGitSource.Value.URLParent = segments[0] + "/" + segments[1] + "/" + segments[2]
+		src.AsGitSource.Value.URLParent = filepath.Join(segments[:len(segments)-1]...)
 
 		cloneURL := src.AsGitSource.Value.CloneURL()
 
@@ -75,8 +68,8 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource.Value.Version = modVersion
 
 		var subPath string
-		if len(segments) == 4 {
-			subPath = segments[3]
+		if len(segments) >= 4 {
+			subPath = segments[len(segments)-1]
 		} else {
 			subPath = "/"
 		}
@@ -147,19 +140,18 @@ type parsedRefString struct {
 	modPath    string
 	modVersion string
 	hasVersion bool
-	isGitHub   bool
 	kind       core.ModuleSourceKind
 }
 
 func parseRefString(refString string) parsedRefString {
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
-	parsed.isGitHub = strings.HasPrefix(parsed.modPath, "github.com/")
 
-	if !parsed.hasVersion && !parsed.isGitHub {
+	if _, err := os.Stat(refString); err == nil {
 		parsed.kind = core.ModuleSourceKindLocal
 		return parsed
 	}
+
 	parsed.kind = core.ModuleSourceKindGit
 	return parsed
 }
