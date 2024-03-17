@@ -29,7 +29,7 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "User Guide",
+      "label": "User Manual",
       "link": {
         "type": "doc",
         "id": "manuals/user/index"
@@ -67,7 +67,7 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Developer Guide",
+      "label": "Developer Manual",
       "collapsible": true,
       "collapsed": true,
       "link": {
