@@ -110,6 +110,8 @@ var _ sdklog.LogExporter = (*DB)(nil)
 
 func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 	for _, log := range logs {
+		slog.Debug("exporting log", "span", log.SpanID, "body", log.Body().AsString())
+
 		// render vterm for TUI
 		_, _ = fmt.Fprint(db.spanLogs(log.SpanID), log.Body().AsString())
 
