@@ -28,11 +28,7 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 		Stdout(ctx)
 
 	// get value
-	val, err := redisCLI.
+	return redisCLI.
 		WithExec([]string{"get", "foo"}).
 		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-	return val, nil
 }

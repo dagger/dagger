@@ -20,21 +20,19 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 		WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
 
 	// set value
-	setter, err1 := redisCLI.
+	setter, err := redisCLI.
 		WithExec([]string{"set", "foo", "abc"}).
 		Stdout(ctx)
-
-	if err1 != nil {
-		return "", err1
+	if err != nil {
+		return "", err
 	}
 
 	// get value
-	getter, err2 := redisCLI.
+	getter, err := redisCLI.
 		WithExec([]string{"get", "foo"}).
 		Stdout(ctx)
-
-	if err2 != nil {
-		return "", err2
+	if err != nil {
+		return "", err
 	}
 
 	return setter + getter, nil

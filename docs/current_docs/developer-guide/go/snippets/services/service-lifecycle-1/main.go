@@ -21,12 +21,5 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 
 	// send ping from client to server
 	ping := redisCLI.WithExec([]string{"ping"})
-
-	val, err := ping.
-		Stdout(ctx)
-
-	if err != nil {
-		return "", err
-	}
-	return val, nil
+	return ping.Stdout(ctx)
 }

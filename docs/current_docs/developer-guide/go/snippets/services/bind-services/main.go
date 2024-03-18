@@ -21,13 +21,9 @@ func (m *MyModule) HttpService() *Service {
 
 // sends a request to an HTTP service and returns the response
 func (m *MyModule) Get(ctx context.Context) (string, error) {
-	val, err := dag.Container().
+	return dag.Container().
 		From("alpine").
 		WithServiceBinding("www", m.HttpService()).
 		WithExec([]string{"wget", "-O-", "http://www:8080"}).
 		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-	return val, nil
 }

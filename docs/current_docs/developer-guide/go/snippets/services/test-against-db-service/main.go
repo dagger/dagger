@@ -25,16 +25,11 @@ func (m *MyModule) Test(ctx context.Context) (string, error) {
 
 	// add service binding for MariaDB
 	// run kernel tests using PHPUnit
-	test, err := drupal.
+	return drupal.
 		WithServiceBinding("db", mariadb).
 		WithEnvVariable("SIMPLETEST_DB", "mysql://user:password@db/drupal").
 		WithEnvVariable("SYMFONY_DEPRECATIONS_HELPER", "disabled").
 		WithWorkdir("/opt/drupal/web/core").
 		WithExec([]string{"../../vendor/bin/phpunit", "-v", "--group", "KernelTests"}).
 		Stdout(ctx)
-
-	if err != nil {
-		return "", err
-	}
-	return test, nil
 }
