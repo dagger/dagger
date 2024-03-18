@@ -29,46 +29,6 @@ Services instantiated by a Dagger Function run in service containers, which have
 - Service containers are started just-in-time, de-duplicated, and stopped when no longer needed
 - Service containers are health checked prior to running clients
 
-## Work with service hostnames and ports
-
-Each service container has a canonical, content-addressed hostname and an optional set of exposed ports. You can query a service container's canonical hostname with the `Service` type's `Hostname` function.
-
-Here is an example of a Dagger Function that creates a service and returns its hostname:
-
-```go file=./snippets/services/hostnames/main.go
-```
-
-Here is an example call for this Dagger Function:
-
-```shell
-dagger call http-service
-```
-
-The result will be similar to:
-
-```shell
-od4gh92hddt1a
-```
-
-You can also define the ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-
-Here is an example of a Dagger Function that creates a service and sets the port on which the service container will listen. Note also the `Endpoint` function of the `Service` object, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
-
-```go file=./snippets/services/ports/main.go
-```
-
-Here is an example call for this Dagger Function:
-
-```shell
-dagger call http-service
-```
-
-The result will be similar to:
-
-```shell
-ol9av111a8l7s:8080
-```
-
 ## Bind services in functions
 
 A Dagger Function can create and return a service, which can then be used from another Dagger Function or from the calling host. Services in Dagger Functions are returned using the `Service` core type.
@@ -96,26 +56,31 @@ Services returned by Dagger Functions can also be exposed directly to the host. 
 
 One use case is for testing, where you need to be able to spin up ephemeral databases to run tests against. You might also use this to access a web UI in a browser on your desktop.
 
-Here is another example call for the Dagger Function shown previously, this time exposing the HTTP service on host port 9000:
+Here is another example call for the Dagger Function shown previously, this time exposing the HTTP service on the host
 
 ```shell
-dagger call http-service up --ports 9000:8080
+dagger call http-service up
 ```
 
-This service can then be accessed by clients on the host. Here's an example:
+By default, each service port maps to the same port on the host - in this case, port 8080. The service can then be accessed by clients on the host. Here's an example:
 
 ```shell
-curl localhost:9000
+curl localhost:8080
 ```
-
 The result will be:
 
 ```shell
 Hello, world!
 ```
 
+To specify a different mapping, use the additional `--ports` argument to `dagger call ... up` with a list of host/service port mappings. Here's an example, which exposes the service on host port 9000:
+
+```shell
+dagger call http-service up --ports 9000:8080
+```
+
 :::note
-By default, each service port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument to `dagger call ... up` with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
+To bind ports randomly, use the `--random` argument.
 :::
 
 ## Expose host services to functions
