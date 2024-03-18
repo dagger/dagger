@@ -115,7 +115,7 @@ Hello, world!
 ```
 
 :::note
-By default, each service port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument to `dagger call...up` with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
+By default, each service port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument to `dagger call ... up` with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
 :::
 
 ## Expose host services to functions
@@ -140,7 +140,7 @@ docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_ROOT_PASSW
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call user-list --host-service=tcp://localhost:3306
+dagger call user-list --svc=tcp://localhost:3306
 ```
 
 The result will be:
@@ -176,6 +176,8 @@ abc
 ## Start and stop services
 
 Services are designed to be expressed as a Directed Acyclic Graph (DAG) with explicit bindings allowing services to be started lazily, just like every other DAG node. But sometimes, you may need to explicitly manage the lifecycle in a Dagger Function.
+
+For example, this may be needed if the application in the service has certain behavior on shutdown (such as flushing data) that needs careful coordination with the rest of your logic.
 
 Here's an example which demonstrates explicitly starting a Docker daemon for use in a test suite:
 
@@ -236,7 +238,7 @@ Here's what happens on the last line:
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 :::note
-Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
+Dagger cancels each service run after a 10 second grace period to avoid frequent restarts, unless the explicit `Start` and `Stop' APIs are used.
 :::
 
 Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.
