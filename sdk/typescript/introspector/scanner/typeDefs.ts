@@ -51,7 +51,7 @@ export type FieldTypeDef = {
 /**
  * The type of function argument in a method or function.
  */
-export type FunctionArg = {
+export type FunctionArgTypeDef = {
   name: string
   description: string
   optional: boolean
@@ -67,12 +67,12 @@ export type FunctionTypedef = {
   name: string
   description: string
   alias?: string
-  args: { [name: string]: FunctionArg }
+  args: { [name: string]: FunctionArgTypeDef }
   returnType: TypeDef<TypeDefKind>
 }
 
 export type ConstructorTypeDef = {
-  args: { [name: string]: FunctionArg }
+  args: { [name: string]: FunctionArgTypeDef }
 }
 
 /**

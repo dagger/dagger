@@ -35,9 +35,7 @@ export class Bin implements EngineConn {
   private cliVersion?: string
 
   private readonly cacheDir = path.join(
-    `${
-      process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache
-    }`,
+    `${process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache}`,
     "dagger",
   )
 
@@ -108,7 +106,9 @@ export class Bin implements EngineConn {
       fs.rmSync(tmpBinDownloadDir, { recursive: true })
       throw new InitEngineSessionBinaryError(
         `failed to download dagger cli binary: ${e}`,
-        { cause: e as Error },
+        {
+          cause: e as Error,
+        },
       )
     }
 
@@ -221,7 +221,9 @@ export class Bin implements EngineConn {
           reject(
             new EngineSessionConnectionTimeoutError(
               "Engine connection timeout",
-              { timeOutDuration },
+              {
+                timeOutDuration,
+              },
             ),
           )
         }, timeOutDuration).unref() // long timeout to account for extensions, though that should be optimized in future
@@ -246,7 +248,9 @@ export class Bin implements EngineConn {
       }
       throw new EngineSessionConnectParamsParseError(
         `invalid connect params: ${line}`,
-        { parsedLine: line },
+        {
+          parsedLine: line,
+        },
       )
     }
 
@@ -343,18 +347,14 @@ export class Bin implements EngineConn {
     if (this.normalizedOS() === "windows") {
       ext = "zip"
     }
-    return `dagger_v${
-      this.cliVersion
-    }_${this.normalizedOS()}_${this.normalizedArch()}.${ext}`
+    return `dagger_v${this.cliVersion}_${this.normalizedOS()}_${this.normalizedArch()}.${ext}`
   }
 
   private cliArchiveURL(): string {
     if (OVERRIDE_CLI_URL) {
       return OVERRIDE_CLI_URL
     }
-    return `https://${CLI_HOST}/dagger/releases/${
-      this.cliVersion
-    }/${this.cliArchiveName()}`
+    return `https://${CLI_HOST}/dagger/releases/${this.cliVersion}/${this.cliArchiveName()}`
   }
 
   private cliChecksumURL(): string {

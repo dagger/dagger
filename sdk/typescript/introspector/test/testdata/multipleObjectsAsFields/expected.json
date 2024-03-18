@@ -1,0 +1,63 @@
+{
+  "name": "MultipleObjectsAsFields",
+  "objects": {
+    "Test": {
+      "name": "Test",
+      "description": "",
+      "methods": {
+        "echo": {
+          "name": "echo",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    },
+    "Lint": {
+      "name": "Lint",
+      "description": "",
+      "methods": {
+        "echo": {
+          "name": "echo",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    },
+    "MultipleObjectsAsFields": {
+      "name": "MultipleObjectsAsFields",
+      "description": "",
+      "constructor": {
+        "args": {}
+      },
+      "methods": {},
+      "properties": {
+        "test": {
+          "name": "test",
+          "description": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Test"
+          },
+          "isExposed": true
+        },
+        "lint": {
+          "name": "lint",
+          "description": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Lint"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  }
+}

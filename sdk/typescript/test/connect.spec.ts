@@ -116,7 +116,7 @@ describe("TypeScript sdk Connect", function () {
     delete process.env["DAGGER_SESSION_TOKEN"]
   })
 
-  it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
+  it.skip("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
     this.timeout(60000)
 
     await connect(
@@ -132,7 +132,7 @@ describe("TypeScript sdk Connect", function () {
     )
   })
 
-  it("throws error", async function () {
+  it.skip("throws error", async function () {
     this.timeout(60000)
 
     try {

@@ -1,0 +1,115 @@
+{
+  "name": "State",
+  "description": "A State Module with Alpine implementation for testing purpose only.\n\nWarning: Do not reproduce in production.",
+  "objects": {
+    "State": {
+      "name": "State",
+      "description": "State module",
+      "methods": {
+        "base": {
+          "name": "base",
+          "description": "Returns a base Alpine container",
+          "arguments": {
+            "version": {
+              "name": "version",
+              "description": "version to use (default to: 3.16.2)",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "State"
+          }
+        },
+        "install": {
+          "name": "install",
+          "description": "",
+          "arguments": {
+            "pkgs": {
+              "name": "pkgs",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "State"
+          }
+        },
+        "exec": {
+          "name": "exec",
+          "description": "",
+          "arguments": {
+            "cmd": {
+              "name": "cmd",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {
+        "version": {
+          "name": "version",
+          "description": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": false
+        },
+        "user": {
+          "name": "user",
+          "description": "",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": false
+        },
+        "packages": {
+          "name": "packages",
+          "description": "packages to install",
+          "type": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "STRING_KIND"
+            }
+          },
+          "isExposed": true
+        },
+        "ctr": {
+          "name": "ctr",
+          "description": "",
+          "type": {
+            "kind": "OBJECT_KIND",
+            "name": "Container"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  }
+}

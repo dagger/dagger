@@ -23,6 +23,7 @@ module.exports = {
         "quickstart/containers",
         "quickstart/daggerize",
         "quickstart/custom-function",
+        "quickstart/daggerverse",
         "quickstart/conclusion"
       ]
     },
@@ -104,6 +105,11 @@ module.exports = {
               "id": "user-guide/cloud/org-administration"
             }
           ]
+        },
+        {
+          "type": "doc",
+          "id": "user-guide/troubleshooting",
+          "label": "Troubleshooting"
         }
       ]
     },
@@ -374,6 +380,11 @@ module.exports = {
         },
         {
           "type": "doc",
+          "label": "Publish Modules",
+          "id": "guides/publish-modules"
+        },
+        {
+          "type": "doc",
           "id": "guides",
           "label": "Guides"
         },
@@ -386,7 +397,8 @@ module.exports = {
           "type": "doc",
           "id": "developer-guide/known-issues"
         }
-      ]
+      ],
+
     },
     {
       "type": "doc",

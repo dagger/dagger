@@ -21,7 +21,7 @@ export class Bar {
 }
 
 @object()
-export class HelloWorld {
+export class Alias {
     @field("prefix")
     gretingPrefix = "test"
 
