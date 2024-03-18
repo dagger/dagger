@@ -11,8 +11,6 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	redisSrv := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
-		WithMountedCache("/data", dag.CacheVolume("my-redis")).
-		WithWorkdir("/data").
 		AsService()
 
 	// create Redis client container
@@ -21,18 +19,23 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 		WithServiceBinding("redis-srv", redisSrv).
 		WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
 
-	// set and save value
-	redisCLI.
+	// set value
+	setter, err1 := redisCLI.
 		WithExec([]string{"set", "foo", "abc"}).
-		WithExec([]string{"save"}).
 		Stdout(ctx)
 
+	if err1 != nil {
+		return "", err1
+	}
+
 	// get value
-	val, err := redisCLI.
+	getter, err2 := redisCLI.
 		WithExec([]string{"get", "foo"}).
 		Stdout(ctx)
-	if err != nil {
-		return "", err
+
+	if err2 != nil {
+		return "", err2
 	}
-	return val, nil
+
+	return setter + getter, nil
 }

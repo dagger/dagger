@@ -4,9 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-
-	// FIXME
-	"dagger.io/dagger/dag"
 )
 
 type MyModule struct{}

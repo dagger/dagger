@@ -29,7 +29,47 @@ Services instantiated by a Dagger Function run in service containers, which have
 - Service containers are started just-in-time, de-duplicated, and stopped when no longer needed
 - Service containers are health checked prior to running clients
 
-## Returning services
+## Work with service hostnames and ports
+
+Each service container has a canonical, content-addressed hostname and an optional set of exposed ports. You can query a service container's canonical hostname with the `Service` type's `Hostname` function.
+
+Here is an example of a Dagger Function that creates a service and returns its hostname:
+
+```go file=./snippets/services/hostnames/main.go
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call http-service
+```
+
+The result will be similar to:
+
+```shell
+od4gh92hddt1a
+```
+
+You can also define the ports on which the service container will listen. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+
+Here is an example of a Dagger Function that creates a service and sets the port on which the service container will listen. Note also the `Endpoint` function of the `Service` object, which returns an address pointing to a particular port, optionally with a URL scheme. You can either specify a port or let Dagger pick the first exposed port.
+
+```go file=./snippets/services/ports/main.go
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call http-service
+```
+
+The result will be similar to:
+
+```shell
+ol9av111a8l7s:8080
+```
+
+## Bind services in functions
 
 A Dagger Function can create and return a service, which can then be used from another Dagger Function or from the calling host. Services in Dagger Functions are returned using the `Service` core type.
 
@@ -49,6 +89,8 @@ The result will be:
 ```shell
 Hello, world!
 ```
+
+## Expose services returned by functions to the host
 
 Services returned by Dagger Functions can also be exposed directly to the host. This enables clients on the host to communicate with services running in Dagger.
 
@@ -76,7 +118,7 @@ Hello, world!
 By default, each service port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument to `dagger call...up` with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
 :::
 
-## Receiving services
+## Expose host services to functions
 
 Dagger Functions can also receive host services as function arguments of type `Service`, in the form `tcp://<host>:<port>`. This enables client containers in Dagger Functions to communicate with services running on the host.
 
@@ -108,4 +150,111 @@ Host    User
 %       root
 localhost       mariadb.sys
 localhost       root
+```
+
+## Persist service state
+
+Dagger cancels each service run after a 10 second grace period to avoid frequent restarts. To avoid relying on the grace period, use a cache volume to persist a service's data, as in the following example:
+
+```go file=./snippets/services/persist-service-state/main.go
+```
+
+This function uses Redis's SAVE command to ensure data is synced. By default, Redis flushes data to disk periodically.
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call redis-service
+```
+
+The result will be:
+
+```shell
+abc
+```
+
+## Start and stop services
+
+Services are designed to be expressed as a Directed Acyclic Graph (DAG) with explicit bindings allowing services to be started lazily, just like every other DAG node. But sometimes, you may need to explicitly manage the lifecycle in a Dagger Function.
+
+Here's an example which demonstrates explicitly starting a Docker daemon for use in a test suite:
+
+```go file=./snippets/services/start-stop-services/main.go
+```
+
+## Example: MariaDB database service for application tests
+
+The following example demonstrates how services can be used in Dagger Functions, by creating a Dagger Function for application unit/integration testing against a bound MariaDB database service.
+
+The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://phpunit.de/).
+
+```go file=./snippets/services/test-against-db-service/main.go
+```
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call test
+```
+
+The result will be:
+
+```shell
+PHPUnit 9.6.17 by Sebastian Bergmann and contributors.
+Runtime:       PHP 8.2.5
+Configuration: /opt/drupal/web/core/phpunit.xml.dist
+Testing
+.....................S                                            22 / 22 (100%)
+Time: 00:15.806, Memory: 315.00 MB
+There was 1 skipped test:
+
+1) Drupal\Tests\pgsql\Kernel\pgsql\KernelTestBaseTest::testSetUp
+
+This test only runs for the database driver 'pgsql'. Current database driver is 'mysql'.
+/opt/drupal/web/core/tests/Drupal/KernelTests/Core/Database/DriverSpecificKernelTestBase.php:44
+/opt/drupal/vendor/phpunit/phpunit/src/Framework/TestResult.php:728
+
+OK, but incomplete, skipped, or risky tests!
+Tests: 22, Assertions: 72, Skipped: 1.
+```
+
+## Reference: How service binding works in Dagger Functions
+
+If you're not interested in what's happening in the background, you can skip this section and just trust that services are running when they need to be. If you're interested in the theory, keep reading.
+
+Consider this example:
+
+```go file=./snippets/services/service-lifecycle-1/main.go
+```
+
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redisSrv`.
+1. Dagger starts the `redisSrv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redisSrv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
+:::note
+Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
+:::
+
+Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.
+
+Content-addressed services are very convenient. You don't have to come up with names and maintain instances of services; just use them by value. You also don't have to manage the state of the service; you can just trust that it will be running when needed and stopped when not.
+
+:::tip
+If you need multiple instances of a service, just attach something unique to each one, such as an instance ID.
+:::
+
+Here's a more detailed client-server example of running commands against a Redis service:
+
+```go file=./snippets/services/service-lifecycle-2/main.go
+```
+
+This example relies on the 10-second grace period, which you should try to avoid. Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
+
+It would be better to chain both commands together, which ensures that the service stays running for both.
+
+```go file=./snippets/services/service-lifecycle-3/main.go
 ```
