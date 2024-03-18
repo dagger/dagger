@@ -164,7 +164,7 @@ func TestDaggerRun(t *testing.T) {
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
 	// verify we got some progress output
-	require.Contains(t, stderr, "resolve image config for")
+	require.Contains(t, stderr, "Container.from")
 }
 
 func TestClientSendsLabelsInTelemetry(t *testing.T) {
