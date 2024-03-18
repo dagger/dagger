@@ -17,11 +17,6 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
-	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -33,9 +28,16 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/vektah/gqlparser/v2/ast"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/tracing"
 )
 
 var ErrContainerNoExec = errors.New("no command has been executed")
@@ -1511,7 +1513,7 @@ func (container *Container) AsTarball(
 
 func (container *Container) Import(
 	ctx context.Context,
-	source *File,
+	file *File,
 	tag string,
 ) (*Container, error) {
 	bk := container.Query.Buildkit
@@ -1521,8 +1523,11 @@ func (container *Container) Import(
 	container = container.Clone()
 
 	var release func(context.Context) error
-	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
-		src, err := source.Open(ctx)
+	loadManifest := func(innerCtx context.Context) (_ *specs.Descriptor, rerr error) {
+		innerCtx, span := Tracer().Start(innerCtx, "streaming image archive")
+		defer tracing.End(span, func() error { return rerr })
+
+		src, err := file.Open(innerCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -1537,12 +1542,21 @@ func (container *Container) Import(
 
 		stream := archive.NewImageImportStream(src, "")
 
-		desc, err := stream.Import(ctx, store)
+		indexDesc, err := stream.Import(innerCtx, store)
 		if err != nil {
 			return nil, fmt.Errorf("image archive import: %w", err)
 		}
 
-		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
+		manifestDesc, err := resolveIndex(innerCtx, store, indexDesc, container.Platform.Spec(), tag)
+		if err != nil {
+			return nil, fmt.Errorf("resolve index: %w", err)
+		}
+
+		span.AddEvent("imported image", trace.WithAttributes(
+			semconv.OciManifestDigest(manifestDesc.Digest.String())),
+		)
+
+		return manifestDesc, nil
 	}
 
 	manifestDesc, err := loadManifest(ctx)
