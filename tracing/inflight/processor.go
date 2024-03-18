@@ -2,7 +2,6 @@ package inflight
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 
 	"go.opentelemetry.io/otel"
@@ -41,8 +40,6 @@ func NewSimpleSpanProcessor(exporter trace.SpanExporter) *simpleSpanProcessor {
 func (ssp *simpleSpanProcessor) OnStart(ctx context.Context, s trace.ReadWriteSpan) {
 	ssp.exporterMu.Lock()
 	defer ssp.exporterMu.Unlock()
-
-	slog.Warn("OnStart", "span", s.SpanContext().SpanID(), "parent", s.Parent().SpanID())
 
 	if ssp.exporter != nil && s.SpanContext().TraceFlags().IsSampled() {
 		if err := ssp.exporter.ExportSpans(context.Background(), []trace.ReadOnlySpan{s}); err != nil {
