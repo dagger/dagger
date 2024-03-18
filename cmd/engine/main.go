@@ -28,6 +28,7 @@ import (
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
 	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/tracing"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
@@ -236,6 +237,7 @@ func main() { //nolint:gocyclo
 				semconv.ServiceVersionKey.String(engine.Version),
 			),
 			LiveTraceExporters: []trace.SpanExporter{pubsub},
+			LiveLogExporters:   []sdklog.LogExporter{pubsub},
 		})
 
 		bklog.G(ctx).Debug("loading engine config file")
