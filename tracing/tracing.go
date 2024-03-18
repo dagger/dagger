@@ -29,6 +29,49 @@ import (
 	"github.com/dagger/dagger/tracing/inflight"
 )
 
+func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.LogExporter, bool) {
+	cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN")
+	if cloudToken == "" {
+		return nil, nil, false
+	}
+
+	cloudURL := os.Getenv("DAGGER_CLOUD_URL")
+	if cloudURL == "" {
+		cloudURL = "https://api.dagger.cloud"
+	}
+
+	cloudEndpoint, err := url.Parse(cloudURL)
+	if err != nil {
+		slog.Warn("bad cloud URL", "error", err)
+		return nil, nil, false
+	}
+
+	tracesURL := cloudEndpoint.JoinPath("v1", "traces")
+	logsURL := cloudEndpoint.JoinPath("v1", "logs")
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + cloudToken,
+	}
+
+	spans, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithEndpointURL(tracesURL.String()),
+		otlptracehttp.WithHeaders(headers))
+	if err != nil {
+		slog.Warn("failed to configure cloud tracing", "error", err)
+		return nil, nil, false
+	}
+
+	cfg := otlploghttp.Config{
+		Endpoint: logsURL.Host,
+		URLPath:  logsURL.Path,
+		Insecure: logsURL.Scheme != "https",
+		Headers:  headers,
+	}
+	logs := otlploghttp.NewClient(cfg)
+
+	return spans, logs, true
+}
+
 func OtelConfigured() bool {
 	for _, env := range os.Environ() {
 		if strings.HasPrefix(env, "OTEL_") {
@@ -307,6 +350,10 @@ func Init(ctx context.Context, cfg Config) context.Context {
 	}
 
 	if cfg.Detect {
+		if spans, logs, ok := ConfiguredCloudExporters(ctx); ok {
+			cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, spans)
+			cfg.LiveLogExporters = append(cfg.LiveLogExporters, logs)
+		}
 		if exp, ok := ConfiguredSpanExporter(ctx); ok {
 			if ForceLiveTrace {
 				cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, exp)

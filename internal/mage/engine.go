@@ -340,8 +340,8 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 	runArgs = append(runArgs, []string{
 		"-e", util.CacheConfigEnvName,
-		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
-		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
+		"-e", "DAGGER_CLOUD_TOKEN",
+		"-e", "DAGGER_CLOUD_URL",
 		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
 		"-p", "6060:6060",
