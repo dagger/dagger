@@ -1206,6 +1206,10 @@ func (r *modFunctionArg) FlagName() string {
 	return r.flagName
 }
 
+func (r *modFunctionArg) IsRequired() bool {
+	return !r.TypeDef.Optional && r.DefaultValue == ""
+}
+
 func getDefaultValue[T any](r *modFunctionArg) (T, error) {
 	var val T
 	err := json.Unmarshal([]byte(r.DefaultValue), &val)
