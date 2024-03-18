@@ -2,46 +2,47 @@ package main
 
 import (
 	"context"
-	"main/internal/dagger"
-	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 type MyModule struct{}
 
-func (m *MyModule) TestFoo(ctx context.Context, t *testing.T) {
-	dockerd, err := dag.Container().From("docker:dind").AsService().Start(ctx)
-	require.NoError(t, err)
+func (m *MyModule) RedisService(ctx context.Context) (string, error) {
+	// create Redis service container
+	redisSrv := dag.Container().
+		From("redis").
+		WithExposedPort(6379).
+		AsService()
 
-	// dockerd is now running, and will stay running
-	// so you don't have to worry about it restarting after a 10 second gap
+	// start redis ahead of time so it stays up for the duration of the test
+	redisSrv, err := redisSrv.Start(ctx)
+	if err != nil {
+		return "", err
+	}
 
-	// then in all of your tests, continue to use an explicit binding:
-	_, err = dag.Container().From("golang").
-		WithServiceBinding("docker", dockerd).
-		WithEnvVariable("DOCKER_HOST", "tcp://docker:2375").
-		WithExec([]string{"go", "test", "./..."}).
-		Sync(ctx)
-	require.NoError(t, err)
+	// stop the service when we're done
+	defer redisSrv.Stop(ctx)
 
-	// or, if you prefer
-	// trust `Endpoint()` to construct the address
-	//
-	// note that this has the exact same non-cache-busting semantics as WithServiceBinding,
-	// since hostnames are stable and content-addressed
-	//
-	// this could be part of the global test suite setup.
-	dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{
-		Scheme: "tcp",
-	})
-	require.NoError(t, err)
+	// create Redis client container
+	redisCLI := dag.Container().
+		From("redis").
+		WithServiceBinding("redis-srv", redisSrv).
+		WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
 
-	_, err = dag.Container().From("golang").
-		WithEnvVariable("DOCKER_HOST", dockerHost).
-		WithExec([]string{"go", "test", "./..."}).
-		Sync(ctx)
-	require.NoError(t, err)
+	// set value
+	setter, err := redisCLI.
+		WithExec([]string{"set", "foo", "abc"}).
+		Stdout(ctx)
+	if err != nil {
+		return "", err
+	}
 
-	// Service.Stop() is available to explicitly stop the service if needed
+	// get value
+	getter, err := redisCLI.
+		WithExec([]string{"get", "foo"}).
+		Stdout(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return setter + getter, nil
 }
