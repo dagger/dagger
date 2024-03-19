@@ -148,7 +148,9 @@ func (ps *PubSub) SpanSubscribers(session trace.TraceID) []sdktrace.SpanExporter
 
 func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, exp sdklog.LogExporter) error {
 	slog.Debug("subscribing to logs", "trace", traceID.String())
+	ps.tracesL.Lock()
 	trace := ps.initTrace(traceID)
+	ps.tracesL.Lock()
 	ps.logSubsL.Lock()
 	ps.logSubs[traceID] = append(ps.logSubs[traceID], exp)
 	ps.logSubsL.Unlock()
