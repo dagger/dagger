@@ -30,6 +30,7 @@ func NewPubSub() *PubSub {
 }
 
 func (ps *PubSub) Drain(id trace.TraceID, immediate bool) {
+	slog.Debug("draining", "trace", id.String(), "immediate", immediate)
 	ps.tracesL.Lock()
 	trace, ok := ps.traces[id]
 	if ok {
@@ -38,6 +39,8 @@ func (ps *PubSub) Drain(id trace.TraceID, immediate bool) {
 		trace.drainImmediately = immediate
 		trace.cond.Broadcast()
 		trace.cond.L.Unlock()
+	} else {
+		slog.Warn("draining nonexistant trace", "trace", id.String(), "immediate", immediate)
 	}
 	ps.tracesL.Unlock()
 }
@@ -49,7 +52,7 @@ func (ps *PubSub) initTrace(id trace.TraceID) *activeTrace {
 	t := &activeTrace{
 		id:          id,
 		cond:        sync.NewCond(&sync.Mutex{}),
-		activeSpans: map[trace.SpanID]struct{}{},
+		activeSpans: map[trace.SpanID]sdktrace.ReadOnlySpan{},
 	}
 	ps.traces[id] = t
 	return t
@@ -96,7 +99,7 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 		activeTrace := ps.initTrace(traceID)
 
 		if s.EndTime().Before(s.StartTime()) {
-			activeTrace.startSpan(spanID)
+			activeTrace.startSpan(spanID, s)
 		} else {
 			activeTrace.finishSpan(spanID)
 		}
@@ -150,7 +153,7 @@ func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, ex
 	slog.Debug("subscribing to logs", "trace", traceID.String())
 	ps.tracesL.Lock()
 	trace := ps.initTrace(traceID)
-	ps.tracesL.Lock()
+	ps.tracesL.Unlock()
 	ps.logSubsL.Lock()
 	ps.logSubs[traceID] = append(ps.logSubs[traceID], exp)
 	ps.logSubsL.Unlock()
@@ -255,15 +258,15 @@ func (ps *PubSub) unsubLogs(traceID trace.TraceID, exp sdklog.LogExporter) {
 // entire trace.
 type activeTrace struct {
 	id               trace.TraceID
-	activeSpans      map[trace.SpanID]struct{}
+	activeSpans      map[trace.SpanID]sdktrace.ReadOnlySpan
 	draining         bool
 	drainImmediately bool
 	cond             *sync.Cond
 }
 
-func (trace *activeTrace) startSpan(id trace.SpanID) {
+func (trace *activeTrace) startSpan(id trace.SpanID, span sdktrace.ReadOnlySpan) {
 	trace.cond.L.Lock()
-	trace.activeSpans[id] = struct{}{}
+	trace.activeSpans[id] = span
 	trace.cond.L.Unlock()
 }
 
@@ -299,6 +302,9 @@ func (trace *activeTrace) wait(ctx context.Context) {
 		}
 		if trace.draining {
 			slog.Debug("waiting for spans", "activeSpans", len(trace.activeSpans))
+			for id, span := range trace.activeSpans {
+				slog.Debug("waiting for span", "id", id, "span", span.Name())
+			}
 		}
 		trace.cond.Wait()
 	}
