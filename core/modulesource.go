@@ -58,7 +58,6 @@ type ModuleSource struct {
 	WithDependencies  []dagql.Instance[*ModuleDependency]
 	WithSDK           string
 	WithSourceSubpath string
-	WithInclude       []string
 	WithViews         []*ModuleSourceView
 }
 
@@ -91,11 +90,6 @@ func (src ModuleSource) Clone() *ModuleSource {
 	if src.WithDependencies != nil {
 		cp.WithDependencies = make([]dagql.Instance[*ModuleDependency], len(src.WithDependencies))
 		copy(cp.WithDependencies, src.WithDependencies)
-	}
-
-	if src.WithInclude != nil {
-		cp.WithInclude = make([]string, len(src.WithInclude))
-		copy(cp.WithInclude, src.WithInclude)
 	}
 
 	if src.WithViews != nil {
@@ -287,24 +281,6 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 	return &modCfg, true, nil
 }
 
-func (src *ModuleSource) Include(ctx context.Context) ([]string, error) {
-	includes := src.WithInclude
-	if includes == nil {
-		cfg, ok, err := src.ModuleConfig(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("module config: %w", err)
-		}
-		if !ok {
-			return nil, nil
-		}
-		includes = cfg.Include
-	}
-
-	slices.Sort(includes)
-	includes = slices.Compact(includes)
-	return includes, nil
-}
-
 func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {
 	existingViews := map[string]int{}
 	cfg, cfgExists, err := src.ModuleConfig(ctx)
@@ -328,10 +304,6 @@ func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error)
 		}
 	}
 
-	for _, view := range views {
-		slices.Sort(view.Patterns)
-		view.Patterns = slices.Compact(view.Patterns)
-	}
 	slices.SortFunc(views, func(a, b *ModuleSourceView) int {
 		return strings.Compare(a.Name, b.Name)
 	})

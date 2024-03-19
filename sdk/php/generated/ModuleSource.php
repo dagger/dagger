@@ -96,15 +96,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The global path filters used when loading the module source, if any.
-     */
-    public function include(): array
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('include');
-        return (array)$this->queryLeaf($leafQueryBuilder, 'include');
-    }
-
-    /**
      * The kind of source (e.g. local, git, etc.)
      */
     public function kind(): ModuleSourceKind
@@ -226,16 +217,6 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDependencies');
         $innerQueryBuilder->setArgument('dependencies', $dependencies);
-        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Update the module source with new global include filters.
-     */
-    public function withInclude(array $patterns): ModuleSource
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInclude');
-        $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

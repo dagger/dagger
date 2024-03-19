@@ -4401,11 +4401,6 @@ impl ModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The global path filters used when loading the module source, if any.
-    pub async fn include(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("include");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The kind of source (e.g. local, git, etc.)
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
@@ -4553,26 +4548,6 @@ impl ModuleSource {
     pub fn with_dependencies(&self, dependencies: Vec<ModuleDependencyId>) -> ModuleSource {
         let mut query = self.selection.select("withDependencies");
         query = query.arg("dependencies", dependencies);
-        return ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Update the module source with new global include filters.
-    ///
-    /// # Arguments
-    ///
-    /// * `patterns` - The patterns to set as the include filters.
-    pub fn with_include(&self, patterns: Vec<impl Into<String>>) -> ModuleSource {
-        let mut query = self.selection.select("withInclude");
-        query = query.arg(
-            "patterns",
-            patterns
-                .into_iter()
-                .map(|i| i.into())
-                .collect::<Vec<String>>(),
-        );
         return ModuleSource {
             proc: self.proc.clone(),
             selection: query,

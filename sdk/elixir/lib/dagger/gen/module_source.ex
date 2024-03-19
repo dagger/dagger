@@ -109,15 +109,6 @@ defmodule Dagger.ModuleSource do
   )
 
   (
-    @doc "The global path filters used when loading the module source, if any."
-    @spec include(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
-    def include(%__MODULE__{} = module_source) do
-      selection = select(module_source.selection, "include")
-      execute(selection, module_source.client)
-    end
-  )
-
-  (
     @doc "The kind of source (e.g. local, git, etc.)"
     @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
     def kind(%__MODULE__{} = module_source) do
@@ -259,16 +250,6 @@ defmodule Dagger.ModuleSource do
     def with_dependencies(%__MODULE__{} = module_source, dependencies) do
       selection = select(module_source.selection, "withDependencies")
       selection = arg(selection, "dependencies", dependencies)
-      %Dagger.ModuleSource{selection: selection, client: module_source.client}
-    end
-  )
-
-  (
-    @doc "Update the module source with new global include filters.\n\n## Required Arguments\n\n* `patterns` - The patterns to set as the include filters."
-    @spec with_include(t(), [Dagger.String.t()]) :: Dagger.ModuleSource.t()
-    def with_include(%__MODULE__{} = module_source, patterns) do
-      selection = select(module_source.selection, "withInclude")
-      selection = arg(selection, "patterns", patterns)
       %Dagger.ModuleSource{selection: selection, client: module_source.client}
     end
   )

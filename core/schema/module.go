@@ -144,13 +144,6 @@ func (s *moduleSchema) Install() {
 			Impure(`Queries live caller-specific data from their filesystem.`).
 			Doc(`The path to the module source's context directory on the caller's filesystem. Only valid for local sources.`),
 
-		dagql.Func("include", s.moduleSourceInclude).
-			Doc(`The global path filters used when loading the module source, if any.`),
-
-		dagql.Func("withInclude", s.moduleSourceWithInclude).
-			ArgDoc("patterns", `The patterns to set as the include filters.`).
-			Doc(`Update the module source with new global include filters.`),
-
 		dagql.Func("resolveDirectoryFromCaller", s.moduleSourceResolveDirectoryFromCaller).
 			Impure(`Queries live caller-specific data from their filesystem.`).
 			ArgDoc("path", `The path on the caller's filesystem to load.`).
@@ -948,16 +941,6 @@ func (s *moduleSchema) updateDaggerConfig(
 	}
 	if sourceRelSubpath != "." {
 		modCfg.Source = sourceRelSubpath
-	}
-
-	include, err := src.Self.Include(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get include: %w", err)
-	}
-	modCfg.Include = include
-	if len(include) == 0 {
-		// prefer nil over empty array
-		modCfg.Include = nil
 	}
 
 	views, err := src.Self.Views(ctx)

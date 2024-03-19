@@ -46,9 +46,8 @@ func TestModuleConfigs(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
 		require.Equal(t, "test", modCfg.Name)
 		require.Equal(t, "go", modCfg.SDK)
-		require.Equal(t, []string{"!blah", "foo"}, modCfg.Include)
-		//nolint:staticcheck // SA1019 deprecated
-		require.Empty(t, modCfg.Exclude)
+		require.Equal(t, []string{"foo"}, modCfg.Include)
+		require.Equal(t, []string{"blah"}, modCfg.Exclude)
 		require.Len(t, modCfg.Dependencies, 1)
 		require.Equal(t, "foo", modCfg.Dependencies[0].Source)
 		require.Equal(t, "dep", modCfg.Dependencies[0].Name)
@@ -1048,10 +1047,16 @@ func (m *Coolsdk) RequiredPaths() []string {
 				ctr = ctr.With(sdkSource(tc.sdk, tc.mainSource))
 			}
 
-			ctr = ctr.With(daggerExec("config", "include", "set",
-				"dagger/subdir/keepdir",
-				"!dagger/subdir/keepdir/rmdir",
-			)).WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory())
+			// TODO: use cli to configure include/exclude once supported
+			ctr = ctr.
+				With(configFile(".", &modules.ModuleConfig{
+					Name:    "test",
+					SDK:     tc.sdk,
+					Include: []string{"dagger/subdir/keepdir"},
+					Exclude: []string{"dagger/subdir/keepdir/rmdir"},
+					Source:  "dagger",
+				})).
+				WithDirectory("dagger/subdir/keepdir/rmdir", c.Directory())
 
 			// call should work even though dagger.json and main source files weren't
 			// explicitly included
@@ -1422,11 +1427,11 @@ func (m *Test) Fn(dir *Directory) *Directory {
 	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "no-subdir-txt-view", "**/*.txt", "!subdir"))
 	out, err = ctr.Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "!subdir\n**/*.txt")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\n!subdir")
 
 	out, err = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "!subdir\n**/*.txt")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\n!subdir")
 
 	out, err = ctr.With(daggerExec("config", "views", "--json")).Stdout(ctx)
 	require.NoError(t, err)
@@ -1437,7 +1442,7 @@ func (m *Test) Fn(dir *Directory) *Directory {
 			"nice-view":          []any{"nice-file", "subdir/other-nice-file"},
 			"mean-view":          []any{"mean-file", "subdir/other-mean-file"},
 			"txt-view":           []any{"**/*.txt"},
-			"no-subdir-txt-view": []any{"!subdir", "**/*.txt"},
+			"no-subdir-txt-view": []any{"**/*.txt", "!subdir"},
 		}, actual)
 	}
 
@@ -1461,11 +1466,11 @@ func (m *Test) Fn(dir *Directory) *Directory {
 	ctr = ctr.With(daggerExec("config", "views", "add", "-n", "txt-view", "nice-file", "!subdir"))
 	out, err = ctr.Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "!subdir\n**/*.txt\nnice-file")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
 
 	out, err = ctr.With(daggerExec("config", "views", "-n", "txt-view")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, strings.TrimSpace(out), "!subdir\n**/*.txt\nnice-file")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
 
 	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
 	require.NoError(t, err)
@@ -1501,7 +1506,7 @@ func (m *Test) Fn(dir *Directory) *Directory {
 	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
-	require.Contains(t, strings.TrimSpace(out), "!subdir\n**/*.txt\nnice-file")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
 	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
 
 	// remove all views

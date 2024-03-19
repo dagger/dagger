@@ -1828,9 +1828,6 @@ type ModuleSource {
   """A unique identifier for this ModuleSource."""
   id: ModuleSourceID!
 
-  """The global path filters used when loading the module source, if any."""
-  include: [String!]!
-
   """The kind of source (e.g. local, git, etc.)"""
   kind: ModuleSourceKind!
 
@@ -1908,12 +1905,6 @@ type ModuleSource {
   withDependencies(
     """The dependencies to append."""
     dependencies: [ModuleDependencyID!]!
-  ): ModuleSource!
-
-  """Update the module source with new global include filters."""
-  withInclude(
-    """The patterns to set as the include filters."""
-    patterns: [String!]!
   ): ModuleSource!
 
   """Update the module source with a new name."""

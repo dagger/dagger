@@ -4665,16 +4665,6 @@ func (r *ModuleSource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// The global path filters used when loading the module source, if any.
-func (r *ModuleSource) Include(ctx context.Context) ([]string, error) {
-	q := r.query.Select("include")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // The kind of source (e.g. local, git, etc.)
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
@@ -4853,16 +4843,6 @@ func (r *ModuleSource) WithContextDirectory(dir *Directory) *ModuleSource {
 func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *ModuleSource {
 	q := r.query.Select("withDependencies")
 	q = q.Arg("dependencies", dependencies)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Update the module source with new global include filters.
-func (r *ModuleSource) WithInclude(patterns []string) *ModuleSource {
-	q := r.query.Select("withInclude")
-	q = q.Arg("patterns", patterns)
 
 	return &ModuleSource{
 		query: q,

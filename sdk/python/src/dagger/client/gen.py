@@ -4814,28 +4814,6 @@ class ModuleSource(Type):
         return await _ctx.execute(ModuleSourceID)
 
     @typecheck
-    async def include(self) -> list[str]:
-        """The global path filters used when loading the module source, if any.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("include", _args)
-        return await _ctx.execute(list[str])
-
-    @typecheck
     async def kind(self) -> ModuleSourceKind:
         """The kind of source (e.g. local, git, etc.)
 
@@ -5092,21 +5070,6 @@ class ModuleSource(Type):
             Arg("dependencies", dependencies),
         ]
         _ctx = self._select("withDependencies", _args)
-        return ModuleSource(_ctx)
-
-    @typecheck
-    def with_include(self, patterns: Sequence[str]) -> "ModuleSource":
-        """Update the module source with new global include filters.
-
-        Parameters
-        ----------
-        patterns:
-            The patterns to set as the include filters.
-        """
-        _args = [
-            Arg("patterns", patterns),
-        ]
-        _ctx = self._select("withInclude", _args)
         return ModuleSource(_ctx)
 
     @typecheck

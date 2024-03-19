@@ -625,6 +625,7 @@ func (s *moduleSchema) resolveContextPathFromCaller(
 	return contextAbsPath, sourceRootAbsPath, nil
 }
 
+//nolint:gocyclo // it's already been split up where it makes sense, more would just create indirection in reading it
 func (s *moduleSchema) moduleSourceResolveFromCaller(
 	ctx context.Context,
 	src *core.ModuleSource,
@@ -688,22 +689,31 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		}
 
 		// rebase user defined include/exclude relative to context
-		for _, path := range localDep.modCfg.Include {
-			isExclude := strings.HasPrefix(path, "!")
+		rebaseIncludeExclude := func(path string, set map[string]struct{}) error {
+			isNegation := strings.HasPrefix(path, "!")
 			path = strings.TrimPrefix(path, "!")
-
 			absPath := filepath.Join(sourceRootAbsPath, path)
 			relPath, err := filepath.Rel(contextAbsPath, absPath)
 			if err != nil {
-				return inst, fmt.Errorf("failed to get relative path of config include: %s", err)
+				return fmt.Errorf("failed to get relative path of config include/exclude: %s", err)
 			}
 			if !filepath.IsLocal(relPath) {
-				return inst, fmt.Errorf("local module dep source include path %q escapes context %q", relPath, contextAbsPath)
+				return fmt.Errorf("local module dep source include/exclude path %q escapes context %q", relPath, contextAbsPath)
 			}
-			if isExclude {
-				excludeSet[relPath] = struct{}{}
-			} else {
-				includeSet[relPath] = struct{}{}
+			if isNegation {
+				relPath = "!" + relPath
+			}
+			set[relPath] = struct{}{}
+			return nil
+		}
+		for _, path := range localDep.modCfg.Include {
+			if err := rebaseIncludeExclude(path, includeSet); err != nil {
+				return inst, err
+			}
+		}
+		for _, path := range localDep.modCfg.Exclude {
+			if err := rebaseIncludeExclude(path, excludeSet); err != nil {
+				return inst, err
 			}
 		}
 
@@ -850,19 +860,6 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 		)
 		if err != nil {
 			return inst, fmt.Errorf("failed to set dependency: %w", err)
-		}
-	}
-	if src.WithInclude != nil {
-		err = s.dag.Select(ctx, inst, &inst,
-			dagql.Selector{
-				Field: "withInclude",
-				Args: []dagql.NamedInput{
-					{Name: "include", Value: asArrayInput(src.WithInclude, dagql.NewString)},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set include: %w", err)
 		}
 	}
 	if src.WithViews != nil {
@@ -1123,37 +1120,6 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		return inst, fmt.Errorf("failed to import local directory module arg: %w", err)
 	}
 	return core.LoadBlob(ctx, s.dag, desc)
-}
-
-func (s *moduleSchema) moduleSourceInclude(
-	ctx context.Context,
-	src *core.ModuleSource,
-	args struct{},
-) ([]string, error) {
-	return src.Include(ctx)
-}
-
-func (s *moduleSchema) moduleSourceWithInclude(
-	ctx context.Context,
-	src *core.ModuleSource,
-	args struct {
-		Patterns []string
-	},
-) (*core.ModuleSource, error) {
-	src = src.Clone()
-	if args.Patterns == nil {
-		args.Patterns = []string{}
-	}
-
-	for _, p := range args.Patterns {
-		p = strings.TrimPrefix(p, "!")
-		if filepath.IsAbs(p) {
-			return nil, fmt.Errorf("include path %q cannot be absolute", p)
-		}
-	}
-
-	src.WithInclude = args.Patterns
-	return src, nil
 }
 
 func (s *moduleSchema) moduleSourceViews(

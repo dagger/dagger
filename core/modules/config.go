@@ -19,9 +19,6 @@ type ModuleConfig struct {
 	// Paths to explicitly include from the module, relative to the configuration file.
 	Include []string `json:"include,omitempty"`
 
-	// Deprecated: Use Include patterns with a leading ! to exclude files. Any setting here
-	// will be automatically converted to an Include pattern.
-	//
 	// Paths to explicitly exclude from the module, relative to the configuration file.
 	Exclude []string `json:"exclude,omitempty"`
 
@@ -57,14 +54,6 @@ func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	// For those cases, the Source was implicitly ".", so set it to that.
 	if tmp.SDK != "" && tmp.Source == "" {
 		tmp.Source = "."
-	}
-
-	// Convert Exclude to Include patterns with a leading !
-	if len(tmp.Exclude) > 0 {
-		for _, exclude := range tmp.Exclude {
-			tmp.Include = append(tmp.Include, "!"+exclude)
-		}
-		tmp.Exclude = nil
 	}
 
 	*modCfg = ModuleConfig(tmp)

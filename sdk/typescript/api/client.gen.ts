@@ -6025,23 +6025,6 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The global path filters used when loading the module source, if any.
-   */
-  include = async (): Promise<string[]> => {
-    const response: Awaited<string[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "include",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
    * The kind of source (e.g. local, git, etc.)
    */
   kind = async (): Promise<ModuleSourceKind> => {
@@ -6303,23 +6286,6 @@ export class ModuleSource extends BaseClient {
         {
           operation: "withDependencies",
           args: { dependencies },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Update the module source with new global include filters.
-   * @param patterns The patterns to set as the include filters.
-   */
-  withInclude = (patterns: string[]): ModuleSource => {
-    return new ModuleSource({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withInclude",
-          args: { patterns },
         },
       ],
       ctx: this._ctx,
