@@ -116,8 +116,6 @@ type Client struct {
 	nestedSessionPort int
 
 	labels telemetry.Labels
-
-	finishRun func(error)
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
