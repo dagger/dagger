@@ -12,9 +12,12 @@ class MyModule {
       .from("mariadb:10.11.2")
       .withServiceBinding("db", svc)
       .withExec([
-        "/bin/sh",
-        "-c",
-        "/usr/bin/mysql --user=root --password=secret --host=db -e 'SELECT Host, User FROM mysql.user'",
+        "/usr/bin/mysql",
+        "--user=root",
+        "--password=secret",
+        "--host=db",
+        "-e",
+        "SELECT Host, User FROM mysql.user"
       ])
       .stdout()
   }
