@@ -13,9 +13,12 @@ class MyModule:
             .with_service_binding("db", svc)
             .with_exec(
                 [
-                    "/bin/sh",
-                    "-c",
-                    "/usr/bin/mysql --user=root --password=secret --host=db -e 'SELECT Host, User FROM mysql.user'",
+                    "/usr/bin/mysql",
+                    "--user=root",
+                    "--password=secret",
+                    "--host=db",
+                    "-e",
+                    "SELECT Host, User FROM mysql.user",
                 ]
             )
             .stdout()
