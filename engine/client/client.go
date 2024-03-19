@@ -51,7 +51,6 @@ import (
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/tracing"
 )
 
 type Params struct {
@@ -182,16 +181,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 
 	connectSpanOpts := []trace.SpanStartOption{
-		tracing.Encapsulate(),
+		telemetry.Encapsulate(),
 	}
 
 	if c.Params.ModuleCallerDigest != "" {
-		connectSpanOpts = append(connectSpanOpts, tracing.Internal())
+		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
 	}
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
 	connectCtx, span := Tracer().Start(ctx, "connect", connectSpanOpts...)
-	defer tracing.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error { return rerr })
 
 	if err := c.startEngine(connectCtx); err != nil {
 		return nil, nil, fmt.Errorf("start engine: %w", err)
@@ -301,9 +300,9 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
-	defer tracing.End(sessionSpan, func() error { return rerr })
+	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, InstrumentationLibrary)
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
 	hostname, err := os.Hostname()
 	if err != nil {

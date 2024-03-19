@@ -9,7 +9,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	bkclient "github.com/moby/buildkit/client"
 	"go.opentelemetry.io/otel"
 )
@@ -29,7 +29,7 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.C
 	}))
 
 	ctx, span := Tracer().Start(ctx, "starting engine")
-	defer tracing.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error { return rerr })
 
 	c, err := bkclient.New(ctx, remote.String(), opts...)
 	if err != nil {

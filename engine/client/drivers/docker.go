@@ -20,7 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 )
 
 func init() {
@@ -59,7 +59,7 @@ const (
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
 func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
-	log := tracing.ContextLogger(ctx, slog.LevelWarn) // TODO
+	log := telemetry.ContextLogger(ctx, slog.LevelWarn) // TODO
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
@@ -198,8 +198,8 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 
 func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
-	defer tracing.End(span, func() error { return rerr })
-	_, stdout, stderr := tracing.WithStdioToOtel(ctx, "")
+	defer telemetry.End(span, func() error { return rerr })
+	_, stdout, stderr := telemetry.WithStdioToOtel(ctx, "")
 	outBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdout, outBuf)
 	cmd.Stdout = stderr

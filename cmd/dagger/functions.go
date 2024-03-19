@@ -11,7 +11,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
@@ -340,8 +340,8 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	ctx := c.Context()
 	dag := fc.c.Dagger()
 
-	ctx, span := Tracer().Start(ctx, "initialize", tracing.Encapsulate())
-	defer tracing.End(span, func() error { return rerr })
+	ctx, span := Tracer().Start(ctx, "initialize", telemetry.Encapsulate())
+	defer telemetry.End(span, func() error { return rerr })
 
 	modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
 	if err != nil {

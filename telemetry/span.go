@@ -1,4 +1,4 @@
-package tracing
+package telemetry
 
 import (
 	"go.opentelemetry.io/otel/attribute"
@@ -23,7 +23,7 @@ func Internal() trace.SpanStartOption {
 // It is optimized for use as a defer one-liner with a function that has a
 // named error return value, conventionally `rerr`.
 //
-//	defer tracing.End(span, func() error { return rerr })
+//	defer telemetry.End(span, func() error { return rerr })
 func End(span trace.Span, fn func() error) {
 	if err := fn(); err != nil {
 		span.RecordError(err)

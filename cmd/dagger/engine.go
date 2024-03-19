@@ -6,7 +6,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/mattn/go-isatty"
 )
 
@@ -59,21 +59,21 @@ func withEngine(
 	params.EngineTrace = Frontend
 	params.EngineLogs = Frontend
 
-	if exp, ok := tracing.ConfiguredSpanExporter(ctx); ok {
-		if !tracing.ForceLiveTrace {
-			exp = tracing.FilterLiveSpansExporter{
+	if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
+		if !telemetry.ForceLiveTrace {
+			exp = telemetry.FilterLiveSpansExporter{
 				// SpanProcessor: processor,
 				SpanExporter: exp,
 			}
 		}
-		params.EngineTrace = tracing.MultiSpanExporter{
+		params.EngineTrace = telemetry.MultiSpanExporter{
 			params.EngineTrace,
 			exp,
 		}
 	}
 
-	if exp, ok := tracing.ConfiguredLogExporter(ctx); ok {
-		params.EngineLogs = tracing.MultiLogExporter{
+	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
+		params.EngineLogs = telemetry.MultiLogExporter{
 			params.EngineLogs,
 			exp,
 		}

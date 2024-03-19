@@ -1,4 +1,4 @@
-package tracing
+package telemetry
 
 import (
 	"context"
@@ -23,10 +23,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
+	"github.com/dagger/dagger/telemetry/inflight"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploggrpc"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploghttp"
-	"github.com/dagger/dagger/tracing/inflight"
 )
 
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.LogExporter, bool) {

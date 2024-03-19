@@ -18,7 +18,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 )
 
 // File is a content-addressed file.
@@ -262,7 +262,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 	}
 
 	ctx, vtx := Tracer().Start(ctx, fmt.Sprintf("export file %s to host %s", file.File, dest))
-	defer tracing.End(vtx, func() error { return rerr })
+	defer telemetry.End(vtx, func() error { return rerr })
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {

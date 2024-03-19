@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -28,7 +28,7 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 }
 
 func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
-	log := tracing.GlobalLogger(s.rootCtx)
+	log := telemetry.GlobalLogger(s.rootCtx)
 
 	req, err := srv.Recv()
 	if err != nil {

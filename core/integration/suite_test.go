@@ -18,7 +18,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -26,9 +26,9 @@ import (
 )
 
 func init() {
-	tracing.Init(context.Background(), tracing.Config{
+	telemetry.Init(context.Background(), telemetry.Config{
 		Detect:   true,
-		Resource: tracing.FallbackResource(),
+		Resource: telemetry.FallbackResource(),
 	})
 }
 

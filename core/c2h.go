@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -76,8 +76,8 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	}
 
 	ctx, span := Tracer().Start(ctx, strings.Join(args, " "))
-	defer tracing.End(span, func() error { return rerr })
-	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, InstrumentationLibrary)
+	defer telemetry.End(span, func() error { return rerr })
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
 	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
 		Hostname: d.tunnelServiceHost,
@@ -99,7 +99,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 	proc, err := container.Start(ctx, bkgw.StartRequest{
 		Args:   args,
-		Env:    append(tracing.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
+		Env:    append(telemetry.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
 		Stdout: nopCloser{stdout},
 		Stderr: nopCloser{stderr},
 	})

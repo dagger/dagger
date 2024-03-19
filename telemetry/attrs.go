@@ -1,4 +1,4 @@
-package tracing
+package telemetry
 
 const (
 	DagDigestAttr = "dagger.io/dag.digest"

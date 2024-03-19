@@ -1,4 +1,4 @@
-package tracing
+package telemetry
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func PrettyLogger(dest io.Writer, level slog.Level) *slog.Logger {
 	slogOpts := &tint.Options{
 		TimeFormat: time.TimeOnly,
 		NoColor:    false,
-		Level:      level, // TODO
+		Level:      level,
 	}
 	return slog.New(tint.NewHandler(dest, slogOpts))
 }
@@ -43,7 +43,7 @@ func GlobalLogger(ctx context.Context) *slog.Logger {
 		Logger: Logger(GlobalLogs),
 		Stream: 2,
 	}
-	return PrettyLogger(logW, slog.LevelDebug) // TODO
+	return PrettyLogger(logW, slog.LevelDebug)
 }
 
 func WithStdioToOtel(ctx context.Context, name string) (context.Context, io.Writer, io.Writer) {

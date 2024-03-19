@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/mitchellh/go-spdx"
 )
 
@@ -61,7 +61,7 @@ var licenseFiles = []string{
 }
 
 func findOrCreateLicense(ctx context.Context, dir string) error {
-	log := tracing.ContextLogger(ctx, slog.LevelWarn) // TODO
+	log := telemetry.ContextLogger(ctx, slog.LevelWarn)
 
 	id := licenseID
 	if id == "" {

@@ -21,7 +21,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 )
 
 // Directory is a content-addressed directory.
@@ -725,7 +725,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string) (rerr error) 
 	}
 
 	ctx, span := Tracer().Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
-	defer tracing.End(span, func() error { return rerr })
+	defer telemetry.End(span, func() error { return rerr })
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {

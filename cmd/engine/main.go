@@ -29,7 +29,6 @@ import (
 	"github.com/dagger/dagger/network/netinst"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/tracing"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -229,7 +228,7 @@ func main() { //nolint:gocyclo
 
 		pubsub := telemetry.NewPubSub()
 
-		ctx = tracing.Init(ctx, tracing.Config{
+		ctx = telemetry.Init(ctx, telemetry.Config{
 			Detect: true,
 			Resource: resource.NewWithAttributes(
 				semconv.SchemaURL,
@@ -393,7 +392,7 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(_ *cli.Context) error {
-		tracing.Close()
+		telemetry.Close()
 		return nil
 	}
 

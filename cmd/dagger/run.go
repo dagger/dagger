@@ -13,7 +13,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -108,7 +108,7 @@ func run(ctx context.Context, args []string) error {
 		sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
 		env = append(env, "DAGGER_SESSION_PORT="+sessionPort)
 		env = append(env, "DAGGER_SESSION_TOKEN="+sessionToken)
-		env = append(env, tracing.PropagationEnv(ctx)...)
+		env = append(env, telemetry.PropagationEnv(ctx)...)
 
 		subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
 

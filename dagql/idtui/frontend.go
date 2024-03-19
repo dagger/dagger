@@ -22,8 +22,8 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/tracing"
 )
 
 var consoleSink = os.Stderr
@@ -99,7 +99,7 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
-	slog.SetDefault(tracing.PrettyLogger(fe.messagesW, level))
+	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, level))
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
@@ -250,7 +250,7 @@ func (fe *Frontend) renderPrimaryOutput() error {
 		}
 		var stream int
 		l.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == tracing.LogStreamAttr {
+			if attr.Key == telemetry.LogStreamAttr {
 				stream = int(attr.Value.AsInt64())
 				return false
 			}

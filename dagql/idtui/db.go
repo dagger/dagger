@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/tracing"
 )
 
 type DB struct {
@@ -169,7 +169,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 	attrs := span.Attributes()
 
 	var digest string
-	if digestAttr, ok := getAttr(attrs, tracing.DagDigestAttr); ok {
+	if digestAttr, ok := getAttr(attrs, telemetry.DagDigestAttr); ok {
 		digest = digestAttr.AsString()
 		spanData.Digest = digest
 
@@ -183,7 +183,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 	for _, attr := range attrs {
 		switch attr.Key {
-		case tracing.DagCallAttr:
+		case telemetry.DagCallAttr:
 			var call callpbv1.Call
 			if err := call.Decode(attr.Value.AsString()); err != nil {
 				slog.Warn("failed to decode id", "err", err)
@@ -210,25 +210,25 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 				db.Calls[digest] = &call
 			}
 
-		case tracing.LLBOpAttr:
+		case telemetry.LLBOpAttr:
 			// TODO
 
-		case tracing.CachedAttr:
+		case telemetry.CachedAttr:
 			spanData.Cached = attr.Value.AsBool()
 
-		case tracing.CanceledAttr:
+		case telemetry.CanceledAttr:
 			spanData.Canceled = attr.Value.AsBool()
 
-		case tracing.UIEncapsulateAttr:
+		case telemetry.UIEncapsulateAttr:
 			spanData.Encapsulate = attr.Value.AsBool()
 
-		case tracing.InternalAttr:
+		case telemetry.InternalAttr:
 			spanData.Internal = attr.Value.AsBool()
 
-		case tracing.DagInputsAttr:
+		case telemetry.DagInputsAttr:
 			spanData.Inputs = attr.Value.AsStringSlice()
 
-		case tracing.DagOutputAttr:
+		case telemetry.DagOutputAttr:
 			output := attr.Value.AsString()
 			if digest == "" {
 				slog.Warn("output attribute is set, but a digest is not?")
@@ -267,7 +267,7 @@ func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
 func (db *DB) maybeRecordTask(span sdktrace.ReadOnlySpan) {
 	attrs := span.Attributes()
 
-	if _, isTask := getAttr(attrs, tracing.TaskParentAttr); !isTask {
+	if _, isTask := getAttr(attrs, telemetry.TaskParentAttr); !isTask {
 		return
 	}
 
@@ -282,10 +282,10 @@ func (db *DB) maybeRecordTask(span sdktrace.ReadOnlySpan) {
 		Completed: span.EndTime(),
 	}
 
-	if attr, ok := getAttr(attrs, tracing.ProgressCurrentAttr); ok {
+	if attr, ok := getAttr(attrs, telemetry.ProgressCurrentAttr); ok {
 		task.Current = attr.AsInt64()
 	}
-	if attr, ok := getAttr(attrs, tracing.ProgressTotalAttr); ok {
+	if attr, ok := getAttr(attrs, telemetry.ProgressTotalAttr); ok {
 		task.Total = attr.AsInt64()
 	}
 

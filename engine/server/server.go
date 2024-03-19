@@ -27,7 +27,6 @@ import (
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
-	"github.com/dagger/dagger/tracing"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -180,7 +179,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	// stash away the cache so we can share it between other servers
 	root.Cache = dag.Cache
 
-	dag.Around(tracing.AroundFunc)
+	dag.Around(telemetry.AroundFunc)
 
 	coreMod := &schema.CoreMod{Dag: dag}
 	root.DefaultDeps = core.NewModDeps(root, []core.Mod{coreMod})
@@ -365,7 +364,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		tracing.FlushLiveProcessors(ctx)
+		telemetry.FlushLiveProcessors(ctx)
 	}))
 
 	s.endpointMu.RLock()
@@ -460,7 +459,7 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 	// close the analytics recorder
 	errs = errors.Join(errs, s.analytics.Close())
 
-	tracing.FlushLiveProcessors(ctx)
+	telemetry.FlushLiveProcessors(ctx)
 
 	return errs
 }

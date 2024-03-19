@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/tracing"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/sirupsen/logrus"
@@ -210,13 +209,13 @@ func main() {
 
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		ctx = tracing.Init(ctx, tracing.Config{
+		ctx = telemetry.Init(ctx, telemetry.Config{
 			Detect:             true,
 			Resource:           resource.NewWithAttributes(semconv.SchemaURL, attrs...),
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend},
 			LiveLogExporters:   []sdklog.LogExporter{Frontend},
 		})
-		defer tracing.Close()
+		defer telemetry.Close()
 
 		parentCtx := trace.SpanContextFromContext(ctx)
 
@@ -226,7 +225,7 @@ func main() {
 		// that, since they will also be leaked in various other places (like the
 		// process tree). Use Secret arguments instead.
 		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
-		defer tracing.End(span, func() error { return rerr })
+		defer telemetry.End(span, func() error { return rerr })
 
 		// Set the span as the primary span for the frontend.
 		Frontend.SetPrimary(span.SpanContext().SpanID())
@@ -237,7 +236,7 @@ func main() {
 			"trace", span.SpanContext().TraceID(),
 		)
 
-		ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, "dagger")
+		ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, "dagger")
 		rootCmd.SetOut(stdout)
 		rootCmd.SetErr(stderr)
 

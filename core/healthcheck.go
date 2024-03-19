@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -42,8 +42,8 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 
 	// always show health checks
 	ctx, span := Tracer().Start(ctx, strings.Join(args, " "))
-	defer tracing.End(span, func() error { return rerr })
-	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, InstrumentationLibrary)
+	defer telemetry.End(span, func() error { return rerr })
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
 	scratchDef, err := llb.Scratch().Marshal(ctx)
 	if err != nil {
@@ -78,7 +78,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 
 	proc, err := container.Start(ctx, bkgw.StartRequest{
 		Args:   args,
-		Env:    append(tracing.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
+		Env:    append(telemetry.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
 		Stdout: nopCloser{stdout},
 		Stderr: nopCloser{stderr},
 	})

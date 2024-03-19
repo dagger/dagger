@@ -37,7 +37,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -186,9 +186,9 @@ func shim() (returnExitCode int) {
 
 	// Set up slog initially to log directly to stderr, in case something goes
 	// wrong with the logging setup.
-	slog.SetDefault(tracing.PrettyLogger(os.Stderr, slog.LevelWarn))
+	slog.SetDefault(telemetry.PrettyLogger(os.Stderr, slog.LevelWarn))
 
-	traceCfg := tracing.Config{
+	traceCfg := telemetry.Config{
 		Detect: false, // false, since we want "live" exporting
 		Resource: resource.NewWithAttributes(
 			semconv.SchemaURL,
@@ -196,17 +196,17 @@ func shim() (returnExitCode int) {
 			semconv.ServiceVersionKey.String(engine.Version),
 		),
 	}
-	if exp, ok := tracing.ConfiguredSpanExporter(ctx); ok {
+	if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
 		traceCfg.LiveTraceExporters = append(traceCfg.LiveTraceExporters, exp)
 	}
-	if exp, ok := tracing.ConfiguredLogExporter(ctx); ok {
+	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
 		traceCfg.LiveLogExporters = append(traceCfg.LiveLogExporters, exp)
 	}
 
-	ctx = tracing.Init(ctx, traceCfg)
-	defer tracing.Close()
+	ctx = telemetry.Init(ctx, traceCfg)
+	defer telemetry.Close()
 
-	ctx, stdoutOtel, stderrOtel := tracing.WithStdioToOtel(ctx, "dagger.io/shim")
+	ctx, stdoutOtel, stderrOtel := telemetry.WithStdioToOtel(ctx, "dagger.io/shim")
 
 	name := os.Args[1]
 	args := []string{}
@@ -282,7 +282,7 @@ func shim() (returnExitCode int) {
 
 		// Direct slog to the new stderr. This is only for dev time debugging, and
 		// runtime errors/warnings.
-		slog.SetDefault(tracing.PrettyLogger(errWriter, slog.LevelWarn))
+		slog.SetDefault(telemetry.PrettyLogger(errWriter, slog.LevelWarn))
 
 		if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 			cmd.Stdout = outWriter

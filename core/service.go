@@ -17,7 +17,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -250,12 +250,12 @@ func (svc *Service) startContainer(
 	}()
 
 	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
-	ctx, stdout, stderr := tracing.WithStdioToOtel(ctx, InstrumentationLibrary)
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. vtx.Done is called elsewhere.
-			tracing.End(span, func() error { return rerr })
+			telemetry.End(span, func() error { return rerr })
 		}
 	}()
 
@@ -337,7 +337,7 @@ func (svc *Service) startContainer(
 
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, proxyEnvList(execOp.Meta.ProxyEnv)...)
-	env = append(env, tracing.PropagationEnv(ctx)...)
+	env = append(env, telemetry.PropagationEnv(ctx)...)
 	if interactive {
 		env = append(env, ShimEnableTTYEnvVar+"=1")
 	}
