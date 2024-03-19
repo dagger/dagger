@@ -65,6 +65,12 @@
 
 [[redirects]]
   # redirect CI pages from user manual
+  from = "/user-guide/ci/734201-gitlab"
+  to = "/integrations/734201/gitlab"
+  status = 301
+
+[[redirects]]
+  # redirect CI pages from user manual
   from = "/user-guide/ci/592501-circleci"
   to = "/integrations/592501/circleci"
   status = 301
