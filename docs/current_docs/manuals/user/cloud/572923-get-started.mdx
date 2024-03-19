@@ -112,7 +112,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
-    [See an example of a sample GitHub Actions workflow file](../../integrations/642920-github-actions.mdx)
+    [See an example of a sample GitHub Actions workflow file](../../../integrations/642920-github-actions.mdx)
 
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
 
@@ -123,7 +123,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
 
-    [See an example of a sample GitLab workflow file](../../integrations/734201-gitlab.mdx)
+    [See an example of a sample GitLab workflow file](../../../integrations/734201-gitlab.mdx)
 
 1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger Engine container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
 
@@ -160,7 +160,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
       CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
     ```
 
-    [See an example of a sample CircleCI workflow](../../integrations/592501-circleci.mdx)
+    [See an example of a sample CircleCI workflow](../../../integrations/592501-circleci.mdx)
 
 
 </TabItem>
@@ -170,7 +170,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
 
-    [See an example of a sample Jenkins Pipeline](../../integrations/322019-jenkins.mdx)
+    [See an example of a sample Jenkins Pipeline](../../../integrations/322019-jenkins.mdx)
 
 :::note
 - This Jenkins Pipeline assumes that the the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
@@ -189,7 +189,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
 
-    [See an example of a sample Argo Workflows specification](../../integrations/533927-argo-workflows.mdx)
+    [See an example of a sample Argo Workflows specification](../../../integrations/533927-argo-workflows.mdx)
 
 </TabItem>
 </Tabs>
