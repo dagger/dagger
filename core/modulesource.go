@@ -237,7 +237,10 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 	if !ok {
 		return nil, nil
 	}
-	return modCfg.AutomaticGitignore, nil
+	if modCfg.Codegen == nil {
+		return nil, nil
+	}
+	return modCfg.Codegen.AutomaticGitignore, nil
 }
 
 func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], err error) {

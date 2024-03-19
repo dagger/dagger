@@ -607,7 +607,9 @@ func TestModuleGit(t *testing.T) {
 				modCfg := &modules.ModuleConfig{}
 				require.NoError(t, json.Unmarshal([]byte(modCfgContents), modCfg))
 				autoGitignore := false
-				modCfg.AutomaticGitignore = &autoGitignore
+				modCfg.Codegen = &modules.ModuleCodegenConfig{
+					AutomaticGitignore: &autoGitignore,
+				}
 				modCfgBytes, err := json.Marshal(modCfg)
 				require.NoError(t, err)
 
