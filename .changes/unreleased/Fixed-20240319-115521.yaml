@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix Directory.glob on directories with a sub path
+time: 2024-03-19T11:55:21.946593-01:00
+custom:
+  Author: helderco
+  PR: "6904"
