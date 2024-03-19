@@ -1313,3 +1313,217 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 		})
 	}
 }
+
+func TestModuleViews(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	ctr := goGitBase(t, c).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+
+type Test struct {}
+
+func (m *Test) Fn(dir *Directory) *Directory {
+	return dir
+}
+`}).WithDirectory("stuff", c.Directory().
+		WithNewFile("nice-file", "nice").
+		WithNewFile("mean-file", "mean").
+		WithNewFile("foo.txt", "foo").
+		WithDirectory("subdir", c.Directory().
+			WithNewFile("other-nice-file", "nice").
+			WithNewFile("other-mean-file", "mean").
+			WithNewFile("bar.txt", "bar"),
+		),
+	)
+
+	// setup nice-view
+	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "nice-view", "nice-file", "subdir/other-nice-file"))
+	out, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
+
+	out, err = ctr.With(daggerExec("config", "views", "-n", "nice-view")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
+
+	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "other-nice-file", strings.TrimSpace(out))
+
+	// setup mean-view
+	ctr = ctr.With(daggerExec("config", "views", "--json", "set", "-n", "mean-view", "mean-file", "subdir/other-mean-file"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	actual := []string{}
+	require.NoError(t, json.Unmarshal([]byte(out), &actual))
+	require.Equal(t, []string{"mean-file", "subdir/other-mean-file"}, actual)
+
+	out, err = ctr.With(daggerExec("config", "views", "-n", "mean-view")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "mean-file\nsubdir/other-mean-file")
+
+	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
+	require.Contains(t, strings.TrimSpace(out), "mean-file\nsubdir/other-mean-file")
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "other-mean-file", strings.TrimSpace(out))
+
+	// setup txt-view
+	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "txt-view", "**/*.txt"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
+
+	out, err = ctr.With(daggerExec("config", "views", "-n", "txt-view")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
+
+	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
+	require.Contains(t, strings.TrimSpace(out), "mean-file\nsubdir/other-mean-file")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar.txt", strings.TrimSpace(out))
+
+	// setup no-subdir-txt-view
+	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "no-subdir-txt-view", "**/*.txt", "!subdir"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\n!subdir")
+
+	out, err = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\n!subdir")
+
+	out, err = ctr.With(daggerExec("config", "views", "--json")).Stdout(ctx)
+	require.NoError(t, err)
+	{
+		actual := map[string]any{}
+		require.NoError(t, json.Unmarshal([]byte(out), &actual))
+		require.Equal(t, map[string]any{
+			"nice-view":          []any{"nice-file", "subdir/other-nice-file"},
+			"mean-view":          []any{"mean-file", "subdir/other-mean-file"},
+			"txt-view":           []any{"**/*.txt"},
+			"no-subdir-txt-view": []any{"**/*.txt", "!subdir"},
+		}, actual)
+	}
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:nice-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "nice-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:mean-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "mean-file\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo.txt", strings.TrimSpace(out))
+
+	// add to txt-view
+	ctr = ctr.With(daggerExec("config", "views", "add", "-n", "txt-view", "nice-file", "!subdir"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
+
+	out, err = ctr.With(daggerExec("config", "views", "-n", "txt-view")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:txt-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo.txt\nnice-file", strings.TrimSpace(out))
+
+	// remove from no-subdir-txt-view
+	ctr = ctr.With(daggerExec("config", "views", "remove", "-n", "no-subdir-txt-view", "!subdir"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
+
+	out, err = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo.txt\nsubdir", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("fn", "--dir", "stuff:no-subdir-txt-view", "directory", "--path=subdir", "entries")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar.txt", strings.TrimSpace(out))
+
+	// remove mean-view
+	ctr = ctr.With(daggerExec("config", "views", "-n", "mean-view", "remove"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), `View "mean-view" removed`)
+
+	_, err = ctr.With(daggerExec("config", "views", "-n", "mean-view")).Stdout(ctx)
+	require.ErrorContains(t, err, `view "mean-view" not found`)
+
+	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), "nice-file\nsubdir/other-nice-file")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt\nnice-file\n!subdir")
+	require.Contains(t, strings.TrimSpace(out), "**/*.txt")
+
+	// remove all views
+	ctr = ctr.With(daggerExec("config", "views", "-n", "nice-view", "remove"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), `View "nice-view" removed`)
+	ctr = ctr.With(daggerExec("config", "views", "-n", "txt-view", "remove"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), `View "txt-view" removed`)
+	ctr = ctr.With(daggerExec("config", "views", "-n", "no-subdir-txt-view", "remove"))
+	out, err = ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, strings.TrimSpace(out), `View "no-subdir-txt-view" removed`)
+
+	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "", strings.TrimSpace(out))
+}

@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
-	"github.com/juju/ansiterm/tabwriter"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -61,6 +60,7 @@ func init() {
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
+	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
@@ -76,69 +76,6 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
-
-	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	configCmd.AddGroup(moduleGroup)
-}
-
-var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Get or set the configuration of a Dagger module",
-	Long:  "Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.",
-	Example: strings.TrimSpace(`
-dagger config -m /path/to/some/dir
-dagger config -m github.com/dagger/hello-dagger
-`,
-	),
-	GroupID: moduleGroup.ID,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { vtx.Done(err) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, vtx)
-
-			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true, true)
-			if err != nil {
-				return fmt.Errorf("failed to load module: %w", err)
-			}
-			if !modConf.FullyInitialized() {
-				return fmt.Errorf("module must be fully initialized")
-			}
-			mod := modConf.Source.AsModule()
-
-			name, err := mod.Name(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module name: %w", err)
-			}
-			sdk, err := mod.SDK(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get module SDK: %w", err)
-			}
-
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Name:",
-				name,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"SDK:",
-				sdk,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Root Directory:",
-				modConf.LocalContextPath,
-			)
-			fmt.Fprintf(tw, "%s\t%s\n",
-				"Source Directory:",
-				modConf.LocalRootSourcePath,
-			)
-
-			return tw.Flush()
-		})
-	},
 }
 
 var moduleInitCmd = &cobra.Command{
