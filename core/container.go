@@ -29,15 +29,12 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/tracing"
 )
 
 var ErrContainerNoExec = errors.New("no command has been executed")
@@ -1513,7 +1510,7 @@ func (container *Container) AsTarball(
 
 func (container *Container) Import(
 	ctx context.Context,
-	file *File,
+	source *File,
 	tag string,
 ) (*Container, error) {
 	bk := container.Query.Buildkit
@@ -1523,11 +1520,8 @@ func (container *Container) Import(
 	container = container.Clone()
 
 	var release func(context.Context) error
-	loadManifest := func(innerCtx context.Context) (_ *specs.Descriptor, rerr error) {
-		innerCtx, span := Tracer().Start(innerCtx, "streaming image archive")
-		defer tracing.End(span, func() error { return rerr })
-
-		src, err := file.Open(innerCtx)
+	loadManifest := func(ctx context.Context) (*specs.Descriptor, error) {
+		src, err := source.Open(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -1542,21 +1536,12 @@ func (container *Container) Import(
 
 		stream := archive.NewImageImportStream(src, "")
 
-		indexDesc, err := stream.Import(innerCtx, store)
+		desc, err := stream.Import(ctx, store)
 		if err != nil {
 			return nil, fmt.Errorf("image archive import: %w", err)
 		}
 
-		manifestDesc, err := resolveIndex(innerCtx, store, indexDesc, container.Platform.Spec(), tag)
-		if err != nil {
-			return nil, fmt.Errorf("resolve index: %w", err)
-		}
-
-		span.AddEvent("imported image", trace.WithAttributes(
-			semconv.OciManifestDigest(manifestDesc.Digest.String())),
-		)
-
-		return manifestDesc, nil
+		return resolveIndex(ctx, store, desc, container.Platform.Spec(), tag)
 	}
 
 	manifestDesc, err := loadManifest(ctx)
