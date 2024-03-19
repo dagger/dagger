@@ -88,18 +88,6 @@ type PythonSdk struct {
 	Discovery *Discovery
 }
 
-func (m *PythonSdk) ModuleRuntime(
-	ctx context.Context,
-	modSource *ModuleSource,
-	introspectionJson string,
-) (*Container, error) {
-	ctr, err := m.Common(ctx, modSource, introspectionJson)
-	if err != nil {
-		return nil, err
-	}
-	return ctr.WithEntrypoint([]string{RuntimeExecutablePath}), nil
-}
-
 func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*GeneratedCode, error) {
 	ctr, err := m.Common(ctx, modSource, introspectionJson)
 	if err != nil {
@@ -112,6 +100,18 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 		WithVCSIgnoredPaths(
 			[]string{GenDir},
 		), nil
+}
+
+func (m *PythonSdk) ModuleRuntime(
+	ctx context.Context,
+	modSource *ModuleSource,
+	introspectionJson string,
+) (*Container, error) {
+	ctr, err := m.Common(ctx, modSource, introspectionJson)
+	if err != nil {
+		return nil, err
+	}
+	return ctr.WithEntrypoint([]string{RuntimeExecutablePath}), nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions.
@@ -140,7 +140,7 @@ func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introsp
 // Get all the needed information from the module's metadata and source files.
 func (m *PythonSdk) Load(ctx context.Context, modSource *ModuleSource) (*PythonSdk, error) {
 	if err := m.Discovery.Load(ctx, modSource); err != nil {
-		return nil, fmt.Errorf("module source discovery: %v", err)
+		return nil, fmt.Errorf("runtime module load: %v", err)
 	}
 	return m, nil
 }
@@ -240,10 +240,14 @@ func (m *PythonSdk) WithSDK(sdkPath string, introspectionJson string) *PythonSdk
 	// pinning dependencies.
 	if m.Discovery.HasFile(LockFilePath) {
 		ctr = ctr.
-			// Add pyproject.toml in case the lock file needs it
-			// (for example, rye adds `-e:.`).
-			WithMountedFile("pyproject.toml", m.Discovery.GetFile("pyproject.toml")).
-			WithMountedFile(LockFilePath, m.Discovery.GetFile(LockFilePath)).
+			WithFile(LockFilePath, m.Discovery.GetFile(LockFilePath)).
+			// Don't install the current project yet.
+			WithExec([]string{
+				"sed", "-i",
+				"-e", `/-e file:\./d`,
+				"-e", `/-e \./d`,
+				LockFilePath,
+			}).
 			With(m.install("-r", LockFilePath))
 	}
 
