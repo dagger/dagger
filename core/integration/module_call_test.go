@@ -531,11 +531,11 @@ func (m *Test) Mod(ctx context.Context, module *Module) *Module {
 
 		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+		require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
 		out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+		require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
 		out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef("top-level"), "as-string")).Stdout(ctx)
 		require.NoError(t, err)
