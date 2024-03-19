@@ -1,0 +1,29 @@
+.docker:
+  image: alpine:latest
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_DRIVER: overlay2
+    DOCKER_VERSION: '20.10.16'
+    # assumes the Dagger Cloud token is
+    # in a masked/protected variable named DAGGER_CLOUD_TOKEN
+    # set via the GitLab UI
+    DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
+.dagger:
+  extends: [.docker]
+  before_script:
+    - apk add curl
+    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+build:
+  extends: [.dagger]
+  script:
+    # assumes a Go project
+    # modify to use different function(s) as needed
+    - dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
+    # for ephemeral runners only: override the default docker stop timeout and
+    # give the Dagger Engine more time to push cache data to Dagger Cloud
+    - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)

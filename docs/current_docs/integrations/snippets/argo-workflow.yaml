@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: dagger-in-argo-
+spec:
+  entrypoint: dagger-workflow
+  volumes:
+    - name: dagger-conn
+      hostPath:
+        path: /var/run/dagger
+    - name: gomod-cache
+      persistentVolumeClaim:
+        claimName: gomod-cache
+  templates:
+    - name: dagger-workflow
+      inputs:
+        artifacts:
+          - name: project-source
+            path: /work
+            git:
+              repo: YOUR_REPOSITORY_URL_HERE
+              revision: "main"
+          - name: dagger-cli
+            path: /usr/local/bin
+            mode: 0755
+            http:
+              url: https://github.com/dagger/dagger/releases/download/v0.10.2/dagger_v0.10.2_linux_arm64.tar.gz
+      container:
+        image: alpine:latest
+        command: ["sh", "-c"]
+        # assumes a Go project
+        # modify to use different function(s) as needed
+        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=."]
+        workingDir: /work
+        env:
+        - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
+          value: "unix:///var/run/dagger/buildkitd.sock"
+          # assumes the Dagger Cloud token is
+          # in a Kubernetes secret named dagger-cloud
+        - name: "DAGGER_CLOUD_TOKEN"
+          valueFrom:
+            secretKeyRef:
+              name: dagger-cloud
+              key: token
+        volumeMounts:
+          - name: dagger-conn
+            mountPath: /var/run/dagger
+          - name: gomod-cache
+            mountPath: /go/pkg/mod

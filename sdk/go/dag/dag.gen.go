@@ -284,6 +284,12 @@ func LoadModuleSourceFromID(id dagger.ModuleSourceID) *dagger.ModuleSource {
 	return client.LoadModuleSourceFromID(id)
 }
 
+// Load a ModuleSourceView from its ID.
+func LoadModuleSourceViewFromID(id dagger.ModuleSourceViewID) *dagger.ModuleSourceView {
+	client := initClient()
+	return client.LoadModuleSourceViewFromID(id)
+}
+
 // Load a ObjectTypeDef from its ID.
 func LoadObjectTypeDefFromID(id dagger.ObjectTypeDefID) *dagger.ObjectTypeDef {
 	client := initClient()

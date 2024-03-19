@@ -133,6 +133,11 @@ class ModuleSourceID(Scalar):
     object of type ModuleSource."""
 
 
+class ModuleSourceViewID(Scalar):
+    """The `ModuleSourceViewID` scalar type represents an identifier for
+    an object of type ModuleSourceView."""
+
+
 class ObjectTypeDefID(Scalar):
     """The `ObjectTypeDefID` scalar type represents an identifier for an
     object of type ObjectTypeDef."""
@@ -4914,6 +4919,29 @@ class ModuleSource(Type):
         return ModuleSource(_ctx)
 
     @typecheck
+    def resolve_directory_from_caller(
+        self,
+        path: str,
+        *,
+        view_name: str | None = None,
+    ) -> Directory:
+        """Load a directory from the caller optionally with a given view applied.
+
+        Parameters
+        ----------
+        path:
+            The path on the caller's filesystem to load.
+        view_name:
+            If set, the name of the view to apply to the path.
+        """
+        _args = [
+            Arg("path", path),
+            Arg("viewName", view_name, None),
+        ]
+        _ctx = self._select("resolveDirectoryFromCaller", _args)
+        return Directory(_ctx)
+
+    @typecheck
     def resolve_from_caller(self) -> "ModuleSource":
         """Load the source from its path on the caller's filesystem, including
         only needed+configured files and directories. Only valid for local
@@ -4968,6 +4996,46 @@ class ModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("sourceSubpath", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    def view(self, name: str) -> "ModuleSourceView":
+        """Retrieve a named view defined for this module source.
+
+        Parameters
+        ----------
+        name:
+            The name of the view to retrieve.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("view", _args)
+        return ModuleSourceView(_ctx)
+
+    @typecheck
+    async def views(self) -> list["ModuleSourceView"]:
+        """The named views defined for this module source, which are sets of
+        directory filters that can be applied to directory arguments provided
+        to functions.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("views", _args)
+        _ctx = ModuleSourceView(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: ModuleSourceViewID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            ModuleSourceView(
+                Client.from_context(_ctx)._select(
+                    "loadModuleSourceViewFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
 
     @typecheck
     def with_context_directory(self, dir: Directory) -> "ModuleSource":
@@ -5049,12 +5117,104 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
+    @typecheck
+    def with_view(self, name: str, patterns: Sequence[str]) -> "ModuleSource":
+        """Update the module source with a new named view.
+
+        Parameters
+        ----------
+        name:
+            The name of the view to set.
+        patterns:
+            The patterns to set as the view filters.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("patterns", patterns),
+        ]
+        _ctx = self._select("withView", _args)
+        return ModuleSource(_ctx)
+
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
         """Call the provided callable with current ModuleSource.
 
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+class ModuleSourceView(Type):
+    """A named set of path filters that can be applied to directory
+    arguments provided to functions."""
+
+    @typecheck
+    async def id(self) -> ModuleSourceViewID:
+        """A unique identifier for this ModuleSourceView.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ModuleSourceViewID
+            The `ModuleSourceViewID` scalar type represents an identifier for
+            an object of type ModuleSourceView.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ModuleSourceViewID)
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the view
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def patterns(self) -> list[str]:
+        """The patterns of the view used to filter paths
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("patterns", _args)
+        return await _ctx.execute(list[str])
 
 
 class ObjectTypeDef(Type):
@@ -5853,6 +6013,17 @@ class Client(Root):
         ]
         _ctx = self._select("loadModuleSourceFromID", _args)
         return ModuleSource(_ctx)
+
+    @typecheck
+    def load_module_source_view_from_id(
+        self, id: ModuleSourceViewID
+    ) -> ModuleSourceView:
+        """Load a ModuleSourceView from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleSourceViewFromID", _args)
+        return ModuleSourceView(_ctx)
 
     @typecheck
     def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
@@ -6687,6 +6858,8 @@ __all__ = [
     "ModuleSource",
     "ModuleSourceID",
     "ModuleSourceKind",
+    "ModuleSourceView",
+    "ModuleSourceViewID",
     "NetworkProtocol",
     "ObjectTypeDef",
     "ObjectTypeDefID",

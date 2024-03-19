@@ -625,6 +625,7 @@ func (s *moduleSchema) resolveContextPathFromCaller(
 	return contextAbsPath, sourceRootAbsPath, nil
 }
 
+//nolint:gocyclo // it's already been split up where it makes sense, more would just create indirection in reading it
 func (s *moduleSchema) moduleSourceResolveFromCaller(
 	ctx context.Context,
 	src *core.ModuleSource,
@@ -688,27 +689,32 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		}
 
 		// rebase user defined include/exclude relative to context
-		for _, path := range localDep.modCfg.Include {
+		rebaseIncludeExclude := func(path string, set map[string]struct{}) error {
+			isNegation := strings.HasPrefix(path, "!")
+			path = strings.TrimPrefix(path, "!")
 			absPath := filepath.Join(sourceRootAbsPath, path)
 			relPath, err := filepath.Rel(contextAbsPath, absPath)
 			if err != nil {
-				return inst, fmt.Errorf("failed to get relative path of config include: %s", err)
+				return fmt.Errorf("failed to get relative path of config include/exclude: %s", err)
 			}
 			if !filepath.IsLocal(relPath) {
-				return inst, fmt.Errorf("local module dep source include path %q escapes context %q", relPath, contextAbsPath)
+				return fmt.Errorf("local module dep source include/exclude path %q escapes context %q", relPath, contextAbsPath)
 			}
-			includeSet[relPath] = struct{}{}
+			if isNegation {
+				relPath = "!" + relPath
+			}
+			set[relPath] = struct{}{}
+			return nil
+		}
+		for _, path := range localDep.modCfg.Include {
+			if err := rebaseIncludeExclude(path, includeSet); err != nil {
+				return inst, err
+			}
 		}
 		for _, path := range localDep.modCfg.Exclude {
-			absPath := filepath.Join(sourceRootAbsPath, path)
-			relPath, err := filepath.Rel(contextAbsPath, absPath)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get relative path of config exclude: %s", err)
+			if err := rebaseIncludeExclude(path, excludeSet); err != nil {
+				return inst, err
 			}
-			if !filepath.IsLocal(relPath) {
-				return inst, fmt.Errorf("local module dep source exclude path %q escapes context %q", relPath, contextAbsPath)
-			}
-			excludeSet[relPath] = struct{}{}
 		}
 
 		// always include the config file
@@ -856,6 +862,23 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			return inst, fmt.Errorf("failed to set dependency: %w", err)
 		}
 	}
+	if src.WithViews != nil {
+		for _, view := range src.WithViews {
+			err = s.dag.Select(ctx, inst, &inst,
+				dagql.Selector{
+					Field: "withView",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(view.Name)},
+						{Name: "patterns", Value: asArrayInput(view.Patterns, dagql.NewString)},
+					},
+				},
+			)
+			if err != nil {
+				return inst, fmt.Errorf("failed to set view: %w", err)
+			}
+		}
+	}
+
 	return inst, err
 }
 
@@ -1050,4 +1073,109 @@ func callerHostFindUpContext(
 		return "", false, nil
 	}
 	return callerHostFindUpContext(ctx, bk, filepath.Dir(curDirPath))
+}
+
+func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Path     string
+		ViewName *string
+	},
+) (inst dagql.Instance[*core.Directory], err error) {
+	path := args.Path
+	if !filepath.IsAbs(path) {
+		stat, err := src.Query.Buildkit.StatCallerHostPath(ctx, path, true)
+		if err != nil {
+			return inst, fmt.Errorf("failed to stat caller path: %w", err)
+		}
+		path = stat.Path
+	}
+
+	var includes []string
+	var excludes []string
+	if args.ViewName != nil {
+		view, err := src.ViewByName(ctx, *args.ViewName)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get view: %w", err)
+		}
+		for _, p := range view.Patterns {
+			if strings.HasPrefix(p, "!") {
+				excludes = append(excludes, p[1:])
+			} else {
+				includes = append(includes, p)
+			}
+		}
+	}
+
+	pipelineName := fmt.Sprintf("load local directory module arg %s", path)
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
+	_, desc, err := src.Query.Buildkit.LocalImport(
+		ctx, subRecorder, src.Query.Platform.Spec(),
+		path,
+		excludes,
+		includes,
+	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to import local directory module arg: %w", err)
+	}
+	return core.LoadBlob(ctx, s.dag, desc)
+}
+
+func (s *moduleSchema) moduleSourceViews(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) ([]*core.ModuleSourceView, error) {
+	return src.Views(ctx)
+}
+
+func (s *moduleSchema) moduleSourceView(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Name string
+	},
+) (*core.ModuleSourceView, error) {
+	return src.ViewByName(ctx, args.Name)
+}
+
+func (s *moduleSchema) moduleSourceWithView(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Name     string
+		Patterns []string
+	},
+) (*core.ModuleSource, error) {
+	for _, p := range args.Patterns {
+		p = strings.TrimSpace(p)
+		if filepath.IsAbs(p) {
+			return nil, fmt.Errorf("include path %q cannot be absolute", p)
+		}
+	}
+	view := &core.ModuleSourceView{
+		ModuleConfigView: &modules.ModuleConfigView{
+			Name:     args.Name,
+			Patterns: args.Patterns,
+		},
+	}
+	src.WithViews = append(src.WithViews, view)
+	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceViewName(
+	ctx context.Context,
+	view *core.ModuleSourceView,
+	args struct{},
+) (string, error) {
+	return view.Name, nil
+}
+
+func (s *moduleSchema) moduleSourceViewPatterns(
+	ctx context.Context,
+	view *core.ModuleSourceView,
+	args struct{},
+) ([]string, error) {
+	return view.Patterns, nil
 }

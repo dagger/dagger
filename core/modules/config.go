@@ -30,6 +30,10 @@ type ModuleConfig struct {
 
 	// The version of the engine this module was last updated with.
 	EngineVersion string `json:"engineVersion,omitempty"`
+
+	// Named views defined for this module, which are sets of directory filters that can be applied to
+	// directory arguments provided to functions.
+	Views []*ModuleConfigView `json:"views,omitempty"`
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
@@ -100,4 +104,9 @@ func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
 	}
 	*depCfg = ModuleConfigDependency(tmp)
 	return nil
+}
+
+type ModuleConfigView struct {
+	Name     string   `json:"name"`
+	Patterns []string `json:"patterns,omitempty"`
 }

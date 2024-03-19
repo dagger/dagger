@@ -142,6 +142,19 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Load a directory from the caller optionally with a given view applied.
+     */
+    public function resolveDirectoryFromCaller(string $path, ?string $viewName = null): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveDirectoryFromCaller');
+        $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $viewName) {
+        $innerQueryBuilder->setArgument('viewName', $viewName);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
      */
     public function resolveFromCaller(): ModuleSource
@@ -166,6 +179,25 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sourceSubpath');
         return (string)$this->queryLeaf($leafQueryBuilder, 'sourceSubpath');
+    }
+
+    /**
+     * Retrieve a named view defined for this module source.
+     */
+    public function view(string $name): ModuleSourceView
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('view');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleSourceView($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
+     */
+    public function views(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('views');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'views');
     }
 
     /**
@@ -215,6 +247,17 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceSubpath');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Update the module source with a new named view.
+     */
+    public function withView(string $name, array $patterns): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withView');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
