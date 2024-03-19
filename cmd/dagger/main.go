@@ -228,6 +228,9 @@ func main() {
 		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
 		defer tracing.End(span, func() error { return rerr })
 
+		// Set the span as the primary span for the frontend.
+		Frontend.SetPrimary(span.SpanContext().SpanID())
+
 		slog.Debug("established root span",
 			"parent", parentCtx.SpanID(),
 			"span", span.SpanContext().SpanID(),

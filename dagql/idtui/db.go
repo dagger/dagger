@@ -22,10 +22,10 @@ type DB struct {
 	Tasks    map[trace.SpanID][]*Task
 	Children map[trace.SpanID]map[trace.SpanID]struct{}
 
-	Logs      map[trace.SpanID]*Vterm
-	LogWidth  int
-	RootSpans map[trace.TraceID]trace.SpanID
-	RootLogs  map[trace.SpanID][]*sdklog.LogData
+	Logs        map[trace.SpanID]*Vterm
+	LogWidth    int
+	PrimarySpan trace.SpanID
+	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
 
 	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
@@ -40,10 +40,9 @@ func NewDB() *DB {
 		Tasks:    make(map[trace.SpanID][]*Task),
 		Children: make(map[trace.SpanID]map[trace.SpanID]struct{}),
 
-		Logs:      make(map[trace.SpanID]*Vterm),
-		LogWidth:  -1,
-		RootSpans: make(map[trace.TraceID]trace.SpanID),
-		RootLogs:  make(map[trace.SpanID][]*sdklog.LogData),
+		Logs:        make(map[trace.SpanID]*Vterm),
+		LogWidth:    -1,
+		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
 
 		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
@@ -116,9 +115,9 @@ func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 		// render vterm for TUI
 		_, _ = fmt.Fprint(db.spanLogs(log.SpanID), log.Body().AsString())
 
-		if db.RootSpans[log.TraceID] == log.SpanID {
+		if log.SpanID == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
-			db.RootLogs[log.SpanID] = append(db.RootLogs[log.SpanID], log)
+			db.PrimaryLogs[log.SpanID] = append(db.PrimaryLogs[log.SpanID], log)
 		}
 	}
 	return nil
@@ -140,12 +139,16 @@ func (db *DB) spanLogs(id trace.SpanID) *Vterm {
 	return term
 }
 
+func (db *DB) SetPrimarySpan(span trace.SpanID) {
+	db.PrimarySpan = span
+}
+
 func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 	spanID := span.SpanContext().SpanID()
-	traceID := span.SpanContext().TraceID()
 
 	spanData := &Span{
 		ReadOnlySpan: span,
+		Primary:      spanID == db.PrimarySpan,
 		db:           db,
 		trace:        traceData,
 	}
@@ -161,9 +164,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 		}
 		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
 		db.Children[parent.SpanID()][spanID] = struct{}{}
-	} else {
-		db.RootSpans[traceID] = spanID
-		spanData.Primary = true
 	}
 
 	attrs := span.Attributes()
@@ -257,7 +257,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
 	for _, span := range db.Spans {
 		spanCtx := span.SpanContext()
-		if spanCtx.TraceID() == traceID && !span.Parent().SpanID().IsValid() {
+		if span.Primary && spanCtx.TraceID() == traceID {
 			return span
 		}
 	}
