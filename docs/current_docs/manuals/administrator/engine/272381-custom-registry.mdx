@@ -1,0 +1,42 @@
+---
+slug: /manuals/administrator/272381/custom-registry
+---
+
+# Configure a Custom Registry Mirror
+
+The Dagger Engine can be configured to use container registry mirrors for any registry URL. This allows container images that refer to one registry to instead be redirected to a different one.
+
+Create a file named `engine.toml` that contains the registry mirror:
+
+```toml
+debug = true
+insecure-entitlements = ["security.insecure"]
+
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
+```
+
+This configuration can be repeated for multiple registries and mirrors if needed:
+
+```toml
+[registry."docker.io"]
+  mirrors = ["mirror.a.com", "mirror.b.com"]
+
+[registry."some.other.registry.com"]
+  mirrors = ["mirror.foo.com", "mirror.bar.com"]
+```
+
+Manually start the Dagger Engine with the custom `engine.toml`:
+
+```shell
+docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.10.2
+```
+
+Execute the following commands to test the configuration
+
+```shell
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://customized-dagger-engine
+dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
+```
+
+You should see the specified `hello-world` container being pulled from the mirror instead of from Docker Hub.

@@ -7,6 +7,8 @@ pipeline {
     DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
   }
 
+  // assumes a Go project
+  // modify to use different function(s) as needed
   stages {
     stage("dagger") {
       steps {

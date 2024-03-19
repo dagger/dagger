@@ -29,6 +29,66 @@ module.exports = {
     },
     {
       "type": "category",
+      "label": "Integrations",
+      "link": {
+        "type": "doc",
+        "id": "integrations/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "id": "integrations/argo-workflows"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/aws-codebuild"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/azure-pipelines"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/containerd"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/circleci"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/github-actions"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/gitlab"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/jenkins"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/kubernetes"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/openshift"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/podman"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/tekton"
+        }
+      ]
+    },
+    {
+      "type": "category",
       "label": "User Guide",
       "link": {
         "type": "doc",
@@ -37,46 +97,6 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
-        {
-          "type": "category",
-          "label": "Dagger in CI",
-          "link": {
-            "type": "doc",
-            "id": "user-guide/ci/index"
-          },
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            {
-              "type": "doc",
-              "id": "user-guide/ci/github-actions"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/gitlab"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/circleci"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/jenkins"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/aws-codebuild"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/azure-pipelines"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/ci/argo-workflows"
-            }
-          ]
-        },
         {
           "type": "category",
           "label": "Dagger Cloud",
@@ -95,14 +115,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "user-guide/cloud/user-interface"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/cloud/roles-permissions"
-            },
-            {
-              "type": "doc",
-              "id": "user-guide/cloud/org-administration"
             }
           ]
         },
@@ -394,7 +406,64 @@ module.exports = {
           "id": "developer-guide/known-issues"
         }
       ],
-
+    },
+    {
+      "type": "category",
+      "label": "Administrator Manual",
+      "link": {
+        "type": "doc",
+        "id": "manuals/administrator/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "id": "manuals/administrator/ci"
+        },
+        {
+          "type": "category",
+          "label": "Dagger Engine",
+          "link": {
+            "type": "doc",
+            "id": "manuals/administrator/engine/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Custom Runner",
+              "id": "manuals/administrator/engine/custom-runner"
+            },
+            {
+              "type": "doc",
+              "label": "Custom Registry",
+              "id": "manuals/administrator/engine/custom-registry"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Dagger Cloud",
+          "link": {
+            "type": "doc",
+            "id": "manuals/administrator/cloud/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manuals/administrator/cloud/roles-permissions"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/cloud/organizations"
+            }
+          ]
+        }
+      ]
     },
     {
       "type": "doc",
