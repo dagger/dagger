@@ -205,7 +205,7 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 				<-time.After(DetachGracePeriod)
 				for _, svc := range running {
 					if svc != nil {
-						go ss.Detach(ctx, svc)
+						ss.Detach(ctx, svc)
 					}
 				}
 			}()
@@ -336,11 +336,8 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	slog.Debug("detach: stopping")
 
-	// block; caller determines whether to wait. we want to block when we're
-	// shutting down to ensure events are fully flushed.
-	ss.stopGraceful(ctx, running, TerminateGracePeriod)
-
-	slog.Debug("detach: stopped")
+	// we should avoid blocking, and return immediately
+	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
 }
 
 func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {

@@ -254,7 +254,7 @@ func (svc *Service) startContainer(
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
-			// an error starting. vtx.Done is called elsewhere.
+			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
 		}
 	}()
@@ -572,7 +572,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 		Ports: ports,
 		Stop: func(_ context.Context, _ bool) error {
 			stop()
-			go svcs.Detach(svcCtx, upstream) // async to avoid deadlock between stopping/detaching
+			svcs.Detach(svcCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
 				errs = append(errs, closeListener())
