@@ -5,6 +5,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     async def test(self) -> str:
+        '''Runs unit tests against a database service'''
         # get MariaDB base image
         mariadb = (
             dag.container()
