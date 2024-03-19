@@ -106,12 +106,6 @@
   status = 301
 
 [[redirects]]
-  # redirect user guide pages to user manual
-  from = "/user-guide/*"
-  to = "/manuals/user/:splat"
-  status = 301
-
-[[redirects]]
   # redirect developer guide index to developer manual index
   from = "/developer-guide"
   to = "/manuals/developer"
