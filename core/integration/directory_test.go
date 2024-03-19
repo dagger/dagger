@@ -1079,7 +1079,6 @@ func TestDirectoryGlob(t *testing.T) {
 					"subdir2/TESTING.md", "subdir/subsubdir/JS.md",
 				})
 			})
-
 		})
 	}
 
