@@ -38,6 +38,12 @@ type UserConfig struct {
 	// UseUv is for choosing the faster uv tool instead of pip to install packages.
 	UseUv bool `toml:"use-uv"`
 
+	// UvVersion is the version of the uv tool to use.
+	//
+	// By default, it's pinned to a specific version in each dagger version,
+	// can be useful to get a newer version to fix a bug or get a new feature.
+	UvVersion string `toml:"uv-version"`
+
 	// BaseImage is the image reference to use for the container.
 	BaseImage string `toml:"base-image"`
 }
@@ -48,7 +54,8 @@ func New(
 ) *PythonSdk {
 	return &PythonSdk{
 		Discovery: NewDiscovery(UserConfig{
-			UseUv: true,
+			UseUv:     true,
+			UvVersion: getRequirement("uv"),
 		}),
 		// TODO: get an sdist build of the SDK into the engine rather than
 		// duplicating which files to include in the engine's publishing task.
@@ -154,12 +161,13 @@ func (m *PythonSdk) WithBase() *PythonSdk {
 	if m.UseUv() {
 		uv := base.
 			WithEnvVariable("PYTHONDONTWRITEBYTECODE", "1").
-			WithMountedFile("/reqs.txt", dag.CurrentModule().Source().File("requirements.txt")).
+			WithNewFile("reqs.txt", ContainerWithNewFileOpts{
+				Contents: "uv" + m.Discovery.UserConfig().UvVersion,
+			}).
 			WithExec([]string{"pip", "install", "-r", "/reqs.txt"}).
 			File("/usr/local/bin/uv")
 		base = base.
 			WithFile("/usr/local/bin/uv", uv).
-			// TODO: add uv's version to the cache key
 			WithMountedCache("/root/.cache/uv", m.cacheVolume("uv")).
 			// Use a clean venv with uv
 			WithExec([]string{"uv", "venv", VenvPath}).
