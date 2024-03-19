@@ -1,0 +1,58 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: dagger
+spec:
+  description: Run Dagger Function
+  workspaces:
+  - name: source
+  params:
+    - name: dagger-cloud-token
+      type: string
+      description: Dagger Cloud Token
+  volumes:
+    - name: dagger-socket
+      emptyDir: {}
+    - name: dagger-storage
+      emptyDir: {}
+  sidecars:
+    - name: dagger-engine
+      image: registry.dagger.io/engine:v0.10.2
+      args:
+        - "--oci-max-parallelism"
+        - "num-cpu"
+      securityContext:
+        privileged: true
+        capabilities:
+          add:
+            - ALL
+      readinessProbe:
+        exec:
+          command: ["buildctl", "debug", "workers"]
+      volumeMounts:
+        - mountPath: /var/run/buildkit
+          name: dagger-socket
+        - mountPath: /var/lib/dagger
+          name: dagger-storage
+      env:
+        - name: DAGGER_CLOUD_TOKEN
+          value: $(params.dagger-cloud-token)
+  steps:
+  # assumes a Go project
+  # modify to use different function(s) as needed
+  - name: read
+    image: docker:dind
+    workingDir: $(workspaces.source.path)
+    script: |
+      #!/usr/bin/env sh
+      apk add curl
+      curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
+    volumeMounts:
+      - mountPath: /var/run/dagger
+        name: dagger-socket
+    env:
+      - name: _EXPERIMENTAL_DAGGER_RUNNER_HOST
+        value: unix:///var/run/dagger/buildkitd.sock
+      - name: DAGGER_CLOUD_TOKEN
+        value: $(params.dagger-cloud-token)

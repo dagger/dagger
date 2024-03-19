@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix `Container.withFiles` not respecting absolute paths
+time: 2024-03-13T15:50:31.465015-01:00
+custom:
+  Author: helderco
+  PR: "6879"

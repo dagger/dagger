@@ -331,6 +331,9 @@ func (v *secretValue) Set(s string) error {
 }
 
 func (v *secretValue) String() string {
+	if v.sourceVal == "" {
+		return ""
+	}
 	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
 }
 

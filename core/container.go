@@ -521,7 +521,7 @@ func (container *Container) WithFiles(ctx context.Context, destDir string, src [
 			return nil, err
 		}
 
-		return dir.WithFiles(ctx, destDir, src, permissions, ownership)
+		return dir.WithFiles(ctx, path.Base(destDir), src, permissions, ownership)
 	})
 }
 

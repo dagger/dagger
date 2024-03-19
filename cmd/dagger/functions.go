@@ -568,7 +568,7 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 		if err != nil {
 			return err
 		}
-		if !arg.TypeDef.Optional && arg.DefaultValue == "" {
+		if arg.IsRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())
 		}
 	}
