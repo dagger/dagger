@@ -16,7 +16,7 @@ defmodule Dagger.ClientTest do
     Sync
   }
 
-  setup do
+  setup_all do
     client = Dagger.connect!(connect_timeout: :timer.seconds(60))
     on_exit(fn -> Dagger.close(client) end)
 
@@ -203,7 +203,7 @@ defmodule Dagger.ClientTest do
 
     assert {:ok, "Hello, world!"} =
              client
-             |> Client.file(id)
+             |> Client.load_file_from_id(id)
              |> File.contents()
   end
 
@@ -234,13 +234,17 @@ defmodule Dagger.ClientTest do
     assert {:ok, "spam\n"} = Container.stdout(container)
   end
 
-  test "calling id before passing constructing arg", %{client: client} do
+  test "calling id before passing constructing arg" do
     dockerfile = """
     FROM alpine
     RUN --mount=type=secret,id=the-secret echo "hello ${THE_SECRET}"
     """
 
+    client = Dagger.connect!()
+    on_exit(fn -> Dagger.close(client) end)
+
     Elixir.File.write!("Dockerfile", dockerfile)
+    on_exit(fn -> Elixir.File.rm_rf!("Dockerfile") end)
 
     secret =
       client
@@ -252,8 +256,6 @@ defmodule Dagger.ClientTest do
              |> Host.directory(".")
              |> Directory.docker_build(dockerfile: "Dockerfile", secrets: [secret])
              |> Sync.sync()
-
-    Elixir.File.rm_rf!("Dockerfile")
 
     container = Client.container(client)
     assert %Container{} = Client.container(client, id: container)
