@@ -67,6 +67,7 @@ By default, each service port maps to the same port on the host - in this case, 
 ```shell
 curl localhost:8080
 ```
+
 The result will be:
 
 ```shell
@@ -144,7 +145,7 @@ Services are designed to be expressed as a Directed Acyclic Graph (DAG) with exp
 
 For example, this may be needed if the application in the service has certain behavior on shutdown (such as flushing data) that needs careful coordination with the rest of your logic.
 
-Here's an example which demonstrates explicitly starting a Docker daemon for use in a test suite:
+The following example explicitly starts the Redis service and stops it at the end, ensuring the 10 second grace period doesn't get in the way, without the need for a persistent cache volume:
 
 ```go file=./snippets/services/start-stop-services/main.go
 ```
@@ -221,7 +222,7 @@ Here's a more detailed client-server example of running commands against a Redis
 
 This example relies on the 10-second grace period, which you should try to avoid. Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
 
-It would be better to chain both commands together, which ensures that the service stays running for both.
+It would be better to chain both commands together, which ensures that the service stays running for both, as in the revision below:
 
 ```go file=./snippets/services/service-lifecycle-3/main.go
 ```
