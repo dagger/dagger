@@ -2,5 +2,5 @@
   "name": "python-sdk",
   "sdk": "go",
   "source": ".",
-  "engineVersion": "v0.10.1"
+  "engineVersion": "v0.10.2"
 }

@@ -1,7 +1,23 @@
-// Utility functions, to use in With()
 package main
 
-import "strings"
+import (
+	_ "embed"
+	"strings"
+)
+
+//go:embed requirements.txt
+var reqs string
+
+// getRequirement returns the version constraint for a tool, saved in this
+// module's requirements.txt file.
+func getRequirement(name string) string {
+	for _, line := range strings.Split(reqs, "\n") {
+		if strings.HasPrefix(line, name) {
+			return strings.TrimPrefix(line, name)
+		}
+	}
+	return ""
+}
 
 // cacheVolume returns a CacheVolume with a common prefix.
 func (m *PythonSdk) cacheVolume(name string) *CacheVolume {
