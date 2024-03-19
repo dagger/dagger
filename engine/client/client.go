@@ -426,7 +426,7 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 	return err
 }
 
-func (c *Client) Close(runErr error) (rerr error) {
+func (c *Client) Close() (rerr error) {
 	// shutdown happens outside of c.closeMu, since it requires a connection
 	if err := c.shutdownServer(); err != nil {
 		rerr = errors.Join(rerr, fmt.Errorf("shutdown: %w", err))
@@ -474,11 +474,6 @@ func (c *Client) Close(runErr error) (rerr error) {
 		if err := c.telemetry.Wait(); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
 		}
-	}
-
-	// finalize the run, sending the error result upstream
-	if c.finishRun != nil {
-		c.finishRun(runErr)
 	}
 
 	return rerr

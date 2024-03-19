@@ -694,15 +694,11 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
 	}
 
-	for _, env := range os.Environ() {
-		fmt.Println(env)
-	}
-
 	sess, ctx, err := client.Connect(ctx, clientParams)
 	if err != nil {
 		return fmt.Errorf("error connecting to engine: %w", err)
 	}
-	defer sess.Close(nil)
+	defer sess.Close()
 
 	_ = ctx // avoid ineffasign lint
 

@@ -83,7 +83,7 @@ func withEngine(
 	if err != nil {
 		return err
 	}
-	err = fn(ctx, sess)
-	sess.Close(err)
-	return err
+	defer sess.Close()
+
+	return fn(ctx, sess)
 }

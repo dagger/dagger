@@ -11,8 +11,6 @@ import (
 	"strings"
 	"unicode"
 
-	"log/slog"
-
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
@@ -186,6 +184,18 @@ func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/cli")
 }
 
+func Resource() *resource.Resource {
+	attrs := []attribute.KeyValue{
+		semconv.ServiceName("dagger-cli"),
+		semconv.ServiceVersion(engine.Version),
+		semconv.ProcessCommandArgs(os.Args...),
+	}
+	for k, v := range telemetry.LoadDefaultLabels(workdir, engine.Version) {
+		attrs = append(attrs, attribute.String(k, v))
+	}
+	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
+}
+
 func main() {
 	rootCmd.SetArgs(parseGlobalFlags())
 
@@ -197,27 +207,15 @@ func main() {
 	ctx := context.Background()
 
 	if err := Frontend.Run(ctx, func(ctx context.Context) (rerr error) {
-		attrs := []attribute.KeyValue{
-			semconv.ServiceName("dagger-cli"),
-			semconv.ServiceVersion(engine.Version),
-			semconv.ProcessCommandArgs(os.Args...),
-		}
-
-		for k, v := range telemetry.LoadDefaultLabels(workdir, engine.Version) {
-			attrs = append(attrs, attribute.String(k, v))
-		}
-
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx = telemetry.Init(ctx, telemetry.Config{
 			Detect:             true,
-			Resource:           resource.NewWithAttributes(semconv.SchemaURL, attrs...),
+			Resource:           Resource(),
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend},
 			LiveLogExporters:   []sdklog.LogExporter{Frontend},
 		})
 		defer telemetry.Close()
-
-		parentCtx := trace.SpanContextFromContext(ctx)
 
 		// Set the full command string as the name of the root span.
 		//
@@ -230,12 +228,7 @@ func main() {
 		// Set the span as the primary span for the frontend.
 		Frontend.SetPrimary(span.SpanContext().SpanID())
 
-		slog.Debug("established root span",
-			"parent", parentCtx.SpanID(),
-			"span", span.SpanContext().SpanID(),
-			"trace", span.SpanContext().TraceID(),
-		)
-
+		// Direct command stdout/stderr to span logs via OpenTelemetry.
 		ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, "dagger")
 		rootCmd.SetOut(stdout)
 		rootCmd.SetErr(stderr)

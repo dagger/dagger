@@ -76,6 +76,9 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		srv := http.Server{
 			Handler:           sess,
 			ReadHeaderTimeout: 30 * time.Second,
+			BaseContext: func(net.Listener) context.Context {
+				return ctx
+			},
 		}
 
 		paramBytes, err := json.Marshal(connectParams{
