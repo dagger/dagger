@@ -111,7 +111,12 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 
 	var runErr error
 	if fe.Plain || fe.Silent {
-		// no TTY found; just run normally and do a final render
+		// no TTY found; set a reasonable screen size for logs, and just run the
+		// function
+		fe.SetWindowSize(tea.WindowSizeMsg{
+			Width:  300, // influences vterm width
+			Height: 100, // theoretically noop, since we always render full logs
+		})
 		runErr = run(ctx)
 	} else {
 		// run the TUI until it exits and cleans up the TTY
@@ -468,9 +473,7 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		fe.window = msg
-		fe.db.SetWidth(msg.Width)
-		fe.messagesView.SetWidth(msg.Width)
+		fe.SetWindowSize(msg)
 		return fe, nil
 
 	case ui.FrameMsg:
@@ -483,6 +486,12 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *Frontend) SetWindowSize(msg tea.WindowSizeMsg) {
+	fe.window = msg
+	fe.db.SetWidth(msg.Width)
+	fe.messagesView.SetWidth(msg.Width)
 }
 
 func (fe *Frontend) render() {
