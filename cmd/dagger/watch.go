@@ -9,8 +9,11 @@ import (
 )
 
 var watchCmd = &cobra.Command{
-	Use:     "watch [flags] COMMAND",
-	Hidden:  true,
+	Use:    "watch [flags] COMMAND",
+	Hidden: true,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 	Aliases: []string{"w"},
 	Short:   "Watch activity across all Dagger sessions.",
 	Example: `dagger watch`,
