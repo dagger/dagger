@@ -262,6 +262,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manuals/developer/python/services"
+            },
+            {
+              "type": "doc",
               "id": "manuals/developer/python/dependencies"
             },
             {
@@ -334,6 +338,10 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/services"
             },
             {
               "type": "doc",
