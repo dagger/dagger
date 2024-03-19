@@ -88,6 +88,18 @@
   status = 301
 
 [[redirects]]
+  # redirect cloud orgs admin page from user manual
+  from = "/user-guide/cloud/609601/org-administration"
+  to = "/manuals/administrator/609601/organizations"
+  status = 301
+
+[[redirects]]
+  # redirect cloud roles and permissions page from user manual
+  from = "/user-guide/cloud/968372/roles-permissions"
+  to = "/manuals/administrator/968372/roles-permissions"
+  status = 301
+
+[[redirects]]
   # redirect user guide pages to user manual
   from = "/user-guide/*"
   to = "/manuals/user/:splat"
@@ -103,18 +115,6 @@
   # redirect developer guide pages to developer manual
   from = "/developer-guide/*"
   to = "/manuals/developer/:splat"
-  status = 301
-
-[[redirects]]
-  # redirect cloud orgs admin page from user manual
-  from = "/user-guide/cloud/609601/org-administration"
-  to = "/manuals/administrator/609601/organizations"
-  status = 301
-
-[[redirects]]
-  # redirect cloud roles and permissions page from user manual
-  from = "/user-guide/cloud/968372/roles-permissions"
-  to = "/manuals/administrator/968372/roles-permissions"
   status = 301
 
 [[redirects]]
