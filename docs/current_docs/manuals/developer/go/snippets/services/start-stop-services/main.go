@@ -13,13 +13,13 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 		WithExposedPort(6379).
 		AsService()
 
-	// start redis ahead of time so it stays up for the duration of the test
+	// start Redis ahead of time so it stays up for the duration of the test
 	redisSrv, err := redisSrv.Start(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	// stop the service when we're done
+	// stop the service when done
 	defer redisSrv.Stop(ctx)
 
 	// create Redis client container
