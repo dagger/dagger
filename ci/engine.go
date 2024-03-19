@@ -2,21 +2,23 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 
 	"dagger/build"
+	"dagger/internal/dagger"
 	"dagger/util"
 )
 
 type Engine struct {
 	Dagger *Dagger // +private
 
-	Base   *Container // +private
-	Args   []string   // +private
-	Config []string   // +private
+	Args   []string // +private
+	Config []string // +private
 
 	GPUSupport bool // +private
 }
@@ -33,43 +35,7 @@ func (e *Engine) WithArg(key, value string) *Engine {
 
 func (e *Engine) WithGPUSupport() *Engine {
 	e.GPUSupport = true
-	e.Base = nil
 	return e
-}
-
-// XXX: maybe we should private this?
-func (e *Engine) Container(ctx context.Context) (*Container, error) {
-	if e.Base == nil {
-		opts := build.BuilderOpts{}
-		if e.GPUSupport {
-			opts.Base = "ubuntu"
-			opts.GPUSupport = true
-		}
-
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64", &opts)
-		if err != nil {
-			return nil, err
-		}
-		e.Base, err = builder.Engine(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	cfg, err := generateConfig(e.Config)
-	if err != nil {
-		return nil, err
-	}
-	entrypoint, err := generateEntrypoint(e.Args)
-	if err != nil {
-		return nil, err
-	}
-
-	ctr := e.Base
-	ctr = ctr.WithFile(engineTomlPath, cfg)
-	ctr = ctr.WithFile(engineEntrypointPath, entrypoint)
-	ctr = ctr.WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
-	return ctr, nil
 }
 
 func (e *Engine) Service(
@@ -88,7 +54,7 @@ func (e *Engine) Service(
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`)
-	devEngine, err := e.Container(ctx)
+	devEngine, err := e.container(ctx, Platform(platforms.DefaultString()))
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +80,88 @@ func (e *Engine) Lint(ctx context.Context) error {
 	return err
 }
 
+func (e *Engine) Publish(
+	ctx context.Context,
+
+	engineImage string,
+	// +optional
+	platform []Platform,
+
+	// +optional
+	registry *string,
+	// +optional
+	registryUsername *string,
+	// +optional
+	registryPassword *Secret,
+) (string, error) {
+	if len(platform) == 0 {
+		platform = []Platform{Platform(platforms.DefaultString())}
+	}
+	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
+	if err != nil {
+		return "", err
+	}
+
+	ref := fmt.Sprintf("%s:%s", engineImage, builder.Version.EngineVersion())
+	if e.GPUSupport {
+		ref += "-gpu"
+	}
+
+	var engines []*Container
+	for _, platform := range platform {
+		ctr, err := e.container(ctx, platform)
+		if err != nil {
+			return "", err
+		}
+		engines = append(engines, ctr)
+	}
+
+	ctr := dag.Container()
+	if registry != nil && registryUsername != nil && registryPassword != nil {
+		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
+	}
+
+	digest, err := ctr.
+		Publish(ctx, ref, dagger.ContainerPublishOpts{
+			PlatformVariants:  engines,
+			ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
+		})
+	if err != nil {
+		return "", err
+	}
+	return digest, nil
+}
+
+func (e *Engine) container(ctx context.Context, platform dagger.Platform) (*Container, error) {
+	cfg, err := generateConfig(e.Config)
+	if err != nil {
+		return nil, err
+	}
+	entrypoint, err := generateEntrypoint(e.Args)
+	if err != nil {
+		return nil, err
+	}
+
+	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
+	if err != nil {
+		return nil, err
+	}
+	builder = builder.WithPlatform(platform)
+	if e.GPUSupport {
+		builder = builder.WithUbuntuBase().WithGPUSupport()
+	}
+
+	ctr, err := builder.Engine(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
+		WithFile(engineTomlPath, cfg).
+		WithFile(engineEntrypointPath, entrypoint).
+		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
+	return ctr, nil
+}
+
 type CLI struct {
 	Dagger *Dagger // +private
 
@@ -122,7 +170,7 @@ type CLI struct {
 
 func (e *CLI) File(ctx context.Context) (*File, error) {
 	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source, "linux/amd64", nil)
+		builder, err := build.NewBuilder(ctx, e.Dagger.Source)
 		if err != nil {
 			return nil, err
 		}

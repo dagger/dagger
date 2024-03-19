@@ -6,6 +6,7 @@ import (
 	"dagger/util"
 	"path/filepath"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 )
@@ -140,7 +141,7 @@ func (ci *Dagger) testCmd(ctx context.Context) (*Container, error) {
 		WithConfig(`grpc`, `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`)
-	devEngine, err := engine.Container(ctx)
+	devEngine, err := engine.container(ctx, Platform(platforms.DefaultString()))
 	if err != nil {
 		return nil, err
 	}

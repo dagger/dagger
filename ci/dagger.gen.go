@@ -827,125 +827,31 @@ func main() {
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	switch parentName {
-	case "CLI":
-		switch fnName {
-		case "File":
-			var parent CLI
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*CLI).File(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "Engine":
-		switch fnName {
-		case "WithConfig":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var key string
-			if inputArgs["key"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
-				}
-			}
-			var value string
-			if inputArgs["value"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
-				}
-			}
-			return (*Engine).WithConfig(&parent, key, value), nil
-		case "WithArg":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var key string
-			if inputArgs["key"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
-				}
-			}
-			var value string
-			if inputArgs["value"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
-				}
-			}
-			return (*Engine).WithArg(&parent, key, value), nil
-		case "WithGPUSupport":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Engine).WithGPUSupport(&parent), nil
-		case "Container":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Engine).Container(&parent, ctx)
-		case "Service":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var name string
-			if inputArgs["name"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
-				}
-			}
-			return (*Engine).Service(&parent, ctx, name)
-		case "Lint":
-			var parent Engine
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Engine).Lint(&parent, ctx)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "PythonSDK":
+	case "TypescriptSDK":
 		switch fnName {
 		case "Lint":
-			var parent PythonSDK
+			var parent TypescriptSDK
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*PythonSDK).Lint(&parent, ctx)
+			return nil, (*TypescriptSDK).Lint(&parent, ctx)
 		case "Test":
-			var parent PythonSDK
+			var parent TypescriptSDK
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*PythonSDK).Test(&parent, ctx)
+			return nil, (*TypescriptSDK).Test(&parent, ctx)
 		case "Generate":
-			var parent PythonSDK
+			var parent TypescriptSDK
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*PythonSDK).Generate(&parent, ctx)
+			return (*TypescriptSDK).Generate(&parent, ctx)
 		case "Publish":
-			var parent PythonSDK
+			var parent TypescriptSDK
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
@@ -957,9 +863,9 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
 				}
 			}
-			return nil, (*PythonSDK).Publish(&parent, ctx, tag)
+			return nil, (*TypescriptSDK).Publish(&parent, ctx, tag)
 		case "Bump":
-			var parent PythonSDK
+			var parent TypescriptSDK
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
@@ -971,7 +877,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*PythonSDK).Bump(&parent, ctx, version)
+			return (*TypescriptSDK).Bump(&parent, ctx, version)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -1111,6 +1017,215 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
+	case "Dagger":
+		switch fnName {
+		case "CLI":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Dagger).CLI(&parent), nil
+		case "Engine":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Dagger).Engine(&parent), nil
+		case "SDK":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Dagger).SDK(&parent), nil
+		case "Dev":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var target *Directory
+			if inputArgs["target"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["target"]), &target)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg target", err))
+				}
+			}
+			var experimentalGpusupport bool
+			if inputArgs["experimentalGPUSupport"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["experimentalGPUSupport"]), &experimentalGpusupport)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg experimentalGPUSupport", err))
+				}
+			}
+			return (*Dagger).Dev(&parent, ctx, target, experimentalGpusupport)
+		case "Test":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Dagger).Test(&parent, ctx)
+		case "TestRace":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Dagger).TestRace(&parent, ctx)
+		case "TestImportant":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Dagger).TestImportant(&parent, ctx)
+		case "":
+			var parent Dagger
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			return New(source), nil
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "CLI":
+		switch fnName {
+		case "File":
+			var parent CLI
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*CLI).File(&parent, ctx)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "PythonSDK":
+		switch fnName {
+		case "Lint":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PythonSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*PythonSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*PythonSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			return nil, (*PythonSDK).Publish(&parent, ctx, tag)
+		case "Bump":
+			var parent PythonSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*PythonSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
+	case "JavaSDK":
+		switch fnName {
+		case "Lint":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*JavaSDK).Lint(&parent, ctx)
+		case "Test":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*JavaSDK).Test(&parent, ctx)
+		case "Generate":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*JavaSDK).Generate(&parent, ctx)
+		case "Publish":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var tag string
+			if inputArgs["tag"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+				}
+			}
+			var dryRun bool
+			if inputArgs["dryRun"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
+				}
+			}
+			return nil, (*JavaSDK).Publish(&parent, ctx, tag, dryRun)
+		case "Bump":
+			var parent JavaSDK
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var version string
+			if inputArgs["version"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+				}
+			}
+			return (*JavaSDK).Bump(&parent, ctx, version)
+		default:
+			return nil, fmt.Errorf("unknown function %s", fnName)
+		}
 	case "PHPSDK":
 		switch fnName {
 		case "Lint":
@@ -1200,200 +1315,120 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
-	case "Dagger":
+	case "Engine":
 		switch fnName {
-		case "CLI":
-			var parent Dagger
+		case "WithConfig":
+			var parent Engine
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Dagger).CLI(&parent), nil
-		case "Engine":
-			var parent Dagger
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Dagger).Engine(&parent), nil
-		case "SDK":
-			var parent Dagger
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*Dagger).SDK(&parent), nil
-		case "Dev":
-			var parent Dagger
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var target *Directory
-			if inputArgs["target"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["target"]), &target)
+			var key string
+			if inputArgs["key"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg target", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
 				}
 			}
-			var experimentalGpusupport bool
-			if inputArgs["experimentalGPUSupport"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["experimentalGPUSupport"]), &experimentalGpusupport)
+			var value string
+			if inputArgs["value"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg experimentalGPUSupport", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
 				}
 			}
-			return (*Dagger).Dev(&parent, ctx, target, experimentalGpusupport)
-		case "Test":
-			var parent Dagger
+			return (*Engine).WithConfig(&parent, key, value), nil
+		case "WithArg":
+			var parent Engine
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*Dagger).Test(&parent, ctx)
-		case "TestRace":
-			var parent Dagger
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Dagger).TestRace(&parent, ctx)
-		case "TestImportant":
-			var parent Dagger
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*Dagger).TestImportant(&parent, ctx)
-		case "":
-			var parent Dagger
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var source *Directory
-			if inputArgs["source"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+			var key string
+			if inputArgs["key"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["key"]), &key)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg key", err))
 				}
 			}
-			return New(source), nil
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "TypescriptSDK":
-		switch fnName {
+			var value string
+			if inputArgs["value"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["value"]), &value)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
+				}
+			}
+			return (*Engine).WithArg(&parent, key, value), nil
+		case "WithGPUSupport":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Engine).WithGPUSupport(&parent), nil
+		case "Service":
+			var parent Engine
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var name string
+			if inputArgs["name"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["name"]), &name)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg name", err))
+				}
+			}
+			return (*Engine).Service(&parent, ctx, name)
 		case "Lint":
-			var parent TypescriptSDK
+			var parent Engine
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*TypescriptSDK).Lint(&parent, ctx)
-		case "Test":
-			var parent TypescriptSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*TypescriptSDK).Test(&parent, ctx)
-		case "Generate":
-			var parent TypescriptSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*TypescriptSDK).Generate(&parent, ctx)
+			return nil, (*Engine).Lint(&parent, ctx)
 		case "Publish":
-			var parent TypescriptSDK
+			var parent Engine
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var tag string
-			if inputArgs["tag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+			var engineImage string
+			if inputArgs["engineImage"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["engineImage"]), &engineImage)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg engineImage", err))
 				}
 			}
-			return nil, (*TypescriptSDK).Publish(&parent, ctx, tag)
-		case "Bump":
-			var parent TypescriptSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+			var platform []Platform
+			if inputArgs["platform"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["platform"]), &platform)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg platform", err))
 				}
 			}
-			return (*TypescriptSDK).Bump(&parent, ctx, version)
-		default:
-			return nil, fmt.Errorf("unknown function %s", fnName)
-		}
-	case "JavaSDK":
-		switch fnName {
-		case "Lint":
-			var parent JavaSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*JavaSDK).Lint(&parent, ctx)
-		case "Test":
-			var parent JavaSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*JavaSDK).Test(&parent, ctx)
-		case "Generate":
-			var parent JavaSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return (*JavaSDK).Generate(&parent, ctx)
-		case "Publish":
-			var parent JavaSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var tag string
-			if inputArgs["tag"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["tag"]), &tag)
+			var registry string
+			if inputArgs["registry"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["registry"]), &registry)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registry", err))
 				}
 			}
-			var dryRun bool
-			if inputArgs["dryRun"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
+			var registryUsername string
+			if inputArgs["registryUsername"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["registryUsername"]), &registryUsername)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryUsername", err))
 				}
 			}
-			return nil, (*JavaSDK).Publish(&parent, ctx, tag, dryRun)
-		case "Bump":
-			var parent JavaSDK
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
+			var registryPassword *Secret
+			if inputArgs["registryPassword"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["registryPassword"]), &registryPassword)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg registryPassword", err))
 				}
 			}
-			return (*JavaSDK).Bump(&parent, ctx, version)
+			return (*Engine).Publish(&parent, ctx, engineImage, platform, registry, registryUsername, registryPassword)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -1542,17 +1577,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 						dag.Function("WithGPUSupport",
 							dag.TypeDef().WithObject("Engine"))).
 					WithFunction(
-						dag.Function("Container",
-							dag.TypeDef().WithObject("Container")).
-							WithDescription("XXX: maybe we should private this?")).
-					WithFunction(
 						dag.Function("Service",
 							dag.TypeDef().WithObject("Service")).
 							WithArg("name", dag.TypeDef().WithKind(StringKind))).
 					WithFunction(
 						dag.Function("Lint",
 							dag.TypeDef().WithKind(VoidKind).WithOptional(true)).
-							WithDescription("Lint lints the engine"))).
+							WithDescription("Lint lints the engine")).
+					WithFunction(
+						dag.Function("Publish",
+							dag.TypeDef().WithKind(StringKind)).
+							WithArg("engineImage", dag.TypeDef().WithKind(StringKind)).
+							WithArg("platform", dag.TypeDef().WithListOf(dag.TypeDef().WithKind(StringKind)).WithOptional(true)).
+							WithArg("registry", dag.TypeDef().WithKind(StringKind)).
+							WithArg("registryUsername", dag.TypeDef().WithKind(StringKind).WithOptional(true)).
+							WithArg("registryPassword", dag.TypeDef().WithObject("Secret").WithOptional(true)))).
 			WithObject(
 				dag.TypeDef().WithObject("SDK").
 					WithField("Go", dag.TypeDef().WithObject("GoSDK")).

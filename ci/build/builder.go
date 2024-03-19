@@ -23,34 +23,20 @@ var dag = dagger.Connect()
 type Builder struct {
 	Source *Directory
 
-	Version      *VersionInfo
+	Version *VersionInfo
+
 	Platform     dagger.Platform
-	PlatformSpec *ocispecs.Platform
+	PlatformSpec ocispecs.Platform
 
-	BuilderOpts
-}
-
-type BuilderOpts struct {
 	Base       string
 	GPUSupport bool
 }
 
-func NewBuilder(ctx context.Context, source *Directory, platform dagger.Platform, opts *BuilderOpts) (*Builder, error) {
+func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
 	// FIXME: can we make this lazy?
 	version, err := getVersionFromGit(ctx, source.Directory(".git"))
 	if err != nil {
 		return nil, err
-	}
-
-	var platformSpec ocispecs.Platform
-	if platform == "" {
-		platformSpec = platforms.DefaultSpec()
-		platform = dagger.Platform(platforms.Format(platformSpec))
-	} else {
-		platformSpec, err = platforms.Parse(string(platform))
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	source = dag.Directory().WithDirectory("/", source, DirectoryWithDirectoryOpts{
@@ -87,16 +73,37 @@ func NewBuilder(ctx context.Context, source *Directory, platform dagger.Platform
 		},
 	})
 
-	if opts == nil {
-		opts = &BuilderOpts{}
-	}
 	return &Builder{
 		Source:       source,
 		Version:      version,
-		Platform:     platform,
-		PlatformSpec: &platformSpec,
-		BuilderOpts:  *opts,
+		Platform:     Platform(platforms.DefaultString()),
+		PlatformSpec: platforms.DefaultSpec(),
 	}, nil
+}
+
+func (builder *Builder) WithPlatform(p dagger.Platform) *Builder {
+	b := *builder
+	b.Platform = p
+	b.PlatformSpec = platforms.MustParse(string(p))
+	return &b
+}
+
+func (builder *Builder) WithUbuntuBase() *Builder {
+	b := *builder
+	b.Base = "ubuntu"
+	return &b
+}
+
+func (builder *Builder) WithAlpineBase() *Builder {
+	b := *builder
+	builder.Base = "alpine"
+	return &b
+}
+
+func (builder *Builder) WithGPUSupport() *Builder {
+	b := *builder
+	builder.GPUSupport = true
+	return &b
 }
 
 func (build *Builder) Engine(ctx context.Context) (*Container, error) {
@@ -193,6 +200,8 @@ func (build *Builder) binary(pkg string) *File {
 	ldflags := []string{
 		"-s", "-w",
 	}
+	// XXX: not every binary needs this actually!
+	// because it changes often, it causes lots of cache misses
 	ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.Version.EngineVersion())
 
 	output := filepath.Join("./bin/", filepath.Base(pkg))
