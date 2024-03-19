@@ -46,6 +46,12 @@
   status = 301
 
 [[redirects]]
+  # redirect user guide CI index to integrations index
+  from = "/user-guide/ci"
+  to = "/integrations"
+  status = 301
+
+[[redirects]]
   # redirect CI pages from user manual
   from = "/user-guide/ci/533927-argo-workflows"
   to = "/integrations/533927/argo-workflows"
