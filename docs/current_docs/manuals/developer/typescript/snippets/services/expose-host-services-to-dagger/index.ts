@@ -17,7 +17,7 @@ class MyModule {
         "--password=secret",
         "--host=db",
         "-e",
-        "SELECT Host, User FROM mysql.user"
+        "SELECT Host, User FROM mysql.user",
       ])
       .stdout()
   }
