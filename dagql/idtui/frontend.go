@@ -229,7 +229,23 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 }
 
 func (fe *Frontend) renderPrimaryOutput() error {
-	logs := fe.db.PrimaryLogs[fe.db.PrimarySpan]
+	// TODO: there really should just be one, but 'dagger watch' can show
+	// multiple traces. but it might be more elegant to just not do this in the
+	// 'dagger watch' case and show each root span like normal.
+	showHeaders := len(fe.db.RootSpans) > 1
+	for traceID, rootSpan := range fe.db.RootSpans {
+		if showHeaders {
+			fmt.Fprintln(os.Stdout, "Logs for root span of trace ID:", traceID)
+		}
+		if err := fe.renderPrimaryOutputForRootSpan(rootSpan); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (fe *Frontend) renderPrimaryOutputForRootSpan(rootSpan trace.SpanID) error {
+	logs := fe.db.RootLogs[rootSpan]
 	if len(logs) == 0 {
 		return nil
 	}

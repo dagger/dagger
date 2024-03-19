@@ -14,10 +14,6 @@ const (
 
 	LLBOpAttr = "dagger.io/llb.op"
 
-	// Applied to the root span to make it clear that it's the trace we care
-	// about, in the event of orphaned spans.
-	UIPrimaryAttr = "dagger.io/ui.primary"
-
 	// Hide child spans by default.
 	UIEncapsulateAttr = "dagger.io/ui.encapsulate"
 

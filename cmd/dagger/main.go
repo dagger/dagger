@@ -225,8 +225,7 @@ func main() {
 		// If you pass credentials in plaintext, yes, they will be leaked; don't do
 		// that, since they will also be leaked in various other places (like the
 		// process tree). Use Secret arguments instead.
-		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "),
-			trace.WithAttributes(attribute.Bool(tracing.UIPrimaryAttr, true)))
+		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
 		defer tracing.End(span, func() error { return rerr })
 
 		slog.Debug("established root span",
