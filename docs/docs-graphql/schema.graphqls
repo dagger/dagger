@@ -1854,6 +1854,15 @@ type ModuleSource {
     dep: ModuleSourceID!
   ): ModuleSource!
 
+  """Load a directory from the caller optionally with a given view applied."""
+  resolveDirectoryFromCaller(
+    """The path on the caller's filesystem to load."""
+    path: String!
+
+    """If set, the name of the view to apply to the path."""
+    viewName: String
+  ): Directory!
+
   """
   Load the source from its path on the caller's filesystem, including only
   needed+configured files and directories. Only valid for local sources.
@@ -1869,6 +1878,18 @@ type ModuleSource {
 
   """The path relative to context of the module implementation source code."""
   sourceSubpath: String!
+
+  """Retrieve a named view defined for this module source."""
+  view(
+    """The name of the view to retrieve."""
+    name: String!
+  ): ModuleSourceView!
+
+  """
+  The named views defined for this module source, which are sets of directory
+  filters that can be applied to directory arguments provided to functions.
+  """
+  views: [ModuleSourceView!]!
 
   """
   Update the module source with a new context directory. Only valid for local sources.
@@ -1903,6 +1924,15 @@ type ModuleSource {
     """The path to set as the source subpath."""
     path: String!
   ): ModuleSource!
+
+  """Update the module source with a new named view."""
+  withView(
+    """The name of the view to set."""
+    name: String!
+
+    """The patterns to set as the view filters."""
+    patterns: [String!]!
+  ): ModuleSource!
 }
 
 """
@@ -1915,6 +1945,25 @@ enum ModuleSourceKind {
   LOCAL_SOURCE
   GIT_SOURCE
 }
+
+"""
+A named set of path filters that can be applied to directory arguments provided to functions.
+"""
+type ModuleSourceView {
+  """A unique identifier for this ModuleSourceView."""
+  id: ModuleSourceViewID!
+
+  """The name of the view"""
+  name: String!
+
+  """The patterns of the view used to filter paths"""
+  patterns: [String!]!
+}
+
+"""
+The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
+"""
+scalar ModuleSourceViewID
 
 """Transport layer network protocol associated to a port."""
 enum NetworkProtocol {
@@ -2205,6 +2254,9 @@ type Query {
 
   """Load a ModuleSource from its ID."""
   loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!
+
+  """Load a ModuleSourceView from its ID."""
+  loadModuleSourceViewFromID(id: ModuleSourceViewID!): ModuleSourceView!
 
   """Load a ObjectTypeDef from its ID."""
   loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!

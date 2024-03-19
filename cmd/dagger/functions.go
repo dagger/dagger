@@ -181,6 +181,10 @@ type FuncCommand struct {
 	// mod is the loaded module definition.
 	mod *moduleDef
 
+	// the ModuleSource definition for the module, needed by some arg types
+	// applying module-specific configs to the arg value.
+	modSource *dagger.ModuleSource
+
 	// showHelp is set in the loader vertex to flag whether to show the help
 	// in the execution vertex.
 	showHelp bool
@@ -351,6 +355,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	if err != nil {
 		return nil, nil, err
 	}
+	fc.modSource = modConf.Source
 
 	modDef, err := loadModTypeDefs(ctx, dag, mod)
 	if err != nil {
@@ -540,7 +545,7 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 		if err != nil {
 			return err
 		}
-		if !arg.TypeDef.Optional && arg.DefaultValue == "" {
+		if arg.IsRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())
 		}
 	}
@@ -592,7 +597,7 @@ func (fc *FuncCommand) selectFunc(selectName string, fn *modFunction, cmd *cobra
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj, err := v.Get(cmd.Context(), dag)
+			obj, err := v.Get(cmd.Context(), dag, fc.modSource)
 			if err != nil {
 				return fmt.Errorf("failed to get value for argument %q: %w", arg.Name, err)
 			}

@@ -78,7 +78,7 @@ type DaggerValue interface {
 	pflag.Value
 
 	// Get returns the final value for the query builder.
-	Get(context.Context, *dagger.Client) (any, error)
+	Get(context.Context, *dagger.Client, *dagger.ModuleSource) (any, error)
 }
 
 // sliceValue is a pflag.Value that builds a slice of DaggerValue instances.
@@ -103,10 +103,10 @@ func (v *sliceValue[T]) String() string {
 	return "[" + out + "]"
 }
 
-func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client) (any, error) {
+func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
 	out := make([]any, len(v.value))
 	for i, v := range v.value {
-		outV, err := v.Get(ctx, c)
+		outV, err := v.Get(ctx, c, modSrc)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +166,7 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(_ context.Context, c *dagger.Client) (any, error) {
+func (v *containerValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	if v.address == "" {
 		return nil, fmt.Errorf("container address cannot be empty")
 	}
@@ -194,7 +194,7 @@ func (v *directoryValue) String() string {
 	return v.address
 }
 
-func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
+func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("directory address cannot be empty")
 	}
@@ -216,15 +216,18 @@ func (v *directoryValue) Get(_ context.Context, dag *dagger.Client) (any, error)
 	}
 
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
-	vStr := v.String()
-	vStr = strings.TrimPrefix(vStr, "file://")
-	if !filepath.IsAbs(vStr) {
-		vStr, err = filepath.Abs(vStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
-		}
-	}
-	return dag.Host().Directory(vStr), nil
+	path := v.String()
+	path = strings.TrimPrefix(path, "file://")
+
+	// Check if there's a :view.
+	// This technically prevents use of paths containing a ":", but that's
+	// generally considered a no-no anyways since it isn't in the
+	// POSIX "portable filename character set":
+	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
+	path, viewName, _ := strings.Cut(path, ":")
+	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
+		ViewName: viewName,
+	}).Sync(ctx)
 }
 
 func parseGit(urlStr string) (*gitutil.GitURL, error) {
@@ -265,7 +268,7 @@ func (v *fileValue) String() string {
 	return v.path
 }
 
-func (v *fileValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
+func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	vStr := v.String()
 	if vStr == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
@@ -331,10 +334,13 @@ func (v *secretValue) Set(s string) error {
 }
 
 func (v *secretValue) String() string {
+	if v.sourceVal == "" {
+		return ""
+	}
 	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
 }
 
-func (v *secretValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
+func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	var plaintext string
 
 	switch v.secretSource {
@@ -440,7 +446,7 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(ctx context.Context, c *dagger.Client) (any, error) {
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
@@ -487,7 +493,7 @@ func (v *portForwardValue) String() string {
 	return fmt.Sprintf("%d:%d", v.frontend, v.backend)
 }
 
-func (v *portForwardValue) Get(_ context.Context, c *dagger.Client) (any, error) {
+func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	return &dagger.PortForward{
 		Frontend: v.frontend,
 		Backend:  v.backend,
@@ -516,7 +522,7 @@ func (v *cacheVolumeValue) String() string {
 	return v.name
 }
 
-func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client) (any, error) {
+func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("cacheVolume name cannot be empty")
 	}
@@ -543,7 +549,7 @@ func (v *moduleValue) String() string {
 	return v.ref
 }
 
-func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client) (any, error) {
+func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
@@ -574,7 +580,7 @@ func (v *moduleSourceValue) String() string {
 	return v.ref
 }
 
-func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client) (any, error) {
+func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}

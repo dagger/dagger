@@ -1,0 +1,52 @@
+---
+slug: /manuals/developer/overview/942201/execution-environment
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Execution Environment"
+---
+
+
+# Execution Environment
+
+
+## Containerization
+
+All Dagger Modules and Dagger Functions execute within containers spawned by the Dagger Engine. This serves a few purposes:
+
+1. Reproducibility - executing in a well-defined and well-controlled container makes it easier for your code to run the same way every time it is invoked. This makes it easier to reason about; you can't accidentally create "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+
+1. Caching - the reproducible containerized environment makes it possible to cache the result of Function execution, which in turn allows Dagger to automatically speed up function execution.
+
+1. Security - Even when running third-party Dagger Modules sourced from a Git repository, those Dagger Functions will not have default access to your host environment (e.g. files, directories, environment variables, etc.). They can only be granted access by explicitly passing those resources as argument values to the Dagger Function.
+
+## Code execution
+
+When implementing Dagger Functions, you are free to write arbitrary code that will execute inside the Dagger Module's container. You have access to the Dagger API to make calls to the core Dagger API or other Dagger Modules you depend on, but you are also free to just use the language's standard library and/or imported third-party libraries.
+
+The process your code executes in will currently be with the `root` user, but without a full set of Linux capabilities and other standard container sandboxing provided by `runc`.
+
+The current working directory of your code will be an initially empty directory. You can write and read files and directories in this directory if needed. This includes using the `Export` APIs on `File`/`Directory`/`Container` to write those to this local directory if needed.
+
+## `CurrentModule` API
+
+The Dagger API client available to all Dagger Functions includes a `CurrentModule` API that provides abilities to introspect the function's module and interface between the current execution environment and the Dagger API.
+
+For example:
+
+1. The `Source` API on `CurrentModule` returns a `Directory` where your module's source code is stored, which grants access to any files or directories within there.
+
+1. The `Workdir` and `WorkdirFile` APIs on `CurrentModule` allow you to load directories and files, respectively, from your function's current working directory (as described in the above section).
+
+## Host resources
+
+As mentioned above, Dagger Functions execute in containers and thus do not have access to resources on the host you invoke the function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, these resources need to be explicitly passed when executing `dagger call`.
+
+This includes:
+
+1. Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument when using `dagger call`.
+
+1. Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
+
+1. Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://<host>:<port>`.
+
+More details can be found in [Pass arguments to a function](../../../quickstart/292472-arguments.mdx).

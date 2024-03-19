@@ -432,6 +432,23 @@ impl ModuleSourceId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ModuleSourceViewId(pub String);
+impl Into<ModuleSourceViewId> for &str {
+    fn into(self) -> ModuleSourceViewId {
+        ModuleSourceViewId(self.to_string())
+    }
+}
+impl Into<ModuleSourceViewId> for String {
+    fn into(self) -> ModuleSourceViewId {
+        ModuleSourceViewId(self.clone())
+    }
+}
+impl ModuleSourceViewId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ObjectTypeDefId(pub String);
 impl Into<ObjectTypeDefId> for &str {
     fn into(self) -> ObjectTypeDefId {
@@ -4303,6 +4320,12 @@ pub struct ModuleSource {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceResolveDirectoryFromCallerOpts<'a> {
+    /// If set, the name of the view to apply to the path.
+    #[builder(setter(into, strip_option), default)]
+    pub view_name: Option<&'a str>,
+}
 impl ModuleSource {
     /// If the source is a of kind git, the git source representation of it.
     pub fn as_git_source(&self) -> GitModuleSource {
@@ -4418,6 +4441,43 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Load a directory from the caller optionally with a given view applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path on the caller's filesystem to load.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn resolve_directory_from_caller(&self, path: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("resolveDirectoryFromCaller");
+        query = query.arg("path", path.into());
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a directory from the caller optionally with a given view applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path on the caller's filesystem to load.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn resolve_directory_from_caller_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        opts: ModuleSourceResolveDirectoryFromCallerOpts<'a>,
+    ) -> Directory {
+        let mut query = self.selection.select("resolveDirectoryFromCaller");
+        query = query.arg("path", path.into());
+        if let Some(view_name) = opts.view_name {
+            query = query.arg("viewName", view_name);
+        }
+        return Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
     pub fn resolve_from_caller(&self) -> ModuleSource {
         let query = self.selection.select("resolveFromCaller");
@@ -4436,6 +4496,29 @@ impl ModuleSource {
     pub async fn source_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceSubpath");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Retrieve a named view defined for this module source.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the view to retrieve.
+    pub fn view(&self, name: impl Into<String>) -> ModuleSourceView {
+        let mut query = self.selection.select("view");
+        query = query.arg("name", name.into());
+        return ModuleSourceView {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
+    pub fn views(&self) -> Vec<ModuleSourceView> {
+        let query = self.selection.select("views");
+        return vec![ModuleSourceView {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
     }
     /// Update the module source with a new context directory. Only valid for local sources.
     ///
@@ -4512,6 +4595,55 @@ impl ModuleSource {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// Update the module source with a new named view.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the view to set.
+    /// * `patterns` - The patterns to set as the view filters.
+    pub fn with_view(
+        &self,
+        name: impl Into<String>,
+        patterns: Vec<impl Into<String>>,
+    ) -> ModuleSource {
+        let mut query = self.selection.select("withView");
+        query = query.arg("name", name.into());
+        query = query.arg(
+            "patterns",
+            patterns
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        return ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+}
+#[derive(Clone)]
+pub struct ModuleSourceView {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ModuleSourceView {
+    /// A unique identifier for this ModuleSourceView.
+    pub async fn id(&self) -> Result<ModuleSourceViewId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the view
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The patterns of the view used to filter paths
+    pub async fn patterns(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("patterns");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -5361,6 +5493,22 @@ impl Query {
             }),
         );
         return ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a ModuleSourceView from its ID.
+    pub fn load_module_source_view_from_id(&self, id: ModuleSourceView) -> ModuleSourceView {
+        let mut query = self.selection.select("loadModuleSourceViewFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        return ModuleSourceView {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

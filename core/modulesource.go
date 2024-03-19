@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
@@ -57,6 +58,7 @@ type ModuleSource struct {
 	WithDependencies  []dagql.Instance[*ModuleDependency]
 	WithSDK           string
 	WithSourceSubpath string
+	WithViews         []*ModuleSourceView
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -88,6 +90,11 @@ func (src ModuleSource) Clone() *ModuleSource {
 	if src.WithDependencies != nil {
 		cp.WithDependencies = make([]dagql.Instance[*ModuleDependency], len(src.WithDependencies))
 		copy(cp.WithDependencies, src.WithDependencies)
+	}
+
+	if src.WithViews != nil {
+		cp.WithViews = make([]*ModuleSourceView, len(src.WithViews))
+		copy(cp.WithViews, src.WithViews)
 	}
 
 	return &cp
@@ -274,6 +281,60 @@ func (src *ModuleSource) ModuleConfig(ctx context.Context) (*modules.ModuleConfi
 	return &modCfg, true, nil
 }
 
+func (src *ModuleSource) Views(ctx context.Context) ([]*ModuleSourceView, error) {
+	existingViews := map[string]int{}
+	cfg, cfgExists, err := src.ModuleConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("module config: %w", err)
+	}
+
+	var views []*ModuleSourceView
+	if cfgExists {
+		for i, view := range cfg.Views {
+			existingViews[view.Name] = i
+			views = append(views, &ModuleSourceView{view})
+		}
+	}
+
+	for _, view := range src.WithViews {
+		if i, ok := existingViews[view.Name]; ok {
+			views[i] = view
+		} else {
+			views = append(views, view)
+		}
+	}
+
+	slices.SortFunc(views, func(a, b *ModuleSourceView) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return views, nil
+}
+
+func (src *ModuleSource) ViewByName(ctx context.Context, viewName string) (*ModuleSourceView, error) {
+	for i := range src.WithViews {
+		view := src.WithViews[len(src.WithViews)-1-i]
+		if view.Name == viewName {
+			return view, nil
+		}
+	}
+
+	cfg, ok, err := src.ModuleConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("module config: %w", err)
+	}
+	if !ok {
+		return nil, fmt.Errorf("module config not found")
+	}
+
+	for _, view := range cfg.Views {
+		if view.Name == viewName {
+			return &ModuleSourceView{view}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("view %q not found", viewName)
+}
+
 type LocalModuleSource struct {
 	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
 
@@ -380,4 +441,19 @@ func (src *GitModuleSource) HTMLURL() string {
 		u += "/" + subPath
 	}
 	return u
+}
+
+type ModuleSourceView struct {
+	*modules.ModuleConfigView
+}
+
+func (v *ModuleSourceView) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ModuleSourceView",
+		NonNull:   true,
+	}
+}
+
+func (v *ModuleSourceView) TypeDescription() string {
+	return "A named set of path filters that can be applied to directory arguments provided to functions."
 }

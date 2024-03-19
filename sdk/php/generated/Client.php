@@ -444,6 +444,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a ModuleSourceView from its ID.
+     */
+    public function loadModuleSourceViewFromID(ModuleSourceViewId|ModuleSourceView $id): ModuleSourceView
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadModuleSourceViewFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ModuleSourceView($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a ObjectTypeDef from its ID.
      */
     public function loadObjectTypeDefFromID(ObjectTypeDefId|ObjectTypeDef $id): ObjectTypeDef
