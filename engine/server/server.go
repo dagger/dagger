@@ -333,8 +333,8 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer slog.Debug("done shutting down server")
 
 		if clientMetadata.ClientID == s.mainClientCallerID {
-			// Detach all services associated with the server, which will only
-			// synchronously shut them down if we're the last binder.
+			// Stop services, since the main client is going away, and we
+			// want the client to see them stop.
 			s.services.StopClientServices(ctx, s.serverID)
 
 			// Start draining telemetry
