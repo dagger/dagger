@@ -18,8 +18,7 @@ class MyModule:
 
         # set and get value
         return await (
-            redis_cli
-            .with_exec(["set", "foo", "abc"])
+            redis_cli.with_exec(["set", "foo", "abc"])
             .with_exec(["get", "foo"])
             .stdout()
         )
