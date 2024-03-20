@@ -25,8 +25,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
-	"github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -34,13 +32,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
-	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
-	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/proto"
 )
 
 type DaggerServer struct {
@@ -497,76 +490,4 @@ func (r splitWriteConn) Write(b []byte) (n int, err error) {
 
 		b = bnext
 	}
-}
-
-type chunkedTraceClient struct {
-	w http.ResponseWriter
-	f http.Flusher
-	l sync.Mutex
-}
-
-var _ otlptrace.Client = (*chunkedTraceClient)(nil)
-
-func (h *chunkedTraceClient) Start(ctx context.Context) error {
-	slog.Info("attached to traces; sending initial response")
-	fmt.Fprintf(h.w, "0\n")
-	h.f.Flush()
-	return nil
-}
-
-func (h *chunkedTraceClient) Stop(ctx context.Context) error {
-	return nil
-}
-
-func (h *chunkedTraceClient) UploadTraces(ctx context.Context, protoSpans []*tracepb.ResourceSpans) error {
-	h.l.Lock()
-	defer h.l.Unlock()
-	pbRequest := &coltracepb.ExportTraceServiceRequest{
-		ResourceSpans: protoSpans,
-	}
-	rawRequest, err := proto.Marshal(pbRequest)
-	if err != nil {
-		return err
-	}
-	// TODO hacky length-prefixed encoding
-	fmt.Fprintf(h.w, "%d\n", len(rawRequest))
-	h.w.Write(rawRequest)
-	h.f.Flush()
-	return nil
-}
-
-type chunkedLogsClient struct {
-	w http.ResponseWriter
-	f http.Flusher
-	l sync.Mutex
-}
-
-func (h *chunkedLogsClient) Start(ctx context.Context) error {
-	slog.Info("attached to traces; sending initial response")
-	fmt.Fprintf(h.w, "0\n")
-	h.f.Flush()
-	return nil
-}
-
-var _ sdklog.LogExporter = (*chunkedLogsClient)(nil)
-
-func (h *chunkedLogsClient) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
-	h.l.Lock()
-	defer h.l.Unlock()
-	pbRequest := &collogspb.ExportLogsServiceRequest{
-		ResourceLogs: transform.Logs(logs),
-	}
-	rawRequest, err := proto.Marshal(pbRequest)
-	if err != nil {
-		return err
-	}
-	// TODO hacky length-prefixed encoding
-	fmt.Fprintf(h.w, "%d\n", len(rawRequest))
-	h.w.Write(rawRequest)
-	h.f.Flush()
-	return nil
-}
-
-func (h *chunkedLogsClient) Shutdown(ctx context.Context) error {
-	return nil
 }
