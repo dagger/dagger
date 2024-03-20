@@ -29,47 +29,54 @@ import (
 	"github.com/dagger/dagger/telemetry/sdklog/otlploghttp"
 )
 
+var configuredCloudSpanExporter sdktrace.SpanExporter
+var configuredCloudLogsExporter sdklog.LogExporter
+var ocnfiguredCloudExportersOnce sync.Once
+
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.LogExporter, bool) {
-	cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN")
-	if cloudToken == "" {
-		return nil, nil, false
-	}
+	ocnfiguredCloudExportersOnce.Do(func() {
+		cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN")
+		if cloudToken == "" {
+			return
+		}
 
-	cloudURL := os.Getenv("DAGGER_CLOUD_URL")
-	if cloudURL == "" {
-		cloudURL = "https://api.dagger.cloud"
-	}
+		cloudURL := os.Getenv("DAGGER_CLOUD_URL")
+		if cloudURL == "" {
+			cloudURL = "https://api.dagger.cloud"
+		}
 
-	cloudEndpoint, err := url.Parse(cloudURL)
-	if err != nil {
-		slog.Warn("bad cloud URL", "error", err)
-		return nil, nil, false
-	}
+		cloudEndpoint, err := url.Parse(cloudURL)
+		if err != nil {
+			slog.Warn("bad cloud URL", "error", err)
+			return
+		}
 
-	tracesURL := cloudEndpoint.JoinPath("v1", "traces")
-	logsURL := cloudEndpoint.JoinPath("v1", "logs")
+		tracesURL := cloudEndpoint.JoinPath("v1", "traces")
+		logsURL := cloudEndpoint.JoinPath("v1", "logs")
 
-	headers := map[string]string{
-		"Authorization": "Bearer " + cloudToken,
-	}
+		headers := map[string]string{
+			"Authorization": "Bearer " + cloudToken,
+		}
 
-	spans, err := otlptracehttp.New(ctx,
-		otlptracehttp.WithEndpointURL(tracesURL.String()),
-		otlptracehttp.WithHeaders(headers))
-	if err != nil {
-		slog.Warn("failed to configure cloud tracing", "error", err)
-		return nil, nil, false
-	}
+		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,
+			otlptracehttp.WithEndpointURL(tracesURL.String()),
+			otlptracehttp.WithHeaders(headers))
+		if err != nil {
+			slog.Warn("failed to configure cloud tracing", "error", err)
+			return
+		}
 
-	cfg := otlploghttp.Config{
-		Endpoint: logsURL.Host,
-		URLPath:  logsURL.Path,
-		Insecure: logsURL.Scheme != "https",
-		Headers:  headers,
-	}
-	logs := otlploghttp.NewClient(cfg)
+		cfg := otlploghttp.Config{
+			Endpoint: logsURL.Host,
+			URLPath:  logsURL.Path,
+			Insecure: logsURL.Scheme != "https",
+			Headers:  headers,
+		}
+		configuredCloudLogsExporter = otlploghttp.NewClient(cfg)
+	})
 
-	return spans, logs, true
+	return configuredCloudSpanExporter, configuredCloudLogsExporter,
+		configuredCloudSpanExporter != nil
 }
 
 func OtelConfigured() bool {

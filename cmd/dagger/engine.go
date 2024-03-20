@@ -66,17 +66,16 @@ func withEngine(
 				SpanExporter: exp,
 			}
 		}
-		params.EngineTrace = telemetry.MultiSpanExporter{
-			params.EngineTrace,
-			exp,
-		}
+		params.EngineTrace = telemetry.MultiSpanExporter{params.EngineTrace, exp}
 	}
 
 	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
-		params.EngineLogs = telemetry.MultiLogExporter{
-			params.EngineLogs,
-			exp,
-		}
+		params.EngineLogs = telemetry.MultiLogExporter{params.EngineLogs, exp}
+	}
+
+	if spans, logs, ok := telemetry.ConfiguredCloudExporters(ctx); ok {
+		params.EngineTrace = telemetry.MultiSpanExporter{params.EngineTrace, spans}
+		params.EngineLogs = telemetry.MultiLogExporter{params.EngineLogs, logs}
 	}
 
 	sess, ctx, err := client.Connect(ctx, params)
