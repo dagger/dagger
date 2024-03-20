@@ -1,4 +1,14 @@
+import contextlib
+
+import dagger
 from dagger import dag, function, object_type
+
+
+@contextlib.asynccontextmanager
+async def managed_service(svc: dagger.Service):
+    """Start and stop a service."""
+    yield await svc.start()
+    await svc.stop()
 
 
 @object_type
@@ -9,23 +19,20 @@ class MyModule:
         redis_srv = dag.container().from_("redis").with_exposed_port(6379).as_service()
 
         # start Redis ahead of time so it stays up for the duration of the test
-        redis_srv = await redis_srv.start()
+        # and stop when done
+        async with managed_service(redis_srv) as redis_srv:
+            # create Redis client container
+            redis_cli = (
+                dag.container()
+                .from_("redis")
+                .with_service_binding("redis-srv", redis_srv)
+                .with_entrypoint(["redis-cli", "-h", "redis-srv"])
+            )
 
-        # stop the service when done
-        await redis_srv.stop()
+            # set value
+            setter = await redis_cli.with_exec(["set", "foo", "abc"]).stdout()
 
-        # create Redis client container
-        redis_cli = (
-            dag.container()
-            .from_("redis")
-            .with_service_binding("redis-srv", redis_srv)
-            .with_entrypoint(["redis-cli", "-h", "redis-srv"])
-        )
+            # get value
+            getter = await redis_cli.with_exec(["get", "foo"]).stdout()
 
-        # set value
-        setter = await redis_cli.with_exec(["set", "foo", "abc"]).stdout()
-
-        # get value
-        getter = await redis_cli.with_exec(["get", "foo"]).stdout()
-
-        return setter + getter
+            return setter + getter

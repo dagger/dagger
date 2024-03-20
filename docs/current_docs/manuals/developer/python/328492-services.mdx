@@ -198,13 +198,13 @@ Consider this example:
 Here's what happens on the last line:
 
 1. The client requests the `ping` container's stdout, which requires the container to run.
-1. Dagger sees that the `ping` container has a service binding, `redisSrv`.
-1. Dagger starts the `redisSrv` container, which recurses into this same process.
-1. Dagger waits for health checks to pass against `redisSrv`.
+1. Dagger sees that the `ping` container has a service binding, `redis_srv`.
+1. Dagger starts the `redis_srv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redis_srv`.
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 :::note
-Dagger cancels each service run after a 10 second grace period to avoid frequent restarts, unless the explicit `Start` and `Stop' APIs are used.
+Dagger cancels each service run after a 10 second grace period to avoid frequent restarts, unless the explicit `Start` and `Stop` APIs are used.
 :::
 
 Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.

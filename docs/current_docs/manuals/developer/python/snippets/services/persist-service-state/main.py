@@ -24,7 +24,7 @@ class MyModule:
         )
 
         # set and save value
-        await redis_cli.with_exec(["set", "foo", "abc"]).with_exec(["save"]).stdout()
+        await redis_cli.with_exec(["set", "foo", "abc"]).with_exec(["save"])
 
         # get value
         return await redis_cli.with_exec(["get", "foo"]).stdout()
