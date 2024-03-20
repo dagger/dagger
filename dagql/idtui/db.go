@@ -139,6 +139,10 @@ func (db *DB) spanLogs(id trace.SpanID) *Vterm {
 	return term
 }
 
+// SetPrimarySpan allows the primary span to be explicitly set to a particular
+// span. normally we assume the root span is the primary span, but in a nested
+// scenario we never actually see the root span, so the CLI explicitly sets it
+// to the span it created.
 func (db *DB) SetPrimarySpan(span trace.SpanID) {
 	db.PrimarySpan = span
 }
@@ -148,9 +152,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 	spanData := &Span{
 		ReadOnlySpan: span,
-		Primary:      spanID == db.PrimarySpan,
-		db:           db,
-		trace:        traceData,
+
+		// All root spans are Primary, unless we're explicitly told a different
+		// span to treat as the "primary" as with Dagger-in-Dagger.
+		Primary: !span.Parent().SpanID().IsValid() ||
+			spanID == db.PrimarySpan,
+
+		db:    db,
+		trace: traceData,
 	}
 
 	slog.Debug("recording span", "span", span.Name(), "id", spanID)
@@ -164,6 +173,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 		}
 		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
 		db.Children[parent.SpanID()][spanID] = struct{}{}
+	} else if !db.PrimarySpan.IsValid() {
+		// default primary to "root" span, but we might never see it in a nested
+		// scenario.
+		db.PrimarySpan = spanID
 	}
 
 	attrs := span.Attributes()
