@@ -736,11 +736,6 @@ func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module
 		TypeDefs []*modTypeDef
 	}
 
-	modID, err := mod.ID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get module ID: %w", err)
-	}
-
 	const query = `
 fragment TypeDefRefParts on TypeDef {
 	kind
@@ -794,7 +789,7 @@ fragment FieldParts on FieldTypeDef {
 	}
 }
 
-query TypeDefs($module: ModuleID!) {
+query TypeDefs {
 	typeDefs: currentTypeDefs {
 		kind
 		optional
@@ -828,11 +823,8 @@ query TypeDefs($module: ModuleID!) {
 }
 `
 
-	err = dag.Do(ctx, &dagger.Request{
+	err := dag.Do(ctx, &dagger.Request{
 		Query: query,
-		Variables: map[string]interface{}{
-			"module": modID,
-		},
 	}, &dagger.Response{
 		Data: &res,
 	})
