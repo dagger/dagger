@@ -102,6 +102,17 @@ const config: Config = {
       },
     ],
   ],
+  scripts: [
+    {
+      src: "https://widget.kapa.ai/kapa-widget.bundle.js",
+      "data-website-id": "cd096dd4-a417-48fa-b9aa-1e7818babec5",
+      "data-project-name": "Dagger",
+      "data-project-color": "#121226",
+      "data-project-logo":
+        "https://i.ibb.co/m42W777/No-Margins-LOGO-Dagger-Color-On-Black-Badge.png",
+      async: true,
+    },
+  ],
   themes: ["@docusaurus/theme-mermaid"],
   themeConfig: {
     sidebarCollapsed: false,
