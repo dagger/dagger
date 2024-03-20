@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -45,12 +44,12 @@ func TestModulePythonInit(t *testing.T) {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("respects existing pyproject.toml", func(t *testing.T) {
+	t.Run("doesn't init files with existing pyproject.toml", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("pyproject.toml", dagger.ContainerWithNewFileOpts{
@@ -60,19 +59,10 @@ func TestModulePythonInit(t *testing.T) {
                     version = "0.0.0"
                 `),
 			}).
-			With(daggerExec("init", "--name=hasPyproject", "--sdk=python"))
+			With(daggerFunctions()).
+			Sync(ctx)
 
-		out, err := modGen.
-			With(daggerQuery(`{hasPyproject{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"hasPyproject":{"containerEcho":{"stdout":"hello\n"}}}`, out)
-
-		t.Run("preserves module name", func(t *testing.T) {
-			generated, err := modGen.File("pyproject.toml").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, generated, `name = "has-pyproject"`)
-		})
+		require.Error(t, err)
 	})
 
 	t.Run("respects existing main.py", func(t *testing.T) {
@@ -84,9 +74,6 @@ func TestModulePythonInit(t *testing.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/src/main/__init__.py", dagger.ContainerWithNewFileOpts{
-				Contents: "from . import notmain\n",
-			}).
-			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
 				Contents: heredoc.Doc(`
                     from dagger import function
 
@@ -95,7 +82,7 @@ func TestModulePythonInit(t *testing.T) {
                         return "Hello, world!"
                 `),
 			}).
-			With(daggerExec("init", "--source=.", "--name=hasMainPy", "--sdk=python")).
+			With(daggerExec("init", "--name=hasMainPy", "--sdk=python", "--source=.")).
 			With(daggerQuery(`{hasMainPy{hello}}`)).
 			Stdout(ctx)
 
@@ -136,7 +123,7 @@ func TestModulePythonSignatures(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         from collections.abc import Sequence
         from typing import Optional
 
@@ -274,7 +261,7 @@ func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         import dagger
         from dagger import field, function, object_type
 
@@ -340,7 +327,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated
 
             from dagger import Doc, function, object_type
@@ -398,7 +385,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from dataclasses import field as datafield
             from typing import Annotated
 
@@ -443,7 +430,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -471,7 +458,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -511,7 +498,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -540,7 +527,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -569,7 +556,7 @@ func TestModulePythonNameOverrides(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         from typing import Annotated
 
         from dagger import Arg, Doc, field, function, object_type
@@ -596,7 +583,7 @@ func TestModulePythonReturnSelf(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	out, err := pythonModInit(ctx, t, c, `
+	out, err := pythonModInit(t, c, `
         from typing import Self
 
         from dagger import field, function, object_type
@@ -782,7 +769,7 @@ func TestModulePythonScalarKind(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := pythonModInit(ctx, t, c, `
+	_, err := pythonModInit(t, c, `
         import dagger
         from dagger import dag, function, object_type
 
@@ -803,7 +790,7 @@ func TestModulePythonEnumKind(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := pythonModInit(ctx, t, c, `
+	_, err := pythonModInit(t, c, `
         import dagger
         from dagger import dag, function, object_type
 
@@ -823,6 +810,6 @@ func pythonSource(contents string) dagger.WithContainerFunc {
 	return sdkSource("python", contents)
 }
 
-func pythonModInit(ctx context.Context, t *testing.T, c *dagger.Client, source string) *dagger.Container {
-	return modInit(ctx, t, c, "python", source)
+func pythonModInit(t *testing.T, c *dagger.Client, source string) *dagger.Container {
+	return modInit(t, c, "python", source)
 }
