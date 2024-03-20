@@ -702,7 +702,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 	return dir, nil
 }
 
-func (dir *Directory) Export(ctx context.Context, destPath string) (rerr error) {
+func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
 	svcs := dir.Query.Services
 	bk := dir.Query.Buildkit
 
@@ -735,7 +735,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string) (rerr error) 
 	}
 	defer detach()
 
-	return bk.LocalDirExport(ctx, defPB, destPath)
+	return bk.LocalDirExport(ctx, defPB, destPath, merge)
 }
 
 // Root removes any relative path from the directory.

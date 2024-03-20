@@ -1938,12 +1938,24 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	return response, q.Execute(ctx)
 }
 
+// DirectoryExportOpts contains options for Directory.Export
+type DirectoryExportOpts struct {
+	// If true, then the host directory will be wiped clean such that it exactly matches the directory being exported, including deleting any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
+	Wipe bool
+}
+
 // Writes the contents of the directory to a path on the host.
-func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
+func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
 	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `wipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Wipe) {
+			q = q.Arg("wipe", opts[i].Wipe)
+		}
+	}
 	q = q.Arg("path", path)
 
 	var response bool

@@ -178,6 +178,10 @@ type LocalExportOpts struct {
 	FileOriginalName   string      `json:"file_original_name"`
 	AllowParentDirPath bool        `json:"allow_parent_dir_path"`
 	FileMode           os.FileMode `json:"file_mode"`
+	// whether to just merge in contents of a directory to the target on the host
+	// or to replace the target entirely such that it matches the source directory,
+	// which includes deleting any files that are not in the source directory
+	Merge bool
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {
