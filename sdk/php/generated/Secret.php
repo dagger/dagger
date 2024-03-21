@@ -23,6 +23,15 @@ class Secret extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The name of this secret.
+     */
+    public function name(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
      * The value of this secret.
      */
     public function plaintext(): string
