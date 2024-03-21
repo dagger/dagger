@@ -464,7 +464,7 @@ func (s *moduleSchema) currentFunctionCall(ctx context.Context, self *core.Query
 }
 
 func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*core.Module], _ struct{}) (dagql.Nullable[core.Void], error) {
-	return dagql.Null[core.Void](), modMeta.Self.Query.ServeModuleToMainClient(ctx, modMeta)
+	return dagql.Null[core.Void](), modMeta.Self.Query.ServeModule(ctx, modMeta.Self)
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) ([]*core.TypeDef, error) {

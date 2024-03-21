@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/content"
@@ -14,6 +15,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
 )
@@ -114,22 +116,16 @@ type ClientCallContext struct {
 
 	// If the client is itself from a function call in a user module, these are set with the
 	// metadata of that ongoing function call
-	Module *Module
 	FnCall *FunctionCall
 
 	ProgrockParent string
 }
 
-func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Instance[*Module]) error {
+func (q *Query) ServeModule(ctx context.Context, mod *Module) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
 	}
-	if clientMetadata.ClientID != q.MainClientCallerID {
-		return fmt.Errorf("cannot serve module to client %s", clientMetadata.ClientID)
-	}
-
-	mod := modMeta.Self
 
 	q.ClientCallMu.Lock()
 	defer q.ClientCallMu.Unlock()
@@ -141,45 +137,70 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 	return nil
 }
 
-func (q *Query) RegisterFunctionCall(
-	ctx context.Context,
-	clientID string,
-	deps *ModDeps,
-	mod *Module,
-	call *FunctionCall,
-	progrockParent string,
-) error {
-	if clientID == "" {
-		return fmt.Errorf("cannot register function call with empty clientID")
+func (q *Query) RegisterCaller(ctx context.Context, call *FunctionCall) (string, error) {
+	if call == nil {
+		call = &FunctionCall{}
+	}
+	callCtx := &ClientCallContext{
+		FnCall:         call,
+		ProgrockParent: progrock.FromContext(ctx).Parent,
+	}
+
+	currentID := dagql.CurrentID(ctx)
+	clientIDInputs := []string{currentID.Digest().String()}
+	if !call.Cache {
+		// use the ServerID so that we bust cache once-per-session
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return "", err
+		}
+		clientIDInputs = append(clientIDInputs, clientMetadata.ServerID)
+	}
+	clientIDDigest := digest.FromString(strings.Join(clientIDInputs, " "))
+
+	// only use encoded part of digest because this ID ends up becoming a buildkit Session ID
+	// and buildkit has some ancient internal logic that splits on a colon to support some
+	// dev mode logic: https://github.com/moby/buildkit/pull/290
+	// also trim it to 25 chars as it ends up becoming part of service URLs
+	clientID := clientIDDigest.Encoded()[:25]
+
+	// break glass for debugging which client is which operation
+	// bklog.G(ctx).Debugf("CLIENT ID %s = %s", clientID, currentID.Display())
+
+	if call.Module == nil {
+		callCtx.Deps = q.DefaultDeps
+	} else {
+		callCtx.Deps = call.Module.Deps
+		// By default, serve both deps and the module's own API to itself. But if SkipSelfSchema is set,
+		// only serve the APIs of the deps of this module. This is currently only needed for the special
+		// case of the function used to get the definition of the module itself (which can't obviously
+		// be served the API its returning the definition of).
+		if !call.SkipSelfSchema {
+			callCtx.Deps = callCtx.Deps.Append(call.Module)
+		}
 	}
 
 	q.ClientCallMu.Lock()
 	defer q.ClientCallMu.Unlock()
 	_, ok := q.ClientCallContext[clientID]
 	if ok {
-		return nil
+		return clientID, nil
 	}
-	newRoot, err := NewRoot(ctx, q.QueryOpts)
+
+	var err error
+	callCtx.Root, err = NewRoot(ctx, q.QueryOpts)
 	if err != nil {
-		return err
+		return "", err
 	}
-	q.ClientCallContext[clientID] = &ClientCallContext{
-		Root:           newRoot,
-		Deps:           deps,
-		Module:         mod,
-		FnCall:         call,
-		ProgrockParent: progrockParent,
-	}
-	return nil
+
+	q.ClientCallContext[clientID] = callCtx
+	return clientID, nil
 }
 
 func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
-	}
-	if clientMetadata.ClientID == q.MainClientCallerID {
-		return nil, fmt.Errorf("%w: main client caller has no module", ErrNoCurrentModule)
 	}
 
 	q.ClientCallMu.RLock()
@@ -188,7 +209,10 @@ func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
 	if !ok {
 		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
 	}
-	return callCtx.Module, nil
+	if callCtx.FnCall.Module == nil {
+		return nil, ErrNoCurrentModule
+	}
+	return callCtx.FnCall.Module, nil
 }
 
 func (q *Query) CurrentFunctionCall(ctx context.Context) (*FunctionCall, error) {

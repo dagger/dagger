@@ -1021,10 +1021,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		// clientID may be an empty string, in which case it will get its own
-		// new isolated server (currently only happens for nested execs besides
-		// function calls)
-		clientID := opts.NestedClientID
+		clientID, err := container.Query.RegisterCaller(ctx, opts.NestedExecFunctionCall)
+		if err != nil {
+			return nil, fmt.Errorf("register caller: %w", err)
+		}
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_NESTED_CLIENT_ID", clientID),
 			// include the engine version so that these execs get invalidated if the engine/API change
@@ -1782,10 +1782,9 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
-	// (Internal-only) If this exec is nested, this sets the client ID used to connect back
-	// to the API. It's used by the API server to determine which schema to serve and other
-	// module context metadata.
-	NestedClientID string `name:"-"`
+	// (Internal-only) If this is a nested exec for a Function call, this should be set
+	// with the metadata for that call
+	NestedExecFunctionCall *FunctionCall `name:"-"`
 }
 
 type BuildArg struct {

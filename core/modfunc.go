@@ -10,13 +10,11 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vito/progrock"
 )
 
 type ModuleFunction struct {
@@ -111,7 +109,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallOpts) (t dagql.Typed, rerr error) {
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -164,23 +162,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 		})
 	}
 
-	callerDigestInputs := []string{}
-	{
-		callerIDDigest := caller.Digest() // FIXME(vito) canonicalize, once all that's implemented
-		callerDigestInputs = append(callerDigestInputs, callerIDDigest.String())
-	}
-	if !opts.Cache {
-		// use the ServerID so that we bust cache once-per-session
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client metadata: %w", err)
-		}
-		callerDigestInputs = append(callerDigestInputs, clientMetadata.ServerID)
-	}
-
-	callerDigest := digest.FromString(strings.Join(callerDigestInputs, " "))
-
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("caller_digest", callerDigest.String()))
 	bklog.G(ctx).Debug("function call")
 	defer func() {
 		bklog.G(ctx).Debug("function call done")
@@ -195,35 +176,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 	}
 
 	callMeta := &FunctionCall{
-		Query:     fn.root,
-		Name:      fn.metadata.OriginalName,
-		Parent:    parentJSON,
-		InputArgs: callInputs,
+		Query:          fn.root,
+		Name:           fn.metadata.OriginalName,
+		Parent:         parentJSON,
+		InputArgs:      callInputs,
+		Module:         mod,
+		Cache:          opts.Cache,
+		SkipSelfSchema: opts.SkipSelfSchema,
 	}
 	if fn.objDef != nil {
 		callMeta.ParentName = fn.objDef.OriginalName
-	}
-
-	var deps *ModDeps
-	if opts.SkipSelfSchema {
-		// Only serve the APIs of the deps of this module. This is currently only needed for the special
-		// case of the function used to get the definition of the module itself (which can't obviously
-		// be served the API its returning the definition of).
-		deps = mod.Deps
-	} else {
-		// by default, serve both deps and the module's own API to itself
-		deps = mod.Deps.Prepend(mod)
-	}
-
-	// only use encoded part of digest because this ID ends up becoming a buildkit Session ID
-	// and buildkit has some ancient internal logic that splits on a colon to support some
-	// dev mode logic: https://github.com/moby/buildkit/pull/290
-	// also trim it to 25 chars as it ends up becoming part of service URLs
-	clientID := callerDigest.Encoded()[:25]
-	err = mod.Query.RegisterFunctionCall(ctx, clientID, deps, fn.mod, callMeta,
-		progrock.FromContext(ctx).Parent)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register function call: %w", err)
 	}
 
 	ctr := fn.runtime
@@ -237,7 +199,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
-		NestedClientID:                clientID,
+		NestedExecFunctionCall:        callMeta,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)

@@ -290,15 +290,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// already started
 	c.eg.Go(func() error {
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			// overwrite the session ID to be our client ID
-			const sessionIDHeader = "X-Docker-Expose-Session-Uuid"
-			if _, ok := meta[sessionIDHeader]; !ok {
-				// should never happen unless upstream changes the value of the header key,
-				// in which case we want to know
-				return nil, fmt.Errorf("missing header %s", sessionIDHeader)
-			}
-			meta[sessionIDHeader] = []string{c.ID}
-
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:            true,
 				ClientID:                  c.ID,

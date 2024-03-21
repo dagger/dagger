@@ -97,7 +97,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 	getSessionCtx, getSessionCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer getSessionCancel()
-	sessionCaller, err := e.SessionManager.Get(getSessionCtx, clientMetadata.ClientID, false)
+	sessionCaller, err := e.SessionManager.Get(getSessionCtx, clientMetadata.BuildkitSessionID(), false)
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
@@ -280,12 +280,15 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = progrock.ToContext(ctx, rec)
 
+	s.clientCallMu.RLock()
 	schema, err := callContext.Deps.Schema(ctx)
 	if err != nil {
+		s.clientCallMu.RUnlock()
 		// TODO: technically this is not *always* bad request, should ideally be more specific and differentiate
 		errorOut(err, http.StatusBadRequest)
 		return
 	}
+	s.clientCallMu.RUnlock()
 
 	defer func() {
 		if v := recover(); v != nil {

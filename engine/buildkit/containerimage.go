@@ -108,7 +108,7 @@ func (c *Client) ExportContainerImage(
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.BuildkitSessionID())
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %s", err)
 	}

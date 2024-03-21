@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -88,6 +89,15 @@ func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
 		md[k] = append(md[k], v...)
 	}
 	return md
+}
+
+// The ID to use for this client's buildkit session. It's a combination of both
+// the client and the server IDs to account for the fact that the client ID is
+// a content digest for functions/nested-execs, meaning it can reoccur across
+// different servers; that doesn't work because buildkit's SessionManager is
+// global to the whole process.
+func (m ClientMetadata) BuildkitSessionID() string {
+	return strings.Join([]string{m.ClientID, m.ServerID}, "-")
 }
 
 func ContextWithClientMetadata(ctx context.Context, clientMetadata *ClientMetadata) context.Context {

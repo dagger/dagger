@@ -635,10 +635,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if !ok {
 		return errors.New("missing nested client server ID")
 	}
-	if clientID == "" {
-		// if this is a new client, it gets it own isolated server
-		serverID = ""
-	}
 
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
 

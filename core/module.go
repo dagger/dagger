@@ -137,7 +137,7 @@ func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Modul
 		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", mod.Name(), err)
 	}
 
-	result, err := getModDefFn.Call(ctx, newID, &CallOpts{Cache: true, SkipSelfSchema: true})
+	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true, SkipSelfSchema: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call module %q to get functions: %w", mod.Name(), err)
 	}

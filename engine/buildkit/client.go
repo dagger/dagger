@@ -615,13 +615,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("failed to get requester session: %s", err)
