@@ -289,10 +289,9 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			execMeta, ok := c.execMetadata[*execOp.OpDigest]
 			if !ok {
 				execMeta = ContainerExecUncachedMetadata{
-					ParentClientIDs: clientMetadata.ClientIDs(),
-					ServerID:        clientMetadata.ServerID,
-					ProgSockPath:    c.ProgSockPath,
-					ProgParent:      progrock.FromContext(ctx).Parent,
+					ServerID:     clientMetadata.ServerID,
+					ProgSockPath: c.ProgSockPath,
+					ProgParent:   progrock.FromContext(ctx).Parent,
 				}
 				c.execMetadata[*execOp.OpDigest] = execMeta
 			}
@@ -761,8 +760,7 @@ func withOutgoingContext(ctx context.Context) context.Context {
 // the "real" ftp proxy setting in here too and have the shim handle
 // leaving only that set in the actual env var.
 type ContainerExecUncachedMetadata struct {
-	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
-	ServerID        string   `json:"serverID,omitempty"`
+	ServerID string `json:"serverID,omitempty"`
 	// Progrock propagation
 	ProgSockPath string `json:"progSockPath,omitempty"`
 	ProgParent   string `json:"progParent,omitempty"`

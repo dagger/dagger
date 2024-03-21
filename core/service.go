@@ -265,7 +265,7 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
 
 	bk := svc.Query.Buildkit
 
@@ -333,10 +333,9 @@ func (svc *Service) startContainer(
 	}
 
 	execMeta := buildkit.ContainerExecUncachedMetadata{
-		ParentClientIDs: clientMetadata.ClientIDs(),
-		ServerID:        clientMetadata.ServerID,
-		ProgSockPath:    bk.ProgSockPath,
-		ProgParent:      rec.Parent,
+		ServerID:     clientMetadata.ServerID,
+		ProgSockPath: bk.ProgSockPath,
+		ProgParent:   rec.Parent,
 	}
 	execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 	if err != nil {
@@ -608,7 +607,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 	svcCtx = progrock.ToContext(svcCtx, rec)
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
 
 	bk := svc.Query.Buildkit
 
