@@ -118,7 +118,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Writes the contents of the directory to a path on the host.\n\n## Required Arguments\n\n* `path` - Location of the copied directory (e.g., \"logs/\").\n\n## Optional Arguments\n\n* `wipe` - If true, then the host directory will be wiped clean such that it exactly matches the directory being exported, including deleting any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone."
+    @doc "Writes the contents of the directory to a path on the host.\n\n## Required Arguments\n\n* `path` - Location of the copied directory (e.g., \"logs/\").\n\n## Optional Arguments\n\n* `wipe` - If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone."
     @spec export(t(), Dagger.String.t(), keyword()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
     def export(%__MODULE__{} = directory, path, optional_args \\ []) do

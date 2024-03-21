@@ -528,7 +528,7 @@ export type DirectoryEntriesOpts = {
 
 export type DirectoryExportOpts = {
   /**
-   * If true, then the host directory will be wiped clean such that it exactly matches the directory being exported, including deleting any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
+   * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
    */
   wipe?: boolean
 }
@@ -2923,7 +2923,7 @@ export class Directory extends BaseClient {
   /**
    * Writes the contents of the directory to a path on the host.
    * @param path Location of the copied directory (e.g., "logs/").
-   * @param opts.wipe If true, then the host directory will be wiped clean such that it exactly matches the directory being exported, including deleting any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
+   * @param opts.wipe If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
    */
   export = async (
     path: string,
