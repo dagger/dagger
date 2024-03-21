@@ -189,24 +189,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 		}
 	}()
 
-	ctr := fn.runtime
-
-	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform)
-	ctr, err := ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
-	}
-
-	// Setup the Exec for the Function call and evaluate it
-	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-		ModuleCallerDigest:            callerDigest,
-		ExperimentalPrivilegedNesting: true,
-		NestedInSameSession:           true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec function: %w", err)
-	}
-
 	parentJSON, err := json.Marshal(opts.ParentVal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
@@ -233,10 +215,32 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 		deps = mod.Deps.Prepend(mod)
 	}
 
-	err = mod.Query.RegisterFunctionCall(ctx, callerDigest, deps, fn.mod, callMeta,
+	// only use encoded part of digest because this ID ends up becoming a buildkit Session ID
+	// and buildkit has some ancient internal logic that splits on a colon to support some
+	// dev mode logic: https://github.com/moby/buildkit/pull/290
+	// also trim it to 25 chars as it ends up becoming part of service URLs
+	clientID := callerDigest.Encoded()[:25]
+	err = mod.Query.RegisterFunctionCall(ctx, clientID, deps, fn.mod, callMeta,
 		progrock.FromContext(ctx).Parent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register function call: %w", err)
+	}
+
+	ctr := fn.runtime
+
+	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform)
+	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
+	}
+
+	// Setup the Exec for the Function call and evaluate it
+	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
+		ExperimentalPrivilegedNesting: true,
+		NestedClientID:                clientID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
 	_, err = ctr.Evaluate(ctx)

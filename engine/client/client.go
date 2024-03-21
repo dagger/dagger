@@ -32,7 +32,6 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/util/grpcerrors"
-	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
@@ -50,8 +49,13 @@ import (
 const ProgrockParentHeader = "X-Progrock-Parent"
 
 type Params struct {
-	// The id of the server to connect to, or if blank a new one
-	// should be started.
+	// The id to connect to the API server with. If blank, will be set to a
+	// new random value.
+	ID string
+
+	// The id of the server to connect to, or if blank a new one should be started.
+	// Needed separately from the client ID as that ID is a digest which could
+	// be reused across multiple servers.
 	ServerID string
 
 	// Parent client IDs of this Dagger client.
@@ -72,11 +76,6 @@ type Params struct {
 	ProgrockParent     string
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
-
-	// If this client is for a module function, this digest will be set in the
-	// grpc context metadata for any api requests back to the engine. It's used by the API
-	// server to determine which schema to serve and other module context metadata.
-	ModuleCallerDigest digest.Digest
 }
 
 type Client struct {
@@ -111,11 +110,14 @@ type Client struct {
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
 	c := &Client{Params: params}
-	if c.SecretToken == "" {
-		c.SecretToken = uuid.New().String()
+	if c.ID == "" {
+		c.ID = identity.NewID()
 	}
 	if c.ServerID == "" {
 		c.ServerID = identity.NewID()
+	}
+	if c.SecretToken == "" {
+		c.SecretToken = uuid.New().String()
 	}
 
 	c.internalCtx, c.internalCancel = context.WithCancel(context.Background())
@@ -180,19 +182,15 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	// sneakily using ModuleCallerDigest here because it seems nicer than just
+	// sneakily using the client ID here because it seems nicer than just
 	// making something up, and should be pretty much 1:1 I think (even
 	// non-cached things will have a different caller digest each time)
-	connectDigest := params.ModuleCallerDigest
+	connectDigest := params.ID
 	var opts []progrock.VertexOpt
-	if connectDigest == "" {
-		connectDigest = digest.FromString("_root") // arbitrary
-	} else {
-		opts = append(opts, progrock.Internal())
-	}
+	opts = append(opts, progrock.Internal())
 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", opts...)
+	_, loader := progrock.Span(ctx, connectDigest, "connect", opts...)
 	defer func() { loader.Done(rerr) }()
 
 	// Check if any of the upstream cache importers/exporters are enabled.
@@ -260,13 +258,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.labels = labels
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
-		ClientID:           c.ID(),
-		ClientSecretToken:  c.SecretToken,
-		ServerID:           c.ServerID,
-		ClientHostname:     c.hostname,
-		Labels:             c.labels,
-		ParentClientIDs:    c.ParentClientIDs,
-		ModuleCallerDigest: c.ModuleCallerDigest,
+		ClientID:          c.ID,
+		ClientSecretToken: c.SecretToken,
+		ClientHostname:    c.hostname,
+		Labels:            c.labels,
+		ParentClientIDs:   c.ParentClientIDs,
 	})
 
 	// progress
@@ -294,17 +290,25 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// already started
 	c.eg.Go(func() error {
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+			// overwrite the session ID to be our client ID
+			const sessionIDHeader = "X-Docker-Expose-Session-Uuid"
+			if _, ok := meta[sessionIDHeader]; !ok {
+				// should never happen unless upstream changes the value of the header key,
+				// in which case we want to know
+				return nil, fmt.Errorf("missing header %s", sessionIDHeader)
+			}
+			meta[sessionIDHeader] = []string{c.ID}
+
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:            true,
-				ClientID:                  c.ID(),
-				ClientSecretToken:         c.SecretToken,
+				ClientID:                  c.ID,
 				ServerID:                  c.ServerID,
+				ClientSecretToken:         c.SecretToken,
 				ParentClientIDs:           c.ParentClientIDs,
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
 				Labels:                    c.labels,
-				ModuleCallerDigest:        c.ModuleCallerDigest,
 				CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 				DoNotTrack:                analytics.DoNotTrack(),
 			}.AppendToMD(meta))
@@ -461,10 +465,6 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 	return ctx, cancel, nil
 }
 
-func (c *Client) ID() string {
-	return c.bkSession.ID()
-}
-
 func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, err error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
@@ -481,13 +481,12 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
 	} else {
 		conn, err = grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-			ClientID:           c.ID(),
-			ClientSecretToken:  c.SecretToken,
-			ServerID:           c.ServerID,
-			ClientHostname:     c.hostname,
-			ParentClientIDs:    c.ParentClientIDs,
-			Labels:             c.labels,
-			ModuleCallerDigest: c.ModuleCallerDigest,
+			ClientID:          c.ID,
+			ServerID:          c.ServerID,
+			ClientSecretToken: c.SecretToken,
+			ClientHostname:    c.hostname,
+			ParentClientIDs:   c.ParentClientIDs,
+			Labels:            c.labels,
 		}.ToGRPCMD())
 	}
 	if err != nil {

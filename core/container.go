@@ -1021,16 +1021,15 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		// include the engine version so that these execs get invalidated if the engine/API change
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", engine.Version))
-	}
-
-	if opts.ModuleCallerDigest != "" {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_MODULE_CALLER_DIGEST", opts.ModuleCallerDigest.String()))
-	}
-
-	if opts.NestedInSameSession {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION", ""))
+		// clientID may be an empty string, in which case it will get its own
+		// new isolated server (currently only happens for nested execs besides
+		// function calls)
+		clientID := opts.NestedClientID
+		runOpts = append(runOpts,
+			llb.AddEnv("_DAGGER_NESTED_CLIENT_ID", clientID),
+			// include the engine version so that these execs get invalidated if the engine/API change
+			llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version),
+		)
 	}
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
@@ -1071,13 +1070,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		// don't pass these through to the container when manually set, they are internal only
-		if name == "_DAGGER_ENABLE_NESTING" && !opts.ExperimentalPrivilegedNesting {
-			continue
-		}
-		if name == "_DAGGER_MODULE_CALLER_DIGEST" && opts.ModuleCallerDigest == "" {
-			continue
-		}
-		if name == "_DAGGER_ENABLE_NESTING_IN_SAME_SESSION" && !opts.NestedInSameSession {
+		if name == "_DAGGER_NESTED_CLIENT_ID" && !opts.ExperimentalPrivilegedNesting {
 			continue
 		}
 
@@ -1783,22 +1776,16 @@ type ContainerExecOpts struct {
 	// Redirect the command's standard error to a file in the container
 	RedirectStderr string `default:""`
 
-	// Provide dagger access to the executed command
-	// Do not use this option unless you trust the command being executed.
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
 
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
-	// (Internal-only) If this exec is for a module function, this digest will be set in the
-	// grpc context metadata for any api requests back to the engine. It's used by the API
-	// server to determine which schema to serve and other module context metadata.
-	ModuleCallerDigest digest.Digest `name:"-"`
-
-	// (Internal-only) Used for module function execs to trigger the nested api client to
-	// be connected back to the same session.
-	NestedInSameSession bool `name:"-"`
+	// (Internal-only) If this exec is nested, this sets the client ID used to connect back
+	// to the API. It's used by the API server to determine which schema to serve and other
+	// module context metadata.
+	NestedClientID string `name:"-"`
 }
 
 type BuildArg struct {

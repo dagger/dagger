@@ -59,10 +59,9 @@ type Opts struct {
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
 	// not any nested clients (may change in future).
-	MainClientCaller   bksession.Caller
-	MainClientCallerID string
-	DNSConfig          *oci.DNSConfig
-	Frontends          map[string]bkfrontend.Frontend
+	MainClientCaller bksession.Caller
+	DNSConfig        *oci.DNSConfig
+	Frontends        map[string]bkfrontend.Frontend
 	sharedClientState
 }
 

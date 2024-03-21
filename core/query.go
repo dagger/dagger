@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/util/leaseutil"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vito/progrock"
 )
@@ -60,8 +59,9 @@ type QueryOpts struct {
 	// For the special case of the main client caller, the key is just empty string.
 	// This is never explicitly deleted from; instead it will just be garbage collected
 	// when this server for the session shuts down
-	ClientCallContext map[digest.Digest]*ClientCallContext
-	ClientCallMu      *sync.RWMutex
+	ClientCallContext  map[string]*ClientCallContext
+	ClientCallMu       *sync.RWMutex
+	MainClientCallerID string
 
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	Endpoints  map[string]http.Handler
@@ -125,7 +125,7 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 	if err != nil {
 		return err
 	}
-	if clientMetadata.ModuleCallerDigest != "" {
+	if clientMetadata.ClientID != q.MainClientCallerID {
 		return fmt.Errorf("cannot serve module to client %s", clientMetadata.ClientID)
 	}
 
@@ -133,7 +133,7 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 
 	q.ClientCallMu.Lock()
 	defer q.ClientCallMu.Unlock()
-	callCtx, ok := q.ClientCallContext[""]
+	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
 	if !ok {
 		return fmt.Errorf("client call not found")
 	}
@@ -143,19 +143,19 @@ func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Insta
 
 func (q *Query) RegisterFunctionCall(
 	ctx context.Context,
-	dgst digest.Digest,
+	clientID string,
 	deps *ModDeps,
 	mod *Module,
 	call *FunctionCall,
 	progrockParent string,
 ) error {
-	if dgst == "" {
-		return fmt.Errorf("cannot register function call with empty digest")
+	if clientID == "" {
+		return fmt.Errorf("cannot register function call with empty clientID")
 	}
 
 	q.ClientCallMu.Lock()
 	defer q.ClientCallMu.Unlock()
-	_, ok := q.ClientCallContext[dgst]
+	_, ok := q.ClientCallContext[clientID]
 	if ok {
 		return nil
 	}
@@ -163,7 +163,7 @@ func (q *Query) RegisterFunctionCall(
 	if err != nil {
 		return err
 	}
-	q.ClientCallContext[dgst] = &ClientCallContext{
+	q.ClientCallContext[clientID] = &ClientCallContext{
 		Root:           newRoot,
 		Deps:           deps,
 		Module:         mod,
@@ -178,15 +178,15 @@ func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
-	if clientMetadata.ModuleCallerDigest == "" {
+	if clientMetadata.ClientID == q.MainClientCallerID {
 		return nil, fmt.Errorf("%w: main client caller has no module", ErrNoCurrentModule)
 	}
 
 	q.ClientCallMu.RLock()
 	defer q.ClientCallMu.RUnlock()
-	callCtx, ok := q.ClientCallContext[clientMetadata.ModuleCallerDigest]
+	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
 	}
 	return callCtx.Module, nil
 }
@@ -196,15 +196,15 @@ func (q *Query) CurrentFunctionCall(ctx context.Context) (*FunctionCall, error) 
 	if err != nil {
 		return nil, err
 	}
-	if clientMetadata.ModuleCallerDigest == "" {
+	if clientMetadata.ClientID == q.MainClientCallerID {
 		return nil, fmt.Errorf("%w: main client caller has no function", ErrNoCurrentModule)
 	}
 
 	q.ClientCallMu.RLock()
 	defer q.ClientCallMu.RUnlock()
-	callCtx, ok := q.ClientCallContext[clientMetadata.ModuleCallerDigest]
+	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
 	}
 
 	return callCtx.FnCall, nil
@@ -215,9 +215,9 @@ func (q *Query) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
 	if err != nil {
 		return nil, err
 	}
-	callCtx, ok := q.ClientCallContext[clientMetadata.ModuleCallerDigest]
+	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
+		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
 	}
 	return callCtx.Deps, nil
 }

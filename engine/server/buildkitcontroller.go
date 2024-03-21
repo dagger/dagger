@@ -153,7 +153,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", opts.ClientID).
 		WithField("client_hostname", opts.ClientHostname).
-		WithField("client_call_digest", opts.ModuleCallerDigest).
 		WithField("server_id", opts.ServerID))
 	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Debug("handling session call")
 	defer func() {

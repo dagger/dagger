@@ -32,7 +32,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/progrock"
@@ -46,10 +45,9 @@ type DaggerServer struct {
 	clientIDMu            sync.RWMutex
 
 	// The metadata of client calls.
-	// For the special case of the main client caller, the key is just empty string.
 	// This is never explicitly deleted from; instead it will just be garbage collected
 	// when this server for the session shuts down
-	clientCallContext map[digest.Digest]*core.ClientCallContext
+	clientCallContext map[string]*core.ClientCallContext
 	clientCallMu      *sync.RWMutex
 
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
@@ -75,7 +73,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		serverID: clientMetadata.ServerID,
 
 		clientIDToSecretToken: map[string]string{},
-		clientCallContext:     map[digest.Digest]*core.ClientCallContext{},
+		clientCallContext:     map[string]*core.ClientCallContext{},
 		clientCallMu:          &sync.RWMutex{},
 		endpoints:             map[string]http.Handler{},
 		endpointMu:            &sync.RWMutex{},
@@ -170,7 +168,6 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 			UpstreamCacheImports:  cacheImporterCfgs,
 			ProgSockPath:          progSockPath,
 			MainClientCaller:      sessionCaller,
-			MainClientCallerID:    s.mainClientCallerID,
 			DNSConfig:             e.DNSConfig,
 			Frontends:             e.Frontends,
 		},
@@ -183,6 +180,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		Auth:               authProvider,
 		ClientCallContext:  s.clientCallContext,
 		ClientCallMu:       s.clientCallMu,
+		MainClientCallerID: s.mainClientCallerID,
 		Endpoints:          s.endpoints,
 		EndpointMu:         s.endpointMu,
 		Recorder:           s.recorder,
@@ -205,7 +203,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	}
 
 	// the main client caller starts out with the core API loaded
-	s.clientCallContext[""] = &core.ClientCallContext{
+	s.clientCallContext[s.mainClientCallerID] = &core.ClientCallContext{
 		Deps: root.DefaultDeps,
 		Root: root,
 	}
@@ -268,9 +266,9 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	callContext, ok := s.ClientCallContext(clientMetadata.ModuleCallerDigest)
+	callContext, ok := s.ClientCallContext(clientMetadata.ClientID)
 	if !ok {
-		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest), http.StatusInternalServerError)
+		errorOut(fmt.Errorf("client call for %s not found", clientMetadata.ClientID), http.StatusInternalServerError)
 		return
 	}
 
@@ -345,7 +343,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.clientCallMu.RLock()
-			bk := s.clientCallContext[""].Root.Buildkit
+			bk := s.clientCallContext[s.mainClientCallerID].Root.Buildkit
 			s.clientCallMu.RUnlock()
 			err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
 			if err != nil {
@@ -399,10 +397,10 @@ func (s *DaggerServer) VerifyClient(clientID, secretToken string) error {
 	return nil
 }
 
-func (s *DaggerServer) ClientCallContext(clientDigest digest.Digest) (*core.ClientCallContext, bool) {
+func (s *DaggerServer) ClientCallContext(clientID string) (*core.ClientCallContext, bool) {
 	s.clientCallMu.RLock()
 	defer s.clientCallMu.RUnlock()
-	ctx, ok := s.clientCallContext[clientDigest]
+	ctx, ok := s.clientCallContext[clientID]
 	return ctx, ok
 }
 
@@ -411,9 +409,9 @@ func (s *DaggerServer) CurrentServedDeps(ctx context.Context) (*core.ModDeps, er
 	if err != nil {
 		return nil, err
 	}
-	callCtx, ok := s.ClientCallContext(clientMetadata.ModuleCallerDigest)
+	callCtx, ok := s.ClientCallContext(clientMetadata.ClientID)
 	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest)
+		return nil, fmt.Errorf("client call for %s not found", clientMetadata.ClientID)
 	}
 	return callCtx.Deps, nil
 }

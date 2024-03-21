@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -28,11 +27,12 @@ const (
 )
 
 type ClientMetadata struct {
-	// ClientID is unique to every session created by every client
+	// ClientID is unique to each client. The main client's ID is the empty string,
+	// any module and/or nested exec client's ID is a unique digest.
 	ClientID string `json:"client_id"`
 
 	// ClientSecretToken is a secret token that is unique to every client. It's
-	// initially provided to the server in the controller.Solve request. Every
+	// initially provided to the server in the controller.Session request. Every
 	// other request w/ that client ID must also include the same token.
 	ClientSecretToken string `json:"client_secret_token"`
 
@@ -60,11 +60,6 @@ type ClientMetadata struct {
 	// session. The first element is the direct parent, the second element is the
 	// parent of the parent, and so on.
 	ParentClientIDs []string `json:"parent_client_ids"`
-
-	// If this client is for a module function, this digest will be set in the
-	// grpc context metadata for any api requests back to the engine. It's used by the API
-	// server to determine which schema to serve and other module context metadata.
-	ModuleCallerDigest digest.Digest `json:"module_caller_digest"`
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
