@@ -4528,13 +4528,13 @@ func TestModuleLoops(t *testing.T) {
 }
 
 //go:embed testdata/modules/go/id/arg/main.go
-var badIDArgGoSrc string
+var goodIDArgGoSrc string
 
 //go:embed testdata/modules/python/id/arg/main.py
-var badIDArgPySrc string
+var goodIDArgPySrc string
 
 //go:embed testdata/modules/typescript/id/arg/index.ts
-var badIDArgTSSrc string
+var goodIDArgTSSrc string
 
 //go:embed testdata/modules/go/id/field/main.go
 var badIDFieldGoSrc string
@@ -4565,20 +4565,21 @@ func TestModuleReservedWords(t *testing.T) {
 		t.Parallel()
 
 		t.Run("arg", func(t *testing.T) {
+			// id used to be disallowed as an arg name, but is allowed now, test it works
 			t.Parallel()
 
 			for _, tc := range []testCase{
 				{
 					sdk:    "go",
-					source: badIDArgGoSrc,
+					source: goodIDArgGoSrc,
 				},
 				{
 					sdk:    "python",
-					source: badIDArgPySrc,
+					source: goodIDArgPySrc,
 				},
 				{
 					sdk:    "typescript",
-					source: badIDArgTSSrc,
+					source: goodIDArgTSSrc,
 				},
 			} {
 				tc := tc
@@ -4587,11 +4588,11 @@ func TestModuleReservedWords(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)
 
-					_, err := modInit(ctx, t, c, tc.sdk, tc.source).
-						With(daggerQuery(`{test{fn(id:"no")}}`)).
-						Sync(ctx)
-
-					require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+					out, err := modInit(ctx, t, c, tc.sdk, tc.source).
+						With(daggerQuery(`{test{fn(id:"YES!!!!")}}`)).
+						Stdout(ctx)
+					require.NoError(t, err)
+					require.JSONEq(t, `{"test":{"fn":"YES!!!!"}}`, out)
 				})
 			}
 		})
