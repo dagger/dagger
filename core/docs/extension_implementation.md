@@ -47,7 +47,7 @@ When a resolver from an extension needs to be invoked:
 1. A file `/inputs/dagger.json` will be mounted as read-only into the ExecOp, with the following (json-encoded) contents:
    - `resolver` - identifies the field that needs to be resolver, in the form of `<ObjectName>.<FieldName>`. For instance, if the `build` field of the `Alpine` object is being invoked, this will be set to `Alpine.build`
    - `args` - The args provided to the GraphQL resolver, as described [here](https://www.apollographql.com/docs/apollo-server/data/resolvers/#resolver-arguments).
-   - `parent` - The result of the parent resolver to this field in the the GraphQL query (if any), as described [here](https://www.apollographql.com/docs/apollo-server/data/resolvers/#resolver-arguments).
+   - `parent` - The result of the parent resolver to this field in the GraphQL query (if any), as described [here](https://www.apollographql.com/docs/apollo-server/data/resolvers/#resolver-arguments).
 1. A directory `/outputs` will be mounted as read-write into the ExecOp. It is where the runtime will write output of the resolver (as described more below)
 1. The `ExperimentalPrivilegedNesting` flag is set, enabling access back to the "parent" dagger session
 

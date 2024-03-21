@@ -241,7 +241,7 @@ export class Bin implements EngineConn {
     stdoutReader: readline.Interface,
   ): Promise<ConnectParams | undefined> {
     for await (const line of stdoutReader) {
-      // parse the the line as json-encoded connect params
+      // parse the line as json-encoded connect params
       const connectParams = JSON.parse(line) as ConnectParams
       if (connectParams.port && connectParams.session_token) {
         return connectParams
