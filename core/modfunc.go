@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -113,7 +112,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallOpts) (t dagql.Typed, rerr error) {
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -166,23 +165,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 		})
 	}
 
-	callerDigestInputs := []string{}
-	{
-		callerIDDigest := caller.Digest() // FIXME(vito) canonicalize, once all that's implemented
-		callerDigestInputs = append(callerDigestInputs, callerIDDigest.String())
-	}
-	if !opts.Cache {
-		// use the ServerID so that we bust cache once-per-session
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client metadata: %w", err)
-		}
-		callerDigestInputs = append(callerDigestInputs, clientMetadata.ServerID)
-	}
-
-	callerDigest := digest.FromString(strings.Join(callerDigestInputs, " "))
-
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("caller_digest", callerDigest.String()))
 	bklog.G(ctx).Debug("function call")
 	defer func() {
 		bklog.G(ctx).Debug("function call done")
@@ -191,10 +173,28 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 		}
 	}()
 
+	parentJSON, err := json.Marshal(opts.ParentVal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
+	}
+
+	callMeta := &FunctionCall{
+		Query:          fn.root,
+		Name:           fn.metadata.OriginalName,
+		Parent:         parentJSON,
+		InputArgs:      callInputs,
+		Module:         mod,
+		Cache:          opts.Cache,
+		SkipSelfSchema: opts.SkipSelfSchema,
+	}
+	if fn.objDef != nil {
+		callMeta.ParentName = fn.objDef.OriginalName
+	}
+
 	ctr := fn.runtime
 
 	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform)
-	ctr, err := ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
+	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
 	}
@@ -219,43 +219,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-		ModuleCallerDigest:            callerDigest,
 		ExperimentalPrivilegedNesting: true,
-		NestedInSameSession:           true,
+		NestedExecFunctionCall:        callMeta,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
-	}
-
-	parentJSON, err := json.Marshal(opts.ParentVal)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
-	}
-
-	callMeta := &FunctionCall{
-		Query:     fn.root,
-		Name:      fn.metadata.OriginalName,
-		Parent:    parentJSON,
-		InputArgs: callInputs,
-	}
-	if fn.objDef != nil {
-		callMeta.ParentName = fn.objDef.OriginalName
-	}
-
-	var deps *ModDeps
-	if opts.SkipSelfSchema {
-		// Only serve the APIs of the deps of this module. This is currently only needed for the special
-		// case of the function used to get the definition of the module itself (which can't obviously
-		// be served the API its returning the definition of).
-		deps = mod.Deps
-	} else {
-		// by default, serve both deps and the module's own API to itself
-		deps = mod.Deps.Prepend(mod)
-	}
-
-	err = mod.Query.RegisterFunctionCall(ctx, callerDigest, deps, fn.mod, callMeta)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register function call: %w", err)
 	}
 
 	_, err = ctr.Evaluate(ctx)

@@ -207,7 +207,7 @@ func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocke
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if clientMetadata.ClientID != host.Query.Buildkit.MainClientCallerID {
+	if clientMetadata.ClientID != host.Query.MainClientCallerID {
 		return nil, fmt.Errorf("only the main client can access the host's unix sockets")
 	}
 

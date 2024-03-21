@@ -24,7 +24,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/console"
 	"github.com/google/uuid"
-	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -543,7 +542,7 @@ func setupBundle() (returnExitCode int) {
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
-		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
+		case strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID="):
 			// keep the env var; we use it at runtime
 			keepEnv = append(keepEnv, env)
 
@@ -562,6 +561,9 @@ func setupBundle() (returnExitCode int) {
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
+		case strings.HasPrefix(env, "_DAGGER_ENGINE_VERSION="):
+			// don't need this at runtime, it is just for invalidating cache, which
+			// has already happened by now
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
@@ -715,7 +717,8 @@ func internalEnv(name string) (string, bool) {
 }
 
 func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
-	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); !found {
+	clientID, ok := internalEnv("_DAGGER_NESTED_CLIENT_ID")
+	if !ok {
 		// no nesting; run as normal
 		return execProcess(cmd, true)
 	}
@@ -733,25 +736,19 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
 
+	serverID, ok := internalEnv("_DAGGER_SERVER_ID")
+	if !ok {
+		return errors.New("missing nested client server ID")
+	}
+
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
 
 	clientParams := client.Params{
+		ID:              clientID,
+		ServerID:        serverID,
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
-	}
-
-	if _, ok := internalEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION"); ok {
-		serverID, ok := internalEnv("_DAGGER_SERVER_ID")
-		if !ok {
-			return fmt.Errorf("missing _DAGGER_SERVER_ID")
-		}
-		clientParams.ServerID = serverID
-	}
-
-	moduleCallerDigest, ok := internalEnv("_DAGGER_MODULE_CALLER_DIGEST")
-	if ok {
-		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
 	}
 
 	sess, ctx, err := client.Connect(ctx, clientParams)
