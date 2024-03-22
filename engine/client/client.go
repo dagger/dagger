@@ -763,7 +763,7 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 		}
 
 		err := fsutil.Receive(stream.Context(), stream, opts.Path, fsutil.ReceiveOpt{
-			Merge: true,
+			Merge: opts.Merge,
 			Filter: func(path string, stat *fstypes.Stat) bool {
 				stat.Uid = uint32(os.Getuid())
 				stat.Gid = uint32(os.Getgid())

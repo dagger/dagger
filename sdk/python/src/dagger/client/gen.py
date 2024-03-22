@@ -2197,13 +2197,26 @@ class Directory(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
-    async def export(self, path: str) -> bool:
+    async def export(
+        self,
+        path: str,
+        *,
+        wipe: bool | None = False,
+    ) -> bool:
         """Writes the contents of the directory to a path on the host.
 
         Parameters
         ----------
         path:
             Location of the copied directory (e.g., "logs/").
+        wipe:
+            If true, then the host directory will be wiped clean before
+            exporting so that it exactly matches the directory being exported;
+            this means it will delete any files on the host that aren't in the
+            exported dir. If false (the default), the contents of the
+            directory will be merged with any existing contents of the host
+            directory, leaving any existing files on the host that aren't in
+            the exported directory alone.
 
         Returns
         -------
@@ -2219,6 +2232,7 @@ class Directory(Type):
         """
         _args = [
             Arg("path", path),
+            Arg("wipe", wipe, False),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)

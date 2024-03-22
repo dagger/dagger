@@ -678,6 +678,26 @@ func TestDirectoryExport(t *testing.T) {
 		entries, err := ls(wd)
 		require.NoError(t, err)
 		require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
+
+		t.Run("wipe flag", func(t *testing.T) {
+			dir := dir.WithoutFile("README")
+
+			// by default a delete in the source dir won't overwrite the destination on the host
+			ok, err := dir.Export(ctx, ".")
+			require.NoError(t, err)
+			require.True(t, ok)
+			entries, err = ls(wd)
+			require.NoError(t, err)
+			require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
+
+			// wipe results in the destination being replaced with the source entirely, including deletes
+			ok, err = dir.Export(ctx, ".", dagger.DirectoryExportOpts{Wipe: true})
+			require.NoError(t, err)
+			require.True(t, ok)
+			entries, err = ls(wd)
+			require.NoError(t, err)
+			require.Equal(t, []string{"20locale.sh", "color_prompt.sh.disabled"}, entries)
+		})
 	})
 
 	t.Run("to outer dir", func(t *testing.T) {
