@@ -675,7 +675,9 @@ func inputSpecsForType(obj any, optIn bool) (InputSpecs, error) {
 			}
 			if input.Type().NonNull {
 				input = DynamicOptional{
-					Elem: input,
+					Elem:  input,
+					Value: inputDef,
+					Valid: true,
 				}
 			}
 		}
