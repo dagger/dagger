@@ -1,0 +1,19 @@
+Just-in-time artifacts such as containers, directories and files expose an export function, enabling them to be exported to the host filesystem from the function that produced them. The destination path on the host is passed to the function using the `--path` argument.
+
+Here is an example of exporting the build directory returned by a Go builder function to the `./my-build` directory on the host:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build
+```
+
+Here is another example, this time exporting the rules file used by a linter function as /tmp/rules on the host:
+
+```shell
+dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3cd735a6405fd call rules export --path=/tmp/rules
+```
+
+Here is an example of exporting a container returned by a Wolfi container builder function as an OCI tarball named `/tmp/tarball.tar.gz` on the host:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container export --path=./tarball.tar.gz
+```
