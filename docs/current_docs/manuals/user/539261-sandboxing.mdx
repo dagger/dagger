@@ -1,0 +1,5 @@
+Dagger Functions execute within containers spawned by the Dagger Engine. This serves a few important purposes:
+
+- Reproducibility: Executing in a well-defined and well-controlled container ensures that a function to run the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+- Caching: A reproducible containerized environment makes it possible to cache the result of function execution, which in turn allows Dagger to automatically speed up function execution.
+- Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
