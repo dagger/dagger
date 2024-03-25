@@ -271,8 +271,6 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 // However, this requires to maintain buildkit code and is not mandatory for now until
 // we hit performances issues.
 func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]string, error) {
-	src = path.Join(dir.Dir, src)
-
 	svcs := dir.Query.Services
 	bk := dir.Query.Buildkit
 
@@ -295,14 +293,14 @@ func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]s
 	}
 	// empty directory, i.e. llb.Scratch()
 	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
+		if clean := path.Clean(dir.Dir); clean == "." || clean == "/" {
 			return []string{}, nil
 		}
 		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path:           src,
+		Path:           path.Join(dir.Dir, src),
 		IncludePattern: pattern,
 	})
 	if err != nil {
@@ -311,13 +309,7 @@ func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]s
 
 	paths := []string{}
 	for _, entry := range entries {
-		entryPath := entry.GetPath()
-
-		if src != "." {
-			// We remove `/` because src is `/` by default, but it obfuscates
-			// the output.
-			entryPath = strings.TrimPrefix(filepath.Join(src, entryPath), "/")
-		}
+		entryPath := path.Join(src, entry.GetPath())
 
 		// We use the same pattern matching function as Buildkit to handle
 		// recursive strategy.
@@ -336,7 +328,6 @@ func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]s
 			if err != nil {
 				return nil, err
 			}
-
 			paths = append(paths, subEntries...)
 		}
 	}
