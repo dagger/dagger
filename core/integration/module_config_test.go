@@ -539,7 +539,7 @@ func TestModuleDaggerDevelop(t *testing.T) {
 					})
 
 				// should be able to invoke it directly now
-				out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
+				out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
 
