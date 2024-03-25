@@ -1,0 +1,6 @@
+kind: Changed
+body: allow `id` to be name of argument to functions
+time: 2024-03-25T13:23:03.063989316-07:00
+custom:
+  Author: sipsma
+  PR: "6912"
