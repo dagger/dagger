@@ -878,7 +878,7 @@ export type ClientContainerOpts = {
 
 export type ClientDirectoryOpts = {
   /**
-   * DEPRECATED: Use `loadDirectoryFromID` isntead.
+   * DEPRECATED: Use `loadDirectoryFromID` instead.
    */
   id?: DirectoryID
 }
@@ -1402,7 +1402,7 @@ export class Container extends BaseClient {
   /**
    * EXPERIMENTAL API! Subject to change/removal at any time.
    *
-   * Configures the provided list of devices to be accesible to this container.
+   * Configures the provided list of devices to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
    * @param devices List of devices to be accessible to this container.
@@ -7010,7 +7010,7 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
-   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` isntead.
+   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` instead.
    */
   directory = (opts?: ClientDirectoryOpts): Directory => {
     return new Directory({

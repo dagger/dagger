@@ -396,7 +396,7 @@ var modulePublishCmd = &cobra.Command{
 
 The module needs to be committed to a git repository and have a remote
 configured with name "origin". The git repository must be clean (unless
-forced), to avoid mistakingly depending on uncommitted files.
+forced), to avoid mistakenly depending on uncommitted files.
 `,
 		daDaggerverse,
 	),

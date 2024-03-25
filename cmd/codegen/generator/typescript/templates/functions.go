@@ -52,7 +52,7 @@ func pascalCase(name string) string {
 	return strcase.ToCamel(name)
 }
 
-// solve checks if a field is solveable.
+// solve checks if a field is solvable.
 func solve(field introspection.Field) bool {
 	if field.TypeRef == nil {
 		return false

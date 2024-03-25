@@ -117,7 +117,7 @@ type censor struct {
 //
 // Unlike some other secret scrubbing implementations, this aims to sanitize
 // bytes *as soon as possible*. The moment that we know a byte is not part of a
-// secret, we should ouput it into dst - even if this would break up a provided
+// secret, we should output it into dst - even if this would break up a provided
 // src into multiple dsts over multiple calls to Transform.
 func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err error) {
 	for {

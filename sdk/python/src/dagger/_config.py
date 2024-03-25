@@ -70,7 +70,7 @@ class Config(ConnectConfig):
     console: Console = field(init=False)
 
     def __post_init__(self):
-        # Backwards compability for (expected) use of `timeout` config.
+        # Backwards compatibility for (expected) use of `timeout` config.
         if self.timeout and not isinstance(self.timeout, Timeout):
             # TODO: deprecation warning: Use
             # self.timeout hasn't worked! (unused)
@@ -85,7 +85,7 @@ class Config(ConnectConfig):
 
             self.timeout = Timeout(None, connect=timeout)
 
-        # Backwards compability for `execute_timeout` config.
+        # Backwards compatibility for `execute_timeout` config.
         if self.execute_timeout is not UNSET:
             # TODO: deprecation warning: Use `timeout` instead.
             timeout = self.execute_timeout

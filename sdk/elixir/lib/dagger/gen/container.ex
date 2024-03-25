@@ -172,7 +172,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "EXPERIMENTAL API! Subject to change/removal at any time.\n\nConfigures the provided list of devices to be accesible to this container.\n\nThis currently works for Nvidia devices only.\n\n## Required Arguments\n\n* `devices` - List of devices to be accessible to this container."
+    @doc "EXPERIMENTAL API! Subject to change/removal at any time.\n\nConfigures the provided list of devices to be accessible to this container.\n\nThis currently works for Nvidia devices only.\n\n## Required Arguments\n\n* `devices` - List of devices to be accessible to this container."
     @spec experimental_with_gpu(t(), [Dagger.String.t()]) :: Dagger.Container.t()
     def experimental_with_gpu(%__MODULE__{} = container, devices) do
       selection = select(container.selection, "experimentalWithGPU")

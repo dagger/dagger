@@ -559,7 +559,7 @@ class Container(Type):
     def experimental_with_gpu(self, devices: Sequence[str]) -> "Container":
         """EXPERIMENTAL API! Subject to change/removal at any time.
 
-        Configures the provided list of devices to be accesible to this
+        Configures the provided list of devices to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
@@ -5682,7 +5682,7 @@ class Client(Root):
         Parameters
         ----------
         id:
-            DEPRECATED: Use `loadDirectoryFromID` isntead.
+            DEPRECATED: Use `loadDirectoryFromID` instead.
         """
         _args = [
             Arg("id", id, None),

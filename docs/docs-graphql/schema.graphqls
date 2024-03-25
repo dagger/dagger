@@ -152,7 +152,7 @@ type Container {
   """
   EXPERIMENTAL API! Subject to change/removal at any time.
   
-  Configures the provided list of devices to be accesible to this container.
+  Configures the provided list of devices to be accessible to this container.
   
   This currently works for Nvidia devices only.
   """
@@ -2136,7 +2136,7 @@ type Query {
 
   """Creates an empty directory."""
   directory(
-    """DEPRECATED: Use `loadDirectoryFromID` isntead."""
+    """DEPRECATED: Use `loadDirectoryFromID` instead."""
     id: DirectoryID
   ): Directory!
   file(id: FileID!): File! @deprecated(reason: "Use `loadFileFromID` instead.")

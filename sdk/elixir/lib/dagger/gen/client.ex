@@ -128,7 +128,7 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Creates an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` - DEPRECATED: Use `loadDirectoryFromID` isntead."
+    @doc "Creates an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` - DEPRECATED: Use `loadDirectoryFromID` instead."
     @spec directory(t(), keyword()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "directory")
