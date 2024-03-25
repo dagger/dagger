@@ -69,6 +69,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -901,6 +902,7 @@ func runOtelController(p string, pubsub *telemetry.PubSub) error {
 	server := grpc.NewServer()
 	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{PubSub: pubsub})
 	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{PubSub: pubsub})
+	metricsv1.RegisterMetricsServiceServer(server, &telemetry.MetricsServer{PubSub: pubsub})
 	uid := os.Getuid()
 	l, err := sys.GetLocalListener(p, uid, uid)
 	if err != nil {

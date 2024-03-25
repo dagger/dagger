@@ -3,6 +3,7 @@ package telemetry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/moby/buildkit/util/tracing/transform"
@@ -13,10 +14,13 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
 	colllogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	collmetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	colltracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/telemetry/sdklog"
 	logtransform "github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
@@ -100,6 +104,23 @@ func (s *logStreamExporter) ExportLogs(ctx context.Context, logs []*sdklog.LogDa
 
 func (s *logStreamExporter) Shutdown(ctx context.Context) error {
 	return nil
+}
+
+type MetricsServer struct {
+	PubSub *PubSub
+
+	*collmetricsv1.UnimplementedMetricsServiceServer
+	*UnimplementedMetricsSourceServer
+}
+
+func (e *MetricsServer) Export(ctx context.Context, req *collmetricsv1.ExportMetricsServiceRequest) (*collmetricsv1.ExportMetricsServiceResponse, error) {
+	// TODO
+	slog.Warn("MetricsServer.Export ignoring export (TODO)")
+	return &collmetricsv1.ExportMetricsServiceResponse{}, nil
+}
+
+func (e *MetricsServer) Subscribe(req *TelemetryRequest, srv MetricsSource_SubscribeServer) error {
+	return status.Errorf(codes.Unimplemented, "Subscribe not implemented")
 }
 
 func TransformPBLogs(resLogs []*otlplogsv1.ResourceLogs) []*sdklog.LogData {

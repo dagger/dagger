@@ -1,8 +1,9 @@
 syntax = "proto3";
 package telemetry;
 
-import "opentelemetry/proto/logs/v1/logs.proto";
 import "opentelemetry/proto/trace/v1/trace.proto";
+import "opentelemetry/proto/logs/v1/logs.proto";
+import "opentelemetry/proto/metrics/v1/metrics.proto";
 
 option go_package = "./telemetry";
 
@@ -12,6 +13,10 @@ service TracesSource {
 
 service LogsSource {
   rpc Subscribe (TelemetryRequest) returns (stream opentelemetry.proto.logs.v1.LogsData) {}
+}
+
+service MetricsSource {
+  rpc Subscribe (TelemetryRequest) returns (stream opentelemetry.proto.metrics.v1.MetricsData) {}
 }
 
 message TelemetryRequest {

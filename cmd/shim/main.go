@@ -537,12 +537,21 @@ func setupBundle() int {
 			otelEndpoint = "unix://" + otelEndpoint
 		}
 		spec.Process.Env = append(spec.Process.Env,
+			"OTEL_EXPORTER_OTLP_ENDPOINT="+otelEndpoint,
 			// Re-set the otel env vars, but with a corrected otelEndpoint.
 			"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="+otelProto,
 			"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="+otelEndpoint,
-			// Dagger sets up a log exporter too.
+			// Dagger sets up a log exporter too. Explicitly set it so things can
+			// detect support for it.
 			"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL="+otelProto,
 			"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="+otelEndpoint,
+			// Dagger doesn't set up metrics yet, but we should set this anyway,
+			// since otherwise some tools default to localhost.
+			//
+			// TODO: we could also consider listening on localhost and proxying to
+			// the socket.
+			"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="+otelEndpoint,
 		)
 	}
 

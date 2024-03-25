@@ -9,6 +9,7 @@ package telemetry
 import (
 	context "context"
 	v11 "go.opentelemetry.io/proto/otlp/logs/v1"
+	v12 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	v1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -248,6 +249,123 @@ var LogsSource_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Subscribe",
 			Handler:       _LogsSource_Subscribe_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "servers.proto",
+}
+
+const (
+	MetricsSource_Subscribe_FullMethodName = "/telemetry.MetricsSource/Subscribe"
+)
+
+// MetricsSourceClient is the client API for MetricsSource service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type MetricsSourceClient interface {
+	Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (MetricsSource_SubscribeClient, error)
+}
+
+type metricsSourceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewMetricsSourceClient(cc grpc.ClientConnInterface) MetricsSourceClient {
+	return &metricsSourceClient{cc}
+}
+
+func (c *metricsSourceClient) Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (MetricsSource_SubscribeClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MetricsSource_ServiceDesc.Streams[0], MetricsSource_Subscribe_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &metricsSourceSubscribeClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type MetricsSource_SubscribeClient interface {
+	Recv() (*v12.MetricsData, error)
+	grpc.ClientStream
+}
+
+type metricsSourceSubscribeClient struct {
+	grpc.ClientStream
+}
+
+func (x *metricsSourceSubscribeClient) Recv() (*v12.MetricsData, error) {
+	m := new(v12.MetricsData)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+// MetricsSourceServer is the server API for MetricsSource service.
+// All implementations must embed UnimplementedMetricsSourceServer
+// for forward compatibility
+type MetricsSourceServer interface {
+	Subscribe(*TelemetryRequest, MetricsSource_SubscribeServer) error
+	mustEmbedUnimplementedMetricsSourceServer()
+}
+
+// UnimplementedMetricsSourceServer must be embedded to have forward compatible implementations.
+type UnimplementedMetricsSourceServer struct {
+}
+
+func (UnimplementedMetricsSourceServer) Subscribe(*TelemetryRequest, MetricsSource_SubscribeServer) error {
+	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
+}
+func (UnimplementedMetricsSourceServer) mustEmbedUnimplementedMetricsSourceServer() {}
+
+// UnsafeMetricsSourceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MetricsSourceServer will
+// result in compilation errors.
+type UnsafeMetricsSourceServer interface {
+	mustEmbedUnimplementedMetricsSourceServer()
+}
+
+func RegisterMetricsSourceServer(s grpc.ServiceRegistrar, srv MetricsSourceServer) {
+	s.RegisterService(&MetricsSource_ServiceDesc, srv)
+}
+
+func _MetricsSource_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TelemetryRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(MetricsSourceServer).Subscribe(m, &metricsSourceSubscribeServer{stream})
+}
+
+type MetricsSource_SubscribeServer interface {
+	Send(*v12.MetricsData) error
+	grpc.ServerStream
+}
+
+type metricsSourceSubscribeServer struct {
+	grpc.ServerStream
+}
+
+func (x *metricsSourceSubscribeServer) Send(m *v12.MetricsData) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+// MetricsSource_ServiceDesc is the grpc.ServiceDesc for MetricsSource service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var MetricsSource_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "telemetry.MetricsSource",
+	HandlerType: (*MetricsSourceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Subscribe",
+			Handler:       _MetricsSource_Subscribe_Handler,
 			ServerStreams: true,
 		},
 	},

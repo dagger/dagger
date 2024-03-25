@@ -31,6 +31,7 @@ import (
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
 	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -371,12 +372,18 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
+
 	traceSrv := &telemetry.TraceServer{PubSub: e.TelemetryPubSub}
-	logsSrv := &telemetry.LogsServer{PubSub: e.TelemetryPubSub}
 	tracev1.RegisterTraceServiceServer(server, traceSrv)
 	telemetry.RegisterTracesSourceServer(server, traceSrv)
+
+	logsSrv := &telemetry.LogsServer{PubSub: e.TelemetryPubSub}
 	logsv1.RegisterLogsServiceServer(server, logsSrv)
 	telemetry.RegisterLogsSourceServer(server, logsSrv)
+
+	metricsSrv := &telemetry.MetricsServer{PubSub: e.TelemetryPubSub}
+	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
+	telemetry.RegisterMetricsSourceServer(server, metricsSrv)
 }
 
 func (e *BuildkitController) Close() error {

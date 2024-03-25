@@ -8,24 +8,29 @@ import (
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/moby/buildkit/identity"
 	"github.com/sourcegraph/conc/pool"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type PubSub struct {
-	spanSubs  map[trace.TraceID][]sdktrace.SpanExporter
-	spanSubsL sync.Mutex
-	logSubs   map[trace.TraceID][]sdklog.LogExporter
-	logSubsL  sync.Mutex
-	traces    map[trace.TraceID]*activeTrace
-	tracesL   sync.Mutex
+	spanSubs    map[trace.TraceID][]sdktrace.SpanExporter
+	spanSubsL   sync.Mutex
+	logSubs     map[trace.TraceID][]sdklog.LogExporter
+	logSubsL    sync.Mutex
+	metricSubs  map[trace.TraceID][]sdkmetric.Exporter
+	metricSubsL sync.Mutex
+	traces      map[trace.TraceID]*activeTrace
+	tracesL     sync.Mutex
 }
 
 func NewPubSub() *PubSub {
 	return &PubSub{
-		spanSubs: map[trace.TraceID][]sdktrace.SpanExporter{},
-		logSubs:  map[trace.TraceID][]sdklog.LogExporter{},
-		traces:   map[trace.TraceID]*activeTrace{},
+		spanSubs:   map[trace.TraceID][]sdktrace.SpanExporter{},
+		logSubs:    map[trace.TraceID][]sdklog.LogExporter{},
+		metricSubs: map[trace.TraceID][]sdkmetric.Exporter{},
+		traces:     map[trace.TraceID]*activeTrace{},
 	}
 }
 
@@ -209,6 +214,39 @@ func (ps *PubSub) LogSubscribers(session trace.TraceID) []sdklog.LogExporter {
 	cp := make([]sdklog.LogExporter, len(subs))
 	copy(cp, subs)
 	return cp
+}
+
+// Metric exporter implementation below. Fortunately there are no overlaps with
+// the other exporter signatures.
+var _ sdkmetric.Exporter = (*PubSub)(nil)
+
+func (ps *PubSub) Temporality(kind sdkmetric.InstrumentKind) metricdata.Temporality {
+	return sdkmetric.DefaultTemporalitySelector(kind)
+}
+
+func (ps *PubSub) Aggregation(kind sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.DefaultAggregationSelector(kind)
+}
+
+func (ps *PubSub) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
+	slog.Warn("TODO: support exporting metrics to pub/sub", "metrics", len(metrics.ScopeMetrics))
+	return nil
+}
+
+func (ps *PubSub) MetricSubscribers(session trace.TraceID) []sdkmetric.Exporter {
+	ps.metricSubsL.Lock()
+	defer ps.metricSubsL.Unlock()
+	subs := ps.metricSubs[session]
+	cp := make([]sdkmetric.Exporter, len(subs))
+	copy(cp, subs)
+	return cp
+}
+
+// NB: this is part of the Metrics exporter interface only for some reason, but
+// it would be the same signature across the others too anyway.
+func (ps *PubSub) ForceFlush(ctx context.Context) error {
+	slog.Warn("TODO: forcing flush of metrics")
+	return nil
 }
 
 func (ps *PubSub) Shutdown(ctx context.Context) error {
