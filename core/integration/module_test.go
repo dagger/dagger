@@ -5579,6 +5579,31 @@ func diffSecret(ctx context.Context, first, second *Secret) error {
 	})
 }
 
+func TestModuleUnicodePath(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/wórk/sub/").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("/wórk/sub/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+ 			import (
+ 				"context"
+ 			)
+ 			type Test struct {}
+ 			func (m *Test) Hello(ctx context.Context) string {
+				return "hello"
+ 			}
+ 			`,
+		}).
+		With(daggerQuery(`{test{hello}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
