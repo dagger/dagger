@@ -376,6 +376,20 @@ func (typeDef *TypeDef) Underlying() *TypeDef {
 	}
 }
 
+// if the type is an object, input or interface, returns the name of the type
+func (typeDef *TypeDef) Name() string {
+	switch typeDef.Kind {
+	case TypeDefKindObject:
+		return typeDef.AsObject.Value.Name
+	case TypeDefKindInterface:
+		return typeDef.AsInterface.Value.Name
+	case TypeDefKindInput:
+		return typeDef.AsInput.Value.Name
+	default:
+		return ""
+	}
+}
+
 func (typeDef *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = kind

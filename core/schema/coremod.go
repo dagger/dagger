@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -26,8 +28,8 @@ func (m *CoreMod) Name() string {
 	return core.ModuleName
 }
 
-func (m *CoreMod) Dependencies() []core.Mod {
-	return nil
+func (m *CoreMod) Digest() digest.Digest {
+	return digest.FromString(m.Name())
 }
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
@@ -72,8 +74,9 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 
 	case core.TypeDefKindObject:
-		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
-		if !ok {
+		objType, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
+		if !ok || objType.SourceModule() != nil {
+			// SourceModule is nil for core types
 			return nil, false, nil
 		}
 		modType = &CoreModObject{coreMod: m}
@@ -97,111 +100,158 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.Dag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
+	typeDefs := make(map[string]*core.TypeDef)
+	typeDefStubs := make(map[string]*core.TypeDef)
+
+	var getStub func(*ast.Type, bool) *core.TypeDef
+	getStub = func(t *ast.Type, isArg bool) *core.TypeDef {
+		switch {
+		case t.NamedType != "":
+			stubName := t.String() // includes ! when non-null
+			if isArg && strings.HasSuffix(t.NamedType, "ID") {
+				// convert ID arguments to the actual object
+				stubName = strings.TrimSuffix(t.NamedType, "ID")
+				if t.NonNull {
+					stubName += "!"
+				}
+			}
+
+			stub, ok := typeDefStubs[stubName]
+			if !ok {
+				stub = &core.TypeDef{
+					Optional: !t.NonNull,
+				}
+				typeDefStubs[stubName] = stub
+			}
+			return stub
+		case t.Elem != nil:
+			return &core.TypeDef{
+				Kind:     core.TypeDefKindList,
+				Optional: !t.NonNull,
+				AsList: dagql.NonNull(&core.ListTypeDef{
+					ElementTypeDef: getStub(t.Elem, isArg),
+				}),
+			}
+		}
+		return nil
 	}
-	var schemaResp introspection.Response
-	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
-	}
-	schema := schemaResp.Schema
 
-	typeDefs := make([]*core.TypeDef, 0, len(schema.Types))
-	for _, introspectionType := range schema.Types {
-		switch introspectionType.Kind {
-		case introspection.TypeKindObject:
-			typeDef := &core.ObjectTypeDef{
-				Name:        introspectionType.Name,
-				Description: introspectionType.Description,
-			}
-
-			isIdable := false
-			for _, introspectionField := range introspectionType.Fields {
-				if introspectionField.Name == "id" {
-					isIdable = true
-					continue
-				}
-
-				fn := &core.Function{
-					Name:        introspectionField.Name,
-					Description: introspectionField.Description,
-				}
-
-				rtType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert return type: %w", err)
-				}
-				if !ok {
-					continue
-				}
-				fn.ReturnType = rtType
-
-				for _, introspectionArg := range introspectionField.Args {
-					fnArg := &core.FunctionArg{
-						Name:        introspectionArg.Name,
-						Description: introspectionArg.Description,
-					}
-
-					if introspectionArg.DefaultValue != nil {
-						fnArg.DefaultValue = core.JSON(*introspectionArg.DefaultValue)
-					}
-
-					argType, ok, err := introspectionRefToTypeDef(introspectionArg.TypeRef, false, true)
-					if err != nil {
-						return nil, fmt.Errorf("failed to convert argument type: %w", err)
-					}
-					if !ok {
-						continue
-					}
-					fnArg.TypeDef = argType
-
-					fn.Args = append(fn.Args, fnArg)
-				}
-
-				typeDef.Functions = append(typeDef.Functions, fn)
-			}
-
-			if !isIdable {
-				continue
-			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				AsObject: dagql.NonNull(typeDef),
-			})
-
-		case introspection.TypeKindInputObject:
-			typeDef := &core.InputTypeDef{
-				Name: introspectionType.Name,
-			}
-
-			for _, introspectionField := range introspectionType.InputFields {
-				field := &core.FieldTypeDef{
-					Name:        introspectionField.Name,
-					Description: introspectionField.Description,
-				}
-				fieldType, ok, err := introspectionRefToTypeDef(introspectionField.TypeRef, false, false)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert return type: %w", err)
-				}
-				if !ok {
-					continue
-				}
-				field.TypeDef = fieldType
-				typeDef.Fields = append(typeDef.Fields, field)
-			}
-
-			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind:    core.TypeDefKindInput,
-				AsInput: dagql.NonNull(typeDef),
-			})
-
-		default:
+	objTypes := m.Dag.ObjectTypes()
+	for _, objType := range objTypes {
+		if objType.SourceModule() != nil {
+			// not a core type
 			continue
 		}
+		astDef := objType.TypeDefinition()
+		objTypeDef := core.NewObjectTypeDef(astDef.Name, astDef.Description)
+
+		// check that this is an idable object quick first so we don't recurse to stubs for e.g. introspection types
+		isIdable := false
+		for _, field := range astDef.Fields {
+			if field.Name == "id" {
+				isIdable = true
+				break
+			}
+		}
+		if !isIdable {
+			continue
+		}
+
+		for _, field := range astDef.Fields {
+			if field.Name == "id" {
+				continue
+			}
+			fn := &core.Function{
+				Name:        field.Name,
+				Description: field.Description,
+				ReturnType:  getStub(field.Type, false),
+			}
+			for _, arg := range field.Arguments {
+				fnArg := &core.FunctionArg{
+					Name:        arg.Name,
+					Description: arg.Description,
+					TypeDef:     getStub(arg.Type, true),
+				}
+				if arg.DefaultValue != nil {
+					anyVal, err := arg.DefaultValue.Value(nil)
+					if err != nil {
+						return nil, fmt.Errorf("failed to get default value: %w", err)
+					}
+					bs, err := json.Marshal(anyVal)
+					if err != nil {
+						return nil, fmt.Errorf("failed to marshal default value: %w", err)
+					}
+					fnArg.DefaultValue = core.JSON(bs)
+				}
+				fn.Args = append(fn.Args, fnArg)
+			}
+			objTypeDef.Functions = append(objTypeDef.Functions, fn)
+		}
+		typeDefs[objTypeDef.Name] = &core.TypeDef{
+			Kind:     core.TypeDefKindObject,
+			AsObject: dagql.NonNull(objTypeDef),
+		}
 	}
-	return typeDefs, nil
+
+	inputTypes := m.Dag.TypeDefs()
+	for _, inputType := range inputTypes {
+		astDef := inputType.TypeDefinition()
+		inputTypeDef := &core.InputTypeDef{
+			Name:   astDef.Name,
+			Fields: make([]*core.FieldTypeDef, 0, len(astDef.Fields)),
+		}
+		for _, field := range astDef.Fields {
+			fieldDef := &core.FieldTypeDef{
+				Name:        field.Name,
+				Description: field.Description,
+				TypeDef:     getStub(field.Type, false),
+			}
+			inputTypeDef.Fields = append(inputTypeDef.Fields, fieldDef)
+		}
+		typeDefs[inputTypeDef.Name] = &core.TypeDef{
+			Kind:    core.TypeDefKindInput,
+			AsInput: dagql.NonNull(inputTypeDef),
+		}
+	}
+
+	scalarTypes := m.Dag.ScalarTypes()
+	for _, scalarType := range scalarTypes {
+		switch scalarType.(type) {
+		case dagql.Int:
+			typeDefs[scalarType.TypeName()] = &core.TypeDef{
+				Kind: core.TypeDefKindInteger,
+			}
+		case dagql.Boolean:
+			typeDefs[scalarType.TypeName()] = &core.TypeDef{
+				Kind: core.TypeDefKindBoolean,
+			}
+		default:
+			// default everything else to string for now
+			typeDefs[scalarType.TypeName()] = &core.TypeDef{
+				Kind: core.TypeDefKindString,
+			}
+		}
+	}
+
+	// fill in stubs with kinds
+	for name, stub := range typeDefStubs {
+		typeDef, ok := typeDefs[strings.TrimSuffix(name, "!")]
+		if !ok {
+			return nil, fmt.Errorf("failed to find type %q", name)
+		}
+		stub.Kind = typeDef.Kind
+		stub.AsObject = typeDef.AsObject
+		stub.AsInput = typeDef.AsInput
+	}
+
+	sortedTypeDefs := make([]*core.TypeDef, 0, len(typeDefs))
+	for _, typeDef := range typeDefs {
+		sortedTypeDefs = append(sortedTypeDefs, typeDef)
+	}
+	slices.SortFunc(sortedTypeDefs, func(a, b *core.TypeDef) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+	return sortedTypeDefs, nil
 }
 
 // CoreModObject represents objects from core (Container, Directory, etc.)
@@ -259,86 +309,5 @@ func (obj *CoreModObject) TypeDef() *core.TypeDef {
 		AsObject: dagql.NonNull(&core.ObjectTypeDef{
 			Name: obj.name,
 		}),
-	}
-}
-
-func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {
-	switch introspectionType.Kind {
-	case introspection.TypeKindNonNull:
-		return introspectionRefToTypeDef(introspectionType.OfType, true, isInput)
-
-	case introspection.TypeKindScalar:
-		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
-			// convert ID inputs to the actual object
-			objName := strings.TrimSuffix(introspectionType.Name, "ID")
-			return &core.TypeDef{
-				Kind:     core.TypeDefKindObject,
-				Optional: !nonNull,
-				AsObject: dagql.NonNull(&core.ObjectTypeDef{
-					Name: objName,
-				}),
-			}, true, nil
-		}
-
-		typeDef := &core.TypeDef{
-			Optional: !nonNull,
-		}
-		switch introspectionType.Name {
-		case string(introspection.ScalarString):
-			typeDef.Kind = core.TypeDefKindString
-		case string(introspection.ScalarInt):
-			typeDef.Kind = core.TypeDefKindInteger
-		case string(introspection.ScalarBoolean):
-			typeDef.Kind = core.TypeDefKindBoolean
-		default:
-			// default to saying it's a string for now
-			typeDef.Kind = core.TypeDefKindString
-		}
-
-		return typeDef, true, nil
-
-	case introspection.TypeKindEnum:
-		return &core.TypeDef{
-			// just call it a string for now
-			Kind:     core.TypeDefKindString,
-			Optional: !nonNull,
-		}, true, nil
-
-	case introspection.TypeKindList:
-		elementTypeDef, ok, err := introspectionRefToTypeDef(introspectionType.OfType, false, isInput)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to convert list element type: %w", err)
-		}
-		if !ok {
-			return nil, false, nil
-		}
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindList,
-			Optional: !nonNull,
-			AsList: dagql.NonNull(&core.ListTypeDef{
-				ElementTypeDef: elementTypeDef,
-			}),
-		}, true, nil
-
-	case introspection.TypeKindObject:
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindObject,
-			Optional: !nonNull,
-			AsObject: dagql.NonNull(&core.ObjectTypeDef{
-				Name: introspectionType.Name,
-			}),
-		}, true, nil
-
-	case introspection.TypeKindInputObject:
-		return &core.TypeDef{
-			Kind:     core.TypeDefKindInput,
-			Optional: !nonNull,
-			AsInput: dagql.NonNull(&core.InputTypeDef{
-				Name: introspectionType.Name,
-			}),
-		}, true, nil
-
-	default:
-		return nil, false, fmt.Errorf("unexpected type kind %s", introspectionType.Kind)
 	}
 }

@@ -19,10 +19,11 @@ import (
 // The class is defined by a set of fields, which are installed into the class
 // dynamically at runtime.
 type Class[T Typed] struct {
-	inner   T
-	idable  bool
-	fields  map[string]*Field[T]
-	fieldsL *sync.Mutex
+	inner        T
+	idable       bool
+	fields       map[string]*Field[T]
+	fieldsL      *sync.Mutex
+	sourceModule *call.Module
 }
 
 type ClassOpts[T Typed] struct {
@@ -34,6 +35,9 @@ type ClassOpts[T Typed] struct {
 	// In the simple case, we can just use a zero-value, but it is also allowed
 	// to use a dynamic Typed value.
 	Typed T
+
+	// If this object is defined by a user module, this is the module. Otherwise nil.
+	SourceModule *call.Module
 }
 
 // NewClass returns a new empty class for a given type.
@@ -43,9 +47,10 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 		opts = opts_[0]
 	}
 	class := Class[T]{
-		inner:   opts.Typed,
-		fields:  map[string]*Field[T]{},
-		fieldsL: new(sync.Mutex),
+		inner:        opts.Typed,
+		fields:       map[string]*Field[T]{},
+		fieldsL:      new(sync.Mutex),
+		sourceModule: opts.SourceModule,
 	}
 	if !opts.NoIDs {
 		class.Install(
@@ -100,6 +105,10 @@ var _ ObjectType = Class[Typed]{}
 
 func (cls Class[T]) TypeName() string {
 	return cls.inner.Type().Name()
+}
+
+func (class Class[T]) SourceModule() *call.Module {
+	return class.sourceModule
 }
 
 func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {

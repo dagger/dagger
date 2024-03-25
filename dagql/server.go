@@ -244,6 +244,16 @@ func (s *Server) ObjectType(name string) (ObjectType, bool) {
 	return t, ok
 }
 
+func (s *Server) ObjectTypes() []ObjectType {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	types := make([]ObjectType, 0, len(s.objects))
+	for _, t := range s.objects {
+		types = append(types, t)
+	}
+	return types
+}
+
 // ScalarType returns the ScalarType with the given name, if it exists.
 func (s *Server) ScalarType(name string) (ScalarType, bool) {
 	s.installLock.Lock()
@@ -252,12 +262,32 @@ func (s *Server) ScalarType(name string) (ScalarType, bool) {
 	return t, ok
 }
 
+func (s *Server) ScalarTypes() []ScalarType {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	types := make([]ScalarType, 0, len(s.scalars))
+	for _, t := range s.scalars {
+		types = append(types, t)
+	}
+	return types
+}
+
 // InputType returns the InputType with the given name, if it exists.
 func (s *Server) TypeDef(name string) (TypeDef, bool) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	t, ok := s.typeDefs[name]
 	return t, ok
+}
+
+func (s *Server) TypeDefs() []TypeDef {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	types := make([]TypeDef, 0, len(s.typeDefs))
+	for _, t := range s.typeDefs {
+		types = append(types, t)
+	}
+	return types
 }
 
 // Around installs a function to be called around every non-cached selection.

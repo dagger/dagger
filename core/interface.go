@@ -30,30 +30,31 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 	// TODO: this seems expensive
 	fromID := func(id *call.ID) (dagql.Typed, error) {
-		deps, err := iface.mod.Query.IDDeps(ctx, id)
+		dynamicRoot, err := iface.mod.Query.NewRootForDynamicID(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
+			return nil, fmt.Errorf("failed to get root for DynamicID: %w", err)
 		}
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
-		}
-		val, err := dag.Load(ctx, id)
+		val, err := dynamicRoot.Dag.Load(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("load interface ID %s: %w", id.Display(), err)
 		}
 
 		typeName := val.ObjectType().TypeName()
 
+		// Verify that the object provided actually implements the interface. This
+		// is also enforced by only adding "As*" fields to objects in a schema once
+		// they implement the interface, but in theory an SDK could provide
+		// arbitrary IDs of objects here, so we need to check again to be fully
+		// robust.
 		var checkType *TypeDef
-		if objType, found, err := deps.ModTypeFor(ctx, &TypeDef{
+		if objType, found, err := dynamicRoot.Deps.ModTypeFor(ctx, &TypeDef{
 			Kind: TypeDefKindObject,
 			AsObject: dagql.NonNull(&ObjectTypeDef{
 				Name: typeName,
 			}),
 		}); err == nil && found {
 			checkType = objType.TypeDef()
-		} else if ifaceType, found, err := deps.ModTypeFor(ctx, &TypeDef{
+		} else if ifaceType, found, err := dynamicRoot.Deps.ModTypeFor(ctx, &TypeDef{
 			Kind: TypeDefKindInterface,
 			AsInterface: dagql.NonNull(&InterfaceTypeDef{
 				Name: typeName,
@@ -63,12 +64,6 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		} else {
 			return nil, fmt.Errorf("could not find object or interface type for %q", typeName)
 		}
-
-		// Verify that the object provided actually implements the interface. This
-		// is also enforced by only adding "As*" fields to objects in a schema once
-		// they implement the interface, but in theory an SDK could provide
-		// arbitrary IDs of objects here, so we need to check again to be fully
-		// robust.
 		if ok := checkType.IsSubtypeOf(iface.TypeDef()); !ok {
 			return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
 		}
@@ -124,6 +119,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			TypeDef:   iface.typeDef,
 			IfaceType: iface,
 		},
+		SourceModule: iface.mod.IDModule(),
 	})
 
 	dag.InstallObject(class)

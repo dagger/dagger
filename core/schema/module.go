@@ -11,7 +11,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"golang.org/x/sync/errgroup"
 )
 
 type moduleSchema struct {
@@ -161,6 +160,11 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `The name of the view to set.`).
 			ArgDoc("patterns", `The patterns to set as the view filters.`).
 			Doc(`Update the module source with a new named view.`),
+
+		// have a func for returning this as a JSON string for SDKs, but a separate field
+		// for returning the actual introspection type could be added if ever needed
+		dagql.NodeFunc("schemaIntrospectionJSON", s.moduleSourceSchemaIntrospectionJSON).
+			Doc(`The graphql schema that will be presented to the module when invoked (excluding it's own self schema), formatted as JSON.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleSourceView]{
@@ -468,11 +472,7 @@ func (s *moduleSchema) moduleServe(ctx context.Context, modMeta dagql.Instance[*
 }
 
 func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ struct{}) ([]*core.TypeDef, error) {
-	deps, err := self.CurrentServedDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current module: %w", err)
-	}
-	return deps.TypeDefs(ctx)
+	return self.Deps.TypeDefs(ctx)
 }
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
@@ -707,60 +707,20 @@ func (s *moduleSchema) updateDeps(
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
-	var deps []dagql.Instance[*core.ModuleDependency]
-	err := s.dag.Select(ctx, src, &deps, dagql.Selector{Field: "dependencies"})
+	depCfgs, deps, err := s.loadModuleDependencies(ctx, src)
 	if err != nil {
 		return fmt.Errorf("failed to load module dependencies: %w", err)
 	}
-	mod.DependencyConfig = make([]*core.ModuleDependency, len(deps))
+
+	mod.DependencyConfig = depCfgs
+
+	depMods := make([]core.Mod, len(deps))
+	mod.DependenciesField = make([]*core.Module, len(deps))
 	for i, dep := range deps {
-		// verify that the dependency config actually exists
-		_, cfgExists, err := dep.Self.Source.Self.ModuleConfig(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to load module %q dependency %q config: %w", mod.NameField, dep.Self.Name, err)
-		}
-		if !cfgExists {
-			// best effort for err message, ignore err
-			sourceRootPath, _ := dep.Self.Source.Self.SourceRootSubpath()
-			return fmt.Errorf("module %q dependency %q with source root path %q does not exist or does not have a configuration file", mod.NameField, dep.Self.Name, sourceRootPath)
-		}
-		mod.DependencyConfig[i] = dep.Self
+		mod.DependenciesField[i] = dep.Self
+		depMods[i] = dep.Self
 	}
-
-	mod.DependenciesField = make([]dagql.Instance[*core.Module], len(deps))
-	var eg errgroup.Group
-	for i, dep := range deps {
-		i, dep := i, dep
-		eg.Go(func() error {
-			err := s.dag.Select(ctx, dep.Self.Source, &mod.DependenciesField[i],
-				dagql.Selector{
-					Field: "withName",
-					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.String(dep.Self.Name)},
-					},
-				},
-				dagql.Selector{
-					Field: "asModule",
-				},
-				dagql.Selector{
-					Field: "initialize",
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to initialize dependency module: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("failed to initialize dependency modules: %w", err)
-	}
-
-	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
-	for _, dep := range mod.DependenciesField {
-		mod.Deps = mod.Deps.Append(dep.Self)
-	}
-
+	mod.Deps = core.NewModDeps(depMods).Append(&CoreMod{Dag: s.dag})
 	return nil
 }
 
@@ -790,7 +750,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		return fmt.Errorf("failed to load sdk for module: %w", err)
 	}
 
-	generatedCode, err := sdk.Codegen(ctx, mod.Deps, src)
+	generatedCode, err := sdk.Codegen(ctx, mod.Source)
 	if err != nil {
 		return fmt.Errorf("failed to generate code: %w", err)
 	}
@@ -910,7 +870,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		}
 	}
 
-	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
+	mod.Runtime, err = sdk.Runtime(ctx, mod.Source)
 	if err != nil {
 		return fmt.Errorf("failed to get module runtime: %w", err)
 	}
@@ -989,7 +949,7 @@ func (s *moduleSchema) updateDaggerConfig(
 		depName := dep.Name
 		if dep.Name == "" {
 			// fill in default dep names if missing with the name of the module
-			depName = mod.DependenciesField[i].Self.Name()
+			depName = mod.DependenciesField[i].Name()
 		}
 
 		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{

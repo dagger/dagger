@@ -861,7 +861,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 				With(daggerExec("install", testGitModuleRef("this/just/does/not/exist"))).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
+			require.ErrorContains(t, err, `dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
 		})
 
 		t.Run("unpinned gets pinned", func(t *testing.T) {

@@ -50,15 +50,11 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case DynamicID:
-		deps, err := t.mod.Query.IDDeps(ctx, x.ID())
+		dynamicRoot, err := t.mod.Query.NewRootForDynamicID(ctx, x.ID())
 		if err != nil {
-			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
+			return nil, fmt.Errorf("failed to get root for DynamicID: %w", err)
 		}
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
-		}
-		val, err := dag.Load(ctx, x.ID())
+		val, err := dynamicRoot.Dag.Load(ctx, x.ID())
 		if err != nil {
 			return nil, fmt.Errorf("load DynamicID: %w", err)
 		}
@@ -172,7 +168,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 	class := dagql.NewClass(dagql.ClassOpts[*ModuleObject]{
-		Typed: obj,
+		Typed:        obj,
+		SourceModule: obj.Module.IDModule(),
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module

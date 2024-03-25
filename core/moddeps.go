@@ -2,14 +2,12 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"sync"
+	"strings"
 
-	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/dagql"
-	dagintro "github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/tracing"
+	"github.com/opencontainers/go-digest"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -19,146 +17,47 @@ const (
 	ModuleName = "daggercore"
 )
 
-// We don't expose these types to modules SDK codegen, but
-// we still want their graphql schemas to be available for
-// internal usage. So we use this list to scrub them from
-// the introspection JSON that module SDKs use for codegen.
-var typesHiddenFromModuleSDKs = []dagql.Typed{
-	&Host{},
-}
-
 /*
 ModDeps represents a set of dependencies for a module or for a caller depending on a
 particular set of modules to be served.
 */
 type ModDeps struct {
-	root *Query
 	Mods []Mod // TODO hide
-
-	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema            *dagql.Server
-	lazilyLoadedIntrospectionJSON string
-	loadSchemaErr                 error
-	loadSchemaLock                sync.Mutex
 }
 
-func NewModDeps(root *Query, mods []Mod) *ModDeps {
+func NewModDeps(mods []Mod) *ModDeps {
+	slices.SortFunc(mods, func(a, b Mod) int {
+		return strings.Compare(a.Digest().String(), b.Digest().String())
+	})
+	mods = slices.CompactFunc(mods, func(a, b Mod) bool {
+		return a.Digest() == b.Digest()
+	})
 	return &ModDeps{
-		root: root,
 		Mods: mods,
 	}
-}
-
-func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
-	deps := append([]Mod{}, mods...)
-	deps = append(deps, d.Mods...)
-	return NewModDeps(d.root, deps)
 }
 
 func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 	deps := append([]Mod{}, d.Mods...)
 	deps = append(deps, mods...)
-	return NewModDeps(d.root, deps)
+	return NewModDeps(deps)
 }
 
 // The combined schema exposed by each mod in this set of dependencies
-func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
-	schema, _, err := d.lazilyLoadSchema(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return schema, nil
-}
-
-// The introspection json for combined schema exposed by each mod in this set of dependencies
-func (d *ModDeps) SchemaIntrospectionJSON(ctx context.Context, forModule bool) (string, error) {
-	_, introspectionJSON, err := d.lazilyLoadSchema(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	if !forModule {
-		return introspectionJSON, nil
-	}
-
-	var introspection introspection.Response
-	if err := json.Unmarshal([]byte(introspectionJSON), &introspection); err != nil {
-		return "", fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
-	}
-
-	for _, typed := range typesHiddenFromModuleSDKs {
-		introspection.Schema.ScrubType(typed.Type().Name())
-		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
-	}
-	bs, err := json.Marshal(introspection)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal introspection JSON: %w", err)
-	}
-	return string(bs), nil
-}
-
-// All the TypeDefs exposed by this set of dependencies
-func (d *ModDeps) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
-	var typeDefs []*TypeDef
-	for _, mod := range d.Mods {
-		modTypeDefs, err := mod.TypeDefs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
-		}
-		typeDefs = append(typeDefs, modTypeDefs...)
-	}
-	return typeDefs, nil
-}
-
-func schemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMessage, error) {
-	data, err := dag.Query(ctx, introspection.Query, nil)
-	if err != nil {
-		return nil, fmt.Errorf("introspection query failed: %w", err)
-	}
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal introspection result: %w", err)
-	}
-	return json.RawMessage(jsonBytes), nil
-}
-
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Server, loadedIntrospectionJSON string, rerr error) {
-	d.loadSchemaLock.Lock()
-	defer d.loadSchemaLock.Unlock()
-	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, d.lazilyLoadedIntrospectionJSON, nil
-	}
-	if d.loadSchemaErr != nil {
-		return nil, "", d.loadSchemaErr
-	}
-	defer func() {
-		d.lazilyLoadedSchema = loadedSchema
-		d.lazilyLoadedIntrospectionJSON = loadedIntrospectionJSON
-		d.loadSchemaErr = rerr
-	}()
-
-	dag := dagql.NewServer[*Query](d.root)
-
-	dag.Around(tracing.AroundFunc)
-
-	// share the same cache session-wide
-	dag.Cache = d.root.Cache
-
-	dagintro.Install[*Query](dag)
-
+func (d *ModDeps) Install(ctx context.Context, dag *dagql.Server) error {
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
 	for _, mod := range d.Mods {
 		err := mod.Install(ctx, dag)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
+			return fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
 		if userMod, ok := mod.(*Module); ok {
 			defs, err := mod.TypeDefs(ctx)
 			if err != nil {
-				return nil, "", fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
+				return fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}
 			for _, def := range defs {
 				switch def.Kind {
@@ -182,7 +81,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Ser
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
-			return nil, "", fmt.Errorf("failed to find object %q in schema", obj.Name)
+			return fmt.Errorf("failed to find object %q in schema", obj.Name)
 		}
 		for _, ifaceType := range ifaces {
 			iface := ifaceType.typeDef
@@ -215,12 +114,20 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Ser
 		}
 	}
 
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, dag)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get schema introspection JSON: %w", err)
-	}
+	return nil
+}
 
-	return dag, string(introspectionJSON), nil
+// All the TypeDefs exposed by this set of dependencies
+func (d *ModDeps) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
+	var typeDefs []*TypeDef
+	for _, mod := range d.Mods {
+		modTypeDefs, err := mod.TypeDefs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get objects from mod %q: %w", mod.Name(), err)
+		}
+		typeDefs = append(typeDefs, modTypeDefs...)
+	}
+	return typeDefs, nil
 }
 
 // Search the deps for the given type def, returning the ModType if found. This does not recurse
@@ -238,4 +145,13 @@ func (d *ModDeps) ModTypeFor(ctx context.Context, typeDef *TypeDef) (ModType, bo
 		return modType, true, nil
 	}
 	return nil, false, nil
+}
+
+// Return a unique digest for this set of dependencies, based on the module digests
+func (d *ModDeps) Digest() digest.Digest {
+	dgsts := make([]string, len(d.Mods))
+	for i, mod := range d.Mods {
+		dgsts[i] = mod.Digest().String()
+	}
+	return digest.FromString(strings.Join(dgsts, " "))
 }

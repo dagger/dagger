@@ -2,11 +2,8 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/iancoleman/strcase"
 )
@@ -68,18 +65,6 @@ func asArrayInput[T any, I dagql.Input](ts []T, conv func(T) I) dagql.ArrayInput
 		ins[i] = conv(v)
 	}
 	return ins
-}
-
-func schemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMessage, error) {
-	data, err := dag.Query(ctx, introspection.Query, nil)
-	if err != nil {
-		return nil, fmt.Errorf("introspection query failed: %w", err)
-	}
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal introspection result: %w", err)
-	}
-	return json.RawMessage(jsonBytes), nil
 }
 
 func gqlFieldName(name string) string {

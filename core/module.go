@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -41,7 +42,7 @@ type Module struct {
 	DependencyConfig []*ModuleDependency `field:"true" doc:"The dependencies as configured by the module."`
 
 	// The module's loaded dependencies, not yet initialized
-	DependenciesField []dagql.Instance[*Module] `field:"true" name:"dependencies" doc:"Modules used by this module."`
+	DependenciesField []*Module `field:"true" name:"dependencies" doc:"Modules used by this module."`
 
 	// Deps contains the module's dependency DAG.
 	Deps *ModDeps
@@ -100,12 +101,8 @@ func (mod *Module) Name() string {
 	return mod.NameField
 }
 
-func (mod *Module) Dependencies() []Mod {
-	mods := make([]Mod, len(mod.DependenciesField))
-	for i, dep := range mod.DependenciesField {
-		mods[i] = dep.Self
-	}
-	return mods
+func (mod *Module) Digest() digest.Digest {
+	return mod.Source.ID().Digest()
 }
 
 func (mod *Module) IDModule() *call.Module {
@@ -234,10 +231,6 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 		typeDefs = append(typeDefs, typeDef)
 	}
 	return typeDefs, nil
-}
-
-func (mod *Module) DependencySchemaIntrospectionJSON(ctx context.Context, forModule bool) (string, error) {
-	return mod.Deps.SchemaIntrospectionJSON(ctx, forModule)
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -533,9 +526,6 @@ type Mod interface {
 	// The name of the module
 	Name() string
 
-	// The direct dependencies of this module
-	Dependencies() []Mod
-
 	// TODO describe
 	Install(context.Context, *dagql.Server) error
 
@@ -546,6 +536,9 @@ type Mod interface {
 
 	// All the TypeDefs exposed by this module (does not include dependencies)
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
+
+	// A unique digest for the module
+	Digest() digest.Digest
 }
 
 /*
@@ -571,16 +564,11 @@ type SDK interface {
 
 	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
 	in the case where that's different than the root of the sourceDir.
-
-	The provided Module is not fully initialized; the Runtime field will not be set yet.
 	*/
-	Codegen(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
+	Codegen(context.Context, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
 
-	/* Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
-
-	The provided Module is not fully initialized; the Runtime field will not be set yet.
-	*/
-	Runtime(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Container, error)
+	// Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
+	Runtime(context.Context, dagql.Instance[*ModuleSource]) (*Container, error)
 
 	// Paths that should always be loaded from module sources using this SDK. Ensures that e.g. main.go
 	// in the Go SDK is always loaded even if dagger.json has include settings that don't include it.
@@ -613,9 +601,9 @@ func (mod Module) Clone() *Module {
 		cp.DependencyConfig[i] = dep.Clone()
 	}
 
-	cp.DependenciesField = make([]dagql.Instance[*Module], len(mod.DependenciesField))
+	cp.DependenciesField = make([]*Module, len(mod.DependenciesField))
 	for i, dep := range mod.DependenciesField {
-		cp.DependenciesField[i].Self = dep.Self.Clone()
+		cp.DependenciesField[i] = dep.Clone()
 	}
 
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))

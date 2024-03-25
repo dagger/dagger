@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
@@ -16,6 +17,14 @@ import (
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
+
+// We don't expose these types to modules SDK codegen, but
+// we still want their graphql schemas to be available for
+// internal usage. So we use this list to scrub them from
+// the introspection JSON that module SDKs use for codegen.
+var typesHiddenFromModuleSDKs = []dagql.Typed{
+	&core.Host{},
+}
 
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
@@ -397,6 +406,111 @@ func (s *moduleSchema) moduleSourceDependencies(
 	})
 
 	return finalDeps, nil
+}
+
+func (s *moduleSchema) moduleSourceSchemaIntrospectionJSON(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+	args struct{},
+) (core.JSON, error) {
+	_, deps, err := s.loadModuleDependencies(ctx, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
+	}
+
+	depMods := make([]core.Mod, len(deps))
+	for i, dep := range deps {
+		depMods[i] = dep.Self
+	}
+	root, err := src.Self.Query.NewRootForDependencies(ctx, core.NewModDeps(depMods))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create root for dependencies: %w", err)
+	}
+
+	data, err := root.Dag.Query(ctx, introspection.Query, nil)
+	if err != nil {
+		return nil, fmt.Errorf("introspection query failed: %w", err)
+	}
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal introspection result: %w", err)
+	}
+
+	var introspection introspection.Response
+	if err := json.Unmarshal(jsonBytes, &introspection); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
+	}
+
+	for _, typed := range typesHiddenFromModuleSDKs {
+		introspection.Schema.ScrubType(typed.Type().Name())
+		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
+	}
+	jsonBytes, err = json.Marshal(introspection)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal introspection JSON: %w", err)
+	}
+	return core.JSON(jsonBytes), nil
+}
+
+// internal util, loads all the module source deps as actual modules
+func (s *moduleSchema) loadModuleDependencies(
+	ctx context.Context,
+	src dagql.Instance[*core.ModuleSource],
+) ([]*core.ModuleDependency, []dagql.Instance[*core.Module], error) {
+	var deps []dagql.Instance[*core.ModuleDependency]
+	err := s.dag.Select(ctx, src, &deps, dagql.Selector{Field: "dependencies"})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load module dependencies: %w", err)
+	}
+
+	depCfgs := make([]*core.ModuleDependency, len(deps))
+	for i, dep := range deps {
+		// verify that the dependency config actually exists
+		_, cfgExists, err := dep.Self.Source.Self.ModuleConfig(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to load dependency %q config: %w", dep.Self.Name, err)
+		}
+		if !cfgExists {
+			// best effort for err message, ignore err
+			sourceRootPath, _ := dep.Self.Source.Self.SourceRootSubpath()
+			return nil, nil, fmt.Errorf(
+				"dependency %q with source root path %q does not exist or does not have a configuration file",
+				dep.Self.Name, sourceRootPath,
+			)
+		}
+		depCfgs[i] = dep.Self
+	}
+
+	depMods := make([]dagql.Instance[*core.Module], len(deps))
+	var eg errgroup.Group
+	for i, dep := range deps {
+		i, dep := i, dep
+		eg.Go(func() error {
+			err := s.dag.Select(ctx, dep.Self.Source, &depMods[i],
+				dagql.Selector{
+					Field: "withName",
+					Args: []dagql.NamedInput{
+						{Name: "name", Value: dagql.String(dep.Self.Name)},
+					},
+				},
+				dagql.Selector{
+					Field: "asModule",
+				},
+				dagql.Selector{
+					Field: "initialize",
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to initialize dependency module: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize dependency modules: %w", err)
+	}
+
+	return depCfgs, depMods, nil
 }
 
 func (s *moduleSchema) moduleSourceWithDependencies(

@@ -1021,12 +1021,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		clientID, err := container.Query.RegisterCaller(ctx, opts.NestedExecFunctionCall)
+		newRoot, err := container.Query.NewRootForCurrentCall(ctx, opts.NestedExecFunctionCall)
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}
 		runOpts = append(runOpts,
-			llb.AddEnv("_DAGGER_NESTED_CLIENT_ID", clientID),
+			llb.AddEnv("_DAGGER_NESTED_CLIENT_ID", newRoot.ClientID),
 			// include the engine version so that these execs get invalidated if the engine/API change
 			llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version),
 		)

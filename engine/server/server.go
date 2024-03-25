@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,8 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	dagintro "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
@@ -32,6 +35,8 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/locker"
+	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vito/progrock"
@@ -40,19 +45,21 @@ import (
 type DaggerServer struct {
 	serverID string
 
-	clientIDToSecretToken map[string]string
-	connectedClients      int
-	clientIDMu            sync.RWMutex
-
-	// The metadata of client calls.
+	// The root for each client, keyed by client ID
 	// This is never explicitly deleted from; instead it will just be garbage collected
 	// when this server for the session shuts down
-	clientCallContext map[string]*core.ClientCallContext
-	clientCallMu      *sync.RWMutex
+	clientRoots      map[string]*core.Query
+	clientRootMu     sync.RWMutex
+	perClientMu      *locker.Locker
+	connectedClients int
 
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	endpoints  map[string]http.Handler
-	endpointMu *sync.RWMutex
+	endpointMu sync.RWMutex
+
+	dagqlCache   dagql.Cache
+	queryOpts    core.QueryOpts
+	buildkitOpts *buildkit.Opts
 
 	services *core.Services
 
@@ -72,11 +79,11 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	s := &DaggerServer{
 		serverID: clientMetadata.ServerID,
 
-		clientIDToSecretToken: map[string]string{},
-		clientCallContext:     map[string]*core.ClientCallContext{},
-		clientCallMu:          &sync.RWMutex{},
-		endpoints:             map[string]http.Handler{},
-		endpointMu:            &sync.RWMutex{},
+		clientRoots: map[string]*core.Query{},
+		perClientMu: locker.New(),
+		endpoints:   map[string]http.Handler{},
+
+		dagqlCache: dagql.NewCache(),
 
 		doneCh: make(chan struct{}, 1),
 
@@ -156,21 +163,23 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		})
 	}
 
-	root, err := core.NewRoot(ctx, core.QueryOpts{
-		BuildkitOpts: &buildkit.Opts{
-			Worker:                e.worker,
-			SessionManager:        e.SessionManager,
-			LLBSolver:             e.llbSolver,
-			GenericSolver:         e.genericSolver,
-			SecretStore:           secretStore,
-			AuthProvider:          authProvider,
-			PrivilegedExecEnabled: e.privilegedExecEnabled,
-			UpstreamCacheImports:  cacheImporterCfgs,
-			ProgSockPath:          progSockPath,
-			MainClientCaller:      sessionCaller,
-			DNSConfig:             e.DNSConfig,
-			Frontends:             e.Frontends,
-		},
+	s.buildkitOpts = &buildkit.Opts{
+		Worker:                e.worker,
+		SessionManager:        e.SessionManager,
+		LLBSolver:             e.llbSolver,
+		GenericSolver:         e.genericSolver,
+		SecretStore:           secretStore,
+		AuthProvider:          authProvider,
+		PrivilegedExecEnabled: e.privilegedExecEnabled,
+		UpstreamCacheImports:  cacheImporterCfgs,
+		ProgSockPath:          progSockPath,
+		MainClientCaller:      sessionCaller,
+		DNSConfig:             e.DNSConfig,
+		Frontends:             e.Frontends,
+	}
+
+	s.queryOpts = core.QueryOpts{
+		DaggerServer:       s,
 		ProgrockSocketPath: progSockPath,
 		Services:           s.services,
 		Platform:           core.Platform(e.worker.Platforms(true)[0]),
@@ -178,36 +187,15 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		OCIStore:           e.worker.ContentStore(),
 		LeaseManager:       e.worker.LeaseManager(),
 		Auth:               authProvider,
-		ClientCallContext:  s.clientCallContext,
-		ClientCallMu:       s.clientCallMu,
 		MainClientCallerID: s.mainClientCallerID,
-		Endpoints:          s.endpoints,
-		EndpointMu:         s.endpointMu,
-		Recorder:           s.recorder,
-	})
+	}
+
+	// register the main client caller
+	newRoot, err := s.newRootForClient(ctx, s.mainClientCallerID, nil)
 	if err != nil {
 		return nil, err
 	}
-
-	dag := dagql.NewServer(root)
-
-	// stash away the cache so we can share it between other servers
-	root.Cache = dag.Cache
-
-	dag.Around(tracing.AroundFunc)
-
-	coreMod := &schema.CoreMod{Dag: dag}
-	root.DefaultDeps = core.NewModDeps(root, []core.Mod{coreMod})
-	if err := coreMod.Install(ctx, dag); err != nil {
-		return nil, err
-	}
-
-	// the main client caller starts out with the core API loaded
-	s.clientCallContext[s.mainClientCallerID] = &core.ClientCallContext{
-		Deps: root.DefaultDeps,
-		Root: root,
-	}
-
+	s.clientRoots[newRoot.ClientID] = newRoot
 	return s, nil
 }
 
@@ -222,14 +210,14 @@ func (s *DaggerServer) ServeClientConn(
 		return fmt.Errorf("failed to verify client: %w", err)
 	}
 
-	s.clientIDMu.Lock()
+	s.clientRootMu.Lock()
 	s.connectedClients++
+	s.clientRootMu.Unlock()
 	defer func() {
-		s.clientIDMu.Lock()
+		s.clientRootMu.Lock()
 		s.connectedClients--
-		s.clientIDMu.Unlock()
+		s.clientRootMu.Unlock()
 	}()
-	s.clientIDMu.Unlock()
 
 	conn = newLogicalDeadlineConn(splitWriteConn{nopCloserConn{conn}, defaults.DefaultMaxSendMsgSize * 95 / 100})
 	l := &singleConnListener{conn: conn, closeCh: make(chan struct{})}
@@ -266,7 +254,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	callContext, ok := s.ClientCallContext(clientMetadata.ClientID)
+	root, ok := s.rootFor(clientMetadata.ClientID)
 	if !ok {
 		errorOut(fmt.Errorf("client call for %s not found", clientMetadata.ClientID), http.StatusInternalServerError)
 		return
@@ -275,20 +263,10 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rec := progrock.FromContext(ctx)
 	if header := r.Header.Get(client.ProgrockParentHeader); header != "" {
 		rec = rec.WithParent(header)
-	} else if callContext.ProgrockParent != "" {
-		rec = rec.WithParent(callContext.ProgrockParent)
+	} else if root.ProgrockParent != "" {
+		rec = rec.WithParent(root.ProgrockParent)
 	}
 	ctx = progrock.ToContext(ctx, rec)
-
-	s.clientCallMu.RLock()
-	schema, err := callContext.Deps.Schema(ctx)
-	if err != nil {
-		s.clientCallMu.RUnlock()
-		// TODO: technically this is not *always* bad request, should ideally be more specific and differentiate
-		errorOut(err, http.StatusBadRequest)
-		return
-	}
-	s.clientCallMu.RUnlock()
 
 	defer func() {
 		if v := recover(); v != nil {
@@ -320,14 +298,15 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	srv := handler.NewDefaultServer(schema)
-	// NB: break glass when needed:
-	// srv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
-	// 	res := next(ctx)
-	// 	pl, err := json.Marshal(res)
-	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
-	// 	return res
-	// })
+	srv := handler.NewDefaultServer(root.Dag)
+	/* NB: break glass when needed:
+	srv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
+		res := next(ctx)
+		pl, err := json.Marshal(res)
+		slog.Debug("graphql response", "response", string(pl), "error", err)
+		return res
+	})
+	*/
 	mux := http.NewServeMux()
 	mux.Handle("/query", srv)
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -345,9 +324,9 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
 				}
 			}
-			s.clientCallMu.RLock()
-			bk := s.clientCallContext[s.mainClientCallerID].Root.Buildkit
-			s.clientCallMu.RUnlock()
+			s.clientRootMu.RLock()
+			bk := s.clientRoots[s.mainClientCallerID].Buildkit
+			s.clientRootMu.RUnlock()
 			err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
 			if err != nil {
 				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
@@ -369,16 +348,19 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *DaggerServer) RegisterClient(clientID, clientHostname, secretToken string) error {
-	s.clientIDMu.Lock()
-	defer s.clientIDMu.Unlock()
-	existingToken, ok := s.clientIDToSecretToken[clientID]
-	if ok {
+	s.clientRootMu.Lock()
+	defer s.clientRootMu.Unlock()
+	existingRoot, ok := s.clientRoots[clientID]
+	if !ok {
+		return fmt.Errorf("client ID %q not found", clientID)
+	}
+	if existingToken := existingRoot.SecretToken; existingToken != "" {
 		if existingToken != secretToken {
 			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
 		}
 		return nil
 	}
-	s.clientIDToSecretToken[clientID] = secretToken
+	existingRoot.SecretToken = secretToken
 	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
 	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
 	// Deleting it would make it easier to create race conditions around using the client's session
@@ -388,22 +370,197 @@ func (s *DaggerServer) RegisterClient(clientID, clientHostname, secretToken stri
 }
 
 func (s *DaggerServer) VerifyClient(clientID, secretToken string) error {
-	s.clientIDMu.RLock()
-	defer s.clientIDMu.RUnlock()
-	existingToken, ok := s.clientIDToSecretToken[clientID]
+	s.clientRootMu.RLock()
+	defer s.clientRootMu.RUnlock()
+	existingRoot, ok := s.clientRoots[clientID]
 	if !ok {
-		return fmt.Errorf("client ID %q not registered", clientID)
+		return fmt.Errorf("client ID %q not found", clientID)
 	}
-	if existingToken != secretToken {
+	if existingRoot.SecretToken != secretToken {
 		return fmt.Errorf("client ID %q registered with different secret token", clientID)
 	}
 	return nil
 }
 
-func (s *DaggerServer) ClientCallContext(clientID string) (*core.ClientCallContext, bool) {
-	s.clientCallMu.RLock()
-	defer s.clientCallMu.RUnlock()
-	ctx, ok := s.clientCallContext[clientID]
+func (s *DaggerServer) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
+	s.endpointMu.Lock()
+	defer s.endpointMu.Unlock()
+	s.endpoints[path] = handler
+	return nil
+}
+
+func (s *DaggerServer) ServeModule(ctx context.Context, mod *core.Module) error {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	s.clientRootMu.Lock()
+	defer s.clientRootMu.Unlock()
+	root, ok := s.clientRoots[clientMetadata.ClientID]
+	if !ok {
+		return fmt.Errorf("client call for %s not found", clientMetadata.ClientID)
+	}
+	root.Deps = root.Deps.Append(mod)
+	if err := mod.Install(ctx, root.Dag); err != nil {
+		return fmt.Errorf("install module: %w", err)
+	}
+	return nil
+}
+
+// Initialize a new root Query for the current dagql call (or return an existing one if it already exists for the current call's digest).
+func (s *DaggerServer) NewRootForCurrentCall(ctx context.Context, fnCall *core.FunctionCall) (*core.Query, error) {
+	if fnCall == nil {
+		fnCall = &core.FunctionCall{}
+	}
+
+	clientID := s.digestToClientID(dagql.CurrentID(ctx).Digest(), fnCall.Cache)
+
+	s.perClientMu.Lock(clientID)
+	defer s.perClientMu.Unlock(clientID)
+
+	s.clientRootMu.Lock()
+	if root, ok := s.clientRoots[clientID]; ok {
+		s.clientRootMu.Unlock()
+		return root, nil
+	}
+	s.clientRootMu.Unlock()
+
+	newRoot, err := s.newRootForClient(ctx, clientID, fnCall)
+	if err != nil {
+		return nil, fmt.Errorf("new root: %w", err)
+	}
+	s.clientRoots[newRoot.ClientID] = newRoot
+	return newRoot, nil
+}
+
+// Initialize a new root Query for the given set of dependency mods (or return an existing one if it already exists for the dep's digest).
+func (s *DaggerServer) NewRootForDependencies(ctx context.Context, deps *core.ModDeps) (*core.Query, error) {
+	clientID := "deps" + s.digestToClientID(deps.Digest(), false)
+
+	s.perClientMu.Lock(clientID)
+	defer s.perClientMu.Unlock(clientID)
+
+	s.clientRootMu.Lock()
+	if root, ok := s.clientRoots[clientID]; ok {
+		s.clientRootMu.Unlock()
+		return root, nil
+	}
+	s.clientRootMu.Unlock()
+
+	newRoot, err := s.newRootForClient(ctx, clientID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new root: %w", err)
+	}
+	if err := deps.Install(ctx, newRoot.Dag); err != nil {
+		return nil, fmt.Errorf("install dep: %w", err)
+	}
+	newRoot.Deps = newRoot.Deps.Append(deps.Mods...)
+
+	s.clientRoots[newRoot.ClientID] = newRoot
+	return newRoot, nil
+}
+
+// Initialize a new root Query for the given ID based on the modules it needs to be loaded (or return an existing one if it already exists for the ID's digest).
+func (s *DaggerServer) NewRootForDynamicID(ctx context.Context, id *call.ID) (*core.Query, error) {
+	clientID := "dynamicid" + s.digestToClientID(id.Digest(), false)
+
+	s.perClientMu.Lock(clientID)
+	defer s.perClientMu.Unlock(clientID)
+
+	s.clientRootMu.Lock()
+	if root, ok := s.clientRoots[clientID]; ok {
+		s.clientRootMu.Unlock()
+		return root, nil
+	}
+	s.clientRootMu.Unlock()
+
+	newRoot, err := s.newRootForClient(ctx, clientID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new root: %w", err)
+	}
+
+	deps := core.NewModDeps(nil)
+	for _, modID := range id.Modules() {
+		mod, err := dagql.NewID[*core.Module](modID.ID()).Load(ctx, newRoot.Dag)
+		if err != nil {
+			return nil, fmt.Errorf("load source mod: %w", err)
+		}
+		deps = deps.Append(mod.Self)
+	}
+	if err := deps.Install(ctx, newRoot.Dag); err != nil {
+		return nil, fmt.Errorf("install deps for dynamic id: %w", err)
+	}
+	newRoot.Deps = newRoot.Deps.Append(deps.Mods...)
+
+	s.clientRoots[newRoot.ClientID] = newRoot
+	return newRoot, nil
+}
+
+func (s *DaggerServer) digestToClientID(dgst digest.Digest, cache bool) string {
+	clientIDInputs := []string{dgst.String()}
+	if !cache {
+		// use the ServerID so that we bust cache once-per-session
+		clientIDInputs = append(clientIDInputs, s.serverID)
+	}
+	clientIDDigest := digest.FromString(strings.Join(clientIDInputs, " "))
+
+	// only use encoded part of digest because this ID ends up becoming a buildkit Session ID
+	// and buildkit has some ancient internal logic that splits on a colon to support some
+	// dev mode logic: https://github.com/moby/buildkit/pull/290
+	// also trim it to 25 chars as it ends up becoming part of service URLs
+	return clientIDDigest.Encoded()[:25]
+}
+
+func (s *DaggerServer) newRootForClient(ctx context.Context, clientID string, fnCall *core.FunctionCall) (*core.Query, error) {
+	if fnCall == nil {
+		fnCall = &core.FunctionCall{}
+	}
+	root := &core.Query{
+		QueryOpts:      s.queryOpts,
+		ClientID:       clientID,
+		FnCall:         fnCall,
+		ProgrockParent: progrock.FromContext(ctx).Parent,
+	}
+
+	var err error
+	root.Buildkit, err = buildkit.NewClient(ctx, s.buildkitOpts)
+	if err != nil {
+		return nil, fmt.Errorf("buildkit client: %w", err)
+	}
+
+	// NOTE: context.WithoutCancel is used because if the provided context is canceled, buildkit can
+	// leave internal progress contexts open and leak goroutines.
+	root.Buildkit.WriteStatusesTo(context.WithoutCancel(ctx), s.recorder)
+
+	root.Dag = dagql.NewServer(root)
+	root.Dag.Around(tracing.AroundFunc)
+	root.Dag.Cache = s.dagqlCache
+	dagintro.Install[*core.Query](root.Dag)
+
+	coreMod := &schema.CoreMod{Dag: root.Dag}
+	root.Deps = core.NewModDeps([]core.Mod{coreMod})
+	if fnCall.Module != nil {
+		root.Deps = root.Deps.Append(fnCall.Module.Deps.Mods...)
+		// By default, serve both deps and the module's own API to itself. But if SkipSelfSchema is set,
+		// only serve the APIs of the deps of this module. This is currently only needed for the special
+		// case of the function used to get the definition of the module itself (which can't obviously
+		// be served the API its returning the definition of).
+		if !fnCall.SkipSelfSchema {
+			root.Deps = root.Deps.Append(fnCall.Module)
+		}
+	}
+	if err := root.Deps.Install(ctx, root.Dag); err != nil {
+		return nil, fmt.Errorf("install deps: %w", err)
+	}
+
+	return root, nil
+}
+
+func (s *DaggerServer) rootFor(clientID string) (*core.Query, bool) {
+	s.clientRootMu.RLock()
+	defer s.clientRootMu.RUnlock()
+	ctx, ok := s.clientRoots[clientID]
 	return ctx, ok
 }
 
@@ -412,16 +569,16 @@ func (s *DaggerServer) CurrentServedDeps(ctx context.Context) (*core.ModDeps, er
 	if err != nil {
 		return nil, err
 	}
-	callCtx, ok := s.ClientCallContext(clientMetadata.ClientID)
+	root, ok := s.rootFor(clientMetadata.ClientID)
 	if !ok {
 		return nil, fmt.Errorf("client call for %s not found", clientMetadata.ClientID)
 	}
-	return callCtx.Deps, nil
+	return root.Deps, nil
 }
 
 func (s *DaggerServer) LogMetrics(l *logrus.Entry) *logrus.Entry {
-	s.clientIDMu.RLock()
-	defer s.clientIDMu.RUnlock()
+	s.clientRootMu.RLock()
+	defer s.clientRootMu.RUnlock()
 	return l.WithField(fmt.Sprintf("server-%s-client-count", s.serverID), s.connectedClients)
 }
 
@@ -436,11 +593,11 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 		slog.Error("failed to stop client services", "error", err)
 	}
 
-	s.clientCallMu.RLock()
-	for _, callCtx := range s.clientCallContext {
-		err = errors.Join(err, callCtx.Root.Buildkit.Close())
+	s.clientRootMu.RLock()
+	for _, root := range s.clientRoots {
+		err = errors.Join(err, root.Buildkit.Close())
 	}
-	s.clientCallMu.RUnlock()
+	s.clientRootMu.RUnlock()
 
 	// mark all groups completed
 	s.recorder.Complete()
