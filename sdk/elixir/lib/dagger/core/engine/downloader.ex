@@ -28,12 +28,16 @@ defmodule Dagger.Core.Engine.Downloader do
   end
 
   defp extract_cli(cli_host, cli_version, bin_path) do
-    req = Req.new(url: cli_archive_url(cli_host, cli_version))
-
-    with {:ok, response} <- Req.get(req, raw: true),
-         :ok <- verify_checksum(response, cli_host, cli_version) do
-      {_, %{body: files}} = Req.Steps.decode_body({req, response})
-
+    with {:ok, {{_, 200, _}, headers, response}} <-
+           :httpc.request(cli_archive_url(cli_host, cli_version)),
+         :ok <- verify_checksum(response, cli_host, cli_version),
+         {:ok, files} <-
+           extract(
+             response,
+             List.keyfind!(headers, ~c"content-type", 0)
+             |> elem(1)
+             |> to_string()
+           ) do
       {_, dagger_bin} =
         Enum.find(files, fn {filename, _bin} ->
           {os, _} = target()
@@ -44,8 +48,16 @@ defmodule Dagger.Core.Engine.Downloader do
     end
   end
 
+  defp extract(archive, "application/x-gzip") do
+    :erl_tar.extract({:binary, IO.iodata_to_binary(archive)}, [:memory, :compressed])
+  end
+
+  defp extract(archive, "application/zip") do
+    :zip.extract(IO.iodata_to_binary(archive), [:memory])
+  end
+
   defp verify_checksum(response, cli_host, cli_version) do
-    calculated_checksum = :crypto.hash(:sha256, response.body) |> Base.encode16(case: :lower)
+    calculated_checksum = :crypto.hash(:sha256, response) |> Base.encode16(case: :lower)
 
     case expected_checksum(cli_host, cli_version) do
       {:ok, expected_checksum} ->
@@ -79,9 +91,11 @@ defmodule Dagger.Core.Engine.Downloader do
 
   defp checksum_map(cli_host, cli_version) do
     try do
-      with {:ok, response} <- Req.get(checksum_url(cli_host, cli_version)) do
+      with {:ok, {{_, 200, _}, _, response}} <-
+             :httpc.request(checksum_url(cli_host, cli_version)) do
         checksum_map =
-          response.body
+          response
+          |> to_string()
           |> String.split("\n", trim: true)
           |> Enum.map(&String.split/1)
           |> Enum.map(fn
