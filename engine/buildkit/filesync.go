@@ -46,7 +46,7 @@ func (c *Client) LocalImport(
 	}
 
 	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.ClientID),
+		llb.SessionID(clientMetadata.BuildkitSessionID()),
 		llb.SharedKeyHint(strings.Join([]string{clientMetadata.ClientHostname, srcPath}, " ")),
 	}
 
@@ -112,18 +112,13 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	}
 	defer cancel()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
 	ctx = engine.LocalImportOpts{
 		Path:               path,
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get requester session: %s", err)
 	}
@@ -147,18 +142,13 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 	}
 	defer cancel()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
 	ctx = engine.LocalImportOpts{
 		Path:              path,
 		StatPathOnly:      true,
 		StatReturnAbsPath: returnAbsPath,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get requester session: %s", err)
 	}
@@ -231,7 +221,7 @@ func (c *Client) LocalDirExport(
 		Merge: merge,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
+	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.BuildkitSessionID())
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
 	}
@@ -306,11 +296,6 @@ func (c *Client) LocalFileExport(
 		return fmt.Errorf("failed to stat file: %s", err)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
 	ctx = engine.LocalExportOpts{
 		Path:               destPath,
 		IsFileStream:       true,
@@ -319,7 +304,7 @@ func (c *Client) LocalFileExport(
 		FileMode:           stat.Mode().Perm(),
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %s", err)
 	}
@@ -375,11 +360,6 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		lg.Debug("finished exporting bytes")
 	}()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
 	ctx = engine.LocalExportOpts{
 		Path:             destPath,
 		IsFileStream:     true,
@@ -387,13 +367,13 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		FileMode:         destMode,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session: %s", err)
+		return fmt.Errorf("failed to get requester session: %w", err)
 	}
 	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create diff copy client: %s", err)
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 	defer diffCopyClient.CloseSend()
 
@@ -407,25 +387,25 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 			err = nil
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read file: %s", err)
+			return fmt.Errorf("failed to read file: %w", err)
 		}
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
 			if err != nil {
-				return fmt.Errorf("diff copy client error: %s", err)
+				return fmt.Errorf("diff copy client error: %w", err)
 			}
 		} else if err != nil {
-			return fmt.Errorf("failed to send file chunk: %s", err)
+			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 	}
 	if err := diffCopyClient.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %s", err)
+		return fmt.Errorf("failed to close send: %w", err)
 	}
 	// wait for receiver to finish
 	var msg filesync.BytesMessage
 	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
-		return fmt.Errorf("unexpected closing recv msg: %s", err)
+		return fmt.Errorf("unexpected closing recv msg: %w", err)
 	}
 	return nil
 }

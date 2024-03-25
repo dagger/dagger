@@ -9,6 +9,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/moby/buildkit/identity"
@@ -84,7 +85,17 @@ func (c *Client) newSession() (*bksession.Session, error) {
 	return sess, nil
 }
 
-func (c *Client) GetSessionCaller(ctx context.Context, clientID string) (bksession.Caller, error) {
-	waitForSession := true
-	return c.SessionManager.Get(ctx, clientID, !waitForSession)
+func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (bksession.Caller, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caller, err := c.SessionManager.Get(ctx, clientMetadata.BuildkitSessionID(), !wait)
+	if err != nil {
+		return nil, err
+	}
+	if caller == nil {
+		return nil, fmt.Errorf("session for %q not found", clientMetadata.BuildkitSessionID())
+	}
+	return caller, nil
 }

@@ -47,6 +47,10 @@ type ObjectType interface {
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
 	Extend(FieldSpec, FieldFunc)
+	// If this object is defined by a user module, that module. Otherwise nil.
+	SourceModule() *call.Module
+	// The underlying ast definition for the object.
+	TypeDefinition() *ast.Definition
 }
 
 type IDType interface {

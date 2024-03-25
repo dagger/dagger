@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -51,15 +50,11 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	// needing to make calls to their own API).
 	switch x := value.(type) {
 	case DynamicID:
-		deps, err := t.mod.Query.IDDeps(ctx, x.ID())
+		dynamicRoot, err := t.mod.Query.NewRootForDynamicID(ctx, x.ID())
 		if err != nil {
-			return nil, fmt.Errorf("failed to get deps for DynamicID: %w", err)
+			return nil, fmt.Errorf("failed to get root for DynamicID: %w", err)
 		}
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
-		}
-		val, err := dag.Load(ctx, x.ID())
+		val, err := dynamicRoot.Dag.Load(ctx, x.ID())
 		if err != nil {
 			return nil, fmt.Errorf("load DynamicID: %w", err)
 		}
@@ -84,7 +79,7 @@ func (t *ModuleObjectType) TypeDef() *TypeDef {
 }
 
 type Callable interface {
-	Call(context.Context, *call.ID, *CallOpts) (dagql.Typed, error)
+	Call(context.Context, *CallOpts) (dagql.Typed, error)
 	ReturnType() (ModType, error)
 	ArgType(argName string) (ModType, error)
 }
@@ -173,7 +168,8 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
 	class := dagql.NewClass(dagql.ClassOpts[*ModuleObject]{
-		Typed: obj,
+		Typed:        obj,
+		SourceModule: obj.Module.IDModule(),
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module
@@ -254,7 +250,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 					Value: v,
 				})
 			}
-			return fn.Call(ctx, dagql.CurrentID(ctx), &CallOpts{
+			return fn.Call(ctx, &CallOpts{
 				Inputs:    callInput,
 				ParentVal: nil,
 			})
@@ -351,7 +347,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 			sort.Slice(opts.Inputs, func(i, j int) bool {
 				return opts.Inputs[i].Name < opts.Inputs[j].Name
 			})
-			return modFun.Call(ctx, dagql.CurrentID(ctx), opts)
+			return modFun.Call(ctx, opts)
 		},
 	}, nil
 }
@@ -362,7 +358,7 @@ type CallableField struct {
 	Return ModType
 }
 
-func (f *CallableField) Call(ctx context.Context, id *call.ID, opts *CallOpts) (dagql.Typed, error) {
+func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, error) {
 	val, ok := opts.ParentVal[f.Field.OriginalName]
 	if !ok {
 		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentVal)
