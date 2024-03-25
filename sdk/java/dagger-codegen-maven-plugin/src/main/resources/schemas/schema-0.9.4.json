@@ -527,7 +527,7 @@
                             }
                         ],
                         "deprecationReason": null,
-                        "description": "EXPERIMENTAL API! Subject to change/removal at any time.\n\nexperimentalWithGPU configures the provided list of devices to be accessible to this container.\nThis currently works for Nvidia devices only.",
+                        "description": "EXPERIMENTAL API! Subject to change/removal at any time.\n\nexperimentalWithGPU configures the provided list of devices to be accesible to this container.\nThis currently works for Nvidia devices only.",
                         "isDeprecated": false,
                         "name": "experimentalWithGPU",
                         "type": {
