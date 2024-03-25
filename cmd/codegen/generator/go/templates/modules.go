@@ -35,7 +35,7 @@ The overall idea is that users just need to create a struct with the same name a
 add methods to that struct to implement their Module. Methods on that struct become Functions.
 
 They are also free to return custom objects from Functions, which themselves may have methods that become
-Functions too. However, only the "top-level" Module struct's Functions will be directly invokable.
+Functions too. However, only the "top-level" Module struct's Functions will be directly invocable.
 
 This is essentially just the GraphQL execution model.
 

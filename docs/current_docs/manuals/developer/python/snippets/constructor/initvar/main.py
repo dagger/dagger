@@ -1,4 +1,4 @@
-"""An example module controling contructor parameters."""
+"""An example module controlling constructor parameters."""
 import dataclasses
 
 import dagger

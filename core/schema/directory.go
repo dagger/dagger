@@ -20,7 +20,7 @@ func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`).
-			ArgDeprecated("id", "Use `loadDirectoryFromID` isntead."),
+			ArgDeprecated("id", "Use `loadDirectoryFromID` instead."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Directory]{

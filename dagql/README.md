@@ -22,7 +22,7 @@ Below are a set of assertions that build on one another.
 * An *impure* query or ID may return an Object with a *pure* ID.
 * All data may be kept in-memory with LRU-like caching semantics.
 * All Arrays returned by Objects have deterministic order.
-* An ID may refer to an Object returned in an Array by specifing the *nth* index (starting at 1).
+* An ID may refer to an Object returned in an Array by specifying the *nth* index (starting at 1).
 * All Objects in Arrays have IDs: either an ID of their own, or the field's ID with *nth* set.
 * At the GraphQL API layer, Objects are passed to each other by ID.
 * At the code layer, Objects received as arguments are automatically loaded from a given ID.

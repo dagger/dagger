@@ -584,7 +584,7 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 
 // EXPERIMENTAL API! Subject to change/removal at any time.
 //
-// Configures the provided list of devices to be accesible to this container.
+// Configures the provided list of devices to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
@@ -5031,7 +5031,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 // DirectoryOpts contains options for Client.Directory
 type DirectoryOpts struct {
-	// DEPRECATED: Use `loadDirectoryFromID` isntead.
+	// DEPRECATED: Use `loadDirectoryFromID` instead.
 	ID DirectoryID
 }
 

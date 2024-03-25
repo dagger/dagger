@@ -47,7 +47,7 @@ type ClientMetadata struct {
 	RegisterClient bool `json:"register_client"`
 
 	// ClientHostname is the hostname of the client that made the request. It's
-	// used opportunisticly as a best-effort, semi-stable identifier for the
+	// used opportunistically as a best-effort, semi-stable identifier for the
 	// client across multiple sessions, which can be useful for debugging and for
 	// minimizing occurrences of both excessive cache misses and excessive cache
 	// matches.

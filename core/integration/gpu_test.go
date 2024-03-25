@@ -159,7 +159,7 @@ func TestGPUAccessWithPython(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	t.Run("pytorch CUDA availibility check", func(t *testing.T) {
+	t.Run("pytorch CUDA availability check", func(t *testing.T) {
 		ctr := c.Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			ExperimentalWithAllGPUs().
