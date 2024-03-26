@@ -51,18 +51,10 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Creates a scratch container.\n\nOptional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `id` - DEPRECATED: Use `loadContainerFromID` instead.\n* `platform` - Platform to initialize the container with."
+    @doc "Creates a scratch container.\n\nOptional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `platform` - Platform to initialize the container with."
     @spec container(t(), keyword()) :: Dagger.Container.t()
     def container(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "container")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.Container.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
 
       selection =
         if is_nil(optional_args[:platform]) do
@@ -128,31 +120,11 @@ defmodule Dagger.Client do
   )
 
   (
-    @doc "Creates an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` - DEPRECATED: Use `loadDirectoryFromID` instead."
-    @spec directory(t(), keyword()) :: Dagger.Directory.t()
-    def directory(%__MODULE__{} = query, optional_args \\ []) do
+    @doc "Creates an empty directory."
+    @spec directory(t()) :: Dagger.Directory.t()
+    def directory(%__MODULE__{} = query) do
       selection = select(query.selection, "directory")
-
-      selection =
-        if is_nil(optional_args[:id]) do
-          selection
-        else
-          {:ok, id} = Dagger.Directory.id(optional_args[:id])
-          arg(selection, "id", id)
-        end
-
       %Dagger.Directory{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "## Required Arguments\n\n* `id` -"
-    @deprecated "Use `load_file_from_id` instead"
-    @spec file(t(), Dagger.FileID.t()) :: Dagger.File.t()
-    def file(%__MODULE__{} = query, file) do
-      selection = select(query.selection, "file")
-      selection = arg(selection, "id", file)
-      %Dagger.File{selection: selection, client: query.client}
     end
   )
 
@@ -679,22 +651,6 @@ defmodule Dagger.Client do
       selection = arg(selection, "name", name)
       selection = arg(selection, "plaintext", plaintext)
       %Dagger.Secret{selection: selection, client: query.client}
-    end
-  )
-
-  (
-    @doc "Loads a socket by its ID.\n\n## Required Arguments\n\n* `id` -"
-    @deprecated "Use `load_socket_from_id` instead"
-    @spec socket(t(), Dagger.Socket.t()) :: Dagger.Socket.t()
-    def socket(%__MODULE__{} = query, socket) do
-      selection = select(query.selection, "socket")
-
-      (
-        {:ok, id} = Dagger.Socket.id(socket)
-        selection = arg(selection, "id", id)
-      )
-
-      %Dagger.Socket{selection: selection, client: query.client}
     end
   )
 

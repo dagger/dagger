@@ -24,26 +24,10 @@ defmodule Dagger.GitRef do
   )
 
   (
-    @doc "The filesystem tree at this ref.\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - DEPRECATED: This option should be passed to `git` instead.\n* `ssh_auth_socket` - DEPRECATED: This option should be passed to `git` instead."
-    @spec tree(t(), keyword()) :: Dagger.Directory.t()
-    def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
+    @doc "The filesystem tree at this ref."
+    @spec tree(t()) :: Dagger.Directory.t()
+    def tree(%__MODULE__{} = git_ref) do
       selection = select(git_ref.selection, "tree")
-
-      selection =
-        if is_nil(optional_args[:ssh_known_hosts]) do
-          selection
-        else
-          arg(selection, "sshKnownHosts", optional_args[:ssh_known_hosts])
-        end
-
-      selection =
-        if is_nil(optional_args[:ssh_auth_socket]) do
-          selection
-        else
-          {:ok, id} = Dagger.Socket.id(optional_args[:ssh_auth_socket])
-          arg(selection, "sshAuthSocket", id)
-        end
-
       %Dagger.Directory{selection: selection, client: git_ref.client}
     end
   )

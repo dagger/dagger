@@ -75,10 +75,7 @@ async fn test_container() {
 
     let id = alpine.id().await.unwrap();
     let contents = client
-        .container_opts(dagger_sdk::QueryContainerOpts {
-            id: Some(id),
-            platform: None,
-        })
+        .load_container_from_id(id)
         .file("/etc/alpine-release")
         .contents()
         .await

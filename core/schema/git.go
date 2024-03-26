@@ -51,9 +51,7 @@ func (s *gitSchema) Install() {
 
 	dagql.Fields[*core.GitRef]{
 		dagql.Func("tree", s.tree).
-			Doc(`The filesystem tree at this ref.`).
-			ArgDeprecated("sshKnownHosts", "This option should be passed to `git` instead.").
-			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
+			Doc(`The filesystem tree at this ref.`),
 		dagql.Func("commit", s.fetchCommit).
 			Doc(`The resolved commit id at this ref.`),
 	}.Install(s.srv)
@@ -152,29 +150,8 @@ func (s *gitSchema) tag(ctx context.Context, parent *core.GitRepository, args ta
 	}, nil
 }
 
-type treeArgs struct {
-	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
-	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
-}
-
-func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, args treeArgs) (*core.Directory, error) {
-	var authSock *core.Socket
-	if args.SSHAuthSocket.Valid {
-		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
-		if err != nil {
-			return nil, err
-		}
-		authSock = sock.Self
-	}
-	res := parent
-	if args.SSHKnownHosts.Valid || args.SSHAuthSocket.Valid {
-		// no need for a full clone() here, we're only modifying string fields
-		cp := *res.Repo
-		cp.SSHKnownHosts = args.SSHKnownHosts.GetOr("").String()
-		cp.SSHAuthSocket = authSock
-		res.Repo = &cp
-	}
-	return res.Tree(ctx)
+func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, _ struct{}) (*core.Directory, error) {
+	return parent.Tree(ctx)
 }
 
 func (s *gitSchema) fetchCommit(ctx context.Context, parent *core.GitRef, _ struct{}) (dagql.String, error) {
