@@ -2,12 +2,9 @@ package core
 
 import (
 	"context"
-	"crypto/hmac"
-	"encoding/hex"
 	"sync"
 
 	"github.com/moby/buildkit/session/secrets"
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -18,30 +15,6 @@ type Secret struct {
 
 	// Name specifies the name of the secret.
 	Name string `json:"name,omitempty"`
-
-	// Accessor specifies the accessor key for the secret.
-	Accessor string `json:"accessor,omitempty"`
-}
-
-func GetLocalSecretAccessor(ctx context.Context, parent *Query, name string) (string, error) {
-	m, err := parent.CurrentModule(ctx)
-	if err != nil && !errors.Is(err, ErrNoCurrentModule) {
-		return "", err
-	}
-	var d digest.Digest
-	if m != nil {
-		d = m.Source.ID().Digest()
-	}
-	return NewSecretAccessor(name, d.String()), nil
-}
-
-func NewSecretAccessor(name string, scope string) string {
-	// Use an HMAC, which allows us to keep the scope secret
-	// This also protects from length-extension attacks (where if we had
-	// access to secret FOO in scope X, we could derive access to FOOBAR).
-	h := hmac.New(digest.SHA256.Hash, []byte(scope))
-	dt := h.Sum([]byte(name))
-	return hex.EncodeToString(dt)
 }
 
 func (*Secret) Type() *ast.Type {

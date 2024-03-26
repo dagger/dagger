@@ -15,6 +15,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
+	bksecrets "github.com/moby/buildkit/session/secrets"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
 )
@@ -30,7 +31,7 @@ const (
 	BuiltinContentOCIStoreName = "dagger-builtin-content"
 )
 
-func (c *Client) newSession() (*bksession.Session, error) {
+func (c *Client) newSession(secretStore bksecrets.SecretStore) (*bksession.Session, error) {
 	sess, err := bksession.NewSession(c.closeCtx, identity.NewID(), "")
 	if err != nil {
 		return nil, err
@@ -41,7 +42,7 @@ func (c *Client) newSession() (*bksession.Session, error) {
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
-	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
+	sess.Allow(secretsprovider.NewSecretProvider(secretStore))
 	sess.Allow(&socketProxy{c})
 	sess.Allow(&authProxy{c})
 	sess.Allow(&client.AnyDirSource{})

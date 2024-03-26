@@ -138,7 +138,6 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	}
 	s.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
-	secretStore := core.NewSecretStore()
 	authProvider := auth.NewRegistryAuthProvider()
 
 	cacheImporterCfgs := make([]bkgw.CacheOptionsEntry, 0, len(clientMetadata.UpstreamCacheImportConfig))
@@ -168,7 +167,6 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		SessionManager:        e.SessionManager,
 		LLBSolver:             e.llbSolver,
 		GenericSolver:         e.genericSolver,
-		SecretStore:           secretStore,
 		AuthProvider:          authProvider,
 		PrivilegedExecEnabled: e.privilegedExecEnabled,
 		UpstreamCacheImports:  cacheImporterCfgs,
@@ -183,7 +181,6 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		ProgrockSocketPath: progSockPath,
 		Services:           s.services,
 		Platform:           core.Platform(e.worker.Platforms(true)[0]),
-		Secrets:            secretStore,
 		OCIStore:           e.worker.ContentStore(),
 		LeaseManager:       e.worker.LeaseManager(),
 		Auth:               authProvider,
@@ -191,7 +188,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	}
 
 	// register the main client caller
-	newRoot, err := s.newRootForClient(ctx, s.mainClientCallerID, nil)
+	newRoot, err := s.newRootForClient(ctx, s.mainClientCallerID, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -414,22 +411,44 @@ func (s *DaggerServer) NewRootForCurrentCall(ctx context.Context, fnCall *core.F
 		fnCall = &core.FunctionCall{}
 	}
 
-	clientID := s.digestToClientID(dagql.CurrentID(ctx).Digest(), fnCall.Cache)
+	currentID := dagql.CurrentID(ctx)
+	clientID := s.digestToClientID(currentID.Digest(), fnCall.Cache)
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	fmt.Printf("NewRootForCurrentCall: %s %s\n", clientID, currentID.Display())
 
 	s.perClientMu.Lock(clientID)
 	defer s.perClientMu.Unlock(clientID)
-
-	s.clientRootMu.Lock()
-	if root, ok := s.clientRoots[clientID]; ok {
-		s.clientRootMu.Unlock()
+	if root, ok := s.rootFor(clientID); ok {
 		return root, nil
 	}
-	s.clientRootMu.Unlock()
 
-	newRoot, err := s.newRootForClient(ctx, clientID, fnCall)
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	currentRoot, ok := s.rootFor(clientMetadata.ClientID)
+	if !ok {
+		return nil, fmt.Errorf("client call for %s not found", clientMetadata.ClientID)
+	}
+	secrets, err := dagql.ReferencedTypes[*core.Secret](ctx, currentID, currentRoot.Dag, false)
+	if err != nil {
+		return nil, fmt.Errorf("referenced secrets: %w", err)
+	}
+	currentSecretStore := currentRoot.Secrets
+
+	newRoot, err := s.newRootForClient(ctx, clientID, fnCall, currentSecretStore, secrets)
 	if err != nil {
 		return nil, fmt.Errorf("new root: %w", err)
 	}
+
+	s.clientRootMu.Lock()
+	defer s.clientRootMu.Unlock()
 	s.clientRoots[newRoot.ClientID] = newRoot
 	return newRoot, nil
 }
@@ -440,15 +459,11 @@ func (s *DaggerServer) NewRootForDependencies(ctx context.Context, deps *core.Mo
 
 	s.perClientMu.Lock(clientID)
 	defer s.perClientMu.Unlock(clientID)
-
-	s.clientRootMu.Lock()
-	if root, ok := s.clientRoots[clientID]; ok {
-		s.clientRootMu.Unlock()
+	if root, ok := s.rootFor(clientID); ok {
 		return root, nil
 	}
-	s.clientRootMu.Unlock()
 
-	newRoot, err := s.newRootForClient(ctx, clientID, nil)
+	newRoot, err := s.newRootForClient(ctx, clientID, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new root: %w", err)
 	}
@@ -457,6 +472,8 @@ func (s *DaggerServer) NewRootForDependencies(ctx context.Context, deps *core.Mo
 	}
 	newRoot.Deps = newRoot.Deps.Append(deps.Mods...)
 
+	s.clientRootMu.Lock()
+	defer s.clientRootMu.Unlock()
 	s.clientRoots[newRoot.ClientID] = newRoot
 	return newRoot, nil
 }
@@ -467,15 +484,17 @@ func (s *DaggerServer) NewRootForDynamicID(ctx context.Context, id *call.ID) (*c
 
 	s.perClientMu.Lock(clientID)
 	defer s.perClientMu.Unlock(clientID)
-
-	s.clientRootMu.Lock()
-	if root, ok := s.clientRoots[clientID]; ok {
-		s.clientRootMu.Unlock()
+	if root, ok := s.rootFor(clientID); ok {
 		return root, nil
 	}
-	s.clientRootMu.Unlock()
 
-	newRoot, err := s.newRootForClient(ctx, clientID, nil)
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: include secrets here?
+
+	newRoot, err := s.newRootForClient(ctx, clientID, nil, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new root: %w", err)
 	}
@@ -493,6 +512,8 @@ func (s *DaggerServer) NewRootForDynamicID(ctx context.Context, id *call.ID) (*c
 	}
 	newRoot.Deps = newRoot.Deps.Append(deps.Mods...)
 
+	s.clientRootMu.Lock()
+	defer s.clientRootMu.Unlock()
 	s.clientRoots[newRoot.ClientID] = newRoot
 	return newRoot, nil
 }
@@ -512,7 +533,14 @@ func (s *DaggerServer) digestToClientID(dgst digest.Digest, cache bool) string {
 	return clientIDDigest.Encoded()[:25]
 }
 
-func (s *DaggerServer) newRootForClient(ctx context.Context, clientID string, fnCall *core.FunctionCall) (*core.Query, error) {
+func (s *DaggerServer) newRootForClient(
+	ctx context.Context,
+	clientID string,
+	fnCall *core.FunctionCall,
+	// TODO: cleanup
+	currentSecretStore *core.SecretStore,
+	secrets []*core.Secret,
+) (*core.Query, error) {
 	if fnCall == nil {
 		fnCall = &core.FunctionCall{}
 	}
@@ -523,8 +551,19 @@ func (s *DaggerServer) newRootForClient(ctx context.Context, clientID string, fn
 		ProgrockParent: progrock.FromContext(ctx).Parent,
 	}
 
+	root.Secrets = core.NewSecretStore()
+	for _, secret := range secrets {
+		plaintext, err := currentSecretStore.GetSecret(ctx, secret.Name)
+		if err != nil {
+			return nil, fmt.Errorf("get secret: %w", err)
+		}
+		if err := root.Secrets.AddSecret(ctx, secret.Name, plaintext); err != nil {
+			return nil, fmt.Errorf("add secret: %w", err)
+		}
+	}
+
 	var err error
-	root.Buildkit, err = buildkit.NewClient(ctx, s.buildkitOpts)
+	root.Buildkit, err = buildkit.NewClient(ctx, s.buildkitOpts, root.Secrets)
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
@@ -560,8 +599,8 @@ func (s *DaggerServer) newRootForClient(ctx context.Context, clientID string, fn
 func (s *DaggerServer) rootFor(clientID string) (*core.Query, bool) {
 	s.clientRootMu.RLock()
 	defer s.clientRootMu.RUnlock()
-	ctx, ok := s.clientRoots[clientID]
-	return ctx, ok
+	root, ok := s.clientRoots[clientID]
+	return root, ok
 }
 
 func (s *DaggerServer) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {

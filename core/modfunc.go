@@ -188,6 +188,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		callMeta.ParentName = fn.objDef.OriginalName
 	}
 
+	newRoot, err := fn.root.NewRootForCurrentCall(ctx, callMeta)
+	if err != nil {
+		return nil, fmt.Errorf("register caller: %w", err)
+	}
 	ctr := fn.runtime
 
 	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform)
@@ -199,7 +203,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
-		NestedExecFunctionCall:        callMeta,
+		NestedExecRoot:                newRoot,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)
@@ -249,6 +253,22 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	returnValueTyped, err := fn.returnType.ConvertFromSDKResult(ctx, returnValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
+	}
+
+	// TODO: split out
+	secrets, err := referencedTypes[*Secret](ctx, returnValueTyped, newRoot.Dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to link secret dependency blobs: %w", err)
+	}
+	for _, secret := range secrets {
+		plaintext, err := newRoot.Secrets.GetSecret(ctx, secret.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get secret %q: %w", secret.Name, err)
+		}
+
+		if err := CurrentQuery(ctx).Secrets.AddSecret(ctx, secret.Name, plaintext); err != nil {
+			return nil, fmt.Errorf("failed to add secret %q: %w", secret.Name, err)
+		}
 	}
 
 	if err := fn.linkDependencyBlobs(ctx, result, returnValueTyped); err != nil {

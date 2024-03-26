@@ -1223,12 +1223,12 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	secretBytes, err := parent.Query.Secrets.GetSecret(ctx, secret.Self.Accessor)
+	secretBytes, err := core.CurrentQuery(ctx).Secrets.GetSecret(ctx, secret.Self.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := parent.Query.Auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
+	if err := core.CurrentQuery(ctx).Auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
 		return nil, err
 	}
 
@@ -1239,8 +1239,8 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(_ context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
-	if err := parent.Query.Auth.RemoveCredential(args.Address); err != nil {
+func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+	if err := core.CurrentQuery(ctx).Auth.RemoveCredential(args.Address); err != nil {
 		return nil, err
 	}
 
@@ -1384,7 +1384,7 @@ func (s *containerSchema) terminal(
 		return nil, err
 	}
 
-	if err := ctr.Self.Query.MuxEndpoint(ctx, path.Join("/", term.Endpoint), handler); err != nil {
+	if err := core.CurrentQuery(ctx).MuxEndpoint(ctx, path.Join("/", term.Endpoint), handler); err != nil {
 		return nil, err
 	}
 

@@ -598,12 +598,27 @@ func CurrentID(ctx context.Context) *call.ID {
 	return val.(*call.ID)
 }
 
+type srvCtx struct{}
+
+func srvToContext(ctx context.Context, srv *Server) context.Context {
+	return context.WithValue(ctx, srvCtx{}, srv)
+}
+
+func CurrentServer(ctx context.Context) *Server {
+	val := ctx.Value(srvCtx{})
+	if val == nil {
+		return nil
+	}
+	return val.(*Server)
+}
+
 func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *call.ID, rerr error) {
 	chainedID, err := self.IDFor(ctx, sel)
 	if err != nil {
 		return nil, nil, err
 	}
 	ctx = idToContext(ctx, chainedID)
+	ctx = srvToContext(ctx, s)
 	doSelect := func(ctx context.Context) (Typed, error) {
 		return self.Select(ctx, sel)
 	}

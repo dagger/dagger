@@ -5410,8 +5410,6 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 		// even when we know the underlying IDs
 		t.Parallel()
 
-		t.Skip("this protection is not yet implemented")
-
 		var logs safeBuffer
 		c, ctx := connect(t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 

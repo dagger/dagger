@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -127,10 +126,10 @@ func (obj *ModuleObject) Type() *ast.Type {
 	}
 }
 
-var _ HasPBDefinitions = (*ModuleObject)(nil)
+var _ HasFieldValues = (*ModuleObject)(nil)
 
-func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	defs := []*pb.Definition{}
+func (obj *ModuleObject) FieldValues(ctx context.Context) ([]dagql.Typed, error) {
+	values := []dagql.Typed{}
 	objDef := obj.TypeDef
 	for name, val := range obj.Fields {
 		fieldDef, ok := objDef.FieldByOriginalName(name)
@@ -150,13 +149,9 @@ func (obj *ModuleObject) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field %q: %w", name, err)
 		}
-		fieldDefs, err := collectPBDefinitions(ctx, converted)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, fieldDefs...)
+		values = append(values, converted)
 	}
-	return defs, nil
+	return values, nil
 }
 
 func (obj *ModuleObject) TypeDescription() string {

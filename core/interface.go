@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -351,10 +350,10 @@ func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 	return iface.TypeDef.Description
 }
 
-var _ HasPBDefinitions = (*InterfaceAnnotatedValue)(nil)
+var _ HasFieldValues = (*InterfaceAnnotatedValue)(nil)
 
-func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
-	defs := []*pb.Definition{}
+func (iface *InterfaceAnnotatedValue) FieldValues(ctx context.Context) ([]dagql.Typed, error) {
+	values := make([]dagql.Typed, 0, len(iface.Fields))
 	objDef := iface.UnderlyingType.TypeDef().AsObject.Value
 	for name, val := range iface.Fields {
 		fieldDef, ok := objDef.FieldByOriginalName(name)
@@ -373,11 +372,7 @@ func (iface *InterfaceAnnotatedValue) PBDefinitions(ctx context.Context) ([]*pb.
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert arg %q: %w", name, err)
 		}
-		fieldDefs, err := collectPBDefinitions(ctx, converted)
-		if err != nil {
-			return nil, err
-		}
-		defs = append(defs, fieldDefs...)
+		values = append(values, converted)
 	}
-	return defs, nil
+	return values, nil
 }

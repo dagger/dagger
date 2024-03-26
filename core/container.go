@@ -55,8 +55,6 @@ type DefaultTerminalCmdOpts struct {
 
 // Container is a content-addressed container.
 type Container struct {
-	Query *Query
-
 	// The container's root filesystem.
 	FS *pb.Definition `json:"fs"`
 
@@ -135,12 +133,8 @@ func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition
 	return defs, nil
 }
 
-func NewContainer(root *Query, platform Platform) (*Container, error) {
-	if root == nil {
-		panic("query must be non-nil")
-	}
+func NewContainer(platform Platform) (*Container, error) {
 	return &Container{
-		Query:    root,
 		Platform: platform,
 	}, nil
 }
@@ -167,7 +161,9 @@ var _ pipeline.Pipelineable = (*Container)(nil)
 
 // PipelinePath returns the container's pipeline path.
 func (container *Container) PipelinePath() pipeline.Path {
-	return container.Query.Pipeline
+	//TODO:
+	return nil
+	// return container.Query.Pipeline
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
@@ -281,7 +277,7 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 }
 
 func (container *Container) From(ctx context.Context, addr string) (*Container, error) {
-	bk := container.Query.Buildkit
+	bk := CurrentQuery(ctx).Buildkit
 
 	container = container.Clone()
 
@@ -361,8 +357,8 @@ func (container *Container) Build(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs := CurrentQuery(ctx).Services
+	bk := CurrentQuery(ctx).Buildkit
 
 	// add a weak group for the docker build vertices
 	ctx, subRecorder := progrock.WithGroup(ctx, "docker build", progrock.Weak())
@@ -399,13 +395,7 @@ func (container *Container) Build(
 		dockerui.DefaultLocalNameDockerfile: contextDir.LLB,
 	}
 
-	// FIXME: ew, this is a terrible way to pass this around
-	//nolint:staticcheck
-	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
-		return GetLocalSecretAccessor(ctx, container.Query, name)
-	})
-
-	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
 		FrontendOpt:    opts,
 		FrontendInputs: inputs,
@@ -455,7 +445,7 @@ func (container *Container) Build(
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	return &Directory{
-		Query:    container.Query,
+		Query:    CurrentQuery(ctx),
 		LLB:      container.FS,
 		Dir:      "/",
 		Platform: container.Platform,
@@ -743,8 +733,8 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return nil, err
 	}
 
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs := CurrentQuery(ctx).Services
+	bk := CurrentQuery(ctx).Buildkit
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
@@ -811,7 +801,7 @@ func locatePath[T *File | *Directory](
 			}
 
 			return init(
-				container.Query,
+				CurrentQuery(ctx),
 				mnt.Source,
 				sub,
 				container.Platform,
@@ -822,7 +812,7 @@ func locatePath[T *File | *Directory](
 
 	// Not found in a mount
 	return init(
-		container.Query,
+		CurrentQuery(ctx),
 		container.FS,
 		containerPath,
 		container.Platform,
@@ -899,7 +889,7 @@ func (container *Container) chown(
 			return nil, "", err
 		}
 
-		ref, err := bkRef(ctx, container.Query.Buildkit, def.ToPB())
+		ref, err := bkRef(ctx, CurrentQuery(ctx).Buildkit, def.ToPB())
 		if err != nil {
 			return nil, "", err
 		}
@@ -978,7 +968,8 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 
 func (container *Container) WithPipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Container, error) {
 	container = container.Clone()
-	container.Query = container.Query.WithPipeline(name, description, labels)
+	// TODO:
+	// container.Query = container.Query.WithPipeline(name, description, labels)
 	return container, nil
 }
 
@@ -999,7 +990,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	mounts := container.Mounts
 	platform := container.Platform
 	if platform.OS == "" {
-		platform = container.Query.Platform
+		platform = CurrentQuery(ctx).Platform
 	}
 
 	args, err := container.command(opts)
@@ -1021,9 +1012,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		newRoot, err := container.Query.NewRootForCurrentCall(ctx, opts.NestedExecFunctionCall)
-		if err != nil {
-			return nil, fmt.Errorf("register caller: %w", err)
+		newRoot := opts.NestedExecRoot
+		if newRoot == nil {
+			var err error
+			newRoot, err = CurrentQuery(ctx).NewRootForCurrentCall(ctx, nil)
+			if err != nil {
+				return nil, fmt.Errorf("register caller: %w", err)
+			}
 		}
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_NESTED_CLIENT_ID", newRoot.ClientID),
@@ -1087,7 +1082,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Accessor)}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Name)}
 
 		var secretDest string
 		switch {
@@ -1240,7 +1235,7 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, nil
 	}
 
-	root := container.Query
+	root := CurrentQuery(ctx)
 
 	detach, _, err := root.Services.StartBindings(ctx, container.Services)
 	if err != nil {
@@ -1274,7 +1269,7 @@ func (container *Container) MetaFileContents(ctx context.Context, filePath strin
 	}
 
 	file := NewFile(
-		container.Query,
+		CurrentQuery(ctx),
 		container.Meta,
 		path.Join(buildkit.MetaSourcePath, filePath),
 		container.Platform,
@@ -1344,8 +1339,8 @@ func (container *Container) Publish(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs := CurrentQuery(ctx).Services
+	bk := CurrentQuery(ctx).Buildkit
 
 	detach, _, err := svcs.StartBindings(ctx, services)
 	if err != nil {
@@ -1388,8 +1383,8 @@ func (container *Container) Export(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs := CurrentQuery(ctx).Services
+	bk := CurrentQuery(ctx).Buildkit
 
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
@@ -1455,9 +1450,9 @@ func (container *Container) AsTarball(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) (*File, error) {
-	bk := container.Query.Buildkit
-	svcs := container.Query.Services
-	engineHostPlatform := container.Query.Platform
+	bk := CurrentQuery(ctx).Buildkit
+	svcs := CurrentQuery(ctx).Services
+	engineHostPlatform := CurrentQuery(ctx).Platform
 
 	if mediaTypes == "" {
 		mediaTypes = OCIMediaTypes
@@ -1513,7 +1508,7 @@ func (container *Container) AsTarball(
 	if err != nil {
 		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
-	return NewFile(container.Query, pbDef, fileName, engineHostPlatform, nil), nil
+	return NewFile(CurrentQuery(ctx), pbDef, fileName, engineHostPlatform, nil), nil
 }
 
 func (container *Container) Import(
@@ -1521,9 +1516,9 @@ func (container *Container) Import(
 	source *File,
 	tag string,
 ) (*Container, error) {
-	bk := container.Query.Buildkit
-	store := container.Query.OCIStore
-	lm := container.Query.LeaseManager
+	bk := CurrentQuery(ctx).Buildkit
+	store := CurrentQuery(ctx).OCIStore
+	lm := CurrentQuery(ctx).LeaseManager
 
 	container = container.Clone()
 
@@ -1705,7 +1700,7 @@ func (container *Container) Service(ctx context.Context) (*Service, error) {
 			return nil, err
 		}
 	}
-	return container.Query.NewContainerService(container), nil
+	return CurrentQuery(ctx).NewContainerService(container), nil
 }
 
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
@@ -1719,7 +1714,7 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 		return nil, err
 	}
 
-	return resolveUIDGID(ctx, fsSt, container.Query.Buildkit, container.Platform, owner)
+	return resolveUIDGID(ctx, fsSt, CurrentQuery(ctx).Buildkit, container.Platform, owner)
 }
 
 func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
@@ -1782,9 +1777,9 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
-	// (Internal-only) If this is a nested exec for a Function call, this should be set
-	// with the metadata for that call
-	NestedExecFunctionCall *FunctionCall `name:"-"`
+	// (Internal-only) If this is a nested exec, use this as the root Query.
+	// Otherwise, nested execs will get a new root based on the current ID.
+	NestedExecRoot *Query `name:"-"`
 }
 
 type BuildArg struct {

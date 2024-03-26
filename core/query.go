@@ -28,6 +28,8 @@ type Query struct {
 
 	SecretToken string
 
+	Secrets *SecretStore
+
 	Deps *ModDeps
 
 	FnCall *FunctionCall
@@ -48,8 +50,6 @@ type QueryOpts struct {
 
 	Services *Services
 
-	Secrets *SecretStore
-
 	Auth *auth.RegistryAuthProvider
 
 	OCIStore     content.Store
@@ -69,6 +69,11 @@ type DaggerServer interface {
 	NewRootForCurrentCall(ctx context.Context, call *FunctionCall) (*Query, error)
 	NewRootForDependencies(ctx context.Context, deps *ModDeps) (*Query, error)
 	NewRootForDynamicID(ctx context.Context, id *call.ID) (*Query, error)
+}
+
+func CurrentQuery(ctx context.Context) *Query {
+	srv := dagql.CurrentServer(ctx)
+	return srv.Root().(dagql.Instance[*Query]).Self
 }
 
 func (*Query) Type() *ast.Type {
@@ -114,16 +119,14 @@ func (q *Query) WithPipeline(name, desc string, labels []pipeline.Label) *Query 
 
 func (q *Query) NewContainer(platform Platform) *Container {
 	return &Container{
-		Query:    q,
 		Platform: platform,
 	}
 }
 
-func (q *Query) NewSecret(name string, accessor string) *Secret {
+func (q *Query) NewSecret(name string) *Secret {
 	return &Secret{
-		Query:    q,
-		Name:     name,
-		Accessor: accessor,
+		Query: q,
+		Name:  name,
 	}
 }
 

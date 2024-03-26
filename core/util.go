@@ -27,6 +27,10 @@ type HasPBDefinitions interface {
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
+type HasFieldValues interface {
+	FieldValues(context.Context) ([]dagql.Typed, error)
+}
+
 func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definition, error) {
 	switch x := value.(type) {
 	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:
@@ -54,6 +58,20 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		}
 	case dagql.Wrapper: // dagql.Instance
 		return collectPBDefinitions(ctx, x.Unwrap())
+	case HasFieldValues:
+		fieldValues, err := x.FieldValues(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get field values: %w", err)
+		}
+		defs := []*pb.Definition{}
+		for _, val := range fieldValues {
+			fieldDefs, err := collectPBDefinitions(ctx, val)
+			if err != nil {
+				return nil, err
+			}
+			defs = append(defs, fieldDefs...)
+		}
+		return defs, nil
 	case HasPBDefinitions:
 		return x.PBDefinitions(ctx)
 	default:
@@ -61,6 +79,53 @@ func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definit
 		// on the floor. might be worth just implementing HasPBDefinitions for
 		// everything. (would be nice to just skip scalars though.)
 		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
+		return nil, nil
+	}
+}
+
+func referencedTypes[T dagql.Typed](ctx context.Context, value dagql.Typed, dag *dagql.Server) ([]T, error) {
+	switch x := value.(type) {
+	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:
+		// nothing to do
+		return nil, nil
+	case dagql.Enumerable: // dagql.Array
+		values := []T{}
+		for i := 1; i < x.Len(); i++ {
+			val, err := x.Nth(i)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get nth value: %w", err)
+			}
+			elemValues, err := referencedTypes[T](ctx, val, dag)
+			if err != nil {
+				return nil, fmt.Errorf("failed to link nth value dependency blobs: %w", err)
+			}
+			values = append(values, elemValues...)
+		}
+		return values, nil
+	case dagql.Derefable: // dagql.Nullable
+		if inner, ok := x.Deref(); ok {
+			return referencedTypes[T](ctx, inner, dag)
+		} else {
+			return nil, nil
+		}
+	case HasFieldValues:
+		fieldValues, err := x.FieldValues(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get field values: %w", err)
+		}
+		values := []T{}
+		for _, val := range fieldValues {
+			fieldValues, err := referencedTypes[T](ctx, val, dag)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, fieldValues...)
+		}
+		return values, nil
+	case dagql.IDable:
+		return dagql.ReferencedTypes[T](ctx, x.ID(), dag, true)
+	default:
+		slog.Warn("referencedTypes: unhandled type", "type", fmt.Sprintf("%T", value))
 		return nil, nil
 	}
 }

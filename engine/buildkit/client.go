@@ -50,7 +50,6 @@ type Opts struct {
 	SessionManager        *bksession.Manager
 	LLBSolver             *llbsolver.Solver
 	GenericSolver         *bksolver.Solver
-	SecretStore           bksecrets.SecretStore
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
@@ -95,7 +94,7 @@ type Client struct {
 	closeMu  sync.RWMutex
 }
 
-func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
+func NewClient(ctx context.Context, opts *Opts, secretStore bksecrets.SecretStore) (*Client, error) {
 	// override the outer cancel, we will manage cancellation ourselves here
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	client := &Client{
@@ -117,7 +116,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	client.execMetadataMu.Unlock()
 
-	session, err := client.newSession()
+	session, err := client.newSession(secretStore)
 	if err != nil {
 		return nil, err
 	}
@@ -256,9 +255,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	req.CacheImports = c.UpstreamCacheImports
 
 	// include exec metadata that isn't included in the cache key
-	var llbRes *bkfrontend.Result
-	switch {
-	case req.Definition != nil && req.Definition.Def != nil:
+	if req.Definition != nil && req.Definition.Def != nil {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
@@ -311,43 +308,12 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return nil, err
 		}
 		req.Definition = newDef
-
-		llbRes, err = c.llbBridge.Solve(ctx, req, c.ID())
-		if err != nil {
-			return nil, wrapError(ctx, err, c.ID())
-		}
-	case req.Frontend != "":
-		// HACK: don't force evaluation like this, we can write custom frontend
-		// wrappers (for dockerfile.v0 and gateway.v0) that read from ctx to
-		// replace the llbBridge it knows about.
-		// This current implementation may be limited when it comes to
-		// implement provenance/etc.
-
-		f, ok := c.Frontends[req.Frontend]
-		if !ok {
-			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
-		}
-
-		gw := newFilterGateway(c.llbBridge, req)
-		gw.secretTranslator = ctx.Value("secret-translator").(func(string) (string, error))
-
-		llbRes, err = f.Solve(ctx, gw, c.llbExec, req.FrontendOpt, req.FrontendInputs, c.ID(), c.SessionManager)
-		if err != nil {
-			return nil, err
-		}
-		if req.Evaluate {
-			err = llbRes.EachRef(func(ref bksolver.ResultProxy) error {
-				_, err := ref.Result(ctx)
-				return err
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-	default:
-		llbRes = &bkfrontend.Result{}
 	}
 
+	llbRes, err := c.llbBridge.Solve(ctx, req, c.ID())
+	if err != nil {
+		return nil, wrapError(ctx, err, c.ID())
+	}
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
 		return newRef(rp, c), nil
 	})
@@ -779,80 +745,4 @@ func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
 		return false, err
 	}
 	return true, nil
-}
-
-// filteringGateway is a helper gateway that filters+converts various
-// operations for the frontend
-type filteringGateway struct {
-	bkfrontend.FrontendLLBBridge
-
-	// secretTranslator is a function to convert secret ids. Frontends may
-	// attempt to access secrets by raw IDs, but they may be keyed differently
-	// in the secret store.
-	secretTranslator func(string) (string, error)
-
-	// skipInputs specifies op digests that were part of the request inputs and
-	// so shouldn't be processed.
-	skipInputs map[digest.Digest]struct{}
-}
-
-func newFilterGateway(bridge bkfrontend.FrontendLLBBridge, req bkgw.SolveRequest) *filteringGateway {
-	inputs := map[digest.Digest]struct{}{}
-	for _, inp := range req.FrontendInputs {
-		for _, def := range inp.Def {
-			inputs[digest.FromBytes(def)] = struct{}{}
-		}
-	}
-
-	return &filteringGateway{
-		FrontendLLBBridge: bridge,
-		skipInputs:        inputs,
-	}
-}
-
-func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
-	if req.Definition != nil && req.Definition.Def != nil {
-		dag, err := DefToDAG(req.Definition)
-		if err != nil {
-			return nil, err
-		}
-		if err := dag.Walk(func(dag *OpDAG) error {
-			if _, ok := gw.skipInputs[*dag.OpDigest]; ok {
-				return SkipInputs
-			}
-
-			execOp, ok := dag.AsExec()
-			if !ok {
-				return nil
-			}
-
-			for _, secret := range execOp.ExecOp.GetSecretenv() {
-				secret.ID, err = gw.secretTranslator(secret.ID)
-				if err != nil {
-					return err
-				}
-			}
-			for _, mount := range execOp.ExecOp.GetMounts() {
-				if mount.MountType != bksolverpb.MountType_SECRET {
-					continue
-				}
-				secret := mount.SecretOpt
-				secret.ID, err = gw.secretTranslator(secret.ID)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-
-		newDef, err := dag.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		req.Definition = newDef
-	}
-
-	return gw.FrontendLLBBridge.Solve(ctx, req, sid)
 }

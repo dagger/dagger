@@ -76,7 +76,7 @@ func (s *hostSchema) Install() {
 				return nil, fmt.Errorf("marshal root: %w", err)
 			}
 
-			container, err := core.NewContainer(parent, parent.Platform)
+			container, err := core.NewContainer(parent.Platform)
 			if err != nil {
 				return nil, fmt.Errorf("new container: %w", err)
 			}

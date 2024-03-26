@@ -286,7 +286,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
-	ctr, err := core.NewContainer(parent.Query, platform)
+	ctr, err := core.NewContainer(platform)
 	if err != nil {
 		return nil, err
 	}
