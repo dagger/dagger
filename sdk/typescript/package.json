@@ -32,7 +32,8 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
-    "test": "mocha",
+    "test:bun": "bun run --bun mocha",
+    "test:node": "mocha",
     "test:generate-scan": "tsx ./introspector/test/testdata/generate_expected_scan.ts",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --fix .",
