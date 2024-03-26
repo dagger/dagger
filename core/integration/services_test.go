@@ -1708,12 +1708,43 @@ func gitServiceWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, c
 	gitDaemon := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
-		WithDirectory("/root/repo", content).
-		WithMountedFile("/root/start.sh",
-			c.Directory().
-				WithNewFile("start.sh", fmt.Sprintf(`#!/bin/sh
+		WithDirectory("/root/srv", makeGitDir(c, content, branchName)).
+		WithExposedPort(gitPort).
+		WithExec([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		AsService()
 
-set -e -u -x
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	return gitDaemon, repoURL
+}
+
+func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Service, string) {
+	t.Helper()
+
+	gitDaemon := c.Container().
+		From("nginx").
+		WithMountedDirectory("/usr/share/nginx/html", makeGitDir(c, content, branchName)).
+		WithExposedPort(80).
+		AsService()
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("http://%s/repo.git", gitHost)
+
+	return gitDaemon, repoURL
+}
+
+func makeGitDir(c *dagger.Client, content *dagger.Directory, branchName string) *dagger.Directory {
+	return c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithDirectory("/root/repo", content).
+		WithNewFile("/root/create.sh", dagger.ContainerWithNewFileOpts{
+			Contents: fmt.Sprintf(`#!/bin/sh
 
 cd /root
 
@@ -1731,21 +1762,13 @@ cd ..
 
 cd srv
 	git clone --bare ../repo repo.git
+	ls -lh
+	ls -lh repo.git
 cd ..
-
-git daemon --verbose --export-all --base-path=/root/srv
-`, branchName)).
-				File("start.sh")).
-		WithExposedPort(gitPort).
-		WithExec([]string{"sh", "/root/start.sh"}).
-		AsService()
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
-
-	return gitDaemon, repoURL
+`, branchName),
+		}).
+		WithExec([]string{"sh", "/root/create.sh"}).
+		Directory("/root/srv")
 }
 
 // signalService is a little helper service that writes assorted signals that

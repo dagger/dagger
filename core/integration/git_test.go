@@ -233,6 +233,21 @@ sleep infinity
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
+func TestGitAuth(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main")
+	dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Branch("main").
+		Tree().
+		File("README.md").
+		Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", dt)
+}
+
 func TestGitKeepGitDir(t *testing.T) {
 	t.Parallel()
 
