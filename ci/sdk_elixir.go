@@ -17,11 +17,11 @@ const (
 )
 
 // https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
-var elixirVersions = []string{"1.14.5", "1.15.4"}
+var elixirVersions = []string{"1.16.2", "1.15.7", "1.14.5"}
 
 const (
-	otpVersion    = "25.3.2.4"
-	debianVersion = "20230612"
+	otpVersion    = "26.2.3"
+	debianVersion = "20240130"
 )
 
 type ElixirSDK struct {
@@ -72,11 +72,16 @@ func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 
-	generated := ctr.
-		WithExec([]string{"mix", "dagger.gen"}).
-		Directory(".")
+	gen := ctr.
+		WithExec([]string{"mix", "run", "scripts/fetch_introspection.exs"}).
+		WithWorkdir("dagger_codegen").
+		WithExec([]string{"mix", "deps.get"}).
+		WithExec([]string{"mix", "escript.build"}).
+		WithExec([]string{"./dagger_codegen", "generate", "--introspection", "../introspection.json", "--outdir", "gen"}).
+		WithExec([]string{"mix", "format", "gen/*.ex"}).
+		Directory("gen")
 
-	dir := dag.Directory().WithDirectory("sdk/elixir", generated)
+	dir := dag.Directory().WithDirectory("sdk/elixir/lib/dagger/gen", gen)
 	return dir, nil
 }
 
