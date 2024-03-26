@@ -32,6 +32,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
+    "test": "yarn run test:node && yarn run test:bun",
     "test:bun": "bun run --bun mocha",
     "test:node": "mocha",
     "test:generate-scan": "tsx ./introspector/test/testdata/generate_expected_scan.ts",
