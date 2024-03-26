@@ -30,7 +30,7 @@ type ElixirSDK struct {
 
 // Lint lints the Elixir SDK
 func (t ElixirSDK) Lint(ctx context.Context) error {
-	ctr, err := t.Dagger.installDagger(ctx, t.elixirBase(elixirVersions[1]), "sdk-elixir-lint")
+	ctr, err := t.Dagger.installDagger(ctx, t.elixirBase(elixirVersions[0]), "sdk-elixir-lint")
 	if err != nil {
 		return err
 	}
@@ -67,7 +67,7 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the Elixir SDK API
 func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := t.Dagger.installDagger(ctx, t.elixirBase(elixirVersions[1]), "sdk-elixir-generate")
+	ctr, err := t.Dagger.installDagger(ctx, t.elixirBase(elixirVersions[0]), "sdk-elixir-generate")
 	if err != nil {
 		return nil, err
 	}
