@@ -7808,6 +7808,7 @@ export class Client extends BaseClient {
  */
 export class Secret extends BaseClient {
   private readonly _id?: SecretID = undefined
+  private readonly _name?: string = undefined
   private readonly _plaintext?: string = undefined
 
   /**
@@ -7816,11 +7817,13 @@ export class Secret extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: SecretID,
+    _name?: string,
     _plaintext?: string,
   ) {
     super(parent)
 
     this._id = _id
+    this._name = _name
     this._plaintext = _plaintext
   }
 
@@ -7837,6 +7840,27 @@ export class Secret extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of this secret.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
         },
       ],
       await this._ctx.connection(),

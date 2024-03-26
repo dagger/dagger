@@ -6285,6 +6285,28 @@ class Secret(Type):
         return await _ctx.execute(SecretID)
 
     @typecheck
+    async def name(self) -> str:
+        """The name of this secret.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
     async def plaintext(self) -> str:
         """The value of this secret.
 

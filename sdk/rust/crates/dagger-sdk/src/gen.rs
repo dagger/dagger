@@ -5868,6 +5868,11 @@ impl Secret {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The name of this secret.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The value of this secret.
     pub async fn plaintext(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("plaintext");

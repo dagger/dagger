@@ -2359,6 +2359,9 @@ type Secret {
   """A unique identifier for this Secret."""
   id: SecretID!
 
+  """The name of this secret."""
+  name: String!
+
   """The value of this secret."""
   plaintext: String!
 }

@@ -5998,6 +5998,7 @@ type Secret struct {
 	query *querybuilder.Selection
 
 	id        *SecretID
+	name      *string
 	plaintext *string
 }
 
@@ -6045,6 +6046,19 @@ func (r *Secret) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// The name of this secret.
+func (r *Secret) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The value of this secret.
