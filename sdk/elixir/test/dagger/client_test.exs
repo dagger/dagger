@@ -13,7 +13,8 @@ defmodule Dagger.ClientTest do
     Host,
     QueryError,
     Secret,
-    Sync
+    Sync,
+    ID
   }
 
   setup_all do
@@ -180,9 +181,8 @@ defmodule Dagger.ClientTest do
              |> Container.from("alpine:3.16.2")
              |> Container.env_variables()
 
-    assert [{:ok, "PATH"}] =
-             envs
-             |> Enum.map(&EnvVariable.name/1)
+    assert is_list(envs)
+    assert [{:ok, "PATH"}] = Enum.map(envs, &EnvVariable.name/1)
   end
 
   test "nullable", %{client: client} do
