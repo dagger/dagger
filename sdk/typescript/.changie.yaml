@@ -27,7 +27,7 @@ headerFormat: |
   This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
 
   ⬢ https://www.npmjs.com/package/@dagger.io/dagger
-  📒 https://docs.dagger.io/sdk/nodejs/reference/modules/api_client_gen
+  📒 https://docs.dagger.io/reference/typescript/modules
 footerFormat: |
   ### What to do next
   - Read the [documentation](https://docs.dagger.io/sdk/nodejs)
