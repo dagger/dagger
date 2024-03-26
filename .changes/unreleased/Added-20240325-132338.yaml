@@ -1,6 +1,0 @@
-kind: Added
-body: make automatic .gitignore creation for modules configurable
-time: 2024-03-25T13:23:38.185779035-07:00
-custom:
-  Author: sipsma
-  PR: "6888"
