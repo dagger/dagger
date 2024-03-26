@@ -82,6 +82,8 @@ func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, pla
 		id.ClientIDs = strings.Split(v, ",")
 	}
 
+	fmt.Println("git token/header:", id.AuthTokenSecret, id.AuthHeaderSecret)
+
 	return id, nil
 }
 
