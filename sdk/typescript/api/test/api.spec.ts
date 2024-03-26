@@ -88,13 +88,13 @@ describe("TypeScript SDK api", function () {
     this.timeout(60000)
     connect(async (client: Client) => {
       const image = await client
-        .container({
-          id: await client
+        .loadContainerFromID(
+          await client
             .container()
             .from("alpine:3.16.2")
             .withExec(["apk", "add", "yarn"])
             .id(),
-        })
+        )
         .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
         .withExec(["echo", "foo bar"])
         .stdout()

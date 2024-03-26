@@ -19,8 +19,7 @@ var _ SchemaResolvers = &directorySchema{}
 func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
-			Doc(`Creates an empty directory.`).
-			ArgDeprecated("id", "Use `loadDirectoryFromID` instead."),
+			Doc(`Creates an empty directory.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Directory]{
@@ -107,20 +106,8 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 	return parent.WithPipeline(ctx, args.Name, args.Description, collectInputsSlice(args.Labels))
 }
 
-type directoryArgs struct {
-	ID dagql.Optional[core.DirectoryID]
-}
-
-func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
-	if args.ID.Valid {
-		inst, err := args.ID.Value.Load(ctx, s.srv)
-		if err != nil {
-			return nil, err
-		}
-		return inst.Self, nil
-	}
-	platform := parent.Platform
-	return core.NewScratchDirectory(parent, platform), nil
+func (s *directorySchema) directory(ctx context.Context, parent *core.Query, _ struct{}) (*core.Directory, error) {
+	return core.NewScratchDirectory(parent, parent.Platform), nil
 }
 
 type subdirectoryArgs struct {

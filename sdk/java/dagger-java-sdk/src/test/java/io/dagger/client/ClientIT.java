@@ -39,7 +39,7 @@ public class ClientIT {
       assertTrue(readme.contains("Dagger"));
 
       FileID readmeID = readmeFile.id();
-      String otherReadme = client.file(readmeID).contents();
+      String otherReadme = client.loadFileFromID(readmeID).contents();
       assertEquals(readme, otherReadme);
     }
   }
@@ -56,12 +56,11 @@ public class ClientIT {
 
       // Ensure we can grab the container ID back and re-run the same query
       ContainerID id = alpine.id();
-      contents =
-          client
-              .container(new ContainerArguments().withId(id))
-              .rootfs()
-              .file("/etc/alpine-release")
-              .contents();
+      contents = client
+          .loadContainerFromID(id)
+          .rootfs()
+          .file("/etc/alpine-release")
+          .contents();
       assertEquals("3.16.2\n", contents);
     }
   }
@@ -87,13 +86,12 @@ public class ClientIT {
   @Test
   public void testList() throws Exception {
     try (Client client = Dagger.connect()) {
-      List<EnvVariable> envs =
-          client
-              .container()
-              .from("alpine:3.16.2")
-              .withEnvVariable("FOO", "BAR")
-              .withEnvVariable("BAR", "BAZ")
-              .envVariables();
+      List<EnvVariable> envs = client
+          .container()
+          .from("alpine:3.16.2")
+          .withEnvVariable("FOO", "BAR")
+          .withEnvVariable("BAR", "BAZ")
+          .envVariables();
 
       assertThat(envs).hasSizeGreaterThanOrEqualTo(3);
 

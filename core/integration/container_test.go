@@ -2960,9 +2960,7 @@ func TestContainerFromIDPlatform(t *testing.T) {
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 
-	platform, err := c.Container(dagger.ContainerOpts{
-		ID: id,
-	}).Platform(ctx)
+	platform, err := c.LoadContainerFromID(id).Platform(ctx)
 	require.NoError(t, err)
 	require.Equal(t, desiredPlatform, platform)
 }
@@ -3938,12 +3936,12 @@ EXPOSE 8080
 	res := struct {
 		Container struct {
 			ExposedPorts []core.Port
-		}
+		} `json:"loadContainerFromID"`
 	}{}
 
 	err = testutil.Query(`
         query Test($id: ContainerID!) {
-            container(id: $id) {
+            loadContainerFromID(id: $id) {
                 exposedPorts {
                     port
                     protocol
