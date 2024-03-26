@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"strconv"
+	"unicode"
 
 	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -129,7 +132,7 @@ func (o LocalImportOpts) ToGRPCMD() metadata.MD {
 	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
 	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
 	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
-	return md
+	return encodeOpts(md)
 }
 
 func (o LocalImportOpts) AppendToOutgoingContext(ctx context.Context) context.Context {
@@ -149,7 +152,7 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 	if !incomingOk && !outgoingOk {
 		return nil, fmt.Errorf("failed to get metadata from context")
 	}
-	md := metadata.Join(incomingMD, outgoingMD)
+	md := decodeOpts(metadata.Join(incomingMD, outgoingMD))
 
 	opts := &LocalImportOpts{}
 	_, ok := md[localImportOptsMetaKey]
@@ -258,4 +261,66 @@ func decodeMeta(md metadata.MD, key string, dest interface{}) error {
 		return fmt.Errorf("failed to JSON-unmarshal %s: %v", key, err)
 	}
 	return nil
+}
+
+// encodeOpts comes from buildkit session/filesync/filesync.go
+func encodeOpts(opts map[string][]string) map[string][]string {
+	md := make(map[string][]string, len(opts))
+	for k, v := range opts {
+		out, encoded := encodeStringForHeader(v)
+		md[k] = out
+		if encoded {
+			md[k+"-encoded"] = []string{"1"}
+		}
+	}
+	return md
+}
+
+// decodeOpts comes from buildkit session/filesync/filesync.go
+func decodeOpts(opts map[string][]string) map[string][]string {
+	md := make(map[string][]string, len(opts))
+	for k, v := range opts {
+		out := make([]string, len(v))
+		var isEncoded bool
+		if v, ok := opts[k+"-encoded"]; ok && len(v) > 0 {
+			if b, _ := strconv.ParseBool(v[0]); b {
+				isEncoded = true
+			}
+		}
+		if isEncoded {
+			for i, s := range v {
+				out[i], _ = url.QueryUnescape(s)
+			}
+		} else {
+			copy(out, v)
+		}
+		md[k] = out
+	}
+	return md
+}
+
+// encodeStringForHeader encodes a string value so it can be used in grpc header. This encoding
+// is backwards compatible and avoids encoding ASCII characters.
+//
+// encodeStringForHeader comes from buildkit session/filesync/filesync.go
+func encodeStringForHeader(inputs []string) ([]string, bool) {
+	var encode bool
+loop:
+	for _, input := range inputs {
+		for _, runeVal := range input {
+			// Only encode non-ASCII characters, and characters that have special
+			// meaning during decoding.
+			if runeVal > unicode.MaxASCII {
+				encode = true
+				break loop
+			}
+		}
+	}
+	if !encode {
+		return inputs, false
+	}
+	for i, input := range inputs {
+		inputs[i] = url.QueryEscape(input)
+	}
+	return inputs, true
 }
