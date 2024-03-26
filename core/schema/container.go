@@ -33,8 +33,7 @@ func (s *containerSchema) Install() {
 				`Optional platform argument initializes new containers to execute and
 				publish as that platform. Platform defaults to that of the builder's
 				host.`).
-			ArgDoc("platform", `Platform to initialize the container with.`).
-			ArgDeprecated("id", "Use `loadContainerFromID` instead."),
+			ArgDoc("platform", `Platform to initialize the container with.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Container]{
@@ -572,20 +571,10 @@ func (s *containerSchema) Install() {
 }
 
 type containerArgs struct {
-	ID       dagql.Optional[core.ContainerID]
 	Platform dagql.Optional[core.Platform]
 }
 
 func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
-	if args.ID.Valid {
-		inst, err := args.ID.Value.Load(ctx, s.srv)
-		if err != nil {
-			return nil, err
-		}
-		// NB: what we kind of want is to return an Instance[*core.Container] in
-		// this case, but this API is deprecated anyhow
-		return inst.Self, nil
-	}
 	var platform core.Platform
 	if args.Platform.Valid {
 		platform = args.Platform.Value

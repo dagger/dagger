@@ -221,20 +221,6 @@ sleep infinity
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
-
-	repoURL = fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	entries, err = c.Git(repoURL, dagger.GitOpts{
-		ExperimentalServiceHost: sshSvc,
-	}).
-		Branch("main").
-		Tree(dagger.GitRefTreeOpts{
-			// test deprecated parameters
-			SSHKnownHosts: fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
-			SSHAuthSocket: c.Host().UnixSocket(sock),
-		}).
-		Entries(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []string{"README.md"}, entries)
 }
 
 func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {

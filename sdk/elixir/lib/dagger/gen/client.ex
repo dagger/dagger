@@ -54,15 +54,11 @@ defmodule Dagger.Client do
 
   Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
   """
-  @spec container(t(), [
-          {:id, Dagger.ContainerID.t() | nil},
-          {:platform, Dagger.Platform.t() | nil}
-        ]) :: Dagger.Container.t()
+  @spec container(t(), [{:platform, Dagger.Platform.t() | nil}]) :: Dagger.Container.t()
   def container(%__MODULE__{} = client, optional_args \\ []) do
     selection =
       client.selection
       |> select("container")
-      |> maybe_put_arg("id", optional_args[:id])
       |> maybe_put_arg("platform", optional_args[:platform])
 
     %Dagger.Container{
@@ -141,25 +137,12 @@ defmodule Dagger.Client do
   end
 
   @doc "Creates an empty directory."
-  @spec directory(t(), [{:id, Dagger.DirectoryID.t() | nil}]) :: Dagger.Directory.t()
-  def directory(%__MODULE__{} = client, optional_args \\ []) do
+  @spec directory(t()) :: Dagger.Directory.t()
+  def directory(%__MODULE__{} = client) do
     selection =
-      client.selection |> select("directory") |> maybe_put_arg("id", optional_args[:id])
+      client.selection |> select("directory")
 
     %Dagger.Directory{
-      selection: selection,
-      client: client.client
-    }
-  end
-
-  @deprecated "Use `load_file_from_id` instead."
-
-  @spec file(t(), Dagger.FileID.t()) :: Dagger.File.t()
-  def file(%__MODULE__{} = client, id) do
-    selection =
-      client.selection |> select("file") |> put_arg("id", id)
-
-    %Dagger.File{
       selection: selection,
       client: client.client
     }
@@ -812,19 +795,6 @@ defmodule Dagger.Client do
       |> put_arg("plaintext", plaintext)
 
     %Dagger.Secret{
-      selection: selection,
-      client: client.client
-    }
-  end
-
-  @deprecated "Use `load_socket_from_id` instead."
-  @doc "Loads a socket by its ID."
-  @spec socket(t(), Dagger.SocketID.t()) :: Dagger.Socket.t()
-  def socket(%__MODULE__{} = client, id) do
-    selection =
-      client.selection |> select("socket") |> put_arg("id", id)
-
-    %Dagger.Socket{
       selection: selection,
       client: client.client
     }

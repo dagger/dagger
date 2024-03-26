@@ -99,15 +99,9 @@ func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 }
 
 // Creates an empty directory.
-func Directory(opts ...dagger.DirectoryOpts) *dagger.Directory {
+func Directory() *dagger.Directory {
 	client := initClient()
-	return client.Directory(opts...)
-}
-
-// Deprecated: Use LoadFileFromID instead.
-func File(id dagger.FileID) *dagger.File {
-	client := initClient()
-	return client.File(id)
+	return client.Directory()
 }
 
 // Creates a function.
@@ -410,14 +404,6 @@ func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 func SetSecret(name string, plaintext string) *dagger.Secret {
 	client := initClient()
 	return client.SetSecret(name, plaintext)
-}
-
-// Loads a socket by its ID.
-//
-// Deprecated: Use LoadSocketFromID instead.
-func Socket(id dagger.SocketID) *dagger.Socket {
-	client := initClient()
-	return client.Socket(id)
 }
 
 // Create a new TypeDef.
