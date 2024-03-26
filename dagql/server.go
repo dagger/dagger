@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"runtime/debug"
 	"sort"
@@ -821,6 +822,9 @@ func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 			arg.Name,
 			arg.Value.ToLiteral(),
 		))
+		if spec.Name == "up" {
+			slog.Warn("!!! APPENDING", "arg", arg.Name, "type", fmt.Sprintf("%T", arg.Value), "val", fmt.Sprintf("%+v", arg.Value))
+		}
 	}
 	// TODO: it's better DX if it matches schema order
 	sort.Slice(idArgs, func(i, j int) bool {
@@ -988,14 +992,25 @@ func collectLiteralArgs(obj any) ([]*call.Argument, error) {
 			args = append(args, subArgs...)
 			continue
 		}
-		input, err := builtinOrInput(fieldI)
-		if err != nil {
-			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
+		if lit, ok := fieldI.(call.Literate); ok {
+			args = append(args, call.NewArgument(
+				name,
+				lit.ToLiteral(),
+			))
+		} else {
+			input, err := builtinOrInput(fieldI)
+			if err != nil {
+				return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
+			}
+			val, err := input.Decoder().DecodeInput(fieldI)
+			if err != nil {
+				return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
+			}
+			args = append(args, call.NewArgument(
+				name,
+				val.ToLiteral(),
+			))
 		}
-		args = append(args, call.NewArgument(
-			name,
-			input.ToLiteral(),
-		))
 	}
 	return args, nil
 }

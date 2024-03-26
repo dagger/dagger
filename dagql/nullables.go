@@ -150,9 +150,13 @@ var _ InputDecoder = DynamicOptional{}
 func (o DynamicOptional) DecodeInput(val any) (Input, error) {
 	if val == nil {
 		return DynamicOptional{
-			Elem:  o,
+			Elem:  o.Elem,
 			Valid: false,
 		}, nil
+	}
+	valV := reflect.ValueOf(val)
+	if valV.Kind() == reflect.Ptr {
+		val = valV.Elem().Interface()
 	}
 	input, err := o.Elem.Decoder().DecodeInput(val)
 	if err != nil {
@@ -283,5 +287,17 @@ func (n *DynamicNullable) UnmarshalJSON(p []byte) error {
 	if err := json.Unmarshal(p, &n.Value); err != nil {
 		return err
 	}
+	if n.Value != nil {
+		n.Valid = true
+	}
 	return nil
 }
+
+// var _ call.Literate = DynamicNullable{}
+
+// func (n DynamicNullable) ToLiteral() call.Literal {
+// 	if !o.Valid {
+// 		return call.NewLiteralNull()
+// 	}
+// 	return o.Value.ToLiteral()
+// }
