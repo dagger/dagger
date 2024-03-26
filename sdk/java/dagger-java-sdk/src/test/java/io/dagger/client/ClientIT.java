@@ -3,7 +3,6 @@ package io.dagger.client;
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-import io.dagger.client.Client.ContainerArguments;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -39,7 +38,7 @@ public class ClientIT {
       assertTrue(readme.contains("Dagger"));
 
       FileID readmeID = readmeFile.id();
-      String otherReadme = client.file(readmeID).contents();
+      String otherReadme = client.loadFileFromID(readmeID).contents();
       assertEquals(readme, otherReadme);
     }
   }
@@ -56,12 +55,7 @@ public class ClientIT {
 
       // Ensure we can grab the container ID back and re-run the same query
       ContainerID id = alpine.id();
-      contents =
-          client
-              .container(new ContainerArguments().withId(id))
-              .rootfs()
-              .file("/etc/alpine-release")
-              .contents();
+      contents = client.loadContainerFromID(id).rootfs().file("/etc/alpine-release").contents();
       assertEquals("3.16.2\n", contents);
     }
   }
