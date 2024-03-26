@@ -4,9 +4,9 @@ defmodule Dagger.Codegen.Generator do
   def generate() do
     {:ok, client} = Dagger.Core.Client.connect()
 
-    {:ok, %{status: 200, body: resp}} =
+    {:ok, %{"data" => data}} =
       Dagger.Core.Client.query(client, Dagger.Codegen.Introspection.query())
 
-    Dagger.Codegen.Compiler.compile(resp["data"])
+    Dagger.Codegen.Compiler.compile(data)
   end
 end
