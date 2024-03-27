@@ -1,3 +1,10 @@
-The CLI can add follow-up processing to a just-in-time container, essentially enabling you to continue the pipeline directly from the command-line.
+The CLI can add follow-up processing to a just-in-time container, essentially enabling you to continue the pipeline directly from the command-line. `Container` objects expose a with-exec function, which lets you execute a command in the corresponding container.
 
+Here is an example of chaining a `with-exec` function call to a container returned by a Wolfi container builder function, to display and return the contents of the `/etc/os-release` file:
+
+```shell
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container with-exec --args="cat","/etc/os-release" stdout
+```
+
+Here is a more complex example of...
 FIXME

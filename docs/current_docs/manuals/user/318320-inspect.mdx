@@ -15,7 +15,7 @@ dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3
 Similar, the `File` object exposes a size function, which returns the size of the corresponding file. Here is an example of obtaining the size of the ZIP file returned by a file archiving function, by chaining a size function call to the returned `File` object:
 
 ```shell
-dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli --directory https://github.com/dagger/dagger#main:cmd/dagger  create --format zip size
+dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli '--directory https://github.com/dagger/dagger#main:cmd/dagger'  create --format zip size
 ```
 
 `Container` objects expose a with-exec function, which lets you execute a command in the corresponding container. Here is an example of chaining this function call to a container returned by a Wolfi container builder function, to execute the cowsay command:

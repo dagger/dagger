@@ -4,7 +4,6 @@ Just-in-time files might be produced by a function that:
 
 - Builds language-specific binaries
 - Combines multiple input files into a single output file, such as a composite video or a compressed archive
--
 
 Here is an example of a linter function that returns the linting rules used by it as a file:
 
@@ -23,5 +22,5 @@ This means that the function succeeded, and a File type representing the linting
 Here is another example of a file builder function that returns a ZIP archive of the contents of the `cmd/dagger` directory in the Dagger GitHub repository:
 
 ```shell
-dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli --directory https://github.com/dagger/dagger#main:cmd/dagger  create --format zip
+dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli '--directory https://github.com/dagger/dagger#main:cmd/dagger'  create --format zip
 ```

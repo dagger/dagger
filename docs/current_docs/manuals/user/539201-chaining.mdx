@@ -24,6 +24,18 @@ dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3
 dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container publish --address=ttl.sh/my-wolfi
 ```
 
+- Add labels to a container image before publishing it, by chaining additional calls to the `Container` object's with-label function:
+
+```shell
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=curl with-label --name version --value 1.0 with-label --name vendor --value "Unknown Corp" publish --address=ttl.sh/my-wolfi
+```
+
+Display and return the contents of the `/etc/os-release` file in a container, by chaining calls to the `Container` object's with-exec and stdout functions:
+
+```shell
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container with-exec --args="cat","/etc/os-release" stdout
+```
+
 - Expose a service returned by a function on a specified host port, by chaining a call to the `Service` object's up function:
 
 ```shell
