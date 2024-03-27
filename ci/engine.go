@@ -161,23 +161,3 @@ func (e *Engine) container(ctx context.Context, platform dagger.Platform) (*Cont
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 	return ctr, nil
 }
-
-type CLI struct {
-	Dagger *Dagger // +private
-
-	Base *File // +private
-}
-
-func (e *CLI) File(ctx context.Context) (*File, error) {
-	if e.Base == nil {
-		builder, err := build.NewBuilder(ctx, e.Dagger.Source)
-		if err != nil {
-			return nil, err
-		}
-		e.Base, err = builder.CLI(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return e.Base, nil
-}

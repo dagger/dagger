@@ -301,7 +301,9 @@ func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
 	ctr = ctr.WithEnvVariable("GOARCH", build.PlatformSpec.Architecture)
 	switch build.PlatformSpec.Architecture {
 	case "arm", "arm64":
-		ctr = ctr.WithEnvVariable("GOARM", build.PlatformSpec.Variant)
+		if build.PlatformSpec.Variant != "" {
+			ctr = ctr.WithEnvVariable("GOARM", strings.TrimPrefix(build.PlatformSpec.Variant, "v"))
+		}
 	}
 	return ctr
 }

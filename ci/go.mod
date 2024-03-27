@@ -11,6 +11,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0-rc5
 	github.com/vektah/gqlparser/v2 v2.5.10
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
+	golang.org/x/mod v0.14.0
 	golang.org/x/sync v0.6.0
 )
 

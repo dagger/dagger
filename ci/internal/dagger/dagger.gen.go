@@ -177,6 +177,9 @@ type ModuleID string
 // The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
 type ModuleSourceID string
 
+// The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
+type ModuleSourceViewID string
+
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 type ObjectTypeDefID string
 
@@ -521,7 +524,7 @@ func (r *Container) ExperimentalWithAllGPUs() *Container {
 
 // EXPERIMENTAL API! Subject to change/removal at any time.
 //
-// Configures the provided list of devices to be accesible to this container.
+// Configures the provided list of devices to be accessible to this container.
 //
 // This currently works for Nvidia devices only.
 func (r *Container) ExperimentalWithGPU(devices []string) *Container {
@@ -1964,12 +1967,24 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	return response, q.Execute(ctx)
 }
 
+// DirectoryExportOpts contains options for Directory.Export
+type DirectoryExportOpts struct {
+	// If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
+	Wipe bool
+}
+
 // Writes the contents of the directory to a path on the host.
-func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
+func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
 	q := r.query.Select("export")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `wipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Wipe) {
+			q = q.Arg("wipe", opts[i].Wipe)
+		}
+	}
 	q = q.Arg("path", path)
 
 	var response bool
@@ -4761,6 +4776,28 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 	}
 }
 
+// ModuleSourceResolveDirectoryFromCallerOpts contains options for ModuleSource.ResolveDirectoryFromCaller
+type ModuleSourceResolveDirectoryFromCallerOpts struct {
+	// If set, the name of the view to apply to the path.
+	ViewName string
+}
+
+// Load a directory from the caller optionally with a given view applied.
+func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSourceResolveDirectoryFromCallerOpts) *Directory {
+	q := r.query.Select("resolveDirectoryFromCaller")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `viewName` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ViewName) {
+			q = q.Arg("viewName", opts[i].ViewName)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
 func (r *ModuleSource) ResolveFromCaller() *ModuleSource {
 	q := r.query.Select("resolveFromCaller")
@@ -4794,6 +4831,49 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve a named view defined for this module source.
+func (r *ModuleSource) View(name string) *ModuleSourceView {
+	q := r.query.Select("view")
+	q = q.Arg("name", name)
+
+	return &ModuleSourceView{
+		query: q,
+	}
+}
+
+// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
+func (r *ModuleSource) Views(ctx context.Context) ([]ModuleSourceView, error) {
+	q := r.query.Select("views")
+
+	q = q.Select("id")
+
+	type views struct {
+		Id ModuleSourceViewID
+	}
+
+	convert := func(fields []views) []ModuleSourceView {
+		out := []ModuleSourceView{}
+
+		for i := range fields {
+			val := ModuleSourceView{id: &fields[i].Id}
+			val.query = q.Root().Select("loadModuleSourceViewFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []views
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Update the module source with a new context directory. Only valid for local sources.
@@ -4845,6 +4925,103 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 	return &ModuleSource{
 		query: q,
 	}
+}
+
+// Update the module source with a new named view.
+func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
+	q := r.query.Select("withView")
+	q = q.Arg("name", name)
+	q = q.Arg("patterns", patterns)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// A named set of path filters that can be applied to directory arguments provided to functions.
+type ModuleSourceView struct {
+	query *querybuilder.Selection
+
+	id   *ModuleSourceViewID
+	name *string
+}
+
+func (r *ModuleSourceView) WithGraphQLQuery(q *querybuilder.Selection) *ModuleSourceView {
+	return &ModuleSourceView{
+		query: q,
+	}
+}
+
+// A unique identifier for this ModuleSourceView.
+func (r *ModuleSourceView) ID(ctx context.Context) (ModuleSourceViewID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ModuleSourceViewID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ModuleSourceView) XXX_GraphQLType() string {
+	return "ModuleSourceView"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ModuleSourceView) XXX_GraphQLIDType() string {
+	return "ModuleSourceViewID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ModuleSourceView) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ModuleSourceView) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *ModuleSourceView) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = *dag.LoadModuleSourceViewFromID(ModuleSourceViewID(id))
+	return nil
+}
+
+// The name of the view
+func (r *ModuleSourceView) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The patterns of the view used to filter paths
+func (r *ModuleSourceView) Patterns(ctx context.Context) ([]string, error) {
+	q := r.query.Select("patterns")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A definition of a custom object defined in a Module.
@@ -5298,7 +5475,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 
 // DirectoryOpts contains options for Client.Directory
 type DirectoryOpts struct {
-	// DEPRECATED: Use `loadDirectoryFromID` isntead.
+	// DEPRECATED: Use `loadDirectoryFromID` instead.
 	ID DirectoryID
 }
 
@@ -5642,6 +5819,16 @@ func (r *Client) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
 	}
 }
 
+// Load a ModuleSourceView from its ID.
+func (r *Client) LoadModuleSourceViewFromID(id ModuleSourceViewID) *ModuleSourceView {
+	q := r.query.Select("loadModuleSourceViewFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleSourceView{
+		query: q,
+	}
+}
+
 // Load a ObjectTypeDef from its ID.
 func (r *Client) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	q := r.query.Select("loadObjectTypeDefFromID")
@@ -5855,6 +6042,7 @@ type Secret struct {
 	query *querybuilder.Selection
 
 	id        *SecretID
+	name      *string
 	plaintext *string
 }
 
@@ -5911,6 +6099,19 @@ func (r *Secret) UnmarshalJSON(bs []byte) error {
 	}
 	*r = *dag.LoadSecretFromID(SecretID(id))
 	return nil
+}
+
+// The name of this secret.
+func (r *Secret) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The value of this secret.
