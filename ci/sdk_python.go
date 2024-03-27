@@ -10,6 +10,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// TODO: use dev module (this is just the mage port)
+
 const (
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
 	pythonDefaultVersion   = "3.11"
@@ -18,8 +20,6 @@ const (
 var (
 	pythonVersions = []string{"3.10", "3.11"}
 )
-
-// TODO: use dev module (this is just the mage port)
 
 type PythonSDK struct {
 	Dagger *Dagger // +private
@@ -59,14 +59,14 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 
 // Test tests the Python SDK
 func (t PythonSDK) Test(ctx context.Context) error {
+	installer, err := t.Dagger.installer(ctx, "sdk-python-test")
+	if err != nil {
+		return err
+	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, version := range pythonVersions {
-		version := version
-
-		base, err := t.Dagger.installDagger(ctx, t.pythonBase(version), "sdk-python-test")
-		if err != nil {
-			return err
-		}
+		base := t.pythonBase(version).With(installer)
 
 		eg.Go(func() error {
 			_, err := base.
@@ -103,12 +103,13 @@ func (t PythonSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the Python SDK API
 func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := t.Dagger.installDagger(ctx, t.pythonBase(pythonDefaultVersion), "sdk-python-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk-python-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	generated := ctr.
+	generated := t.pythonBase(pythonDefaultVersion).
+		With(installer).
 		WithWorkdir("/").
 		WithExec([]string{"dagger", "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
 		WithExec([]string{"black", pythonGeneratedAPIPath}).

@@ -31,12 +31,13 @@ func (t JavaSDK) Lint(ctx context.Context) error {
 
 // Test tests the Java SDK
 func (t JavaSDK) Test(ctx context.Context) error {
-	ctr, err := t.Dagger.installDagger(ctx, t.javaBase(), "sdk-java-test")
+	installer, err := t.Dagger.installer(ctx, "sdk-java-test")
 	if err != nil {
 		return err
 	}
 
-	_, err = ctr.
+	_, err = t.javaBase().
+		With(installer).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
 	return err
@@ -44,12 +45,14 @@ func (t JavaSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the Java SDK API
 func (t JavaSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := t.Dagger.installDagger(ctx, t.javaBase(), "sdk-java-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk-java-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	generatedSchema, err := ctr.
+	base := t.javaBase().With(installer)
+
+	generatedSchema, err := base.
 		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
 		WithExec([]string{"mvn", "-N", "dagger-codegen:generateSchema"}).
 		File(javaGeneratedSchemaPath).
@@ -58,7 +61,7 @@ func (t JavaSDK) Generate(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 
-	engineVersion, err := ctr.
+	engineVersion, err := base.
 		WithExec([]string{"dagger", "version"}).
 		Stdout(ctx)
 	if err != nil {

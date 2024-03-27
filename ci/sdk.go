@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"dagger/internal/dagger"
 )
 
 type SDK struct {
@@ -16,15 +15,7 @@ type SDK struct {
 	PHP    *PHPSDK
 }
 
-func (dg *Dagger) installDagger(ctx context.Context, ctr *dagger.Container, name string) (*dagger.Container, error) {
-	ctrs, err := dg.installDaggers(ctx, []*dagger.Container{ctr}, name)
-	if err != nil {
-		return nil, err
-	}
-	return ctrs[0], nil
-}
-
-func (dg *Dagger) installDaggers(ctx context.Context, ctrs []*dagger.Container, name string) ([]*dagger.Container, error) {
+func (dg *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
 	engineSvc, err := dg.Engine().Service(ctx, name)
 	if err != nil {
 		return nil, err
@@ -40,13 +31,12 @@ func (dg *Dagger) installDaggers(ctx context.Context, ctrs []*dagger.Container, 
 	}
 	cliBinaryPath := "/.dagger-cli"
 
-	for i, ctr := range ctrs {
-		ctrs[i] = ctr.
+	return func(ctr *Container) *Container {
+		return ctr.
 			WithServiceBinding("dagger-engine", engineSvc).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint).
 			WithMountedFile(cliBinaryPath, cliBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
 			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
-	}
-	return ctrs, nil
+	}, nil
 }

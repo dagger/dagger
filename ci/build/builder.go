@@ -174,7 +174,7 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 	return ctr, nil
 }
 
-func (build *Builder) codegenBinary() *File {
+func (build *Builder) CodegenBinary() *File {
 	return build.binary("./cmd/codegen")
 }
 

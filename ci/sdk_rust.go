@@ -52,11 +52,12 @@ func (r RustSDK) Lint(ctx context.Context) error {
 
 // Test tests the Rust SDK
 func (r RustSDK) Test(ctx context.Context) error {
-	ctr, err := r.Dagger.installDagger(ctx, r.rustBase(rustDockerStable), "sdk-rust-test")
+	installer, err := r.Dagger.installer(ctx, "sdk-rust-test")
 	if err != nil {
 		return err
 	}
-	_, err = ctr.
+	_, err = r.rustBase(rustDockerStable).
+		With(installer).
 		WithExec([]string{"rustc", "--version"}).
 		WithExec([]string{"cargo", "test", "--release", "--all"}).
 		Sync(ctx)
@@ -65,12 +66,13 @@ func (r RustSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the Rust SDK API
 func (r RustSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := r.Dagger.installDagger(ctx, r.rustBase(rustDockerStable), "sdk-rust-generate")
+	installer, err := r.Dagger.installer(ctx, "sdk-rust-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	generated := ctr.
+	generated := r.rustBase(rustDockerStable).
+		With(installer).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"}).

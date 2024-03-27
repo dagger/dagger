@@ -11,7 +11,8 @@ func DiffDirectory(ctx context.Context, path string, original *dagger.Directory,
 		From("alpine").
 		WithMountedDirectory("/mnt/original", original).
 		WithMountedDirectory("/mnt/modified", modified).
-		WithExec([]string{"diff", "-r", filepath.Join("/mnt/original", path), filepath.Join("/mnt/modified", path)}).
+		WithWorkdir("/mnt").
+		WithExec([]string{"diff", "-r", filepath.Join("original", path), filepath.Join("modified", path)}).
 		Sync(ctx)
 	return err
 }

@@ -30,12 +30,13 @@ type ElixirSDK struct {
 
 // Lint lints the Elixir SDK
 func (t ElixirSDK) Lint(ctx context.Context) error {
-	ctr, err := t.Dagger.installDagger(ctx, t.elixirBase(elixirVersions[0]), "sdk-elixir-lint")
+	installer, err := t.Dagger.installer(ctx, "sdk-elixir-lint")
 	if err != nil {
 		return err
 	}
 
-	_, err = ctr.
+	_, err = t.elixirBase(elixirVersions[0]).
+		With(installer).
 		WithExec([]string{"mix", "lint"}).
 		Sync(ctx)
 	return err
@@ -43,18 +44,15 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 
 // Test tests the Elixir SDK
 func (t ElixirSDK) Test(ctx context.Context) error {
-	ctrs := []*dagger.Container{}
-	for _, elixirVersion := range elixirVersions {
-		ctrs = append(ctrs, t.elixirBase(elixirVersion))
-	}
-	ctrs, err := t.Dagger.installDaggers(ctx, ctrs, "sdk-elixir-test")
+	installer, err := t.Dagger.installer(ctx, "sdk-elixir-test")
 	if err != nil {
 		return err
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, ctr := range ctrs {
-		ctr := ctr
+	for _, elixirVersion := range elixirVersions {
+		ctr := t.elixirBase(elixirVersion).With(installer)
+
 		eg.Go(func() error {
 			_, err := ctr.
 				WithExec([]string{"mix", "test"}).
@@ -67,12 +65,13 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the Elixir SDK API
 func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := t.Dagger.installDagger(ctx, t.elixirBase(elixirVersions[0]), "sdk-elixir-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk-elixir-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	gen := ctr.
+	gen := t.elixirBase(elixirVersions[0]).
+		With(installer).
 		WithExec([]string{"mix", "run", "scripts/fetch_introspection.exs"}).
 		WithWorkdir("dagger_codegen").
 		WithExec([]string{"mix", "deps.get"}).

@@ -36,12 +36,13 @@ func (t GoSDK) Lint(ctx context.Context) error {
 
 // Test tests the Go SDK
 func (t GoSDK) Test(ctx context.Context) error {
-	ctr, err := t.Dagger.installDagger(ctx, util.GoBase(t.Dagger.Source), "sdk-go-test")
+	installer, err := t.Dagger.installer(ctx, "sdk-go-test")
 	if err != nil {
 		return err
 	}
 
-	output, err := ctr.
+	output, err := util.GoBase(t.Dagger.Source).
+		With(installer).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "test", "-v", "./..."}).
 		Stdout(ctx)
@@ -53,12 +54,13 @@ func (t GoSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the Go SDK API
 func (t GoSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := t.Dagger.installDagger(ctx, util.GoBase(t.Dagger.Source), "sdk-go-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk-go-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	generated := ctr.
+	generated := util.GoBase(t.Dagger.Source).
+		With(installer).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		WithExec([]string{"go", "mod", "tidy"}).

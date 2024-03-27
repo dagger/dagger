@@ -31,12 +31,13 @@ func (t PHPSDK) Test(ctx context.Context) error {
 
 // Generate re-generates the PHP SDK API
 func (t PHPSDK) Generate(ctx context.Context) (*Directory, error) {
-	ctr, err := t.Dagger.installDagger(ctx, t.phpBase(), "sdk-php-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk-php-generate")
 	if err != nil {
 		return nil, err
 	}
 
-	generated := ctr.
+	generated := t.phpBase().
+		With(installer).
 		With(util.ShellCmds(
 			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),
 			fmt.Sprintf("ls -lha"),
