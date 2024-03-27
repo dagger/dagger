@@ -68,7 +68,7 @@ type batchSpanProcessor struct {
 
 	batch           []trace.ReadOnlySpan
 	batchMutex      sync.Mutex
-	batchSpans      map[otrace.SpanID]struct{}
+	batchSpans      map[otrace.SpanID]int
 	inProgressSpans map[otrace.SpanID]*inProgressSpan
 	timer           *time.Timer
 	stopWait        sync.WaitGroup
@@ -113,7 +113,7 @@ func NewBatchSpanProcessor(exporter trace.SpanExporter, options ...BatchSpanProc
 		e:               exporter,
 		o:               o,
 		batch:           make([]trace.ReadOnlySpan, 0, o.MaxExportBatchSize),
-		batchSpans:      make(map[otrace.SpanID]struct{}),
+		batchSpans:      make(map[otrace.SpanID]int),
 		inProgressSpans: make(map[otrace.SpanID]*inProgressSpan),
 		timer:           time.NewTimer(o.BatchTimeout),
 		queue:           make(chan trace.ReadOnlySpan, o.MaxQueueSize),
@@ -281,7 +281,7 @@ func (bsp *batchSpanProcessor) exportSpans(ctx context.Context) error {
 
 	// Update in progress spans
 	for _, span := range bsp.batch {
-		if span.EndTime().IsZero() {
+		if span.EndTime().Before(span.StartTime()) {
 			bsp.inProgressSpans[span.SpanContext().SpanID()] = &inProgressSpan{
 				ReadOnlySpan: span,
 				UpdatedAt:    time.Now(),
@@ -308,7 +308,7 @@ func (bsp *batchSpanProcessor) exportSpans(ctx context.Context) error {
 		// It is up to the exporter to implement any type of retry logic if a batch is failing
 		// to be exported, since it is specific to the protocol and backend being sent to.
 		bsp.batch = bsp.batch[:0]
-		bsp.batchSpans = make(map[otrace.SpanID]struct{})
+		bsp.batchSpans = make(map[otrace.SpanID]int)
 
 		if err != nil {
 			return err
@@ -355,10 +355,11 @@ func (bsp *batchSpanProcessor) processQueue() {
 }
 
 func (bsp *batchSpanProcessor) addToBatch(sd trace.ReadOnlySpan) {
-	if _, ok := bsp.batchSpans[sd.SpanContext().SpanID()]; ok {
+	if i, ok := bsp.batchSpans[sd.SpanContext().SpanID()]; ok {
+		bsp.batch[i] = sd
 		return
 	}
-	bsp.batchSpans[sd.SpanContext().SpanID()] = struct{}{}
+	bsp.batchSpans[sd.SpanContext().SpanID()] = len(bsp.batch)
 	bsp.batch = append(bsp.batch, sd)
 }
 
