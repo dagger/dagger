@@ -3,27 +3,30 @@ package mage
 import (
 	"context"
 
-	"github.com/dagger/dagger/internal/mage/sdk"
 	"golang.org/x/sync/errgroup"
 )
 
-type linter interface {
-	Lint(context.Context) error
-}
-
 // Lint runs all linters
 func Lint(ctx context.Context) error {
-	targets := []linter{
-		Engine{},
-		Docs{},
-		sdk.All{},
+	targets := [][]string{
+		{"engine"},
+		{"docs"},
+		{"sdk", "go"},
+		{"sdk", "python"},
+		{"sdk", "typescript"},
+		{"sdk", "elixir"},
+		{"sdk", "rust"},
+		{"sdk", "php"},
 	}
-	eg, ctx := errgroup.WithContext(ctx)
 
-	for _, t := range targets {
-		t := t
+	// XXX: running this in parallel makes for *absolute* chaos
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, target := range targets {
+		target := append([]string{}, target...)
+		target = append(target, "lint")
+
 		eg.Go(func() error {
-			return t.Lint(ctx)
+			return call(ctx, target...)
 		})
 	}
 
