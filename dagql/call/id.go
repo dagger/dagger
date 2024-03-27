@@ -59,6 +59,9 @@ func (id *ID) Base() *ID {
 // The root Call of the ID, with its Digest set. Exposed so that Calls can be
 // streamed over the wire one-by-one, rather than emitting full DAGs, which
 // would involve a ton of duplication.
+//
+// WARRANTY VOID IF MUTATIONS ARE MADE TO THE INNER PROTOBUF. Perform a
+// proto.Clone before mutating.
 func (id *ID) Call() *callpbv1.Call {
 	return id.pb
 }
