@@ -36,7 +36,6 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/util/grpcerrors"
-	"github.com/moby/buildkit/util/tracing/transform"
 	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -504,7 +503,7 @@ func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
 				return fmt.Errorf("recv log: %w", err)
 			}
 
-			spans := transform.Spans(data.GetResourceSpans())
+			spans := telemetry.SpansFromProto(data.GetResourceSpans())
 
 			slog.Debug("received spans from engine", "len", len(spans))
 

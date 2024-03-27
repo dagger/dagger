@@ -357,7 +357,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		telemetry.FlushLiveProcessors(ctx)
+		telemetry.Flush(ctx)
 	}))
 
 	s.endpointMu.RLock()
@@ -452,7 +452,7 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 	// close the analytics recorder
 	errs = errors.Join(errs, s.analytics.Close())
 
-	telemetry.FlushLiveProcessors(ctx)
+	telemetry.Flush(ctx)
 
 	return errs
 }

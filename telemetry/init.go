@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -253,16 +252,9 @@ func FallbackResource() *resource.Resource {
 
 var (
 	// set by Init, closed by Close
-	tracerProvider trace.TracerProvider = otel.GetTracerProvider()
-	loggerProvider log.LoggerProvider   = noop.NewLoggerProvider()
-	closers        []closer
+	tracerProvider *inflight.ProxyTraceProvider
+	loggerProvider *sdklog.LoggerProvider
 )
-
-// closer is a hokey little type to help annotate errors when closing things.
-type closer struct {
-	signal string
-	close  func(context.Context) error
-}
 
 // LiveSpanProcessor is a SpanProcessor that can additionally receive updates
 // for a span at runtime, rather than waiting until the span ends.
@@ -306,31 +298,15 @@ func NewLiveSpanProcessor(exp sdktrace.SpanExporter) LiveSpanProcessor {
 		inflight.WithBatchTimeout(NearlyImmediate))
 }
 
-var liveProcessors []LiveSpanProcessor
-
 var ForceLiveTrace = os.Getenv("FORCE_LIVE_TRACE") != ""
-
-// FlushLiveProcessors assists with draining live telemetry data just before a
-// client goes away.
-//
-// NB: this is often called in scenarios where e.g. one client goes away. It
-// may seem weird that we're flushing everyone's events instead of just that
-// client's, but it really doesn't matter much; live processors flush every
-// 100ms already, and clients don't go away that often.
-func FlushLiveProcessors(ctx context.Context) {
-	slog.Debug("flushing live processors")
-	for _, proc := range liveProcessors {
-		if err := proc.ForceFlush(ctx); err != nil {
-			slog.Error("failed to flush live spans", "error", err)
-		}
-	}
-	slog.Debug("done flushing live processors")
-}
 
 // Logger returns a logger with the given name.
 func Logger(name string) log.Logger {
 	return loggerProvider.Logger(name) // TODO more instrumentation attrs
 }
+
+var SpanProcessors = []sdktrace.SpanProcessor{}
+var LogProcessors = []sdklog.LogProcessor{}
 
 // Init sets up the global OpenTelemetry providers tracing, logging, and
 // someday metrics providers. It is called by the CLI, the engine, and the
@@ -365,7 +341,14 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			if ForceLiveTrace {
 				cfg.LiveTraceExporters = append(cfg.LiveTraceExporters, exp)
 			} else {
-				cfg.BatchedTraceExporters = append(cfg.BatchedTraceExporters, exp)
+				cfg.BatchedTraceExporters = append(cfg.BatchedTraceExporters,
+					// Filter out unfinished spans to avoid confusing external systems.
+					//
+					// Normally we avoid sending them here by virtue of putting this into
+					// BatchedTraceExporters, but that only applies to the local process.
+					// Unfinished spans may end up here if they're proxied out of the
+					// engine via Params.EngineTrace.
+					FilterLiveSpansExporter{exp})
 			}
 		}
 		if exp, ok := ConfiguredLogExporter(ctx); ok {
@@ -377,16 +360,21 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		sdktrace.WithResource(cfg.Resource),
 	}
 
+	liveProcessors := make([]LiveSpanProcessor, 0, len(cfg.LiveTraceExporters))
 	for _, exporter := range cfg.LiveTraceExporters {
 		processor := NewLiveSpanProcessor(exporter)
-		traceOpts = append(traceOpts, sdktrace.WithSpanProcessor(processor))
 		liveProcessors = append(liveProcessors, processor)
+		SpanProcessors = append(SpanProcessors, processor)
 	}
 	for _, exporter := range cfg.BatchedTraceExporters {
-		traceOpts = append(traceOpts, sdktrace.WithBatcher(exporter))
+		processor := sdktrace.NewBatchSpanProcessor(exporter)
+		SpanProcessors = append(SpanProcessors, processor)
+	}
+	for _, proc := range SpanProcessors {
+		traceOpts = append(traceOpts, sdktrace.WithSpanProcessor(proc))
 	}
 
-	inflightProvider := inflight.NewProxyTraceProvider(
+	tracerProvider = inflight.NewProxyTraceProvider(
 		sdktrace.NewTracerProvider(traceOpts...),
 		func(s trace.Span) { // OnUpdate
 			if ro, ok := s.(sdktrace.ReadOnlySpan); ok && s.IsRecording() {
@@ -396,7 +384,6 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			}
 		},
 	)
-	tracerProvider = inflightProvider
 
 	// Register our TracerProvider as the global so any imported instrumentation
 	// in the future will default to using it.
@@ -405,18 +392,14 @@ func Init(ctx context.Context, cfg Config) context.Context {
 	// telemetry doesn't work.
 	otel.SetTracerProvider(tracerProvider)
 
-	// Make sure we flush everything on Close().
-	closers = append(closers, closer{
-		signal: "tracing",
-		close:  inflightProvider.Shutdown,
-	})
-
 	// Set up a log provider if configured.
 	if len(cfg.LiveLogExporters) > 0 {
 		lp := sdklog.NewLoggerProvider(cfg.Resource)
 		for _, exp := range cfg.LiveLogExporters {
-			lp.RegisterLogProcessor(sdklog.NewBatchLogProcessor(exp,
-				sdklog.WithBatchTimeout(NearlyImmediate)))
+			processor := sdklog.NewBatchLogProcessor(exp,
+				sdklog.WithBatchTimeout(NearlyImmediate))
+			LogProcessors = append(LogProcessors, processor)
+			lp.RegisterLogProcessor(processor)
 		}
 		loggerProvider = lp
 
@@ -424,15 +407,25 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		// Register our TracerProvider as the global so any imported
 		// instrumentation in the future will default to using it.
 		// otel.SetLoggerProvider(loggerProvider)
-
-		// Make sure we flush everything on Close().
-		closers = append(closers, closer{
-			signal: "logging",
-			close:  lp.Shutdown,
-		})
 	}
 
 	return ctx
+}
+
+// Flush drains telemetry data, and is typically called just before a client
+// goes away.
+//
+// NB: now that we wait for all spans to complete, this is less necessary, but
+// it seems wise to keep it anyway, as the spots where it are needed are hard
+// to find.
+func Flush(ctx context.Context) {
+	slog.Debug("flushing processors")
+	if tracerProvider != nil {
+		if err := tracerProvider.ForceFlush(ctx); err != nil {
+			slog.Error("failed to flush spans", "error", err)
+		}
+	}
+	slog.Debug("done flushing processors")
 }
 
 // Close shuts down the global OpenTelemetry providers, flushing any remaining
@@ -440,21 +433,15 @@ func Init(ctx context.Context, cfg Config) context.Context {
 func Close() {
 	flushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	FlushLiveProcessors(flushCtx)
-
-	wg := new(sync.WaitGroup)
-	for _, closer := range closers {
-		closer := closer // it's a pre-1.22 ting
-		wg.Add(1)
-		go func() {
-			slog.Debug("closing", "signal", closer.signal)
-			defer wg.Done()
-			if err := closer.close(flushCtx); err != nil {
-				slog.Error("failed to close", "signal", closer.signal, "error", err)
-			}
-			slog.Debug("closed", "signal", closer.signal)
-		}()
+	Flush(flushCtx)
+	if tracerProvider != nil {
+		if err := tracerProvider.Shutdown(flushCtx); err != nil {
+			slog.Error("failed to shut down tracer provider", "error", err)
+		}
 	}
-	wg.Wait()
+	if loggerProvider != nil {
+		if err := loggerProvider.Shutdown(flushCtx); err != nil {
+			slog.Error("failed to shut down logger provider", "error", err)
+		}
+	}
 }

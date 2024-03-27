@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/moby/buildkit/util/tracing/transform"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/log"
@@ -34,7 +33,7 @@ type TraceServer struct {
 }
 
 func (e *TraceServer) Export(ctx context.Context, req *colltracev1.ExportTraceServiceRequest) (*colltracev1.ExportTraceServiceResponse, error) {
-	err := e.PubSub.ExportSpans(ctx, transform.Spans(req.GetResourceSpans()))
+	err := e.PubSub.ExportSpans(ctx, SpansFromProto(req.GetResourceSpans()))
 	if err != nil {
 		return nil, err
 	}

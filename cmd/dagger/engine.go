@@ -56,26 +56,11 @@ func withEngine(
 
 	params.CloudURLCallback = Frontend.ConnectedToCloud
 
-	params.EngineTrace = Frontend
-	params.EngineLogs = Frontend
-
-	if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
-		if !telemetry.ForceLiveTrace {
-			exp = telemetry.FilterLiveSpansExporter{
-				// SpanProcessor: processor,
-				SpanExporter: exp,
-			}
-		}
-		params.EngineTrace = telemetry.MultiSpanExporter{params.EngineTrace, exp}
+	params.EngineTrace = telemetry.SpanForwarder{
+		Processors: telemetry.SpanProcessors,
 	}
-
-	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
-		params.EngineLogs = telemetry.MultiLogExporter{params.EngineLogs, exp}
-	}
-
-	if spans, logs, ok := telemetry.ConfiguredCloudExporters(ctx); ok {
-		params.EngineTrace = telemetry.MultiSpanExporter{params.EngineTrace, spans}
-		params.EngineLogs = telemetry.MultiLogExporter{params.EngineLogs, logs}
+	params.EngineLogs = telemetry.LogForwarder{
+		Processors: telemetry.LogProcessors,
 	}
 
 	sess, ctx, err := client.Connect(ctx, params)
