@@ -17,7 +17,6 @@
 import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class QuickStart {
   /**
    * Returns a container that echoes whatever string argument is provided
