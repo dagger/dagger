@@ -29,6 +29,10 @@ func (ci *Dagger) Engine() *Engine {
 	return &Engine{Dagger: ci}
 }
 
+func (ci *Dagger) Docs() *Docs {
+	return &Docs{Dagger: ci}
+}
+
 func (ci *Dagger) SDK() *SDK {
 	return &SDK{
 		Go:         &GoSDK{Dagger: ci},
