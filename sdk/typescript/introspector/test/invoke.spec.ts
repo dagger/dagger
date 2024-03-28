@@ -175,7 +175,7 @@ describe("Invoke typescript function", function () {
     )
   })
 
-  it("Should correctly handle multiple objets as fields", async function () {
+  it("Should correctly handle multiple objects as fields", async function () {
     this.timeout(60000)
 
     const files = await listFiles(`${rootDirectory}/multipleObjectsAsFields`)
@@ -193,7 +193,7 @@ describe("Invoke typescript function", function () {
     }
 
     const constructorResult = await invoke(scanResult, constructorInput)
-    // Verify object instanciation
+    // Verify object instantiation
     assert.notStrictEqual(undefined, constructorResult)
     assert.notStrictEqual(undefined, constructorResult.test)
     assert.notStrictEqual(undefined, constructorResult.lint)

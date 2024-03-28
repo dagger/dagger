@@ -559,7 +559,7 @@ class Container(Type):
     def experimental_with_gpu(self, devices: Sequence[str]) -> "Container":
         """EXPERIMENTAL API! Subject to change/removal at any time.
 
-        Configures the provided list of devices to be accesible to this
+        Configures the provided list of devices to be accessible to this
         container.
 
         This currently works for Nvidia devices only.
@@ -2197,13 +2197,26 @@ class Directory(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
-    async def export(self, path: str) -> bool:
+    async def export(
+        self,
+        path: str,
+        *,
+        wipe: bool | None = False,
+    ) -> bool:
         """Writes the contents of the directory to a path on the host.
 
         Parameters
         ----------
         path:
             Location of the copied directory (e.g., "logs/").
+        wipe:
+            If true, then the host directory will be wiped clean before
+            exporting so that it exactly matches the directory being exported;
+            this means it will delete any files on the host that aren't in the
+            exported dir. If false (the default), the contents of the
+            directory will be merged with any existing contents of the host
+            directory, leaving any existing files on the host that aren't in
+            the exported directory alone.
 
         Returns
         -------
@@ -2219,6 +2232,7 @@ class Directory(Type):
         """
         _args = [
             Arg("path", path),
+            Arg("wipe", wipe, False),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
@@ -5668,7 +5682,7 @@ class Client(Root):
         Parameters
         ----------
         id:
-            DEPRECATED: Use `loadDirectoryFromID` isntead.
+            DEPRECATED: Use `loadDirectoryFromID` instead.
         """
         _args = [
             Arg("id", id, None),
@@ -6269,6 +6283,28 @@ class Secret(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SecretID)
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of this secret.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
 
     @typecheck
     async def plaintext(self) -> str:

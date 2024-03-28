@@ -14,7 +14,7 @@ _Example:_ `./hack/make engine:test`
 
 _Example:_ `./hack/dev bash`
 
-`dev` will first boostrap an engine from local code and then execute whatever command you specify with environment variables set so that dagger SDKs will connect to the dev engine.
+`dev` will first bootstrap an engine from local code and then execute whatever command you specify with environment variables set so that dagger SDKs will connect to the dev engine.
 
 # Examples
 

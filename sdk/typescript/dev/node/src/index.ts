@@ -103,7 +103,7 @@ class Node {
   /**
    * Downloads dependencies in the container.
    *
-   * @param pkgs Additonal packages to install in the container.
+   * @param pkgs Additional packages to install in the container.
    */
   @func()
   install(pkgs: string[] = []): Node {

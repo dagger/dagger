@@ -22,7 +22,7 @@ An Extension Runtime is the bridge between the Dagger GraphQL server and executa
 
 The above process (described in greater detail below) is what's called the "runtime protocol". It's what enables the otherwise highly-generic, language-agnostic Dagger server to dynamically plug in resolver implementations written in arbitrary languages and/or frameworks.
 
-The protocol could thus be thought of as a way of "proxying" resolver calls out from the server to these dynamically loaded pieces of user code. It is optimized to maximize re-usability of BuildKit caching, with each resolver call being cached based exactly on its relevent inputs.
+The protocol could thus be thought of as a way of "proxying" resolver calls out from the server to these dynamically loaded pieces of user code. It is optimized to maximize re-usability of BuildKit caching, with each resolver call being cached based exactly on its relevant inputs.
 
 There are currently two runtime implementations:
 1. Go
@@ -47,7 +47,7 @@ When a resolver from an extension needs to be invoked:
 1. A file `/inputs/dagger.json` will be mounted as read-only into the ExecOp, with the following (json-encoded) contents:
    - `resolver` - identifies the field that needs to be resolver, in the form of `<ObjectName>.<FieldName>`. For instance, if the `build` field of the `Alpine` object is being invoked, this will be set to `Alpine.build`
    - `args` - The args provided to the GraphQL resolver, as described [here](https://www.apollographql.com/docs/apollo-server/data/resolvers/#resolver-arguments).
-   - `parent` - The result of the parent resolver to this field in the the GraphQL query (if any), as described [here](https://www.apollographql.com/docs/apollo-server/data/resolvers/#resolver-arguments).
+   - `parent` - The result of the parent resolver to this field in the GraphQL query (if any), as described [here](https://www.apollographql.com/docs/apollo-server/data/resolvers/#resolver-arguments).
 1. A directory `/outputs` will be mounted as read-write into the ExecOp. It is where the runtime will write output of the resolver (as described more below)
 1. The `ExperimentalPrivilegedNesting` flag is set, enabling access back to the "parent" dagger session
 
@@ -124,13 +124,13 @@ The rest of the doc will use this terminology:
 It's only valid to invoke a full hierarchy of commands to a leaf.
 * e.g. if a user invokes `dagger do sdk:go` only the `--help` output will be shown, no commands actually executed
 
-All arguments on every command in the hierarchy are coallesced together as flags available on the leaf.
+All arguments on every command in the hierarchy are coalesced together as flags available on the leaf.
 * e.g. There is a `foo` arg on `sdk` and a `bar` arg on `build`, so `sdk:go:build` has flags for `--foo` and `--bar`
 * As a result, there must be no overlap in names in a hierarchy. Doing so should result in an error.
 
 Command hierarchies are helpful for organization, but they also enable common work and configuration to be down in parent commands and then passed down to subcommands, including leafs.
 * This is just the graphql resolver model. More background and examples of the general idea are available in most graphql framework docs, e.g. [these Apollo docs](https://www.apollographql.com/docs/apollo-server/data/resolvers/#example)
-* Parent commands pass information to subcommands by returning "structs" (or similar concept), which are then made available to the subcommands. More details in the Type restrictions section of Requirements below. 
+* Parent commands pass information to subcommands by returning "structs" (or similar concept), which are then made available to the subcommands. More details in the Type restrictions section of Requirements below.
 * Importantly, every execution of parent commands are cached individually, so any expensive work that runs as part of them can be cached even if the execution of the subcommands is not cached.
 
 ## Requirements

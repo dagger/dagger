@@ -105,9 +105,10 @@ func TestSecretSet(t *testing.T) {
 
 	c, ctx := connect(t)
 
+	secretName := "aws_key"
 	secretValue := "very-secret-text"
 
-	s := c.SetSecret("aws_key", secretValue)
+	s := c.SetSecret(secretName, secretValue)
 
 	ctr, err := c.Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
@@ -127,6 +128,10 @@ func TestSecretSet(t *testing.T) {
 	plaintext, err := s.Plaintext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, secretValue, plaintext)
+
+	name, err := s.Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, secretName, name)
 }
 
 func TestSecretWhitespaceScrubbed(t *testing.T) {

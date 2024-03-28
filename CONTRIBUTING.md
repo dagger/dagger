@@ -114,7 +114,7 @@ Contributions to this project must be accompanied by a Developer Certificate of
 Origin (DCO).
 
 All commit messages must contain the Signed-off-by line with an email address
-that matches the commit author. When commiting, use the `--signoff` flag:
+that matches the commit author. When committing, use the `--signoff` flag:
 
 ```shell
 git commit -s

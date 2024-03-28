@@ -31,6 +31,8 @@ func (s *secretSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Secret]{
+		dagql.Func("name", s.name).
+			Doc(`The name of this secret.`),
 		dagql.Func("plaintext", s.plaintext).
 			Impure("A secret's `plaintext` value in the internal secret store state can change.").
 			Doc(`The value of this secret.`),
@@ -90,6 +92,10 @@ func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args s
 	}
 
 	return i, nil
+}
+
+func (s *secretSchema) name(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {
+	return dagql.NewString(secret.Name), nil
 }
 
 func (s *secretSchema) plaintext(ctx context.Context, secret *core.Secret, args struct{}) (dagql.String, error) {

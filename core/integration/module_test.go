@@ -541,6 +541,11 @@ func TestModuleGit(t *testing.T) {
 				"/internal/dagger/**",
 				"/internal/querybuilder/**",
 			},
+			gitIgnoredFiles: []string{
+				"/dagger.gen.go",
+				"/internal/dagger",
+				"/internal/querybuilder",
+			},
 		},
 		{
 			sdk: "python",
@@ -583,15 +588,38 @@ func TestModuleGit(t *testing.T) {
 					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated\n", fileName))
 				}
 			})
-			if len(tc.gitIgnoredFiles) > 0 {
-				t.Run("configures .gitignore", func(t *testing.T) {
-					ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
-					require.NoError(t, err)
-					for _, fileName := range tc.gitIgnoredFiles {
-						require.Contains(t, ignore, fileName)
-					}
-				})
-			}
+
+			t.Run("configures .gitignore", func(t *testing.T) {
+				ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
+				require.NoError(t, err)
+				for _, fileName := range tc.gitIgnoredFiles {
+					require.Contains(t, ignore, fileName)
+				}
+			})
+
+			t.Run("does not configure .gitignore if disabled", func(t *testing.T) {
+				modGen := goGitBase(t, c).
+					With(daggerExec("init", "--name=bare"))
+
+				// TODO: use dagger config to set this once support is added there
+				modCfgContents, err := modGen.File("dagger.json").Contents(ctx)
+				require.NoError(t, err)
+				modCfg := &modules.ModuleConfig{}
+				require.NoError(t, json.Unmarshal([]byte(modCfgContents), modCfg))
+				autoGitignore := false
+				modCfg.Codegen = &modules.ModuleCodegenConfig{
+					AutomaticGitignore: &autoGitignore,
+				}
+				modCfgBytes, err := json.Marshal(modCfg)
+				require.NoError(t, err)
+
+				modGen = modGen.WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
+					Contents: string(modCfgBytes),
+				}).With(daggerExec("develop", "--sdk=go"))
+
+				_, err = modGen.File("dagger/.gitignore").Contents(ctx)
+				require.ErrorContains(t, err, "no such file or directory")
+			})
 		})
 	}
 }
@@ -4500,13 +4528,13 @@ func TestModuleLoops(t *testing.T) {
 }
 
 //go:embed testdata/modules/go/id/arg/main.go
-var badIDArgGoSrc string
+var goodIDArgGoSrc string
 
 //go:embed testdata/modules/python/id/arg/main.py
-var badIDArgPySrc string
+var goodIDArgPySrc string
 
 //go:embed testdata/modules/typescript/id/arg/index.ts
-var badIDArgTSSrc string
+var goodIDArgTSSrc string
 
 //go:embed testdata/modules/go/id/field/main.go
 var badIDFieldGoSrc string
@@ -4537,20 +4565,21 @@ func TestModuleReservedWords(t *testing.T) {
 		t.Parallel()
 
 		t.Run("arg", func(t *testing.T) {
+			// id used to be disallowed as an arg name, but is allowed now, test it works
 			t.Parallel()
 
 			for _, tc := range []testCase{
 				{
 					sdk:    "go",
-					source: badIDArgGoSrc,
+					source: goodIDArgGoSrc,
 				},
 				{
 					sdk:    "python",
-					source: badIDArgPySrc,
+					source: goodIDArgPySrc,
 				},
 				{
 					sdk:    "typescript",
-					source: badIDArgTSSrc,
+					source: goodIDArgTSSrc,
 				},
 			} {
 				tc := tc
@@ -4559,11 +4588,11 @@ func TestModuleReservedWords(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)
 
-					_, err := modInit(ctx, t, c, tc.sdk, tc.source).
-						With(daggerQuery(`{test{fn(id:"no")}}`)).
-						Sync(ctx)
-
-					require.ErrorContains(t, err, "cannot define argument with reserved name \"id\"")
+					out, err := modInit(ctx, t, c, tc.sdk, tc.source).
+						With(daggerQuery(`{test{fn(id:"YES!!!!")}}`)).
+						Stdout(ctx)
+					require.NoError(t, err)
+					require.JSONEq(t, `{"test":{"fn":"YES!!!!"}}`, out)
 				})
 			}
 		})
@@ -5548,6 +5577,31 @@ func diffSecret(ctx context.Context, first, second *Secret) error {
 			require.NoError(t, err)
 		})
 	})
+}
+
+func TestModuleUnicodePath(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/wórk/sub/").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("/wórk/sub/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+ 			import (
+ 				"context"
+ 			)
+ 			type Test struct {}
+ 			func (m *Test) Hello(ctx context.Context) string {
+				return "hello"
+ 			}
+ 			`,
+		}).
+		With(daggerQuery(`{test{hello}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {

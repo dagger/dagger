@@ -139,7 +139,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * EXPERIMENTAL API! Subject to change/removal at any time.
      *
-     * Configures the provided list of devices to be accesible to this container.
+     * Configures the provided list of devices to be accessible to this container.
      *
      * This currently works for Nvidia devices only.
      */

@@ -92,7 +92,7 @@ packages = [{ include = "main.py", from = "src" }]
 
 ## Default project layout
 
-The default template from `dagger init` creates a `main.py` file inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code, which prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python pakaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+The default template from `dagger init` creates a `main.py` file inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code, which prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
 
 Tools like [build](https://build.pypa.io/en/latest/) (default), [Hatch](https://hatch.pypa.io/latest/), and [Poetry](https://python-poetry.org/docs/) already detect this project layout by default, but it's not required and can be overridden as long as `main` is installed correctly in `site-packages`, or is at least importable with `import main`.
 
