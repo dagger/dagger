@@ -900,11 +900,11 @@ impl Container {
     /// Be sure to set any exposed ports before this conversion.
     pub fn as_service(&self) -> Service {
         let query = self.selection.select("asService");
-        return Service {
+        Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a File representing the container serialized to a tarball.
     ///
@@ -913,11 +913,11 @@ impl Container {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_tarball(&self) -> File {
         let query = self.selection.select("asTarball");
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a File representing the container serialized to a tarball.
     ///
@@ -935,11 +935,11 @@ impl Container {
         if let Some(media_types) = opts.media_types {
             query = query.arg_enum("mediaTypes", media_types);
         }
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Initializes this container from a Dockerfile build.
     ///
@@ -956,11 +956,11 @@ impl Container {
                 Box::pin(async move { context.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Initializes this container from a Dockerfile build.
     ///
@@ -989,11 +989,11 @@ impl Container {
         if let Some(secrets) = opts.secrets {
             query = query.arg("secrets", secrets);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves default arguments for future commands.
     pub async fn default_args(&self) -> Result<Vec<String>, DaggerError> {
@@ -1009,11 +1009,11 @@ impl Container {
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves entrypoint to be prepended to the arguments of all commands.
     pub async fn entrypoint(&self) -> Result<Vec<String>, DaggerError> {
@@ -1044,11 +1044,11 @@ impl Container {
     /// This currently works for Nvidia devices only.
     pub fn experimental_with_all_gp_us(&self) -> Container {
         let query = self.selection.select("experimentalWithAllGPUs");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures the provided list of devices to be accessible to this container.
@@ -1066,11 +1066,11 @@ impl Container {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
     /// Return true on success.
@@ -1134,11 +1134,11 @@ impl Container {
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Initializes this container from a pulled base image.
     ///
@@ -1150,11 +1150,11 @@ impl Container {
     pub fn from(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this Container.
     pub async fn id(&self) -> Result<ContainerId, DaggerError> {
@@ -1181,11 +1181,11 @@ impl Container {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Reads the container from an OCI tarball.
     ///
@@ -1205,11 +1205,11 @@ impl Container {
         if let Some(tag) = opts.tag {
             query = query.arg("tag", tag);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves the value of the specified label.
     ///
@@ -1244,11 +1244,11 @@ impl Container {
     pub fn pipeline(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("pipeline");
         query = query.arg("name", name.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a named sub-pipeline.
     ///
@@ -1269,11 +1269,11 @@ impl Container {
         if let Some(labels) = opts.labels {
             query = query.arg("labels", labels);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The platform this container executes and publishes as.
     pub async fn platform(&self) -> Result<Platform, DaggerError> {
@@ -1326,11 +1326,11 @@ impl Container {
     /// Retrieves this container's root filesystem. Mounts are not included.
     pub fn rootfs(&self) -> Directory {
         let query = self.selection.select("rootfs");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
@@ -1357,11 +1357,11 @@ impl Container {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal(&self) -> Terminal {
         let query = self.selection.select("terminal");
-        return Terminal {
+        Terminal {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
@@ -1382,11 +1382,11 @@ impl Container {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
-        return Terminal {
+        Terminal {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves the user to be set for all commands.
     pub async fn user(&self) -> Result<String, DaggerError> {
@@ -1404,11 +1404,11 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Set the default command to invoke for the container's terminal API.
     ///
@@ -1422,11 +1422,11 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Set the default command to invoke for the container's terminal API.
     ///
@@ -1453,11 +1453,11 @@ impl Container {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a directory written at the given path.
     ///
@@ -1476,11 +1476,11 @@ impl Container {
                 Box::pin(async move { directory.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a directory written at the given path.
     ///
@@ -1513,11 +1513,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container but with a different command entrypoint.
     ///
@@ -1531,11 +1531,11 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container but with a different command entrypoint.
     ///
@@ -1556,11 +1556,11 @@ impl Container {
         if let Some(keep_default_args) = opts.keep_default_args {
             query = query.arg("keepDefaultArgs", keep_default_args);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the given environment variable.
     ///
@@ -1577,11 +1577,11 @@ impl Container {
         let mut query = self.selection.select("withEnvVariable");
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the given environment variable.
     ///
@@ -1602,11 +1602,11 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container after executing the specified command inside it.
     ///
@@ -1622,11 +1622,11 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container after executing the specified command inside it.
     ///
@@ -1667,11 +1667,11 @@ impl Container {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Expose a network port.
     /// Exposed ports serve two purposes:
@@ -1685,11 +1685,11 @@ impl Container {
     pub fn with_exposed_port(&self, port: isize) -> Container {
         let mut query = self.selection.select("withExposedPort");
         query = query.arg("port", port);
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Expose a network port.
     /// Exposed ports serve two purposes:
@@ -1716,11 +1716,11 @@ impl Container {
         if let Some(experimental_skip_healthcheck) = opts.experimental_skip_healthcheck {
             query = query.arg("experimentalSkipHealthcheck", experimental_skip_healthcheck);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the contents of the given file copied to the given path.
     ///
@@ -1739,11 +1739,11 @@ impl Container {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the contents of the given file copied to the given path.
     ///
@@ -1773,11 +1773,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the contents of the given files copied to the given path.
     ///
@@ -1790,11 +1790,11 @@ impl Container {
         let mut query = self.selection.select("withFiles");
         query = query.arg("path", path.into());
         query = query.arg("sources", sources);
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the contents of the given files copied to the given path.
     ///
@@ -1818,20 +1818,20 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Indicate that subsequent operations should be featured more prominently in the UI.
     pub fn with_focus(&self) -> Container {
         let query = self.selection.select("withFocus");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus the given label.
     ///
@@ -1843,11 +1843,11 @@ impl Container {
         let mut query = self.selection.select("withLabel");
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a cache volume mounted at the given path.
     ///
@@ -1866,11 +1866,11 @@ impl Container {
                 Box::pin(async move { cache.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a cache volume mounted at the given path.
     ///
@@ -1903,11 +1903,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a directory mounted at the given path.
     ///
@@ -1926,11 +1926,11 @@ impl Container {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a directory mounted at the given path.
     ///
@@ -1957,11 +1957,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a file mounted at the given path.
     ///
@@ -1980,11 +1980,11 @@ impl Container {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a file mounted at the given path.
     ///
@@ -2011,11 +2011,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a secret mounted into a file at the given path.
     ///
@@ -2034,11 +2034,11 @@ impl Container {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a secret mounted into a file at the given path.
     ///
@@ -2068,11 +2068,11 @@ impl Container {
         if let Some(mode) = opts.mode {
             query = query.arg("mode", mode);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a temporary directory mounted at the given path.
     ///
@@ -2082,11 +2082,11 @@ impl Container {
     pub fn with_mounted_temp(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withMountedTemp");
         query = query.arg("path", path.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a new file written at the given path.
     ///
@@ -2097,11 +2097,11 @@ impl Container {
     pub fn with_new_file(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a new file written at the given path.
     ///
@@ -2125,11 +2125,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with a registry authentication for a given address.
     ///
@@ -2156,11 +2156,11 @@ impl Container {
                 Box::pin(async move { secret.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves the container with the given directory mounted to /.
     ///
@@ -2176,11 +2176,11 @@ impl Container {
                 Box::pin(async move { directory.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus an env variable containing the given secret.
     ///
@@ -2198,11 +2198,11 @@ impl Container {
                 Box::pin(async move { secret.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Establish a runtime dependency on a service.
     /// The service will be started automatically when needed and detached when it is no longer needed, executing the default command if none is set.
@@ -2223,11 +2223,11 @@ impl Container {
                 Box::pin(async move { service.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
     ///
@@ -2246,11 +2246,11 @@ impl Container {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
     ///
@@ -2277,11 +2277,11 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with a different command user.
     ///
@@ -2291,11 +2291,11 @@ impl Container {
     pub fn with_user(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withUser");
         query = query.arg("name", name.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with a different working directory.
     ///
@@ -2305,20 +2305,20 @@ impl Container {
     pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with unset default arguments for future commands.
     pub fn without_default_args(&self) -> Container {
         let query = self.selection.select("withoutDefaultArgs");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with an unset command entrypoint.
     ///
@@ -2327,11 +2327,11 @@ impl Container {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_entrypoint(&self) -> Container {
         let query = self.selection.select("withoutEntrypoint");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with an unset command entrypoint.
     ///
@@ -2343,11 +2343,11 @@ impl Container {
         if let Some(keep_default_args) = opts.keep_default_args {
             query = query.arg("keepDefaultArgs", keep_default_args);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container minus the given environment variable.
     ///
@@ -2357,11 +2357,11 @@ impl Container {
     pub fn without_env_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutEnvVariable");
         query = query.arg("name", name.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Unexpose a previously exposed port.
     ///
@@ -2372,11 +2372,11 @@ impl Container {
     pub fn without_exposed_port(&self, port: isize) -> Container {
         let mut query = self.selection.select("withoutExposedPort");
         query = query.arg("port", port);
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Unexpose a previously exposed port.
     ///
@@ -2394,21 +2394,21 @@ impl Container {
         if let Some(protocol) = opts.protocol {
             query = query.arg_enum("protocol", protocol);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Indicate that subsequent operations should not be featured more prominently in the UI.
     /// This is the initial state of all containers.
     pub fn without_focus(&self) -> Container {
         let query = self.selection.select("withoutFocus");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container minus the given environment label.
     ///
@@ -2418,11 +2418,11 @@ impl Container {
     pub fn without_label(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutLabel");
         query = query.arg("name", name.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container after unmounting everything at the given path.
     ///
@@ -2432,11 +2432,11 @@ impl Container {
     pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
         query = query.arg("path", path.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container without the registry authentication of a given address.
     ///
@@ -2448,11 +2448,11 @@ impl Container {
     pub fn without_registry_auth(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutRegistryAuth");
         query = query.arg("address", address.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with a previously added Unix socket removed.
     ///
@@ -2462,31 +2462,31 @@ impl Container {
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
         query = query.arg("path", path.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with an unset command user.
     /// Should default to root.
     pub fn without_user(&self) -> Container {
         let query = self.selection.select("withoutUser");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this container with an unset working directory.
     /// Should default to "/".
     pub fn without_workdir(&self) -> Container {
         let query = self.selection.select("withoutWorkdir");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves the working directory for all commands.
     pub async fn workdir(&self) -> Result<String, DaggerError> {
@@ -2523,11 +2523,11 @@ impl CurrentModule {
     /// The directory containing the module's source code loaded into the engine (plus any generated code that may have been created).
     pub fn source(&self) -> Directory {
         let query = self.selection.select("source");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///
@@ -2538,11 +2538,11 @@ impl CurrentModule {
     pub fn workdir(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("workdir");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///
@@ -2563,11 +2563,11 @@ impl CurrentModule {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///
@@ -2577,11 +2577,11 @@ impl CurrentModule {
     pub fn workdir_file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("workdirFile");
         query = query.arg("path", path.into());
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -2679,11 +2679,11 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module(&self) -> Module {
         let query = self.selection.select("asModule");
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load the directory as a Dagger module
     ///
@@ -2695,11 +2695,11 @@ impl Directory {
         if let Some(source_root_path) = opts.source_root_path {
             query = query.arg("sourceRootPath", source_root_path);
         }
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Gets the difference between this directory and an another directory.
     ///
@@ -2715,11 +2715,11 @@ impl Directory {
                 Box::pin(async move { other.id().await.unwrap().quote() })
             }),
         );
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves a directory at the given path.
     ///
@@ -2729,11 +2729,11 @@ impl Directory {
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Builds a new Docker container from this directory.
     ///
@@ -2742,11 +2742,11 @@ impl Directory {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build(&self) -> Container {
         let query = self.selection.select("dockerBuild");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Builds a new Docker container from this directory.
     ///
@@ -2770,11 +2770,11 @@ impl Directory {
         if let Some(secrets) = opts.secrets {
             query = query.arg("secrets", secrets);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a list of files and directories at the given path.
     ///
@@ -2837,11 +2837,11 @@ impl Directory {
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a list of files and directories that matche the given pattern.
     ///
@@ -2867,11 +2867,11 @@ impl Directory {
     pub fn pipeline(&self, name: impl Into<String>) -> Directory {
         let mut query = self.selection.select("pipeline");
         query = query.arg("name", name.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a named sub-pipeline.
     ///
@@ -2892,11 +2892,11 @@ impl Directory {
         if let Some(labels) = opts.labels {
             query = query.arg("labels", labels);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
@@ -2920,11 +2920,11 @@ impl Directory {
                 Box::pin(async move { directory.id().await.unwrap().quote() })
             }),
         );
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus a directory written at the given path.
     ///
@@ -2954,11 +2954,11 @@ impl Directory {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus the contents of the given file copied to the given path.
     ///
@@ -2977,11 +2977,11 @@ impl Directory {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus the contents of the given file copied to the given path.
     ///
@@ -3008,11 +3008,11 @@ impl Directory {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus the contents of the given files copied to the given path.
     ///
@@ -3025,11 +3025,11 @@ impl Directory {
         let mut query = self.selection.select("withFiles");
         query = query.arg("path", path.into());
         query = query.arg("sources", sources);
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus the contents of the given files copied to the given path.
     ///
@@ -3050,11 +3050,11 @@ impl Directory {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus a new directory created at the given path.
     ///
@@ -3065,11 +3065,11 @@ impl Directory {
     pub fn with_new_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withNewDirectory");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus a new directory created at the given path.
     ///
@@ -3087,11 +3087,11 @@ impl Directory {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus a new file written at the given path.
     ///
@@ -3104,11 +3104,11 @@ impl Directory {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
         query = query.arg("contents", contents.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory plus a new file written at the given path.
     ///
@@ -3129,11 +3129,11 @@ impl Directory {
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
@@ -3145,11 +3145,11 @@ impl Directory {
     pub fn with_timestamps(&self, timestamp: isize) -> Directory {
         let mut query = self.selection.select("withTimestamps");
         query = query.arg("timestamp", timestamp);
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory with the directory at the given path removed.
     ///
@@ -3159,11 +3159,11 @@ impl Directory {
     pub fn without_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves this directory with the file at the given path removed.
     ///
@@ -3173,11 +3173,11 @@ impl Directory {
     pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3228,11 +3228,11 @@ impl FieldTypeDef {
     /// The type of the field.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3312,11 +3312,11 @@ impl File {
     pub fn with_timestamps(&self, timestamp: isize) -> File {
         let mut query = self.selection.select("withTimestamps");
         query = query.arg("timestamp", timestamp);
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3362,11 +3362,11 @@ impl Function {
     /// The type returned by the function.
     pub fn return_type(&self) -> TypeDef {
         let query = self.selection.select("returnType");
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns the function with the provided argument
     ///
@@ -3385,11 +3385,11 @@ impl Function {
                 Box::pin(async move { type_def.id().await.unwrap().quote() })
             }),
         );
-        return Function {
+        Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns the function with the provided argument
     ///
@@ -3419,11 +3419,11 @@ impl Function {
         if let Some(default_value) = opts.default_value {
             query = query.arg("defaultValue", default_value);
         }
-        return Function {
+        Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns the function with the given doc string.
     ///
@@ -3433,11 +3433,11 @@ impl Function {
     pub fn with_description(&self, description: impl Into<String>) -> Function {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
-        return Function {
+        Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3470,11 +3470,11 @@ impl FunctionArg {
     /// The type of the argument.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3557,11 +3557,11 @@ impl GeneratedCode {
     /// The directory containing the generated code.
     pub fn code(&self) -> Directory {
         let query = self.selection.select("code");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this GeneratedCode.
     pub async fn id(&self) -> Result<GeneratedCodeId, DaggerError> {
@@ -3585,11 +3585,11 @@ impl GeneratedCode {
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        return GeneratedCode {
+        GeneratedCode {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Set the list of paths to ignore in version control.
     pub fn with_vcs_ignored_paths(&self, paths: Vec<impl Into<String>>) -> GeneratedCode {
@@ -3598,11 +3598,11 @@ impl GeneratedCode {
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        return GeneratedCode {
+        GeneratedCode {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3625,11 +3625,11 @@ impl GitModuleSource {
     /// The directory containing everything needed to load load and use the module.
     pub fn context_directory(&self) -> Directory {
         let query = self.selection.select("contextDirectory");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The URL to the source's git repo in a web browser
     pub async fn html_url(&self) -> Result<String, DaggerError> {
@@ -3685,11 +3685,11 @@ impl GitRef {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree(&self) -> Directory {
         let query = self.selection.select("tree");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The filesystem tree at this ref.
     ///
@@ -3704,11 +3704,11 @@ impl GitRef {
         if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
             query = query.arg("sshAuthSocket", ssh_auth_socket);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3726,11 +3726,11 @@ impl GitRepository {
     pub fn branch(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("branch");
         query = query.arg("name", name.into());
-        return GitRef {
+        GitRef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns details of a commit.
     ///
@@ -3740,11 +3740,11 @@ impl GitRepository {
     pub fn commit(&self, id: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
-        return GitRef {
+        GitRef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this GitRepository.
     pub async fn id(&self) -> Result<GitRepositoryId, DaggerError> {
@@ -3759,11 +3759,11 @@ impl GitRepository {
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
         query = query.arg("name", name.into());
-        return GitRef {
+        GitRef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns details of a tag.
     ///
@@ -3773,11 +3773,11 @@ impl GitRepository {
     pub fn tag(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("tag");
         query = query.arg("name", name.into());
-        return GitRef {
+        GitRef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -3824,11 +3824,11 @@ impl Host {
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Accesses a directory on the host.
     ///
@@ -3849,11 +3849,11 @@ impl Host {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Accesses a file on the host.
     ///
@@ -3863,11 +3863,11 @@ impl Host {
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this Host.
     pub async fn id(&self) -> Result<HostId, DaggerError> {
@@ -3887,11 +3887,11 @@ impl Host {
     pub fn service(&self, ports: Vec<PortForward>) -> Service {
         let mut query = self.selection.select("service");
         query = query.arg("ports", ports);
-        return Service {
+        Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a service that forwards traffic to a specified address via the host.
     ///
@@ -3909,11 +3909,11 @@ impl Host {
         if let Some(host) = opts.host {
             query = query.arg("host", host);
         }
-        return Service {
+        Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
     /// The file is limited to a size of 512000 bytes.
@@ -3926,11 +3926,11 @@ impl Host {
         let mut query = self.selection.select("setSecretFile");
         query = query.arg("name", name.into());
         query = query.arg("path", path.into());
-        return Secret {
+        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a tunnel that forwards traffic from the host to a service.
     ///
@@ -3947,11 +3947,11 @@ impl Host {
                 Box::pin(async move { service.id().await.unwrap().quote() })
             }),
         );
-        return Service {
+        Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a tunnel that forwards traffic from the host to a service.
     ///
@@ -3974,11 +3974,11 @@ impl Host {
         if let Some(native) = opts.native {
             query = query.arg("native", native);
         }
-        return Service {
+        Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Accesses a Unix socket on the host.
     ///
@@ -3988,11 +3988,11 @@ impl Host {
     pub fn unix_socket(&self, path: impl Into<String>) -> Socket {
         let mut query = self.selection.select("unixSocket");
         query = query.arg("path", path.into());
-        return Socket {
+        Socket {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -4092,11 +4092,11 @@ impl ListTypeDef {
     /// The type of the elements in the list.
     pub fn element_type_def(&self) -> TypeDef {
         let query = self.selection.select("elementTypeDef");
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this ListTypeDef.
     pub async fn id(&self) -> Result<ListTypeDefId, DaggerError> {
@@ -4114,11 +4114,11 @@ impl LocalModuleSource {
     /// The directory containing everything needed to load load and use the module.
     pub fn context_directory(&self) -> Directory {
         let query = self.selection.select("contextDirectory");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this LocalModuleSource.
     pub async fn id(&self) -> Result<LocalModuleSourceId, DaggerError> {
@@ -4164,20 +4164,20 @@ impl Module {
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_diff(&self) -> Directory {
         let query = self.selection.select("generatedContextDiff");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The module source's context plus any configuration and source files created by codegen.
     pub fn generated_context_directory(&self) -> Directory {
         let query = self.selection.select("generatedContextDirectory");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this Module.
     pub async fn id(&self) -> Result<ModuleId, DaggerError> {
@@ -4187,11 +4187,11 @@ impl Module {
     /// Retrieves the module with the objects loaded via its SDK.
     pub fn initialize(&self) -> Module {
         let query = self.selection.select("initialize");
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Interfaces served by this module.
     pub fn interfaces(&self) -> Vec<TypeDef> {
@@ -4219,11 +4219,11 @@ impl Module {
     /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
     pub fn runtime(&self) -> Container {
         let query = self.selection.select("runtime");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
     pub async fn sdk(&self) -> Result<String, DaggerError> {
@@ -4239,11 +4239,11 @@ impl Module {
     /// The source for the module.
     pub fn source(&self) -> ModuleSource {
         let query = self.selection.select("source");
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves the module with the given description
     ///
@@ -4253,11 +4253,11 @@ impl Module {
     pub fn with_description(&self, description: impl Into<String>) -> Module {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// This module plus the given Interface type and associated functions
     pub fn with_interface(&self, iface: TypeDef) -> Module {
@@ -4269,11 +4269,11 @@ impl Module {
                 Box::pin(async move { iface.id().await.unwrap().quote() })
             }),
         );
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// This module plus the given Object type and associated functions.
     pub fn with_object(&self, object: TypeDef) -> Module {
@@ -4285,11 +4285,11 @@ impl Module {
                 Box::pin(async move { object.id().await.unwrap().quote() })
             }),
         );
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves the module with basic configuration loaded if present.
     ///
@@ -4305,11 +4305,11 @@ impl Module {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -4332,11 +4332,11 @@ impl ModuleDependency {
     /// The source for the dependency module.
     pub fn source(&self) -> ModuleSource {
         let query = self.selection.select("source");
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -4355,29 +4355,29 @@ impl ModuleSource {
     /// If the source is a of kind git, the git source representation of it.
     pub fn as_git_source(&self) -> GitModuleSource {
         let query = self.selection.select("asGitSource");
-        return GitModuleSource {
+        GitModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// If the source is of kind local, the local source representation of it.
     pub fn as_local_source(&self) -> LocalModuleSource {
         let query = self.selection.select("asLocalSource");
-        return LocalModuleSource {
+        LocalModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
     pub fn as_module(&self) -> Module {
         let query = self.selection.select("asModule");
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A human readable ref string representation of this module source.
     pub async fn as_string(&self) -> Result<String, DaggerError> {
@@ -4392,11 +4392,11 @@ impl ModuleSource {
     /// The directory containing everything needed to load load and use the module.
     pub fn context_directory(&self) -> Directory {
         let query = self.selection.select("contextDirectory");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
     pub fn dependencies(&self) -> Vec<ModuleDependency> {
@@ -4415,11 +4415,11 @@ impl ModuleSource {
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this ModuleSource.
     pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
@@ -4460,11 +4460,11 @@ impl ModuleSource {
                 Box::pin(async move { dep.id().await.unwrap().quote() })
             }),
         );
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a directory from the caller optionally with a given view applied.
     ///
@@ -4475,11 +4475,11 @@ impl ModuleSource {
     pub fn resolve_directory_from_caller(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("resolveDirectoryFromCaller");
         query = query.arg("path", path.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a directory from the caller optionally with a given view applied.
     ///
@@ -4497,20 +4497,20 @@ impl ModuleSource {
         if let Some(view_name) = opts.view_name {
             query = query.arg("viewName", view_name);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources.
     pub fn resolve_from_caller(&self) -> ModuleSource {
         let query = self.selection.select("resolveFromCaller");
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The path relative to context of the root of the module source, which contains dagger.json. It also contains the module implementation source code, but that may or may not being a subdir of this root.
     pub async fn source_root_subpath(&self) -> Result<String, DaggerError> {
@@ -4530,11 +4530,11 @@ impl ModuleSource {
     pub fn view(&self, name: impl Into<String>) -> ModuleSourceView {
         let mut query = self.selection.select("view");
         query = query.arg("name", name.into());
-        return ModuleSourceView {
+        ModuleSourceView {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
     pub fn views(&self) -> Vec<ModuleSourceView> {
@@ -4559,11 +4559,11 @@ impl ModuleSource {
                 Box::pin(async move { dir.id().await.unwrap().quote() })
             }),
         );
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Append the provided dependencies to the module source's dependency list.
     ///
@@ -4573,11 +4573,11 @@ impl ModuleSource {
     pub fn with_dependencies(&self, dependencies: Vec<ModuleDependencyId>) -> ModuleSource {
         let mut query = self.selection.select("withDependencies");
         query = query.arg("dependencies", dependencies);
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Update the module source with a new name.
     ///
@@ -4587,11 +4587,11 @@ impl ModuleSource {
     pub fn with_name(&self, name: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withName");
         query = query.arg("name", name.into());
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Update the module source with a new SDK.
     ///
@@ -4601,11 +4601,11 @@ impl ModuleSource {
     pub fn with_sdk(&self, sdk: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSDK");
         query = query.arg("sdk", sdk.into());
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Update the module source with a new source subpath.
     ///
@@ -4615,11 +4615,11 @@ impl ModuleSource {
     pub fn with_source_subpath(&self, path: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSourceSubpath");
         query = query.arg("path", path.into());
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Update the module source with a new named view.
     ///
@@ -4641,11 +4641,11 @@ impl ModuleSource {
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),
         );
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -4681,11 +4681,11 @@ impl ObjectTypeDef {
     /// The function used to construct new instances of this object, if any
     pub fn constructor(&self) -> Function {
         let query = self.selection.select("constructor");
-        return Function {
+        Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The doc string for the object, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -4848,11 +4848,11 @@ impl Query {
         query = query.arg("size", size);
         query = query.arg("mediaType", media_type.into());
         query = query.arg("uncompressed", uncompressed.into());
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Retrieves a container builtin to the engine.
     ///
@@ -4862,11 +4862,11 @@ impl Query {
     pub fn builtin_container(&self, digest: impl Into<String>) -> Container {
         let mut query = self.selection.select("builtinContainer");
         query = query.arg("digest", digest.into());
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Constructs a cache volume for a given cache key.
     ///
@@ -4876,11 +4876,11 @@ impl Query {
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
         query = query.arg("key", key.into());
-        return CacheVolume {
+        CacheVolume {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Checks if the current Dagger Engine is compatible with an SDK's required version.
     ///
@@ -4903,11 +4903,11 @@ impl Query {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container(&self) -> Container {
         let query = self.selection.select("container");
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a scratch container.
     /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
@@ -4923,30 +4923,30 @@ impl Query {
         if let Some(platform) = opts.platform {
             query = query.arg("platform", platform);
         }
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The FunctionCall context that the SDK caller is currently executing in.
     /// If the caller is not currently executing in a function, this will return an error.
     pub fn current_function_call(&self) -> FunctionCall {
         let query = self.selection.select("currentFunctionCall");
-        return FunctionCall {
+        FunctionCall {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The module currently being served in the session, if any.
     pub fn current_module(&self) -> CurrentModule {
         let query = self.selection.select("currentModule");
-        return CurrentModule {
+        CurrentModule {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// The TypeDef representations of the objects currently being served in the session.
     pub fn current_type_defs(&self) -> Vec<TypeDef> {
@@ -4969,11 +4969,11 @@ impl Query {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self) -> Directory {
         let query = self.selection.select("directory");
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates an empty directory.
     ///
@@ -4985,11 +4985,11 @@ impl Query {
         if let Some(id) = opts.id {
             query = query.arg("id", id);
         }
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     pub fn file(&self, id: File) -> File {
         let mut query = self.selection.select("file");
@@ -5000,11 +5000,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a function.
     ///
@@ -5022,11 +5022,11 @@ impl Query {
                 Box::pin(async move { return_type.id().await.unwrap().quote() })
             }),
         );
-        return Function {
+        Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a code generation result, given a directory containing the generated code.
     pub fn generated_code(&self, code: Directory) -> GeneratedCode {
@@ -5038,11 +5038,11 @@ impl Query {
                 Box::pin(async move { code.id().await.unwrap().quote() })
             }),
         );
-        return GeneratedCode {
+        GeneratedCode {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Queries a Git repository.
     ///
@@ -5057,11 +5057,11 @@ impl Query {
     pub fn git(&self, url: impl Into<String>) -> GitRepository {
         let mut query = self.selection.select("git");
         query = query.arg("url", url.into());
-        return GitRepository {
+        GitRepository {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Queries a Git repository.
     ///
@@ -5088,20 +5088,20 @@ impl Query {
         if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
             query = query.arg("sshAuthSocket", ssh_auth_socket);
         }
-        return GitRepository {
+        GitRepository {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Queries the host environment.
     pub fn host(&self) -> Host {
         let query = self.selection.select("host");
-        return Host {
+        Host {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a file containing an http remote url content.
     ///
@@ -5112,11 +5112,11 @@ impl Query {
     pub fn http(&self, url: impl Into<String>) -> File {
         let mut query = self.selection.select("http");
         query = query.arg("url", url.into());
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a file containing an http remote url content.
     ///
@@ -5130,11 +5130,11 @@ impl Query {
         if let Some(experimental_service_host) = opts.experimental_service_host {
             query = query.arg("experimentalServiceHost", experimental_service_host);
         }
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a CacheVolume from its ID.
     pub fn load_cache_volume_from_id(&self, id: CacheVolume) -> CacheVolume {
@@ -5146,11 +5146,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return CacheVolume {
+        CacheVolume {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Container from its ID.
     pub fn load_container_from_id(&self, id: Container) -> Container {
@@ -5162,11 +5162,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Container {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a CurrentModule from its ID.
     pub fn load_current_module_from_id(&self, id: CurrentModule) -> CurrentModule {
@@ -5178,11 +5178,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return CurrentModule {
+        CurrentModule {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Directory from its ID.
     pub fn load_directory_from_id(&self, id: Directory) -> Directory {
@@ -5194,11 +5194,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Directory {
+        Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a EnvVariable from its ID.
     pub fn load_env_variable_from_id(&self, id: EnvVariable) -> EnvVariable {
@@ -5210,11 +5210,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return EnvVariable {
+        EnvVariable {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a FieldTypeDef from its ID.
     pub fn load_field_type_def_from_id(&self, id: FieldTypeDef) -> FieldTypeDef {
@@ -5226,11 +5226,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return FieldTypeDef {
+        FieldTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a File from its ID.
     pub fn load_file_from_id(&self, id: File) -> File {
@@ -5242,11 +5242,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return File {
+        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a FunctionArg from its ID.
     pub fn load_function_arg_from_id(&self, id: FunctionArg) -> FunctionArg {
@@ -5258,11 +5258,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return FunctionArg {
+        FunctionArg {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a FunctionCallArgValue from its ID.
     pub fn load_function_call_arg_value_from_id(
@@ -5277,11 +5277,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return FunctionCallArgValue {
+        FunctionCallArgValue {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a FunctionCall from its ID.
     pub fn load_function_call_from_id(&self, id: FunctionCall) -> FunctionCall {
@@ -5293,11 +5293,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return FunctionCall {
+        FunctionCall {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Function from its ID.
     pub fn load_function_from_id(&self, id: Function) -> Function {
@@ -5309,11 +5309,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Function {
+        Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a GeneratedCode from its ID.
     pub fn load_generated_code_from_id(&self, id: GeneratedCode) -> GeneratedCode {
@@ -5325,11 +5325,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return GeneratedCode {
+        GeneratedCode {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a GitModuleSource from its ID.
     pub fn load_git_module_source_from_id(&self, id: GitModuleSource) -> GitModuleSource {
@@ -5341,11 +5341,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return GitModuleSource {
+        GitModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a GitRef from its ID.
     pub fn load_git_ref_from_id(&self, id: GitRef) -> GitRef {
@@ -5357,11 +5357,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return GitRef {
+        GitRef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a GitRepository from its ID.
     pub fn load_git_repository_from_id(&self, id: GitRepository) -> GitRepository {
@@ -5373,11 +5373,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return GitRepository {
+        GitRepository {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Host from its ID.
     pub fn load_host_from_id(&self, id: Host) -> Host {
@@ -5389,11 +5389,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Host {
+        Host {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a InputTypeDef from its ID.
     pub fn load_input_type_def_from_id(&self, id: InputTypeDef) -> InputTypeDef {
@@ -5405,11 +5405,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return InputTypeDef {
+        InputTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a InterfaceTypeDef from its ID.
     pub fn load_interface_type_def_from_id(&self, id: InterfaceTypeDef) -> InterfaceTypeDef {
@@ -5421,11 +5421,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return InterfaceTypeDef {
+        InterfaceTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Label from its ID.
     pub fn load_label_from_id(&self, id: Label) -> Label {
@@ -5437,11 +5437,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Label {
+        Label {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a ListTypeDef from its ID.
     pub fn load_list_type_def_from_id(&self, id: ListTypeDef) -> ListTypeDef {
@@ -5453,11 +5453,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return ListTypeDef {
+        ListTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a LocalModuleSource from its ID.
     pub fn load_local_module_source_from_id(&self, id: LocalModuleSource) -> LocalModuleSource {
@@ -5469,11 +5469,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return LocalModuleSource {
+        LocalModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a ModuleDependency from its ID.
     pub fn load_module_dependency_from_id(&self, id: ModuleDependency) -> ModuleDependency {
@@ -5485,11 +5485,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return ModuleDependency {
+        ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Module from its ID.
     pub fn load_module_from_id(&self, id: Module) -> Module {
@@ -5501,11 +5501,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a ModuleSource from its ID.
     pub fn load_module_source_from_id(&self, id: ModuleSource) -> ModuleSource {
@@ -5517,11 +5517,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a ModuleSourceView from its ID.
     pub fn load_module_source_view_from_id(&self, id: ModuleSourceView) -> ModuleSourceView {
@@ -5533,11 +5533,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return ModuleSourceView {
+        ModuleSourceView {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a ObjectTypeDef from its ID.
     pub fn load_object_type_def_from_id(&self, id: ObjectTypeDef) -> ObjectTypeDef {
@@ -5549,11 +5549,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return ObjectTypeDef {
+        ObjectTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Port from its ID.
     pub fn load_port_from_id(&self, id: Port) -> Port {
@@ -5565,11 +5565,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Port {
+        Port {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Secret from its ID.
     pub fn load_secret_from_id(&self, id: Secret) -> Secret {
@@ -5581,11 +5581,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Secret {
+        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Service from its ID.
     pub fn load_service_from_id(&self, id: Service) -> Service {
@@ -5597,11 +5597,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Service {
+        Service {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Socket from its ID.
     pub fn load_socket_from_id(&self, id: Socket) -> Socket {
@@ -5613,11 +5613,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Socket {
+        Socket {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a Terminal from its ID.
     pub fn load_terminal_from_id(&self, id: Terminal) -> Terminal {
@@ -5629,11 +5629,11 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Terminal {
+        Terminal {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Load a TypeDef from its ID.
     pub fn load_type_def_from_id(&self, id: TypeDef) -> TypeDef {
@@ -5645,20 +5645,20 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a new module.
     pub fn module(&self) -> Module {
         let query = self.selection.select("module");
-        return Module {
+        Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a new module dependency configuration from a module source and name
     ///
@@ -5675,11 +5675,11 @@ impl Query {
                 Box::pin(async move { source.id().await.unwrap().quote() })
             }),
         );
-        return ModuleDependency {
+        ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a new module dependency configuration from a module source and name
     ///
@@ -5703,11 +5703,11 @@ impl Query {
         if let Some(name) = opts.name {
             query = query.arg("name", name);
         }
-        return ModuleDependency {
+        ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a new module source instance from a source ref string.
     ///
@@ -5718,11 +5718,11 @@ impl Query {
     pub fn module_source(&self, ref_string: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("refString", ref_string.into());
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a new module source instance from a source ref string.
     ///
@@ -5740,11 +5740,11 @@ impl Query {
         if let Some(stable) = opts.stable {
             query = query.arg("stable", stable);
         }
-        return ModuleSource {
+        ModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a named sub-pipeline.
     ///
@@ -5755,11 +5755,11 @@ impl Query {
     pub fn pipeline(&self, name: impl Into<String>) -> Query {
         let mut query = self.selection.select("pipeline");
         query = query.arg("name", name.into());
-        return Query {
+        Query {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Creates a named sub-pipeline.
     ///
@@ -5776,11 +5776,11 @@ impl Query {
         if let Some(labels) = opts.labels {
             query = query.arg("labels", labels);
         }
-        return Query {
+        Query {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Reference a secret by name.
     ///
@@ -5790,11 +5790,11 @@ impl Query {
     pub fn secret(&self, name: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
         query = query.arg("name", name.into());
-        return Secret {
+        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Reference a secret by name.
     ///
@@ -5807,11 +5807,11 @@ impl Query {
         if let Some(accessor) = opts.accessor {
             query = query.arg("accessor", accessor);
         }
-        return Secret {
+        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Sets a secret given a user defined name to its plaintext and returns the secret.
     /// The plaintext value is limited to a size of 128000 bytes.
@@ -5824,11 +5824,11 @@ impl Query {
         let mut query = self.selection.select("setSecret");
         query = query.arg("name", name.into());
         query = query.arg("plaintext", plaintext.into());
-        return Secret {
+        Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Loads a socket by its ID.
     pub fn socket(&self, id: Socket) -> Socket {
@@ -5840,20 +5840,20 @@ impl Query {
                 Box::pin(async move { id.id().await.unwrap().quote() })
             }),
         );
-        return Socket {
+        Socket {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Create a new TypeDef.
     pub fn type_def(&self) -> TypeDef {
         let query = self.selection.select("typeDef");
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Clone)]
@@ -6070,38 +6070,38 @@ impl TypeDef {
     /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
     pub fn as_input(&self) -> InputTypeDef {
         let query = self.selection.select("asInput");
-        return InputTypeDef {
+        InputTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null.
     pub fn as_interface(&self) -> InterfaceTypeDef {
         let query = self.selection.select("asInterface");
-        return InterfaceTypeDef {
+        InterfaceTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null.
     pub fn as_list(&self) -> ListTypeDef {
         let query = self.selection.select("asList");
-        return ListTypeDef {
+        ListTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null.
     pub fn as_object(&self) -> ObjectTypeDef {
         let query = self.selection.select("asObject");
-        return ObjectTypeDef {
+        ObjectTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// A unique identifier for this TypeDef.
     pub async fn id(&self) -> Result<TypeDefId, DaggerError> {
@@ -6128,11 +6128,11 @@ impl TypeDef {
                 Box::pin(async move { function.id().await.unwrap().quote() })
             }),
         );
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Adds a static field for an Object TypeDef, failing if the type is not an object.
     ///
@@ -6151,11 +6151,11 @@ impl TypeDef {
                 Box::pin(async move { type_def.id().await.unwrap().quote() })
             }),
         );
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Adds a static field for an Object TypeDef, failing if the type is not an object.
     ///
@@ -6182,11 +6182,11 @@ impl TypeDef {
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
     pub fn with_function(&self, function: Function) -> TypeDef {
@@ -6198,11 +6198,11 @@ impl TypeDef {
                 Box::pin(async move { function.id().await.unwrap().quote() })
             }),
         );
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a TypeDef of kind Interface with the provided name.
     ///
@@ -6212,11 +6212,11 @@ impl TypeDef {
     pub fn with_interface(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withInterface");
         query = query.arg("name", name.into());
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a TypeDef of kind Interface with the provided name.
     ///
@@ -6233,21 +6233,21 @@ impl TypeDef {
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Sets the kind of the type.
     pub fn with_kind(&self, kind: TypeDefKind) -> TypeDef {
         let mut query = self.selection.select("withKind");
         query = query.arg_enum("kind", kind);
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a TypeDef of kind List with the provided type for its elements.
     pub fn with_list_of(&self, element_type: TypeDef) -> TypeDef {
@@ -6259,11 +6259,11 @@ impl TypeDef {
                 Box::pin(async move { element_type.id().await.unwrap().quote() })
             }),
         );
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a TypeDef of kind Object with the provided name.
     /// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
@@ -6274,11 +6274,11 @@ impl TypeDef {
     pub fn with_object(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withObject");
         query = query.arg("name", name.into());
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Returns a TypeDef of kind Object with the provided name.
     /// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
@@ -6296,21 +6296,21 @@ impl TypeDef {
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
     /// Sets whether this type can be set to null.
     pub fn with_optional(&self, optional: bool) -> TypeDef {
         let mut query = self.selection.select("withOptional");
         query = query.arg("optional", optional);
-        return TypeDef {
+        TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        };
+        }
     }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
