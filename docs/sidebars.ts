@@ -247,12 +247,12 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "label": "Consume remote repositories",
+              "label": "Fetch remote repositories",
               "id": "manuals/user/remotes/remote-repositories"
             },
             {
               "type": "doc",
-              "label": "Consume remote container images",
+              "label": "Fetch remote container images",
               "id": "manuals/user/remotes/remote-images"
             },
 
