@@ -28,6 +28,8 @@ defmodule Dagger.MixProject do
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.0"},
       {:nestru, "~> 0.3"},
+      {:opentelemetry_api, "~> 1.3"},
+      {:opentelemetry_exporter, "~> 1.7"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
