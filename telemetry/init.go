@@ -293,11 +293,6 @@ type Config struct {
 // visual perception vs. performance cost.
 const NearlyImmediate = 100 * time.Millisecond
 
-func NewLiveSpanProcessor(exp sdktrace.SpanExporter) LiveSpanProcessor {
-	return inflight.NewBatchSpanProcessor(exp,
-		inflight.WithBatchTimeout(NearlyImmediate))
-}
-
 var ForceLiveTrace = os.Getenv("FORCE_LIVE_TRACE") != ""
 
 // Logger returns a logger with the given name.
@@ -362,7 +357,8 @@ func Init(ctx context.Context, cfg Config) context.Context {
 
 	liveProcessors := make([]LiveSpanProcessor, 0, len(cfg.LiveTraceExporters))
 	for _, exporter := range cfg.LiveTraceExporters {
-		processor := NewLiveSpanProcessor(exporter)
+		processor := inflight.NewBatchSpanProcessor(exporter,
+			inflight.WithBatchTimeout(NearlyImmediate))
 		liveProcessors = append(liveProcessors, processor)
 		SpanProcessors = append(SpanProcessors, processor)
 	}
