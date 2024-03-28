@@ -152,8 +152,8 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 	ctr := base.
 		WithFile(consts.EngineServerPath, build.engineBinary()).
 		WithFile(consts.EngineShimPath, build.shimBinary()).
-		WithFile("/usr/bin/dialstdio", build.dialstdioBinary()).
-		WithExec([]string{"ln", "-s", "/usr/bin/dialstdio", "/usr/bin/buildctl"}).
+		WithFile("/usr/bin/dial-stdio", build.dialstdioBinary()).
+		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
 		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
 		WithFile("/usr/local/bin/runc", build.runcBin(), ContainerWithFileOpts{Permissions: 0o700}).
 		WithDirectory("/usr/local/bin", build.qemuBins()).

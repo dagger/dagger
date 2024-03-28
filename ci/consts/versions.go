@@ -5,9 +5,8 @@ import (
 )
 
 const (
-	EngineServerPath    = "/usr/local/bin/dagger-engine"
-	EngineDialStdioPath = "/usr/local/bin/dial-stdio" // XXX: this isn't used!
-	EngineShimPath      = distconsts.EngineShimPath
+	EngineServerPath = "/usr/local/bin/dagger-engine"
+	EngineShimPath   = distconsts.EngineShimPath
 )
 
 const (
