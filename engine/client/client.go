@@ -54,12 +54,6 @@ type Params struct {
 	// should be started.
 	ServerID string
 
-	// Parent client IDs of this Dagger client.
-	//
-	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
-	// passed from the parent.
-	ParentClientIDs []string
-
 	SecretToken string
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
@@ -265,7 +259,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ServerID:           c.ServerID,
 		ClientHostname:     c.hostname,
 		Labels:             c.labels,
-		ParentClientIDs:    c.ParentClientIDs,
 		ModuleCallerDigest: c.ModuleCallerDigest,
 	})
 
@@ -299,7 +292,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ClientID:                  c.ID(),
 				ClientSecretToken:         c.SecretToken,
 				ServerID:                  c.ServerID,
-				ParentClientIDs:           c.ParentClientIDs,
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
@@ -485,7 +477,6 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 			ClientSecretToken:  c.SecretToken,
 			ServerID:           c.ServerID,
 			ClientHostname:     c.hostname,
-			ParentClientIDs:    c.ParentClientIDs,
 			Labels:             c.labels,
 			ModuleCallerDigest: c.ModuleCallerDigest,
 		}.ToGRPCMD())
