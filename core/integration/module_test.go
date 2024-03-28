@@ -5748,7 +5748,7 @@ func currentSchema(ctx context.Context, t *testing.T, ctr *dagger.Container) *in
 }
 
 var moduleIntrospection = daggerQuery(`
-query { host { directory(path: ".") { asModule { initialize {
+query { host { directory(path: ".") { asModule {
     description
     objects {
         asObject {
@@ -5777,7 +5777,7 @@ query { host { directory(path: ".") { asModule { initialize {
             }
         }
     }
-} } } } }
+} } } }
 `)
 
 func inspectModule(ctx context.Context, t *testing.T, ctr *dagger.Container) gjson.Result {
