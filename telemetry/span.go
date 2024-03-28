@@ -23,7 +23,7 @@ func Encapsulate() trace.SpanStartOption {
 // Internal can be applied to a span to indicate that this span should not be
 // shown to the user by default.
 func Internal() trace.SpanStartOption {
-	return trace.WithAttributes(attribute.Bool(InternalAttr, true))
+	return trace.WithAttributes(attribute.Bool(UIInternalAttr, true))
 }
 
 // End is a helper to end a span with an error if the function returns an error.

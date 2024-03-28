@@ -389,7 +389,7 @@ func (fe *Frontend) ShouldShow(row *TraceRow) bool {
 		return true
 	}
 	if span.IsInternal() && fe.Verbosity < 2 {
-		// internal steps are, by definition, not interesting
+		// internal steps are hidden by default
 		return false
 	}
 	if span.Duration() < TooFastThreshold && fe.Verbosity < 3 {
@@ -698,7 +698,8 @@ func (fe *Frontend) renderVertex(out *termenv.Output, span *Span, depth int) err
 	indent(out, depth)
 	fe.renderStatus(out, span, depth)
 	fmt.Fprint(out, span.Name())
-	fe.renderVertexTasks(out, span, depth)
+	// TODO: when a span has child spans that have progress, do 2-d progress
+	// fe.renderVertexTasks(out, span, depth)
 	fe.renderDuration(out, span)
 	fmt.Fprintln(out)
 	return nil
@@ -781,42 +782,42 @@ func (fe *Frontend) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, duration)
 }
 
-var (
-	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
-)
+// var (
+// 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
+// )
 
-func (fe *Frontend) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
-	tasks := fe.db.Tasks[span.SpanContext().SpanID()]
-	if len(tasks) == 0 {
-		return nil
-	}
-	var spaced bool
-	for _, t := range tasks {
-		var sym termenv.Style
-		if t.Total != 0 {
-			percent := int(100 * (float64(t.Current) / float64(t.Total)))
-			idx := (len(progChars) - 1) * percent / 100
-			chr := progChars[idx]
-			sym = out.String(chr)
-		} else {
-			// TODO: don't bother printing non-progress-bar tasks for now
-			// else if t.Completed != nil {
-			// sym = out.String(ui.IconSuccess)
-			// } else if t.Started != nil {
-			// sym = out.String(ui.DotFilled)
-			// }
-			continue
-		}
-		if t.Completed.IsZero() {
-			sym = sym.Foreground(termenv.ANSIYellow)
-		} else {
-			sym = sym.Foreground(termenv.ANSIGreen)
-		}
-		if !spaced {
-			fmt.Fprint(out, " ")
-			spaced = true
-		}
-		fmt.Fprint(out, sym)
-	}
-	return nil
-}
+// func (fe *Frontend) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
+// 	tasks := fe.db.Tasks[span.SpanContext().SpanID()]
+// 	if len(tasks) == 0 {
+// 		return nil
+// 	}
+// 	var spaced bool
+// 	for _, t := range tasks {
+// 		var sym termenv.Style
+// 		if t.Total != 0 {
+// 			percent := int(100 * (float64(t.Current) / float64(t.Total)))
+// 			idx := (len(progChars) - 1) * percent / 100
+// 			chr := progChars[idx]
+// 			sym = out.String(chr)
+// 		} else {
+// 			// TODO: don't bother printing non-progress-bar tasks for now
+// 			// else if t.Completed != nil {
+// 			// sym = out.String(ui.IconSuccess)
+// 			// } else if t.Started != nil {
+// 			// sym = out.String(ui.DotFilled)
+// 			// }
+// 			continue
+// 		}
+// 		if t.Completed.IsZero() {
+// 			sym = sym.Foreground(termenv.ANSIYellow)
+// 		} else {
+// 			sym = sym.Foreground(termenv.ANSIGreen)
+// 		}
+// 		if !spaced {
+// 			fmt.Fprint(out, " ")
+// 			spaced = true
+// 		}
+// 		fmt.Fprint(out, sym)
+// 	}
+// 	return nil
+// }

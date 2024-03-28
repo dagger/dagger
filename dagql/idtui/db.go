@@ -19,7 +19,6 @@ import (
 type DB struct {
 	Traces   map[trace.TraceID]*Trace
 	Spans    map[trace.SpanID]*Span
-	Tasks    map[trace.SpanID][]*Task
 	Children map[trace.SpanID]map[trace.SpanID]struct{}
 
 	Logs        map[trace.SpanID]*Vterm
@@ -37,7 +36,6 @@ func NewDB() *DB {
 	return &DB{
 		Traces:   make(map[trace.TraceID]*Trace),
 		Spans:    make(map[trace.SpanID]*Span),
-		Tasks:    make(map[trace.SpanID][]*Task),
 		Children: make(map[trace.SpanID]map[trace.SpanID]struct{}),
 
 		Logs:        make(map[trace.SpanID]*Vterm),
@@ -101,7 +99,6 @@ func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) er
 		}
 
 		db.maybeRecordSpan(traceData, span)
-		db.maybeRecordTask(span)
 	}
 	return nil
 }
@@ -235,8 +232,11 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 		case telemetry.UIEncapsulateAttr:
 			spanData.Encapsulate = attr.Value.AsBool()
 
-		case telemetry.InternalAttr:
+		case telemetry.UIInternalAttr:
 			spanData.Internal = attr.Value.AsBool()
+
+		case telemetry.UIPassthroughAttr:
+			spanData.Passthrough = attr.Value.AsBool()
 
 		case telemetry.DagInputsAttr:
 			spanData.Inputs = attr.Value.AsStringSlice()
@@ -275,45 +275,6 @@ func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
 		}
 	}
 	return nil
-}
-
-func (db *DB) maybeRecordTask(span sdktrace.ReadOnlySpan) {
-	attrs := span.Attributes()
-
-	if _, isTask := getAttr(attrs, telemetry.TaskParentAttr); !isTask {
-		return
-	}
-
-	parent := span.Parent().SpanID()
-
-	tasks := db.Tasks[parent]
-
-	task := &Task{
-		Span:      span,
-		Name:      span.Name(),
-		Started:   span.StartTime(),
-		Completed: span.EndTime(),
-	}
-
-	if attr, ok := getAttr(attrs, telemetry.ProgressCurrentAttr); ok {
-		task.Current = attr.AsInt64()
-	}
-	if attr, ok := getAttr(attrs, telemetry.ProgressTotalAttr); ok {
-		task.Total = attr.AsInt64()
-	}
-
-	taskID := span.SpanContext().SpanID()
-
-	var updated bool
-	for i, task := range tasks {
-		if task.Span.SpanContext().SpanID() == taskID {
-			tasks[i] = task
-		}
-	}
-	if !updated {
-		tasks = append(tasks, task)
-		db.Tasks[parent] = tasks
-	}
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
