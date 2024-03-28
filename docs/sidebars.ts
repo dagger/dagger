@@ -132,7 +132,7 @@ module.exports = {
           "label": "Produce artifacts",
           "link": {
             "type": "doc",
-            "id": "manuals/user/artifacts/production/artifacts"
+            "id": "manuals/user/artifacts/production/produce-artifacts"
           },
           "collapsible": true,
           "collapsed": true,
@@ -189,6 +189,10 @@ module.exports = {
         {
           "type": "category",
           "label": "Consume remote resources",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/remotes/remotes"
+          },
           "collapsible": true,
           "collapsed": true,
           "items": [
@@ -205,6 +209,30 @@ module.exports = {
 
           ]
         },
+        {
+          "type": "category",
+          "label": "Visualization",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/visualization/visualization"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Use the Dagger TUI",
+              "id": "manuals/user/visualization/tui"
+            },
+            {
+              "type": "doc",
+              "label": "Get Started with Dagger Cloud",
+              "id": "manuals/user/visualization/cloud-get-started"
+            },
+
+          ]
+        },
+
         /*
         {
           "type": "category",
