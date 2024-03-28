@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 )
 

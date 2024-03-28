@@ -3,7 +3,7 @@ package mage
 import (
 	"context"
 
-	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
+	"github.com/magefile/mage/mg"
 )
 
 type Dagger mg.Namespace

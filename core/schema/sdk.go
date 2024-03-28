@@ -11,7 +11,7 @@ import (
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const (
