@@ -84,7 +84,7 @@ func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
 func (builder *Builder) WithPlatform(p dagger.Platform) *Builder {
 	b := *builder
 	b.Platform = p
-	b.PlatformSpec = platforms.MustParse(string(p))
+	b.PlatformSpec = platforms.Normalize(platforms.MustParse(string(p)))
 	return &b
 }
 
@@ -301,7 +301,9 @@ func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
 	ctr = ctr.WithEnvVariable("GOARCH", build.PlatformSpec.Architecture)
 	switch build.PlatformSpec.Architecture {
 	case "arm", "arm64":
-		if build.PlatformSpec.Variant != "" {
+		switch build.PlatformSpec.Variant {
+		case "", "v8":
+		default:
 			ctr = ctr.WithEnvVariable("GOARM", strings.TrimPrefix(build.PlatformSpec.Variant, "v"))
 		}
 	}
