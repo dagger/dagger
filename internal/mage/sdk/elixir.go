@@ -1,239 +1,49 @@
 package sdk
 
 import (
-	"bytes"
 	"context"
-	"fmt"
 	"os"
-	"regexp"
 	"strconv"
-	"strings"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
 )
 
-const (
-	elixirSDKPath            = "sdk/elixir"
-	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
-	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/engine_conn.ex"
-)
-
-// https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
-var elixirVersions = []string{"1.16.2", "1.15.7", "1.14.5"}
-
-const (
-	otpVersion    = "26.2.3"
-	debianVersion = "20240130"
-)
+type Elixir mg.Namespace
 
 var _ SDK = Elixir{}
 
-type Elixir mg.Namespace
-
 // Lint lints the Elixir SDK
 func (Elixir) Lint(ctx context.Context) error {
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("lint")
-
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
-		ctx,
-		c.Pipeline("dev-engine"),
-		util.DevEngineOpts{Name: "sdk-elixir-test"},
-	)
-	if err != nil {
-		return err
-	}
-
-	cliBinary, err := util.DevelDaggerBinary(ctx, c)
-	if err != nil {
-		return err
-	}
-	cliBinPath := "/.dagger-cli"
-
-	_, err = elixirBase(c, elixirVersions[1]).
-		WithServiceBinding("dagger-engine", devEngine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mix", "lint"}).
-		Sync(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return util.DaggerCall(ctx, "sdk", "elixir", "lint")
 }
 
 // Test tests the Elixir SDK
 func (Elixir) Test(ctx context.Context) error {
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("test")
-
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
-		ctx,
-		c.Pipeline("dev-engine"),
-		util.DevEngineOpts{Name: "sdk-elixir-test"},
-	)
-	if err != nil {
-		return err
-	}
-
-	cliBinary, err := util.DevelDaggerBinary(ctx, c)
-	if err != nil {
-		return err
-	}
-	cliBinPath := "/.dagger-cli"
-
-	for _, elixirVersion := range elixirVersions {
-		_, err := elixirBase(c.Pipeline(elixirVersion), elixirVersion).
-			WithServiceBinding("dagger-engine", devEngine).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-			WithMountedFile(cliBinPath, cliBinary).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-			WithExec([]string{"mix", "test"}).
-			Sync(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return util.DaggerCall(ctx, "sdk", "elixir", "test")
 }
 
 // Generate re-generates the SDK API
 func (Elixir) Generate(ctx context.Context) error {
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
-
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
-		ctx,
-		c.Pipeline("dev-engine"),
-		util.DevEngineOpts{Name: "sdk-elixir-test"},
-	)
-	if err != nil {
-		return err
-	}
-
-	cliBinary, err := util.DevelDaggerBinary(ctx, c)
-	if err != nil {
-		return err
-	}
-	cliBinPath := "/.dagger-cli"
-
-	generated, err := elixirBase(c, elixirVersions[0]).
-		WithServiceBinding("dagger-engine", devEngine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
-		WithMountedFile(cliBinPath, cliBinary).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mix", "run", "scripts/fetch_introspection.exs"}).
-		WithWorkdir("dagger_codegen").
-		WithExec([]string{"mix", "deps.get"}).
-		WithExec([]string{"mix", "escript.build"}).
-		WithExec([]string{"./dagger_codegen", "generate", "--introspection", "../introspection.json", "--outdir", "gen"}).
-		WithExec([]string{"mix", "format", "gen/*.ex"}).
-		Sync(ctx)
-	if err != nil {
-		return err
-	}
-
-	if err := os.RemoveAll(elixirSDKGeneratedPath); err != nil {
-		return err
-	}
-
-	ok, err := generated.
-		Directory("gen").
-		Export(ctx, elixirSDKGeneratedPath)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("cannot export generated code to `%s`", elixirSDKGeneratedPath)
-	}
-	return nil
+	return util.DaggerCall(ctx, "sdk", "elixir", "generate", "export", "--path=.")
 }
 
 // Publish publishes the Elixir SDK
 func (Elixir) Publish(ctx context.Context, tag string) error {
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
+	args := []string{"sdk", "go", "publish", "--tag=" + tag}
 
-	var (
-		version = strings.TrimPrefix(tag, "sdk/elixir/v")
-		mixFile = "sdk/elixir/mix.exs"
-	)
-
-	dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN"))
-
-	mixExs, err := os.ReadFile(mixFile)
-	if err != nil {
-		return err
-	}
-	newMixExs := bytes.Replace(mixExs, []byte(`@version "0.0.0"`), []byte(`@version "`+version+`"`), 1)
-	err = os.WriteFile(mixFile, newMixExs, 0o600)
-	if err != nil {
-		return err
+	if dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN")); dryRun {
+		args = append(args, "--dry-run=true")
 	}
 
-	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
-
-	result := elixirBase(c, elixirVersions[1])
-	args := []string{"mix", "hex.publish", "--yes"}
-	if dryRun {
-		args = append(args, "--dry-run")
-		result = result.WithExec(args)
-	} else {
-		result = result.
-			With(util.HostSecretVar(c, "HEX_API_KEY")).
-			WithExec(args)
+	if _, ok := os.LookupEnv("HEX_API_KEY"); ok {
+		args = append(args, "--hex-api-key=env:HEX_API_KEY")
 	}
-	_, err = result.Sync(ctx)
-	return err
+
+	return util.DaggerCall(ctx, args...)
 }
 
 // Bump the Elixir SDK's Engine dependency
 func (Elixir) Bump(ctx context.Context, engineVersion string) error {
-	contents, err := os.ReadFile(elixirSDKVersionFilePath)
-	if err != nil {
-		return err
-	}
-
-	newVersion := fmt.Sprintf(`@dagger_cli_version "%s"`, strings.TrimPrefix(engineVersion, "v"))
-
-	versionRe, err := regexp.Compile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
-	if err != nil {
-		return err
-	}
-	newContents := versionRe.ReplaceAll(contents, []byte(newVersion))
-	return os.WriteFile(elixirSDKVersionFilePath, newContents, 0o600)
-}
-
-func elixirBase(c *dagger.Client, elixirVersion string) *dagger.Container {
-	mountPath := fmt.Sprintf("/%s", elixirSDKPath)
-
-	return c.Container().
-		From(fmt.Sprintf("hexpm/elixir:%s-erlang-%s-debian-bookworm-%s-slim", elixirVersion, otpVersion, debianVersion)).
-		WithWorkdir(mountPath).
-		WithDirectory(mountPath, util.Repository(c).Directory(elixirSDKPath)).
-		WithExec([]string{"mix", "local.hex", "--force"}).
-		WithExec([]string{"mix", "local.rebar", "--force"}).
-		WithExec([]string{"mix", "deps.get"})
+	return util.DaggerCall(ctx, "sdk", "go", "bump", "--version="+engineVersion, "export", "--path=.")
 }

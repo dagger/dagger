@@ -8,6 +8,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
+	"golang.org/x/sync/errgroup"
 
 	"dagger/build"
 	"dagger/internal/dagger"
@@ -83,7 +84,7 @@ func (e *Engine) Lint(ctx context.Context) error {
 func (e *Engine) Publish(
 	ctx context.Context,
 
-	engineImage string,
+	image string,
 	// +optional
 	platform []Platform,
 
@@ -102,7 +103,7 @@ func (e *Engine) Publish(
 		return "", err
 	}
 
-	ref := fmt.Sprintf("%s:%s", engineImage, builder.Version.EngineVersion())
+	ref := fmt.Sprintf("%s:%s", image, builder.Version.EngineVersion())
 	if e.GPUSupport {
 		ref += "-gpu"
 	}
@@ -130,6 +131,31 @@ func (e *Engine) Publish(
 		return "", err
 	}
 	return digest, nil
+}
+
+func (e *Engine) TestPublish(
+	ctx context.Context,
+
+	// +optional
+	platform []Platform,
+) error {
+	if len(platform) == 0 {
+		platform = []Platform{Platform(platforms.DefaultString())}
+	}
+
+	var eg errgroup.Group
+	for _, platform := range platform {
+		platform := platform
+		eg.Go(func() error {
+			ctr, err := e.container(ctx, platform)
+			if err != nil {
+				return err
+			}
+			_, err = ctr.Sync(ctx)
+			return err
+		})
+	}
+	return eg.Wait()
 }
 
 func (e *Engine) container(ctx context.Context, platform dagger.Platform) (*Container, error) {

@@ -3,6 +3,7 @@ package mage
 import (
 	"context"
 
+	"github.com/dagger/dagger/internal/mage/util"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -19,14 +20,13 @@ func Lint(ctx context.Context) error {
 		{"sdk", "php"},
 	}
 
-	// XXX: running this in parallel makes for *absolute* chaos
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, target := range targets {
 		target := append([]string{}, target...)
 		target = append(target, "lint")
 
 		eg.Go(func() error {
-			return call(ctx, target...)
+			return util.DaggerCall(ctx, target...)
 		})
 	}
 
