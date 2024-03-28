@@ -25,7 +25,7 @@ func (dg *Dagger) installer(ctx context.Context, name string) (func(*Container) 
 		return nil, err
 	}
 
-	cliBinary, err := dg.CLI().File(ctx)
+	cliBinary, err := dg.CLI().File(ctx, "")
 	if err != nil {
 		return nil, err
 	}

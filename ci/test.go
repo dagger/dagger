@@ -13,7 +13,7 @@ type Test struct {
 	Dagger *Dagger // +private
 }
 
-// All runs all Engine tests
+// Run all engine tests
 func (t *Test) All(
 	ctx context.Context,
 	// +optional
@@ -22,18 +22,17 @@ func (t *Test) All(
 	return t.test(ctx, race, "", "./...")
 }
 
-// Important runs Engine Container+Module tests, which give good basic coverage
-// of functionality w/out having to run everything
+// Run "important" engine tests
 func (t *Test) Important(
 	ctx context.Context,
 	// +optional
 	race bool,
 ) error {
+	// These tests give good basic coverage of functionality w/out having to run everything
 	return t.test(ctx, race, `^(TestModule|TestContainer)`, "./...")
 }
 
-// Important runs Engine Container+Module tests, which give good basic coverage
-// of functionality w/out having to run everything
+// Run custom engine tests
 func (t *Test) Custom(
 	ctx context.Context,
 	run string,
@@ -102,7 +101,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		return nil, err
 	}
 
-	devBinary, err := t.Dagger.CLI().File(ctx)
+	devBinary, err := t.Dagger.CLI().File(ctx, "")
 	if err != nil {
 		return nil, err
 	}

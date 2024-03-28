@@ -24,7 +24,7 @@ type RustSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the Rust SDK
+// Lint the Rust SDK
 func (r RustSDK) Lint(ctx context.Context) error {
 	base := r.rustBase(rustDockerStable)
 
@@ -50,7 +50,7 @@ func (r RustSDK) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Test tests the Rust SDK
+// Test the Rust SDK
 func (r RustSDK) Test(ctx context.Context) error {
 	installer, err := r.Dagger.installer(ctx, "sdk-rust-test")
 	if err != nil {
@@ -64,7 +64,7 @@ func (r RustSDK) Test(ctx context.Context) error {
 	return err
 }
 
-// Generate re-generates the Rust SDK API
+// Regenerate the Rust SDK API
 func (r RustSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := r.Dagger.installer(ctx, "sdk-rust-generate")
 	if err != nil {
@@ -83,7 +83,7 @@ func (r RustSDK) Generate(ctx context.Context) (*Directory, error) {
 		WithFile(rustGeneratedAPIPath, generated), nil
 }
 
-// Publish publishes the Rust SDK
+// Publish the Rust SDK
 func (r RustSDK) Publish(
 	ctx context.Context,
 	tag string,

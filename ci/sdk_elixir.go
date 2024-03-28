@@ -28,7 +28,7 @@ type ElixirSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the Elixir SDK
+// Lint the Elixir SDK
 func (t ElixirSDK) Lint(ctx context.Context) error {
 	installer, err := t.Dagger.installer(ctx, "sdk-elixir-lint")
 	if err != nil {
@@ -42,7 +42,7 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 	return err
 }
 
-// Test tests the Elixir SDK
+// Test the Elixir SDK
 func (t ElixirSDK) Test(ctx context.Context) error {
 	installer, err := t.Dagger.installer(ctx, "sdk-elixir-test")
 	if err != nil {
@@ -63,7 +63,7 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Generate re-generates the Elixir SDK API
+// Regenerate the Elixir SDK API
 func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-elixir-generate")
 	if err != nil {
@@ -84,7 +84,7 @@ func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dir, nil
 }
 
-// Publish publishes the Elixir SDK
+// Publish the Elixir SDK
 func (t ElixirSDK) Publish(
 	ctx context.Context,
 	tag string,

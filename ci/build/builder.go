@@ -21,15 +21,15 @@ import (
 var dag = dagger.Connect()
 
 type Builder struct {
-	Source *Directory
+	source *Directory
 
-	Version *VersionInfo
+	version *VersionInfo
 
-	Platform     dagger.Platform
-	PlatformSpec ocispecs.Platform
+	platform     dagger.Platform
+	platformSpec ocispecs.Platform
 
-	Base       string
-	GPUSupport bool
+	base       string
+	gpuSupport bool
 }
 
 func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
@@ -74,44 +74,48 @@ func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
 	})
 
 	return &Builder{
-		Source:       source,
-		Version:      version,
-		Platform:     Platform(platforms.DefaultString()),
-		PlatformSpec: platforms.DefaultSpec(),
+		source:       source,
+		version:      version,
+		platform:     Platform(platforms.DefaultString()),
+		platformSpec: platforms.DefaultSpec(),
 	}, nil
+}
+
+func (builder *Builder) EngineVersion() string {
+	return builder.version.EngineVersion()
 }
 
 func (builder *Builder) WithPlatform(p dagger.Platform) *Builder {
 	b := *builder
-	b.Platform = p
-	b.PlatformSpec = platforms.Normalize(platforms.MustParse(string(p)))
+	b.platform = p
+	b.platformSpec = platforms.Normalize(platforms.MustParse(string(p)))
 	return &b
 }
 
 func (builder *Builder) WithUbuntuBase() *Builder {
 	b := *builder
-	b.Base = "ubuntu"
+	b.base = "ubuntu"
 	return &b
 }
 
 func (builder *Builder) WithAlpineBase() *Builder {
 	b := *builder
-	builder.Base = "alpine"
+	builder.base = "alpine"
 	return &b
 }
 
 func (builder *Builder) WithGPUSupport() *Builder {
 	b := *builder
-	builder.GPUSupport = true
+	builder.gpuSupport = true
 	return &b
 }
 
 func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 	var base *dagger.Container
-	switch build.Base {
+	switch build.base {
 	case "alpine", "":
 		base = dag.
-			Container(ContainerOpts{Platform: build.Platform}).
+			Container(ContainerOpts{Platform: build.platform}).
 			From(consts.AlpineImage).
 			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
 			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
@@ -130,7 +134,7 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 			}).
 			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
 	case "ubuntu":
-		base = dag.Container(dagger.ContainerOpts{Platform: build.Platform}).
+		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 			From("ubuntu:"+consts.UbuntuVersion).
 			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
@@ -142,7 +146,7 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 			}).
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
 	default:
-		return nil, fmt.Errorf("unsupported engine base %q", build.Base)
+		return nil, fmt.Errorf("unsupported engine base %q", build.base)
 	}
 
 	ctr := base.
@@ -159,12 +163,12 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 		WithDirectory("/", build.cniPlugins()).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
-	if build.GPUSupport {
-		if build.Base != "ubuntu" {
-			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu", build.Base)
+	if build.gpuSupport {
+		if build.base != "ubuntu" {
+			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu", build.base)
 		}
-		if build.PlatformSpec.Architecture != "amd64" {
-			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "ubuntu", build.PlatformSpec.Architecture)
+		if build.platformSpec.Architecture != "amd64" {
+			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "ubuntu", build.platformSpec.Architecture)
 		}
 		ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
 		ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
@@ -195,14 +199,14 @@ func (build *Builder) dialstdioBinary() *File {
 }
 
 func (build *Builder) binary(pkg string) *File {
-	base := util.GoBase(build.Source).With(build.goPlatformEnv)
+	base := util.GoBase(build.source).With(build.goPlatformEnv)
 
 	ldflags := []string{
 		"-s", "-w",
 	}
 	// XXX: not every binary needs this actually!
 	// because it changes often, it causes lots of cache misses
-	ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.Version.EngineVersion())
+	ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version.EngineVersion())
 
 	output := filepath.Join("./bin/", filepath.Base(pkg))
 	result := base.
@@ -225,7 +229,7 @@ func (build *Builder) runcBin() *File {
 		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
 		With(build.goPlatformEnv).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
-		WithEnvVariable("TARGETPLATFORM", string(build.Platform)).
+		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
 		WithEnvVariable("CGO_ENABLED", "1").
 		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
 		WithDirectory("/", dag.Container().From("tonistiigi/xx:1.2.1").Rootfs()).
@@ -252,7 +256,7 @@ func (build *Builder) runcBin() *File {
 
 func (build *Builder) qemuBins() *Directory {
 	return dag.
-		Container(ContainerOpts{Platform: build.Platform}).
+		Container(ContainerOpts{Platform: build.platform}).
 		From(consts.QemuBinImage).
 		Rootfs()
 }
@@ -262,7 +266,7 @@ func (build *Builder) cniPlugins() *Directory {
 	// can contain CVEs in the builds on github releases
 	// If GPU support is enabled use a Debian image:
 	ctr := dag.Container()
-	switch build.Base {
+	switch build.base {
 	case "alpine", "":
 		ctr = ctr.From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
 			WithExec([]string{"apk", "add", "build-base", "go", "git"})
@@ -297,14 +301,14 @@ func (build *Builder) cniPlugins() *Directory {
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
-	ctr = ctr.WithEnvVariable("GOOS", build.PlatformSpec.OS)
-	ctr = ctr.WithEnvVariable("GOARCH", build.PlatformSpec.Architecture)
-	switch build.PlatformSpec.Architecture {
+	ctr = ctr.WithEnvVariable("GOOS", build.platformSpec.OS)
+	ctr = ctr.WithEnvVariable("GOARCH", build.platformSpec.Architecture)
+	switch build.platformSpec.Architecture {
 	case "arm", "arm64":
-		switch build.PlatformSpec.Variant {
+		switch build.platformSpec.Variant {
 		case "", "v8":
 		default:
-			ctr = ctr.WithEnvVariable("GOARM", strings.TrimPrefix(build.PlatformSpec.Variant, "v"))
+			ctr = ctr.WithEnvVariable("GOARM", strings.TrimPrefix(build.platformSpec.Variant, "v"))
 		}
 	}
 	return ctr

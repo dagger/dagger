@@ -19,17 +19,17 @@ type PHPSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the PHP SDK
+// Lint the PHP SDK
 func (t PHPSDK) Lint(ctx context.Context) error {
 	return util.DiffDirectoryF(ctx, filepath.Join(phpSDKPath, phpSDKGeneratedDir), t.Dagger.Source, t.Generate)
 }
 
-// Test tests the PHP SDK
+// Test the PHP SDK
 func (t PHPSDK) Test(ctx context.Context) error {
 	return fmt.Errorf("not implemented")
 }
 
-// Generate re-generates the PHP SDK API
+// Regenerate the PHP SDK API
 func (t PHPSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-php-generate")
 	if err != nil {
@@ -47,7 +47,7 @@ func (t PHPSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dag.Directory().WithDirectory(phpSDKPath, generated), nil
 }
 
-// Publish publishes the PHP SDK
+// Publish the PHP SDK
 func (t PHPSDK) Publish(
 	ctx context.Context,
 	tag string,

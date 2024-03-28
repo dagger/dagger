@@ -7,7 +7,7 @@ import (
 )
 
 type Dagger struct {
-	Source *Directory
+	Source *Directory // +private
 }
 
 func New(source *Directory) *Dagger {
@@ -44,6 +44,7 @@ func (ci *Dagger) SDK() *SDK {
 	}
 }
 
+// Creates a dev container that has a running CLI connected to a dagger engine
 func (ci *Dagger) Dev(
 	ctx context.Context,
 	// +optional
@@ -68,7 +69,7 @@ func (ci *Dagger) Dev(
 		return nil, err
 	}
 
-	client, err := ci.CLI().File(ctx)
+	client, err := ci.CLI().File(ctx, "")
 	if err != nil {
 		return nil, err
 	}

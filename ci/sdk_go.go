@@ -16,7 +16,7 @@ type GoSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the Go SDK
+// Lint the Go SDK
 func (t GoSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -34,7 +34,7 @@ func (t GoSDK) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Test tests the Go SDK
+// Test the Go SDK
 func (t GoSDK) Test(ctx context.Context) error {
 	installer, err := t.Dagger.installer(ctx, "sdk-go-test")
 	if err != nil {
@@ -52,7 +52,7 @@ func (t GoSDK) Test(ctx context.Context) error {
 	return err
 }
 
-// Generate re-generates the Go SDK API
+// Regenerate the Go SDK API
 func (t GoSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-go-generate")
 	if err != nil {
@@ -68,7 +68,7 @@ func (t GoSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dag.Directory().WithDirectory("sdk/go", generated), nil
 }
 
-// Publish publishes the Go SDK
+// Publish the Go SDK
 func (t GoSDK) Publish(
 	ctx context.Context,
 	tag string,

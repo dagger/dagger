@@ -14,7 +14,7 @@ import (
 
 func (build *Builder) pythonSDKContent(ctx context.Context) WithContainerFunc {
 	return func(ctr *Container) *Container {
-		rootfs := dag.Directory().WithDirectory("/", build.Source.Directory("sdk/python"), DirectoryWithDirectoryOpts{
+		rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/python"), DirectoryWithDirectoryOpts{
 			Include: []string{
 				"pyproject.toml",
 				"src/**/*.py",
@@ -50,7 +50,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) WithContainerFunc {
 
 func (build *Builder) typescriptSDKContent(ctx context.Context) WithContainerFunc {
 	return func(ctr *Container) *Container {
-		rootfs := dag.Directory().WithDirectory("/", build.Source.Directory("sdk/typescript"), DirectoryWithDirectoryOpts{
+		rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), DirectoryWithDirectoryOpts{
 			Include: []string{
 				"**/*.ts",
 				"LICENSE",
@@ -91,7 +91,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) WithContainerFun
 
 func (build *Builder) goSDKContent(ctx context.Context) WithContainerFunc {
 	return func(ctr *Container) *Container {
-		base := dag.Container(ContainerOpts{Platform: build.Platform}).
+		base := dag.Container(ContainerOpts{Platform: build.platform}).
 			From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion))
 
 		sdkCtrTarball := base.

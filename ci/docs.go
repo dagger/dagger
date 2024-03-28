@@ -27,7 +27,7 @@ pagination_prev: null
 # CLI Reference
 `
 
-// Lint lints documentation files
+// Lint documentation files
 func (d Docs) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -63,7 +63,7 @@ func (d Docs) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Generate re-generates the API schema and CLI reference
+// Regenerate the API schema and CLI reference docs
 func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -87,7 +87,7 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return sdl.WithDirectory("/", cli), nil
 }
 
-// GenerateSdl re-generates the API schema
+// Regenerate the API schema
 func (d Docs) GenerateSdl(ctx context.Context) (*Directory, error) {
 	introspectionJSON :=
 		util.GoBase(d.Dagger.Source).
@@ -106,7 +106,7 @@ func (d Docs) GenerateSdl(ctx context.Context) (*Directory, error) {
 	return dag.Directory().WithFile(generatedSchemaPath, generated), nil
 }
 
-// GenerateCli re-generates the CLI reference documentation
+// Regenerate the CLI reference docs
 func (d Docs) GenerateCli(ctx context.Context) (*Directory, error) {
 	// Should we keep `--include-experimental`?
 	generated := util.GoBase(d.Dagger.Source).

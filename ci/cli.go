@@ -15,10 +15,19 @@ type CLI struct {
 	Dagger *Dagger // +private
 }
 
-func (cli *CLI) File(ctx context.Context) (*File, error) {
+// Build the CLI binary
+func (cli *CLI) File(
+	ctx context.Context,
+
+	// +optional
+	platform dagger.Platform,
+) (*File, error) {
 	builder, err := build.NewBuilder(ctx, cli.Dagger.Source)
 	if err != nil {
 		return nil, err
+	}
+	if platform != "" {
+		builder = builder.WithPlatform(platform)
 	}
 	return builder.CLI(ctx)
 }
@@ -28,7 +37,7 @@ const (
 	goReleaserVersion = "v1.22.1-pro"
 )
 
-// Publish publishes dagger CLI using GoReleaser
+// Publish the CLI using GoReleaser
 func (cli *CLI) Publish(
 	ctx context.Context,
 	version string,
@@ -95,12 +104,13 @@ func (cli *CLI) Publish(
 	return err
 }
 
-// TestPublish verifies that the CLI builds without actually publishing anything
-// TODO: ideally this would also use go releaser, but we want to run this step in
-// PRs and locally and we use goreleaser pro features that require a key which is private.
-// For now, this just builds the CLI for the same targets so there's at least some
-// coverage
+// Verify that the CLI builds without actually publishing anything
 func (cli *CLI) TestPublish(ctx context.Context) error {
+	// TODO: ideally this would also use go releaser, but we want to run this
+	// step in PRs and locally and we use goreleaser pro features that require
+	// a key which is private. For now, this just builds the CLI for the same
+	// targets so there's at least some coverage
+
 	oses := []string{"linux", "windows", "darwin"}
 	arches := []string{"amd64", "arm64", "arm"}
 

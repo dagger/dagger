@@ -39,125 +39,7 @@ func (e *Engine) WithGPUSupport() *Engine {
 	return e
 }
 
-func (e *Engine) Service(
-	ctx context.Context,
-	name string,
-) (*Service, error) {
-	var cacheVolumeName string
-	if name != "" {
-		cacheVolumeName = "dagger-dev-engine-state-" + name
-	} else {
-		cacheVolumeName = "dagger-dev-engine-state"
-	}
-	cacheVolumeName = cacheVolumeName + identity.NewID()
-
-	e = e.
-		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
-		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`)
-	devEngine, err := e.Container(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	devEngine = devEngine.
-		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName)).
-		WithExec(nil, ContainerWithExecOpts{
-			InsecureRootCapabilities:      true,
-			ExperimentalPrivilegedNesting: true,
-		})
-
-	return devEngine.AsService(), nil
-}
-
-// Lint lints the engine
-func (e *Engine) Lint(ctx context.Context) error {
-	_, err := dag.Container().
-		From("golangci/golangci-lint:v1.55-alpine").
-		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
-		WithWorkdir("/app").
-		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-		Sync(ctx)
-	return err
-}
-
-func (e *Engine) Publish(
-	ctx context.Context,
-
-	image string,
-	// +optional
-	platform []Platform,
-
-	// +optional
-	registry *string,
-	// +optional
-	registryUsername *string,
-	// +optional
-	registryPassword *Secret,
-) (string, error) {
-	if len(platform) == 0 {
-		platform = []Platform{Platform(platforms.DefaultString())}
-	}
-	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
-	if err != nil {
-		return "", err
-	}
-
-	ref := fmt.Sprintf("%s:%s", image, builder.Version.EngineVersion())
-	if e.GPUSupport {
-		ref += "-gpu"
-	}
-
-	var engines []*Container
-	for _, platform := range platform {
-		ctr, err := e.Container(ctx, platform)
-		if err != nil {
-			return "", err
-		}
-		engines = append(engines, ctr)
-	}
-
-	ctr := dag.Container()
-	if registry != nil && registryUsername != nil && registryPassword != nil {
-		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
-	}
-
-	digest, err := ctr.
-		Publish(ctx, ref, dagger.ContainerPublishOpts{
-			PlatformVariants:  engines,
-			ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
-		})
-	if err != nil {
-		return "", err
-	}
-	return digest, nil
-}
-
-func (e *Engine) TestPublish(
-	ctx context.Context,
-
-	// +optional
-	platform []Platform,
-) error {
-	if len(platform) == 0 {
-		platform = []Platform{Platform(platforms.DefaultString())}
-	}
-
-	var eg errgroup.Group
-	for _, platform := range platform {
-		platform := platform
-		eg.Go(func() error {
-			ctr, err := e.Container(ctx, platform)
-			if err != nil {
-				return err
-			}
-			_, err = ctr.Sync(ctx)
-			return err
-		})
-	}
-	return eg.Wait()
-}
-
+// Build the engine container
 func (e *Engine) Container(
 	ctx context.Context,
 
@@ -193,4 +75,126 @@ func (e *Engine) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 	return ctr, nil
+}
+
+// Create a test engine service
+func (e *Engine) Service(
+	ctx context.Context,
+	name string,
+) (*Service, error) {
+	var cacheVolumeName string
+	if name != "" {
+		cacheVolumeName = "dagger-dev-engine-state-" + name
+	} else {
+		cacheVolumeName = "dagger-dev-engine-state"
+	}
+	cacheVolumeName = cacheVolumeName + identity.NewID()
+
+	e = e.
+		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
+		WithArg(`network-name`, `dagger-dev`).
+		WithArg(`network-cidr`, `10.88.0.0/16`)
+	devEngine, err := e.Container(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	devEngine = devEngine.
+		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName)).
+		WithExec(nil, ContainerWithExecOpts{
+			InsecureRootCapabilities:      true,
+			ExperimentalPrivilegedNesting: true,
+		})
+
+	return devEngine.AsService(), nil
+}
+
+// Lint the engine
+func (e *Engine) Lint(ctx context.Context) error {
+	_, err := dag.Container().
+		From("golangci/golangci-lint:v1.55-alpine").
+		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
+		WithWorkdir("/app").
+		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
+		Sync(ctx)
+	return err
+}
+
+// Publish all engine images to a registry
+func (e *Engine) Publish(
+	ctx context.Context,
+
+	image string,
+	// +optional
+	platform []Platform,
+
+	// +optional
+	registry *string,
+	// +optional
+	registryUsername *string,
+	// +optional
+	registryPassword *Secret,
+) (string, error) {
+	if len(platform) == 0 {
+		platform = []Platform{Platform(platforms.DefaultString())}
+	}
+	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
+	if err != nil {
+		return "", err
+	}
+
+	ref := fmt.Sprintf("%s:%s", image, builder.EngineVersion())
+	if e.GPUSupport {
+		ref += "-gpu"
+	}
+
+	var engines []*Container
+	for _, platform := range platform {
+		ctr, err := e.Container(ctx, platform)
+		if err != nil {
+			return "", err
+		}
+		engines = append(engines, ctr)
+	}
+
+	ctr := dag.Container()
+	if registry != nil && registryUsername != nil && registryPassword != nil {
+		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
+	}
+
+	digest, err := ctr.
+		Publish(ctx, ref, dagger.ContainerPublishOpts{
+			PlatformVariants:  engines,
+			ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
+		})
+	if err != nil {
+		return "", err
+	}
+	return digest, nil
+}
+
+// Verify that the engine builds without actually publishing anything
+func (e *Engine) TestPublish(
+	ctx context.Context,
+
+	// +optional
+	platform []Platform,
+) error {
+	if len(platform) == 0 {
+		platform = []Platform{Platform(platforms.DefaultString())}
+	}
+
+	var eg errgroup.Group
+	for _, platform := range platform {
+		platform := platform
+		eg.Go(func() error {
+			ctr, err := e.Container(ctx, platform)
+			if err != nil {
+				return err
+			}
+			_, err = ctr.Sync(ctx)
+			return err
+		})
+	}
+	return eg.Wait()
 }

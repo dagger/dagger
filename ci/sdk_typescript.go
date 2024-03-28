@@ -27,7 +27,7 @@ type TypescriptSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the Typescript SDK
+// Lint the Typescript SDK
 func (t TypescriptSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -67,7 +67,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Test tests the Typescript SDK
+// Test the Typescript SDK
 func (t TypescriptSDK) Test(ctx context.Context) error {
 	installer, err := t.Dagger.installer(ctx, "sdk-typescript-test")
 	if err != nil {
@@ -99,7 +99,7 @@ func (t TypescriptSDK) Test(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Generate re-generates the Typescript SDK API
+// Regenerate the Typescript SDK API
 func (t TypescriptSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-typescript-generate")
 	if err != nil {
@@ -119,7 +119,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dag.Directory().WithFile(typescriptGeneratedAPIPath, generated), nil
 }
 
-// Publish publishes the Typescript SDK
+// Publish the Typescript SDK
 func (t TypescriptSDK) Publish(
 	ctx context.Context,
 	tag string,

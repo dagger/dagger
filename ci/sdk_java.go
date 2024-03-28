@@ -21,7 +21,7 @@ type JavaSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the Java SDK
+// Lint the Java SDK
 func (t JavaSDK) Lint(ctx context.Context) error {
 	_, err := t.javaBase().
 		WithExec([]string{"mvn", "fmt:check"}).
@@ -29,7 +29,7 @@ func (t JavaSDK) Lint(ctx context.Context) error {
 	return err
 }
 
-// Test tests the Java SDK
+// Test the Java SDK
 func (t JavaSDK) Test(ctx context.Context) error {
 	installer, err := t.Dagger.installer(ctx, "sdk-java-test")
 	if err != nil {
@@ -43,7 +43,7 @@ func (t JavaSDK) Test(ctx context.Context) error {
 	return err
 }
 
-// Generate re-generates the Java SDK API
+// Regenerate the Java SDK API
 func (t JavaSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-java-generate")
 	if err != nil {
@@ -73,7 +73,7 @@ func (t JavaSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dir, nil
 }
 
-// Publish publishes the Java SDK
+// Publish the Java SDK
 func (t JavaSDK) Publish(
 	ctx context.Context,
 	tag string,

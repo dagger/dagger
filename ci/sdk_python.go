@@ -25,7 +25,7 @@ type PythonSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint lints the Python SDK
+// Lint the Python SDK
 func (t PythonSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -57,7 +57,7 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Test tests the Python SDK
+// Test the Python SDK
 func (t PythonSDK) Test(ctx context.Context) error {
 	installer, err := t.Dagger.installer(ctx, "sdk-python-test")
 	if err != nil {
@@ -101,7 +101,7 @@ func (t PythonSDK) Test(ctx context.Context) error {
 	return eg.Wait()
 }
 
-// Generate re-generates the Python SDK API
+// Regenerate the Python SDK API
 func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-python-generate")
 	if err != nil {
@@ -117,7 +117,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil
 }
 
-// Publish publishes the Python SDK
+// Publish the Python SDK
 func (t PythonSDK) Publish(
 	ctx context.Context,
 	tag string,
