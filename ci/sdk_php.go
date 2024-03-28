@@ -21,7 +21,7 @@ type PHPSDK struct {
 
 // Lint lints the PHP SDK
 func (t PHPSDK) Lint(ctx context.Context) error {
-	return util.DiffDirectoryF(ctx, "sdk/php", t.Dagger.Source, t.Generate)
+	return util.DiffDirectoryF(ctx, filepath.Join(phpSDKPath, phpSDKGeneratedDir), t.Dagger.Source, t.Generate)
 }
 
 // Test tests the PHP SDK
