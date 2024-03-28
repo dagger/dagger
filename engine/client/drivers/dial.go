@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/vito/progrock"
 
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
@@ -30,7 +29,7 @@ type dialDriver struct {
 	fn func(*url.URL) (*connh.ConnectionHelper, error)
 }
 
-func (d *dialDriver) Provision(ctx context.Context, _ *progrock.VertexRecorder, target *url.URL, _ *DriverOpts) (Connector, error) {
+func (d *dialDriver) Provision(ctx context.Context, target *url.URL, _ *DriverOpts) (Connector, error) {
 	return dialConnector{dialDriver: d, target: target}, nil
 }
 

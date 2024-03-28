@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/engine"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -27,21 +27,21 @@ import (
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
-	"github.com/moby/buildkit/util/tracing/transform"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/sdk/trace"
+	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type BuildkitController struct {
 	BuildkitControllerOpts
-	*tracev1.UnimplementedTraceServiceServer // needed for grpc service register to not complain
 
 	llbSolver             *llbsolver.Solver
 	genericSolver         *solver.Solver
@@ -67,7 +67,7 @@ type BuildkitControllerOpts struct {
 	Entitlements           []string
 	EngineName             string
 	Frontends              map[string]frontend.Frontend
-	TraceCollector         trace.SpanExporter
+	TelemetryPubSub        *telemetry.PubSub
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	DNSConfig              *oci.DNSConfig
@@ -188,6 +188,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Debug("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
 		bklog.G(ctx).WithError(err).Debug("session manager handle conn done")
+		slog.Warn("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
 		if err != nil {
 			return fmt.Errorf("handleConn: %w", err)
 		}
@@ -369,20 +370,20 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 	return resp, nil
 }
 
-func (e *BuildkitController) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
-	if e.TraceCollector == nil {
-		return nil, status.Errorf(codes.Unavailable, "trace collector not configured")
-	}
-	err := e.TraceCollector.ExportSpans(ctx, transform.Spans(req.GetResourceSpans()))
-	if err != nil {
-		return nil, err
-	}
-	return &tracev1.ExportTraceServiceResponse{}, nil
-}
-
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
-	tracev1.RegisterTraceServiceServer(server, e)
+
+	traceSrv := &telemetry.TraceServer{PubSub: e.TelemetryPubSub}
+	tracev1.RegisterTraceServiceServer(server, traceSrv)
+	telemetry.RegisterTracesSourceServer(server, traceSrv)
+
+	logsSrv := &telemetry.LogsServer{PubSub: e.TelemetryPubSub}
+	logsv1.RegisterLogsServiceServer(server, logsSrv)
+	telemetry.RegisterLogsSourceServer(server, logsSrv)
+
+	metricsSrv := &telemetry.MetricsServer{PubSub: e.TelemetryPubSub}
+	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
+	telemetry.RegisterMetricsSourceServer(server, metricsSrv)
 }
 
 func (e *BuildkitController) Close() error {
@@ -438,7 +439,6 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 }
 
 func (e *BuildkitController) Status(req *controlapi.StatusRequest, stream controlapi.Control_StatusServer) error {
-	// we send status updates over progrock session attachables instead
 	return fmt.Errorf("status not implemented")
 }
 

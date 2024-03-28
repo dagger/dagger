@@ -12,17 +12,16 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/telemetry"
 )
 
 // Directory is a content-addressed directory.
@@ -154,9 +153,9 @@ func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
 	return nil
 }
 
-func (dir *Directory) WithPipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Directory, error) {
+func (dir *Directory) WithPipeline(ctx context.Context, name, description string) (*Directory, error) {
 	dir = dir.Clone()
-	dir.Query = dir.Query.WithPipeline(name, description, labels)
+	dir.Query = dir.Query.WithPipeline(name, description)
 	return dir, nil
 }
 
@@ -716,9 +715,8 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		defPB = dir.LLB
 	}
 
-	ctx, vtx := progrock.Span(ctx, identity.NewID(),
-		fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
-	defer func() { vtx.Done(rerr) }()
+	ctx, span := Tracer().Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
+	defer telemetry.End(span, func() error { return rerr })
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {

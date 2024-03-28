@@ -24,7 +24,7 @@ func TestCacheMapConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			val, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
+			val, _, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 				initialized[i] = true
 				return i, nil
 			})
@@ -47,27 +47,29 @@ func TestCacheMapErrors(t *testing.T) {
 	commonKey := 42
 
 	myErr := errors.New("nope")
-	_, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
+	_, _, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 0, myErr
 	})
 	assert.Assert(t, is.ErrorIs(err, myErr))
 
 	otherErr := errors.New("nope 2")
-	_, err = c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
+	_, _, err = c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 0, otherErr
 	})
 	assert.Assert(t, is.ErrorIs(err, otherErr))
 
-	res, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
+	res, cached, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 1, nil
 	})
 	assert.NilError(t, err)
+	assert.Assert(t, !cached)
 	assert.Equal(t, 1, res)
 
-	res, err = c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
+	res, cached, err = c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
 		return 0, errors.New("ignored")
 	})
 	assert.NilError(t, err)
+	assert.Assert(t, cached)
 	assert.Equal(t, 1, res)
 }
 
@@ -77,29 +79,33 @@ func TestCacheMapRecursiveCall(t *testing.T) {
 	ctx := context.Background()
 
 	// recursive calls that are guaranteed to result in deadlock should error out
-	_, err := c.GetOrInitialize(ctx, 1, func(ctx context.Context) (int, error) {
-		return c.GetOrInitialize(ctx, 1, func(ctx context.Context) (int, error) {
+	_, _, err := c.GetOrInitialize(ctx, 1, func(ctx context.Context) (int, error) {
+		res, _, err := c.GetOrInitialize(ctx, 1, func(ctx context.Context) (int, error) {
 			return 2, nil
 		})
+		return res, err
 	})
 	assert.Assert(t, is.ErrorIs(err, ErrCacheMapRecursiveCall))
 
 	// verify same cachemap can be called recursively w/ different keys
-	v, err := c.GetOrInitialize(ctx, 10, func(ctx context.Context) (int, error) {
-		return c.GetOrInitialize(ctx, 11, func(ctx context.Context) (int, error) {
+	v, _, err := c.GetOrInitialize(ctx, 10, func(ctx context.Context) (int, error) {
+		res, _, err := c.GetOrInitialize(ctx, 11, func(ctx context.Context) (int, error) {
 			return 12, nil
 		})
+		return res, err
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 12, v)
 
 	// verify other cachemaps can be called w/ same keys
 	c2 := newCacheMap[int, int]()
-	v, err = c.GetOrInitialize(ctx, 100, func(ctx context.Context) (int, error) {
-		return c2.GetOrInitialize(ctx, 100, func(ctx context.Context) (int, error) {
+	v, cached, err := c.GetOrInitialize(ctx, 100, func(ctx context.Context) (int, error) {
+		res, _, err := c2.GetOrInitialize(ctx, 100, func(ctx context.Context) (int, error) {
 			return 101, nil
 		})
+		return res, err
 	})
 	assert.NilError(t, err)
 	assert.Equal(t, 101, v)
+	assert.Assert(t, !cached)
 }

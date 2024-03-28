@@ -13,6 +13,8 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 {{ if IsModuleCode }}
 	"{{.PackageImport}}/internal/querybuilder"
@@ -163,12 +165,30 @@ func getClientParams() (graphql.Client, *querybuilder.Selection) {
 	httpClient := &http.Client{
 		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			r.SetBasicAuth(sessionToken, "")
+
+			// detect $TRACEPARENT set by 'dagger run'
+			r = r.WithContext(fallbackSpanContext(r.Context()))
+
+			// propagate span context via headers (i.e. for Dagger-in-Dagger)
+			propagation.TraceContext{}.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
+
 			return dialTransport.RoundTrip(r)
 		}),
 	}
 	gqlClient := errorWrappedClient{graphql.NewClient(fmt.Sprintf("http://%s/query", host), httpClient)}
 
 	return gqlClient, querybuilder.Query()
+}
+
+func fallbackSpanContext(ctx context.Context) context.Context {
+	if trace.SpanContextFromContext(ctx).IsValid() {
+		return ctx
+	}
+	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
+		slog.Debug("falling back to $TRACEPARENT", "value", p)
+		return propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
+	}
+	return ctx
 }
 
 // TODO: pollutes namespace, move to non internal package in dagger.io/dagger

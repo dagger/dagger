@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,9 @@ import (
 	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/containerd/containerd/defaults"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -35,19 +39,18 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
-
-const ProgrockParentHeader = "X-Progrock-Parent"
 
 type Params struct {
 	// The id of the server to connect to, or if blank a new one
@@ -67,9 +70,6 @@ type Params struct {
 
 	DisableHostRW bool
 
-	JournalFile        string
-	ProgrockWriter     progrock.Writer
-	ProgrockParent     string
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
 
@@ -77,11 +77,18 @@ type Params struct {
 	// grpc context metadata for any api requests back to the engine. It's used by the API
 	// server to determine which schema to serve and other module context metadata.
 	ModuleCallerDigest digest.Digest
+
+	EngineTrace sdktrace.SpanExporter
+	EngineLogs  sdklog.LogExporter
 }
 
 type Client struct {
 	Params
-	eg             *errgroup.Group
+
+	rootCtx context.Context
+
+	eg *errgroup.Group
+
 	internalCtx    context.Context
 	internalCancel context.CancelFunc
 
@@ -89,7 +96,8 @@ type Client struct {
 	closeRequests context.CancelFunc
 	closeMu       sync.RWMutex
 
-	Recorder *progrock.Recorder
+	telemetry     *errgroup.Group
+	telemetryConn *grpc.ClientConn
 
 	httpClient *http.Client
 	bkClient   *bkclient.Client
@@ -106,7 +114,7 @@ type Client struct {
 
 	nestedSessionPort int
 
-	labels []pipeline.Label
+	labels telemetry.Labels
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
@@ -118,47 +126,28 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.ServerID = identity.NewID()
 	}
 
-	c.internalCtx, c.internalCancel = context.WithCancel(context.Background())
+	// keep the root ctx around so we can detect whether we've been interrupted,
+	// so we can drain immediately in that scenario
+	c.rootCtx = ctx
+
+	// NB: decouple from the originator's cancel ctx
+	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancel(context.WithoutCancel(ctx))
+
 	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
+
 	defer func() {
 		if rerr != nil {
 			c.internalCancel()
 		}
 	}()
-	c.closeCtx, c.closeRequests = context.WithCancel(context.Background())
 
-	// progress
-	progMultiW := progrock.MultiWriter{}
-	if c.ProgrockWriter != nil {
-		progMultiW = append(progMultiW, c.ProgrockWriter)
-	}
-	if c.JournalFile != "" {
-		fw, err := newProgrockFileWriter(c.JournalFile)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		progMultiW = append(progMultiW, fw)
+	workdir, err := os.Getwd()
+	if err != nil {
+		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 
-	tel := telemetry.New()
-	var cloudURL string
-	if tel.Enabled() {
-		cloudURL = tel.URL()
-		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
-	}
-	if c.ProgrockParent != "" {
-		c.Recorder = progrock.NewSubRecorder(progMultiW, c.ProgrockParent)
-	} else {
-		c.Recorder = progrock.NewRecorder(progMultiW)
-	}
-	ctx = progrock.ToContext(ctx, c.Recorder)
-
-	defer func() {
-		if rerr != nil {
-			c.Recorder.Close()
-		}
-	}()
+	c.labels = telemetry.LoadDefaultLabels(workdir, engine.Version)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
@@ -180,65 +169,148 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	// sneakily using ModuleCallerDigest here because it seems nicer than just
-	// making something up, and should be pretty much 1:1 I think (even
-	// non-cached things will have a different caller digest each time)
-	connectDigest := params.ModuleCallerDigest
-	var opts []progrock.VertexOpt
-	if connectDigest == "" {
-		connectDigest = digest.FromString("_root") // arbitrary
-	} else {
-		opts = append(opts, progrock.Internal())
-	}
-
-	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	_, loader := progrock.Span(ctx, connectDigest.String(), "connect", opts...)
-	defer func() { loader.Done(rerr) }()
-
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
-
-	var err error
 	c.upstreamCacheImportOptions, c.upstreamCacheExportOptions, err = allCacheConfigsFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 
-	remote, err := url.Parse(c.RunnerHost)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse runner host: %w", err)
+	connectSpanOpts := []trace.SpanStartOption{
+		telemetry.Encapsulate(),
 	}
 
-	bkClient, bkInfo, err := newBuildkitClient(ctx, loader, remote, c.UserAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("new client: %w", err)
+	if c.Params.ModuleCallerDigest != "" {
+		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
 	}
 
-	c.bkClient = bkClient
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	connectCtx, span := Tracer().Start(ctx, "connect", connectSpanOpts...)
+	defer telemetry.End(span, func() error { return rerr })
+
+	if err := c.startEngine(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("start engine: %w", err)
+	}
+
 	defer func() {
 		if rerr != nil {
 			c.bkClient.Close()
 		}
 	}()
 
+	if err := c.startSession(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("start session: %w", err)
+	}
+
+	defer func() {
+		if rerr != nil {
+			c.bkSession.Close()
+		}
+	}()
+
+	if err := c.daggerConnect(ctx); err != nil {
+		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
+	}
+
+	return c, ctx, nil
+}
+
+func (c *Client) startEngine(ctx context.Context) (rerr error) {
+	remote, err := url.Parse(c.RunnerHost)
+	if err != nil {
+		return fmt.Errorf("parse runner host: %w", err)
+	}
+
+	driver, err := drivers.GetDriver(remote.Scheme)
+	if err != nil {
+		return err
+	}
+
+	var cloudToken string
+	if v, ok := os.LookupEnv(drivers.EnvDaggerCloudToken); ok {
+		cloudToken = v
+	} else if _, ok := os.LookupEnv(envDaggerCloudCachetoken); ok {
+		cloudToken = v
+	}
+
+	connector, err := driver.Provision(ctx, remote, &drivers.DriverOpts{
+		UserAgent:        c.UserAgent,
+		DaggerCloudToken: cloudToken,
+		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+		// Open a separate connection for telemetry.
+		telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return connector.Connect(c.internalCtx)
+			}),
+			// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
+			// Shrinking IDs might help.
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
+			grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+			// Uncomment to measure telemetry traffic.
+			// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
+			// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
+			grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return fmt.Errorf("telemetry grpc dial: %w", err)
+		}
+		c.telemetryConn = telemetryConn
+		c.telemetry = new(errgroup.Group)
+
+		if c.EngineTrace != nil {
+			if err := c.exportTraces(telemetry.NewTracesSourceClient(telemetryConn)); err != nil {
+				return fmt.Errorf("export traces: %w", err)
+			}
+		}
+
+		if c.EngineLogs != nil {
+			if err := c.exportLogs(telemetry.NewLogsSourceClient(telemetryConn)); err != nil {
+				return fmt.Errorf("export logs: %w", err)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("attach to telemetry: %w", err)
+	}
+
+	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
+	if err != nil {
+		return fmt.Errorf("new client: %w", err)
+	}
+
+	c.bkClient = bkClient
+
 	if c.EngineNameCallback != nil {
 		engineName := fmt.Sprintf("%s (version %s)", bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
 		c.EngineNameCallback(engineName)
 	}
 
+	return nil
+}
+
+func (c *Client) startSession(ctx context.Context) (rerr error) {
+	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
+	defer telemetry.End(sessionSpan, func() error { return rerr })
+
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, nil, fmt.Errorf("get hostname: %w", err)
+		return fmt.Errorf("get hostname: %w", err)
 	}
 	c.hostname = hostname
-
-	sessionTask := loader.Task("starting session")
 
 	sharedKey := ""
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("new s: %w", err)
+		return fmt.Errorf("new session: %w", err)
 	}
 	c.bkSession = bkSession
 	defer func() {
@@ -246,18 +318,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			c.bkSession.Close()
 		}
 	}()
-
-	workdir, err := os.Getwd()
-	if err != nil {
-		return nil, nil, fmt.Errorf("get workdir: %w", err)
-	}
-
-	labels := pipeline.Labels{}
-	labels.AppendCILabel()
-	labels = append(labels, pipeline.LoadVCSLabels(workdir)...)
-	labels = append(labels, pipeline.LoadClientLabels(engine.Version)...)
-
-	c.labels = labels
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:           c.ID(),
@@ -268,9 +328,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ParentClientIDs:    c.ParentClientIDs,
 		ModuleCallerDigest: c.ModuleCallerDigest,
 	})
-
-	// progress
-	bkSession.Allow(progRockAttachable{progMultiW})
 
 	// filesync
 	if !c.DisableHostRW {
@@ -287,8 +344,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil))
 
 	// host=>container networking
-	bkSession.Allow(session.NewTunnelListenerAttachable(c.Recorder))
-	ctx = progrock.ToContext(ctx, c.Recorder)
+	bkSession.Allow(session.NewTunnelListenerAttachable(ctx))
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
@@ -320,51 +376,48 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		DisableKeepAlives: true,
 	}}
 
+	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+		// Make an introspection request, since those get ignored by telemetry and
+		// we don't want this to show up, since it's just a health check.
+		err := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
+		if err != nil {
+			// only show errors once the time between attempts exceeds this threshold, otherwise common
+			// cases of 1 or 2 retries become too noisy
+			if elapsed > time.Second {
+				fmt.Fprintln(stderr, "Failed to connect; retrying...", err)
+			}
+		} else {
+			fmt.Fprintln(stdout, "OK!")
+		}
+		return err
+	}); err != nil {
+		return fmt.Errorf("poll for session: %w", err)
+	}
+
+	return nil
+}
+
+func retry(ctx context.Context, fn func(time.Duration, context.Context) error) error {
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 10 * time.Millisecond
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
-	err = backoff.Retry(func() error {
+	start := time.Now()
+	return backoff.Retry(func() error {
+		if ctx.Err() != nil {
+			return backoff.Permanent(ctx.Err())
+		}
 		nextBackoff := bo.NextBackOff()
 		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
 		defer cancel()
-
-		// Make an introspection request, since those get ignored by telemetry and
-		// we don't want this to show up, since it's just a health check.
-		innerErr := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
-		if innerErr != nil {
-			// only show errors once the time between attempts exceeds this threshold, otherwise common
-			// cases of 1 or 2 retries become too noisy
-			if nextBackoff > time.Second {
-				fmt.Fprintln(loader.Stdout(), "Failed to connect; retrying...", progrock.ErrorLabel(innerErr))
-			}
-		} else {
-			fmt.Fprintln(loader.Stdout(), "OK!")
-		}
-
-		return innerErr
+		return fn(time.Since(start), ctx)
 	}, backoff.WithContext(bo, connectRetryCtx))
-
-	sessionTask.Done(err)
-
-	if err != nil {
-		return nil, nil, fmt.Errorf("connect: %w", err)
-	}
-
-	if c.CloudURLCallback != nil && cloudURL != "" {
-		c.CloudURLCallback(cloudURL)
-	}
-
-	if err := c.daggerConnect(ctx); err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
-	}
-
-	return c, ctx, nil
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
 	var err error
-	c.daggerClient, err = dagger.Connect(context.Background(),
+	c.daggerClient, err = dagger.Connect(
+		context.WithoutCancel(ctx),
 		dagger.WithConn(EngineConn(c)),
 		dagger.WithSkipCompatibilityCheck())
 	return err
@@ -413,23 +466,117 @@ func (c *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
-	// mark all groups completed
-	// close the recorder so the UI exits
-	if c.Recorder != nil {
-		c.Recorder.Complete()
-		c.Recorder.Close()
+	// Wait for telemetry to finish draining
+	if c.telemetry != nil {
+		if err := c.telemetry.Wait(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
+		}
 	}
 
 	return rerr
 }
 
+func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
+	// NB: we never actually want to interrupt this, since it's relied upon for
+	// seeing what's going on, even during shutdown
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	spans, err := tracesClient.Subscribe(ctx, &telemetry.TelemetryRequest{
+		TraceId: traceID[:],
+	})
+	if err != nil {
+		return fmt.Errorf("subscribe to spans: %w", err)
+	}
+
+	slog.Debug("exporting spans from engine")
+
+	c.telemetry.Go(func() error {
+		defer slog.Debug("done exporting spans from engine", "ctxErr", ctx.Err())
+
+		for {
+			data, err := spans.Recv()
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
+				return fmt.Errorf("recv log: %w", err)
+			}
+
+			spans := telemetry.SpansFromProto(data.GetResourceSpans())
+
+			slog.Debug("received spans from engine", "len", len(spans))
+
+			for _, span := range spans {
+				slog.Debug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
+			}
+
+			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
+				return fmt.Errorf("export %d spans: %w", len(spans), err)
+			}
+		}
+	})
+
+	return nil
+}
+
+func (c *Client) exportLogs(logsClient telemetry.LogsSourceClient) error {
+	// NB: we never actually want to interrupt this, since it's relied upon for
+	// seeing what's going on, even during shutdown
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	traceID := trace.SpanContextFromContext(ctx).TraceID()
+	logs, err := logsClient.Subscribe(ctx, &telemetry.TelemetryRequest{
+		TraceId: traceID[:],
+	})
+	if err != nil {
+		return fmt.Errorf("subscribe to logs: %w", err)
+	}
+
+	slog.Debug("exporting logs from engine")
+
+	c.telemetry.Go(func() error {
+		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
+
+		for {
+			data, err := logs.Recv()
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
+				return fmt.Errorf("recv log: %w", err)
+			}
+
+			logs := telemetry.TransformPBLogs(data.GetResourceLogs())
+
+			slog.Debug("received logs from engine", "len", len(logs))
+
+			if err := c.EngineLogs.ExportLogs(ctx, logs); err != nil {
+				return fmt.Errorf("export %d logs: %w", len(logs), err)
+			}
+		}
+	})
+
+	return nil
+}
+
 func (c *Client) shutdownServer() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// don't immediately cancel shutdown if we're shutting down because we were
+	// canceled
+	ctx := context.WithoutCancel(c.internalCtx)
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger/shutdown", nil)
 	if err != nil {
 		return fmt.Errorf("new request: %w", err)
+	}
+
+	if c.rootCtx.Err() != nil {
+		req.URL.RawQuery = url.Values{
+			"immediate": []string{"true"},
+		}.Encode()
 	}
 
 	req.SetBasicAuth(c.SecretToken, "")
@@ -556,6 +703,8 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFunc, w http.ResponseWriter, r *http.Request) {
+	slog.Warn("serving hijacked HTTP with trace", "ctx", trace.SpanContextFromContext(ctx).TraceID())
+
 	serverConn, err := c.DialContext(ctx, "", "")
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
@@ -845,14 +994,6 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	}
 }
 
-type progRockAttachable struct {
-	writer progrock.Writer
-}
-
-func (a progRockAttachable) Register(srv *grpc.Server) {
-	progrock.RegisterProgressServiceServer(srv, progrock.NewRPCReceiver(a.writer))
-}
-
 const (
 	// cache configs that should be applied to be import and export
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
@@ -946,7 +1087,6 @@ func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
 
 func EngineConn(engineClient *Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
-		req.Header.Add(ProgrockParentHeader, progrock.FromContext(req.Context()).Parent)
 		req.SetBasicAuth(engineClient.SecretToken, "")
 		resp := httptest.NewRecorder()
 		engineClient.ServeHTTP(resp, req)

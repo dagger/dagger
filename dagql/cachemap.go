@@ -9,7 +9,7 @@ import (
 )
 
 type CacheMap[K comparable, T any] interface {
-	GetOrInitialize(context.Context, K, func(context.Context) (T, error)) (T, error)
+	GetOrInitialize(context.Context, K, func(context.Context) (T, error)) (T, bool, error)
 	Get(context.Context, K) (T, error)
 	Keys() []K
 }
@@ -56,14 +56,14 @@ func (m *cacheMap[K, T]) Set(key K, val T) {
 	m.l.Unlock()
 }
 
-func (m *cacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, error) {
+func (m *cacheMap[K, T]) GetOrInitialize(ctx context.Context, key K, fn func(ctx context.Context) (T, error)) (T, bool, error) {
 	return m.GetOrInitializeOnHit(ctx, key, fn, func(T, error) {})
 }
 
-func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn func(ctx context.Context) (T, error), onHit func(T, error)) (T, error) {
+func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn func(ctx context.Context) (T, error), onHit func(T, error)) (T, bool, error) {
 	if v := ctx.Value(cacheMapContextKey[K, T]{key: key, m: m}); v != nil {
 		var zero T
-		return zero, ErrCacheMapRecursiveCall
+		return zero, false, ErrCacheMapRecursiveCall
 	}
 
 	m.l.Lock()
@@ -73,7 +73,7 @@ func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 		if onHit != nil {
 			onHit(c.val, c.err)
 		}
-		return c.val, c.err
+		return c.val, true, c.err
 	}
 
 	c := &cache[T]{}
@@ -91,7 +91,7 @@ func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 		m.l.Unlock()
 	}
 
-	return c.val, c.err
+	return c.val, false, c.err
 }
 
 func (m *cacheMap[K, T]) Get(ctx context.Context, key K) (T, error) {

@@ -50,6 +50,7 @@ func (m *Test) Fn() BadIface {
 			With(daggerFunctions()).
 			Sync(ctx)
 		require.Error(t, err)
+		require.NoError(t, c.Close())
 		require.Regexp(t, `missing method .* from DaggerObject interface, which must be embedded in interfaces used in Functions and Objects`, logs.String())
 	})
 }

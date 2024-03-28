@@ -22,12 +22,10 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
-	"github.com/vito/progrock"
 )
 
 func (c *Client) LocalImport(
 	ctx context.Context,
-	recorder *progrock.Recorder,
 	platform specs.Platform,
 	srcPath string,
 	excludePatterns []string,
@@ -80,15 +78,12 @@ func (c *Client) LocalImport(
 	}
 	copyPB := copyDef.ToPB()
 
-	RecordVertexes(recorder, copyPB)
-
 	return c.DefToBlob(ctx, copyPB)
 }
 
 // Import a directory from the engine container, as opposed to from a client
 func (c *Client) EngineContainerLocalImport(
 	ctx context.Context,
-	recorder *progrock.Recorder,
 	platform specs.Platform,
 	srcPath string,
 	excludePatterns []string,
@@ -102,7 +97,7 @@ func (c *Client) EngineContainerLocalImport(
 		ClientID:       c.ID(),
 		ClientHostname: hostname,
 	})
-	return c.LocalImport(ctx, recorder, platform, srcPath, excludePatterns, includePatterns)
+	return c.LocalImport(ctx, platform, srcPath, excludePatterns, includePatterns)
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {

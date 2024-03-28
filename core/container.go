@@ -17,11 +17,6 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
-	"github.com/vektah/gqlparser/v2/ast"
-
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -33,9 +28,12 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	"github.com/vito/progrock"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -287,10 +285,6 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 
 	platform := container.Platform
 
-	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
-	// We create a sub-pipeline to encapsulate both.
-	ctx, subRecorder := progrock.WithGroup(ctx, fmt.Sprintf("from %s", addr), progrock.Weak())
-
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, err
@@ -328,9 +322,6 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 
 	container.FS = def.ToPB()
 
-	// associate vertexes to the 'from' sub-pipeline
-	buildkit.RecordVertexes(subRecorder, container.FS)
-
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = digested.String()
 
@@ -363,9 +354,6 @@ func (container *Container) Build(
 
 	svcs := container.Query.Services
 	bk := container.Query.Buildkit
-
-	// add a weak group for the docker build vertices
-	ctx, subRecorder := progrock.WithGroup(ctx, "docker build", progrock.Weak())
 
 	detach, _, err := svcs.StartBindings(ctx, container.Services)
 	if err != nil {
@@ -433,9 +421,6 @@ func (container *Container) Build(
 	if err != nil {
 		return nil, err
 	}
-
-	// associate vertexes to the 'docker build' sub-pipeline
-	buildkit.RecordVertexes(subRecorder, def.ToPB())
 
 	container.FS = def.ToPB()
 	container.FS.Source = nil
@@ -976,9 +961,9 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return container, nil
 }
 
-func (container *Container) WithPipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Container, error) {
+func (container *Container) WithPipeline(ctx context.Context, name, description string) (*Container, error) {
 	container = container.Clone()
-	container.Query = container.Query.WithPipeline(name, description, labels)
+	container.Query = container.Query.WithPipeline(name, description)
 	return container, nil
 }
 

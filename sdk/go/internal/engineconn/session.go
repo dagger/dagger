@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type cliSessionConn struct {
@@ -83,6 +85,16 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}
 
 	env := os.Environ()
+
+	// detect $TRACEPARENT set by 'dagger run'
+	ctx = fallbackSpanContext(ctx)
+
+	// propagate trace context to the child process (i.e. for Dagger-in-Dagger)
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+	for key, value := range carrier {
+		env = append(env, strings.ToUpper(key)+"="+value)
+	}
 
 	cmdCtx, cmdCancel := context.WithCancel(ctx)
 

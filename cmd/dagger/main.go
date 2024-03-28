@@ -1,22 +1,32 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
-	"runtime/trace"
+	runtimetrace "runtime/trace"
 	"strings"
 	"unicode"
 
 	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 )
 
@@ -31,7 +41,8 @@ var (
 
 	workdir string
 
-	debug bool
+	debug     bool
+	verbosity int
 )
 
 func init() {
@@ -41,7 +52,9 @@ func init() {
 	logrus.StandardLogger().SetOutput(io.Discard)
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Show more information for debugging")
+
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
+	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "show debug logs and full verbosity")
 
 	for _, fl := range []string{"workdir"} {
 		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {
@@ -55,6 +68,7 @@ func init() {
 		versionCmd,
 		queryCmd,
 		runCmd,
+		watchCmd,
 		configCmd,
 		moduleInitCmd,
 		moduleInstallCmd,
@@ -104,10 +118,10 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("create trace: %w", err)
 			}
 
-			if err := trace.Start(traceF); err != nil {
+			if err := runtimetrace.Start(traceF); err != nil {
 				return fmt.Errorf("start trace: %w", err)
 			}
-			cobra.OnFinalize(trace.Stop)
+			cobra.OnFinalize(runtimetrace.Stop)
 		}
 
 		if pprofAddr != "" {
@@ -124,7 +138,8 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
-		t := analytics.New(analytics.DefaultConfig())
+		labels := telemetry.LoadDefaultLabels(workdir, engine.Version)
+		t := analytics.New(analytics.DefaultConfig(labels))
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
 		cobra.OnFinalize(func() {
 			t.Close()
@@ -140,13 +155,88 @@ var rootCmd = &cobra.Command{
 	},
 }
 
+var Frontend = idtui.New()
+
+func parseGlobalFlags() []string {
+	filtered := []string{}
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "-v":
+			verbosity = 1
+		case "-vv":
+			verbosity = 2
+		case "-vvv":
+			verbosity = 3
+		case "--debug":
+			debug = true
+		case "--progress=plain":
+			progress = "plain"
+		case "--silent":
+			silent = true
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered
+}
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/cli")
+}
+
+func Resource() *resource.Resource {
+	attrs := []attribute.KeyValue{
+		semconv.ServiceName("dagger-cli"),
+		semconv.ServiceVersion(engine.Version),
+		semconv.ProcessCommandArgs(os.Args...),
+	}
+	for k, v := range telemetry.LoadDefaultLabels(workdir, engine.Version) {
+		attrs = append(attrs, attribute.String(k, v))
+	}
+	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
+}
+
 func main() {
-	closer := tracing.Init()
-	if err := rootCmd.Execute(); err != nil {
-		closer.Close()
+	rootCmd.SetArgs(parseGlobalFlags())
+
+	Frontend.Debug = debug
+	Frontend.Plain = progress == "plain"
+	Frontend.Silent = silent
+	Frontend.Verbosity = verbosity
+
+	ctx := context.Background()
+
+	if err := Frontend.Run(ctx, func(ctx context.Context) (rerr error) {
+		// Init tracing as early as possible and shutdown after the command
+		// completes, ensuring progress is fully flushed to the frontend.
+		ctx = telemetry.Init(ctx, telemetry.Config{
+			Detect:             true,
+			Resource:           Resource(),
+			LiveTraceExporters: []sdktrace.SpanExporter{Frontend},
+			LiveLogExporters:   []sdklog.LogExporter{Frontend},
+		})
+		defer telemetry.Close()
+
+		// Set the full command string as the name of the root span.
+		//
+		// If you pass credentials in plaintext, yes, they will be leaked; don't do
+		// that, since they will also be leaked in various other places (like the
+		// process tree). Use Secret arguments instead.
+		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
+		defer telemetry.End(span, func() error { return rerr })
+
+		// Set the span as the primary span for the frontend.
+		Frontend.SetPrimary(span.SpanContext().SpanID())
+
+		// Direct command stdout/stderr to span logs via OpenTelemetry.
+		ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, "dagger")
+		rootCmd.SetOut(stdout)
+		rootCmd.SetErr(stderr)
+
+		return rootCmd.ExecuteContext(ctx)
+	}); err != nil {
 		os.Exit(1)
 	}
-	closer.Close()
 }
 
 func NormalizeWorkdir(workdir string) (string, error) {

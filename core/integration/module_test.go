@@ -1000,6 +1000,7 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
+	t.Log(logs.String())
 	require.Contains(t, logs.String(), "nested structs are not supported")
 }
 

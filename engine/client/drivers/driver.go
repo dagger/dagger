@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-
-	"github.com/vito/progrock"
 )
 
 type Driver interface {
 	// Provision creates any underlying resources for a driver, and returns a
 	// Connector that can connect to it.
-	Provision(ctx context.Context, rec *progrock.VertexRecorder, url *url.URL, opts *DriverOpts) (Connector, error)
+	Provision(ctx context.Context, url *url.URL, opts *DriverOpts) (Connector, error)
 }
 
 type Connector interface {
