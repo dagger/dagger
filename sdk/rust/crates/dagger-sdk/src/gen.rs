@@ -8,14 +8,14 @@ use tokio::process::Child;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheVolumeId(pub String);
-impl Into<CacheVolumeId> for &str {
-    fn into(self) -> CacheVolumeId {
-        CacheVolumeId(self.to_string())
+impl From<&str> for CacheVolumeId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<CacheVolumeId> for String {
-    fn into(self) -> CacheVolumeId {
-        CacheVolumeId(self.clone())
+impl From<String> for CacheVolumeId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl CacheVolumeId {
@@ -25,14 +25,14 @@ impl CacheVolumeId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ContainerId(pub String);
-impl Into<ContainerId> for &str {
-    fn into(self) -> ContainerId {
-        ContainerId(self.to_string())
+impl From<&str> for ContainerId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ContainerId> for String {
-    fn into(self) -> ContainerId {
-        ContainerId(self.clone())
+impl From<String> for ContainerId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ContainerId {
@@ -42,14 +42,14 @@ impl ContainerId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CurrentModuleId(pub String);
-impl Into<CurrentModuleId> for &str {
-    fn into(self) -> CurrentModuleId {
-        CurrentModuleId(self.to_string())
+impl From<&str> for CurrentModuleId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<CurrentModuleId> for String {
-    fn into(self) -> CurrentModuleId {
-        CurrentModuleId(self.clone())
+impl From<String> for CurrentModuleId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl CurrentModuleId {
@@ -59,14 +59,14 @@ impl CurrentModuleId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct DirectoryId(pub String);
-impl Into<DirectoryId> for &str {
-    fn into(self) -> DirectoryId {
-        DirectoryId(self.to_string())
+impl From<&str> for DirectoryId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<DirectoryId> for String {
-    fn into(self) -> DirectoryId {
-        DirectoryId(self.clone())
+impl From<String> for DirectoryId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl DirectoryId {
@@ -76,14 +76,14 @@ impl DirectoryId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct EnvVariableId(pub String);
-impl Into<EnvVariableId> for &str {
-    fn into(self) -> EnvVariableId {
-        EnvVariableId(self.to_string())
+impl From<&str> for EnvVariableId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<EnvVariableId> for String {
-    fn into(self) -> EnvVariableId {
-        EnvVariableId(self.clone())
+impl From<String> for EnvVariableId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl EnvVariableId {
@@ -93,14 +93,14 @@ impl EnvVariableId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FieldTypeDefId(pub String);
-impl Into<FieldTypeDefId> for &str {
-    fn into(self) -> FieldTypeDefId {
-        FieldTypeDefId(self.to_string())
+impl From<&str> for FieldTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<FieldTypeDefId> for String {
-    fn into(self) -> FieldTypeDefId {
-        FieldTypeDefId(self.clone())
+impl From<String> for FieldTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl FieldTypeDefId {
@@ -110,14 +110,14 @@ impl FieldTypeDefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FileId(pub String);
-impl Into<FileId> for &str {
-    fn into(self) -> FileId {
-        FileId(self.to_string())
+impl From<&str> for FileId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<FileId> for String {
-    fn into(self) -> FileId {
-        FileId(self.clone())
+impl From<String> for FileId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl FileId {
@@ -127,14 +127,14 @@ impl FileId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FunctionArgId(pub String);
-impl Into<FunctionArgId> for &str {
-    fn into(self) -> FunctionArgId {
-        FunctionArgId(self.to_string())
+impl From<&str> for FunctionArgId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<FunctionArgId> for String {
-    fn into(self) -> FunctionArgId {
-        FunctionArgId(self.clone())
+impl From<String> for FunctionArgId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl FunctionArgId {
@@ -144,14 +144,14 @@ impl FunctionArgId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FunctionCallArgValueId(pub String);
-impl Into<FunctionCallArgValueId> for &str {
-    fn into(self) -> FunctionCallArgValueId {
-        FunctionCallArgValueId(self.to_string())
+impl From<&str> for FunctionCallArgValueId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<FunctionCallArgValueId> for String {
-    fn into(self) -> FunctionCallArgValueId {
-        FunctionCallArgValueId(self.clone())
+impl From<String> for FunctionCallArgValueId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl FunctionCallArgValueId {
@@ -161,14 +161,14 @@ impl FunctionCallArgValueId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FunctionCallId(pub String);
-impl Into<FunctionCallId> for &str {
-    fn into(self) -> FunctionCallId {
-        FunctionCallId(self.to_string())
+impl From<&str> for FunctionCallId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<FunctionCallId> for String {
-    fn into(self) -> FunctionCallId {
-        FunctionCallId(self.clone())
+impl From<String> for FunctionCallId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl FunctionCallId {
@@ -178,14 +178,14 @@ impl FunctionCallId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FunctionId(pub String);
-impl Into<FunctionId> for &str {
-    fn into(self) -> FunctionId {
-        FunctionId(self.to_string())
+impl From<&str> for FunctionId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<FunctionId> for String {
-    fn into(self) -> FunctionId {
-        FunctionId(self.clone())
+impl From<String> for FunctionId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl FunctionId {
@@ -195,14 +195,14 @@ impl FunctionId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GeneratedCodeId(pub String);
-impl Into<GeneratedCodeId> for &str {
-    fn into(self) -> GeneratedCodeId {
-        GeneratedCodeId(self.to_string())
+impl From<&str> for GeneratedCodeId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<GeneratedCodeId> for String {
-    fn into(self) -> GeneratedCodeId {
-        GeneratedCodeId(self.clone())
+impl From<String> for GeneratedCodeId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl GeneratedCodeId {
@@ -212,14 +212,14 @@ impl GeneratedCodeId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GitModuleSourceId(pub String);
-impl Into<GitModuleSourceId> for &str {
-    fn into(self) -> GitModuleSourceId {
-        GitModuleSourceId(self.to_string())
+impl From<&str> for GitModuleSourceId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<GitModuleSourceId> for String {
-    fn into(self) -> GitModuleSourceId {
-        GitModuleSourceId(self.clone())
+impl From<String> for GitModuleSourceId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl GitModuleSourceId {
@@ -229,14 +229,14 @@ impl GitModuleSourceId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GitRefId(pub String);
-impl Into<GitRefId> for &str {
-    fn into(self) -> GitRefId {
-        GitRefId(self.to_string())
+impl From<&str> for GitRefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<GitRefId> for String {
-    fn into(self) -> GitRefId {
-        GitRefId(self.clone())
+impl From<String> for GitRefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl GitRefId {
@@ -246,14 +246,14 @@ impl GitRefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GitRepositoryId(pub String);
-impl Into<GitRepositoryId> for &str {
-    fn into(self) -> GitRepositoryId {
-        GitRepositoryId(self.to_string())
+impl From<&str> for GitRepositoryId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<GitRepositoryId> for String {
-    fn into(self) -> GitRepositoryId {
-        GitRepositoryId(self.clone())
+impl From<String> for GitRepositoryId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl GitRepositoryId {
@@ -263,14 +263,14 @@ impl GitRepositoryId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct HostId(pub String);
-impl Into<HostId> for &str {
-    fn into(self) -> HostId {
-        HostId(self.to_string())
+impl From<&str> for HostId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<HostId> for String {
-    fn into(self) -> HostId {
-        HostId(self.clone())
+impl From<String> for HostId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl HostId {
@@ -280,14 +280,14 @@ impl HostId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct InputTypeDefId(pub String);
-impl Into<InputTypeDefId> for &str {
-    fn into(self) -> InputTypeDefId {
-        InputTypeDefId(self.to_string())
+impl From<&str> for InputTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<InputTypeDefId> for String {
-    fn into(self) -> InputTypeDefId {
-        InputTypeDefId(self.clone())
+impl From<String> for InputTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl InputTypeDefId {
@@ -297,14 +297,14 @@ impl InputTypeDefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct InterfaceTypeDefId(pub String);
-impl Into<InterfaceTypeDefId> for &str {
-    fn into(self) -> InterfaceTypeDefId {
-        InterfaceTypeDefId(self.to_string())
+impl From<&str> for InterfaceTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<InterfaceTypeDefId> for String {
-    fn into(self) -> InterfaceTypeDefId {
-        InterfaceTypeDefId(self.clone())
+impl From<String> for InterfaceTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl InterfaceTypeDefId {
@@ -314,14 +314,14 @@ impl InterfaceTypeDefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Json(pub String);
-impl Into<Json> for &str {
-    fn into(self) -> Json {
-        Json(self.to_string())
+impl From<&str> for Json {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<Json> for String {
-    fn into(self) -> Json {
-        Json(self.clone())
+impl From<String> for Json {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl Json {
@@ -331,14 +331,14 @@ impl Json {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LabelId(pub String);
-impl Into<LabelId> for &str {
-    fn into(self) -> LabelId {
-        LabelId(self.to_string())
+impl From<&str> for LabelId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<LabelId> for String {
-    fn into(self) -> LabelId {
-        LabelId(self.clone())
+impl From<String> for LabelId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl LabelId {
@@ -348,14 +348,14 @@ impl LabelId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ListTypeDefId(pub String);
-impl Into<ListTypeDefId> for &str {
-    fn into(self) -> ListTypeDefId {
-        ListTypeDefId(self.to_string())
+impl From<&str> for ListTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ListTypeDefId> for String {
-    fn into(self) -> ListTypeDefId {
-        ListTypeDefId(self.clone())
+impl From<String> for ListTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ListTypeDefId {
@@ -365,14 +365,14 @@ impl ListTypeDefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct LocalModuleSourceId(pub String);
-impl Into<LocalModuleSourceId> for &str {
-    fn into(self) -> LocalModuleSourceId {
-        LocalModuleSourceId(self.to_string())
+impl From<&str> for LocalModuleSourceId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<LocalModuleSourceId> for String {
-    fn into(self) -> LocalModuleSourceId {
-        LocalModuleSourceId(self.clone())
+impl From<String> for LocalModuleSourceId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl LocalModuleSourceId {
@@ -382,14 +382,14 @@ impl LocalModuleSourceId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ModuleDependencyId(pub String);
-impl Into<ModuleDependencyId> for &str {
-    fn into(self) -> ModuleDependencyId {
-        ModuleDependencyId(self.to_string())
+impl From<&str> for ModuleDependencyId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ModuleDependencyId> for String {
-    fn into(self) -> ModuleDependencyId {
-        ModuleDependencyId(self.clone())
+impl From<String> for ModuleDependencyId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ModuleDependencyId {
@@ -399,14 +399,14 @@ impl ModuleDependencyId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ModuleId(pub String);
-impl Into<ModuleId> for &str {
-    fn into(self) -> ModuleId {
-        ModuleId(self.to_string())
+impl From<&str> for ModuleId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ModuleId> for String {
-    fn into(self) -> ModuleId {
-        ModuleId(self.clone())
+impl From<String> for ModuleId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ModuleId {
@@ -416,14 +416,14 @@ impl ModuleId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ModuleSourceId(pub String);
-impl Into<ModuleSourceId> for &str {
-    fn into(self) -> ModuleSourceId {
-        ModuleSourceId(self.to_string())
+impl From<&str> for ModuleSourceId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ModuleSourceId> for String {
-    fn into(self) -> ModuleSourceId {
-        ModuleSourceId(self.clone())
+impl From<String> for ModuleSourceId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ModuleSourceId {
@@ -433,14 +433,14 @@ impl ModuleSourceId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ModuleSourceViewId(pub String);
-impl Into<ModuleSourceViewId> for &str {
-    fn into(self) -> ModuleSourceViewId {
-        ModuleSourceViewId(self.to_string())
+impl From<&str> for ModuleSourceViewId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ModuleSourceViewId> for String {
-    fn into(self) -> ModuleSourceViewId {
-        ModuleSourceViewId(self.clone())
+impl From<String> for ModuleSourceViewId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ModuleSourceViewId {
@@ -450,14 +450,14 @@ impl ModuleSourceViewId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ObjectTypeDefId(pub String);
-impl Into<ObjectTypeDefId> for &str {
-    fn into(self) -> ObjectTypeDefId {
-        ObjectTypeDefId(self.to_string())
+impl From<&str> for ObjectTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ObjectTypeDefId> for String {
-    fn into(self) -> ObjectTypeDefId {
-        ObjectTypeDefId(self.clone())
+impl From<String> for ObjectTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ObjectTypeDefId {
@@ -467,14 +467,14 @@ impl ObjectTypeDefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Platform(pub String);
-impl Into<Platform> for &str {
-    fn into(self) -> Platform {
-        Platform(self.to_string())
+impl From<&str> for Platform {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<Platform> for String {
-    fn into(self) -> Platform {
-        Platform(self.clone())
+impl From<String> for Platform {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl Platform {
@@ -484,14 +484,14 @@ impl Platform {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct PortId(pub String);
-impl Into<PortId> for &str {
-    fn into(self) -> PortId {
-        PortId(self.to_string())
+impl From<&str> for PortId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<PortId> for String {
-    fn into(self) -> PortId {
-        PortId(self.clone())
+impl From<String> for PortId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl PortId {
@@ -501,14 +501,14 @@ impl PortId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(pub String);
-impl Into<SecretId> for &str {
-    fn into(self) -> SecretId {
-        SecretId(self.to_string())
+impl From<&str> for SecretId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<SecretId> for String {
-    fn into(self) -> SecretId {
-        SecretId(self.clone())
+impl From<String> for SecretId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl SecretId {
@@ -518,14 +518,14 @@ impl SecretId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ServiceId(pub String);
-impl Into<ServiceId> for &str {
-    fn into(self) -> ServiceId {
-        ServiceId(self.to_string())
+impl From<&str> for ServiceId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ServiceId> for String {
-    fn into(self) -> ServiceId {
-        ServiceId(self.clone())
+impl From<String> for ServiceId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl ServiceId {
@@ -535,14 +535,14 @@ impl ServiceId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SocketId(pub String);
-impl Into<SocketId> for &str {
-    fn into(self) -> SocketId {
-        SocketId(self.to_string())
+impl From<&str> for SocketId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<SocketId> for String {
-    fn into(self) -> SocketId {
-        SocketId(self.clone())
+impl From<String> for SocketId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl SocketId {
@@ -552,14 +552,14 @@ impl SocketId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TerminalId(pub String);
-impl Into<TerminalId> for &str {
-    fn into(self) -> TerminalId {
-        TerminalId(self.to_string())
+impl From<&str> for TerminalId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<TerminalId> for String {
-    fn into(self) -> TerminalId {
-        TerminalId(self.clone())
+impl From<String> for TerminalId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl TerminalId {
@@ -569,14 +569,14 @@ impl TerminalId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TypeDefId(pub String);
-impl Into<TypeDefId> for &str {
-    fn into(self) -> TypeDefId {
-        TypeDefId(self.to_string())
+impl From<&str> for TypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<TypeDefId> for String {
-    fn into(self) -> TypeDefId {
-        TypeDefId(self.clone())
+impl From<String> for TypeDefId {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl TypeDefId {
@@ -586,14 +586,14 @@ impl TypeDefId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Void(pub String);
-impl Into<Void> for &str {
-    fn into(self) -> Void {
-        Void(self.to_string())
+impl From<&str> for Void {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<Void> for String {
-    fn into(self) -> Void {
-        Void(self.clone())
+impl From<String> for Void {
+    fn from(value: String) -> Self {
+        Self(value.clone())
     }
 }
 impl Void {
