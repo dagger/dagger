@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
+	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/sirupsen/logrus"
@@ -43,6 +44,15 @@ var (
 
 	debug     bool
 	verbosity int
+	silent    bool
+	progress  string
+
+	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
+	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
+
+	autoTTY = stdoutIsTTY || stderrIsTTY
+
+	Frontend = idtui.New()
 )
 
 func init() {
@@ -50,18 +60,6 @@ func init() {
 	// commandconn library that is used by buildkit's connhelper
 	// and prints unneeded warning logs.
 	logrus.StandardLogger().SetOutput(io.Discard)
-
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-
-	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
-	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "show debug logs and full verbosity")
-
-	for _, fl := range []string{"workdir"} {
-		if err := rootCmd.PersistentFlags().MarkHidden(fl); err != nil {
-			fmt.Println("Error hiding flag: "+fl, err)
-			os.Exit(1)
-		}
-	}
 
 	rootCmd.AddCommand(
 		listenCmd,
@@ -155,29 +153,29 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-var Frontend = idtui.New()
+func installGlobalFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
+	flags.CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
+	flags.BoolVarP(&debug, "debug", "d", false, "show debug logs and full verbosity")
+	flags.BoolVarP(&silent, "silent", "s", false, "disable terminal UI and progress output")
+	flags.StringVar(&progress, "progress", "auto", "progress output format (auto, plain, tty)")
 
-func parseGlobalFlags() []string {
-	filtered := []string{}
-	for _, arg := range os.Args[1:] {
-		switch arg {
-		case "-v":
-			verbosity = 1
-		case "-vv":
-			verbosity = 2
-		case "-vvv":
-			verbosity = 3
-		case "--debug":
-			debug = true
-		case "--progress=plain":
-			progress = "plain"
-		case "--silent":
-			silent = true
-		default:
-			filtered = append(filtered, arg)
+	for _, fl := range []string{"workdir"} {
+		if err := flags.MarkHidden(fl); err != nil {
+			fmt.Println("Error hiding flag: "+fl, err)
+			os.Exit(1)
 		}
 	}
-	return filtered
+}
+
+func parseGlobalFlags() {
+	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
+	flags.ParseErrorsWhitelist.UnknownFlags = true
+	installGlobalFlags(flags)
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
 func Tracer() trace.Tracer {
@@ -197,12 +195,14 @@ func Resource() *resource.Resource {
 }
 
 func main() {
-	rootCmd.SetArgs(parseGlobalFlags())
+	parseGlobalFlags()
 
 	Frontend.Debug = debug
 	Frontend.Plain = progress == "plain"
 	Frontend.Silent = silent
 	Frontend.Verbosity = verbosity
+
+	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx := context.Background()
 
