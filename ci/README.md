@@ -1,23 +1,28 @@
 # CI
 
+This dagger module is used to define the CI for the dagger project itself,
+including building and releasing the CLI, engine and SDKs themselves.
+
 Available functionality:
 
     $ dagger functions
-    Name             Description
-    cli              -
-    dev              -
-    engine           -
-    sdk              -
-    source           -
-    test             Test runs Engine tests
-    test-important   TestImportant runs Engine Container+Module tests, which give good basic coverage
-    test-race        TestRace runs Engine tests with go race detector enabled
+    Name     Description
+    cli      -
+    dev      Creates a dev container that has a running CLI connected to a dagger engine
+    docs     -
+    engine   -
+    sdk      -
+    test     -
 
 ## Tests
 
-Run tests:
+Run all tests:
 
-    $ dagger call --source=. test
+    $ dagger call --source=. test all
+
+Run a specific test (e.g. `TestModuleNamespacing`):
+
+    $ dagger call --source=. test custom --run="^TestModuleNamespacing" --pkg="./core/integration"
 
 ## Dev environment
 
@@ -25,7 +30,7 @@ Start a little dev shell with dagger-in-dagger:
 
     $ dagger call --source=. dev
 
-## Engine
+## Engine & CLI
 
 ### Linting
 
@@ -44,47 +49,72 @@ Build the CLI:
 Run the engine as a service:
 
     $ dagger call --source=. engine service --name=dagger-engine up --ports=1234:1234
-    
+
 Connect to it from a dagger cli:
 
     $ export _EXPERIMENTAL_DAGGER_RUNNER_HOST=tcp://0.0.0.0:1234
-    $ dagger query
-    Error: make request: returned error 422 Unprocessable Entity: {"errors":[{"message":"no operation provided","extensions":{"code":"GRAPHQL_VALIDATION_FAILED"}}],"data":null}
-    
-### Publish the engine image
+    $ dagger call -m github.com/shykes/daggerverse/hello@main hello
+    hello, world!
 
-WIP
+## Docs
+
+Lint the docs:
+
+    $ dagger call --source=. docs lint
+
+Auto-generate docs components:
+
+    $ dagger call --source=. docs generate export --path=.
 
 ## SDKs
 
-### Language-specific
+Available SDKs:
+
+    $ dagger functions sdk
+    Name         Description
+    elixir       -
+    go           -
+    java         -
+    php          -
+    python       -
+    rust         -
+    typescript   -
+
+All SDKs have the same functions defined:
+
+- `lint`: lints SDK-specific files
+- `test`: tests SDK functionality against a dev engine
+- `generate`: generates any auto-generated files against a dev engine
+- `bump`: bumps the SDK version number
+- `publish`: publishes the SDK to a registry
+    - Note: options for this function are SDK-specific
 
 ### Linting
 
-Run the Go SDK linter:
+Run an SDK linter (replace `<sdk>` with one of the supported SDKs):
 
-    $ dagger call --source=. sdk go lint
+    $ dagger call --source=. sdk <sdk> lint
 
 ### Tests
 
-Run the Go SDK tests:
+Run SDK tests (replace `<sdk>` with one of the supported SDKs):
 
-    $ dagger call --source=. sdk go test
+    $ dagger call --source=. sdk <sdk> test
 
 ### Generate
 
-Run the Go SDK static files:
+Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
 
-    $ dagger call --source=. sdk go generate export --path=.
+    $ dagger call --source=. sdk <sdk> generate export --path=.
 
 ### Publish
 
-Run the Go SDK publishing step (dry run):
+Dry-run an SDK publishing step (replace `<sdk>` with one of the supported SDKs):
 
-    $ dagger call --source=. sdk go publish --dry-run
+    $ dagger call --source=. sdk <sdk> publish --dry-run
 
 ### Bump
 
-Run the Go SDK bump step for releasing: 
+Bump an SDK version for releasing (replace `<sdk>` with one of the supported SDKs):
 
-    $ dagger call --source=. sdk go bump --version=$VERSION export --path=.
+    $ dagger call --source=. sdk <sdk> bump --version=$VERSION export --path=.
