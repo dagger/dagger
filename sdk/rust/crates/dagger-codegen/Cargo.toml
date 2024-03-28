@@ -11,7 +11,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-dagger-sdk = { workspace = true }
+dagger-sdk = { workspace = true}
 
 eyre = { workspace = true }
 serde = { workspace = true }
