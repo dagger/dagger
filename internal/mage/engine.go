@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
 )
@@ -108,120 +112,90 @@ func (t Engine) TestCustom(ctx context.Context) error {
 
 // Dev builds and starts an Engine & CLI from local source code
 func (t Engine) Dev(ctx context.Context) error {
-	// XXX: implement this
-	return fmt.Errorf("not implemented")
+	gpuSupport := false
+	if v := os.Getenv(util.GPUSupportEnvName); v != "" {
+		gpuSupport = true
+	}
 
-	// c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	// if err != nil {
-	// 	return err
-	// }
-	// defer c.Close()
+	args := []string{"engine"}
+	if gpuSupport {
+		args = append(args, "with-gpusupport")
+	}
+	tarPath := "./bin/engine.tar"
+	args = append(args, "container", "export", "--path="+tarPath)
+	args = append(args, "--forced-compression="+string(dagger.Gzip)) // use gzip to avoid incompatibility w/ older docker versions
+	err := util.DaggerCall(ctx, args...)
+	if err != nil {
+		return err
+	}
 
-	// c = c.Pipeline("engine").Pipeline("dev")
+	volumeName := util.EngineContainerName
+	imageName := fmt.Sprintf("localhost/%s:latest", util.EngineContainerName)
 
-	// versionInfo, err := util.DevelVersionInfo(ctx, c)
-	// if err != nil {
-	// 	return err
-	// }
+	// #nosec
+	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tarPath)
+	output, err := loadCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker load failed: %w: %s", err, output)
+	}
+	_, imageID, ok := strings.Cut(string(output), "sha256:")
+	if !ok {
+		return fmt.Errorf("unexpected output from docker load: %s", output)
+	}
+	imageID = strings.TrimSpace(imageID)
 
-	// var gpuSupportEnabled bool
-	// if v := os.Getenv(util.GPUSupportEnvName); v != "" {
-	// 	gpuSupportEnabled = true
-	// }
+	if output, err := exec.CommandContext(ctx, "docker",
+		"tag",
+		imageID,
+		imageName,
+	).CombinedOutput(); err != nil {
+		return fmt.Errorf("docker tag: %w: %s", err, output)
+	}
 
-	// arches := []string{runtime.GOARCH}
+	if output, err := exec.CommandContext(ctx, "docker",
+		"rm",
+		"-fv",
+		util.EngineContainerName,
+	).CombinedOutput(); err != nil {
+		return fmt.Errorf("docker rm: %w: %s", err, output)
+	}
 
-	// tarPath := "./bin/engine.tar"
+	runArgs := []string{
+		"run",
+		"-d",
+	}
 
-	// // Conditionally load GPU enabled image for dev environment if the flag is set:
-	// var platformVariants []*dagger.Container
-	// if gpuSupportEnabled {
-	// 	platformVariants, err = util.DevEngineContainerWithGPUSupport(ctx, c, arches, versionInfo.EngineVersion())
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// } else {
-	// 	platformVariants, err = util.DevEngineContainer(ctx, c, arches, versionInfo.EngineVersion())
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
+	// Make all GPUs visible to the engine container if the GPU support flag is set:
+	if gpuSupport {
+		runArgs = append(runArgs, []string{"--gpus", "all"}...)
+	}
+	runArgs = append(runArgs, []string{
+		"-e", util.CacheConfigEnvName,
+		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
+		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
+		"-e", util.GPUSupportEnvName,
+		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
+		"-p", "6060:6060",
+		"--name", util.EngineContainerName,
+		"--privileged",
+	}...)
 
-	// _, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
-	// 	PlatformVariants: platformVariants,
-	// 	// use gzip to avoid incompatibility w/ older docker versions
-	// 	ForcedCompression: dagger.Gzip,
-	// })
-	// if err != nil {
-	// 	return err
-	// }
+	runArgs = append(runArgs, imageName, "--debug", "--debugaddr=0.0.0.0:6060")
 
-	// volumeName := util.EngineContainerName
-	// imageName := fmt.Sprintf("localhost/%s:latest", util.EngineContainerName)
+	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
+		return fmt.Errorf("docker run: %w: %s", err, output)
+	}
 
-	// // #nosec
-	// loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tarPath)
-	// output, err := loadCmd.CombinedOutput()
-	// if err != nil {
-	// 	return fmt.Errorf("docker load failed: %w: %s", err, output)
-	// }
-	// _, imageID, ok := strings.Cut(string(output), "sha256:")
-	// if !ok {
-	// 	return fmt.Errorf("unexpected output from docker load: %s", output)
-	// }
-	// imageID = strings.TrimSpace(imageID)
+	// build the CLI and export locally so it can be used to connect to the Engine
+	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
+	_ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
 
-	// if output, err := exec.CommandContext(ctx, "docker",
-	// 	"tag",
-	// 	imageID,
-	// 	imageName,
-	// ).CombinedOutput(); err != nil {
-	// 	return fmt.Errorf("docker tag: %w: %s", err, output)
-	// }
+	err = util.DaggerCall(ctx, "cli", "file", "export", "--path="+binDest)
+	if err != nil {
+		return err
+	}
 
-	// if output, err := exec.CommandContext(ctx, "docker",
-	// 	"rm",
-	// 	"-fv",
-	// 	util.EngineContainerName,
-	// ).CombinedOutput(); err != nil {
-	// 	return fmt.Errorf("docker rm: %w: %s", err, output)
-	// }
-
-	// runArgs := []string{
-	// 	"run",
-	// 	"-d",
-	// }
-
-	// // Make all GPUs visible to the engine container if the GPU support flag is set:
-	// if gpuSupportEnabled {
-	// 	runArgs = append(runArgs, []string{"--gpus", "all"}...)
-	// }
-	// runArgs = append(runArgs, []string{
-	// 	"-e", util.CacheConfigEnvName,
-	// 	"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
-	// 	"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
-	// 	"-e", util.GPUSupportEnvName,
-	// 	"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
-	// 	"-p", "6060:6060",
-	// 	"--name", util.EngineContainerName,
-	// 	"--privileged",
-	// }...)
-
-	// runArgs = append(runArgs, imageName, "--debug", "--debugaddr=0.0.0.0:6060")
-
-	// if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
-	// 	return fmt.Errorf("docker run: %w: %s", err, output)
-	// }
-
-	// // build the CLI and export locally so it can be used to connect to the Engine
-	// binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
-	// _ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
-	// _, err = util.HostDaggerBinary(c, versionInfo.EngineVersion()).Export(ctx, binDest)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
-	// fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.EngineContainerName)
-	// return nil
+	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
+	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.EngineContainerName)
+	return nil
 }

@@ -6,11 +6,8 @@ import (
 
 const (
 	EngineServerPath    = "/usr/local/bin/dagger-engine"
-	EngineDialStdioPath = "/usr/local/bin/dial-stdio"
+	EngineDialStdioPath = "/usr/local/bin/dial-stdio" // XXX: this isn't used!
 	EngineShimPath      = distconsts.EngineShimPath
-
-	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	GPUSupportEnvName  = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 )
 
 const (

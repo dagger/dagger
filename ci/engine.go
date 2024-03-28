@@ -55,7 +55,7 @@ func (e *Engine) Service(
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`)
-	devEngine, err := e.container(ctx, Platform(platforms.DefaultString()))
+	devEngine, err := e.Container(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (e *Engine) Publish(
 
 	var engines []*Container
 	for _, platform := range platform {
-		ctr, err := e.container(ctx, platform)
+		ctr, err := e.Container(ctx, platform)
 		if err != nil {
 			return "", err
 		}
@@ -147,7 +147,7 @@ func (e *Engine) TestPublish(
 	for _, platform := range platform {
 		platform := platform
 		eg.Go(func() error {
-			ctr, err := e.container(ctx, platform)
+			ctr, err := e.Container(ctx, platform)
 			if err != nil {
 				return err
 			}
@@ -158,7 +158,12 @@ func (e *Engine) TestPublish(
 	return eg.Wait()
 }
 
-func (e *Engine) container(ctx context.Context, platform dagger.Platform) (*Container, error) {
+func (e *Engine) Container(
+	ctx context.Context,
+
+	// +optional
+	platform dagger.Platform,
+) (*Container, error) {
 	cfg, err := generateConfig(e.Config)
 	if err != nil {
 		return nil, err
@@ -172,7 +177,9 @@ func (e *Engine) container(ctx context.Context, platform dagger.Platform) (*Cont
 	if err != nil {
 		return nil, err
 	}
-	builder = builder.WithPlatform(platform)
+	if platform != "" {
+		builder = builder.WithPlatform(platform)
+	}
 	if e.GPUSupport {
 		builder = builder.WithUbuntuBase().WithGPUSupport()
 	}
