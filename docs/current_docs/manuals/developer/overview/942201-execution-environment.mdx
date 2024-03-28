@@ -11,13 +11,11 @@ title: "Execution Environment"
 
 ## Containerization
 
-All Dagger Modules and Dagger Functions execute within containers spawned by the Dagger Engine. This serves a few purposes:
+Dagger Functions execute within containers spawned by the Dagger Engine. This serves a few important purposes:
 
-1. Reproducibility - executing in a well-defined and well-controlled container makes it easier for your code to run the same way every time it is invoked. This makes it easier to reason about; you can't accidentally create "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
-
-1. Caching - the reproducible containerized environment makes it possible to cache the result of Function execution, which in turn allows Dagger to automatically speed up function execution.
-
-1. Security - Even when running third-party Dagger Modules sourced from a Git repository, those Dagger Functions will not have default access to your host environment (e.g. files, directories, environment variables, etc.). They can only be granted access by explicitly passing those resources as argument values to the Dagger Function.
+1. Reproducibility: Executing in a well-defined and well-controlled container ensures that a function to run the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+1. Caching: A reproducible containerized environment makes it possible to cache the result of function execution, which in turn allows Dagger to automatically speed up function execution.
+1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
 
 ## Code execution
 
