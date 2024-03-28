@@ -40,7 +40,7 @@ func LintGeneratedCode(target string, fn func() error, files ...string) error {
 	for _, f := range files {
 		content, err := os.ReadFile(f)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not read original file: %w", err)
 		}
 		originals[f] = content
 	}
@@ -59,7 +59,7 @@ func LintGeneratedCode(target string, fn func() error, files ...string) error {
 		original := string(originals[f])
 		updated, err := os.ReadFile(f)
 		if err != nil {
-			return err
+			return fmt.Errorf("could not read updated file: %w", err)
 		}
 
 		if original != string(updated) {
