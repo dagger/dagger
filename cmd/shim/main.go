@@ -188,6 +188,13 @@ func shim() (returnExitCode int) {
 	// wrong with the logging setup.
 	slog.SetDefault(telemetry.PrettyLogger(os.Stderr, slog.LevelWarn))
 
+	cleanup, err := proxyOtelToTCP()
+	if err == nil {
+		defer cleanup()
+	} else {
+		fmt.Fprintln(os.Stderr, "failed to set up opentelemetry proxy:", err)
+	}
+
 	traceCfg := telemetry.Config{
 		Detect: false, // false, since we want "live" exporting
 		Resource: resource.NewWithAttributes(
@@ -547,9 +554,6 @@ func setupBundle() int {
 			"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="+otelEndpoint,
 			// Dagger doesn't set up metrics yet, but we should set this anyway,
 			// since otherwise some tools default to localhost.
-			//
-			// TODO: we could also consider listening on localhost and proxying to
-			// the socket.
 			"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="+otelProto,
 			"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="+otelEndpoint,
 		)
@@ -815,5 +819,83 @@ func toggleONLCR(enable bool) error {
 		return console.SetONLCR(fd)
 	} else {
 		return console.ClearONLCR(fd)
+	}
+}
+
+// Some OpenTelemetry clients don't support unix:// endpoints, so we proxy them
+// through a TCP endpoint instead.
+func proxyOtelToTCP() (cleanup func(), rerr error) {
+	endpoints := map[string][]string{}
+	for _, env := range []string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+	} {
+		if val := os.Getenv(env); val != "" {
+			slog.Debug("found otel endpoint", "env", env, "endpoint", val)
+			endpoints[val] = append(endpoints[val], env)
+		}
+	}
+	closers := []func() error{}
+	cleanup = func() {
+		for _, closer := range closers {
+			closer()
+		}
+	}
+	defer func() {
+		if rerr != nil {
+			cleanup()
+		}
+	}()
+	for endpoint, envs := range endpoints {
+		if !strings.HasPrefix(endpoint, "unix://") {
+			// We only need to fix up unix:// endpoints.
+			continue
+		}
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return func() {}, fmt.Errorf("listen: %w", err)
+		}
+		closers = append(closers, l.Close)
+
+		slog.Debug("listening for otel proxy", "endpoint", endpoint, "proxy", l.Addr().String())
+		go proxyOtelSocket(l, endpoint)
+
+		for _, env := range envs {
+			slog.Debug("proxying otel endpoint", "env", env, "endpoint", endpoint)
+			os.Setenv(env, "http://"+l.Addr().String())
+		}
+	}
+	return cleanup, nil
+}
+
+func proxyOtelSocket(l net.Listener, endpoint string) {
+	sockPath := strings.TrimPrefix(endpoint, "unix://")
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			if !errors.Is(err, net.ErrClosed) {
+				slog.Error("failed to accept connection", "error", err)
+			}
+			return
+		}
+
+		slog.Debug("accepting otel connection", "endpoint", endpoint)
+
+		go func() {
+			defer conn.Close()
+
+			remote, err := net.Dial("unix", sockPath)
+			if err != nil {
+				slog.Error("failed to dial socket", "error", err)
+				return
+			}
+			defer remote.Close()
+
+			go io.Copy(remote, conn)
+			io.Copy(conn, remote)
+		}()
 	}
 }
