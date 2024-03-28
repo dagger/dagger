@@ -1,4 +1,10 @@
-Just-in-time artifacts such as containers, directories and files expose an `Export()` function, enabling them to be exported to the host filesystem from the function that produced them. The destination path on the host is passed to the function using the `--path` argument.
+---
+slug: /manuals/user/273920/export
+---
+
+# Export Artifacts
+
+Just-in-time artifacts such as containers, directories and files expose an `Export()` function, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the `--path` argument.
 
 Here is an example of exporting the build directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
 

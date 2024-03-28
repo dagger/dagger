@@ -1,4 +1,10 @@
-The CLI can add follow-up processing to a just-in-time container, essentially enabling you to continue the pipeline directly from the command-line. `Container` objects expose a `WithExec()` function, which lets you execute a command in the corresponding container.
+---
+slug: /manuals/user/138393/exec
+---
+
+# Execute Commands in Containers
+
+The Dagger CLI can add follow-up processing to a just-in-time container, essentially enabling you to continue the pipeline directly from the command-line. `Container` objects expose a `WithExec()` function, which lets you execute a command in the corresponding container.
 
 Here is an example of chaining a `WithExec()` function call to a container returned by a Wolfi container builder Dagger Function, to display and return the contents of the `/etc/os-release` file:
 

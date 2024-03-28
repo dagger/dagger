@@ -1,3 +1,9 @@
+---
+slug: /manuals/user/178101/terminal
+---
+
+# Inspect Containers Interactively
+
 Any just-in-time container object can be inspected by starting an ephemeral interactive session, directly from the CLI. This feature is very useful for debugging and experimenting since it allows you to inspect containers directly and at any stage of your Dagger Function execution.
 
 To start an interactive session for a container returned by a Dagger Function, use `dagger call ... terminal`. By default, the terminal is started with the `sh` shell, although this can be overridden by adding the `--cmd` argument.

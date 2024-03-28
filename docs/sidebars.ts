@@ -102,7 +102,7 @@ module.exports = {
       "items": [
         {
           "type": "category",
-          "label": "Use functions",
+          "label": "Functions and Chaining",
           "link": {
             "type": "doc",
             "id": "manuals/user/functions/functions"
@@ -129,39 +129,88 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Produce artifacts",
-          "link": {
-            "type": "doc",
-            "id": "manuals/user/artifacts/production/produce-artifacts"
-          },
+          "label": "Just-in-Time Artifacts",
           "collapsible": true,
           "collapsed": true,
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/artifacts/artifacts"
+          },
           "items": [
             {
-              "type": "doc",
-              "label": "Produce just-in-time containers",
-              "id": "manuals/user/artifacts/production/containers"
+              "type": "category",
+              "label": "Produce artifacts",
+              "link": {
+                "type": "doc",
+                "id": "manuals/user/artifacts/production/produce"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                {
+                  "type": "doc",
+                  "label": "Produce just-in-time containers",
+                  "id": "manuals/user/artifacts/production/containers"
+                },
+                {
+                  "type": "doc",
+                  "label": "Produce just-in-time directories",
+                  "id": "manuals/user/artifacts/production/directories"
+                },
+                {
+                  "type": "doc",
+                  "label": "Produce just-in-time files",
+                  "id": "manuals/user/artifacts/production/files"
+                },
+                {
+                  "type": "doc",
+                  "label": "Inspect artifacts",
+                  "id": "manuals/user/artifacts/production/inspect"
+                },
+              ]
             },
             {
-              "type": "doc",
-              "label": "Produce just-in-time directories",
-              "id": "manuals/user/artifacts/production/directories"
-            },
-            {
-              "type": "doc",
-              "label": "Produce just-in-time files",
-              "id": "manuals/user/artifacts/production/files"
-            },
-            {
-              "type": "doc",
-              "label": "Inspect artifacts",
-              "id": "manuals/user/artifacts/production/inspect"
+              "type": "category",
+              "label": "Consume artifacts",
+              "link": {
+                "type": "doc",
+                "id": "manuals/user/artifacts/consumption/consume"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                {
+                  "type": "doc",
+                  "label": "Export artifacts to the host filesystem",
+                  "id": "manuals/user/artifacts/consumption/export"
+                },
+                {
+                  "type": "doc",
+                  "label": "Inspect containers interactively",
+                  "id": "manuals/user/artifacts/consumption/terminal"
+                },
+                {
+                  "type": "doc",
+                  "label": "Publish containers to a registry",
+                  "id": "manuals/user/artifacts/consumption/publish"
+                },
+                {
+                  "type": "doc",
+                  "label": "Execute commands in containers",
+                  "id": "manuals/user/artifacts/consumption/exec"
+                },
+                {
+                  "type": "doc",
+                  "label": "Run containers as services for local development",
+                  "id": "manuals/user/artifacts/consumption/services"
+                },
+              ]
             },
           ]
         },
         {
           "type": "category",
-          "label": "Access the host system",
+          "label": "Host Access",
           "link": {
             "type": "doc",
             "id": "manuals/user/host/host"
@@ -188,7 +237,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Consume remote resources",
+          "label": "Remote Resources",
           "link": {
             "type": "doc",
             "id": "manuals/user/remotes/remotes"
@@ -229,7 +278,6 @@ module.exports = {
               "label": "Get Started with Dagger Cloud",
               "id": "manuals/user/visualization/cloud-get-started"
             },
-
           ]
         },
 
