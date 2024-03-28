@@ -64,7 +64,7 @@ You can use Dagger Cloud with your CI and for your local development workflows. 
 
 To find your token, browse to the **Organization Settings** page, by clicking your profile photo in the left sidebar and then clicking **Organization Settings**. Select the **Configuration** tab. You can also use this URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=configuration`
 
-    ![Get token](/img/current_docs/manuals/user/cloud/get-started/get-token.png)
+    ![Get token](/img/current_docs/manuals/user/visualization/cloud-get-token.png)
 
   :::warning
   If you regenerate your token, you must replace the token wherever you've referenced it. To reduce operational interruptions, only regenerate your token if it has been leaked.
@@ -251,7 +251,7 @@ Because Dagger Cloud understands the Dagger engine's data model, it gives you vi
 
 Navigate to the **All Runs** page of the Dagger Cloud dashboard. You should see your most recent run as the first entry in the table, as shown below:
 
-![View runs](/img/current_docs/manuals/user/cloud/get-started/view-runs.png)
+![View runs](/img/current_docs/manuals/user/visualization/cloud-view-runs.png)
 
 Here's a quick summary of what you'll see for each run.
 
@@ -276,23 +276,23 @@ You can display a subset of runs, such as runs related to a specific commit, bra
 
 You can drill down into the details of a specific run by clicking it. This directs you to a run-specific *Run Details* page. When you run Dagger locally, this is the page you visit when you click the Dagger Cloud link in the CLI output.
 
-![View run details](/img/current_docs/manuals/user/cloud/get-started/view-run-details-tree.png)
+![View run details](/img/current_docs/manuals/user/visualization/cloud-view-run-details-tree.png)
 
 The *Run Details* page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
 
 When the run is performed in a Git context, the Dagger Cloud UI shows the VCS Git metadata associated with the commit.
 
-![Run with metadata](/img/current_docs/manuals/user/cloud/get-started/run-git-metadata.png)
+![Run with metadata](/img/current_docs/manuals/user/visualization/cloud-run-git-metadata.png)
 
 When the run takes place outside of a Git context, Dagger Cloud will show the same detailed steps. However, the top-level metadata will not be populated.
 
-![Run, no metadata](/img/current_docs/manuals/user/cloud/get-started/run-no-metadata.png)
+![Run, no metadata](/img/current_docs/manuals/user/visualization/cloud-run-no-metadata.png)
 
 ##### Run Details: Step viewer
 
 Clicking into a specific step will open a drawer with several elements that can help you debug why your pipeline is failing and help you identify why a step might not have been cached.
 
-![View step details](/img/current_docs/manuals/user/cloud/user-interface/step-details.png)
+![View step details](/img/current_docs/manuals/user/visualization/cloud-step-details.png)
 
 :::note
 The Dagger team is working on a new user experience to group your Dagger runs by the pull or merge request (group commits by PR/MR).
@@ -306,7 +306,7 @@ A change is a group of runs for a specific commit or pull/merge request.
 
 The *All Changes* page lists available groups.
 
-![View changes](/img/current_docs/manuals/user/cloud/user-interface/all-changes.png)
+![View changes](/img/current_docs/manuals/user/visualization/cloud-all-changes.png)
 
 Here's a quick summary of what you'll see for each change.
 
@@ -328,7 +328,7 @@ Here's a quick summary of what you'll see for each change.
 
 You can drill down into the details of a specific change by clicking it. This directs you to a *Change Details* page, as shown below:
 
-![View change details](/img/current_docs/manuals/user/cloud/user-interface/change-details.png)
+![View change details](/img/current_docs/manuals/user/visualization/cloud-change-details.png)
 
 The *Change Details* page lists all the pipeline runs for the commit or pull request. The tree view shows Dagger pipelines and detailed logs of steps and outputs within those pipelines. Clicking into a run takes you to the [run's details page](user-interface#run-details-page).
 
@@ -358,7 +358,7 @@ To see your cache volumes, browse to the **Organization Settings** page of Dagge
 Your cache volumes will appear in the UI within a few minutes after your pipeline run has completed. If you don't see them in the UI, ensure you've referenced the volumes correctly in your Dagger Module code and that you've set up your CI or local development workflows to push the cache volumes to Dagger Cloud.
 :::
 
-![Manage volumes](/img/current_docs/manuals/user/cloud/get-started/manage-volumes.png)
+![Manage volumes](/img/current_docs/manuals/user/visualization/cloud-manage-volumes.png)
 
 You can create as many volumes as needed and manage them from the **Configuration** tab of your Dagger Cloud organization page.
 
