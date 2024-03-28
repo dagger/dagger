@@ -1,0 +1,27 @@
+Just-in-time artifacts such as containers, directories and files expose an `Export()` function, enabling them to be exported to the host filesystem from the function that produced them. The destination path on the host is passed to the function using the `--path` argument.
+
+Here is an example of exporting the build directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build
+```
+
+By default, the `Export()` function exports the files that exist in the returned directory to the host, but it does not modify or delete any files that already exist at that host path. To replace the contents of the target host directory, such that it exactly matches the directory being exported, add the `--wipe` argument.
+
+Here is an example of exporting the build directory returned by the same Dagger Function above, deleting and replacing files as needed in the `./my-build` directory on the host:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build --wipe
+```
+
+Here is another example, this time exporting the rules file used by a linter Dagger Function as `/tmp/rules` on the host:
+
+```shell
+dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3cd735a6405fd call rules export --path=/tmp/rules
+```
+
+Here is an example of exporting a container returned by a Wolfi container builder Dagger Function as an OCI tarball named `/tmp/tarball.tar.gz` on the host:
+
+```shell
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container export --path=./tarball.tar.gz
+```

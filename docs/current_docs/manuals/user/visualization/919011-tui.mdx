@@ -1,0 +1,11 @@
+# Visualization with the Dagger CLI
+
+The Dagger CLI includes a real-time visualization feature, also called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
+
+The TUI is designed for rapid iteration, in the same way regular scripting works: you run a command, it shows live progress, and then leaves all the output in your terminal scrollback. Here is an example of it in action:
+
+The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A parent-child relationship means that the child call is being made by the parent call.
+- A red X or green check indicates whether the call succeeded or failed.
+- A call's duration is rendered after its name.
+
+For additional debugging information, add the `--debug` flag to the `dagger call` command.

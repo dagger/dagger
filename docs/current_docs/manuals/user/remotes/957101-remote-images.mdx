@@ -1,0 +1,13 @@
+---
+slug: /manuals/user/957101/remote-images
+---
+
+# Consume Remote Container Images
+
+Dagger Functions that accept container arguments can be passed the address(es) of one or more OCI images. The CLI will dynamically pull the image, and pass the resulting `Container` object as argument to the Dagger Function.
+
+Here is an example of passing a container image reference to a Dagger Function as an argument. The Dagger Function scans the container using Trivy and reports any vulnerabilities found.
+
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr index.docker.io/alpine:latest
+```

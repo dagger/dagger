@@ -1,0 +1,13 @@
+---
+slug: /manuals/user/528291/remote-repositories
+---
+
+# Consume Remote Repositories
+
+Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
+
+Here is an example of a Go builder Dagger Function that accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a binary version of the Dagger CLI and exports the build directory to the host filesystem as `./build`:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger export --path=./build
+```

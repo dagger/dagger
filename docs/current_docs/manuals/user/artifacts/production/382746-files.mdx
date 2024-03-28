@@ -1,11 +1,17 @@
-Just-in-time files are produced by calling a function that returns the File type
+---
+slug: /manuals/user/382746/files
+---
 
-Just-in-time files might be produced by a function that:
+# Produce Just-in-Time Files
+
+Just-in-time files are produced by calling a Dagger Function that returns the `File` type.
+
+Just-in-time files might be produced by a Dagger Function that:
 
 - Builds language-specific binaries
 - Combines multiple input files into a single output file, such as a composite video or a compressed archive
 
-Here is an example of a linter function that returns the linting rules used by it as a file:
+Here is an example of a linter Dagger Function that returns the linting rules used by it as a file:
 
 ```shell
 dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3cd735a6405fd call rules
@@ -17,9 +23,9 @@ Once the command completes, you should see this output:
 File evaluated. Use "dagger call rules --help" to see available sub-commands.
 ```
 
-This means that the function succeeded, and a File type representing the linting rules file was returned.
+This means that the function succeeded, and a `File` type representing the linting rules file was returned.
 
-Here is another example of a file builder function that returns a ZIP archive of the contents of the `cmd/dagger` directory in the Dagger GitHub repository:
+Here is another example of a file builder Dagger Function that returns a ZIP archive of the `cmd/dagger` directory in the Dagger GitHub repository:
 
 ```shell
 dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli '--directory https://github.com/dagger/dagger#main:cmd/dagger'  create --format zip

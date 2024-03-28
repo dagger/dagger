@@ -1,0 +1,24 @@
+---
+slug: /manuals/user/180138/host-env
+---
+
+# Access the Host Environment
+
+Dagger Functions do not have access to environment variables on the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, these variables need to be explicitly passed when executing `dagger call`.
+
+To pass host environment variable values as arguments when invoking a Dagger Function, use the standard shell convention of `$ENV_VAR_NAME` when using `dagger call`.
+
+Here is an example of passing a host environment variable containing a string value to a Dagger Function:
+
+```shell
+export GREETING=bonjour
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=$GREETING
+```
+
+To pass a secret stored in a host environment variable as arguments when invoking a Dagger Function, add the `env:` prefix to the environment variable name.
+
+Here is an example of passing a host environment variable containing an access token to a Dagger Function as a secret:
+
+```shell
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo dagger/dagger"
+```

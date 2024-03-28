@@ -14,8 +14,11 @@ module.exports = {
     {
       "type": "category",
       "label": "Quickstart",
+      "link": {
+        "type": "doc",
+        "id": "quickstart/index"
+      },
       "items": [
-        "quickstart/index",
         "quickstart/cli",
         "quickstart/hello",
         "quickstart/arguments",
@@ -99,6 +102,112 @@ module.exports = {
       "items": [
         {
           "type": "category",
+          "label": "Use functions",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/functions/functions"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Call functions",
+              "id": "manuals/user/functions/call"
+            },
+            {
+              "type": "doc",
+              "label": "Use arguments",
+              "id": "manuals/user/functions/arguments"
+            },
+            {
+              "type": "doc",
+              "label": "Chain functions",
+              "id": "manuals/user/functions/chaining"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Produce artifacts",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/artifacts/production/artifacts"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Produce just-in-time containers",
+              "id": "manuals/user/artifacts/production/containers"
+            },
+            {
+              "type": "doc",
+              "label": "Produce just-in-time directories",
+              "id": "manuals/user/artifacts/production/directories"
+            },
+            {
+              "type": "doc",
+              "label": "Produce just-in-time files",
+              "id": "manuals/user/artifacts/production/files"
+            },
+            {
+              "type": "doc",
+              "label": "Inspect artifacts",
+              "id": "manuals/user/artifacts/production/inspect"
+            },
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Access the host system",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/host/host"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Access the host filesystem",
+              "id": "manuals/user/host/host-fs"
+            },
+            {
+              "type": "doc",
+              "label": "Access host environment variables",
+              "id": "manuals/user/host/host-env"
+            },
+            {
+              "type": "doc",
+              "label": "Access host services",
+              "id": "manuals/user/host/host-services"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Consume remote resources",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Consume remote repositories",
+              "id": "manuals/user/remotes/remote-repositories"
+            },
+            {
+              "type": "doc",
+              "label": "Consume remote container images",
+              "id": "manuals/user/remotes/remote-images"
+            },
+
+          ]
+        },
+        /*
+        {
+          "type": "category",
           "label": "Dagger Cloud",
           "link": {
             "type": "doc",
@@ -117,7 +226,7 @@ module.exports = {
               "id": "manuals/user/cloud/user-interface"
             }
           ]
-        },
+        },*/
         {
           "type": "doc",
           "id": "manuals/user/troubleshooting",
@@ -163,7 +272,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Developing with Go",
+          "label": "Develop with Go",
           "link": {
             "type": "doc",
             "id": "manuals/developer/go/index"
@@ -234,7 +343,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Developing with Python",
+          "label": "Develop with Python",
           "link": {
             "type": "doc",
             "id": "manuals/developer/python/index"
@@ -309,7 +418,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Developing with TypeScript",
+          "label": "Develop with TypeScript",
           "link": {
             "type": "doc",
             "id": "manuals/developer/typescript/index"
