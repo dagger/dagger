@@ -122,7 +122,7 @@ module.exports = {
             },
             {
               "type": "doc",
-              "label": "Chain functions",
+              "label": "Chain functions into pipelines",
               "id": "manuals/user/functions/chaining"
             }
           ]
@@ -280,29 +280,6 @@ module.exports = {
             },
           ]
         },
-
-        /*
-        {
-          "type": "category",
-          "label": "Dagger Cloud",
-          "link": {
-            "type": "doc",
-            "id": "manuals/user/cloud/index"
-          },
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            {
-              "type": "doc",
-              "label": "Get Started",
-              "id": "manuals/user/cloud/get-started"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/user/cloud/user-interface"
-            }
-          ]
-        },*/
         {
           "type": "doc",
           "id": "manuals/user/troubleshooting",
