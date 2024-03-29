@@ -44,7 +44,7 @@ from the Engine, calls the relevant function and returns the result. The generat
 on the object+function name, with each case doing json deserialization of the input arguments and calling the actual
 Go function.
 */
-func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
+func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	// HACK: the code in this func can be pretty flaky and tricky to debug -
 	// it's much easier to debug when we actually have stack traces, so we grab
 	// those on a panic
