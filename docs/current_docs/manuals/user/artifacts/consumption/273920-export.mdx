@@ -6,7 +6,7 @@ slug: /manuals/user/273920/export
 
 Just-in-time artifacts such as containers, directories and files expose an `Export()` function, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the `--path` argument.
 
-Here is an example of exporting the build directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
+Here is an example of exporting the directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build
@@ -18,6 +18,12 @@ Here is an example of exporting the build directory returned by the same Dagger 
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build --wipe
+```
+
+Instead of exporting an entire directory, you can also export a file. Here is an example of exporting a single file from the directory returned by the same Go builder Dagger Function, as `./my-binary-file` on the host:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger file --path=dagger export --path=./my-binary-file
 ```
 
 Here is another example, this time exporting the rules file used by a linter Dagger Function as `/tmp/rules` on the host:
