@@ -19,8 +19,8 @@ defmodule Dagger.Core.GraphQLClient.Httpc do
     :otel_propagator_trace_context.inject(
       get_context(),
       headers,
-      &:otel_propagator_text_map.default_carrier_keys/1,
-      &:otel_propagator_text_map.default_carrier_set/3
+      &:otel_propagator_text_map.default_carrier_set/3,
+      []
     )
 
     case :httpc.request(:post, request, http_opts, options) do
