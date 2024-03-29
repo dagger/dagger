@@ -5,7 +5,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     async def redis_service(self) -> str:
-        # create Redis service container
+        """Creates Redis service and client."""
         redis_srv = (
             dag.container()
             .from_("redis")
@@ -24,7 +24,7 @@ class MyModule:
         )
 
         # set and save value
-        await redis_cli.with_exec(["set", "foo", "abc"]).with_exec(["save"])
+        await redis_cli.with_exec(["set", "foo", "abc"]).with_exec(["save"]).sync()
 
         # get value
         return await redis_cli.with_exec(["get", "foo"]).stdout()

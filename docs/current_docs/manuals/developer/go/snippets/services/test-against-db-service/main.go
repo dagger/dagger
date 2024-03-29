@@ -6,8 +6,8 @@ import (
 
 type MyModule struct{}
 
+// runs unit tests against a database service
 func (m *MyModule) Test(ctx context.Context) (string, error) {
-	// get MariaDB base image
 	mariadb := dag.Container().
 		From("mariadb:10.11.2").
 		WithEnvVariable("MARIADB_USER", "user").

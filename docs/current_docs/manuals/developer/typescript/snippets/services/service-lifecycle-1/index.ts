@@ -2,9 +2,11 @@ import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
+  /**
+   * Creates Redis service and client
+   */
   @func()
   async redisService(): Promise<string> {
-    // create Redis service container
     const redisSrv = dag
       .container()
       .from("redis")

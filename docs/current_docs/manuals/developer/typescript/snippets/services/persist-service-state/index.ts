@@ -2,9 +2,11 @@ import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
+  /**
+   * Creates Redis service and client
+   */
   @func()
   async redisService(): Promise<string> {
-    // create Redis service container
     const redisSrv = dag
       .container()
       .from("redis")
@@ -21,7 +23,7 @@ class MyModule {
       .withEntrypoint(["redis-cli", "-h", "redis-srv"])
 
     // set and save value
-    await redisCLI.withExec(["set", "foo", "abc"]).withExec(["save"]).stdout()
+    await redisCLI.withExec(["set", "foo", "abc"]).withExec(["save"]).sync()
 
     // get value
     return await redisCLI.withExec(["get", "foo"]).stdout()

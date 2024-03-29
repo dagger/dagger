@@ -6,8 +6,8 @@ import (
 
 type MyModule struct{}
 
+// creates Redis service and client
 func (m *MyModule) RedisService(ctx context.Context) (string, error) {
-	// create Redis service container
 	redisSrv := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
@@ -25,7 +25,7 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	redisCLI.
 		WithExec([]string{"set", "foo", "abc"}).
 		WithExec([]string{"save"}).
-		Stdout(ctx)
+		Sync(ctx)
 
 	// get value
 	return redisCLI.

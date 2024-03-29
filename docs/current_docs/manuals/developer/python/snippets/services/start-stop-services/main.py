@@ -15,7 +15,7 @@ async def managed_service(svc: dagger.Service):
 class MyModule:
     @function
     async def redis_service(self) -> str:
-        # create Redis service container
+        """Explicitly starts and stops a Redis service."""
         redis_srv = dag.container().from_("redis").with_exposed_port(6379).as_service()
 
         # start Redis ahead of time so it stays up for the duration of the test

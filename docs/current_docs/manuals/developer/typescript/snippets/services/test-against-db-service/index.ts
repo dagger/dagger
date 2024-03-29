@@ -7,7 +7,6 @@ class MyModule {
    */
   @func()
   async test(): Promise<string> {
-    // get MariaDB base image
     const mariadb = dag
       .container()
       .from("mariadb:10.11.2")
