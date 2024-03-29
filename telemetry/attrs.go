@@ -38,6 +38,9 @@ const (
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 
+	// Causes the parent span to act as if Passthrough was set.
+	UIMaskAttr = "dagger.io/ui.mask"
+
 	// NB: the following attributes are not currently used.
 
 	// Indicates that this span was a cache hit and did nothing.

@@ -56,7 +56,11 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	var overlay fs.FS = mfs
 	if g.Config.ModuleName != "" {
-		overlay = layerfs.New(mfs, &MountedFS{FS: dagger.QueryBuilder, Name: "internal"})
+		overlay = layerfs.New(
+			mfs,
+			&MountedFS{FS: dagger.QueryBuilder, Name: "internal"},
+			&MountedFS{FS: dagger.Telemetry, Name: "internal"},
+		)
 	}
 
 	genSt := &generator.GeneratedState{
