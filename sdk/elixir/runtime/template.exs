@@ -59,8 +59,7 @@ defmodule Main do
 
     defp deps do
       [
-        {:dagger, path: "../dagger", override: true},
-        {:dagger_module_runtime, path: "../dagger_module_runtime"}
+        {:dagger, path: "../dagger"}
       ]
     end
   end
@@ -117,6 +116,7 @@ defmodule Main do
     use Mix.Task
 
     def run(_args) do
+      Mix.ensure_application!(:inets)
       Application.ensure_all_started(:dagger)
       Application.ensure_all_started(<%= @application %>)
       Dagger.ModuleRuntime.invoke()

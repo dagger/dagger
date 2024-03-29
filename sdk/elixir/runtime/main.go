@@ -85,8 +85,8 @@ func (m *ElixirSdk) CodegenBase(
 		return nil, err
 	}
 
-	sdk := dag.Git("https://github.com/dagger/dagger").
-		Branch("main").
+	sdk := dag.Git("https://github.com/wingyplus/dagger").
+		Branch("elixir-module").
 		Tree().
 		Directory("sdk/elixir")
 
