@@ -91,6 +91,8 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case "typescript":
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
+	case "elixir":
+		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.ElixirSDKManifestDigestEnvName)))
 	default:
 		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 	}
