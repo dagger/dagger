@@ -48,6 +48,9 @@ func CollectSpans(db *DB, traceID trace.TraceID) []*Span {
 		if traceID.IsValid() && span.SpanContext().TraceID() != traceID {
 			continue
 		}
+		if span.Mask && span.Parent().IsValid() {
+			db.Spans[span.Parent().SpanID()].Passthrough = true
+		}
 		spans = append(spans, span)
 	}
 	sort.Slice(spans, func(i, j int) bool {

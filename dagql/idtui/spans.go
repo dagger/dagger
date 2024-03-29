@@ -27,6 +27,7 @@ type Span struct {
 
 	Primary     bool
 	Encapsulate bool
+	Mask        bool
 	Passthrough bool
 	Ignore      bool
 
