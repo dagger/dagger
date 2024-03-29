@@ -21,11 +21,11 @@ const (
 )
 
 // https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
-var elixirVersions = []string{"1.14.5", "1.15.4"}
+var elixirVersions = []string{"1.16.2", "1.15.7", "1.14.5"}
 
 const (
-	otpVersion    = "25.3.2.4"
-	debianVersion = "20230612"
+	otpVersion    = "26.2.3"
+	debianVersion = "20240130"
 )
 
 var _ SDK = Elixir{}
@@ -136,19 +136,28 @@ func (Elixir) Generate(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	generated := elixirBase(c, elixirVersions[1]).
+	generated, err := elixirBase(c, elixirVersions[0]).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, cliBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mix", "dagger.gen"})
+		WithExec([]string{"mix", "run", "scripts/fetch_introspection.exs"}).
+		WithWorkdir("dagger_codegen").
+		WithExec([]string{"mix", "deps.get"}).
+		WithExec([]string{"mix", "escript.build"}).
+		WithExec([]string{"./dagger_codegen", "generate", "--introspection", "../introspection.json", "--outdir", "gen"}).
+		WithExec([]string{"mix", "format", "gen/*.ex"}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
 
 	if err := os.RemoveAll(elixirSDKGeneratedPath); err != nil {
 		return err
 	}
 
 	ok, err := generated.
-		Directory(strings.Replace(elixirSDKGeneratedPath, elixirSDKPath+"/", "", 1)).
+		Directory("gen").
 		Export(ctx, elixirSDKGeneratedPath)
 	if err != nil {
 		return err
@@ -218,16 +227,12 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 }
 
 func elixirBase(c *dagger.Client, elixirVersion string) *dagger.Container {
-	const appDir = "sdk/elixir"
-
-	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
-
-	mountPath := fmt.Sprintf("/%s", appDir)
+	mountPath := fmt.Sprintf("/%s", elixirSDKPath)
 
 	return c.Container().
-		From(fmt.Sprintf("hexpm/elixir:%s-erlang-%s-debian-buster-%s-slim", elixirVersion, otpVersion, debianVersion)).
+		From(fmt.Sprintf("hexpm/elixir:%s-erlang-%s-debian-bookworm-%s-slim", elixirVersion, otpVersion, debianVersion)).
 		WithWorkdir(mountPath).
-		WithDirectory(mountPath, src).
+		WithDirectory(mountPath, util.Repository(c).Directory(elixirSDKPath)).
 		WithExec([]string{"mix", "local.hex", "--force"}).
 		WithExec([]string{"mix", "local.rebar", "--force"}).
 		WithExec([]string{"mix", "deps.get"})

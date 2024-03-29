@@ -526,6 +526,13 @@ export type DirectoryEntriesOpts = {
   path?: string
 }
 
+export type DirectoryExportOpts = {
+  /**
+   * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
+   */
+  wipe?: boolean
+}
+
 export type DirectoryPipelineOpts = {
   /**
    * Description of the sub-pipeline.
@@ -871,7 +878,7 @@ export type ClientContainerOpts = {
 
 export type ClientDirectoryOpts = {
   /**
-   * DEPRECATED: Use `loadDirectoryFromID` isntead.
+   * DEPRECATED: Use `loadDirectoryFromID` instead.
    */
   id?: DirectoryID
 }
@@ -1395,7 +1402,7 @@ export class Container extends BaseClient {
   /**
    * EXPERIMENTAL API! Subject to change/removal at any time.
    *
-   * Configures the provided list of devices to be accesible to this container.
+   * Configures the provided list of devices to be accessible to this container.
    *
    * This currently works for Nvidia devices only.
    * @param devices List of devices to be accessible to this container.
@@ -2916,8 +2923,12 @@ export class Directory extends BaseClient {
   /**
    * Writes the contents of the directory to a path on the host.
    * @param path Location of the copied directory (e.g., "logs/").
+   * @param opts.wipe If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
    */
-  export = async (path: string): Promise<boolean> => {
+  export = async (
+    path: string,
+    opts?: DirectoryExportOpts,
+  ): Promise<boolean> => {
     if (this._export) {
       return this._export
     }
@@ -2927,7 +2938,7 @@ export class Directory extends BaseClient {
         ...this._queryTree,
         {
           operation: "export",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       await this._ctx.connection(),
@@ -6999,7 +7010,7 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
-   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` isntead.
+   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` instead.
    */
   directory = (opts?: ClientDirectoryOpts): Directory => {
     return new Directory({
@@ -7797,6 +7808,7 @@ export class Client extends BaseClient {
  */
 export class Secret extends BaseClient {
   private readonly _id?: SecretID = undefined
+  private readonly _name?: string = undefined
   private readonly _plaintext?: string = undefined
 
   /**
@@ -7805,11 +7817,13 @@ export class Secret extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: SecretID,
+    _name?: string,
     _plaintext?: string,
   ) {
     super(parent)
 
     this._id = _id
+    this._name = _name
     this._plaintext = _plaintext
   }
 
@@ -7826,6 +7840,27 @@ export class Secret extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of this secret.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
         },
       ],
       await this._ctx.connection(),

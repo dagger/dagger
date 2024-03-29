@@ -135,7 +135,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
-
       - name: "Test Go SDK"
         run: |
           cd sdk/go
@@ -155,7 +154,9 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: 18
-
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.0.x
       - name: "Test TypeScript SDK"
         run: |
           cd sdk/typescript
@@ -294,6 +295,9 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: 18
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: 1.0.x
       - name: "Test TypeScript SDK"
         run: |
           cd sdk/typescript

@@ -18,10 +18,21 @@ defmodule Dagger.Core.QueryBuilder.Selection do
     }
   end
 
-  def arg(%__MODULE__{args: args} = selection, name, value) when is_binary(name) do
+  # TODO: Remove me.
+  def arg(selection, name, value) do
+    put_arg(selection, name, value)
+  end
+
+  def put_arg(%__MODULE__{args: args} = selection, name, value) when is_binary(name) do
     args = args || %{}
 
     %{selection | args: Map.put(args, name, value)}
+  end
+
+  def maybe_put_arg(%__MODULE__{} = selection, _name, nil), do: selection
+
+  def maybe_put_arg(%__MODULE__{} = selection, name, value) do
+    put_arg(selection, name, value)
   end
 
   def build(%__MODULE__{} = selection) do
@@ -100,41 +111,10 @@ end
 defmodule Dagger.Core.QueryBuilder do
   @moduledoc false
 
-  alias Dagger.Core.QueryBuilder.Selection
-  alias Dagger.Core.Client
-
-  def execute(selection, client) do
-    q = Selection.build(selection)
-
-    case Client.query(client, q) do
-      {:ok, %{body: %{"data" => nil, "errors" => errors}}} ->
-        {:error, %Dagger.QueryError{errors: errors}}
-
-      {:ok, %{status: 200, body: %{"data" => data}}} ->
-        {:ok, select_data(data, Selection.path(selection) |> Enum.reverse())}
-
-      otherwise ->
-        otherwise
-    end
-  end
-
-  defp select_data(data, [sub_selection | path]) do
-    case sub_selection |> String.split() do
-      [selection] ->
-        get_in(data, Enum.reverse([selection | path]))
-
-      selections ->
-        case get_in(data, Enum.reverse(path)) do
-          data when is_list(data) -> Enum.map(data, &Map.take(&1, selections))
-          data when is_map(data) -> Map.take(data, selections)
-        end
-    end
-  end
-
   defmacro __using__(_opts) do
     quote do
       import Dagger.Core.QueryBuilder.Selection
-      import Dagger.Core.QueryBuilder, only: [execute: 2]
+      import Dagger.Core.Client, only: [execute: 2]
     end
   end
 end

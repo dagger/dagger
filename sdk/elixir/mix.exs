@@ -19,14 +19,13 @@ defmodule Dagger.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :public_key, :ssl]
     ]
   end
 
   defp deps do
     [
-      {:req, "~> 0.3"},
-      {:absinthe_client, "~> 0.1"},
+      {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.0"},
       {:nestru, "~> 0.3"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},

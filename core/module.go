@@ -408,9 +408,6 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		}
 
 		for _, arg := range fn.Args {
-			if gqlArgName(arg.Name) == "id" {
-				return fmt.Errorf("cannot define argument with reserved name %q on function %q", arg.Name, fn.Name)
-			}
 			argType, ok, err := mod.Deps.ModTypeFor(ctx, arg.TypeDef)
 			if err != nil {
 				return fmt.Errorf("failed to get mod type for type def: %w", err)
@@ -457,9 +454,6 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDe
 		}
 
 		for _, arg := range fn.Args {
-			if gqlArgName(arg.Name) == "id" {
-				return fmt.Errorf("cannot define argument with reserved name %q on function %q", arg.Name, fn.Name)
-			}
 			if err := mod.validateTypeDef(ctx, arg.TypeDef); err != nil {
 				return err
 			}

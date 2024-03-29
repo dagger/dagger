@@ -104,7 +104,7 @@ func (t TypeScript) Test(ctx context.Context) error {
 	// Loop over the LTS and Maintenance versions and test them
 	for _, version := range []NodeVersion{LTS, Maintenance} {
 		version := version
-		c := c.Pipeline(string(version))
+		c := c.Pipeline(fmt.Sprintf("node:%s", string(version)))
 		base := nodeJsBaseFromVersion(c, version)
 		cliBinary := cliBinary
 
@@ -114,12 +114,27 @@ func (t TypeScript) Test(ctx context.Context) error {
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 				WithMountedFile(cliBinPath, cliBinary).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-				WithExec([]string{"yarn", "test"}).
+				WithExec([]string{"yarn", "test:node"}).
 				Sync(gctx)
 			return err
 		})
 
 	}
+
+	eg.Go(func() error {
+		cliBinary := cliBinary
+		c := c.Pipeline("bun")
+		_, err = bunJsBase(c).
+			WithServiceBinding("dagger-engine", devEngine).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithMountedFile(cliBinPath, cliBinary).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+			WithExec([]string{"bun", "test:bun"}).
+			Sync(gctx)
+
+		return err
+	})
+
 	return eg.Wait()
 }
 
@@ -234,9 +249,26 @@ func nodeJsBaseFromVersion(c *dagger.Client, nodeVersion NodeVersion) *dagger.Co
 		// ⚠️  Keep this in sync with the engine version defined in package.json
 		From(nodeVersionImage).
 		WithWorkdir(mountPath).
-		WithMountedCache("/usr/local/share/.cache/yarn", c.CacheVolume("yarn_cache")).
+		WithMountedCache("/usr/local/share/.cache/yarn", c.CacheVolume(fmt.Sprintf("yarn_cache:%s", nodeVersion))).
 		WithFile(fmt.Sprintf("%s/package.json", mountPath), src.File("package.json")).
 		WithFile(fmt.Sprintf("%s/yarn.lock", mountPath), src.File("yarn.lock")).
 		WithExec([]string{"yarn", "install"}).
+		WithDirectory(mountPath, src)
+}
+
+func bunJsBase(c *dagger.Client) *dagger.Container {
+	appDir := "sdk/typescript"
+	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
+
+	// Mirror the same dir structure from the repo because of the
+	// relative paths in eslint (for docs linting).
+	mountPath := fmt.Sprintf("/%s", appDir)
+
+	return c.Container().
+		From("oven/bun:1.0.27").
+		WithWorkdir(mountPath).
+		WithMountedCache("/root/.bun/install/cache", c.CacheVolume("bun_cache")).
+		WithFile(fmt.Sprintf("%s/package.json", mountPath), src.File("package.json")).
+		WithExec([]string{"bun", "install"}).
 		WithDirectory(mountPath, src)
 }

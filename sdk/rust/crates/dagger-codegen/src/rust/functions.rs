@@ -259,7 +259,7 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     if let Some(true) = field.type_.pipe(|t| type_ref_is_object(&t.type_ref)) {
         let output_type = funcs.format_output_type(&field.type_.as_ref().unwrap().type_ref);
         return quote! {
-            return $(output_type) {
+            $(output_type) {
                 proc: self.proc.clone(),
                 selection: query,
                 graphql_client: self.graphql_client.clone(),

@@ -34,6 +34,9 @@ type ModuleConfig struct {
 	// Named views defined for this module, which are sets of directory filters that can be applied to
 	// directory arguments provided to functions.
 	Views []*ModuleConfigView `json:"views,omitempty"`
+
+	// Codegen configuration for this module.
+	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
 }
 
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
@@ -109,4 +112,9 @@ func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
 type ModuleConfigView struct {
 	Name     string   `json:"name"`
 	Patterns []string `json:"patterns,omitempty"`
+}
+
+type ModuleCodegenConfig struct {
+	// Whether to automatically generate a .gitignore file for this module.
+	AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
 }
