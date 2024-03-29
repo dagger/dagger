@@ -12,10 +12,12 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/iancoleman/strcase"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type ModuleFunction struct {
@@ -194,6 +196,24 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 	ctr, err := ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
+	}
+
+	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg ocispecs.ImageConfig) ocispecs.ImageConfig {
+		// Used by the shim to associate logs to the function call instead of the
+		// exec /runtime process, which we hide.
+		tc := propagation.TraceContext{}
+		carrier := propagation.MapCarrier{}
+		tc.Inject(ctx, carrier)
+		for _, f := range tc.Fields() {
+			name := "DAGGER_FUNCTION_" + strcase.ToScreamingSnake(f)
+			if val, ok := carrier[f]; ok {
+				cfg.Env = append(cfg.Env, name+"="+val)
+			}
+		}
+		return cfg
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
 	// Setup the Exec for the Function call and evaluate it

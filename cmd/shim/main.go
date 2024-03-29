@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"golang.org/x/sys/unix"
@@ -213,7 +214,12 @@ func shim() (returnExitCode int) {
 	ctx = telemetry.Init(ctx, traceCfg)
 	defer telemetry.Close()
 
-	ctx, stdoutOtel, stderrOtel := telemetry.WithStdioToOtel(ctx, "dagger.io/shim")
+	logCtx := ctx
+	if p, ok := os.LookupEnv("DAGGER_FUNCTION_TRACEPARENT"); ok {
+		logCtx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
+	}
+
+	ctx, stdoutOtel, stderrOtel := telemetry.WithStdioToOtel(logCtx, "dagger.io/shim")
 
 	name := os.Args[1]
 	args := []string{}
