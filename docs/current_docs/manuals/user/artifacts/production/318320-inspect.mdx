@@ -9,7 +9,7 @@ Just-in-time artifacts such as containers, directories and files are represented
 For example, the `Directory` object exposes an `Entries()` function, which lists the contents of the directory. Here is an example of using it, by chaining an `Entries()` function call to the returned `Directory` object of a Go builder Dagger Function:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger entries
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger entries
 ```
 
 Similarly, the `File` object exposes a `Contents()` function, which prints the contents of the corresponding file. Here is an example of using it to print the linting rules file returned by a linter Dagger Function, by chaining a `Contents()` function call to the returned `File` object:
@@ -21,11 +21,11 @@ dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3
 Similar, the `File` object exposes a `Size()` function, which returns the size of the corresponding file. Here is an example of obtaining the size of the ZIP file returned by a file archiving Dagger Function, by chaining a `Size()` function call to the returned `File` object:
 
 ```shell
-dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli '--directory https://github.com/dagger/dagger#main:cmd/dagger'  create --format zip size
+dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name=dagger-cli '--directory=https://github.com/dagger/dagger#main:cmd/dagger'  create --format=zip size
 ```
 
 `Container` objects expose a `WithExec()` function, which lets you execute a command in the corresponding container. Here is an example of chaining this function call to a container returned by a Wolfi container builder Dagger Function, to execute the `cowsay` command:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=cowsay with-exec --args cowsay,dagger stdout
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=cowsay with-exec --args=cowsay,dagger stdout
 ```

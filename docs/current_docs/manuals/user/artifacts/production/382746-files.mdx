@@ -28,5 +28,5 @@ This means that the function succeeded, and a `File` type representing the linti
 Here is another example of a file builder Dagger Function that returns a ZIP archive of the `cmd/dagger` directory in the Dagger GitHub repository:
 
 ```shell
-dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name dagger-cli '--directory https://github.com/dagger/dagger#main:cmd/dagger'  create --format zip
+dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5a87735264a9 call  archive-directory --name=dagger-cli '--directory=https://github.com/dagger/dagger#main:cmd/dagger'  create --format=zip
 ```

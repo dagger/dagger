@@ -15,7 +15,7 @@ Here are a few examples of function chaining in action:
 - List the contents of the build directory returned by a Dagger Function, by chaining a call to the `Directory` object's `Entries()` function:
 
     ```shell
-    dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger entries
+    dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger entries
     ```
 
 - Print the contents of a file returned by a Dagger Function, by chaining a call to the `File` object's `Contents()` function:
@@ -33,7 +33,7 @@ Here are a few examples of function chaining in action:
 - Add labels to a container image before publishing it, by chaining additional calls to the `Container` object's `WithLabel()` function:
 
     ```shell
-    dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=curl with-label --name version --value 1.0 with-label --name vendor --value "Unknown Corp" publish --address=ttl.sh/my-wolfi
+    dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=curl with-label --name=version --value=1.0 with-label --name=vendor --value="Unknown Corp" publish --address=ttl.sh/my-wolfi
     ```
 
 - Display and return the contents of the `/etc/os-release` file in a container, by chaining calls to the `Container` object's `WithExec()` and `Stdout()` functions:
@@ -45,5 +45,5 @@ Here are a few examples of function chaining in action:
 - Expose a service returned by a Dagger Function on a specified host port, by chaining a call to the `Service` object's `Up()` function:
 
     ```shell
-    dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up --ports 9000:3306
+    dagger -m github.com/levlaz/daggerverse/mariadb@b56073942f5fa65c42a63a524fc9276f7f040f2f call serve up --ports=9000:3306
     ```

@@ -9,5 +9,5 @@ Dagger Functions that accept container arguments can be passed the address(es) o
 Here is an example of passing a container image reference to a Dagger Function as an argument. The Dagger Function scans the container using Trivy and reports any vulnerabilities found.
 
 ```shell
-dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr index.docker.io/alpine:latest
+dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=index.docker.io/alpine:latest
 ```

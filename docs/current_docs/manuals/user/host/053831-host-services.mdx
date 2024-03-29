@@ -17,5 +17,5 @@ docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
 Here is an example of passing this host service as argument to a PostgreSQL client Dagger Function, which drops you to a prompt from where you can execute SQL queries:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call client --db postgres --user postgres --password postgres --server tcp://localhost:5432
+dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
 ```

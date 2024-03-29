@@ -54,7 +54,7 @@ Just like directories, you can pass a container argument to a Dagger Function fr
 Here is an example of passing a container image reference to a Dagger Function as an argument. The Dagger Function scans the container using Trivy and reports any vulnerabilities found.
 
 ```shell
-dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr alpine:latest
+dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=alpine:latest
 ```
 
 :::tip
@@ -70,19 +70,19 @@ To pass a secret to a Dagger Function, source it from a host environment variabl
 Here is an example of passing a GitHub access token from an environment variable named `GITHUB_TOKEN` to a Dagger Function. The Dagger Function uses the token to query the GitHub CLI for a list of issues in the Dagger open-source repository:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo=dagger/dagger"
 ```
 
 Here is an example of passing a secret from a host file named `github-token.txt`:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=file:/home/admin/github-token.txt --cmd="issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=file:/home/admin/github-token.txt --cmd="issue list --repo=dagger/dagger"
 ```
 
 And here is an example of passing a secret from a command executed on the host:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=cmd:"gh auth token" --cmd="issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=cmd:"gh auth token" --cmd="issue list --repo=dagger/dagger"
 ```
 
 :::tip

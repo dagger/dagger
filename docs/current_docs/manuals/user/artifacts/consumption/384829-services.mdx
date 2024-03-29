@@ -33,7 +33,7 @@ By default, each port maps to the same port on the host. To specify a different 
 To start the same service and map NGINX port 80 to host port 8080, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/nginx@v0.1.0 call container as-service up --ports 8080:80
+dagger -m github.com/kpenfound/dagger-modules/nginx@v0.1.0 call container as-service up --ports=8080:80
 ```
 
 The service can now be accessed on the specified port - for example, in another terminal, execute the following command to receive the default NGINX welcome page:

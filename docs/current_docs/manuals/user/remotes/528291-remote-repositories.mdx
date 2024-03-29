@@ -9,5 +9,5 @@ Dagger Functions that accept directory arguments are equally comfortable receivi
 Here is an example of a Go builder Dagger Function that accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a binary version of the Dagger CLI and exports the build directory to the host filesystem as `./build`:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger export --path=./build
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./build
 ```

@@ -18,7 +18,7 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --source=
 Here is an example of passing a host file as argument to a checksum Dagger Function:
 
 ```shell
-dagger -m github.com/jumppad-labs/daggerverse/checksum@49dff54b421df9844fec87766e3710138bc98914 call  calculate-from-file --file ~/.profile
+dagger -m github.com/jumppad-labs/daggerverse/checksum@49dff54b421df9844fec87766e3710138bc98914 call calculate-from-file --file=~/.profile
 ```
 
 To pass a secret stored in a host file as argument when invoking a Dagger Function, add the `file:` prefix to the file path value.
@@ -26,5 +26,5 @@ To pass a secret stored in a host file as argument when invoking a Dagger Functi
 Here is an example of passing a host file containing an access token to a Dagger Function as a secret:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=file:/home/admin/github-token.txt --cmd="issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=file:/home/admin/github-token.txt --cmd="issue list --repo=dagger/dagger"
 ```

@@ -20,5 +20,5 @@ To pass a secret stored in a host environment variable as arguments when invokin
 Here is an example of passing a host environment variable containing an access token to a Dagger Function as a secret:
 
 ```shell
-dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo dagger/dagger"
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo=dagger/dagger"
 ```
