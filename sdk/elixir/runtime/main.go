@@ -85,11 +85,6 @@ func (m *ElixirSdk) CodegenBase(
 		return nil, err
 	}
 
-	sdk := dag.Git("https://github.com/wingyplus/dagger").
-		Branch("elixir-module").
-		Tree().
-		Directory("sdk/elixir")
-
 	// TODO: maybe call ToLower and then replace `-` with `_`?
 	mod := strings.Replace(modName, "-", "_", -1)
 
@@ -105,7 +100,7 @@ func (m *ElixirSdk) CodegenBase(
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithDirectory(
 			"dagger",
-			sdk,
+			m.SDKSourceDir,
 			ContainerWithDirectoryOpts{Exclude: []string{
 				"*.livemd",
 				"*.md",
