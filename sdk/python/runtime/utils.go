@@ -28,12 +28,11 @@ func (m *PythonSdk) cacheVolume(name string) *CacheVolume {
 // install adds an install command to the container
 func (m *PythonSdk) install(args ...string) func(*Container) *Container {
 	return func(ctr *Container) *Container {
-		var cmd []string
+		cmd := []string{"pip", "install", "--compile"}
 		// uv has a compatible api with pip
 		if m.UseUv() {
-			cmd = []string{"uv"}
+			cmd = append([]string{"uv"}, append(cmd, "--strict")...)
 		}
-		cmd = append(cmd, "pip", "install", "--compile")
 		// If there's a lock file, we assume that all the dependencies are
 		// included in it so we can avoid resolving for them to get a faster
 		// install.

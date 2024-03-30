@@ -5656,17 +5656,22 @@ func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	}
 }
 
-func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerFunc {
+// fileContents is syntax sugar for Container.WithNewFile.
+func fileContents(path, contents string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		cfgPath := filepath.Join(dirPath, "dagger.json")
-		cfgBytes, err := json.Marshal(cfg)
-		if err != nil {
-			panic(err)
-		}
-		return c.WithNewFile(cfgPath, dagger.ContainerWithNewFileOpts{
-			Contents: string(cfgBytes),
+		return c.WithNewFile(path, dagger.ContainerWithNewFileOpts{
+			Contents: heredoc.Doc(contents),
 		})
 	}
+}
+
+func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerFunc {
+	cfgPath := filepath.Join(dirPath, "dagger.json")
+	cfgBytes, err := json.Marshal(cfg)
+	if err != nil {
+		panic(err)
+	}
+	return fileContents(cfgPath, string(cfgBytes))
 }
 
 // command for a dagger cli call direct on the host
@@ -5689,15 +5694,7 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 }
 
 func sdkSource(sdk, contents string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		sourcePath := sdkSourceFile(sdk)
-		if sourcePath == "" {
-			return c
-		}
-		return c.WithNewFile(sourcePath, dagger.ContainerWithNewFileOpts{
-			Contents: heredoc.Doc(contents),
-		})
-	}
+	return fileContents(sdkSourceFile(sdk), contents)
 }
 
 func sdkSourceFile(sdk string) string {
@@ -5705,11 +5702,11 @@ func sdkSourceFile(sdk string) string {
 	case "go":
 		return "dagger/main.go"
 	case "python":
-		return "dagger/src/main/__init__.py"
+		return "dagger/" + pythonSourcePath
 	case "typescript":
 		return "dagger/src/index.ts"
 	default:
-		return ""
+		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
 }
 
@@ -5725,18 +5722,15 @@ func sdkCodegenFile(t *testing.T, sdk string) string {
 	case "typescript":
 		return "dagger/sdk/api/client.gen.ts"
 	default:
-		return ""
+		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
 }
 
 func modInit(t *testing.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
+	return daggerCliBase(t, c).
 		With(daggerExec("init", "--name=test", "--sdk="+sdk)).
 		With(sdkSource(sdk, contents))
-	return modGen
 }
 
 func currentSchema(ctx context.Context, t *testing.T, ctr *dagger.Container) *introspection.Schema {

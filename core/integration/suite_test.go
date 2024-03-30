@@ -212,6 +212,13 @@ func daggerCliFile(t testing.TB, c *dagger.Client) *dagger.File {
 	return c.Host().File(daggerCliPath(t))
 }
 
+func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work")
+}
+
 const testCLIBinPath = "/bin/dagger"
 
 func goCache(c *dagger.Client) dagger.WithContainerFunc {

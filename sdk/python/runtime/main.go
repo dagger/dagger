@@ -131,7 +131,7 @@ func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introsp
 	ctr := m.
 		WithBase().
 		WithTemplate().
-		WithSDK(GenDir, introspectionJson).
+		WithSDK(introspectionJson).
 		WithSource().
 		Container
 	return ctr, nil
@@ -151,6 +151,7 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *ModuleSource) (*PythonS
 func (m *PythonSdk) WithBase() *PythonSdk {
 	base := dag.Container().
 		From(m.BaseImage()).
+		WithEnvVariable("DAGGER_BASE_IMAGE", m.BaseImage()).
 		WithEnvVariable("PYTHONUNBUFFERED", "1").
 		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "1").
 		WithEnvVariable("PIP_ROOT_USER_ACTION", "ignore").
@@ -199,14 +200,40 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		ContainerWithFileOpts{Permissions: 0o755},
 	)
 
+	// NB: We can't detect if it's a new module with `dagger develop --sdk`
+	// if there's also a pyproject.toml file to customize the base container.
+	//
+	// The reason for adding sources only on new modules is because it's
+	// been reported that it's surprising for users to delete the pyhton
+	// file on the host and not fail on `dagger functions` and `dagger call`,
+	// if we always recreate from the template. That's because only `init`
+	// and `develop` export the generated files back to the host, potentially
+	// creating a discrepancy.
+	//
+	// Throwing an error on missing files when not a new module is less
+	// surprising, which is done during discovery.
+
 	if d.IsInit {
-		d.AddFile("pyproject.toml", template.File("pyproject.toml"))
+		toml := "pyproject.toml"
+
+		// On `dagger init --sdk`, one can first set a `pyproject.toml` to
+		// change the base image, but if it's `dagger develop --sdk` the
+		// existence of this file will exclude the rest from being added.
+		if !d.HasFile(toml) {
+			d.AddFile(toml, template.File(toml))
+		}
 
 		if m.UseUv() && !d.HasFile(LockFilePath) {
-			sdkToml := path.Join(GenDir, "pyproject.toml")
+			sdkToml := path.Join(GenDir, toml)
 			d.AddLockFile(m.Container.
-				WithMountedFile(sdkToml, m.SDKSourceDir.File("pyproject.toml")).
-				WithExec([]string{"uv", "pip", "compile", "--generate-hashes", "-o", LockFilePath, sdkToml}).
+				WithMountedFile(sdkToml, m.SDKSourceDir.File(toml)).
+				WithMountedFile(toml, d.GetFile(toml)).
+				WithExec([]string{
+					"uv", "pip", "compile", "--generate-hashes",
+					"-o", LockFilePath,
+					sdkToml,
+					toml,
+				}).
 				File(LockFilePath),
 			)
 		}
@@ -226,10 +253,10 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 //
 // This also installs the package in the current virtual environemnt and
 // regenerates the client for the current API schema.
-func (m *PythonSdk) WithSDK(sdkPath string, introspectionJson string) *PythonSdk {
+func (m *PythonSdk) WithSDK(introspectionJson string) *PythonSdk {
 	// Add the clean copy of the SDK  to the source directory, to avoid
 	// extrenuous files from build, *.pyc, or others.
-	m.Discovery.AddDirectory(sdkPath, m.SDKSourceDir)
+	m.Discovery.AddDirectory(GenDir, m.SDKSourceDir)
 
 	// Don't want to mount the entire source directory yet, to avoid cache
 	// invalidation. The full context directory will be mounted later, which
@@ -254,13 +281,14 @@ func (m *PythonSdk) WithSDK(sdkPath string, introspectionJson string) *PythonSdk
 	// Generate the client.
 	// This is not strictly necessary on init (just call), but warms the cache.
 
+	// TODO: Decouple codegen from SDK. Rely on external introspection result.
 	// Need to install SDK for the codegen script.
-	ctr = ctr.With(m.install("-e", sdkPath))
+	ctr = ctr.With(m.install("-e", GenDir))
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal --cmd=bash` command.
 	if introspectionJson != "" {
-		genPath := path.Join(sdkPath, GenPath)
+		genPath := path.Join(GenDir, GenPath)
 
 		genFile := ctr.
 			WithNewFile(SchemaPath, ContainerWithNewFileOpts{
@@ -292,5 +320,12 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 	m.Container = m.Container.
 		WithMountedDirectory(ModSourceDirPath, m.Discovery.ContextDir).
 		With(m.install("-e", "."))
+
+	cmd := []string{"pip", "check"}
+	if m.UseUv() {
+		cmd = append([]string{"uv"}, cmd...)
+	}
+	m.Container = m.Container.WithExec(cmd)
+
 	return m
 }

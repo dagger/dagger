@@ -179,10 +179,6 @@ func (d *Discovery) loadModInfo(ctx context.Context) error {
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
-		// If there's no pyproject.toml, we assume it's a new module.
-		if !d.HasFile("pyproject.toml") {
-			d.IsInit = true
-		}
 		return nil
 	})
 
@@ -192,6 +188,30 @@ func (d *Discovery) loadModInfo(ctx context.Context) error {
 			return fmt.Errorf("get module name: %w", err)
 		}
 		d.ModName = modName
+		return nil
+	})
+
+	// TODO: Provide runtime modules with a boolean to indicate whether the
+	// module is new or not. Could be `dagger init --sdk` or `dagger develop --sdk`.
+	//
+	// With `dagger init` we can check for the presence of the dagger.json file,
+	// which is only being created after this code runs, but in `dagger develop`,
+	// the CLI changes the "sdk" field in dagger.json before loading the module.
+	//
+	// The boolean could be provided to the runtime module's constructor,
+	// the codegen function, or call a new and specific function only when using
+	// `--sdk` in the CLI, like `Init()`.
+
+	eg.Go(func() error {
+		// If there's no dagger.json file, it's definitely a new module
+		// (dagger init).
+		exists, err := d.ModSource.ConfigExists(gctx)
+		if err != nil {
+			return fmt.Errorf("check if config exists: %w", err)
+		}
+		if !exists {
+			d.IsInit = true
+		}
 		return nil
 	})
 
@@ -208,6 +228,12 @@ func (d *Discovery) loadFiles(ctx context.Context) error {
 				path.Join(d.SubPath, exclude),
 			)
 		}
+	}
+
+	// If there's a dagger.json and no pyproject.toml, it's an init'ed module
+	// adding sources (`dagger develop --sdk`).
+	if !d.IsInit && !d.HasFile("pyproject.toml") {
+		d.IsInit = true
 	}
 
 	eg, gctx := errgroup.WithContext(ctx)
@@ -228,29 +254,32 @@ func (d *Discovery) loadFiles(ctx context.Context) error {
 		}
 	}
 
-	if d.IsInit {
-		eg.Go(func() error {
-			// We'll use a glob pattern in fileSet to check for the existence of
-			// python files later. Best effort, ignore errors.
-			entries, _ := d.Source().Glob(gctx, "**/*.py")
-			if len(entries) > 0 {
-				d.FileSet["*.py"] = struct{}{}
-			} else if !d.IsInit {
-
-			}
-			return nil
-		})
-	}
+	// TODO: This can be a performance bottleneck for large directories,
+	// which can happen even unintentionally by not excluding certain
+	// patterns from module load.
+	eg.Go(func() error {
+		// We'll use a glob pattern in fileSet to check for the existence of
+		// python files later. The error is normal when the target directory
+		// on `dagger init` doesn't exist, but just ignore otherwise (best
+		// effort).
+		entries, err := d.Source().Glob(gctx, "**/*.py")
+		if len(entries) > 0 {
+			d.FileSet["*.py"] = struct{}{}
+		} else if err == nil && !d.IsInit {
+			// This can also happen on `dagger develop --sdk` if there's also
+			// a pyproject.toml present to customize the base container.
+			return fmt.Errorf("no python files found in module source")
+		}
+		return nil
+	})
 
 	return eg.Wait()
 }
 
 // loadConfig loads the pyproject.toml file.
 func (d *Discovery) loadConfig(ctx context.Context) error {
-	if !d.IsInit && d.EnableCustomConfig {
-		if contents, ok := d.Files["pyproject.toml"]; ok {
-			return toml.Unmarshal([]byte(contents), d.Config)
-		}
+	if contents, ok := d.Files["pyproject.toml"]; ok {
+		return toml.Unmarshal([]byte(contents), d.Config)
 	}
 	return nil
 }
@@ -262,17 +291,22 @@ func (d *Discovery) loadConfig(ctx context.Context) error {
 // 2. Check pinned version in requires-python (in pyproject.toml)
 // 3. Use the default version
 func (d *Discovery) findPythonVersion() string {
-	if !d.EnableCustomConfig {
-		return DefaultVersion
-	}
 	if version, ok := d.Files[".python-version"]; ok {
 		return version
 	}
-	if strings.HasPrefix(d.Config.Project.RequiresPython, "==") {
-		return strings.TrimSpace(
-			strings.TrimPrefix(d.Config.Project.RequiresPython, "=="),
-		)
+	// NB: In pyproject.toml, the "requires-python" option refers to a minimum
+	// version because it's meant for checking if the (already installed)
+	// Python version in the environment is compatible with what a library
+	// supports. If it's set, we'll use it as a fallback to decide which
+	// version to install.
+	minimum := strings.TrimSpace(d.Config.Project.RequiresPython)
+
+	// With ">=" or a relaxed "==" we don't want to go search for the latest
+	// version here anyway but we know that as a minimum it'll be supported.
+	if strings.HasPrefix(minimum, "==") || strings.HasPrefix(minimum, ">=") {
+		return strings.TrimSpace(minimum[2:])
 	}
+
 	return DefaultVersion
 }
 
