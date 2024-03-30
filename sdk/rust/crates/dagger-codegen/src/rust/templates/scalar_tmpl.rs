@@ -21,7 +21,7 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
 
         impl From<String> for $(t.name.pipe(|n| format_name(n))) {
             fn from(value: String) -> Self {
-                Self(value.clone())
+                Self(value)
             }
         }
 

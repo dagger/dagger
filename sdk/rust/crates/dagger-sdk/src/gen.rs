@@ -15,7 +15,7 @@ impl From<&str> for CacheVolumeId {
 }
 impl From<String> for CacheVolumeId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl CacheVolumeId {
@@ -32,7 +32,7 @@ impl From<&str> for ContainerId {
 }
 impl From<String> for ContainerId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ContainerId {
@@ -49,7 +49,7 @@ impl From<&str> for CurrentModuleId {
 }
 impl From<String> for CurrentModuleId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl CurrentModuleId {
@@ -66,7 +66,7 @@ impl From<&str> for DirectoryId {
 }
 impl From<String> for DirectoryId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl DirectoryId {
@@ -83,7 +83,7 @@ impl From<&str> for EnvVariableId {
 }
 impl From<String> for EnvVariableId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl EnvVariableId {
@@ -100,7 +100,7 @@ impl From<&str> for FieldTypeDefId {
 }
 impl From<String> for FieldTypeDefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl FieldTypeDefId {
@@ -117,7 +117,7 @@ impl From<&str> for FileId {
 }
 impl From<String> for FileId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl FileId {
@@ -134,7 +134,7 @@ impl From<&str> for FunctionArgId {
 }
 impl From<String> for FunctionArgId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl FunctionArgId {
@@ -151,7 +151,7 @@ impl From<&str> for FunctionCallArgValueId {
 }
 impl From<String> for FunctionCallArgValueId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl FunctionCallArgValueId {
@@ -168,7 +168,7 @@ impl From<&str> for FunctionCallId {
 }
 impl From<String> for FunctionCallId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl FunctionCallId {
@@ -185,7 +185,7 @@ impl From<&str> for FunctionId {
 }
 impl From<String> for FunctionId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl FunctionId {
@@ -202,7 +202,7 @@ impl From<&str> for GeneratedCodeId {
 }
 impl From<String> for GeneratedCodeId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl GeneratedCodeId {
@@ -219,7 +219,7 @@ impl From<&str> for GitModuleSourceId {
 }
 impl From<String> for GitModuleSourceId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl GitModuleSourceId {
@@ -236,7 +236,7 @@ impl From<&str> for GitRefId {
 }
 impl From<String> for GitRefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl GitRefId {
@@ -253,7 +253,7 @@ impl From<&str> for GitRepositoryId {
 }
 impl From<String> for GitRepositoryId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl GitRepositoryId {
@@ -270,7 +270,7 @@ impl From<&str> for HostId {
 }
 impl From<String> for HostId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl HostId {
@@ -287,7 +287,7 @@ impl From<&str> for InputTypeDefId {
 }
 impl From<String> for InputTypeDefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl InputTypeDefId {
@@ -304,7 +304,7 @@ impl From<&str> for InterfaceTypeDefId {
 }
 impl From<String> for InterfaceTypeDefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl InterfaceTypeDefId {
@@ -321,7 +321,7 @@ impl From<&str> for Json {
 }
 impl From<String> for Json {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl Json {
@@ -338,7 +338,7 @@ impl From<&str> for LabelId {
 }
 impl From<String> for LabelId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl LabelId {
@@ -355,7 +355,7 @@ impl From<&str> for ListTypeDefId {
 }
 impl From<String> for ListTypeDefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ListTypeDefId {
@@ -372,7 +372,7 @@ impl From<&str> for LocalModuleSourceId {
 }
 impl From<String> for LocalModuleSourceId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl LocalModuleSourceId {
@@ -389,7 +389,7 @@ impl From<&str> for ModuleDependencyId {
 }
 impl From<String> for ModuleDependencyId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ModuleDependencyId {
@@ -406,7 +406,7 @@ impl From<&str> for ModuleId {
 }
 impl From<String> for ModuleId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ModuleId {
@@ -423,7 +423,7 @@ impl From<&str> for ModuleSourceId {
 }
 impl From<String> for ModuleSourceId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ModuleSourceId {
@@ -440,7 +440,7 @@ impl From<&str> for ModuleSourceViewId {
 }
 impl From<String> for ModuleSourceViewId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ModuleSourceViewId {
@@ -457,7 +457,7 @@ impl From<&str> for ObjectTypeDefId {
 }
 impl From<String> for ObjectTypeDefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ObjectTypeDefId {
@@ -474,7 +474,7 @@ impl From<&str> for Platform {
 }
 impl From<String> for Platform {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl Platform {
@@ -491,7 +491,7 @@ impl From<&str> for PortId {
 }
 impl From<String> for PortId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl PortId {
@@ -508,7 +508,7 @@ impl From<&str> for SecretId {
 }
 impl From<String> for SecretId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl SecretId {
@@ -525,7 +525,7 @@ impl From<&str> for ServiceId {
 }
 impl From<String> for ServiceId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl ServiceId {
@@ -542,7 +542,7 @@ impl From<&str> for SocketId {
 }
 impl From<String> for SocketId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl SocketId {
@@ -559,7 +559,7 @@ impl From<&str> for TerminalId {
 }
 impl From<String> for TerminalId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl TerminalId {
@@ -576,7 +576,7 @@ impl From<&str> for TypeDefId {
 }
 impl From<String> for TypeDefId {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl TypeDefId {
@@ -593,7 +593,7 @@ impl From<&str> for Void {
 }
 impl From<String> for Void {
     fn from(value: String) -> Self {
-        Self(value.clone())
+        Self(value)
     }
 }
 impl Void {
