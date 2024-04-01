@@ -141,9 +141,13 @@ func (m *ElixirSdk) Base(version string) *Container {
 	if version == "" {
 		version = defaultElixirVersion
 	}
+
+	mixCache := dag.CacheVolume(".mix-" + version)
+
 	// TODO: Mount cache.
 	return dag.Container().
 		From("hexpm/elixir:"+version).
+		WithMountedCache("/root/.mix", mixCache).
 		WithExec([]string{"apt", "update"}).
 		WithExec([]string{"apt", "install", "-y", "--no-install-recommends", "git"}).
 		WithExec([]string{"mix", "local.hex", "--force"}).
