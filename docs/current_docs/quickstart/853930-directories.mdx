@@ -101,7 +101,7 @@ tracing
 zenith
 ```
 
-This does look like the contents of the Dagger repository after build. Great! Next, export the directory to the local filesystem:
+This does look like the contents of the Dagger repository after build. Great! Next, export the directory to the local filesystem by chaining a call to the `Export()` function:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-dagger-build
@@ -122,7 +122,7 @@ You should see output similar to the following, which confirms that you've just 
 dagger (registry.dagger.io/engine) linux/amd64
 ```
 
-Instead of exporting the entire directory to the Dagger host, you can export just the compiled binary:
+Instead of exporting the entire directory to the Dagger host, you can export just the compiled binary. This involves chaining calls to two functions: first, call the `File()` function to return a specific file from the directory and then, call the `Export()` function to export that file to the host:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger file --path=dagger export --path=./my-dagger-cli
