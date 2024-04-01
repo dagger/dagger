@@ -32,7 +32,7 @@ multidict==6.0.5
     # via
     #   aiohttp
     #   yarl
-packaging==23.2
+packaging==24.0
     # via pytest
 pluggy==1.4.0
     # via pytest
