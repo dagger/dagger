@@ -68,7 +68,7 @@ func (m *ElixirSdk) Codegen(
 
 	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths([]string{genDir + "/**"}).
-		WithVCSIgnoredPaths([]string{genDir}), nil
+		WithVCSIgnoredPaths([]string{"dagger"}), nil
 }
 
 func (m *ElixirSdk) CodegenBase(
