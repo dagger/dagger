@@ -1404,10 +1404,10 @@ natural-compare@^1.4.0:
   resolved "https://registry.yarnpkg.com/natural-compare/-/natural-compare-1.4.0.tgz#4abebfeed7541f2c27acfb29bdbbd15c8d5ba4f7"
   integrity sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==
 
-node-color-log@^11.0.0:
-  version "11.0.0"
-  resolved "https://registry.yarnpkg.com/node-color-log/-/node-color-log-11.0.0.tgz#f10f57334f593e3e3c2b4892f6476726751995db"
-  integrity sha512-ZPkD/eIX+QI5KaEigGnd3EKqItPdSlinqNfJAuigHqfO55Klc+3I3jwI8blHsu3jBaApupu0ldYCTPBF7ddPJQ==
+node-color-log@^12.0.0:
+  version "12.0.0"
+  resolved "https://registry.yarnpkg.com/node-color-log/-/node-color-log-12.0.0.tgz#f371b50e81fbaf341fe5607aa89d9518baaa1bbf"
+  integrity sha512-QXho6YxP/4dd+qKOWikSCbeEqrKvbjNqL8pDddHFuO0DAzRBz0tKmCH+qRhkD2A1CFmwzkcA9VwqtLQG1OHxRg==
 
 node-domexception@^1.0.0:
   version "1.0.0"
