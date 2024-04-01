@@ -2,75 +2,35 @@ import platform
 from typing import Annotated
 
 import dagger
-from dagger import Doc, dag, field, function, object_type
-
-from .consts import PYTHON_VERSION
-from .utils import from_host, from_host_req, mounted_workdir, python_base, requirements
+from dagger import Doc, dag, function, object_type
 
 
 @object_type
 class Test:
     """Run the test suite."""
 
-    requirements: Annotated[
-        dagger.File,
-        Doc("A requirements.txt file with the testing environment's dependencies"),
-    ] = field(default=lambda: from_host_req("test"))
-
-    src: Annotated[
-        dagger.Directory,
-        Doc("Directory with the tests and source code under test"),
-    ] = field(
-        default=lambda: from_host(
-            [
-                "pyproject.toml",
-                "README.md",
-                "src/",
-                "tests/",
-            ]
-        )
-    )
-
-    version: Annotated[
-        str,
-        Doc("Python version to test under"),
-    ] = field(default=PYTHON_VERSION)
+    container: dagger.Container
 
     @function
-    def base(self) -> dagger.Container:
-        """Base container for running tests."""
-        return (
-            python_base(self.version)
-            .with_(requirements(self.requirements))
-            .with_(mounted_workdir(self.src))
-            .with_exec(["pip", "install", "-e", "."])
-        )
-
-    @function
-    def pytest(
+    def run(
         self,
         args: Annotated[list[str], Doc("Arguments to pass to pytest")],
     ) -> dagger.Container:
         """Run the pytest command."""
-        return (
-            self.base()
-            .pipeline(f"Python {self.version}")
-            .with_focus()
-            .with_exec(
-                ["pytest", *args],
-                experimental_privileged_nesting=True,
-            )
+        return self.container.with_exec(
+            ["pytest", *args],
+            experimental_privileged_nesting=True,
         )
 
     @function
     def default(self) -> dagger.Container:
-        """Run integration tests."""
-        return self.pytest(["-Wd", "-l", "-m", "not provision"])
+        """Run python tests."""
+        return self.run(["-Wd", "-l", "-m", "not provision"])
 
     @function
     def unit(self) -> dagger.Container:
         """Run unit tests."""
-        return self.pytest(["-m", "not slow and not provision"])
+        return self.run(["-m", "not slow and not provision"])
 
     @function
     async def provision(
@@ -99,8 +59,7 @@ class Test:
         checksums_name = "checksums.txt"
 
         http_server = (
-            python_base(self.version)
-            .with_mounted_file("/src/dagger", cli_bin)
+            self.container.with_mounted_file("/src/dagger", cli_bin)
             .with_workdir("/work")
             .with_exec(["tar", "czvf", archive_name, "-C", "/src", "dagger"])
             .with_exec(
@@ -120,17 +79,13 @@ class Test:
 
         ctr = dag.dockerd().attach(
             (
-                self.base()
-                .pipeline(f"Python {self.version}")
-                .with_mounted_file(
+                self.container.with_mounted_file(
                     "/opt/docker.tgz",
                     dag.http(
-                        "https://download.docker.com/linux/static/stable"
-                        f"/{arch_name}/docker-{docker_version}.tgz"
+                        "https://download.docker.com/linux/static/stable" f"/{arch_name}/docker-{docker_version}.tgz"
                     ),
                     owner="root",
-                )
-                .with_exec(
+                ).with_exec(
                     [
                         "tar",
                         "xzvf",

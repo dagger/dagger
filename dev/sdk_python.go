@@ -47,8 +47,8 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "/docs"}).
+            WithFile("/.ruff.toml", t.Dagger.Source.File(".ruff.toml")).
+			WithExec([]string{"hatch", "fmt", "--linter", "--check", ".", "/docs"}).
 			Sync(ctx)
 		return err
 	})
@@ -127,7 +127,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 			"python", "-m",
 			"codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
 		}).
-		WithExec([]string{"black", "gen.py"}).
+		WithExec([]string{"hatch", "fmt", "--formatter", "gen.py"}).
 		File("gen.py")
 	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil
 }
@@ -188,6 +188,7 @@ func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 
 	base := dag.Container().
 		From(fmt.Sprintf("python:%s-slim", version)).
+        WithEnvVariable("PYTHONUNBUFFERED", "1").
 		// TODO: the way uv is installed here is temporary. The PythonSDK
 		// object will be refactored soon to use sdk/python/dev as a dependency.
 		WithDirectory(
@@ -206,8 +207,8 @@ func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 		WithMountedCache("/root/.local/pipx/cache", dag.CacheVolume("pipx_cache_"+version)).
 		WithMountedCache("/root/.cache/hatch", dag.CacheVolume("hatch_cache_"+version)).
 		WithMountedFile("/pipx.pyz", pipx).
-		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.12.0"}).
-		WithExec([]string{"python", "-m", "venv", venv}).
+    	WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.12.3"}).
+		WithExec([]string{"uv", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable(
 			"PATH",
@@ -216,17 +217,14 @@ func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 				Expand: true,
 			},
 		).
-		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv).
 		// Mirror the same dir structure from the repo because of the
 		// relative paths in ruff (for docs linting).
-		WithWorkdir(pythonSubdir).
-		WithMountedFile("requirements.txt", src.File("requirements.txt")).
-		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
+		WithWorkdir(pythonSubdir)
 
 	if install {
 		base = base.
 			WithMountedDirectory("", src).
-			WithExec([]string{"pip", "install", "--no-deps", "."})
+			WithExec([]string{"uv", "pip", "sync", "requirements-dev.lock"})
 	}
 
 	return base

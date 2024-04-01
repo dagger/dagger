@@ -1,7 +1,8 @@
 # Adding ruff ignores here to avoid a noqa comment in the snippets
 # and very doc specific rules in the SDK's pyproject.toml.
-extend = "../../sdk/python/pyproject.toml"
+extend = "../../.ruff.toml"
 
+[lint]
 ignore = [
     "D1",    # docstrings
     "E501",  # line too long
