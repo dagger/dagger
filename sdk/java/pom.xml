@@ -260,7 +260,7 @@
         <mockito-core.version>5.10.0</mockito-core.version>
         <slf4j-api.version>2.0.0</slf4j-api.version>
         <slf4j-simple.version>2.0.7</slf4j-simple.version>
-        <smallrye-graphql.version>2.7.0</smallrye-graphql.version>
+        <smallrye-graphql.version>2.8.1</smallrye-graphql.version>
         <system-stubs-jupiter.version>2.1.3</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.3</yasson.version>
