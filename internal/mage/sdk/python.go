@@ -50,8 +50,8 @@ func (t Python) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current_docs"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current_docs"}).
+            WithFile("/.ruff.toml", util.Repository(c).File(".ruff.toml")).
+			WithExec([]string{"hatch", "fmt", "--linter", "--check", ".", "../../docs/current_docs"}).
 			Sync(gctx)
 		return err
 	})
@@ -159,7 +159,7 @@ func (t Python) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithWorkdir("/").
 		WithExec([]string{cliBinPath, "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
-		WithExec([]string{"black", pythonGeneratedAPIPath}).
+		WithExec([]string{"hatch", "fmt", "--formatter", pythonGeneratedAPIPath}).
 		File(pythonGeneratedAPIPath).
 		Contents(ctx)
 	if err != nil {
@@ -222,13 +222,16 @@ func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 
 	return c.Container().
 		From(fmt.Sprintf("python:%s-slim", version)).
+		WithEnvVariable("PYTHONUNBUFFERED", "1").
 		WithEnvVariable("PIPX_BIN_DIR", "/usr/local/bin").
 		WithMountedCache("/root/.cache/pip", c.CacheVolume("pip_cache_"+version)).
 		WithMountedCache("/root/.local/pipx/cache", c.CacheVolume("pipx_cache_"+version)).
 		WithMountedCache("/root/.cache/hatch", c.CacheVolume("hatch_cache_"+version)).
+		WithMountedCache("/root/.cache/uv", c.CacheVolume("uv_cache_"+version)).
 		WithMountedFile("/pipx.pyz", pipx).
-		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.7.0"}).
-		WithExec([]string{"python", "-m", "venv", venv}).
+		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.9.3"}).
+		WithExec([]string{"python", "/pipx.pyz", "install", "uv==0.1.12"}).
+		WithExec([]string{"uv", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable(
 			"PATH",
@@ -236,16 +239,13 @@ func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 			dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
 			},
-		).
-		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv)
+		)
 }
 
 // pythonBase returns a python container with the Python SDK source files
 // added and dependencies installed.
 func pythonBase(c *dagger.Client, version string) *dagger.Container {
-	var (
-		appDir = "sdk/python"
-	)
+	var appDir = "sdk/python"
 
 	src := util.Repository(c).Directory(appDir)
 
@@ -253,14 +253,8 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	// relative paths in ruff (for docs linting).
 	mountPath := fmt.Sprintf("/%s", appDir)
 
-	reqPath := fmt.Sprintf("%s/requirements", appDir)
-	reqFile := fmt.Sprintf("%s.txt", reqPath)
-
 	return pythonBaseEnv(c, version).
-		WithDirectory(reqPath, src.Directory("requirements")).
-		WithFile(reqFile, src.File("requirements.txt")).
-		WithExec([]string{"pip", "install", "-r", reqFile}).
 		WithDirectory(mountPath, src).
 		WithWorkdir(mountPath).
-		WithExec([]string{"pip", "install", "."})
+		WithExec([]string{"uv", "pip", "sync", "requirements-dev.lock"})
 }
