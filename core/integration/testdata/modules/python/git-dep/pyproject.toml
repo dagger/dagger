@@ -1,8 +1,8 @@
 [project]
-name = "basic"
+name = "main"
 version = "0.0.0"
 dependencies = [
-    "dagger-io @ {root:uri}/../../../../../../sdk/python"
+    "asyncer @ git+https://github.com/tiangolo/asyncer@0.0.5",
 ]
 
 [tool.hatch.metadata]
@@ -11,3 +11,4 @@ allow-direct-references = true
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
