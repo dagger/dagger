@@ -46,12 +46,9 @@ func (m *ElixirSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	modDepsCache := dag.CacheVolume("module-deps")
-	modBuildCache := dag.CacheVolume("module-build")
+	modDepsCache, modBuildCache := mixProjectCaches(dag, "module")
 
-	// TODO: clean me up.
-	mod := strings.Replace(modName, "-", "_", -1)
-	entrypoint := path.Join(ModSourceDirPath, subPath, mod)
+	entrypoint := path.Join(ModSourceDirPath, subPath, normalizeModName(modName))
 	depsPath := path.Join(entrypoint, "deps")
 	buildPath := path.Join(entrypoint, "_build")
 
@@ -94,15 +91,16 @@ func (m *ElixirSdk) CodegenBase(
 		return nil, err
 	}
 
-	// TODO: maybe call ToLower and then replace `-` with `_`?
-	mod := strings.Replace(modName, "-", "_", -1)
+	mod := normalizeModName(modName)
+
+	codegenDepsCache, codegenBuildCache := mixProjectCaches(dag, "dagger-codegen")
 
 	ctr := m.Base("").
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-		WithMountedDirectory(sdkSrc, dag.CurrentModule().Source()).
-		WithExec([]string{"mix", "escript.install",
-			"github", "dagger/dagger", "branch", "main",
-			"--sparse", "sdk/elixir/dagger_codegen", "--force"}).
+		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
+		WithMountedCache(codegenPath()+"/deps", codegenDepsCache).
+		WithMountedCache(codegenPath()+"/_build", codegenBuildCache).
+		With(installCodegen).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
@@ -137,10 +135,10 @@ func (m *ElixirSdk) CodegenBase(
 			WithExec([]string{"mix", "new", "--sup", mod}).
 			WithExec([]string{"mkdir", "-p", mod + "/lib/mix/tasks"}).
 			// TODO: move to codegen.
-			WithExec([]string{"sh", "-c", "elixir /sdk/template.exs gen_mix_exs " + mod + " > " + mod + "/mix.exs"}).
-			WithExec([]string{"sh", "-c", "elixir /sdk/template.exs gen_module " + mod + " > " + mod + "/lib/" + mod + ".ex"}).
-			WithExec([]string{"sh", "-c", "elixir /sdk/template.exs gen_application " + mod + " > " + mod + "/lib/" + mod + "/application.ex"}).
-			WithExec([]string{"sh", "-c", "elixir /sdk/template.exs gen_mix_task " + mod + " > " + mod + "/lib/mix/tasks/dagger.invoke.ex"})
+			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_mix_exs " + mod + " > " + mod + "/mix.exs"}).
+			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_module " + mod + " > " + mod + "/lib/" + mod + ".ex"}).
+			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_application " + mod + " > " + mod + "/lib/" + mod + "/application.ex"}).
+			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_mix_task " + mod + " > " + mod + "/lib/mix/tasks/dagger.invoke.ex"})
 
 		return ctr, nil
 	}
@@ -165,4 +163,25 @@ func (m *ElixirSdk) Base(version string) *Container {
 		WithEnvVariable("PATH", "/root/.mix/escripts:$PATH", ContainerWithEnvVariableOpts{
 			Expand: true,
 		})
+}
+
+func installCodegen(ctr *Container) *Container {
+	return ctr.
+		WithWorkdir(codegenPath()).
+		WithExec([]string{"mix", "deps.get"}).
+		WithExec([]string{"mix", "escript.build"}).
+		WithExec([]string{"mix", "escript.install", "--force"})
+}
+
+func codegenPath() string {
+	return path.Join(sdkSrc, "dagger_codegen")
+}
+
+func mixProjectCaches(dag *Client, prefix string) (depsCache *CacheVolume, buildCache *CacheVolume) {
+	return dag.CacheVolume(prefix + "-deps"), dag.CacheVolume(prefix + "-build")
+
+}
+
+func normalizeModName(name string) string {
+	return strings.Replace(strings.ToLower(name), "-", "_", -1)
 }
