@@ -1,4 +1,6 @@
 defmodule Dagger.ModuleRuntime.Module do
+  @moduledoc false
+
   alias Dagger.ModuleRuntime.Function
   alias Dagger.ModuleRuntime.Helper
 
