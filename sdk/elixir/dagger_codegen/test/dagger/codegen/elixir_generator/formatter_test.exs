@@ -20,6 +20,9 @@ defmodule Dagger.Codegen.ElixirGenerator.FormatterTest do
 
     assert Formatter.format_function_name("experimentalWithAllGPUs") ==
              "experimental_with_all_gpus"
+
+    assert Formatter.format_function_name("true") == "true_"
+    assert Formatter.format_function_name("do") == "do_"
   end
 
   test "format_doc/1" do
