@@ -1457,6 +1457,9 @@ type GitRepository {
     id: String!
   ): GitRef!
 
+  """Returns details for HEAD."""
+  head: GitRef!
+
   """A unique identifier for this GitRepository."""
   id: GitRepositoryID!
 
