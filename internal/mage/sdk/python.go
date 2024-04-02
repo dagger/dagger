@@ -35,7 +35,7 @@ func (t Python) Lint(ctx context.Context) error {
 
 	eg, gctx := errgroup.WithContext(ctx)
 
-	base := pythonBase(c, pythonDefaultVersion)
+	base := pythonBase(c, pythonDefaultVersion, true)
 
 	eg.Go(func() error {
 		path := "docs/current_docs"
@@ -92,7 +92,7 @@ func (t Python) Test(ctx context.Context) error {
 	for _, version := range versions {
 		version := version
 		c := c.Pipeline(version)
-		base := pythonBase(c, version)
+		base := pythonBase(c, version, true)
 
 		eg.Go(func() error {
 			_, err := base.
@@ -106,7 +106,7 @@ func (t Python) Test(ctx context.Context) error {
 		})
 
 		//  Test build
-		dist := pythonBaseEnv(c, version).
+		dist := pythonBase(c, version, false).
 			Pipeline("build").
 			WithMountedDirectory(
 				"/dist",
@@ -120,7 +120,7 @@ func (t Python) Test(ctx context.Context) error {
 			ext := ext
 			eg.Go(func() error {
 				_, err := dist.Pipeline(name).
-					WithExec([]string{"sh", "-c", "pip install /dist/*" + ext}).
+					WithExec([]string{"sh", "-c", "pip install --no-deps /dist/*" + ext}).
 					WithExec([]string{"python", "-c", "import dagger"}).
 					Sync(gctx)
 				return err
@@ -152,7 +152,7 @@ func (t Python) Generate(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	generated, err := pythonBase(c, pythonDefaultVersion).
+	generated, err := pythonBase(c, pythonDefaultVersion, true).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, cliBinary).
@@ -189,7 +189,7 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 		repo = "main"
 	}
 
-	result := pythonBase(c, pythonDefaultVersion).
+	result := pythonBase(c, pythonDefaultVersion, true).
 		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", version).
 		WithEnvVariable("HATCH_INDEX_REPO", repo).
 		WithEnvVariable("HATCH_INDEX_USER", "__token__").
@@ -242,7 +242,7 @@ func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 
 // pythonBase returns a python container with the Python SDK source files
 // added and dependencies installed.
-func pythonBase(c *dagger.Client, version string) *dagger.Container {
+func pythonBase(c *dagger.Client, version string, install bool) *dagger.Container {
 	var (
 		appDir = "sdk/python"
 	)
@@ -256,11 +256,17 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	reqPath := fmt.Sprintf("%s/requirements", appDir)
 	reqFile := fmt.Sprintf("%s.txt", reqPath)
 
-	return pythonBaseEnv(c, version).
-		WithDirectory(reqPath, src.Directory("requirements")).
-		WithFile(reqFile, src.File("requirements.txt")).
+	base := pythonBaseEnv(c, version).
+		WithMountedDirectory(reqPath, src.Directory("requirements")).
+		WithMountedFile(reqFile, src.File("requirements.txt")).
 		WithExec([]string{"pip", "install", "-r", reqFile}).
-		WithDirectory(mountPath, src).
-		WithWorkdir(mountPath).
-		WithExec([]string{"pip", "install", "."})
+		WithWorkdir(mountPath)
+
+	if install {
+		base = base.
+			WithMountedDirectory(mountPath, src).
+			WithExec([]string{"pip", "install", "."})
+	}
+
+	return base
 }
