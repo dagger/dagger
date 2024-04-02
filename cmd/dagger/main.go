@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -172,7 +173,7 @@ func parseGlobalFlags() {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.ParseErrorsWhitelist.UnknownFlags = true
 	installGlobalFlags(flags)
-	if err := flags.Parse(os.Args[1:]); err != nil {
+	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
