@@ -4670,6 +4670,49 @@ export class GitRepository extends BaseClient {
       ctx: this._ctx,
     })
   }
+
+  /**
+   * Header to authorize with.
+   * @param header TODO
+   */
+  withAuthHeader = (header: Secret): GitRepository => {
+    return new GitRepository({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withAuthHeader",
+          args: { header },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Token to authorize with.
+   * @param token TODO
+   */
+  withAuthToken = (token: Secret): GitRepository => {
+    return new GitRepository({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withAuthToken",
+          args: { token },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Call the provided function with current GitRepository.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: GitRepository) => GitRepository) => {
+    return arg(this)
+  }
 }
 
 /**

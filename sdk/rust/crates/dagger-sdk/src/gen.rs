@@ -3788,6 +3788,46 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Header to authorize with.
+    ///
+    /// # Arguments
+    ///
+    /// * `header` - TODO
+    pub fn with_auth_header(&self, header: Secret) -> GitRepository {
+        let mut query = self.selection.select("withAuthHeader");
+        query = query.arg_lazy(
+            "header",
+            Box::new(move || {
+                let header = header.clone();
+                Box::pin(async move { header.id().await.unwrap().quote() })
+            }),
+        );
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Token to authorize with.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - TODO
+    pub fn with_auth_token(&self, token: Secret) -> GitRepository {
+        let mut query = self.selection.select("withAuthToken");
+        query = query.arg_lazy(
+            "token",
+            Box::new(move || {
+                let token = token.clone();
+                Box::pin(async move { token.id().await.unwrap().quote() })
+            }),
+        );
+        GitRepository {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct Host {

@@ -1476,6 +1476,18 @@ type GitRepository {
     """Tag's name (e.g., "v0.3.9")."""
     name: String!
   ): GitRef!
+
+  """Header to authorize with."""
+  withAuthHeader(
+    """TODO"""
+    header: SecretID!
+  ): GitRepository!
+
+  """Token to authorize with."""
+  withAuthToken(
+    """TODO"""
+    token: SecretID!
+  ): GitRepository!
 }
 
 """

@@ -78,4 +78,32 @@ defmodule Dagger.GitRepository do
       client: git_repository.client
     }
   end
+
+  @doc "Header to authorize with."
+  @spec with_auth_header(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
+  def with_auth_header(%__MODULE__{} = git_repository, header) do
+    selection =
+      git_repository.selection
+      |> select("withAuthHeader")
+      |> put_arg("header", Dagger.ID.id!(header))
+
+    %Dagger.GitRepository{
+      selection: selection,
+      client: git_repository.client
+    }
+  end
+
+  @doc "Token to authorize with."
+  @spec with_auth_token(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
+  def with_auth_token(%__MODULE__{} = git_repository, token) do
+    selection =
+      git_repository.selection
+      |> select("withAuthToken")
+      |> put_arg("token", Dagger.ID.id!(token))
+
+    %Dagger.GitRepository{
+      selection: selection,
+      client: git_repository.client
+    }
+  end
 end
