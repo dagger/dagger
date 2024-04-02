@@ -234,7 +234,7 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	// Try to detect runtime from package.json
 	source := modSource.ContextDirectory().Directory(subPath)
-	
+
 	// read contents of package.json
 	json, err := source.File("package.json").Contents(ctx)
 	if err == nil {
