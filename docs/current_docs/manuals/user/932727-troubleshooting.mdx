@@ -14,22 +14,22 @@ To resolve this error, you must stop and remove the Dagger Engine container and 
 
 1. Stop and remove the Dagger Engine container:
 
-    ```shell
-    DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
-    docker container stop "$DAGGER_ENGINE_DOCKER_CONTAINER"
-    docker container rm "$DAGGER_ENGINE_DOCKER_CONTAINER"
-    ```
+   ```shell
+   DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
+   docker container stop "$DAGGER_ENGINE_DOCKER_CONTAINER"
+   docker container rm "$DAGGER_ENGINE_DOCKER_CONTAINER"
+   ```
 
 1. Clear unused volumes and data:
 
-    :::info
-    This step is optional. It will remove the cache and result in a slow first run when the container is re-provisioned.
-    :::
+   :::info
+   This step is optional. It will remove the cache and result in a slow first run when the container is re-provisioned.
+   :::
 
-    ```shell
-    docker volume prune
-    docker system prune
-    ```
+   ```shell
+   docker volume prune
+   docker system prune
+   ```
 
 You should now be able to run your Dagger Function successfully.
 
@@ -61,4 +61,16 @@ To resolve this error, remove the `DOCKER_DEFAULT_PLATFORM` variable, restart th
 ```shell
 DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
 docker restart "$DAGGER_ENGINE_DOCKER_CONTAINER"
+```
+
+## Dagger Engine Restarts Due to `CNI setup error`
+
+Dagger Engine requires the `iptable_nat` Linux Kernel Module in order to function properly. On some Linux Distributions (including RHEL 8.x and 9.x) this module is not loaded by default.
+
+You can load this module by running `sudo modprobe iptable_nat`.
+
+If you'd like to have this module loaded by default when your machine starts, then you can add it to the `/etc/modules-load.d/modules` file with the following command:
+
+```
+echo iptable_nat | sudo tee -a /etc/modules-load.d/modules
 ```
