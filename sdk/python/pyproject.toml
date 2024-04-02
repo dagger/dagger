@@ -35,8 +35,6 @@ dependencies = [
     "platformdirs>=2.6.2",
     "typing_extensions>=4.8.0",
     "rich>=10.11.0",
-    "opentelemetry-sdk>=1.23.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.23.0",
 ]
 
 [project.urls]

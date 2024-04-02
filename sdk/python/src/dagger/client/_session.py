@@ -19,7 +19,6 @@ from typing_extensions import Self
 from dagger import ClientConnectionError
 from dagger._config import ConnectConfig, Retry
 from dagger._managers import ResourceManager
-from dagger.client import _otel as otel
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,6 @@ class ClientSession(ResourceManager):
 
         transport = HTTPXAsyncTransport(
             conn.url,
-            transport=otel.AsyncTransport(),
             timeout=cfg.timeout,
             auth=(conn.session_token, ""),
         )
@@ -90,10 +88,6 @@ class ClientSession(ResourceManager):
 
         async with self.get_stack() as stack:
             logger.debug("Establishing client session to GraphQL server")
-
-            await stack.enter_async_context(
-                otel.start_as_current_span("GraphQL client session"),
-            )
             try:
                 session = await stack.enter_async_context(self.client)
             except TimeoutError as e:
