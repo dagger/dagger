@@ -328,6 +328,11 @@ func (sdk *goSDK) Codegen(
 			"internal/dagger/**",
 			"internal/querybuilder/**",
 		},
+		VCSIgnoredPaths: []string{
+			"dagger.gen.go",
+			"internal/dagger",
+			"internal/querybuilder",
+		},
 	}, nil
 }
 

@@ -229,6 +229,20 @@ func (src *ModuleSource) SDK(ctx context.Context) (string, error) {
 	return modCfg.SDK, nil
 }
 
+func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) {
+	modCfg, ok, err := src.ModuleConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("module config: %w", err)
+	}
+	if !ok {
+		return nil, nil
+	}
+	if modCfg.Codegen == nil {
+		return nil, nil
+	}
+	return modCfg.Codegen.AutomaticGitignore, nil
+}
+
 func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], err error) {
 	switch src.Kind {
 	case ModuleSourceKindLocal:

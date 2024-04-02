@@ -526,13 +526,13 @@ const (
 	// the target image.
 	targetImageLayersLabel = "containerd.io/snapshot/remote/stargz.layers"
 
-	// targetSessionLabel is a labeld which contains session IDs usable for
+	// targetSessionLabel is a label which contains session IDs usable for
 	// authenticating the target snapshot.
 	targetSessionLabel = "containerd.io/snapshot/remote/stargz.session"
 )
 
 // sourceWithSession returns a callback which implements a converter from labels to the
-// typed snapshot source info. This callback is called everytime the snapshotter resolves a
+// typed snapshot source info. This callback is called every time the snapshotter resolves a
 // snapshot. This callback returns configuration that is based on buildkitd's registry config
 // and utilizes the session-based authorizer.
 func sourceWithSession(hosts docker.RegistryHosts, sm *session.Manager) sgzsource.GetSources {

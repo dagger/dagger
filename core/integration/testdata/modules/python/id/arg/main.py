@@ -2,4 +2,4 @@ from dagger import function
 
 @function
 def fn(id: str) -> str:
-    return "NOOOO!!!!"
+    return id

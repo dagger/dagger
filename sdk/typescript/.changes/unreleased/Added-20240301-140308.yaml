@@ -1,0 +1,7 @@
+kind: Added
+body: 'runtime: Added support for the SDK runtime to automatically detect or be configured
+  to use the Node.js or Bun.js runtime environments'
+time: 2024-03-01T14:03:08.515862136+01:00
+custom:
+  Author: benjaminstrasser
+  PR: "6730"

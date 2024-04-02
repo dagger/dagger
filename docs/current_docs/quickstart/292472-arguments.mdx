@@ -163,7 +163,7 @@ This example uses a file utility module and calls its `Tree()` function. The `Tr
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. For example, let's try listing the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger
+dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir='https://github.com/dagger/dagger#main:cmd/dagger'
 ```
 
 You should see the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):

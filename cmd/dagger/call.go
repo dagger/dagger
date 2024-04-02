@@ -154,7 +154,7 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
 }
 
-// logOutputSuccess prints to stderr the the output path to the user.
+// logOutputSuccess prints to stderr the output path to the user.
 func logOutputSuccess(cmd *cobra.Command, path string) {
 	path, err := filepath.Abs(path)
 	if err != nil {

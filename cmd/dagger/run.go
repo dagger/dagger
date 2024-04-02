@@ -26,7 +26,7 @@ var runCmd = &cobra.Command{
 		`Executes the specified command in a Dagger Session and displays
 live progress in a TUI.
 
-´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ will be convieniently
+´DAGGER_SESSION_PORT´ and ´DAGGER_SESSION_TOKEN´ will be conveniently
 injected automatically.
 
 For example:

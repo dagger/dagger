@@ -90,10 +90,13 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the contents of the directory to a path on the host.
      */
-    public function export(string $path): bool
+    public function export(string $path, ?bool $wipe = false): bool
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
+        if (null !== $wipe) {
+        $leafQueryBuilder->setArgument('wipe', $wipe);
+        }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 

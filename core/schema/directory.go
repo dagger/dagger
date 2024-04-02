@@ -19,7 +19,7 @@ func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`).
-			ArgDeprecated("id", "Use `loadDirectoryFromID` isntead."),
+			ArgDeprecated("id", "Use `loadDirectoryFromID` instead."),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Directory]{
@@ -79,7 +79,8 @@ func (s *directorySchema) Install() {
 		dagql.Func("export", s.export).
 			Impure("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
-			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`),
+			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).
+			ArgDoc("wipe", `If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
 		dagql.Func("dockerBuild", s.dockerBuild).
 			Doc(`Builds a new Docker container from this directory.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
@@ -261,10 +262,11 @@ func (s *directorySchema) diff(ctx context.Context, parent *core.Directory, args
 
 type dirExportArgs struct {
 	Path string
+	Wipe bool `default:"false"`
 }
 
 func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
-	err := parent.Export(ctx, args.Path)
+	err := parent.Export(ctx, args.Path, !args.Wipe)
 	if err != nil {
 		return false, err
 	}
