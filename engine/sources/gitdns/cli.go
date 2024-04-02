@@ -79,18 +79,21 @@ func (cli *gitCLI) run(ctx context.Context, args ...string) (_ *bytes.Buffer, er
 				flush()
 			}
 		}()
-		if len(cli.auth) > 0 {
-			args = append(cli.auth, args...)
-		}
+
+		cmd := exec.Command("git")
+		// Block sneaky repositories from using repos from the filesystem as submodules.
+		cmd.Args = append(cmd.Args, "-c", "protocol.file.allow=user")
 		if cli.gitDir != "" {
-			args = append([]string{"--git-dir", cli.gitDir}, args...)
+			cmd.Args = append(cmd.Args, "--git-dir", cli.gitDir)
 		}
 		if cli.workTree != "" {
-			args = append([]string{"--work-tree", cli.workTree}, args...)
+			cmd.Args = append(cmd.Args, "--work-tree", cli.workTree)
 		}
-		// Block sneaky repositories from using repos from the filesystem as submodules.
-		args = append([]string{"-c", "protocol.file.allow=user"}, args...)
-		cmd := exec.Command("git", args...)
+		if len(cli.auth) > 0 {
+			cmd.Args = append(cmd.Args, cli.auth...)
+		}
+		cmd.Args = append(cmd.Args, args...)
+
 		cmd.Dir = cli.workTree // some commands like submodule require this
 		buf := bytes.NewBuffer(nil)
 		errbuf := bytes.NewBuffer(nil)
