@@ -11,6 +11,10 @@ import (
 	"strings"
 	"syscall"
 
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -18,9 +22,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/telemetry"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 const (

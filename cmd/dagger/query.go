@@ -8,10 +8,11 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var (

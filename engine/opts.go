@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"unicode"
 
-	"github.com/dagger/dagger/telemetry"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (

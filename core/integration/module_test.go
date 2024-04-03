@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -25,6 +23,8 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 func TestModuleGoInit(t *testing.T) {

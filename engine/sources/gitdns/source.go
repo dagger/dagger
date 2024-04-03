@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
@@ -32,6 +31,8 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/dagger/dagger/network"
 )
 
 var validHex = regexp.MustCompile(`^[a-f0-9]{40}$`)

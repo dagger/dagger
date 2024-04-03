@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func TestInternalVertexes(t *testing.T) {

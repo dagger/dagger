@@ -7,11 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	bkauth "github.com/moby/buildkit/session/auth"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TODO: this could be consolidated to buildkit pkg now, should only be needed there

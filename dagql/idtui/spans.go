@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
-	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
 type Span struct {

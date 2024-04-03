@@ -6,13 +6,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
 	connhKube "github.com/moby/buildkit/client/connhelper/kubepod"
 	connhPodman "github.com/moby/buildkit/client/connhelper/podmancontainer"
 	connhSSH "github.com/moby/buildkit/client/connhelper/ssh"
+	"github.com/pkg/errors"
 )
 
 func init() {

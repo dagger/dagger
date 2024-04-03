@@ -7,10 +7,11 @@ import (
 	"net"
 	"sync"
 
-	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+
+	"github.com/dagger/dagger/telemetry"
 )
 
 type TunnelListenerAttachable struct {

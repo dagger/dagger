@@ -3,8 +3,9 @@ package mage
 import (
 	"context"
 
-	"github.com/dagger/dagger/internal/mage/sdk"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/internal/mage/sdk"
 )
 
 type tester interface {

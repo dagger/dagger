@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/dagger/telemetry"
 	"github.com/mitchellh/go-spdx"
+
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (

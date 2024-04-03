@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type containerSchema struct {
@@ -1195,9 +1196,9 @@ type containerImportArgs struct {
 
 func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) {
 	start := time.Now()
-	slog.Debug("importing container", "source", args.Source.Display(), "tag", args.Tag)
+	slog.ExtraDebug("importing container", "source", args.Source.Display(), "tag", args.Tag)
 	defer func() {
-		slog.Debug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
+		slog.ExtraDebug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
 	}()
 	source, err := args.Source.Load(ctx, s.srv)
 	if err != nil {

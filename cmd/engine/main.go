@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -22,13 +22,6 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/server"
-	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/network/netinst"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -73,6 +66,15 @@ import (
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/server"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/network/netinst"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 const (
@@ -161,6 +163,10 @@ func main() { //nolint:gocyclo
 		cli.BoolFlag{
 			Name:  "debug",
 			Usage: "enable debug output in logs",
+		},
+		cli.BoolFlag{
+			Name:  "extra-debug",
+			Usage: "enable extra debug output in logs",
 		},
 		cli.BoolFlag{
 			Name:  "trace",
@@ -273,13 +279,31 @@ func main() { //nolint:gocyclo
 		// Wire slog up to send to Logrus so engine logs using slog also get sent
 		// to Cloud
 		slogOpts := sloglogrus.Option{}
-		if cfg.Debug {
+
+		noiseReduceHook := &noiseReductionHook{
+			ignoreLogger: logrus.New(),
+		}
+		noiseReduceHook.ignoreLogger.SetOutput(io.Discard)
+
+		switch {
+		case cfg.Trace:
+			slogOpts.Level = slog.LevelTrace
+			logrus.SetLevel(logrus.TraceLevel)
+			// don't add noise reduction hook for trace level
+		case c.IsSet("extra-debug"):
+			slogOpts.Level = slog.LevelExtraDebug
+			logrus.SetLevel(logrus.DebugLevel)
+			// don't add noise reduction hook for extra debug level
+		case cfg.Debug:
 			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
+			logrus.AddHook(noiseReduceHook)
+		default:
+			logrus.AddHook(noiseReduceHook)
 		}
-		if cfg.Trace {
-			logrus.SetLevel(logrus.TraceLevel)
-		}
+
+		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
+		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
 		if cfg.GRPC.DebugAddress != "" {

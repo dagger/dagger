@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+
+	"dagger.io/dagger"
 )
 
 const cliBinPath = "/.dagger-cli"

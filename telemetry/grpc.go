@@ -2,10 +2,11 @@ package telemetry
 
 import (
 	"context"
-	"log/slog"
 
 	grpc "google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func MeasuringUnaryClientInterceptor() grpc.UnaryClientInterceptor {
@@ -13,7 +14,7 @@ func MeasuringUnaryClientInterceptor() grpc.UnaryClientInterceptor {
 		reqSize := proto.Size(req.(proto.Message))
 		err := invoker(ctx, method, req, reply, cc, opts...)
 		respSize := proto.Size(reply.(proto.Message))
-		slog.Debug("measuring gRPC client request",
+		slog.ExtraDebug("measuring gRPC client request",
 			"reqSize", reqSize,
 			"respSize", respSize)
 		return err
@@ -25,7 +26,7 @@ func MeasuringUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 		reqSize := proto.Size(req.(proto.Message))
 		resp, err = handler(ctx, req)
 		respSize := proto.Size(resp.(proto.Message))
-		slog.Debug("measuring gRPC server method",
+		slog.ExtraDebug("measuring gRPC server method",
 			"method", info.FullMethod,
 			"reqSize", reqSize,
 			"respSize", respSize)
@@ -49,7 +50,7 @@ type measuringClientStream struct {
 
 func (s *measuringClientStream) SendMsg(m any) error {
 	msgSize := proto.Size(m.(proto.Message))
-	slog.Debug("measuring client stream SendMsg", "msgSize", msgSize)
+	slog.ExtraDebug("measuring client stream SendMsg", "msgSize", msgSize)
 	return s.ClientStream.SendMsg(m)
 }
 
@@ -57,7 +58,7 @@ func (s *measuringClientStream) RecvMsg(m any) error {
 	err := s.ClientStream.RecvMsg(m)
 	if err == nil {
 		msgSize := proto.Size(m.(proto.Message))
-		slog.Debug("measuring client stream RecvMsg", "msgSize", msgSize)
+		slog.ExtraDebug("measuring client stream RecvMsg", "msgSize", msgSize)
 	}
 	return err
 }

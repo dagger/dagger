@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dagger/dagger/engine/sources/blob"
 	cacheconfig "github.com/moby/buildkit/cache/config"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/compression"
 	bkworker "github.com/moby/buildkit/worker"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"github.com/dagger/dagger/engine/sources/blob"
 )
 
 // DefToBlob converts the given llb definition to a content addressed blob valid for the

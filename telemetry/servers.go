@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -21,6 +20,7 @@ import (
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	logtransform "github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
 )

@@ -3,13 +3,13 @@ package telemetry
 import (
 	"context"
 	"io"
-	"log/slog"
 	"time"
 
 	"github.com/lmittmann/tint"
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/dagql/ioctx"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type OtelWriter struct {

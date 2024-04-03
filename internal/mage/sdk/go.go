@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/magefile/mage/mg"
 	"github.com/moby/buildkit/identity"
 
 	"dagger.io/dagger"
-	"github.com/magefile/mage/mg"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 const (

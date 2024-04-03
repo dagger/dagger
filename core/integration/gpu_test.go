@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 const (

@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {

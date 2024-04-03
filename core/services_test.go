@@ -8,15 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 func TestServicesStartHappy(t *testing.T) {
