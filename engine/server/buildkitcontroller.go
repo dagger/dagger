@@ -173,7 +173,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		if !ok {
 			return fmt.Errorf("server %q not found", opts.ServerID)
 		}
-		bklog.G(ctx).Debugf("forwarding client to server")
+		bklog.G(ctx).Trace("forwarding client to server")
 		err = srv.ServeClientConn(ctx, opts, conn)
 		if errors.Is(err, io.ErrClosedPipe) {
 			return nil
@@ -181,13 +181,13 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		return fmt.Errorf("serve clientConn: %w", err)
 	}
 
-	bklog.G(ctx).Debugf("registering client")
+	bklog.G(ctx).Trace("registering client")
 
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		bklog.G(ctx).Debug("session manager handling conn")
+		bklog.G(ctx).Trace("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
-		bklog.G(ctx).WithError(err).Debug("session manager handle conn done")
+		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
 		slog.Warn("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
 		if err != nil {
 			return fmt.Errorf("handleConn: %w", err)
@@ -204,7 +204,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	srv, ok := e.servers[opts.ServerID]
 	e.serverMu.RUnlock()
 	if !ok {
-		bklog.G(ctx).Debugf("initializing new server")
+		bklog.G(ctx).Trace("initializing new server")
 
 		srv, err = e.newDaggerServer(ctx, opts)
 		if err != nil {
@@ -215,11 +215,11 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		e.servers[opts.ServerID] = srv
 		e.serverMu.Unlock()
 
-		bklog.G(ctx).Debugf("initialized new server")
+		bklog.G(ctx).Trace("initialized new server")
 
 		// delete the server after the initial client who created it exits
 		defer func() {
-			bklog.G(ctx).Debug("removing server")
+			bklog.G(ctx).Trace("removing server")
 			e.serverMu.Lock()
 			delete(e.servers, opts.ServerID)
 			e.serverMu.Unlock()
@@ -229,7 +229,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			}
 
 			time.AfterFunc(time.Second, e.throttledGC)
-			bklog.G(ctx).Debug("server removed")
+			bklog.G(ctx).Trace("server removed")
 		}()
 	}
 	e.perServerMu.Unlock(opts.ServerID)
