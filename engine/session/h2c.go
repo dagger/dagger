@@ -7,21 +7,20 @@ import (
 	"net"
 	"sync"
 
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/util/grpcerrors"
-	"github.com/vito/progrock"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 )
 
 type TunnelListenerAttachable struct {
-	rec *progrock.Recorder
+	rootCtx context.Context
+
 	UnimplementedTunnelListenerServer
 }
 
-func NewTunnelListenerAttachable(rec *progrock.Recorder) TunnelListenerAttachable {
-	return TunnelListenerAttachable{
-		rec: rec,
-	}
+func NewTunnelListenerAttachable(rootCtx context.Context) TunnelListenerAttachable {
+	return TunnelListenerAttachable{rootCtx: rootCtx}
 }
 
 func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
@@ -29,6 +28,8 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 }
 
 func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
+	log := telemetry.GlobalLogger(s.rootCtx)
+
 	req, err := srv.Recv()
 	if err != nil {
 		return err
@@ -64,7 +65,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 			conn, err := l.Accept()
 			if err != nil {
 				if !errors.Is(err, net.ErrClosed) {
-					s.rec.Warn("accept error", progrock.ErrorLabel(err))
+					log.Warn("accept error", "error", err)
 				}
 				return
 			}
@@ -81,7 +82,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 			})
 			sendL.Unlock()
 			if err != nil {
-				s.rec.Warn("send connID error", progrock.ErrorLabel(err))
+				log.Warn("send connID error", "error", err)
 				return
 			}
 
@@ -96,7 +97,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 							return
 						}
 
-						s.rec.Warn("conn read error", progrock.ErrorLabel(err))
+						log.Warn("conn read error", "error", err)
 						return
 					}
 
@@ -107,7 +108,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 					})
 					sendL.Unlock()
 					if err != nil {
-						s.rec.Warn("listener send response error", progrock.ErrorLabel(err))
+						log.Warn("listener send response error", "error", err)
 						return
 					}
 				}
@@ -133,13 +134,13 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 				return nil
 			}
 
-			s.rec.Error("listener receive request error", progrock.ErrorLabel(err))
+			log.Error("listener receive request error", "error", err)
 			return err
 		}
 
 		connID := req.GetConnId()
 		if req.GetConnId() == "" {
-			s.rec.Warn("listener request with no connID")
+			log.Warn("listener request with no connID")
 			continue
 		}
 
@@ -147,14 +148,14 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		conn, ok := conns[connID]
 		connsL.Unlock()
 		if !ok {
-			s.rec.Warn("listener request for unknown connID", progrock.Labelf("connID", connID))
+			log.Warn("listener request for unknown connID", "connID", connID)
 			continue
 		}
 
 		switch {
 		case req.GetClose():
 			if err := conn.Close(); err != nil {
-				s.rec.Warn("conn close error", progrock.ErrorLabel(err))
+				log.Warn("conn close error", "error", err)
 				continue
 			}
 			connsL.Lock()
@@ -168,7 +169,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 					return nil
 				}
 
-				s.rec.Warn("conn write error", progrock.ErrorLabel(err))
+				log.Warn("conn write error", "error", err)
 				continue
 			}
 		}

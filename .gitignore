@@ -45,4 +45,3 @@ go.work.sum
 
 # merged from dagger/examples repository
 **/node_modules
-**/env

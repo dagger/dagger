@@ -34,6 +34,18 @@ defmodule Dagger.GitRepository do
     }
   end
 
+  @doc "Returns details for HEAD."
+  @spec head(t()) :: Dagger.GitRef.t()
+  def head(%__MODULE__{} = git_repository) do
+    selection =
+      git_repository.selection |> select("head")
+
+    %Dagger.GitRef{
+      selection: selection,
+      client: git_repository.client
+    }
+  end
+
   @doc "A unique identifier for this GitRepository."
   @spec id(t()) :: {:ok, Dagger.GitRepositoryID.t()} | {:error, term()}
   def id(%__MODULE__{} = git_repository) do

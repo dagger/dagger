@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"sync"
 
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/sync/errgroup"
@@ -66,6 +67,9 @@ type Discovery struct {
 	// configuration, either from loading pyproject.toml or reacting to the
 	// the presence of certain files like .python-version.
 	EnableCustomConfig bool
+
+	// Used to synchronize updates.
+	mu sync.Mutex
 }
 
 func NewDiscovery(cfg UserConfig) *Discovery {
@@ -168,7 +172,9 @@ func (d *Discovery) loadModInfo(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("get module source subpath: %w", err)
 		}
+		d.mu.Lock()
 		d.SubPath = p
+		d.mu.Unlock()
 		return nil
 	})
 
@@ -176,9 +182,11 @@ func (d *Discovery) loadModInfo(ctx context.Context) error {
 		// d.Source() depends on SubPath
 		<-doneSubPath
 		entries, _ := d.Source().Entries(gctx)
+		d.mu.Lock()
 		for _, entry := range entries {
 			d.FileSet[entry] = struct{}{}
 		}
+		d.mu.Unlock()
 		return nil
 	})
 
@@ -187,7 +195,9 @@ func (d *Discovery) loadModInfo(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("get module name: %w", err)
 		}
+		d.mu.Lock()
 		d.ModName = modName
+		d.mu.Unlock()
 		return nil
 	})
 
@@ -210,7 +220,9 @@ func (d *Discovery) loadModInfo(ctx context.Context) error {
 			return fmt.Errorf("check if config exists: %w", err)
 		}
 		if !exists {
+			d.mu.Lock()
 			d.IsInit = true
+			d.mu.Unlock()
 		}
 		return nil
 	})
@@ -247,7 +259,9 @@ func (d *Discovery) loadFiles(ctx context.Context) error {
 					if err != nil {
 						return fmt.Errorf("get file contents of %q: %w", name, err)
 					}
+					d.mu.Lock()
 					d.Files[name] = strings.TrimSpace(contents)
+					d.mu.Unlock()
 					return nil
 				})
 			}
@@ -264,7 +278,9 @@ func (d *Discovery) loadFiles(ctx context.Context) error {
 		// effort).
 		entries, err := d.Source().Glob(gctx, "**/*.py")
 		if len(entries) > 0 {
+			d.mu.Lock()
 			d.FileSet["*.py"] = struct{}{}
+			d.mu.Unlock()
 		} else if err == nil && !d.IsInit {
 			// This can also happen on `dagger develop --sdk` if there's also
 			// a pyproject.toml present to customize the base container.

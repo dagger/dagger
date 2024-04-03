@@ -11,9 +11,18 @@ import (
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/querybuilder"
 )
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// reassigned at runtime after the span is initialized
+var marshalCtx = context.Background()
 
 // assertNotNil panic if the given value is nil.
 // This function is used to validate that input with pointer type are not nil.
@@ -285,7 +294,7 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *CacheVolume) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -663,7 +672,7 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Container) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -1733,7 +1742,7 @@ func (r *CurrentModule) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *CurrentModule) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2018,7 +2027,7 @@ func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Directory) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2260,7 +2269,7 @@ func (r *EnvVariable) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *EnvVariable) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2356,7 +2365,7 @@ func (r *FieldTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *FieldTypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2483,7 +2492,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *File) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2637,7 +2646,7 @@ func (r *Function) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Function) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2783,7 +2792,7 @@ func (r *FunctionArg) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *FunctionArg) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -2862,7 +2871,7 @@ func (r *FunctionCall) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *FunctionCall) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3003,7 +3012,7 @@ func (r *FunctionCallArgValue) XXX_GraphQLID(ctx context.Context) (string, error
 }
 
 func (r *FunctionCallArgValue) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3099,7 +3108,7 @@ func (r *GeneratedCode) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *GeneratedCode) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3245,7 +3254,7 @@ func (r *GitModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3338,7 +3347,7 @@ func (r *GitRef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *GitRef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3405,6 +3414,15 @@ func (r *GitRepository) Commit(id string) *GitRef {
 	}
 }
 
+// Returns details for HEAD.
+func (r *GitRepository) Head() *GitRef {
+	q := r.query.Select("head")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
 // A unique identifier for this GitRepository.
 func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
 	if r.id != nil {
@@ -3438,7 +3456,7 @@ func (r *GitRepository) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *GitRepository) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3549,7 +3567,7 @@ func (r *Host) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Host) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3721,7 +3739,7 @@ func (r *InputTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *InputTypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3836,7 +3854,7 @@ func (r *InterfaceTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *InterfaceTypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -3917,7 +3935,7 @@ func (r *Label) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Label) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -4005,7 +4023,7 @@ func (r *ListTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -4068,7 +4086,7 @@ func (r *LocalModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -4243,7 +4261,7 @@ func (r *Module) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Module) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -4474,7 +4492,7 @@ func (r *ModuleDependency) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *ModuleDependency) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -4670,7 +4688,7 @@ func (r *ModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *ModuleSource) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -4949,7 +4967,7 @@ func (r *ModuleSourceView) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *ModuleSourceView) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -5116,7 +5134,7 @@ func (r *ObjectTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *ObjectTypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -5225,7 +5243,7 @@ func (r *Port) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Port) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -6041,7 +6059,7 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Secret) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -6173,7 +6191,7 @@ func (r *Service) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Service) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -6320,7 +6338,7 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Socket) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -6374,7 +6392,7 @@ func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Terminal) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -6486,7 +6504,7 @@ func (r *TypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *TypeDef) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(context.Background())
+	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err
 	}

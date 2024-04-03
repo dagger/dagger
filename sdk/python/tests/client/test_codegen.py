@@ -109,7 +109,7 @@ def test_format_output_type(graphql, expected):
 @pytest.mark.parametrize(
     ("name", "args", "expected"),
     [
-        ("args", (NonNull(List(String)),), "args: Sequence[str | None]"),
+        ("args", (NonNull(List(String)),), "args: list[str | None]"),
         ("secret", (NonNull(Scalar("SecretID")),), "secret: Secret"),
         ("secret", (Scalar("SecretID"),), "secret: Secret | None = None"),
         ("from", (String, None), "from_: str | None = None"),

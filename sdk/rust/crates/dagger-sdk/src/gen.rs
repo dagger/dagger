@@ -3746,6 +3746,15 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns details for HEAD.
+    pub fn head(&self) -> GitRef {
+        let query = self.selection.select("head");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this GitRepository.
     pub async fn id(&self) -> Result<GitRepositoryId, DaggerError> {
         let query = self.selection.select("id");

@@ -19,27 +19,26 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vito/progrock"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DaggerServer struct {
 	serverID string
+	traceID  trace.TraceID
 
 	clientIDToSecretToken map[string]string
 	connectedClients      int
@@ -58,9 +57,8 @@ type DaggerServer struct {
 
 	services *core.Services
 
-	recorder    *progrock.Recorder
-	analytics   analytics.Tracker
-	progCleanup func() error
+	pubsub    *telemetry.PubSub
+	analytics analytics.Tracker
 
 	doneCh    chan struct{}
 	closeOnce sync.Once
@@ -82,15 +80,25 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 		doneCh: make(chan struct{}, 1),
 
+		pubsub: e.TelemetryPubSub,
+
 		services: core.NewServices(),
 
 		mainClientCallerID:     clientMetadata.ClientID,
 		upstreamCacheExporters: e.UpstreamCacheExporters,
 	}
 
-	labels := clientMetadata.Labels
-	labels = append(labels, pipeline.EngineLabel(e.EngineName))
-	labels = append(labels, pipeline.LoadServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH, e.cacheManager.ID() != cache.LocalCacheID)...)
+	if traceID := trace.SpanContextFromContext(ctx).TraceID(); traceID.IsValid() {
+		s.traceID = traceID
+	} else {
+		slog.Warn("invalid traceID", "traceID", traceID.String())
+	}
+
+	labels := clientMetadata.Labels.
+		WithEngineLabel(e.EngineName).
+		WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
+			e.cacheManager.ID() != cache.LocalCacheID)
+
 	s.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
 		Labels:     labels,
@@ -103,35 +111,6 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
-	clientConn := sessionCaller.Conn()
-
-	// using a new random ID rather than server ID to squash any nefarious attempts to set
-	// a server id that has e.g. ../../.. or similar in it
-	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", identity.NewID())
-
-	progClient := progrock.NewProgressServiceClient(clientConn)
-	progUpdates, err := progClient.WriteUpdates(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
-		progrock.NewRPCWriter(clientConn, progUpdates),
-		buildkit.ProgrockLogrusWriter{},
-	})
-	if err != nil {
-		return nil, err
-	}
-	s.progCleanup = progCleanup
-
-	progrockLabels := []*progrock.Label{}
-	for _, label := range labels {
-		progrockLabels = append(progrockLabels, &progrock.Label{
-			Name:  label.Name,
-			Value: label.Value,
-		})
-	}
-	s.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
 	secretStore := core.NewSecretStore()
 	authProvider := auth.NewRegistryAuthProvider()
@@ -168,24 +147,21 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 			AuthProvider:          authProvider,
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
 			UpstreamCacheImports:  cacheImporterCfgs,
-			ProgSockPath:          progSockPath,
 			MainClientCaller:      sessionCaller,
 			MainClientCallerID:    s.mainClientCallerID,
 			DNSConfig:             e.DNSConfig,
 			Frontends:             e.Frontends,
 		},
-		ProgrockSocketPath: progSockPath,
-		Services:           s.services,
-		Platform:           core.Platform(e.worker.Platforms(true)[0]),
-		Secrets:            secretStore,
-		OCIStore:           e.worker.ContentStore(),
-		LeaseManager:       e.worker.LeaseManager(),
-		Auth:               authProvider,
-		ClientCallContext:  s.clientCallContext,
-		ClientCallMu:       s.clientCallMu,
-		Endpoints:          s.endpoints,
-		EndpointMu:         s.endpointMu,
-		Recorder:           s.recorder,
+		Services:          s.services,
+		Platform:          core.Platform(e.worker.Platforms(true)[0]),
+		Secrets:           secretStore,
+		OCIStore:          e.worker.ContentStore(),
+		LeaseManager:      e.worker.LeaseManager(),
+		Auth:              authProvider,
+		ClientCallContext: s.clientCallContext,
+		ClientCallMu:      s.clientCallMu,
+		Endpoints:         s.endpoints,
+		EndpointMu:        s.endpointMu,
 	})
 	if err != nil {
 		return nil, err
@@ -196,7 +172,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	// stash away the cache so we can share it between other servers
 	root.Cache = dag.Cache
 
-	dag.Around(tracing.AroundFunc)
+	dag.Around(telemetry.AroundFunc)
 
 	coreMod := &schema.CoreMod{Dag: dag}
 	root.DefaultDeps = core.NewModDeps(root, []core.Mod{coreMod})
@@ -244,8 +220,12 @@ func (s *DaggerServer) ServeClientConn(
 		Handler:           s,
 		ReadHeaderTimeout: 30 * time.Second,
 		BaseContext: func(net.Listener) context.Context {
-			ctx := bklog.WithLogger(context.Background(), bklog.G(ctx))
-			ctx = progrock.ToContext(ctx, s.recorder)
+			// FIXME(vito) not sure if this is right, being conservative and
+			// respecting original context.Background(). later things added to ctx
+			// might be redundant, or maybe we're OK with propagating cancellation
+			// too (seems less likely considering how delicate draining events is).
+			ctx := context.WithoutCancel(ctx)
+			ctx = bklog.WithLogger(ctx, bklog.G(ctx))
 			ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 			ctx = analytics.WithContext(ctx, s.analytics)
 			return ctx
@@ -257,6 +237,10 @@ func (s *DaggerServer) ServeClientConn(
 
 func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+
+	// propagate span context from the client (i.e. for Dagger-in-Dagger)
+	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(r.Header))
+
 	errorOut := func(err error, code int) {
 		bklog.G(ctx).WithError(err).Error("failed to serve request")
 		http.Error(w, err.Error(), code)
@@ -273,14 +257,6 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		errorOut(fmt.Errorf("client call %s not found", clientMetadata.ModuleCallerDigest), http.StatusInternalServerError)
 		return
 	}
-
-	rec := progrock.FromContext(ctx)
-	if header := r.Header.Get(client.ProgrockParentHeader); header != "" {
-		rec = rec.WithParent(header)
-	} else if callContext.ProgrockParent != "" {
-		rec = rec.WithParent(callContext.ProgrockParent)
-	}
-	ctx = progrock.ToContext(ctx, rec)
 
 	schema, err := callContext.Deps.Schema(ctx)
 	if err != nil {
@@ -328,32 +304,62 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// 	return res
 	// })
 	mux := http.NewServeMux()
+
 	mux.Handle("/query", srv)
+
 	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := req.Context()
-		if len(s.upstreamCacheExporterCfgs) > 0 && clientMetadata.ClientID == s.mainClientCallerID {
-			bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
-			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
-			for i, cacheExportCfg := range s.upstreamCacheExporterCfgs {
-				cacheExportCfg := cacheExportCfg
-				cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
-					exporterFunc, ok := s.upstreamCacheExporters[cacheExportCfg.Type]
-					if !ok {
-						return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
+
+		immediate := req.URL.Query().Get("immediate") == "true"
+
+		slog := slog.With(
+			"isImmediate", immediate,
+			"isMainClient", clientMetadata.ClientID == s.mainClientCallerID,
+			"isModule", clientMetadata.ModuleCallerDigest != "",
+			"serverID", s.serverID,
+			"traceID", s.traceID,
+			"clientID", clientMetadata.ClientID,
+			"mainClientID", s.mainClientCallerID,
+			"callerID", clientMetadata.ModuleCallerDigest)
+
+		slog.Debug("shutting down server")
+		defer slog.Debug("done shutting down server")
+
+		if clientMetadata.ClientID == s.mainClientCallerID {
+			// Stop services, since the main client is going away, and we
+			// want the client to see them stop.
+			s.services.StopClientServices(ctx, s.serverID)
+
+			// Start draining telemetry
+			s.pubsub.Drain(s.traceID, immediate)
+
+			if len(s.upstreamCacheExporterCfgs) > 0 {
+				bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
+				cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
+				for i, cacheExportCfg := range s.upstreamCacheExporterCfgs {
+					cacheExportCfg := cacheExportCfg
+					cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
+						exporterFunc, ok := s.upstreamCacheExporters[cacheExportCfg.Type]
+						if !ok {
+							return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
+						}
+						return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
 					}
-					return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
 				}
+				s.clientCallMu.RLock()
+				bk := s.clientCallContext[""].Root.Buildkit
+				s.clientCallMu.RUnlock()
+				err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
+				if err != nil {
+					bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
+				}
+				bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
 			}
-			s.clientCallMu.RLock()
-			bk := s.clientCallContext[""].Root.Buildkit
-			s.clientCallMu.RUnlock()
-			err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
-			if err != nil {
-				bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
-			}
-			bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
 		}
+
+		telemetry.Flush(ctx)
 	}))
+
 	s.endpointMu.RLock()
 	for path, handler := range s.endpoints {
 		mux.Handle(path, handler)
@@ -429,27 +435,26 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 		close(s.doneCh)
 	})
 
-	var err error
+	var errs error
+
+	slog.Debug("server closing; stopping client services and flushing", "server", s.serverID, "trace", s.traceID)
 
 	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
-		slog.Error("failed to stop client services", "error", err)
+		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
 
 	s.clientCallMu.RLock()
 	for _, callCtx := range s.clientCallContext {
-		err = errors.Join(err, callCtx.Root.Buildkit.Close())
+		errs = errors.Join(errs, callCtx.Root.Buildkit.Close())
 	}
 	s.clientCallMu.RUnlock()
 
-	// mark all groups completed
-	s.recorder.Complete()
-	// close the recorder so the UI exits
-	err = errors.Join(err, s.recorder.Close())
-	err = errors.Join(err, s.progCleanup())
 	// close the analytics recorder
-	err = errors.Join(err, s.analytics.Close())
+	errs = errors.Join(errs, s.analytics.Close())
 
-	return err
+	telemetry.Flush(ctx)
+
+	return errs
 }
 
 func (s *DaggerServer) Wait(ctx context.Context) error {

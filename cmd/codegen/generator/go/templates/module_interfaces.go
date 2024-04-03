@@ -346,7 +346,7 @@ func (spec *parsedIfaceType) marshalJSONMethodCode() *Statement {
 		BlockFunc(func(g *Group) {
 			g.If(Id("r").Op("==").Nil()).Block(Return(Index().Byte().Parens(Lit(`""`)), Nil()))
 
-			g.List(Id("id"), Id("err")).Op(":=").Id("r").Dot("ID").Call(Qual("context", "Background").Call())
+			g.List(Id("id"), Id("err")).Op(":=").Id("r").Dot("ID").Call(Id("marshalCtx"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Nil(), Id("err")))
 			g.Return(Id("json").Dot("Marshal").Call(Id("id")))
 		})
