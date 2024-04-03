@@ -36,7 +36,7 @@ func NewPubSub() *PubSub {
 }
 
 func (ps *PubSub) Drain(id trace.TraceID, immediate bool) {
-	slog.Debug("draining", "trace", id.String(), "immediate", immediate)
+	slog.ExtraDebug("draining", "trace", id.String(), "immediate", immediate)
 	ps.tracesL.Lock()
 	trace, ok := ps.traces[id]
 	if ok {
@@ -65,7 +65,7 @@ func (ps *PubSub) initTrace(id trace.TraceID) *activeTrace {
 }
 
 func (ps *PubSub) SubscribeToSpans(ctx context.Context, traceID trace.TraceID, exp sdktrace.SpanExporter) error {
-	slog.Debug("subscribing to spans", "trace", traceID.String())
+	slog.ExtraDebug("subscribing to spans", "trace", traceID.String())
 	ps.tracesL.Lock()
 	trace := ps.initTrace(traceID)
 	ps.tracesL.Unlock()
@@ -82,7 +82,7 @@ var _ sdktrace.SpanExporter = (*PubSub)(nil)
 func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	export := identity.NewID()
 
-	slog.Debug("exporting spans to pubsub", "call", export, "spans", len(spans))
+	slog.ExtraDebug("exporting spans to pubsub", "call", export, "spans", len(spans))
 
 	byTrace := map[trace.TraceID][]sdktrace.ReadOnlySpan{}
 	conds := map[trace.TraceID]*sync.Cond{}
@@ -92,7 +92,7 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 		traceID := s.SpanContext().TraceID()
 		spanID := s.SpanContext().SpanID()
 
-		slog.Debug("pubsub exporting span",
+		slog.ExtraDebug("pubsub exporting span",
 			"call", export,
 			"trace", traceID.String(),
 			"id", spanID,
@@ -123,7 +123,7 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 		for _, sub := range ps.SpanSubscribers(traceID) {
 			sub := sub
 			eg.Go(func() error {
-				slog.Debug("exporting spans to subscriber", "trace", traceID.String(), "spans", len(spans))
+				slog.ExtraDebug("exporting spans to subscriber", "trace", traceID.String(), "spans", len(spans))
 				return sub.ExportSpans(ctx, spans)
 			})
 		}
@@ -133,7 +133,7 @@ func (ps *PubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan
 	for _, sub := range ps.SpanSubscribers(trace.TraceID{}) {
 		sub := sub
 		eg.Go(func() error {
-			slog.Debug("exporting spans to global subscriber", "spans", len(spans))
+			slog.ExtraDebug("exporting spans to global subscriber", "spans", len(spans))
 			return sub.ExportSpans(ctx, spans)
 		})
 	}
@@ -156,7 +156,7 @@ func (ps *PubSub) SpanSubscribers(session trace.TraceID) []sdktrace.SpanExporter
 }
 
 func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, exp sdklog.LogExporter) error {
-	slog.Debug("subscribing to logs", "trace", traceID.String())
+	slog.ExtraDebug("subscribing to logs", "trace", traceID.String())
 	ps.tracesL.Lock()
 	trace := ps.initTrace(traceID)
 	ps.tracesL.Unlock()
@@ -171,12 +171,12 @@ func (ps *PubSub) SubscribeToLogs(ctx context.Context, traceID trace.TraceID, ex
 var _ sdklog.LogExporter = (*PubSub)(nil)
 
 func (ps *PubSub) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
-	slog.Debug("exporting logs to pub/sub", "logs", len(logs))
+	slog.ExtraDebug("exporting logs to pub/sub", "logs", len(logs))
 
 	byTrace := map[trace.TraceID][]*sdklog.LogData{}
 	for _, log := range logs {
 		// NB: break glass if stuck troubleshooting otel  stuff
-		// slog.Debug("exporting logs", "trace", log.Body().AsString())
+		// slog.ExtraDebug("exporting logs", "trace", log.Body().AsString())
 		traceID := log.TraceID
 		byTrace[traceID] = append(byTrace[traceID], log)
 	}
@@ -190,7 +190,7 @@ func (ps *PubSub) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error 
 		for _, sub := range ps.LogSubscribers(traceID) {
 			sub := sub
 			eg.Go(func() error {
-				slog.Debug("exporting logs to subscriber", "trace", traceID.String(), "logs", len(logs))
+				slog.ExtraDebug("exporting logs to subscriber", "trace", traceID.String(), "logs", len(logs))
 				return sub.ExportLogs(ctx, logs)
 			})
 		}
@@ -200,7 +200,7 @@ func (ps *PubSub) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error 
 	for _, sub := range ps.LogSubscribers(trace.TraceID{}) {
 		sub := sub
 		eg.Go(func() error {
-			slog.Debug("exporting logs to global subscriber", "logs", len(logs))
+			slog.ExtraDebug("exporting logs to global subscriber", "logs", len(logs))
 			return sub.ExportLogs(ctx, logs)
 		})
 	}
@@ -251,7 +251,7 @@ func (ps *PubSub) ForceFlush(ctx context.Context) error {
 }
 
 func (ps *PubSub) Shutdown(ctx context.Context) error {
-	slog.Debug("shutting down otel pub/sub")
+	slog.ExtraDebug("shutting down otel pub/sub")
 	ps.spanSubsL.Lock()
 	defer ps.spanSubsL.Unlock()
 	eg := pool.New().WithErrors()
@@ -267,7 +267,7 @@ func (ps *PubSub) Shutdown(ctx context.Context) error {
 }
 
 func (ps *PubSub) unsubSpans(traceID trace.TraceID, exp sdktrace.SpanExporter) {
-	slog.Debug("unsubscribing from trace", "trace", traceID.String())
+	slog.ExtraDebug("unsubscribing from trace", "trace", traceID.String())
 	ps.spanSubsL.Lock()
 	removed := make([]sdktrace.SpanExporter, 0, len(ps.spanSubs[traceID])-1)
 	for _, s := range ps.spanSubs[traceID] {
@@ -280,7 +280,7 @@ func (ps *PubSub) unsubSpans(traceID trace.TraceID, exp sdktrace.SpanExporter) {
 }
 
 func (ps *PubSub) unsubLogs(traceID trace.TraceID, exp sdklog.LogExporter) {
-	slog.Debug("unsubscribing from logs", "trace", traceID.String())
+	slog.ExtraDebug("unsubscribing from logs", "trace", traceID.String())
 	ps.logSubsL.Lock()
 	removed := make([]sdklog.LogExporter, 0, len(ps.logSubs[traceID])-1)
 	for _, s := range ps.logSubs[traceID] {
@@ -332,21 +332,21 @@ func (trace *activeTrace) wait(ctx context.Context) {
 			"activeSpans", len(trace.activeSpans),
 		)
 		if ctx.Err() != nil {
-			slog.Debug("wait interrupted")
+			slog.ExtraDebug("wait interrupted")
 			break
 		}
 		if trace.drainImmediately {
-			slog.Debug("draining immediately")
+			slog.ExtraDebug("draining immediately")
 			break
 		}
 		if trace.draining {
-			slog.Debug("waiting for spans", "activeSpans", len(trace.activeSpans))
+			slog.ExtraDebug("waiting for spans", "activeSpans", len(trace.activeSpans))
 			for id, span := range trace.activeSpans {
-				slog.Debug("waiting for span", "id", id, "span", span.Name())
+				slog.ExtraDebug("waiting for span", "id", id, "span", span.Name())
 			}
 		}
 		trace.cond.Wait()
 	}
-	slog.Debug("done waiting", "ctxErr", ctx.Err())
+	slog.ExtraDebug("done waiting", "ctxErr", ctx.Err())
 	trace.cond.L.Unlock()
 }

@@ -167,14 +167,14 @@ func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Modul
 }
 
 func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
-	slog.Debug("installing module", "name", mod.Name())
+	slog.ExtraDebug("installing module", "name", mod.Name())
 	start := time.Now()
-	defer func() { slog.Debug("done installing module", "name", mod.Name(), "took", time.Since(start)) }()
+	defer func() { slog.ExtraDebug("done installing module", "name", mod.Name(), "took", time.Since(start)) }()
 
 	for _, def := range mod.ObjectDefs {
 		objDef := def.AsObject.Value
 
-		slog.Debug("installing object", "name", mod.Name(), "object", objDef.Name)
+		slog.ExtraDebug("installing object", "name", mod.Name(), "object", objDef.Name)
 
 		// check whether this is a pre-existing object from a dependency module
 		modType, ok, err := mod.Deps.ModTypeFor(ctx, def)
@@ -203,7 +203,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, def := range mod.InterfaceDefs {
 		ifaceDef := def.AsInterface.Value
 
-		slog.Debug("installing interface", "name", mod.Name(), "interface", ifaceDef.Name)
+		slog.ExtraDebug("installing interface", "name", mod.Name(), "interface", ifaceDef.Name)
 
 		iface := &InterfaceType{
 			typeDef: ifaceDef,
@@ -285,7 +285,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 			}
 		}
 		if !found {
-			slog.Debug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
+			slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
 			return nil, false, nil
 		}
 
@@ -314,7 +314,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 			}
 		}
 		if !found {
-			slog.Debug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
+			slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
 			return nil, false, nil
 		}
 

@@ -195,7 +195,7 @@ func (c *Client) WriteStatusesTo(ctx context.Context, dest io.Writer) {
 	}
 	go pw.UpdateFrom(ctx, statusCh)
 	err = c.job.Status(ctx, statusCh)
-	if err != nil {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		bklog.G(ctx).WithError(err).Error("failed to write status updates")
 	}
 }

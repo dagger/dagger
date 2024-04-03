@@ -97,9 +97,9 @@ func (exp FilterLiveSpansExporter) ExportSpans(ctx context.Context, spans []sdkt
 	filtered := make([]sdktrace.ReadOnlySpan, 0, len(spans))
 	for _, span := range spans {
 		if span.StartTime().After(span.EndTime()) {
-			slog.Debug("skipping unfinished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
+			slog.ExtraDebug("skipping unfinished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
 		} else {
-			slog.Debug("keeping finished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
+			slog.ExtraDebug("keeping finished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
 			filtered = append(filtered, span)
 		}
 	}

@@ -188,7 +188,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		bklog.G(ctx).Trace("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
 		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
-		slog.Warn("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
+		slog.Trace("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
 		if err != nil {
 			return fmt.Errorf("handleConn: %w", err)
 		}

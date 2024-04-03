@@ -125,7 +125,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 			}
 		}
 
-		slog.Debug("configuring tracing via env", "protocol", proto)
+		slog.ExtraDebug("configuring tracing via env", "protocol", proto)
 
 		switch proto {
 		case "http/protobuf", "http":
@@ -175,7 +175,7 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 		} else if v := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); v != "" {
 			// we can't assume all OTLP endpoints supprot logs. better to be
 			// explicit than have noisy otel errors.
-			slog.Debug("note: intentionally not sending logs to OTEL_EXPORTER_OTLP_ENDPOINT; set OTEL_EXPORTER_OTLP_LOGS_ENDPOINT if needed")
+			slog.ExtraDebug("note: intentionally not sending logs to OTEL_EXPORTER_OTLP_ENDPOINT; set OTEL_EXPORTER_OTLP_LOGS_ENDPOINT if needed")
 			return
 		}
 		if endpoint == "" {
@@ -192,7 +192,7 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 			proto = "http/protobuf"
 		}
 
-		slog.Debug("configuring logging via env", "protocol", proto, "endpoint", endpoint)
+		slog.ExtraDebug("configuring logging via env", "protocol", proto, "endpoint", endpoint)
 
 		u, err := url.Parse(endpoint)
 		if err != nil {
@@ -307,10 +307,10 @@ var LogProcessors = []sdklog.LogProcessor{}
 // someday metrics providers. It is called by the CLI, the engine, and the
 // container shim, so it needs to be versatile.
 func Init(ctx context.Context, cfg Config) context.Context {
-	slog.Debug("initializing telemetry")
+	slog.ExtraDebug("initializing telemetry")
 
 	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
-		slog.Debug("found TRACEPARENT", "value", p)
+		slog.ExtraDebug("found TRACEPARENT", "value", p)
 		ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
 	}
 
@@ -415,13 +415,13 @@ func Init(ctx context.Context, cfg Config) context.Context {
 // it seems wise to keep it anyway, as the spots where it are needed are hard
 // to find.
 func Flush(ctx context.Context) {
-	slog.Debug("flushing processors")
+	slog.ExtraDebug("flushing processors")
 	if tracerProvider != nil {
 		if err := tracerProvider.ForceFlush(ctx); err != nil {
 			slog.Error("failed to flush spans", "error", err)
 		}
 	}
-	slog.Debug("done flushing processors")
+	slog.ExtraDebug("done flushing processors")
 }
 
 // Close shuts down the global OpenTelemetry providers, flushing any remaining

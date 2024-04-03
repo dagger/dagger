@@ -319,7 +319,7 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	running, found := ss.running[svc.Key]
 	if !found {
 		ss.l.Unlock()
-		slog.Debug("detach: service not running")
+		slog.Trace("detach: service not running")
 		// not even running; ignore
 		return
 	}
@@ -335,7 +335,7 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	ss.l.Unlock()
 
-	slog.Debug("detach: stopping")
+	slog.Trace("detach: stopping")
 
 	// we should avoid blocking, and return immediately
 	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
