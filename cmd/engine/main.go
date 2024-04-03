@@ -284,6 +284,8 @@ func main() { //nolint:gocyclo
 			slogOpts.Level = slog.LevelTrace
 			logrus.SetLevel(logrus.TraceLevel)
 		}
+		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
+		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
 		if cfg.GRPC.DebugAddress != "" {
