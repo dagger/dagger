@@ -17,19 +17,19 @@ require (
 	github.com/charmbracelet/bubbles v0.18.0 // indirect
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.9.1
-	github.com/containerd/console v1.0.4-0.20230313162750-1ae8d489ac81
-	github.com/containerd/containerd v1.7.12
+	github.com/containerd/console v1.0.4
+	github.com/containerd/containerd v1.7.13
 	github.com/containerd/continuity v0.4.3
-	github.com/containerd/fuse-overlayfs-snapshotter v1.0.6
+	github.com/containerd/fuse-overlayfs-snapshotter v1.0.8
 	github.com/containerd/stargz-snapshotter v0.15.1
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/creack/pty v1.1.18
 	github.com/dave/jennifer v1.7.0
 	github.com/denisbrodbeck/machineid v1.0.1
-	github.com/docker/cli v25.0.1+incompatible
+	github.com/docker/cli v25.0.3+incompatible
 	github.com/docker/distribution v2.8.2+incompatible
-	github.com/docker/docker v25.0.1+incompatible
+	github.com/docker/docker v25.0.3+incompatible
 	github.com/dschmidt/go-layerfs v0.1.0
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/gofrs/flock v0.8.1
@@ -46,7 +46,7 @@ require (
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
-	github.com/moby/buildkit v0.13.0-beta3 // https://github.com/moby/buildkit/commit/1981eb123dc979fc71d097adeb5bbb84110aa9f4
+	github.com/moby/buildkit v0.13.0 // https://github.com/moby/buildkit/commit/1981eb123dc979fc71d097adeb5bbb84110aa9f4
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.3
@@ -78,7 +78,7 @@ require (
 	github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452
 	github.com/vito/progrock v0.10.2-0.20240221152222-63c8df30db8d
 	github.com/zeebo/xxh3 v1.0.2
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.1
 	go.opentelemetry.io/otel v1.24.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.24.0
 	go.opentelemetry.io/otel/sdk v1.24.0
@@ -155,7 +155,7 @@ require (
 	github.com/containerd/go-cni v1.1.9 // indirect
 	github.com/containerd/go-runc v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/nydus-snapshotter v0.13.1 // indirect
+	github.com/containerd/nydus-snapshotter v0.13.7 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.15.1 // indirect
 	github.com/containerd/ttrpc v1.2.2 // indirect
 	github.com/containerd/typeurl/v2 v2.1.1 // indirect
@@ -170,6 +170,7 @@ require (
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
+	github.com/felixge/fgprof v0.9.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fogleman/ease v0.0.0-20170301025033-8da417bf1776 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
@@ -177,7 +178,7 @@ require (
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
-	github.com/golang-jwt/jwt/v4 v4.4.2 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
@@ -189,7 +190,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.3 // indirect
 	github.com/in-toto/in-toto-golang v0.5.0 // indirect
@@ -207,6 +208,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
+	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/mountinfo v0.7.1 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/sys/signal v0.7.0 // indirect
@@ -217,7 +219,7 @@ require (
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
-	github.com/pkg/profile v1.5.0 // indirect
+	github.com/pkg/profile v1.7.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.19.0 // indirect
 	github.com/prometheus/client_model v0.6.0 // indirect
@@ -231,10 +233,10 @@ require (
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/skeema/knownhosts v1.2.1 // indirect
 	github.com/sosodev/duration v1.1.0 // indirect
-	github.com/spdx/tools-golang v0.5.1 // indirect
+	github.com/spdx/tools-golang v0.5.3 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tonistiigi/go-actions-cache v0.0.0-20220404170428-0bdeb6e1eac7 // indirect
+	github.com/tonistiigi/go-actions-cache v0.0.0-20240227172821-a0b64f338598 // indirect
 	github.com/tonistiigi/go-archvariant v1.0.0 // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20230623042737-f9a4f7ef6531 // indirect
 	github.com/vbatts/tar-split v0.11.5 // indirect
@@ -242,9 +244,9 @@ require (
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/zmb3/spotify/v2 v2.3.1 // indirect
-	go.etcd.io/bbolt v1.3.7 // indirect
+	go.etcd.io/bbolt v1.3.9 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.45.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.46.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.42.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v0.42.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v0.42.0 // indirect
