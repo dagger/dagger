@@ -115,7 +115,7 @@ func (iface *InterfaceType) TypeDef() *TypeDef {
 
 func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) error {
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("interface", iface.typeDef.Name))
-	bklog.G(ctx).Debug("installing interface")
+	slog.ExtraDebug("installing interface")
 
 	if iface.mod.InstanceID == nil {
 		return fmt.Errorf("installing interface %q too early", iface.typeDef.Name)
@@ -305,7 +305,6 @@ func wrapIface(ctx context.Context, dag *dagql.Server, ifaceType *InterfaceType,
 		}
 	case *ListType:
 		if res == nil {
-			slog.Debug("wrapIface got nil list return") // TODO remove log once confirmed needed
 			return res, nil
 		}
 		enum, ok := res.(dagql.Enumerable)
