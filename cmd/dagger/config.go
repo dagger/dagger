@@ -8,13 +8,11 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vito/progrock"
 )
 
 var configJSONOutput bool
@@ -40,11 +38,6 @@ dagger config -m github.com/dagger/hello-dagger
 	Args:    cobra.NoArgs,
 	GroupID: moduleGroup.ID,
 	RunE: configSubcmdRun(func(ctx context.Context, cmd *cobra.Command, _ []string, modConf *configuredModule) (err error) {
-		ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-		defer func() { vtx.Done(err) }()
-		cmd.SetContext(ctx)
-		setCmdOutput(cmd, vtx)
-
 		if configJSONOutput {
 			cfgContents, err := modConf.Source.Directory(".").File(modules.Filename).Contents(ctx)
 			if err != nil {
@@ -440,12 +433,7 @@ func (run configSubcmdRun) runE(localOnly bool) cobraRunE {
 	return func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
-		return withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-			defer func() { vtx.Done(err) }()
-			cmd.SetContext(ctx)
-			setCmdOutput(cmd, vtx)
-
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			modConf, err := getDefaultModuleConfiguration(ctx, engineClient.Dagger(), true, true)
 			if err != nil {
 				return fmt.Errorf("failed to load module: %w", err)

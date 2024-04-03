@@ -15,18 +15,56 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     Macro.underscore(name)
   end
 
+  def format_function_name(name) do
+    name
+    |> normalize_name()
+    |> Macro.underscore()
+  end
+
+  defp normalize_name(name) do
+    name
+    |> normalize_acronym_word()
+    |> normalize_reserved_word()
+  end
+
+  @reserved_words [
+    # From https://hexdocs.pm/elixir/1.16.2/syntax-reference.html
+    "true",
+    "false",
+    "nil",
+    "when",
+    "and",
+    "or",
+    "not",
+    "in",
+    "fn",
+    "do",
+    "end",
+    "catch",
+    "rescue",
+    "after",
+    "else"
+  ]
+
+  defp normalize_reserved_word(name, reserved_words \\ @reserved_words) do
+    if name in reserved_words do
+      "#{name}_"
+    else
+      name
+    end
+  end
+
   # Temporarily fixes for issue https://github.com/dagger/dagger/issues/6310.
   @acronym_words %{
     "GPU" => "Gpu",
     "VCS" => "Vcs"
   }
 
-  def format_function_name(name, acronym_words \\ @acronym_words) do
+  defp normalize_acronym_word(name, acronym_words \\ @acronym_words) do
     acronym_words
     |> Enum.reduce(name, fn {word, new_word}, name ->
       String.replace(name, word, new_word)
     end)
-    |> Macro.underscore()
   end
 
   def format_doc(doc) do

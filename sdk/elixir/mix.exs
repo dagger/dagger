@@ -19,7 +19,7 @@ defmodule Dagger.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :public_key]
+      extra_applications: [:logger, :public_key, :ssl]
     ]
   end
 
@@ -27,7 +27,6 @@ defmodule Dagger.MixProject do
     [
       {:jason, "~> 1.4"},
       {:nimble_options, "~> 1.0"},
-      {:nestru, "~> 0.3"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

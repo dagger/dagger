@@ -11,7 +11,6 @@ dependencies = [
     "pytest<8",
     "pytest-mock>=3.10.0",
     "pytest-subprocess>=1.4.2",
-    "pytest-lazy-fixture>=0.6.3",
     "pytest-httpx>=0.21.3",
 ]
 

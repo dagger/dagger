@@ -55,6 +55,7 @@ func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
 			"**/.pytest_cache",
 			"**/.ruff_cache",
 			"sdk/python/dist",
+			"sdk/python/**/sdk",
 
 			// go
 			// go.work is ignored so that you can use ../foo during local dev and let

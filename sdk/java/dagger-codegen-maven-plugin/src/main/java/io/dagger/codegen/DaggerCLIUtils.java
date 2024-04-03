@@ -26,7 +26,9 @@ public class DaggerCLIUtils {
 
   public static InputStream query(InputStream query, String binPath) {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
-    FluentProcess.start(binPath, "query", "--silent")
+    // HACK: for some reason writing to stderr just causes it to hang since
+    // we're not reading from stderr, so we redirect it to /dev/null.
+    FluentProcess.start("sh", "-c", "$0 query 2>/dev/null", binPath)
         .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
         .inputStream(query)
         .writeToOutputStream(out);

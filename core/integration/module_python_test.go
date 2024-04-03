@@ -1,32 +1,35 @@
 package core
 
 import (
-	"context"
 	"fmt"
+	"path"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
 )
 
+const pythonSourcePath = "src/main/__init__.py"
+
 func TestModulePythonInit(t *testing.T) {
+	t.Parallel()
+
 	t.Run("from scratch", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
 
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=bare", "--sdk=python")).
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+		out, err := daggerCliBase(t, c).
+			With(daggerInitPython()).
+			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.Equal(t, "hello\n", out)
 	})
 
 	t.Run("with different root", func(t *testing.T) {
@@ -34,73 +37,47 @@ func TestModulePythonInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=bare", "--sdk=python", "child")).
-			With(daggerQueryAt("child", `{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+		out, err := daggerCliBase(t, c).
+			With(daggerInitPythonAt("child")).
+			With(daggerCallAt("child", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("respects existing pyproject.toml", func(t *testing.T) {
+	t.Run("on develop", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("pyproject.toml", dagger.ContainerWithNewFileOpts{
-				Contents: heredoc.Doc(`
-                    [project]
-                    name = "has-pyproject"
-                    version = "0.0.0"
-                `),
-			}).
-			With(daggerExec("init", "--name=hasPyproject", "--sdk=python"))
-
-		out, err := modGen.
-			With(daggerQuery(`{hasPyproject{containerEcho(stringArg:"hello"){stdout}}}`)).
+		out, err := daggerCliBase(t, c).
+			With(daggerExec("init")).
+			With(daggerExec("develop", "--sdk=python", "--source=.")).
+			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"hasPyproject":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
-		t.Run("preserves module name", func(t *testing.T) {
-			generated, err := modGen.File("pyproject.toml").Contents(ctx)
-			require.NoError(t, err)
-			require.Contains(t, generated, `name = "has-pyproject"`)
-		})
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("respects existing main.py", func(t *testing.T) {
+	t.Run("doesn't create files in develop with existing pyproject.toml", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
 
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("/work/src/main/__init__.py", dagger.ContainerWithNewFileOpts{
-				Contents: "from . import notmain\n",
-			}).
-			WithNewFile("/work/src/main/notmain.py", dagger.ContainerWithNewFileOpts{
-				Contents: heredoc.Doc(`
-                    from dagger import function
+		_, err := daggerCliBase(t, c).
+			With(daggerExec("init")).
+			With(fileContents("pyproject.toml", `
+[project]
+name = "main"
+version = "0.0.0"
+`,
+			)).
+			With(daggerExec("develop", "--sdk=python", "--source=.")).
+			Sync(ctx)
 
-                    @function
-                    def hello() -> str:
-                        return "Hello, world!"
-                `),
-			}).
-			With(daggerExec("init", "--source=.", "--name=hasMainPy", "--sdk=python")).
-			With(daggerQuery(`{hasMainPy{hello}}`)).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.JSONEq(t, `{"hasMainPy":{"hello":"Hello, world!"}}`, out)
+		require.ErrorContains(t, err, "no python files found")
 	})
 
 	t.Run("uses expected field casing", func(t *testing.T) {
@@ -108,10 +85,8 @@ func TestModulePythonInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=hello-world", "--sdk=python")).
+		out, err := daggerCliBase(t, c).
+			With(daggerInitPython("--name=hello-world")).
 			With(pythonSource(`
                 from dagger import field, function, object_type
 
@@ -131,12 +106,640 @@ func TestModulePythonInit(t *testing.T) {
 	})
 }
 
+func TestModulePythonProjectLayout(t *testing.T) {
+	t.Parallel()
+
+	var testCases = []struct {
+		name string
+		path string
+		conf string
+	}{
+		{
+			name: "setuptools",
+			path: "src/main/__init__.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+`,
+		},
+		{
+			// This is the old template layout.
+			name: "setuptools",
+			path: "src/main.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+`,
+		},
+		{
+			name: "setuptools",
+			path: "main/__init__.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+
+[tool.setuptools]
+packages = ["main"]
+`,
+		},
+		{
+			name: "setuptools",
+			path: "main.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+
+[tool.setuptools]
+py-modules = ["main"]
+`,
+		},
+		{
+			// This is the **current** template layout.
+			name: "hatch",
+			path: "src/main/__init__.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+		},
+		{
+			name: "hatch",
+			path: "src/main.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/main.py"]
+`,
+		},
+		{
+			name: "hatch",
+			path: "main/__init__.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["main"]
+`,
+		},
+		{
+			name: "hatch",
+			path: "main.py",
+			conf: `
+[project]
+name = "main"
+version = "0.0.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["main.py"]
+`,
+		},
+		{
+			name: "poetry",
+			path: "src/main/__init__.py",
+			conf: `
+[tool.poetry]
+name = "main"
+version = "0.0.0"
+authors = []
+description = ""
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+		{
+			name: "poetry",
+			path: "src/main.py",
+			conf: `
+[tool.poetry]
+name = "main"
+version = "0.0.0"
+authors = []
+description = ""
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+		{
+			name: "poetry",
+			path: "main/__init__.py",
+			conf: `
+[tool.poetry]
+name = "main"
+version = "0.0.0"
+authors = []
+description = ""
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+		{
+			name: "poetry",
+			path: "main.py",
+			conf: `
+[tool.poetry]
+name = "main"
+version = "0.0.0"
+authors = []
+description = ""
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+`,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(t *testing.T) {
+			t.Parallel()
+
+			c, ctx := connect(t)
+
+			out, err := daggerCliBase(t, c).
+				With(fileContents("pyproject.toml", tc.conf)).
+				With(fileContents(tc.path, `
+from dagger import function
+
+@function
+def hello() -> str:
+    return "Hello, world!"
+`,
+				)).
+				With(daggerInitPython()).
+				With(daggerCall("hello")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "Hello, world!", out)
+		})
+	}
+}
+
+func TestModulePythonVersion(t *testing.T) {
+	t.Parallel()
+
+	source := pythonSource(`
+import sys
+from dagger import function
+
+@function
+def version() -> str:
+    v = sys.version_info
+    return f"{v.major}.{v.minor}.{v.micro}"
+
+@function
+def relaxed() -> str:
+    v = sys.version_info
+    return f"{v.major}.{v.minor}"
+`,
+	)
+
+	t.Run("relaxed requires-python", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`requires-python = ">=3.10"`)).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.10", out)
+	})
+
+	t.Run("pinned requires-python", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			// NB: This is **not** the latest version.
+			// Space after `==` is intentional.
+			With(pyprojectExtra(`requires-python = "== 3.10.10"`)).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.10.10", out)
+	})
+
+	t.Run("relaxed .python-version", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(fileContents(".python-version", "3.12")).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.12", out)
+	})
+
+	t.Run("pinned .python-version", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(fileContents(".python-version", "3.12.1")).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.12.1", out)
+	})
+
+	t.Run(".python-version takes precedence", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`requires-python = ">=3.10"`)).
+			With(fileContents(".python-version", "3.12")).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.12", out)
+	})
+
+	t.Run("pinned base image", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			// base image takes precedence over .python-version
+			With(fileContents(".python-version", "3.12")).
+			With(pyprojectExtra(`
+                [tool.dagger]
+                base-image = "python:3.10.10-alpine@sha256:5fb31782a701cacb606e2eca0bb7c75409e10e467ac2a1ceb75a878073d09acf"
+            `)).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.10.10", out)
+	})
+
+	t.Run("default", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("relaxed")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.11", out)
+	})
+}
+
+func TestModulePythonAltRuntime(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	runtimeSrcPath, err := filepath.Abs("../../sdk/python/runtime")
+	require.NoError(t, err)
+
+	extSrcPath, err := filepath.Abs("./testdata/modules/python/extended")
+	require.NoError(t, err)
+
+	moduleSrcPath, err := filepath.Abs("./testdata/modules/python/git-dep")
+	require.NoError(t, err)
+
+	base := goGitBase(t, c).
+		WithMountedDirectory("/work/runtime", c.Host().Directory(runtimeSrcPath)).
+		WithMountedDirectory("/work/extended", c.Host().Directory(extSrcPath))
+
+	t.Run("git dependency", func(t *testing.T) {
+		out, err := base.
+			WithMountedDirectory("/work/git-dep", c.Host().Directory(moduleSrcPath)).
+			WithWorkdir("/work/git-dep").
+			With(daggerCall("hello")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, out, "git version")
+	})
+
+	t.Run("disabled custom config", func(t *testing.T) {
+		out, err := base.
+			WithWorkdir("/work/test").
+			With(fileContents(".python-version", "3.12")).
+			With(pythonSource(`
+import sys
+from dagger import function
+
+@function
+def version() -> str:
+    v = sys.version_info
+    return f"{v.major}.{v.minor}"
+`,
+			)).
+			With(daggerExec("init", "--sdk=../extended", "--name=test", "--source=.")).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "3.11", out)
+	})
+}
+
+func TestModulePythonUv(t *testing.T) {
+	t.Parallel()
+
+	source := pythonSource(`
+import anyio
+from dagger import function
+
+@function
+async def version() -> str:
+    try:
+        r = await anyio.run_process(["uv", "version"])
+    except FileNotFoundError:
+        return "n/d"
+
+    # example output: uv 0.1.22 (9afb36052 2024-03-18)
+    parts = r.stdout.decode().split(" ")
+    return parts[1].strip()
+`,
+	)
+
+	t.Run("disable", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`
+                [tool.dagger]
+                use-uv = false
+            `)).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "n/d", out)
+	})
+
+	t.Run("pinned version", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`
+                [tool.dagger]
+                uv-version = "==0.1.25"
+            `)).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "0.1.25", out)
+	})
+
+	t.Run("upper bound", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`
+                [tool.dagger]
+                uv-version = "<0.1.26"
+            `)).
+			With(source).
+			With(daggerInitPython()).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "0.1.25", out)
+	})
+}
+
+func TestModulePythonLock(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	base := daggerCliBase(t, c).With(pythonSource(`
+from importlib import metadata
+import anyio
+from dagger import function
+
+@function
+async def freeze() -> str:
+    r = await anyio.run_process(["uv", "pip", "freeze"])
+    return r.stdout.decode().strip()
+
+@function
+def version(name: str) -> str:
+    return metadata.version(name)
+`,
+	))
+
+	freeze, err := base.
+		With(daggerInitPython()).
+		With(daggerCall("freeze")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+
+	var lock strings.Builder
+	for _, line := range strings.Split(freeze, "\n") {
+		// Freeze includes the editable installs, which are not a part of the lock file.
+		if strings.HasPrefix(line, "-e") {
+			continue
+		}
+		if strings.HasPrefix(line, "platformdirs==") {
+			// Not the latest version so it's guaranteed to be different.
+			lock.WriteString("platformdirs==4.1.0\n")
+			continue
+		}
+		lock.WriteString(line)
+		lock.WriteString("\n")
+	}
+
+	requirements := lock.String()
+	t.Logf("requirements.lock:\n%s", requirements)
+
+	out, err := base.
+		With(fileContents("requirements.lock", requirements)).
+		With(daggerInitPython()).
+		With(daggerCall("version", "--name=platformdirs")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "4.1.0", out)
+}
+
+func TestModulePythonLockHashes(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	base := daggerCliBase(t, c).With(daggerInitPython())
+
+	out, err := base.File("requirements.lock").Contents(ctx)
+	require.NoError(t, err)
+
+	// Replace hashes for platformdirs with an invalid one.
+	// The lock file has the following format:
+	//
+	// httpx==0.27.0 \
+	//     --hash=sha256:71d5465162c13681bff01ad59b2cc68dd838ea1f10e51574bac27103f00c91a5 \
+	//     --hash=sha256:a0cb88a46f32dc874e04ee956e4c2764aba2aa228f650b06788ba6bda2962ab5
+	//     # via gql
+	// platformdirs==4.2.0 \
+	//     --hash=sha256:0614df2a2f37e1a662acbd8e2b25b92ccf8632929bc6d43467e17fe89c75e068 \
+	//     --hash=sha256:ef0cc731df711022c174543cb70a9b5bd22e5a9337c8624ef2c2ceb8ddad8768
+	// pygments==2.17.2 \
+	//     --hash=sha256:b27c2826c47d0f3219f29554824c30c5e8945175d888647acd804ddd04af846c \
+	//     --hash=sha256:da46cec9fd2de5be3a8a784f434e4c4ab670b4ff54d605c4c2717e9d49c4c367
+	//     # via rich
+
+	var lock strings.Builder
+	replaceHashes := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "platformdirs==") {
+			replaceHashes = true
+			lock.WriteString(
+				fmt.Sprintf("%s\n    --hash=sha256:%s\n", line, strings.Repeat("1", 64)),
+			)
+			continue
+		}
+		if replaceHashes {
+			if strings.HasPrefix(strings.TrimSpace(line), "--hash") {
+				continue
+			} else {
+				replaceHashes = false
+			}
+		}
+		lock.WriteString(line)
+		lock.WriteString("\n")
+	}
+
+	requirements := lock.String()
+	t.Logf("requirements.lock:\n%s", requirements)
+
+	t.Run("uv", func(t *testing.T) {
+		_, err := base.
+			With(fileContents("requirements.lock", requirements)).
+			With(daggerExec("develop")).
+			Sync(ctx)
+
+		// TODO: uv doesn't support hash verification yet.
+		// require.ErrorContains(t, err, "hash mismatch")
+		require.NoError(t, err)
+	})
+
+	t.Run("pip", func(t *testing.T) {
+		_, err := base.
+			With(fileContents("requirements.lock", requirements)).
+			With(pyprojectExtra(`
+                [tool.dagger]
+                use-uv = false
+            `)).
+			With(daggerExec("develop")).
+			Sync(ctx)
+
+		require.ErrorContains(t, err, "DO NOT MATCH THE HASHES")
+		require.ErrorContains(t, err, "Expected sha256 1111111")
+	})
+}
+
+func TestModulePythonLockAddedDep(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	out, err := daggerCliBase(t, c).
+		With(pyprojectExtra(`dependencies = ["asyncer<0.0.5"]`)).
+		With(pythonSource(`
+from importlib import metadata
+from dagger import function
+
+@function
+def version() -> str:
+    return metadata.version("asyncer")
+`,
+		)).
+		With(daggerInitPython()).
+		WithExec([]string{"grep", "asyncer==0.0.4", "requirements.lock"}).
+		With(daggerCall("version")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "0.0.4", out)
+}
+
 func TestModulePythonSignatures(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         from collections.abc import Sequence
         from typing import Optional
 
@@ -274,7 +877,7 @@ func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         import dagger
         from dagger import field, function, object_type
 
@@ -340,7 +943,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated
 
             from dagger import Doc, function, object_type
@@ -398,7 +1001,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from dataclasses import field as datafield
             from typing import Annotated
 
@@ -443,7 +1046,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -471,7 +1074,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -511,7 +1114,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -540,7 +1143,7 @@ func TestModulePythonDocs(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := pythonModInit(ctx, t, c, `
+		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
 
             from dagger import Doc, function, object_type
@@ -569,7 +1172,7 @@ func TestModulePythonNameOverrides(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	modGen := pythonModInit(ctx, t, c, `
+	modGen := pythonModInit(t, c, `
         from typing import Annotated
 
         from dagger import Arg, Doc, field, function, object_type
@@ -596,7 +1199,7 @@ func TestModulePythonReturnSelf(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	out, err := pythonModInit(ctx, t, c, `
+	out, err := pythonModInit(t, c, `
         from typing import Self
 
         from dagger import field, function, object_type
@@ -623,9 +1226,8 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 	c, ctx := connect(t)
 
 	ctr := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
-		With(daggerExec("init", "--name=dep", "--sdk=python")).
+		With(daggerInitPython("--name=dep")).
 		With(pythonSource(`
             from dagger import field, function, object_type
 
@@ -639,10 +1241,9 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
                 def fn(self) -> Obj:
                     return Obj(foo="foo")
         `)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=python", "test")).
-		With(daggerExec("install", "-m=test", "./dep")).
-		WithWorkdir("/work/test")
+		WithWorkdir("/work/test").
+		With(daggerInitPython()).
+		With(daggerExec("install", "../dep"))
 
 	t.Run("return as other module object", func(t *testing.T) {
 		t.Run("direct", func(t *testing.T) {
@@ -782,7 +1383,7 @@ func TestModulePythonScalarKind(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := pythonModInit(ctx, t, c, `
+	_, err := pythonModInit(t, c, `
         import dagger
         from dagger import dag, function, object_type
 
@@ -803,7 +1404,7 @@ func TestModulePythonEnumKind(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	_, err := pythonModInit(ctx, t, c, `
+	_, err := pythonModInit(t, c, `
         import dagger
         from dagger import dag, function, object_type
 
@@ -820,9 +1421,46 @@ func TestModulePythonEnumKind(t *testing.T) {
 }
 
 func pythonSource(contents string) dagger.WithContainerFunc {
-	return sdkSource("python", contents)
+	return pythonSourceAt("", contents)
 }
 
-func pythonModInit(ctx context.Context, t *testing.T, c *dagger.Client, source string) *dagger.Container {
-	return modInit(ctx, t, c, "python", source)
+func pythonSourceAt(modPath, contents string) dagger.WithContainerFunc {
+	return fileContents(path.Join(modPath, pythonSourcePath), contents)
+}
+
+func pythonModInit(t testing.TB, c *dagger.Client, source string) *dagger.Container {
+	t.Helper()
+	return daggerCliBase(t, c).
+		With(daggerInitPython()).
+		With(pythonSource(source))
+}
+
+func daggerInitPython(args ...string) dagger.WithContainerFunc {
+	return daggerInitPythonAt("", args...)
+}
+
+func pyprojectExtra(contents string) dagger.WithContainerFunc {
+	base := `
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "main"
+version = "0.0.0"
+`
+	return fileContents("pyproject.toml", base+contents)
+}
+
+func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc {
+	execArgs := append([]string{"init", "--sdk=python"}, args...)
+	if len(args) == 0 {
+		execArgs = append(execArgs, "--name=test")
+	}
+	if modPath != "" {
+		execArgs = append(execArgs, "--source="+modPath, modPath)
+	} else {
+		execArgs = append(execArgs, "--source=.")
+	}
+	return daggerExec(execArgs...)
 }

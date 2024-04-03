@@ -3,12 +3,12 @@
 black==23.12.1
 click==8.1.7
     # via black
-mypy==1.8.0
+mypy==1.9.0
 mypy-extensions==1.0.0
     # via
     #   black
     #   mypy
-packaging==23.2
+packaging==24.0
     # via black
 pathspec==0.12.1
     # via black

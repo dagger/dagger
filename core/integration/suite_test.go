@@ -18,13 +18,30 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
+
+func init() {
+	telemetry.Init(context.Background(), telemetry.Config{
+		Detect:   true,
+		Resource: telemetry.FallbackResource(),
+	})
+}
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("test")
+}
 
 func connect(t testing.TB, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
+
+	ctx, span := Tracer().Start(ctx, t.Name())
+	t.Cleanup(func() { span.End() })
 
 	opts = append([]dagger.ClientOpt{
 		dagger.WithLogOutput(newTWriter(t)),
@@ -210,6 +227,13 @@ func daggerCliPath(t testing.TB) string {
 func daggerCliFile(t testing.TB, c *dagger.Client) *dagger.File {
 	t.Helper()
 	return c.Host().File(daggerCliPath(t))
+}
+
+func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work")
 }
 
 const testCLIBinPath = "/bin/dagger"

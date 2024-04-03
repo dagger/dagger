@@ -473,6 +473,153 @@ func TestModuleTypescriptOptional(t *testing.T) {
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
 
+func TestModuleTypescriptRuntimeDetection(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+			import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+			@object()
+			class RuntimeDetection {
+			  @func()
+			  echoRuntime(): string {
+			    const isBunRuntime = typeof Bun === "object";
+			    return isBunRuntime ? "bun" : "node";
+			  }
+			}
+		`))
+
+	t.Run("should default to node", func(t *testing.T) {
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
+	})
+
+	t.Run("should use package.json configuration node", func(t *testing.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "node"
+				}
+			}`,
+		})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
+	})
+
+	t.Run("should use package.json configuration bun", func(t *testing.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "bun"
+				}
+			}`,
+		})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
+	})
+
+	t.Run("should detect package-lock.json", func(t *testing.T) {
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+				@object()
+				class RuntimeDetection {
+				  @func()
+				  echoRuntime(): string {
+					const isBunRuntime = typeof Bun === "object";
+					return isBunRuntime ? "bun" : "node";
+				  }
+				}
+			`)).
+			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
+	})
+
+	t.Run("should detect bun.lockb", func(t *testing.T) {
+		modGen := c.Container().From("oven/bun:1.0.27-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+				@object()
+				class RuntimeDetection {
+				  @func()
+				  echoRuntime(): string {
+					const isBunRuntime = typeof Bun === "object";
+					return isBunRuntime ? "bun" : "node";
+				  }
+				}
+			`)).
+			WithExec([]string{"bun", "install", "--cwd", "./dagger"})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
+	})
+
+	t.Run("should prioritize package.json config over file detection", func(t *testing.T) {
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+
+				@object()
+				class RuntimeDetection {
+				  @func()
+				  echoRuntime(): string {
+					const isBunRuntime = typeof Bun === "object";
+					return isBunRuntime ? "bun" : "node";
+				  }
+				}
+			`)).
+			WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{
+					"dagger": {
+						"runtime": "bun"
+					}
+				}`,
+			}).
+			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
+	})
+
+	t.Run("should error if configured runtime is unknown", func(t *testing.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "xyz"
+				}
+			}`,
+		})
+		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
+		require.Error(t, err)
+	})
+}
+
 func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
 	t.Parallel()
 

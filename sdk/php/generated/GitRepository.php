@@ -34,6 +34,15 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Returns details for HEAD.
+     */
+    public function head(): GitRef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('head');
+        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this GitRepository.
      */
     public function id(): GitRepositoryId

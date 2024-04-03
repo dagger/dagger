@@ -1,15 +1,33 @@
 import (
+  "context"
+	"log/slog"
+
 	"{{.PackageImport}}/internal/dagger"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 var dag = dagger.Connect()
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// used for local MarshalJSON implementations
+var marshalCtx = context.Background()
+
+// called by main()
+func setMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+	dagger.SetMarshalContext(ctx)
+}
 
 type DaggerObject = dagger.DaggerObject
 
 type ExecError = dagger.ExecError
 
 {{ range .Types }}
-{{ $name := .Name | FormatName }} 
+{{ $name := .Name | FormatName }}
 
 {{ .Description | Comment }}
 type {{ $name }} = dagger.{{ $name }}

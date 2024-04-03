@@ -29,7 +29,7 @@ type PythonSDK struct {
 func (t PythonSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	base := t.pythonBase(pythonDefaultVersion)
+	base := t.pythonBase(pythonDefaultVersion, true)
 
 	eg.Go(func() error {
 		path := "docs/current_docs"
@@ -66,7 +66,7 @@ func (t PythonSDK) Test(ctx context.Context) error {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, version := range pythonVersions {
-		base := t.pythonBase(version).With(installer)
+		base := t.pythonBase(version, true).With(installer)
 
 		eg.Go(func() error {
 			_, err := base.
@@ -76,7 +76,7 @@ func (t PythonSDK) Test(ctx context.Context) error {
 		})
 
 		// Test build
-		dist := t.pythonBaseEnv(version).
+		dist := t.pythonBase(version, false).
 			Pipeline("build").
 			WithMountedDirectory(
 				"/dist",
@@ -108,7 +108,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 
-	generated := t.pythonBase(pythonDefaultVersion).
+	generated := t.pythonBase(pythonDefaultVersion, true).
 		With(installer).
 		WithWorkdir("/").
 		WithExec([]string{"dagger", "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
@@ -135,7 +135,7 @@ func (t PythonSDK) Publish(
 		pypiRepo = "main"
 	}
 
-	result := t.pythonBase(pythonDefaultVersion).
+	result := t.pythonBase(pythonDefaultVersion, true).
 		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", version).
 		WithEnvVariable("HATCH_INDEX_REPO", pypiRepo).
 		WithEnvVariable("HATCH_INDEX_USER", "__token__").
@@ -187,7 +187,7 @@ func (t PythonSDK) pythonBaseEnv(version string) *Container {
 
 // pythonBase returns a python container with the Python SDK source files
 // added and dependencies installed.
-func (t PythonSDK) pythonBase(version string) *Container {
+func (t PythonSDK) pythonBase(version string, install bool) *Container {
 	var (
 		appDir = "sdk/python"
 	)
@@ -201,11 +201,17 @@ func (t PythonSDK) pythonBase(version string) *Container {
 	reqPath := fmt.Sprintf("%s/requirements", appDir)
 	reqFile := fmt.Sprintf("%s.txt", reqPath)
 
-	return t.pythonBaseEnv(version).
+	base := t.pythonBaseEnv(version).
 		WithDirectory(reqPath, src.Directory("requirements")).
 		WithFile(reqFile, src.File("requirements.txt")).
 		WithExec([]string{"pip", "install", "-r", reqFile}).
-		WithDirectory(mountPath, src).
-		WithWorkdir(mountPath).
-		WithExec([]string{"pip", "install", "."})
+		WithWorkdir(mountPath)
+
+	if install {
+		base = base.
+			WithMountedDirectory(mountPath, src).
+			WithExec([]string{"pip", "install", "."})
+	}
+
+	return base
 }

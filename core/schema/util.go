@@ -31,17 +31,6 @@ func Syncer[T Evaluatable]() dagql.Field[T] {
 	})
 }
 
-func collectInputs[T dagql.Type](inputs dagql.Optional[dagql.ArrayInput[dagql.InputObject[T]]]) []T {
-	if !inputs.Valid {
-		return nil
-	}
-	ts := make([]T, len(inputs.Value))
-	for i, input := range inputs.Value {
-		ts[i] = input.Value
-	}
-	return ts
-}
-
 func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {
 	ts := make([]T, len(inputs))
 	for i, input := range inputs {
