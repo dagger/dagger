@@ -114,7 +114,7 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 	}
 
 	ctx = engine.LocalImportOpts{
-		Path:               path,
+		Path:               filepath.ToSlash(path),
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
 	}.AppendToOutgoingContext(ctx)
@@ -149,7 +149,7 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 	}
 
 	ctx = engine.LocalImportOpts{
-		Path:              path,
+		Path:              filepath.ToSlash(path),
 		StatPathOnly:      true,
 		StatReturnAbsPath: returnAbsPath,
 	}.AppendToOutgoingContext(ctx)

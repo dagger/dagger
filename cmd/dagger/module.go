@@ -679,12 +679,13 @@ func findUp(curDirPath string) (string, bool, error) {
 		return "", false, fmt.Errorf("failed to lstat %s: %s", configPath, err)
 	}
 
-	// didn't exist, try parent unless we've hit "/" or a git repo checkout root
+	// didn't exist, try parent unless we've hit the root or a git repo checkout root
 	curDirAbsPath, err := filepath.Abs(curDirPath)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get absolute path for %s: %s", curDirPath, err)
 	}
-	if curDirAbsPath == "/" {
+	if curDirAbsPath[len(curDirAbsPath)-1] == os.PathSeparator {
+		// path ends in separator, we're at root
 		return "", false, nil
 	}
 

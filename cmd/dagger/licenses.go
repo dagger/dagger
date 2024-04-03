@@ -107,22 +107,20 @@ func searchForLicense(dir string) (string, error) {
 		}
 	}
 
-	var atRoot bool
-	if dir == "/" {
-		atRoot = true
-	} else if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-		atRoot = true
-	}
-
-	if atRoot {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 		// we reached the module root; time to give up
 		return "", errors.New("not found")
 	}
 
-	abs, err := filepath.Abs(dir)
+	dir, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
+	parent := filepath.Dir(dir)
+	if parent == dir {
+		// we reached the filesystem root; time to give up
+		return "", errors.New("not found")
+	}
 
-	return searchForLicense(filepath.Dir(abs))
+	return searchForLicense(filepath.Dir(parent))
 }

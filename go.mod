@@ -255,3 +255,5 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240123012728-ef4313101c80 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
+
+replace github.com/tonistiigi/fsutil => github.com/jedevc/fsutil v0.0.0-20240415151737-86c9caf572e5
