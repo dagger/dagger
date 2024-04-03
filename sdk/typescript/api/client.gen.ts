@@ -4623,6 +4623,21 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Returns details for HEAD.
+   */
+  head = (): GitRef => {
+    return new GitRef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "head",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Returns details of a ref.
    * @param name Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
    */

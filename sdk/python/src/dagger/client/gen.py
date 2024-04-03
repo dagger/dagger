@@ -3726,6 +3726,13 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
     @typecheck
+    def head(self) -> GitRef:
+        """Returns details for HEAD."""
+        _args: list[Arg] = []
+        _ctx = self._select("head", _args)
+        return GitRef(_ctx)
+
+    @typecheck
     async def id(self) -> GitRepositoryID:
         """A unique identifier for this GitRepository.
 

@@ -3414,6 +3414,15 @@ func (r *GitRepository) Commit(id string) *GitRef {
 	}
 }
 
+// Returns details for HEAD.
+func (r *GitRepository) Head() *GitRef {
+	q := r.query.Select("head")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
 // A unique identifier for this GitRepository.
 func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
 	if r.id != nil {
