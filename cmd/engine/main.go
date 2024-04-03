@@ -58,23 +58,18 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/sdk/resource"
-	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
 	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 const (
@@ -233,18 +228,7 @@ func main() { //nolint:gocyclo
 		ctx, cancel := context.WithCancel(appcontext.Context())
 		defer cancel()
 
-		pubsub := telemetry.NewPubSub()
-
-		ctx = telemetry.Init(ctx, telemetry.Config{
-			Detect: true,
-			Resource: resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.ServiceNameKey.String("dagger-engine"),
-				semconv.ServiceVersionKey.String(engine.Version),
-			),
-			LiveTraceExporters: []trace.SpanExporter{pubsub},
-			LiveLogExporters:   []sdklog.LogExporter{pubsub},
-		})
+		ctx, pubsub := InitTelemetry(ctx)
 
 		bklog.G(ctx).Debug("loading engine config file")
 		cfg, err := config.LoadFile(c.GlobalString("config"))
@@ -417,7 +401,7 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(_ *cli.Context) error {
-		telemetry.Close()
+		CloseTelemetry()
 		return nil
 	}
 

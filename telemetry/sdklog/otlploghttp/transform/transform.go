@@ -119,7 +119,16 @@ func logValue(v olog.Value) *commonpb.AnyValue {
 			ArrayValue: array,
 		}
 	case olog.KindMap:
-		panic("not supported")
+		kvList := &commonpb.KeyValueList{}
+		for _, e := range v.AsMap() {
+			kvList.Values = append(kvList.Values, &commonpb.KeyValue{
+				Key:   e.Key,
+				Value: logValue(e.Value),
+			})
+		}
+		av.Value = &commonpb.AnyValue_KvlistValue{
+			KvlistValue: kvList,
+		}
 	default:
 		av.Value = &commonpb.AnyValue_StringValue{
 			StringValue: "INVALID",
