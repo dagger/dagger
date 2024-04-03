@@ -175,11 +175,23 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	conn, _, hijackmd := grpchijack.Hijack(stream)
 
 	if !opts.RegisterClient {
-		e.serverMu.RLock()
-		srv, ok := e.servers[opts.ServerID]
-		e.serverMu.RUnlock()
-		if !ok {
-			return fmt.Errorf("server %q not found", opts.ServerID)
+		// retry a few times since an initially connecting client is concurrently registering
+		// the server, so this it's okay for this to take a bit to succeed
+		srv, err := retry(ctx, 100*time.Millisecond, 20, func() (*DaggerServer, error) {
+			e.serverMu.RLock()
+			srv, ok := e.servers[opts.ServerID]
+			e.serverMu.RUnlock()
+			if !ok {
+				return nil, fmt.Errorf("server %q not found", opts.ServerID)
+			}
+
+			if err := srv.VerifyClient(opts.ClientID, opts.ClientSecretToken); err != nil {
+				return nil, fmt.Errorf("failed to verify client: %w", err)
+			}
+			return srv, nil
+		})
+		if err != nil {
+			return err
 		}
 		bklog.G(ctx).Trace("forwarding client to server")
 		err = srv.ServeClientConn(ctx, opts, conn)
@@ -456,4 +468,22 @@ func (e *BuildkitController) ListenBuildHistory(req *controlapi.BuildHistoryRequ
 
 func (e *BuildkitController) UpdateBuildHistory(ctx context.Context, req *controlapi.UpdateBuildHistoryRequest) (*controlapi.UpdateBuildHistoryResponse, error) {
 	return nil, fmt.Errorf("update build history not implemented")
+}
+
+func retry[T any](ctx context.Context, interval time.Duration, maxRetries int, f func() (T, error)) (T, error) {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		var t T
+		t, err = f()
+		if err == nil {
+			return t, nil
+		}
+		select {
+		case <-time.After(interval):
+		case <-ctx.Done():
+			return t, ctx.Err()
+		}
+	}
+	var t T
+	return t, err
 }

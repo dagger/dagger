@@ -197,9 +197,6 @@ func (s *DaggerServer) ServeClientConn(
 ) error {
 	bklog.G(ctx).Trace("serve client conn")
 	defer bklog.G(ctx).Trace("done serving client conn")
-	if err := s.VerifyClient(clientMetadata.ClientID, clientMetadata.ClientSecretToken); err != nil {
-		return fmt.Errorf("failed to verify client: %w", err)
-	}
 
 	s.clientIDMu.Lock()
 	s.connectedClients++
@@ -438,7 +435,7 @@ func (s *DaggerServer) Close(ctx context.Context) error {
 
 	var errs error
 
-	slog.Debug("server closing; stopping client services and flushing", "server", s.serverID, "trace", s.traceID)
+	slog.ExtraDebug("server closing; stopping client services and flushing", "server", s.serverID, "trace", s.traceID)
 
 	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))

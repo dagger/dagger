@@ -242,7 +242,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
 		// Open a separate connection for telemetry.
 		telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
@@ -375,7 +375,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		DisableKeepAlives: true,
 	}}
 
-	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+	// there are fast retries server-side so we can start out with a large interval here
+	if err := retry(ctx, 3*time.Second, func(elapsed time.Duration, ctx context.Context) error {
 		// Make an introspection request, since those get ignored by telemetry and
 		// we don't want this to show up, since it's just a health check.
 		err := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
@@ -396,9 +397,9 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func retry(ctx context.Context, fn func(time.Duration, context.Context) error) error {
+func retry(ctx context.Context, initialInterval time.Duration, fn func(time.Duration, context.Context) error) error {
 	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = 10 * time.Millisecond
+	bo.InitialInterval = initialInterval
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	start := time.Now()
