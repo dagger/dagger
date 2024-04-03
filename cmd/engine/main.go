@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -164,6 +165,10 @@ func main() { //nolint:gocyclo
 			Usage: "enable debug output in logs",
 		},
 		cli.BoolFlag{
+			Name:  "extra-debug",
+			Usage: "enable extra debug output in logs",
+		},
+		cli.BoolFlag{
 			Name:  "trace",
 			Usage: "enable trace output in logs (highly verbose, could affect performance)",
 		},
@@ -274,14 +279,29 @@ func main() { //nolint:gocyclo
 		// Wire slog up to send to Logrus so engine logs using slog also get sent
 		// to Cloud
 		slogOpts := sloglogrus.Option{}
-		if cfg.Debug {
-			slogOpts.Level = slog.LevelDebug
-			logrus.SetLevel(logrus.DebugLevel)
+
+		noiseReduceHook := &noiseReductionHook{
+			ignoreLogger: logrus.New(),
 		}
-		if cfg.Trace {
+		noiseReduceHook.ignoreLogger.SetOutput(io.Discard)
+
+		switch {
+		case cfg.Trace:
 			slogOpts.Level = slog.LevelTrace
 			logrus.SetLevel(logrus.TraceLevel)
+			// don't add noise reduction hook for trace level
+		case c.IsSet("extra-debug"):
+			slogOpts.Level = slog.LevelExtraDebug
+			logrus.SetLevel(logrus.DebugLevel)
+			// don't add noise reduction hook for extra debug level
+		case cfg.Debug:
+			slogOpts.Level = slog.LevelDebug
+			logrus.SetLevel(logrus.DebugLevel)
+			logrus.AddHook(noiseReduceHook)
+		default:
+			logrus.AddHook(noiseReduceHook)
 		}
+
 		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
 		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))

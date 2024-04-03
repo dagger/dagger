@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"github.com/moby/buildkit/identity"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -27,6 +29,62 @@ func init() {
 	// tel = telemetry.New()
 
 	// logrus.AddHook(&cloudHook{})
+}
+
+// some logs from buildkit/containerd libs are not useful even at debug level,
+// this hook ignores them
+type noiseReductionHook struct {
+	ignoreLogger *logrus.Logger
+}
+
+var _ logrus.Hook = (*noiseReductionHook)(nil)
+
+func (h *noiseReductionHook) Levels() []logrus.Level {
+	return logrus.AllLevels
+}
+
+var ignoredMessages = map[string]struct{}{
+	"fetch":                        {},
+	"fetch response received":      {},
+	"resolving":                    {},
+	"do request":                   {},
+	"resolved":                     {},
+	"push":                         {},
+	"checking and pushing to":      {},
+	"response completed":           {},
+	"authorized request":           {},
+	"serving grpc connection":      {},
+	"diff applied":                 {},
+	"using pigz for decompression": {},
+}
+
+var ignoredMessagePrefixes = []string{
+	"returning network namespace",
+	"releasing cni network namespace",
+	"creating new network namespace",
+	"finished creating network namespace",
+	"diffcopy took",
+	"Using single walk diff for",
+	"reusing ref for",
+	"not reusing ref",
+}
+
+func (h *noiseReductionHook) Fire(entry *logrus.Entry) error {
+	var ignore bool
+	if _, ok := ignoredMessages[entry.Message]; ok {
+		ignore = true
+	} else {
+		for _, prefix := range ignoredMessagePrefixes {
+			if strings.HasPrefix(entry.Message, prefix) {
+				ignore = true
+				break
+			}
+		}
+	}
+	if ignore {
+		entry.Logger = h.ignoreLogger
+	}
+	return nil
 }
 
 // type cloudHook struct{}
