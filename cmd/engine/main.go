@@ -275,9 +275,7 @@ func main() { //nolint:gocyclo
 		// to Cloud
 		slogOpts := sloglogrus.Option{}
 		if cfg.Debug {
-			// TODO: keeping OTEL logs enabled on debug for now, should change this to DebugLevel once done debugging OTEL
-			// slogOpts.Level = slog.LevelDebug
-			slogOpts.Level = slog.LevelExtraDebug
+			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
 		}
 		if cfg.Trace {
