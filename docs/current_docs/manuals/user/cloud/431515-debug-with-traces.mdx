@@ -1,0 +1,22 @@
+---
+slug: /431515/debug-with-traces
+---
+## Debug with Traces
+Dagger Cloud's Traces feature allows you to see the execution path of your Dagger calls in real-time. This is useful for debugging and understanding how your Dagger pipeline is being executed.
+
+Once your run has completed, you can view the Traces tab in the run details page. This tab shows a visual representation of the execution path of your Dagger calls. You can see the order in which the calls were executed, as well as the time taken for each call.
+
+In the following example, we'll debug a failure with a Dagger pipeline using Traces.
+
+### Traces UI Legend
+When you view the details for a Dagger trace, you'll notice icons on the left of each step in the timeline view. 
+
+These icons are dynamically generated for each step in the trace and provide additional context about the step. Steps that are related (upstream or downstream operations), will use the same icons. This lets you visually identify the relationship between steps in the trace.
+
+In the following example, the UI shows that the `directory` referenced in the `bass` step is using the same icon as the `.tree` step preceding it. This indicates that the `bass` step is a downstream operation of the `.tree` step and is using the directory referenced by the `.tree` step.
+
+[ADD SCREENSHOT FOR ICON EXAMPLE]
+
+### Debugging a Failure with Traces
+
+### Debuggin a Performance issue with Traces
