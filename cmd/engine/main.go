@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"os/user"
@@ -22,13 +21,6 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/server"
-	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/network/netinst"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -73,6 +65,15 @@ import (
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/server"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/network/netinst"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 const (

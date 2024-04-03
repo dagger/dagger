@@ -7,11 +7,12 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	fstypes "github.com/tonistiigi/fsutil/types"
+
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
 type FS struct {

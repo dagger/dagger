@@ -7,17 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/gorilla/websocket"
 	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoint string) (rerr error) {

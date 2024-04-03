@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/iancoleman/strcase"
 )
 
 type SchemaResolvers interface {

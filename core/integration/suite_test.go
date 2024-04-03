@@ -15,14 +15,15 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/telemetry"
 )
 
 func init() {

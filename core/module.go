@@ -3,14 +3,15 @@ package core
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type Module struct {

@@ -6,7 +6,6 @@ import (
 	cdk "github.com/aws/aws-cdk-go/awscdk/v2"
 	ecr "github.com/aws/aws-cdk-go/awscdk/v2/awsecr"
 	"github.com/aws/constructs-go/constructs/v10"
-
 	"github.com/aws/jsii-runtime-go"
 )
 

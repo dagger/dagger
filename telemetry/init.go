@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -22,6 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry/inflight"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploggrpc"

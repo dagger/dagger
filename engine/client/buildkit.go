@@ -7,11 +7,12 @@ import (
 	"net/url"
 	"time"
 
+	bkclient "github.com/moby/buildkit/client"
+	"go.opentelemetry.io/otel"
+
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/telemetry"
-	bkclient "github.com/moby/buildkit/client"
-	"go.opentelemetry.io/otel"
 )
 
 const (

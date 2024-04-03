@@ -11,14 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/distconsts"
-	"github.com/dagger/dagger/internal/mage/sdk"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/google/shlex"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/internal/mage/sdk"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 var publishedEngineArches = []string{"amd64", "arm64"}

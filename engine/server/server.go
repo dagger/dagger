@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"runtime"
@@ -16,15 +15,6 @@ import (
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/containerd/containerd/defaults"
-	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
@@ -34,6 +24,17 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type DaggerServer struct {
@@ -322,8 +323,8 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"mainClientID", s.mainClientCallerID,
 			"callerID", clientMetadata.ModuleCallerDigest)
 
-		slog.Debug("shutting down server")
-		defer slog.Debug("done shutting down server")
+		slog.Trace("shutting down server")
+		defer slog.Trace("done shutting down server")
 
 		if clientMetadata.ClientID == s.mainClientCallerID {
 			// Stop services, since the main client is going away, and we

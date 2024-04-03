@@ -11,11 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/spf13/cobra"
+
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/telemetry"
-	"github.com/google/uuid"
-	"github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{

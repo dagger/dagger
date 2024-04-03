@@ -3,7 +3,6 @@ package idtui
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
 )

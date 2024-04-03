@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 
-	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/engine/client"
 )
 
 var watchCmd = &cobra.Command{

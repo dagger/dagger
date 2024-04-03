@@ -9,11 +9,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type ModuleSourceKind string

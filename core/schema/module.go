@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"golang.org/x/sync/errgroup"
 )
 
 type moduleSchema struct {

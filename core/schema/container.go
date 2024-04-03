@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type containerSchema struct {

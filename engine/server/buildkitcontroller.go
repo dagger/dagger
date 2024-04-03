@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -37,6 +36,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 )
 

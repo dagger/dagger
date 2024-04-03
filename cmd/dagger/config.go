@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/modules"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var configJSONOutput bool

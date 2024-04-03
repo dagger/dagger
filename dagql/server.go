@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -19,6 +18,8 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at

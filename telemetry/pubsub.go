@@ -2,16 +2,17 @@ package telemetry
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/moby/buildkit/identity"
 	"github.com/sourcegraph/conc/pool"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 type PubSub struct {

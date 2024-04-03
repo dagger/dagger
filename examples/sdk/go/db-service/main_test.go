@@ -3,10 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDatabase(t *testing.T) {

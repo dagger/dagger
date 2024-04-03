@@ -9,13 +9,14 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
+
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/internal/distconsts"
 )
 
 const (

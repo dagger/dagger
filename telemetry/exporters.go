@@ -2,14 +2,15 @@ package telemetry
 
 import (
 	"context"
-	"log/slog"
 
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/moby/buildkit/identity"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 type MultiSpanExporter []sdktrace.SpanExporter

@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
 )
 
 const (

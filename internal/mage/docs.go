@@ -4,11 +4,11 @@ import (
 	"context"
 	"os"
 
-	"github.com/dagger/dagger/internal/mage/util"
-
-	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
 	"golang.org/x/sync/errgroup"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 type Docs mg.Namespace

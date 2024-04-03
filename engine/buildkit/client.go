@@ -11,9 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session"
 	"github.com/koron-go/prefixw"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
@@ -40,6 +37,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session"
 )
 
 const (

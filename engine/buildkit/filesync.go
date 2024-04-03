@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/engine"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -22,6 +21,8 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
+
+	"github.com/dagger/dagger/engine"
 )
 
 func (c *Client) LocalImport(

@@ -4,18 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
-	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/telemetry"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
