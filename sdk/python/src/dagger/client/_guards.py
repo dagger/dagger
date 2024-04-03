@@ -1,12 +1,20 @@
 import typing
+import warnings
 from collections.abc import Sequence
 from typing import Annotated, TypeGuard
 
 from beartype import BeartypeConf, BeartypeViolationVerbosity, beartype
 from beartype.door import TypeHint
+from beartype.roar import BeartypeDecorHintParamDefaultForwardRefWarning
 from beartype.vale import Is, IsInstance, IsSubclass
 
 from .base import Scalar, Type
+
+warnings.filterwarnings(
+    "ignore",
+    category=BeartypeDecorHintParamDefaultForwardRefWarning,
+)
+
 
 IDScalar = Annotated[Scalar, Is[lambda obj: type(obj).__name__.endswith("ID")]]
 
