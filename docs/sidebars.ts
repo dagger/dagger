@@ -115,6 +115,11 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/user/cloud/user-interface"
+            },
+            {
+              "type": "doc",
+              "label": "Debug with Traces",
+              "id": "manuals/user/cloud/debug-with-traces"
             }
           ]
         },
