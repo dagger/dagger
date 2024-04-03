@@ -190,7 +190,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 </TabItem>
 </Tabs>
 
-## Step 3: Visualize and debug your pipelines with Dagger Cloud
+## Step 3: Visualize your pipeline runs with Dagger Cloud
 
 :::info
 At the end of this step, you will have data from one or more CI or local runs available for inspection and debugging in Dagger Cloud.
@@ -237,7 +237,7 @@ git push
 Dagger 0.11.0 adds support for visualizing Dagger Functions calls in Dagger Cloud. With this update, Dagger Cloud will default to the use the new Traces experience for both `dagger call` and `dagger run` commands. Engines running Dagger 0.11.0 or later will automatically use the new Traces experience. Engines running Dagger 0.10.0 or earlier will continue to use the legacy Runs experience.
 :::
 
-#### Traces: Dagger Function calls
+#### Dagger Traces
 Navigate to the **Traces** page of the Dagger Cloud dashboard. You should see your most recent Dagger pipeline run as the first entry in the list, as shown below: 
 
 [ADD SCREENSHOT HERE]
@@ -252,7 +252,7 @@ The **Trace Details** page includes detailed status and duration metadata about 
 
  A Dagger trace shows a detailed timeline for operations completed in a pipeline run. Dagger Cloud also applies unique IDs and icons for related operations, which are essential for debugging your pipeline when something does wrong. To learn more about the Traces view and how to debug a failure, see the [Dagger Cloud user interface documentation](./741031-user-interface.mdx).
 
-#### Runs: Dagger runs
+#### Dagger Runs
 :::info
 The Runs view only applies to Dagger pipeline runs done with engines before version 0.11.0. 
 :::
