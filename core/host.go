@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/progrock"
 )
 
 type Host struct {
@@ -71,12 +70,8 @@ func (host *Host) Directory(
 	// TODO: enforcement that requester session is granted access to source session at this path
 
 	// Create a sub-pipeline to group llb.Local instructions
-	pipelineName := fmt.Sprintf("%s %s", pipelineNamePrefix, dirPath)
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
-
 	_, desc, err := host.Query.Buildkit.LocalImport(
 		ctx,
-		subRecorder,
 		host.Query.Platform.Spec(),
 		dirPath,
 		filter.Exclude,

@@ -9,10 +9,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
-	"github.com/vito/progrock"
 	"golang.org/x/term"
 )
 
@@ -53,8 +51,6 @@ EOF
 }
 
 func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) (rerr error) {
-	ctx, vtx := progrock.Span(ctx, idtui.PrimaryVertex, cmd.CommandPath())
-	defer func() { vtx.Done(rerr) }()
 	res, err := runQuery(ctx, engineClient, args)
 	if err != nil {
 		return err
@@ -63,7 +59,7 @@ func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, c
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(vtx.Stdout(), "%s\n", result)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s\n", result)
 	return nil
 }
 

@@ -3,14 +3,11 @@ package main
 import (
 	"os"
 
-	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
-	"github.com/sirupsen/logrus"
 )
 
 var (
 	engineName string
-	tel        *telemetry.Telemetry
 )
 
 func init() {
@@ -26,49 +23,50 @@ func init() {
 		}
 	}
 
-	tel = telemetry.New()
+	// TODO(vito): send engine logs over OTLP
+	// tel = telemetry.New()
 
-	logrus.AddHook(&cloudHook{})
+	// logrus.AddHook(&cloudHook{})
 }
 
-type cloudHook struct{}
+// type cloudHook struct{}
 
-var _ logrus.Hook = (*cloudHook)(nil)
+// var _ logrus.Hook = (*cloudHook)(nil)
 
-func (h *cloudHook) Levels() []logrus.Level {
-	return logrus.AllLevels
-}
+// func (h *cloudHook) Levels() []logrus.Level {
+// 	return logrus.AllLevels
+// }
 
-func (h *cloudHook) Fire(entry *logrus.Entry) error {
-	payload := &engineLogPayload{
-		Engine: engineMetadata{
-			Name: engineName,
-		},
-		Message: entry.Message,
-		Level:   entry.Level.String(),
-		Fields:  entry.Data,
-	}
+// func (h *cloudHook) Fire(entry *logrus.Entry) error {
+// 	payload := &engineLogPayload{
+// 		Engine: engineMetadata{
+// 			Name: engineName,
+// 		},
+// 		Message: entry.Message,
+// 		Level:   entry.Level.String(),
+// 		Fields:  entry.Data,
+// 	}
 
-	tel.Push(payload, entry.Time)
-	return nil
-}
+// 	tel.Push(payload, entry.Time)
+// 	return nil
+// }
 
-type engineLogPayload struct {
-	Engine  engineMetadata `json:"engine"`
-	Message string         `json:"message"`
-	Level   string         `json:"level"`
-	// NOTE: fields includes traceID and spanID, can we use that to correlate with clients?
-	Fields map[string]any `json:"fields"`
-}
+// type engineLogPayload struct {
+// 	Engine  engineMetadata `json:"engine"`
+// 	Message string         `json:"message"`
+// 	Level   string         `json:"level"`
+// 	// NOTE: fields includes traceID and spanID, can we use that to correlate with clients?
+// 	Fields map[string]any `json:"fields"`
+// }
 
-func (engineLogPayload) Type() telemetry.EventType {
-	return telemetry.EventType("engine_log")
-}
+// func (engineLogPayload) Type() telemetry.EventType {
+// 	return telemetry.EventType("engine_log")
+// }
 
-func (engineLogPayload) Scope() telemetry.EventScope {
-	return telemetry.EventScopeSystem
-}
+// func (engineLogPayload) Scope() telemetry.EventScope {
+// 	return telemetry.EventScopeSystem
+// }
 
-type engineMetadata struct {
-	Name string `json:"name"`
-}
+// type engineMetadata struct {
+// 	Name string `json:"name"`
+// }
