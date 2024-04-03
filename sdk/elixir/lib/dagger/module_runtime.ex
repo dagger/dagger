@@ -93,7 +93,7 @@ defmodule Dagger.ModuleRuntime do
         value =
           with {:ok, value} <- Dagger.FunctionCallArgValue.value(arg),
                {:ok, value} <- Jason.decode(value) do
-            decode(value, fun_def[:args][name][:type], ctx.dag)
+            decode(value, get_in(fun_def, [:args, name, :type]), ctx.dag)
           end
 
         {name, value}
@@ -108,7 +108,7 @@ defmodule Dagger.ModuleRuntime do
     value
   end
 
-  defp decode(value, module, dag) do
+  defp decode(value, module, dag) when is_atom(module) do
     # NOTE: It feels like we really need a protocol for the module to 
     # load the data from id.
     ["Dagger", name] = Module.split(module)
@@ -136,11 +136,11 @@ defmodule Dagger.ModuleRuntime do
   end
 
   defmacro __using__(opt) do
-    unless opt[:name] do
-      raise "Module name must be define."
-    end
-
     name = opt[:name]
+
+    unless name do
+      raise "Module name is required."
+    end
 
     quote bind_quoted: [name: name] do
       use GenServer

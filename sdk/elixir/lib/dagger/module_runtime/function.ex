@@ -6,14 +6,20 @@ defmodule Dagger.ModuleRuntime.Function do
   @doc """
   Define a Dagger function.
   """
-  def define(dag, {name, fun_def}) do
+  def define(dag, {name, fun_def}, doc_content) do
     args = fun_def[:args] || []
     return = Keyword.fetch!(fun_def, :return)
 
-    # TODO: function doc by retrieving from `@doc`.
     dag
     |> Dagger.Client.function(Helper.camelize(name), define_type(dag, return))
+    |> maybe_with_description(doc_content)
     |> with_args(args, dag)
+  end
+
+  defp maybe_with_description(function, doc) when doc in [:none, :hidden], do: function
+
+  defp maybe_with_description(function, %{"en" => doc}) do
+    Dagger.Function.with_description(function, doc)
   end
 
   defp with_args(fun_def, args, dag) do
