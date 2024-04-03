@@ -155,14 +155,22 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		WithField("client_hostname", opts.ClientHostname).
 		WithField("client_call_digest", opts.ModuleCallerDigest).
 		WithField("server_id", opts.ServerID))
-	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Debug("handling session call")
-	defer func() {
-		if rerr != nil {
-			bklog.G(ctx).WithError(rerr).Errorf("session call failed")
-		} else {
-			bklog.G(ctx).Debugf("session call done")
+
+	{
+		lg := bklog.G(ctx).WithField("register_client", opts.RegisterClient)
+		lgLevel := lg.Trace
+		if opts.RegisterClient {
+			lgLevel = lg.Debug
 		}
-	}()
+		lgLevel("handling session call")
+		defer func() {
+			if rerr != nil {
+				lg.WithError(rerr).Errorf("session call failed")
+			} else {
+				lgLevel("session call done")
+			}
+		}()
+	}
 
 	conn, _, hijackmd := grpchijack.Hijack(stream)
 
