@@ -40,7 +40,7 @@ func (t PHPSDK) Generate(ctx context.Context) (*Directory, error) {
 		With(installer).
 		With(util.ShellCmds(
 			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),
-			fmt.Sprintf("ls -lha"),
+			"ls -lha",
 			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./codegen",
 		)).
 		Directory(".")
