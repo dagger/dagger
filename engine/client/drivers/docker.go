@@ -202,7 +202,7 @@ func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
 	_, stdout, stderr := telemetry.WithStdioToOtel(ctx, "")
 	outBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdout, outBuf)
-	cmd.Stdout = stderr
+	cmd.Stderr = io.MultiWriter(stderr, outBuf)
 	if err := cmd.Run(); err != nil {
 		return outBuf.String(), errors.Wrap(err, "failed to run command")
 	}
