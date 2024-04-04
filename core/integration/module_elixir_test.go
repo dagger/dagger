@@ -2,12 +2,9 @@ package core
 
 import (
 	_ "embed"
-	//"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	//"github.com/tidwall/gjson"
-	//"dagger.io/dagger"
 )
 
 func TestModuleElixirInit(t *testing.T) {
