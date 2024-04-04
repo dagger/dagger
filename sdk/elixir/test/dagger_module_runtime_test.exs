@@ -92,6 +92,36 @@ defmodule Dagger.ModuleRuntimeTest do
     assert name_for(C) == "C"
   end
 
+  test "missing args in function declarattion" do
+    assert_raise NimbleOptions.ValidationError, fn ->
+      defmodule NoArgsModule do
+        use Dagger.ModuleRuntime, name: "NoArgsModule"
+
+        @function [
+          return: :string
+        ]
+        def hello(_self, _args) do
+          "Hello"
+        end
+      end
+    end
+  end
+
+  test "missing return in function declarattion" do
+    assert_raise NimbleOptions.ValidationError, fn ->
+      defmodule NoTypeModule do
+        use Dagger.ModuleRuntime, name: "NoTypeModule"
+
+        @function [
+          args: []
+        ]
+        def hello(_self, _args) do
+          "Hello"
+        end
+      end
+    end
+  end
+
   defp name_for(module) do
     Dagger.ModuleRuntime.Module.name_for(module)
   end

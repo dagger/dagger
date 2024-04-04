@@ -1,6 +1,41 @@
 defmodule Dagger.ModuleRuntime do
+  @schema [
+    args: [
+      doc: """
+      Arguments of the function.
+
+      Everything declared in this keyword will pass into the second argument
+      of the function as a `map`.
+      """,
+      type: :keyword_list,
+      required: true,
+      keys: [
+        *: [
+          type: :non_empty_keyword_list,
+          required: true,
+          keys: [
+            type: [
+              doc: "Type of the argument.",
+              type: :atom,
+              required: true
+            ]
+          ]
+        ]
+      ]
+    ],
+    return: [
+      doc: "Function return type.",
+      type: :atom,
+      required: true
+    ]
+  ]
+
   @moduledoc """
   `Dagger.ModuleRuntime` is a runtime for `Dagger` module for Elixir.
+
+  ## Function schema
+
+  #{NimbleOptions.docs(@schema)}
   """
 
   def __on_definition__(env, :def, name, args, _guards, _body) do
@@ -15,6 +50,7 @@ defmodule Dagger.ModuleRuntime do
           """
         end
 
+        function = NimbleOptions.validate!(function, @schema)
         functions = Module.get_attribute(env.module, :functions)
         functions = [{name, function} | functions]
         Module.put_attribute(env.module, :functions, functions)
@@ -33,6 +69,8 @@ defmodule Dagger.ModuleRuntime do
         """
     end
   end
+
+  def function_schema(), do: @schema
 
   @doc """
   Invoke a function.
