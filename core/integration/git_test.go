@@ -10,12 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 func TestGit(t *testing.T) {

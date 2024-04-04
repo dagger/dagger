@@ -5,9 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/vito/progrock/ui"
+
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/vito/progrock/ui"
 )
 
 func main() {

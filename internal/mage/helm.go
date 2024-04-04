@@ -6,8 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
+
+	"dagger.io/dagger"
 )
 
 type Helm mg.Namespace

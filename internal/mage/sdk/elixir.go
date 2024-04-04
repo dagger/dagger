@@ -9,9 +9,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/magefile/mage/mg"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
-	"github.com/magefile/mage/mg"
 )
 
 const (

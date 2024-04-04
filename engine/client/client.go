@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,13 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd/defaults"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
-
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -39,15 +34,19 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
 )
@@ -243,7 +242,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
 		// Open a separate connection for telemetry.
 		telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
@@ -376,7 +375,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		DisableKeepAlives: true,
 	}}
 
-	if err := retry(ctx, func(elapsed time.Duration, ctx context.Context) error {
+	// there are fast retries server-side so we can start out with a large interval here
+	if err := retry(ctx, 3*time.Second, func(elapsed time.Duration, ctx context.Context) error {
 		// Make an introspection request, since those get ignored by telemetry and
 		// we don't want this to show up, since it's just a health check.
 		err := c.Do(ctx, `{__schema{description}}`, "", nil, nil)
@@ -397,9 +397,9 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func retry(ctx context.Context, fn func(time.Duration, context.Context) error) error {
+func retry(ctx context.Context, initialInterval time.Duration, fn func(time.Duration, context.Context) error) error {
 	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = 10 * time.Millisecond
+	bo.InitialInterval = initialInterval
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	start := time.Now()

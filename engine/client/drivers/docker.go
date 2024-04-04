@@ -5,13 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/url"
 	"os/exec"
 	"strings"
 
-	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -20,6 +18,8 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/dagger/dagger/telemetry"
 )
 

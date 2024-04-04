@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"dagger.io/dagger"
-	// "github.com/dagger/dagger/sdk/go"
 )
 
 func main() {

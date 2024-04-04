@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -21,6 +20,7 @@ import (
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	logtransform "github.com/dagger/dagger/telemetry/sdklog/otlploghttp/transform"
 )
@@ -197,7 +197,8 @@ func attrValue(v *otlpcommonv1.AnyValue) attribute.Value {
 		return attribute.BoolValue(v.GetBoolValue())
 	default:
 		// TODO slices, bleh
-		return attribute.StringValue(fmt.Sprintf("UNHANDLED ATTR TYPE: %v", x))
+		slog.Error("unhandled otlpcommonv1.AnyValue -> attribute.Value conversion", "type", fmt.Sprintf("%T", x))
+		return attribute.StringValue(fmt.Sprintf("UNHANDLED ATTR TYPE: %v (%T)", x, x))
 	}
 }
 
@@ -226,6 +227,7 @@ func logValue(v *otlpcommonv1.AnyValue) log.Value {
 	case *otlpcommonv1.AnyValue_BytesValue:
 		return log.BytesValue(x.BytesValue)
 	default:
-		panic(fmt.Sprintf("unknown value type: %T", x))
+		slog.Error("unhandled otlpcommonv1.AnyValue -> log.Value conversion", "type", fmt.Sprintf("%T", x))
+		return log.StringValue(fmt.Sprintf("UNHANDLED LOG VALUE TYPE: %v (%T)", x, x))
 	}
 }

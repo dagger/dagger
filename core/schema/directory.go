@@ -4,9 +4,8 @@ import (
 	"context"
 	"io/fs"
 
-	"github.com/dagger/dagger/dagql"
-
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 )
 
 type directorySchema struct {

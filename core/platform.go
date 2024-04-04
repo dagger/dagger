@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type Platform specs.Platform

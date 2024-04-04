@@ -12,11 +12,11 @@ import (
 	"text/template"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/exp/maps"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/distconsts"
 )
 

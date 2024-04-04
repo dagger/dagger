@@ -27,13 +27,14 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/network"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/network"
 )
 
 func TestServiceHostnamesAreStable(t *testing.T) {

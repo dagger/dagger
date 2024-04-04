@@ -9,11 +9,12 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
-	"golang.org/x/sync/errgroup"
 )
 
 type moduleSourceArgs struct {

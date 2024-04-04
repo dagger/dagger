@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/core"
 	"golang.org/x/text/transform"
+
+	"github.com/dagger/dagger/core"
 )
 
 var (

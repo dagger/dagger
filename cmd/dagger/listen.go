@@ -8,11 +8,12 @@ import (
 	"os"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var (

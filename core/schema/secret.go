@@ -3,10 +3,11 @@ package schema
 import (
 	"context"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/pkg/errors"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 )
 
 type secretSchema struct {

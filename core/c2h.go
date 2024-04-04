@@ -7,11 +7,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type c2hTunnel struct {
