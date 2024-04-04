@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -153,6 +154,9 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		"-v", distconsts.EngineDefaultStateDir,
 		"--privileged",
 	)
+	// explicitly pass current env vars; if we append more below existing ones like DOCKER_HOST
+	// won't be passed to the cmd
+	cmd.Env = os.Environ()
 	if opts.DaggerCloudToken != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, opts.DaggerCloudToken))
 		cmd.Args = append(cmd.Args, "-e", EnvDaggerCloudToken)
