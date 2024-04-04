@@ -63,7 +63,7 @@ DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^da
 docker restart "$DAGGER_ENGINE_DOCKER_CONTAINER"
 ```
 
-## Dagger Engine Restarts Due to `CNI setup error`
+## Dagger restarts with a "CNI setup error"
 
 Dagger Engine requires the `iptable_nat` Linux Kernel Module in order to function properly. On some Linux Distributions (including RHEL 8.x and 9.x) this module is not loaded by default.
 
