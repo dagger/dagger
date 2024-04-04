@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type containerSchema struct {
@@ -560,12 +560,12 @@ func (s *containerSchema) withRootfs(ctx context.Context, parent *core.Container
 
 type containerPipelineArgs struct {
 	Name        string
-	Description string                              `default:""`
-	Labels      []dagql.InputObject[pipeline.Label] `default:"[]"`
+	Description string                             `default:""`
+	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
 func (s *containerSchema) pipeline(ctx context.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.WithPipeline(ctx, args.Name, args.Description, collectInputsSlice(args.Labels))
+	return parent.WithPipeline(ctx, args.Name, args.Description)
 }
 
 func (s *containerSchema) rootfs(ctx context.Context, parent *core.Container, args struct{}) (*core.Directory, error) {
@@ -1196,9 +1196,9 @@ type containerImportArgs struct {
 
 func (s *containerSchema) import_(ctx context.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) {
 	start := time.Now()
-	slog.Debug("importing container", "source", args.Source.Display(), "tag", args.Tag)
+	slog.ExtraDebug("importing container", "source", args.Source.Display(), "tag", args.Tag)
 	defer func() {
-		slog.Debug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
+		slog.ExtraDebug("done importing container", "source", args.Source.Display(), "tag", args.Tag, "took", start)
 	}()
 	source, err := args.Source.Load(ctx, s.srv)
 	if err != nil {

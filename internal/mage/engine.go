@@ -11,14 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/distconsts"
-	"github.com/dagger/dagger/internal/mage/sdk"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/google/shlex"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/mod/semver"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/internal/mage/sdk"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 var publishedEngineArches = []string{"amd64", "arm64"}
@@ -306,8 +307,9 @@ func (t Engine) Dev(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w: %s", err, output)
 	}
-	_, imageID, ok := strings.Cut(string(output), "sha256:")
+	_, imageID, ok := strings.Cut(string(output), "Loaded image ID: sha256:")
 	if !ok {
+		_, imageID, ok = strings.Cut(string(output), "Loaded image: sha256:") // podman
 		return fmt.Errorf("unexpected output from docker load: %s", output)
 	}
 	imageID = strings.TrimSpace(imageID)
@@ -317,7 +319,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		imageID,
 		imageName,
 	).CombinedOutput(); err != nil {
-		return fmt.Errorf("docker tag: %w: %s", err, output)
+		return fmt.Errorf("docker tag %s %s: %w: %s", imageID, imageName, err, output)
 	}
 
 	if output, err := exec.CommandContext(ctx, "docker",
@@ -339,8 +341,8 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 	runArgs = append(runArgs, []string{
 		"-e", util.CacheConfigEnvName,
-		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
-		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
+		"-e", "DAGGER_CLOUD_TOKEN",
+		"-e", "DAGGER_CLOUD_URL",
 		"-e", util.GPUSupportEnvName,
 		"-v", volumeName + ":" + distconsts.EngineDefaultStateDir,
 		"-p", "6060:6060",

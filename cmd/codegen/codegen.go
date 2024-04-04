@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
-	"time"
-
-	"github.com/vito/progrock"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
@@ -17,17 +15,13 @@ import (
 )
 
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
-	var vtxName string
+	logsW := os.Stdout
+
 	if cfg.ModuleName != "" {
-		vtxName = fmt.Sprintf("generating %s module: %s", cfg.Lang, cfg.ModuleName)
+		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleName)
 	} else {
-		vtxName = fmt.Sprintf("generating %s SDK client", cfg.Lang)
+		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)
 	}
-
-	ctx, vtx := progrock.Span(ctx, time.Now().String(), vtxName)
-	defer func() { vtx.Done(err) }()
-
-	logsW := vtx.Stdout()
 
 	var introspectionSchema *introspection.Schema
 	if cfg.IntrospectionJSON != "" {
@@ -55,12 +49,12 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 
 		for _, cmd := range generated.PostCommands {
 			cmd.Dir = cfg.OutputDir
-			cmd.Stdout = vtx.Stdout()
-			cmd.Stderr = vtx.Stderr()
-			task := vtx.Task(strings.Join(cmd.Args, " "))
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			fmt.Fprintln(logsW, "running post-command:", strings.Join(cmd.Args, " "))
 			err := cmd.Run()
-			task.Done(err)
 			if err != nil {
+				fmt.Fprintln(logsW, "post-command failed:", err)
 				return err
 			}
 		}

@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func TestHTTP(t *testing.T) {

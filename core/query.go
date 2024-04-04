@@ -7,16 +7,16 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/content"
+	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/moby/buildkit/util/leaseutil"
-	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/progrock"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
@@ -33,8 +33,6 @@ var ErrNoCurrentModule = fmt.Errorf("no current module")
 
 // Settings for Query that are shared across all instances for a given DaggerServer
 type QueryOpts struct {
-	ProgrockSocketPath string
-
 	Services *Services
 
 	Secrets *SecretStore
@@ -54,7 +52,6 @@ type QueryOpts struct {
 	Cache dagql.Cache
 
 	BuildkitOpts *buildkit.Opts
-	Recorder     *progrock.Recorder
 
 	// The metadata of client calls.
 	// For the special case of the main client caller, the key is just empty string.
@@ -73,10 +70,6 @@ func NewRoot(ctx context.Context, opts QueryOpts) (*Query, error) {
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
-
-	// NOTE: context.WithoutCancel is used because if the provided context is canceled, buildkit can
-	// leave internal progress contexts open and leak goroutines.
-	bk.WriteStatusesTo(context.WithoutCancel(ctx), opts.Recorder)
 
 	return &Query{
 		QueryOpts: opts,
@@ -116,8 +109,6 @@ type ClientCallContext struct {
 	// metadata of that ongoing function call
 	Module *Module
 	FnCall *FunctionCall
-
-	ProgrockParent string
 }
 
 func (q *Query) ServeModuleToMainClient(ctx context.Context, modMeta dagql.Instance[*Module]) error {
@@ -147,7 +138,6 @@ func (q *Query) RegisterFunctionCall(
 	deps *ModDeps,
 	mod *Module,
 	call *FunctionCall,
-	progrockParent string,
 ) error {
 	if dgst == "" {
 		return fmt.Errorf("cannot register function call with empty digest")
@@ -164,11 +154,10 @@ func (q *Query) RegisterFunctionCall(
 		return err
 	}
 	q.ClientCallContext[dgst] = &ClientCallContext{
-		Root:           newRoot,
-		Deps:           deps,
-		Module:         mod,
-		FnCall:         call,
-		ProgrockParent: progrockParent,
+		Root:   newRoot,
+		Deps:   deps,
+		Module: mod,
+		FnCall: call,
 	}
 	return nil
 }
@@ -222,12 +211,11 @@ func (q *Query) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
 	return callCtx.Deps, nil
 }
 
-func (q *Query) WithPipeline(name, desc string, labels []pipeline.Label) *Query {
+func (q *Query) WithPipeline(name, desc string) *Query {
 	q = q.Clone()
 	q.Pipeline = q.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: desc,
-		Labels:      labels,
 	})
 	return q
 }

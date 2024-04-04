@@ -3,13 +3,14 @@ package core
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
+
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type ModuleObjectType struct {
@@ -241,7 +242,14 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	}
 
 	spec.Name = gqlFieldName(mod.Name())
-	spec.ImpurityReason = "Module functions are currently always impure."
+
+	// NB: functions actually _are_ cached per-session, which matches the
+	// lifetime of the server, so we might as well consider them pure.
+	// That way there will be locking around concurrent calls, so the user won't
+	// see multiple in parallel. Reconsider if/when we have a global cache and/or
+	// figure out function caching.
+	spec.ImpurityReason = ""
+
 	spec.Module = obj.Module.IDModule()
 
 	dag.Root().ObjectType().Extend(

@@ -4,10 +4,8 @@ import (
 	"context"
 	"io/fs"
 
-	"github.com/dagger/dagger/dagql"
-
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/dagql"
 )
 
 type directorySchema struct {
@@ -99,12 +97,12 @@ func (s *directorySchema) Install() {
 
 type directoryPipelineArgs struct {
 	Name        string
-	Description string                              `default:""`
-	Labels      []dagql.InputObject[pipeline.Label] `default:"[]"`
+	Description string                             `default:""`
+	Labels      []dagql.InputObject[PipelineLabel] `default:"[]"`
 }
 
 func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
-	return parent.WithPipeline(ctx, args.Name, args.Description, collectInputsSlice(args.Labels))
+	return parent.WithPipeline(ctx, args.Name, args.Description)
 }
 
 type directoryArgs struct {

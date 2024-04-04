@@ -10,12 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 func TestGit(t *testing.T) {
@@ -32,6 +33,7 @@ func TestGit(t *testing.T) {
 
 	res := struct {
 		Git struct {
+			Head   result
 			Ref    result
 			Commit result
 			Branch result
@@ -42,6 +44,14 @@ func TestGit(t *testing.T) {
 	err := testutil.Query(
 		`{
 			git(url: "github.com/dagger/dagger", keepGitDir: true) {
+				head {
+					commit
+					tree {
+						file(path: "README.md") {
+							contents
+						}
+					}
+				}
 				ref(name: "refs/heads/main") {
 					commit
 					tree {
@@ -78,8 +88,13 @@ func TestGit(t *testing.T) {
 		}`, &res, nil)
 	require.NoError(t, err)
 
+	// head
+	require.NotEmpty(t, res.Git.Head.Commit)
+	require.Contains(t, res.Git.Head.Tree.File.Contents, "Dagger")
+	mainCommit := res.Git.Head.Commit
+
 	// refs/heads/main
-	require.NotEmpty(t, res.Git.Ref.Commit)
+	require.Equal(t, mainCommit, res.Git.Ref.Commit)
 	require.Contains(t, res.Git.Ref.Tree.File.Contents, "Dagger")
 
 	// c80ac2c13df7d573a069938e01ca13f7a81f0345
@@ -87,7 +102,7 @@ func TestGit(t *testing.T) {
 	require.Contains(t, res.Git.Commit.Tree.File.Contents, "Dagger")
 
 	// main
-	require.NotEmpty(t, res.Git.Branch.Commit)
+	require.NotEmpty(t, mainCommit, res.Git.Branch.Commit)
 	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
 
 	// v0.9.5

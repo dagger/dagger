@@ -319,7 +319,12 @@ ${binexe} has built-in shell completion. This is how you can install it for:
     "
 }
 
+clean_install_version() {
+    DAGGER_VERSION=$(echo $DAGGER_VERSION | sed -E 's/^v+//g')
+}
+
 execute() {
+    clean_install_version
     base_url="$(base_url)"
     tarball="$(tarball)"
     tarball_url="${base_url}/${tarball}"

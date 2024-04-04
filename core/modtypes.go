@@ -3,9 +3,9 @@ package core
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // ModType wraps the core TypeDef type with schema specific concerns like ID conversion

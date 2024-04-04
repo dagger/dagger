@@ -17,9 +17,10 @@ import (
 	"strconv"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
+
+	"dagger.io/dagger"
 )
 
 // GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.

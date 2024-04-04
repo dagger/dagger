@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/sourcegraph/conc/pool"
@@ -19,6 +18,8 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 // Server represents a GraphQL server whose schema is dynamically modified at
@@ -47,8 +48,7 @@ type AroundFunc func(
 	context.Context,
 	Object,
 	*call.ID,
-	func(context.Context) (Typed, error),
-) func(context.Context) (Typed, error)
+) (context.Context, func(res Typed, cached bool, err error))
 
 // Cache stores results of pure selections against Server.
 type Cache interface {
@@ -56,7 +56,7 @@ type Cache interface {
 		context.Context,
 		digest.Digest,
 		func(context.Context) (Typed, error),
-	) (Typed, error)
+	) (Typed, bool, error)
 }
 
 // TypeDef is a type whose sole practical purpose is to define a GraphQL type,
@@ -568,23 +568,28 @@ func CurrentID(ctx context.Context) *call.ID {
 	return val.(*call.ID)
 }
 
+func NoopDone(res Typed, cached bool, rerr error) {}
+
 func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *call.ID, rerr error) {
 	chainedID, err := self.IDFor(ctx, sel)
 	if err != nil {
 		return nil, nil, err
 	}
 	ctx = idToContext(ctx, chainedID)
-	doSelect := func(ctx context.Context) (Typed, error) {
+	dig := chainedID.Digest()
+	var val Typed
+	doSelect := func(ctx context.Context) (innerVal Typed, innerErr error) {
+		if s.telemetry != nil {
+			wrappedCtx, done := s.telemetry(ctx, self, chainedID)
+			defer func() { done(innerVal, false, innerErr) }()
+			ctx = wrappedCtx
+		}
 		return self.Select(ctx, sel)
 	}
-	if s.telemetry != nil {
-		doSelect = s.telemetry(ctx, self, chainedID, doSelect)
-	}
-	var val Typed
 	if chainedID.IsTainted() {
 		val, err = doSelect(ctx)
 	} else {
-		val, err = s.Cache.GetOrInitialize(ctx, chainedID.Digest(), doSelect)
+		val, _, err = s.Cache.GetOrInitialize(ctx, dig, doSelect)
 	}
 	if err != nil {
 		return nil, nil, err

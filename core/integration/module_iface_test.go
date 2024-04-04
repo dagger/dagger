@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func TestModuleIfaceBasic(t *testing.T) {
@@ -50,6 +51,7 @@ func (m *Test) Fn() BadIface {
 			With(daggerFunctions()).
 			Sync(ctx)
 		require.Error(t, err)
+		require.NoError(t, c.Close())
 		require.Regexp(t, `missing method .* from DaggerObject interface, which must be embedded in interfaces used in Functions and Objects`, logs.String())
 	})
 }

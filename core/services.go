@@ -7,15 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/network"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
-	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
 )
 
 const (
@@ -172,11 +173,7 @@ dance:
 		}
 	}
 
-	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-	}
+	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 
 	running, err := svc.Start(svcCtx, id, false, nil, nil, nil)
 	if err != nil {
@@ -282,8 +279,8 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	}
 }
 
-// StopClientServices stops all of the services being run by the given client.
-// It is called when a client is closing.
+// StopClientServices stops all of the services being run by the given server.
+// It is called when a server is closing.
 func (ss *Services) StopClientServices(ctx context.Context, serverID string) error {
 	ss.l.Lock()
 	var svcs []*RunningService
@@ -317,9 +314,12 @@ func (ss *Services) StopClientServices(ctx context.Context, serverID string) err
 func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	ss.l.Lock()
 
+	slog := slog.With("service", svc.Host, "bindings", ss.bindings[svc.Key])
+
 	running, found := ss.running[svc.Key]
 	if !found {
 		ss.l.Unlock()
+		slog.Trace("detach: service not running")
 		// not even running; ignore
 		return
 	}
@@ -328,11 +328,14 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	if ss.bindings[svc.Key] > 0 {
 		ss.l.Unlock()
+		slog.Debug("detach: service still has binders")
 		// detached, but other instances still active
 		return
 	}
 
 	ss.l.Unlock()
+
+	slog.Trace("detach: stopping")
 
 	// we should avoid blocking, and return immediately
 	go ss.stopGraceful(ctx, running, TerminateGracePeriod)

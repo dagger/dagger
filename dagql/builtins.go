@@ -6,8 +6,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql/call"
 )
 
 func builtinOrTyped(val any) (Typed, error) {

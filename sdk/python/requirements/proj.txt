@@ -8,7 +8,7 @@ attrs==23.2.0
     # via cattrs
 backoff==2.2.1
     # via gql
-beartype==0.17.2
+beartype==0.18.2
 cattrs==23.2.3
 certifi==2024.2.2
     # via
@@ -19,7 +19,7 @@ graphql-core==3.2.3
     # via gql
 h11==0.14.0
     # via httpcore
-httpcore==1.0.4
+httpcore==1.0.5
     # via httpx
 httpx==0.27.0
     # via gql

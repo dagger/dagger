@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/buildkit/identity"
+	"github.com/stretchr/testify/require"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/moby/buildkit/identity"
-	"github.com/stretchr/testify/require"
 )
 
 func TestFile(t *testing.T) {

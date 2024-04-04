@@ -5,12 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/zeebo/xxh3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
 func New() *ID {
@@ -54,6 +55,16 @@ func (id *ID) Base() *ID {
 		return nil
 	}
 	return id.base
+}
+
+// The root Call of the ID, with its Digest set. Exposed so that Calls can be
+// streamed over the wire one-by-one, rather than emitting full DAGs, which
+// would involve a ton of duplication.
+//
+// WARRANTY VOID IF MUTATIONS ARE MADE TO THE INNER PROTOBUF. Perform a
+// proto.Clone before mutating.
+func (id *ID) Call() *callpbv1.Call {
+	return id.pb
 }
 
 // The GraphQL type of the value.
@@ -254,7 +265,7 @@ func (id *ID) Encode() (string, error) {
 		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
 	}
 
-	return base64.URLEncoding.EncodeToString(proto), nil
+	return base64.StdEncoding.EncodeToString(proto), nil
 }
 
 // NOTE: use with caution, any mutations to the returned proto can corrupt the ID
@@ -293,7 +304,7 @@ func (id *ID) FromAnyPB(data *anypb.Any) error {
 }
 
 func (id *ID) Decode(str string) error {
-	bytes, err := base64.URLEncoding.DecodeString(str)
+	bytes, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
 		return fmt.Errorf("failed to decode base64: %w", err)
 	}

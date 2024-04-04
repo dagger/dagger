@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	goerrors "errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -22,13 +22,8 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
-	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/engine/server"
-	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/network/netinst"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/moby/buildkit/cache/remotecache"
 	"github.com/moby/buildkit/cache/remotecache/azblob"
 	"github.com/moby/buildkit/cache/remotecache/gha"
@@ -52,14 +47,9 @@ import (
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/archutil"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/util/resolver"
 	"github.com/moby/buildkit/util/stack"
-	"github.com/moby/buildkit/util/tracing/detect"
-	_ "github.com/moby/buildkit/util/tracing/detect/jaeger"
-	_ "github.com/moby/buildkit/util/tracing/env"
-	"github.com/moby/buildkit/util/tracing/transform"
 	"github.com/moby/buildkit/version"
 	"github.com/moby/buildkit/worker"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -68,12 +58,18 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/propagation"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
+	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+
+	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/server"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/network/netinst"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -90,12 +86,7 @@ func init() {
 	if reexec.Init() {
 		os.Exit(0)
 	}
-
-	// enable in memory recording for buildkitd traces
-	detect.Recorder = detect.NewTraceRecorder()
 }
-
-var propagators = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 
 type workerInitializerOpt struct {
 	config         *config.Config
@@ -169,6 +160,10 @@ func main() { //nolint:gocyclo
 			Usage: "enable debug output in logs",
 		},
 		cli.BoolFlag{
+			Name:  "extra-debug",
+			Usage: "enable extra debug output in logs",
+		},
+		cli.BoolFlag{
 			Name:  "trace",
 			Usage: "enable trace output in logs (highly verbose, could affect performance)",
 		},
@@ -233,6 +228,8 @@ func main() { //nolint:gocyclo
 		ctx, cancel := context.WithCancel(appcontext.Context())
 		defer cancel()
 
+		ctx, pubsub := InitTelemetry(ctx)
+
 		bklog.G(ctx).Debug("loading engine config file")
 		cfg, err := config.LoadFile(c.GlobalString("config"))
 		if err != nil {
@@ -265,16 +262,32 @@ func main() { //nolint:gocyclo
 
 		// Wire slog up to send to Logrus so engine logs using slog also get sent
 		// to Cloud
-		slogOpts := sloglogrus.Option{
-			AddSource: true,
+		slogOpts := sloglogrus.Option{}
+
+		noiseReduceHook := &noiseReductionHook{
+			ignoreLogger: logrus.New(),
 		}
-		if cfg.Debug {
+		noiseReduceHook.ignoreLogger.SetOutput(io.Discard)
+
+		switch {
+		case cfg.Trace:
+			slogOpts.Level = slog.LevelTrace
+			logrus.SetLevel(logrus.TraceLevel)
+			// don't add noise reduction hook for trace level
+		case c.IsSet("extra-debug"):
+			slogOpts.Level = slog.LevelExtraDebug
+			logrus.SetLevel(logrus.DebugLevel)
+			// don't add noise reduction hook for extra debug level
+		case cfg.Debug:
 			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
+			logrus.AddHook(noiseReduceHook)
+		default:
+			logrus.AddHook(noiseReduceHook)
 		}
-		if cfg.Trace {
-			logrus.SetLevel(logrus.TraceLevel)
-		}
+
+		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
+		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
 		if cfg.GRPC.DebugAddress != "" {
@@ -283,27 +296,8 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		bklog.G(ctx).Debug("setting up engine tracing")
-
-		tp, err := detect.TracerProvider()
-		if err != nil {
-			// just log it, this can happen when there's mismatching versions of otel libraries in your
-			// module dependency DAG...
-			bklog.G(ctx).WithError(err).Error("failed to create tracer provider")
-		}
-
-		// FIXME: continuing to use the deprecated interceptor until/unless there's a replacement that works w/ grpc_middleware
-		//nolint:staticcheck // SA1019 deprecated
-		streamTracer := otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
-
-		// NOTE: using context.Background because otherwise when the outer context is cancelled the server
-		// stops working. Server shutdown based on context cancellation is handled later in this func.
-		unary := grpc_middleware.ChainUnaryServer(unaryInterceptor(context.Background(), tp), grpcerrors.UnaryServerInterceptor)
-		stream := grpc_middleware.ChainStreamServer(streamTracer, grpcerrors.StreamServerInterceptor)
-
 		bklog.G(ctx).Debug("creating engine GRPC server")
-		grpcOpts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
-		server := grpc.NewServer(grpcOpts...)
+		server := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
 		// relative path does not work with nightlyone/lockfile
 		root, err := filepath.Abs(cfg.Root)
@@ -332,7 +326,7 @@ func main() { //nolint:gocyclo
 		}()
 
 		bklog.G(ctx).Debug("creating engine controller")
-		controller, cacheManager, err := newController(ctx, c, &cfg)
+		controller, cacheManager, err := newController(ctx, c, &cfg, pubsub)
 		if err != nil {
 			return err
 		}
@@ -407,8 +401,8 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(_ *cli.Context) error {
-		tel.Close()
-		return detect.Shutdown(context.TODO())
+		CloseTelemetry()
+		return nil
 	}
 
 	profiler.Attach(app)
@@ -650,38 +644,6 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 	}
 }
 
-func unaryInterceptor(globalCtx context.Context, tp trace.TracerProvider) grpc.UnaryServerInterceptor {
-	// FIXME: continuing to use the deprecated interceptor until/unless there's a replacement that works w/ grpc_middleware
-	//nolint:staticcheck // SA1019 deprecated
-	withTrace := otelgrpc.UnaryServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
-
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-
-		go func() {
-			select {
-			case <-ctx.Done():
-			case <-globalCtx.Done():
-				cancel()
-			}
-		}()
-
-		if strings.HasSuffix(info.FullMethod, "opentelemetry.proto.collector.trace.v1.TraceService/Export") {
-			return handler(ctx, req)
-		}
-
-		resp, err = withTrace(ctx, req, info, handler)
-		if err != nil {
-			logrus.Errorf("%s returned error: %v", info.FullMethod, err)
-			if logrus.GetLevel() >= logrus.DebugLevel {
-				fmt.Fprintf(os.Stderr, "%+v", stack.Formatter(grpcerrors.FromGRPC(err)))
-			}
-		}
-		return
-	}
-}
-
 func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	certFile := cfg.Cert
 	keyFile := cfg.Key
@@ -720,23 +682,16 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*server.BuildkitController, cache.Manager, error) {
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubsub *telemetry.PubSub) (*server.BuildkitController, cache.Manager, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	tc, _, err := detect.Exporter()
-	if err != nil {
-		// just log it, this can happen when there's mismatching versions of otel libraries in your
-		// module dependency DAG...
-		bklog.G(ctx).WithError(err).Error("failed to create tracer exporter")
-	}
-
 	var traceSocket string
-	if tc != nil {
+	if pubsub != nil {
 		traceSocket = filepath.Join(cfg.Root, "otel-grpc.sock")
-		if err := runTraceController(traceSocket, tc); err != nil {
+		if err := runOtelController(traceSocket, pubsub); err != nil {
 			logrus.Warnf("failed set up otel-grpc controller: %v", err)
 			traceSocket = ""
 		}
@@ -824,7 +779,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		Entitlements:           cfg.Entitlements,
 		EngineName:             engineName,
 		Frontends:              frontends,
-		TraceCollector:         tc,
+		TelemetryPubSub:        pubsub,
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
 		DNSConfig:              getDNSConfig(cfg.DNS),
@@ -950,9 +905,12 @@ func parseBoolOrAuto(s string) (*bool, error) {
 	return &b, err
 }
 
-func runTraceController(p string, exp sdktrace.SpanExporter) error {
+// Run a separate gRPC serving _only_ the trace/log exporter services.
+func runOtelController(p string, pubsub *telemetry.PubSub) error {
 	server := grpc.NewServer()
-	tracev1.RegisterTraceServiceServer(server, &traceCollector{exporter: exp})
+	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{PubSub: pubsub})
+	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{PubSub: pubsub})
+	metricsv1.RegisterMetricsServiceServer(server, &telemetry.MetricsServer{PubSub: pubsub})
 	uid := os.Getuid()
 	l, err := sys.GetLocalListener(p, uid, uid)
 	if err != nil {
@@ -964,19 +922,6 @@ func runTraceController(p string, exp sdktrace.SpanExporter) error {
 	}
 	go server.Serve(l)
 	return nil
-}
-
-type traceCollector struct {
-	*tracev1.UnimplementedTraceServiceServer
-	exporter sdktrace.SpanExporter
-}
-
-func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
-	err := t.exporter.ExportSpans(ctx, transform.Spans(req.GetResourceSpans()))
-	if err != nil {
-		return nil, err
-	}
-	return &tracev1.ExportTraceServiceResponse{}, nil
 }
 
 type networkConfig struct {

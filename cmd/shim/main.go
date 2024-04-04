@@ -23,16 +23,22 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/console"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/network"
 	"github.com/google/uuid"
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/vito/progrock"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
+
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -179,6 +185,42 @@ func shim() (returnExitCode int) {
 		return errorExitCode
 	}
 
+	// Set up slog initially to log directly to stderr, in case something goes
+	// wrong with the logging setup.
+	slog.SetDefault(telemetry.PrettyLogger(os.Stderr, slog.LevelWarn))
+
+	cleanup, err := proxyOtelToTCP()
+	if err == nil {
+		defer cleanup()
+	} else {
+		fmt.Fprintln(os.Stderr, "failed to set up opentelemetry proxy:", err)
+	}
+
+	traceCfg := telemetry.Config{
+		Detect: false, // false, since we want "live" exporting
+		Resource: resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("dagger-shim"),
+			semconv.ServiceVersionKey.String(engine.Version),
+		),
+	}
+	if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
+		traceCfg.LiveTraceExporters = append(traceCfg.LiveTraceExporters, exp)
+	}
+	if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
+		traceCfg.LiveLogExporters = append(traceCfg.LiveLogExporters, exp)
+	}
+
+	ctx = telemetry.Init(ctx, traceCfg)
+	defer telemetry.Close()
+
+	logCtx := ctx
+	if p, ok := os.LookupEnv("DAGGER_FUNCTION_TRACEPARENT"); ok {
+		logCtx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
+	}
+
+	ctx, stdoutOtel, stderrOtel := telemetry.WithStdioToOtel(logCtx, "dagger.io/shim")
+
 	name := os.Args[1]
 	args := []string{}
 	if len(os.Args) > 2 {
@@ -248,8 +290,12 @@ func shim() (returnExitCode int) {
 			stderrRedirect = stderrRedirectFile
 		}
 
-		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
-		errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
+		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, stdoutOtel, os.Stdout)
+		errWriter := io.MultiWriter(stderrFile, stderrRedirect, stderrOtel, os.Stderr)
+
+		// Direct slog to the new stderr. This is only for dev time debugging, and
+		// runtime errors/warnings.
+		slog.SetDefault(telemetry.PrettyLogger(errWriter, slog.LevelWarn))
 
 		if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 			cmd.Stdout = outWriter
@@ -449,6 +495,8 @@ func setupBundle() int {
 	}
 
 	var gpuParams string
+	var otelEndpoint string
+	var otelProto string
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
@@ -463,26 +511,12 @@ func setupBundle() int {
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
-			// propagate parent vertex ID
-			keepEnv = append(keepEnv, "_DAGGER_PROGROCK_PARENT="+execMetadata.ProgParent)
-
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.runner.sock",
 				Type:        "bind",
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
-			})
-			// also need the progsock path for forwarding progress
-			if execMetadata.ProgSockPath == "" {
-				fmt.Fprintln(os.Stderr, "missing progsock path")
-				return errorExitCode
-			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.progrock.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      execMetadata.ProgSockPath,
 			})
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 		case strings.HasPrefix(env, aliasPrefix):
@@ -493,14 +527,44 @@ func setupBundle() int {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return errorExitCode
 			}
-		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS"):
-			splits := strings.Split(env, "=")
-			gpuParams = splits[1]
+		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
+			_, gpuParams, _ = strings.Cut(env, "=")
+
+			// filter out Buildkit's OTLP env vars, we have our own
+		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="):
+			_, otelEndpoint, _ = strings.Cut(env, "=")
+
+		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="):
+			_, otelProto, _ = strings.Cut(env, "=")
+
 		default:
 			keepEnv = append(keepEnv, env)
 		}
 	}
 	spec.Process.Env = keepEnv
+
+	if otelEndpoint != "" {
+		if strings.HasPrefix(otelEndpoint, "/") {
+			// Buildkit currently sets this to /dev/otel-grpc.sock which is not a valid
+			// endpoint URL despite being set in an OTEL_* env var.
+			otelEndpoint = "unix://" + otelEndpoint
+		}
+		spec.Process.Env = append(spec.Process.Env,
+			"OTEL_EXPORTER_OTLP_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_ENDPOINT="+otelEndpoint,
+			// Re-set the otel env vars, but with a corrected otelEndpoint.
+			"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="+otelEndpoint,
+			// Dagger sets up a log exporter too. Explicitly set it so things can
+			// detect support for it.
+			"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT="+otelEndpoint,
+			// Dagger doesn't set up metrics yet, but we should set this anyway,
+			// since otherwise some tools default to localhost.
+			"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="+otelProto,
+			"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="+otelEndpoint,
+		)
+	}
 
 	if gpuParams != "" {
 		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s", gpuParams))
@@ -650,16 +714,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		clientParams.ModuleCallerDigest = digest.Digest(moduleCallerDigest)
 	}
 
-	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
-	if err != nil {
-		return fmt.Errorf("error connecting to progrock: %w", err)
-	}
-	clientParams.ProgrockWriter = progW
-
-	if parentID := os.Getenv("_DAGGER_PROGROCK_PARENT"); parentID != "" {
-		clientParams.ProgrockParent = parentID
-	}
-
 	sess, ctx, err := client.Connect(ctx, clientParams)
 	if err != nil {
 		return fmt.Errorf("error connecting to engine: %w", err)
@@ -668,7 +722,11 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 
 	_ = ctx // avoid ineffasign lint
 
-	go http.Serve(l, sess) //nolint:gosec
+	srv := &http.Server{ //nolint:gosec
+		Handler:     sess,
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+	go srv.Serve(l)
 
 	// pass dagger session along to any SDKs that run in the container
 	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(sessionPort))
@@ -768,5 +826,83 @@ func toggleONLCR(enable bool) error {
 		return console.SetONLCR(fd)
 	} else {
 		return console.ClearONLCR(fd)
+	}
+}
+
+// Some OpenTelemetry clients don't support unix:// endpoints, so we proxy them
+// through a TCP endpoint instead.
+func proxyOtelToTCP() (cleanup func(), rerr error) {
+	endpoints := map[string][]string{}
+	for _, env := range []string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+	} {
+		if val := os.Getenv(env); val != "" {
+			slog.Debug("found otel endpoint", "env", env, "endpoint", val)
+			endpoints[val] = append(endpoints[val], env)
+		}
+	}
+	closers := []func() error{}
+	cleanup = func() {
+		for _, closer := range closers {
+			closer()
+		}
+	}
+	defer func() {
+		if rerr != nil {
+			cleanup()
+		}
+	}()
+	for endpoint, envs := range endpoints {
+		if !strings.HasPrefix(endpoint, "unix://") {
+			// We only need to fix up unix:// endpoints.
+			continue
+		}
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return func() {}, fmt.Errorf("listen: %w", err)
+		}
+		closers = append(closers, l.Close)
+
+		slog.Debug("listening for otel proxy", "endpoint", endpoint, "proxy", l.Addr().String())
+		go proxyOtelSocket(l, endpoint)
+
+		for _, env := range envs {
+			slog.Debug("proxying otel endpoint", "env", env, "endpoint", endpoint)
+			os.Setenv(env, "http://"+l.Addr().String())
+		}
+	}
+	return cleanup, nil
+}
+
+func proxyOtelSocket(l net.Listener, endpoint string) {
+	sockPath := strings.TrimPrefix(endpoint, "unix://")
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			if !errors.Is(err, net.ErrClosed) {
+				slog.Error("failed to accept connection", "error", err)
+			}
+			return
+		}
+
+		slog.Debug("accepting otel connection", "endpoint", endpoint)
+
+		go func() {
+			defer conn.Close()
+
+			remote, err := net.Dial("unix", sockPath)
+			if err != nil {
+				slog.Error("failed to dial socket", "error", err)
+				return
+			}
+			defer remote.Close()
+
+			go io.Copy(remote, conn)
+			io.Copy(conn, remote)
+		}()
 	}
 }

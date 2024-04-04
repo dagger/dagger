@@ -4,9 +4,10 @@ import (
 	"context"
 	"math"
 
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type Point struct {

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/engine"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -27,21 +26,22 @@ import (
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
-	"github.com/moby/buildkit/util/tracing/transform"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/sdk/trace"
+	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type BuildkitController struct {
 	BuildkitControllerOpts
-	*tracev1.UnimplementedTraceServiceServer // needed for grpc service register to not complain
 
 	llbSolver             *llbsolver.Solver
 	genericSolver         *solver.Solver
@@ -67,7 +67,7 @@ type BuildkitControllerOpts struct {
 	Entitlements           []string
 	EngineName             string
 	Frontends              map[string]frontend.Frontend
-	TraceCollector         trace.SpanExporter
+	TelemetryPubSub        *telemetry.PubSub
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	DNSConfig              *oci.DNSConfig
@@ -155,25 +155,45 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		WithField("client_hostname", opts.ClientHostname).
 		WithField("client_call_digest", opts.ModuleCallerDigest).
 		WithField("server_id", opts.ServerID))
-	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Debug("handling session call")
-	defer func() {
-		if rerr != nil {
-			bklog.G(ctx).WithError(rerr).Errorf("session call failed")
-		} else {
-			bklog.G(ctx).Debugf("session call done")
+
+	{
+		lg := bklog.G(ctx).WithField("register_client", opts.RegisterClient)
+		lgLevel := lg.Trace
+		if opts.RegisterClient {
+			lgLevel = lg.Debug
 		}
-	}()
+		lgLevel("handling session call")
+		defer func() {
+			if rerr != nil {
+				lg.WithError(rerr).Errorf("session call failed")
+			} else {
+				lgLevel("session call done")
+			}
+		}()
+	}
 
 	conn, _, hijackmd := grpchijack.Hijack(stream)
 
 	if !opts.RegisterClient {
-		e.serverMu.RLock()
-		srv, ok := e.servers[opts.ServerID]
-		e.serverMu.RUnlock()
-		if !ok {
-			return fmt.Errorf("server %q not found", opts.ServerID)
+		// retry a few times since an initially connecting client is concurrently registering
+		// the server, so this it's okay for this to take a bit to succeed
+		srv, err := retry(ctx, 100*time.Millisecond, 20, func() (*DaggerServer, error) {
+			e.serverMu.RLock()
+			srv, ok := e.servers[opts.ServerID]
+			e.serverMu.RUnlock()
+			if !ok {
+				return nil, fmt.Errorf("server %q not found", opts.ServerID)
+			}
+
+			if err := srv.VerifyClient(opts.ClientID, opts.ClientSecretToken); err != nil {
+				return nil, fmt.Errorf("failed to verify client: %w", err)
+			}
+			return srv, nil
+		})
+		if err != nil {
+			return err
 		}
-		bklog.G(ctx).Debugf("forwarding client to server")
+		bklog.G(ctx).Trace("forwarding client to server")
 		err = srv.ServeClientConn(ctx, opts, conn)
 		if errors.Is(err, io.ErrClosedPipe) {
 			return nil
@@ -181,13 +201,14 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		return fmt.Errorf("serve clientConn: %w", err)
 	}
 
-	bklog.G(ctx).Debugf("registering client")
+	bklog.G(ctx).Trace("registering client")
 
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		bklog.G(ctx).Debug("session manager handling conn")
+		bklog.G(ctx).Trace("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
-		bklog.G(ctx).WithError(err).Debug("session manager handle conn done")
+		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
+		slog.Trace("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
 		if err != nil {
 			return fmt.Errorf("handleConn: %w", err)
 		}
@@ -203,7 +224,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	srv, ok := e.servers[opts.ServerID]
 	e.serverMu.RUnlock()
 	if !ok {
-		bklog.G(ctx).Debugf("initializing new server")
+		bklog.G(ctx).Trace("initializing new server")
 
 		srv, err = e.newDaggerServer(ctx, opts)
 		if err != nil {
@@ -214,11 +235,11 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		e.servers[opts.ServerID] = srv
 		e.serverMu.Unlock()
 
-		bklog.G(ctx).Debugf("initialized new server")
+		bklog.G(ctx).Trace("initialized new server")
 
 		// delete the server after the initial client who created it exits
 		defer func() {
-			bklog.G(ctx).Debug("removing server")
+			bklog.G(ctx).Trace("removing server")
 			e.serverMu.Lock()
 			delete(e.servers, opts.ServerID)
 			e.serverMu.Unlock()
@@ -228,7 +249,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			}
 
 			time.AfterFunc(time.Second, e.throttledGC)
-			bklog.G(ctx).Debug("server removed")
+			bklog.G(ctx).Trace("server removed")
 		}()
 	}
 	e.perServerMu.Unlock(opts.ServerID)
@@ -369,20 +390,20 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 	return resp, nil
 }
 
-func (e *BuildkitController) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
-	if e.TraceCollector == nil {
-		return nil, status.Errorf(codes.Unavailable, "trace collector not configured")
-	}
-	err := e.TraceCollector.ExportSpans(ctx, transform.Spans(req.GetResourceSpans()))
-	if err != nil {
-		return nil, err
-	}
-	return &tracev1.ExportTraceServiceResponse{}, nil
-}
-
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
-	tracev1.RegisterTraceServiceServer(server, e)
+
+	traceSrv := &telemetry.TraceServer{PubSub: e.TelemetryPubSub}
+	tracev1.RegisterTraceServiceServer(server, traceSrv)
+	telemetry.RegisterTracesSourceServer(server, traceSrv)
+
+	logsSrv := &telemetry.LogsServer{PubSub: e.TelemetryPubSub}
+	logsv1.RegisterLogsServiceServer(server, logsSrv)
+	telemetry.RegisterLogsSourceServer(server, logsSrv)
+
+	metricsSrv := &telemetry.MetricsServer{PubSub: e.TelemetryPubSub}
+	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
+	telemetry.RegisterMetricsSourceServer(server, metricsSrv)
 }
 
 func (e *BuildkitController) Close() error {
@@ -438,7 +459,6 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 }
 
 func (e *BuildkitController) Status(req *controlapi.StatusRequest, stream controlapi.Control_StatusServer) error {
-	// we send status updates over progrock session attachables instead
 	return fmt.Errorf("status not implemented")
 }
 
@@ -448,4 +468,22 @@ func (e *BuildkitController) ListenBuildHistory(req *controlapi.BuildHistoryRequ
 
 func (e *BuildkitController) UpdateBuildHistory(ctx context.Context, req *controlapi.UpdateBuildHistoryRequest) (*controlapi.UpdateBuildHistoryResponse, error) {
 	return nil, fmt.Errorf("update build history not implemented")
+}
+
+func retry[T any](ctx context.Context, interval time.Duration, maxRetries int, f func() (T, error)) (T, error) {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		var t T
+		t, err = f()
+		if err == nil {
+			return t, nil
+		}
+		select {
+		case <-time.After(interval):
+		case <-ctx.Done():
+			return t, ctx.Err()
+		}
+	}
+	var t T
+	return t, err
 }

@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"unicode"
 
-	"github.com/dagger/dagger/core/pipeline"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -57,7 +58,7 @@ type ClientMetadata struct {
 	ClientHostname string `json:"client_hostname"`
 
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
-	Labels []pipeline.Label `json:"labels"`
+	Labels telemetry.Labels `json:"labels"`
 
 	// ParentClientIDs is a list of session ids that are parents of the current
 	// session. The first element is the direct parent, the second element is the

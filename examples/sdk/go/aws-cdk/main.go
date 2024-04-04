@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"dagger.io/dagger"
-	// "github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 )
 
 // build reads the source code, run the test and build the app and publish it to a container registry

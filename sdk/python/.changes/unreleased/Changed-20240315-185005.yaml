@@ -1,6 +1,0 @@
-kind: Changed
-body: Improve performance in the Python runtime module
-time: 2024-03-15T18:50:05.627144-01:00
-custom:
-  Author: helderco
-  PR: "6884"

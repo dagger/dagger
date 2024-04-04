@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -17,7 +16,8 @@ import (
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/engine"
 )
 
 type ContainerExport struct {
@@ -171,8 +171,7 @@ func (c *Client) ContainerImageToTarball(
 		defer descRef.Release()
 	}
 
-	ctx, recorder := progrock.WithGroup(ctx, "container image to tarball")
-	pbDef, _, err := c.EngineContainerLocalImport(ctx, recorder, engineHostPlatform, tmpDir, nil, []string{fileName})
+	pbDef, _, err := c.EngineContainerLocalImport(ctx, engineHostPlatform, tmpDir, nil, []string{fileName})
 	if err != nil {
 		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %s", err)
 	}

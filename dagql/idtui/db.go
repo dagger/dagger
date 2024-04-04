@@ -1,209 +1,319 @@
 package idtui
 
 import (
+	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/tracing"
-	"github.com/vito/progrock"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
-func init() {
-}
-
 type DB struct {
-	Epoch, End time.Time
+	Traces   map[trace.TraceID]*Trace
+	Spans    map[trace.SpanID]*Span
+	Children map[trace.SpanID]map[trace.SpanID]struct{}
 
-	IDs       map[string]*call.ID
-	Vertices  map[string]*progrock.Vertex
-	Tasks     map[string][]*progrock.VertexTask
+	Logs        map[trace.SpanID]*Vterm
+	LogWidth    int
+	PrimarySpan trace.SpanID
+	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
+
+	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
-	Children  map[string]map[string]struct{}
-	Intervals map[string]map[time.Time]*progrock.Vertex
+	Intervals map[string]map[time.Time]*Span
 }
 
 func NewDB() *DB {
 	return &DB{
-		Epoch: time.Now(),  // replaced at runtime
-		End:   time.Time{}, // replaced at runtime
+		Traces:   make(map[trace.TraceID]*Trace),
+		Spans:    make(map[trace.SpanID]*Span),
+		Children: make(map[trace.SpanID]map[trace.SpanID]struct{}),
 
-		IDs:       make(map[string]*call.ID),
-		Vertices:  make(map[string]*progrock.Vertex),
-		Tasks:     make(map[string][]*progrock.VertexTask),
+		Logs:        make(map[trace.SpanID]*Vterm),
+		LogWidth:    -1,
+		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
+
+		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
-		Children:  make(map[string]map[string]struct{}),
-		Intervals: make(map[string]map[time.Time]*progrock.Vertex),
+		Intervals: make(map[string]map[time.Time]*Span),
 	}
 }
 
-var _ progrock.Writer = (*DB)(nil)
-
-func (db *DB) WriteStatus(status *progrock.StatusUpdate) error {
-	// collect IDs
-	for _, meta := range status.Metas {
-		if meta.Name == "id" {
-			var id call.ID
-			if err := id.FromAnyPB(meta.Data); err != nil {
-				return fmt.Errorf("unmarshal payload: %w", err)
-			}
-			db.IDs[meta.Vertex] = &id
-		}
+func (db *DB) AllTraces() []*Trace {
+	traces := make([]*Trace, 0, len(db.Traces))
+	for _, traceData := range db.Traces {
+		traces = append(traces, traceData)
 	}
+	sort.Slice(traces, func(i, j int) bool {
+		return traces[i].Epoch.After(traces[j].Epoch)
+	})
+	return traces
+}
 
-	for _, v := range status.Vertexes {
-		// track the earliest start time and latest end time
-		if v.Started != nil && v.Started.AsTime().Before(db.Epoch) {
-			db.Epoch = v.Started.AsTime()
-		}
-		if v.Completed != nil && v.Completed.AsTime().After(db.End) {
-			db.End = v.Completed.AsTime()
-		}
-
-		// keep track of vertices, just so we track everything, not just IDs
-		db.Vertices[v.Id] = v
-
-		// keep track of outputs
-		for _, out := range v.Outputs {
-			if strings.HasPrefix(v.Name, "load") && strings.HasSuffix(v.Name, "FromID") {
-				// don't consider loadFooFromID to be a 'creator'
-				continue
-			}
-			if db.Outputs[v.Id] == nil {
-				db.Outputs[v.Id] = make(map[string]struct{})
-			}
-			db.Outputs[v.Id][out] = struct{}{}
-			if db.OutputOf[out] == nil {
-				db.OutputOf[out] = make(map[string]struct{})
-			}
-			db.OutputOf[out][v.Id] = struct{}{}
-		}
-
-		// keep track of intervals seen for a digest
-		if v.Started != nil {
-			if db.Intervals[v.Id] == nil {
-				db.Intervals[v.Id] = make(map[time.Time]*progrock.Vertex)
-			}
-			db.Intervals[v.Id][v.Started.AsTime()] = v
-		}
+func (db *DB) SetWidth(width int) {
+	db.LogWidth = width
+	for _, vt := range db.Logs {
+		vt.SetWidth(width)
 	}
+}
 
-	// track vertex sub-tasks
-	for _, t := range status.Tasks {
-		db.recordTask(t)
-	}
+var _ sdktrace.SpanExporter = (*DB)(nil)
 
-	// track parent/child vertices
-	for _, v := range status.Children {
-		if db.Children[v.Vertex] == nil {
-			db.Children[v.Vertex] = make(map[string]struct{})
+func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	for _, span := range spans {
+		traceID := span.SpanContext().TraceID()
+
+		traceData, found := db.Traces[traceID]
+		if !found {
+			traceData = &Trace{
+				ID:    traceID,
+				Epoch: span.StartTime(),
+				End:   span.EndTime(),
+				db:    db,
+			}
+			db.Traces[traceID] = traceData
 		}
-		for _, out := range v.Vertexes {
-			db.Children[v.Vertex][out] = struct{}{}
-		}
-	}
 
+		if span.StartTime().Before(traceData.Epoch) {
+			slog.Debug("new epoch", "old", traceData.Epoch, "new", span.StartTime())
+			traceData.Epoch = span.StartTime()
+		}
+
+		if span.EndTime().Before(span.StartTime()) {
+			traceData.IsRunning = true
+		}
+
+		if span.EndTime().After(traceData.End) {
+			slog.Debug("new end", "old", traceData.End, "new", span.EndTime())
+			traceData.End = span.EndTime()
+		}
+
+		db.maybeRecordSpan(traceData, span)
+	}
 	return nil
 }
 
-func (db *DB) recordTask(t *progrock.VertexTask) {
-	tasks := db.Tasks[t.Vertex]
-	var updated bool
-	for i, task := range tasks {
-		if task.Name == t.Name {
-			tasks[i] = t
-			updated = true
+var _ sdklog.LogExporter = (*DB)(nil)
+
+func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+	for _, log := range logs {
+		slog.Debug("exporting log", "span", log.SpanID, "body", log.Body().AsString())
+
+		// render vterm for TUI
+		_, _ = fmt.Fprint(db.spanLogs(log.SpanID), log.Body().AsString())
+
+		if log.SpanID == db.PrimarySpan {
+			// buffer raw logs so we can replay them later
+			db.PrimaryLogs[log.SpanID] = append(db.PrimaryLogs[log.SpanID], log)
 		}
 	}
-	if !updated {
-		tasks = append(tasks, t)
-		db.Tasks[t.Vertex] = tasks
-	}
+	return nil
 }
 
-// Step returns a Step for the given digest if and only if the step should be
-// displayed.
-//
-// Currently this means:
-//
-// - We don't show `id` selections, since that would be way too much noise.
-// - We don't show internal non-ID vertices, since they're not interesting.
-// - We DO show internal ID vertices, since they're currently marked internal
-// just to hide them from the old TUI.
-func (db *DB) Step(dig string) (*Step, bool) {
-	step := &Step{
-		Digest: dig,
-		db:     db,
+func (db *DB) Shutdown(ctx context.Context) error {
+	return nil // noop
+}
+
+func (db *DB) spanLogs(id trace.SpanID) *Vterm {
+	term, found := db.Logs[id]
+	if !found {
+		term = NewVterm()
+		if db.LogWidth > -1 {
+			term.SetWidth(db.LogWidth)
+		}
+		db.Logs[id] = term
 	}
-	ivals := db.Intervals[dig]
-	if len(ivals) == 0 {
-		// no vertices seen; give up
-		return nil, false
+	return term
+}
+
+// SetPrimarySpan allows the primary span to be explicitly set to a particular
+// span. normally we assume the root span is the primary span, but in a nested
+// scenario we never actually see the root span, so the CLI explicitly sets it
+// to the span it created.
+func (db *DB) SetPrimarySpan(span trace.SpanID) {
+	db.PrimarySpan = span
+}
+
+func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
+	spanID := span.SpanContext().SpanID()
+
+	spanData := &Span{
+		ReadOnlySpan: span,
+
+		// All root spans are Primary, unless we're explicitly told a different
+		// span to treat as the "primary" as with Dagger-in-Dagger.
+		Primary: !span.Parent().SpanID().IsValid() ||
+			spanID == db.PrimarySpan,
+
+		db:    db,
+		trace: traceData,
 	}
-	outID := db.IDs[dig]
-	switch {
-	case outID != nil && outID.Field() == "id":
-		// ignore 'id' field selections, they're everywhere and not interesting
-		return nil, false
-	case !step.HasStarted():
-		// ignore anything in pending state; not interesting, easier to assume
-		// things have always started
-		return nil, false
-	case outID == nil:
-		// no ID; check if we're a regular vertex, or if we're supposed to have an
-		// ID (arrives later via VertexMeta event)
-		for _, vtx := range ivals {
-			if vtx.Label(tracing.IDLabel) == "true" {
-				// no ID yet, but it's an ID vertex; ignore it until we get the ID so
-				// we never have to deal with the intermediate state
-				return nil, false
+
+	slog.Debug("recording span", "span", span.Name(), "id", spanID)
+
+	db.Spans[spanID] = spanData
+
+	// track parent/child relationships
+	if parent := span.Parent(); parent.IsValid() {
+		if db.Children[parent.SpanID()] == nil {
+			db.Children[parent.SpanID()] = make(map[trace.SpanID]struct{})
+		}
+		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
+		db.Children[parent.SpanID()][spanID] = struct{}{}
+	} else if !db.PrimarySpan.IsValid() {
+		// default primary to "root" span, but we might never see it in a nested
+		// scenario.
+		db.PrimarySpan = spanID
+	}
+
+	attrs := span.Attributes()
+
+	var digest string
+	if digestAttr, ok := getAttr(attrs, telemetry.DagDigestAttr); ok {
+		digest = digestAttr.AsString()
+		spanData.Digest = digest
+
+		// keep track of intervals seen for a digest
+		if db.Intervals[digest] == nil {
+			db.Intervals[digest] = make(map[time.Time]*Span)
+		}
+
+		db.Intervals[digest][span.StartTime()] = spanData
+	}
+
+	for _, attr := range attrs {
+		switch attr.Key {
+		case telemetry.DagCallAttr:
+			var call callpbv1.Call
+			if err := call.Decode(attr.Value.AsString()); err != nil {
+				slog.Warn("failed to decode id", "err", err)
+				continue
 			}
+
+			spanData.Call = &call
+
+			// Seeing loadFooFromID is only really interesting if it actually
+			// resulted in evaluating the ID, so we set Passthrough, which will only
+			// show its children.
+			if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
+				spanData.Passthrough = true
+			}
+
+			// We also don't care about seeing the id field selection itself, since
+			// it's more noisy and confusing than helpful. We'll still show all the
+			// spans leadning up to it, just not the ID selection.
+			if call.Field == "id" {
+				spanData.Ignore = true
+			}
+
+			if digest != "" {
+				db.Calls[digest] = &call
+			}
+
+		case telemetry.LLBOpAttr:
+			// TODO
+
+		case telemetry.CachedAttr:
+			spanData.Cached = attr.Value.AsBool()
+
+		case telemetry.CanceledAttr:
+			spanData.Canceled = attr.Value.AsBool()
+
+		case telemetry.UIEncapsulateAttr:
+			spanData.Encapsulate = attr.Value.AsBool()
+
+		case telemetry.UIInternalAttr:
+			spanData.Internal = attr.Value.AsBool()
+
+		case telemetry.UIMaskAttr:
+			spanData.Mask = attr.Value.AsBool()
+
+		case telemetry.UIPassthroughAttr:
+			spanData.Passthrough = attr.Value.AsBool()
+
+		case telemetry.DagInputsAttr:
+			spanData.Inputs = attr.Value.AsStringSlice()
+
+		case telemetry.DagOutputAttr:
+			output := attr.Value.AsString()
+			if digest == "" {
+				slog.Warn("output attribute is set, but a digest is not?")
+			} else {
+				slog.Debug("recording output", "digest", digest, "output", output)
+
+				// parent -> child
+				if db.Outputs[digest] == nil {
+					db.Outputs[digest] = make(map[string]struct{})
+				}
+				db.Outputs[digest][output] = struct{}{}
+
+				// child -> parent
+				if db.OutputOf[output] == nil {
+					db.OutputOf[output] = make(map[string]struct{})
+				}
+				db.OutputOf[output][digest] = struct{}{}
+			}
+
+		case "rpc.service":
+			spanData.Passthrough = true
 		}
 	}
-	if outID != nil && outID.Base() != nil {
-		parentDig := outID.Base().Digest()
-		step.BaseDigest = db.Simplify(parentDig.String())
+}
+
+func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
+	for _, span := range db.Spans {
+		spanCtx := span.SpanContext()
+		if span.Primary && spanCtx.TraceID() == traceID {
+			return span
+		}
 	}
-	return step, true
+	return nil
 }
 
-func (db *DB) HighLevelStep(id *call.ID) (*Step, bool) {
-	parentDig := id.Digest()
-	return db.Step(db.Simplify(parentDig.String()))
+func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
+	return db.MostInterestingSpan(db.Simplify(call).Digest)
 }
 
-func (db *DB) MostInterestingVertex(dig string) *progrock.Vertex {
-	var earliest *progrock.Vertex
-	vs := make([]*progrock.Vertex, 0, len(db.Intervals[dig]))
-	for _, vtx := range db.Intervals[dig] {
-		vs = append(vs, vtx)
+func (db *DB) MostInterestingSpan(dig string) *Span {
+	var earliest *Span
+	var earliestCached bool
+	vs := make([]sdktrace.ReadOnlySpan, 0, len(db.Intervals[dig]))
+	for _, span := range db.Intervals[dig] {
+		vs = append(vs, span)
 	}
 	sort.Slice(vs, func(i, j int) bool {
-		return vs[i].Started.AsTime().Before(vs[j].Started.AsTime())
+		return vs[i].StartTime().Before(vs[j].StartTime())
 	})
-	for _, vtx := range db.Intervals[dig] {
+	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if vtx.Completed == nil {
-			return vtx
+		if span.IsRunning() {
+			return span
 		}
 		switch {
 		case earliest == nil:
 			// always show _something_
-			earliest = vtx
-		case vtx.Cached:
+			earliest = span
+			earliestCached = span.Cached
+		case span.Cached:
 			// don't allow a cached vertex to override a non-cached one
-		case earliest.Cached:
+		case earliestCached:
 			// unclear how this would happen, but non-cached versions are always more
 			// interesting
-			earliest = vtx
-		case vtx.Started.AsTime().Before(earliest.Started.AsTime()):
+			earliest = span
+		case span.StartTime().Before(earliest.StartTime()):
 			// prefer the earliest active interval
-			earliest = vtx
+			earliest = span
 		}
 	}
 	return earliest
@@ -229,52 +339,69 @@ func (*DB) Close() error {
 	return nil
 }
 
-func litSize(lit call.Literal) int {
-	switch x := lit.(type) {
-	case *call.LiteralID:
-		return idSize(x.Value())
-	case *call.LiteralList:
+func (db *DB) MustCall(dig string) *callpbv1.Call {
+	call, ok := db.Calls[dig]
+	if !ok {
+		// Sometimes may see a call's digest before the call itself.
+		//
+		// The loadFooFromID APIs for example will emit their call via their span
+		// before loading the ID, and its ID argument will just be a digest like
+		// anything else.
+		return &callpbv1.Call{
+			Field: "unknown",
+			Type: &callpbv1.Type{
+				NamedType: "Void",
+			},
+			Digest: dig,
+		}
+	}
+	return call
+}
+
+func (db *DB) litSize(lit *callpbv1.Literal) int {
+	switch x := lit.GetValue().(type) {
+	case *callpbv1.Literal_CallDigest:
+		return db.idSize(db.MustCall(x.CallDigest))
+	case *callpbv1.Literal_List:
 		size := 0
-		x.Range(func(_ int, lit call.Literal) error {
-			size += litSize(lit)
-			return nil
-		})
+		for _, lit := range x.List.GetValues() {
+			size += db.litSize(lit)
+		}
 		return size
-	case *call.LiteralObject:
+	case *callpbv1.Literal_Object:
 		size := 0
-		x.Range(func(_ int, _ string, value call.Literal) error {
-			size += litSize(value)
-			return nil
-		})
+		for _, lit := range x.Object.GetValues() {
+			size += db.litSize(lit.GetValue())
+		}
 		return size
 	}
 	return 1
 }
 
-func idSize(id *call.ID) int {
+func (db *DB) idSize(id *callpbv1.Call) int {
 	size := 0
-	for id := id; id != nil; id = id.Base() {
+	for id := id; id != nil; id = db.Calls[id.ReceiverDigest] {
 		size++
-		size += len(id.Args())
-		for _, arg := range id.Args() {
-			size += litSize(arg.Value())
+		size += len(id.Args)
+		for _, arg := range id.Args {
+			size += db.litSize(arg.GetValue())
 		}
 	}
 	return size
 }
 
-func (db *DB) Simplify(dig string) string {
-	creators, ok := db.OutputOf[dig]
+func (db *DB) Simplify(call *callpbv1.Call) (smallest *callpbv1.Call) {
+	smallest = call
+	creators, ok := db.OutputOf[call.Digest]
 	if !ok {
-		return dig
+		return
 	}
-	var smallest = db.IDs[dig]
-	var smallestSize = idSize(smallest)
+	var smallestSize = db.idSize(smallest)
 	var simplified bool
 	for creatorDig := range creators {
-		creator, ok := db.IDs[creatorDig]
+		creator, ok := db.Calls[creatorDig]
 		if ok {
-			if size := idSize(creator); smallest == nil || size < smallestSize {
+			if size := db.idSize(creator); size < smallestSize {
 				smallest = creator
 				smallestSize = size
 				simplified = true
@@ -282,8 +409,16 @@ func (db *DB) Simplify(dig string) string {
 		}
 	}
 	if simplified {
-		smallestDig := smallest.Digest()
-		return db.Simplify(smallestDig.String())
+		return db.Simplify(smallest)
 	}
-	return dig
+	return
+}
+
+func getAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bool) {
+	for _, attr := range attrs {
+		if attr.Key == key {
+			return attr.Value, true
+		}
+	}
+	return attribute.Value{}, false
 }

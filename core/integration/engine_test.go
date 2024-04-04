@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func devEngineContainer(c *dagger.Client) *dagger.Container {
@@ -164,7 +165,7 @@ func TestDaggerRun(t *testing.T) {
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
 	// verify we got some progress output
-	require.Contains(t, stderr, "resolve image config for")
+	require.Contains(t, stderr, "Container.from")
 }
 
 func TestClientSendsLabelsInTelemetry(t *testing.T) {
@@ -222,8 +223,8 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dev-engine:1234").
 		WithServiceBinding("cloud", fakeCloud).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN", "test").
+		WithEnvVariable("DAGGER_CLOUD_URL", "http://cloud:8080/"+eventsID).
+		WithEnvVariable("DAGGER_CLOUD_TOKEN", "test").
 		WithExec([]string{"git", "config", "--global", "init.defaultBranch", "main"}).
 		WithExec([]string{"git", "config", "--global", "user.email", "test@example.com"}).
 		// make sure we handle non-ASCII usernames
@@ -238,7 +239,7 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	receivedEvents, err := withCode.
 		WithMountedCache("/events", eventsVol).
 		WithExec([]string{
-			"cat", fmt.Sprintf("/events/%s.json", eventsID),
+			"sh", "-c", "cat $0", fmt.Sprintf("/events/%s/**/*.json", eventsID),
 		}).
 		Stdout(ctx)
 	require.NoError(t, err)

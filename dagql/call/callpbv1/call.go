@@ -1,6 +1,29 @@
 package callpbv1
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	"encoding/base64"
+	"fmt"
+
+	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/protobuf/proto"
+)
+
+func (call *Call) Encode() (string, error) {
+	// Deterministic is strictly needed so the CallsByDigest map is sorted in the serialized proto
+	proto, err := proto.MarshalOptions{Deterministic: true}.Marshal(call)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ID proto: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(proto), nil
+}
+
+func (call *Call) Decode(str string) error {
+	bytes, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64: %w", err)
+	}
+	return proto.Unmarshal(bytes, call)
+}
 
 func (t *Type) ToAST() *ast.Type {
 	a := &ast.Type{
