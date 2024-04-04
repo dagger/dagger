@@ -550,6 +550,7 @@ func setupBundle() int {
 			otelEndpoint = "unix://" + otelEndpoint
 		}
 		spec.Process.Env = append(spec.Process.Env,
+			"OTEL_EXPORTER_OTLP_PROTOCOL="+otelProto,
 			"OTEL_EXPORTER_OTLP_ENDPOINT="+otelEndpoint,
 			// Re-set the otel env vars, but with a corrected otelEndpoint.
 			"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="+otelProto,
