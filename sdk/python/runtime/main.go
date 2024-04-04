@@ -1,4 +1,4 @@
-// Runtime module for the Python SDK.
+// Runtime module for the Python SDK
 
 package main
 
@@ -49,9 +49,13 @@ type UserConfig struct {
 }
 
 func New(
+    // Directory with the Python SDK source code.
 	// +optional
 	sdkSourceDir *Directory,
 ) *PythonSdk {
+	if sdkSourceDir == nil {
+		sdkSourceDir = dag.Directory()
+	}
 	return &PythonSdk{
 		Discovery: NewDiscovery(UserConfig{
 			UseUv:     true,
@@ -77,17 +81,21 @@ var tplMain string
 // The others were built to be composable and chainable to facilitate the
 // creation of extension modules (custom SDKs that depend on this one).
 type PythonSdk struct {
+    // Directory with the Python SDK source code
 	SDKSourceDir  *Directory
+
+    // List of patterns to allways include when loading Python modules
 	RequiredPaths []string
 
-	// Resulting container after each composing step.
+	// Resulting container after each composing step
 	Container *Container
 
-	// Discovery holds the logic for getting more information from the target module.
+	// Discovery holds the logic for getting more information from the target module
 	// +private
 	Discovery *Discovery
 }
 
+// Generated code for the Python module
 func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*GeneratedCode, error) {
 	ctr, err := m.Common(ctx, modSource, introspectionJson)
 	if err != nil {
@@ -102,6 +110,7 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 		), nil
 }
 
+// Container for executing the Python module runtime
 func (m *PythonSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *ModuleSource,
@@ -137,7 +146,7 @@ func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introsp
 	return ctr, nil
 }
 
-// Get all the needed information from the module's metadata and source files.
+// Get all the needed information from the module's metadata and source files
 func (m *PythonSdk) Load(ctx context.Context, modSource *ModuleSource) (*PythonSdk, error) {
 	if err := m.Discovery.Load(ctx, modSource); err != nil {
 		return nil, fmt.Errorf("runtime module load: %v", err)
