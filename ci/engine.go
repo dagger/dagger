@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger/build"
+	"dagger/consts"
 	"dagger/internal/dagger"
 	"dagger/util"
 )
@@ -112,7 +113,7 @@ func (e *Engine) Service(
 // Lint the engine
 func (e *Engine) Lint(ctx context.Context) error {
 	_, err := dag.Container().
-		From("golangci/golangci-lint:v1.55-alpine").
+		From(consts.GolangLintImage).
 		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).

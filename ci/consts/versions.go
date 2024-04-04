@@ -10,10 +10,13 @@ const (
 )
 
 const (
-	GolangVersion = "1.21.7"
+	GolangVersion     = "1.21.7"
+	GolangLintVersion = "v1.55"
 
 	AlpineVersion = "3.18"
 	AlpineImage   = "alpine:" + AlpineVersion
+
+	GolangLintImage = "golangci/golangci-lint:" + GolangLintVersion + "-alpine"
 
 	UbuntuVersion = "22.04"
 	RuncVersion   = "v1.1.12"

@@ -21,7 +21,7 @@ func (t GoSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		_, err := dag.Container().
-			From("golangci/golangci-lint:v1.54-alpine").
+			From(consts.GolangLintImage).
 			WithMountedDirectory("/app", util.GoDirectory(t.Dagger.Source)).
 			WithWorkdir("/app/sdk/go").
 			WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
