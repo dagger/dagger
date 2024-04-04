@@ -49,7 +49,7 @@ type UserConfig struct {
 }
 
 func New(
-    // Directory with the Python SDK source code.
+	// Directory with the Python SDK source code.
 	// +optional
 	sdkSourceDir *Directory,
 ) *PythonSdk {
@@ -81,10 +81,10 @@ var tplMain string
 // The others were built to be composable and chainable to facilitate the
 // creation of extension modules (custom SDKs that depend on this one).
 type PythonSdk struct {
-    // Directory with the Python SDK source code
-	SDKSourceDir  *Directory
+	// Directory with the Python SDK source code
+	SDKSourceDir *Directory
 
-    // List of patterns to allways include when loading Python modules
+	// List of patterns to allways include when loading Python modules
 	RequiredPaths []string
 
 	// Resulting container after each composing step
