@@ -111,6 +111,10 @@ func (builder *Builder) WithGPUSupport() *Builder {
 	return &b
 }
 
+func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
+	return build.binary("./cmd/dagger", true), nil
+}
+
 func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 	var base *dagger.Container
 	switch build.base {
@@ -180,34 +184,34 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 }
 
 func (build *Builder) CodegenBinary() *File {
-	return build.binary("./cmd/codegen")
+	return build.binary("./cmd/codegen", false)
 }
 
 func (build *Builder) engineBinary() *File {
-	return build.binary("./cmd/engine")
+	return build.binary("./cmd/engine", true)
 }
 
 func (build *Builder) shimBinary() *File {
-	return build.binary("./cmd/shim")
+	return build.binary("./cmd/shim", false)
 }
 
 func (build *Builder) dnsnameBinary() *File {
-	return build.binary("./cmd/dnsname")
+	return build.binary("./cmd/dnsname", false)
 }
 
 func (build *Builder) dialstdioBinary() *File {
-	return build.binary("./cmd/dialstdio")
+	return build.binary("./cmd/dialstdio", false)
 }
 
-func (build *Builder) binary(pkg string) *File {
+func (build *Builder) binary(pkg string, version bool) *File {
 	base := util.GoBase(build.source).With(build.goPlatformEnv)
 
 	ldflags := []string{
 		"-s", "-w",
 	}
-	// XXX: not every binary needs this actually!
-	// because it changes often, it causes lots of cache misses
-	ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version.EngineVersion())
+	if version {
+		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version.EngineVersion())
+	}
 
 	output := filepath.Join("./bin/", filepath.Base(pkg))
 	result := base.

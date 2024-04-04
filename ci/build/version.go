@@ -46,7 +46,3 @@ func (info VersionInfo) EngineVersion() string {
 	}
 	return info.TreeHash
 }
-
-func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
-	return build.binary("./cmd/dagger"), nil
-}
