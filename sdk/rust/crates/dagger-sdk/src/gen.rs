@@ -5904,6 +5904,11 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Get the current Dagger Engine version.
+    pub async fn version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("version");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct Secret {
