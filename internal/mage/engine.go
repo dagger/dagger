@@ -145,7 +145,9 @@ func (t Engine) Dev(ctx context.Context) error {
 	_, imageID, ok := strings.Cut(string(output), "Loaded image ID: sha256:")
 	if !ok {
 		_, imageID, ok = strings.Cut(string(output), "Loaded image: sha256:") // podman
-		return fmt.Errorf("unexpected output from docker load: %s", output)
+		if !ok {
+			return fmt.Errorf("unexpected output from docker load: %s", output)
+		}
 	}
 	imageID = strings.TrimSpace(imageID)
 
@@ -157,6 +159,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker tag %s %s: %w: %s", imageID, imageName, err, output)
 	}
 
+	//nolint:gosec
 	if output, err := exec.CommandContext(ctx, "docker",
 		"rm",
 		"-fv",

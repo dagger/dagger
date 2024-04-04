@@ -124,6 +124,8 @@ func (t ElixirSDK) Publish(
 	return err
 }
 
+var elixirVersionRe = regexp.MustCompile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
+
 // Bump the Elixir SDK's Engine dependency
 func (t ElixirSDK) Bump(ctx context.Context, version string) (*Directory, error) {
 	contents, err := t.Dagger.Source.File(elixirSDKVersionFilePath).Contents(ctx)
@@ -132,11 +134,7 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*Directory, error)
 	}
 
 	newVersion := fmt.Sprintf(`@dagger_cli_version "%s"`, strings.TrimPrefix(version, "v"))
-	versionRe, err := regexp.Compile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
-	if err != nil {
-		return nil, err
-	}
-	newContents := versionRe.ReplaceAllString(contents, newVersion)
+	newContents := elixirVersionRe.ReplaceAllString(contents, newVersion)
 
 	return dag.Directory().WithNewFile(elixirSDKVersionFilePath, newContents), nil
 }

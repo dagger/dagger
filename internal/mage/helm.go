@@ -71,10 +71,6 @@ func (Helm) Publish(ctx context.Context, tag string) error {
 		WithDirectory("/tmp/dagger-helm", helmChart).
 		WithWorkdir("/tmp/dagger-helm")
 
-	if err != nil {
-		return err
-	}
-
 	loggedIn := helm.
 		WithSecretVariable("GITHUB_TOKEN", secret).
 		WithExec([]string{"sh", "-c", "helm registry login -u dagger ghcr.io/dagger --password $GITHUB_TOKEN"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true})

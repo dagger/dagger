@@ -43,3 +43,7 @@ linters-settings:
       - name: unused-parameter
         severity: warning
         disabled: true
+
+  govet:
+    enable:
+      - nilness

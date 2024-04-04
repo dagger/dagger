@@ -14,14 +14,13 @@ import (
 
 	"dagger/consts"
 	"dagger/internal/dagger"
-	. "dagger/internal/dagger"
 	"dagger/util"
 )
 
 var dag = dagger.Connect()
 
 type Builder struct {
-	source *Directory
+	source *dagger.Directory
 
 	version *VersionInfo
 
@@ -32,14 +31,14 @@ type Builder struct {
 	gpuSupport bool
 }
 
-func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
+func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
 	// FIXME: can we make this lazy?
 	version, err := getVersionFromGit(ctx, source.Directory(".git"))
 	if err != nil {
 		return nil, err
 	}
 
-	source = dag.Directory().WithDirectory("/", source, DirectoryWithDirectoryOpts{
+	source = dag.Directory().WithDirectory("/", source, dagger.DirectoryWithDirectoryOpts{
 		Exclude: []string{
 			".git",
 			"bin",
@@ -77,37 +76,37 @@ func NewBuilder(ctx context.Context, source *Directory) (*Builder, error) {
 	return &Builder{
 		source:       source,
 		version:      version,
-		platform:     Platform(platforms.DefaultString()),
+		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 	}, nil
 }
 
-func (builder *Builder) EngineVersion() string {
-	return builder.version.EngineVersion()
+func (build *Builder) EngineVersion() string {
+	return build.version.EngineVersion()
 }
 
-func (builder *Builder) WithPlatform(p dagger.Platform) *Builder {
-	b := *builder
+func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
+	b := *build
 	b.platform = p
 	b.platformSpec = platforms.Normalize(platforms.MustParse(string(p)))
 	return &b
 }
 
-func (builder *Builder) WithUbuntuBase() *Builder {
-	b := *builder
+func (build *Builder) WithUbuntuBase() *Builder {
+	b := *build
 	b.base = "ubuntu"
 	return &b
 }
 
-func (builder *Builder) WithAlpineBase() *Builder {
-	b := *builder
-	builder.base = "alpine"
+func (build *Builder) WithAlpineBase() *Builder {
+	b := *build
+	build.base = "alpine"
 	return &b
 }
 
-func (builder *Builder) WithGPUSupport() *Builder {
-	b := *builder
-	builder.gpuSupport = true
+func (build *Builder) WithGPUSupport() *Builder {
+	b := *build
+	build.gpuSupport = true
 	return &b
 }
 
@@ -115,12 +114,12 @@ func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
 	return build.binary("./cmd/dagger", true), nil
 }
 
-func (build *Builder) Engine(ctx context.Context) (*Container, error) {
+func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	var base *dagger.Container
 	switch build.base {
 	case "alpine", "":
 		base = dag.
-			Container(ContainerOpts{Platform: build.platform}).
+			Container(dagger.ContainerOpts{Platform: build.platform}).
 			From(consts.AlpineImage).
 			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
 			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
@@ -160,7 +159,7 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 		WithFile("/usr/bin/dial-stdio", build.dialstdioBinary()).
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
 		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
-		WithFile("/usr/local/bin/runc", build.runcBin(), ContainerWithFileOpts{Permissions: 0o700}).
+		WithFile("/usr/local/bin/runc", build.runcBin(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
 		WithDirectory("/usr/local/bin", build.qemuBins()).
 		With(build.goSDKContent(ctx)).
 		With(build.pythonSDKContent(ctx)).
@@ -183,27 +182,27 @@ func (build *Builder) Engine(ctx context.Context) (*Container, error) {
 	return ctr, nil
 }
 
-func (build *Builder) CodegenBinary() *File {
+func (build *Builder) CodegenBinary() *dagger.File {
 	return build.binary("./cmd/codegen", false)
 }
 
-func (build *Builder) engineBinary() *File {
+func (build *Builder) engineBinary() *dagger.File {
 	return build.binary("./cmd/engine", true)
 }
 
-func (build *Builder) shimBinary() *File {
+func (build *Builder) shimBinary() *dagger.File {
 	return build.binary("./cmd/shim", false)
 }
 
-func (build *Builder) dnsnameBinary() *File {
+func (build *Builder) dnsnameBinary() *dagger.File {
 	return build.binary("./cmd/dnsname", false)
 }
 
-func (build *Builder) dialstdioBinary() *File {
+func (build *Builder) dialstdioBinary() *dagger.File {
 	return build.binary("./cmd/dialstdio", false)
 }
 
-func (build *Builder) binary(pkg string, version bool) *File {
+func (build *Builder) binary(pkg string, version bool) *dagger.File {
 	base := util.GoBase(build.source).With(build.goPlatformEnv)
 
 	ldflags := []string{
@@ -227,7 +226,7 @@ func (build *Builder) binary(pkg string, version bool) *File {
 	return result
 }
 
-func (build *Builder) runcBin() *File {
+func (build *Builder) runcBin() *dagger.File {
 	// We build runc from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	buildCtr := dag.Container().
@@ -259,14 +258,14 @@ func (build *Builder) runcBin() *File {
 		File("runc")
 }
 
-func (build *Builder) qemuBins() *Directory {
+func (build *Builder) qemuBins() *dagger.Directory {
 	return dag.
-		Container(ContainerOpts{Platform: build.platform}).
+		Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.QemuBinImage).
 		Rootfs()
 }
 
-func (build *Builder) cniPlugins() *Directory {
+func (build *Builder) cniPlugins() *dagger.Directory {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	// If GPU support is enabled use a Debian image:

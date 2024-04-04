@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
@@ -89,7 +90,7 @@ func (e *Engine) Service(
 	} else {
 		cacheVolumeName = "dagger-dev-engine-state"
 	}
-	cacheVolumeName = cacheVolumeName + identity.NewID()
+	cacheVolumeName += identity.NewID()
 
 	e = e.
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
@@ -112,12 +113,17 @@ func (e *Engine) Service(
 
 // Lint the engine
 func (e *Engine) Lint(ctx context.Context) error {
-	_, err := dag.Container().
+	pkgs := []string{"", "ci", "internal/mage"}
+
+	ctr := dag.Container().
 		From(consts.GolangLintImage).
-		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
-		WithWorkdir("/app").
-		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-		Sync(ctx)
+		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source))
+	for _, pkg := range pkgs {
+		ctr = ctr.
+			WithWorkdir(path.Join("/app", pkg)).
+			WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"})
+	}
+	_, err := ctr.Sync(ctx)
 	return err
 }
 
@@ -149,7 +155,7 @@ func (e *Engine) Publish(
 		ref += "-gpu"
 	}
 
-	var engines []*Container
+	engines := make([]*Container, 0, len(platform))
 	for _, platform := range platform {
 		ctr, err := e.Container(ctx, platform)
 		if err != nil {

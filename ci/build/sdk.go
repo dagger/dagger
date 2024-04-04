@@ -9,12 +9,12 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"dagger/consts"
-	. "dagger/internal/dagger"
+	"dagger/internal/dagger"
 )
 
-func (build *Builder) pythonSDKContent(ctx context.Context) WithContainerFunc {
-	return func(ctr *Container) *Container {
-		rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/python"), DirectoryWithDirectoryOpts{
+func (build *Builder) pythonSDKContent(ctx context.Context) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/python"), dagger.DirectoryWithDirectoryOpts{
 			Include: []string{
 				"pyproject.toml",
 				"src/**/*.py",
@@ -28,8 +28,8 @@ func (build *Builder) pythonSDKContent(ctx context.Context) WithContainerFunc {
 		sdkCtrTarball := dag.Container().
 			WithRootfs(rootfs).
 			WithFile("/codegen", build.CodegenBinary()).
-			AsTarball(ContainerAsTarballOpts{
-				ForcedCompression: Uncompressed,
+			AsTarball(dagger.ContainerAsTarballOpts{
+				ForcedCompression: dagger.Uncompressed,
 			})
 
 		sdkDir := dag.Container().
@@ -48,9 +48,9 @@ func (build *Builder) pythonSDKContent(ctx context.Context) WithContainerFunc {
 	}
 }
 
-func (build *Builder) typescriptSDKContent(ctx context.Context) WithContainerFunc {
-	return func(ctr *Container) *Container {
-		rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), DirectoryWithDirectoryOpts{
+func (build *Builder) typescriptSDKContent(ctx context.Context) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/typescript"), dagger.DirectoryWithDirectoryOpts{
 			Include: []string{
 				"**/*.ts",
 				"LICENSE",
@@ -70,8 +70,8 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) WithContainerFun
 		sdkCtrTarball := dag.Container().
 			WithRootfs(rootfs).
 			WithFile("/codegen", build.CodegenBinary()).
-			AsTarball(ContainerAsTarballOpts{
-				ForcedCompression: Uncompressed,
+			AsTarball(dagger.ContainerAsTarballOpts{
+				ForcedCompression: dagger.Uncompressed,
 			})
 
 		sdkDir := dag.Container().From("alpine:"+consts.AlpineVersion).
@@ -89,17 +89,17 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) WithContainerFun
 	}
 }
 
-func (build *Builder) goSDKContent(ctx context.Context) WithContainerFunc {
-	return func(ctr *Container) *Container {
-		base := dag.Container(ContainerOpts{Platform: build.platform}).
+func (build *Builder) goSDKContent(ctx context.Context) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		base := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 			From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion))
 
 		sdkCtrTarball := base.
 			WithEnvVariable("GOTOOLCHAIN", "auto").
 			WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
 			WithEntrypoint([]string{"/usr/local/bin/codegen"}).
-			AsTarball(ContainerAsTarballOpts{
-				ForcedCompression: Uncompressed,
+			AsTarball(dagger.ContainerAsTarballOpts{
+				ForcedCompression: dagger.Uncompressed,
 			})
 
 		sdkDir := base.
@@ -117,7 +117,7 @@ func (build *Builder) goSDKContent(ctx context.Context) WithContainerFunc {
 	}
 }
 
-func sdkContent(ctx context.Context, ctr *Container, sdkDir *Directory, envName string) (*Container, error) {
+func sdkContent(ctx context.Context, ctr *dagger.Container, sdkDir *dagger.Directory, envName string) (*dagger.Container, error) {
 	var index ocispecs.Index
 	indexContents, err := sdkDir.File("index.json").Contents(ctx)
 	if err != nil {
@@ -131,7 +131,7 @@ func sdkContent(ctx context.Context, ctr *Container, sdkDir *Directory, envName 
 
 	return ctr.
 		WithEnvVariable(envName, manifestDgst).
-		WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, ContainerWithDirectoryOpts{
+		WithDirectory(distconsts.EngineContainerBuiltinContentDir, sdkDir, dagger.ContainerWithDirectoryOpts{
 			Include: []string{"blobs/"},
 		}), nil
 }

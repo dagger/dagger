@@ -15,8 +15,8 @@ type SDK struct {
 	PHP    *PHPSDK
 }
 
-func (dg *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
-	engineSvc, err := dg.Engine().Service(ctx, name)
+func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
+	engineSvc, err := ci.Engine().Service(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func (dg *Dagger) installer(ctx context.Context, name string) (func(*Container) 
 		return nil, err
 	}
 
-	cliBinary, err := dg.CLI().File(ctx, "")
+	cliBinary, err := ci.CLI().File(ctx, "")
 	if err != nil {
 		return nil, err
 	}
