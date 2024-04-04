@@ -46,7 +46,7 @@ require (
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
-	github.com/moby/buildkit v0.13.0-rc3.0.20240402015416-cbb116dcc38a // https://github.com/moby/buildkit/commit/cbb116dcc38acb40408743697b575f0ff2a7df6a
+	github.com/moby/buildkit v0.13.0-rc3.0.20240403135707-dc23e43dc15c // https://github.com/moby/buildkit/commit/dc23e43dc15c14dcf1871f8cc97a6e96c8f94a2e
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.3
@@ -179,7 +179,6 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20231101202521-4ca4178f5c7a // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
-	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.0 // indirect
 	github.com/hanwen/go-fuse/v2 v2.4.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
