@@ -3,8 +3,10 @@ package telemetry
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
@@ -35,6 +37,41 @@ func LoadDefaultLabels(workdir, clientEngineVersion string) Labels {
 			WithVCSLabels(workdir)
 	})
 	return defaultLabels
+}
+
+func (labels *Labels) UnmarshalJSON(dt []byte) error {
+	// HACK: this custom Unmarshaller allows for old clients to pass labels in
+	// the legacy format without immediately erroring out (we can easily
+	// convert them)
+	// ...but we should eventually remove this.
+
+	var err error
+
+	current := map[string]string{}
+	if err = json.Unmarshal(dt, &current); err == nil {
+		if *labels == nil {
+			*labels = current
+		} else {
+			maps.Copy(*labels, current)
+		}
+		return nil
+	}
+
+	legacy := []struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}{}
+	if err = json.Unmarshal(dt, &legacy); err == nil {
+		if *labels == nil {
+			*labels = Labels{}
+		}
+		for _, label := range legacy {
+			(*labels)[label.Name] = label.Value
+		}
+		return nil
+	}
+
+	return err
 }
 
 func (labels Labels) UserAgent() string {
