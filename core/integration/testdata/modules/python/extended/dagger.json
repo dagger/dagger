@@ -2,13 +2,13 @@
   "name": "ext-python-sdk",
   "sdk": "python",
   "exclude": [
-      ".venv",
-      "sdk"
+    ".venv",
+    "sdk"
   ],
   "dependencies": [
     {
       "name": "python-sdk",
-      "source": "../runtime"
+      "source": "../../../../../../sdk/python/runtime"
     }
   ],
   "source": ".",
