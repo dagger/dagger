@@ -93,7 +93,7 @@ The general procedure to connect Dagger Cloud with a CI provider/CI tool is:
     :::
   - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
 - For **Team** plan subscribers with ephemeral CI runners only: Add a wait step (example below) for the Docker configuration to allow the Dagger Engine to push cache volumes to the experimental Dagger Cloud distributed cache. Subscribers on the **Individual** plan do not have access to the experimental distributed cache and do not need to add this step.
-- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub Check to your pull requests for your Dagger pipeline run and links to the pipeline visualization for the commit in Dagger Cloud.
+- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding pipeline visualization in Dagger Cloud.
 
 You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
 
