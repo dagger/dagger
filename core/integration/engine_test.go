@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func devEngineContainer(c *dagger.Client) *dagger.Container {

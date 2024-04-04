@@ -3,9 +3,10 @@ package core
 import (
 	"context"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql"
 )
 
 type GeneratedCode struct {

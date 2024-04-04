@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed a few typing issues in the generated client
-time: 2024-04-03T01:28:01.75816Z
-custom:
-  Author: helderco
-  PR: "6998"

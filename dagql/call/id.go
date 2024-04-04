@@ -5,12 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/zeebo/xxh3"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
 
 func New() *ID {

@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
-	"github.com/stretchr/testify/require"
 )
 
 func TestModuleConfigs(t *testing.T) {

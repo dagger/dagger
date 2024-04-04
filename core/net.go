@@ -3,9 +3,10 @@ package core
 import (
 	"strings"
 
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Port configures a port to exposed from a container or service.

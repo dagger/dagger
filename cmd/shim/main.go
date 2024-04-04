@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -37,6 +36,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/telemetry"
 )
@@ -550,6 +550,7 @@ func setupBundle() int {
 			otelEndpoint = "unix://" + otelEndpoint
 		}
 		spec.Process.Env = append(spec.Process.Env,
+			"OTEL_EXPORTER_OTLP_PROTOCOL="+otelProto,
 			"OTEL_EXPORTER_OTLP_ENDPOINT="+otelEndpoint,
 			// Re-set the otel env vars, but with a corrected otelEndpoint.
 			"OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="+otelProto,

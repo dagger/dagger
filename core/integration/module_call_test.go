@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func TestModuleDaggerCallArgTypes(t *testing.T) {

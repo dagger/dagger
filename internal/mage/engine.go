@@ -9,9 +9,10 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/magefile/mage/mg"
+
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/mage/util"
-	"github.com/magefile/mage/mg"
 )
 
 type Engine mg.Namespace

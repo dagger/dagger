@@ -5,13 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -20,6 +19,8 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 
+	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 )
 
@@ -153,6 +154,9 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		"-v", distconsts.EngineDefaultStateDir,
 		"--privileged",
 	)
+	// explicitly pass current env vars; if we append more below existing ones like DOCKER_HOST
+	// won't be passed to the cmd
+	cmd.Env = os.Environ()
 	if opts.DaggerCloudToken != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", EnvDaggerCloudToken, opts.DaggerCloudToken))
 		cmd.Args = append(cmd.Args, "-e", EnvDaggerCloudToken)

@@ -4,9 +4,10 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/shurcooL/graphql"
 	"golang.org/x/oauth2"
+
+	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
 type Client struct {

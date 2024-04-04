@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/engine"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -22,6 +21,8 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
+
+	"github.com/dagger/dagger/engine"
 )
 
 func (c *Client) LocalImport(
@@ -183,7 +184,7 @@ func (c *Client) LocalDirExport(
 		if rerr != nil {
 			lg = lg.WithError(rerr)
 		}
-		lg.Debug("finished exporting local dir")
+		lg.Trace("finished exporting local dir")
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -254,7 +255,7 @@ func (c *Client) LocalFileExport(
 		if rerr != nil {
 			lg = lg.WithError(rerr)
 		}
-		lg.Debug("finished exporting local file")
+		lg.Trace("finished exporting local file")
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -367,7 +368,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		if rerr != nil {
 			lg = lg.WithError(rerr)
 		}
-		lg.Debug("finished exporting bytes")
+		lg.Trace("finished exporting bytes")
 	}()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)

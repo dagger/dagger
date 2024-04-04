@@ -5,9 +5,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/dagger/dagger/internal/mage/util"
-
 	"github.com/magefile/mage/mg"
+
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 type Python mg.Namespace

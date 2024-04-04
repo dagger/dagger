@@ -4,8 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 func TestModuleIfaceBasic(t *testing.T) {

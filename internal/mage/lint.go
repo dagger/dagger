@@ -3,8 +3,9 @@ package mage
 import (
 	"context"
 
-	"github.com/dagger/dagger/internal/mage/util"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 // Lint runs all linters

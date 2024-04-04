@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
+
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {

@@ -12,11 +12,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -30,6 +25,12 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
+
+	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 var (
@@ -171,6 +172,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 
 func parseGlobalFlags() {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
+	flags.Usage = func() {}
 	flags.ParseErrorsWhitelist.UnknownFlags = true
 	installGlobalFlags(flags)
 	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {

@@ -3,9 +3,9 @@ package mage
 import (
 	"context"
 
-	"github.com/dagger/dagger/internal/mage/util"
-
 	"github.com/magefile/mage/mg"
+
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 type Docs mg.Namespace

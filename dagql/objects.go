@@ -3,15 +3,16 @@ package dagql
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // Class is a class of Object types.

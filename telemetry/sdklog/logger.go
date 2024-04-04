@@ -24,10 +24,11 @@ func (l logger) Emit(ctx context.Context, r log.Record) {
 	span := otrace.SpanFromContext(ctx)
 
 	log := &LogData{
-		Record:   r,
-		TraceID:  span.SpanContext().TraceID(),
-		SpanID:   span.SpanContext().SpanID(),
-		Resource: l.resource,
+		Record:               r,
+		TraceID:              span.SpanContext().TraceID(),
+		SpanID:               span.SpanContext().SpanID(),
+		Resource:             l.resource,
+		InstrumentationScope: l.instrumentationScope,
 	}
 
 	for _, proc := range l.provider.getLogProcessors() {

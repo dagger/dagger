@@ -3,12 +3,13 @@ package core
 import (
 	"context"
 
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/gitdns"
 )
 
 type GitRepository struct {

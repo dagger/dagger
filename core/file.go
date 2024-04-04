@@ -3,9 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
-	"io/fs"
-
 	"io"
+	"io/fs"
 	"path"
 	"time"
 
