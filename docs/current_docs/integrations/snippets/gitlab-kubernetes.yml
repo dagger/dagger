@@ -1,0 +1,17 @@
+.dagger:
+  image: alpine:latest
+  variables:
+    _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/dagger/buildkitd.sock"
+    DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
+  before_script:
+    - apk add curl
+    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+build:
+  extends: [.dagger]
+  script:
+    # assumes a Go project
+    # modify to use different function(s) as needed
+    - dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
+    # for ephemeral runners only: override the default docker stop timeout and
+    # give the Dagger Engine more time to push cache data to Dagger Cloud
+    - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
