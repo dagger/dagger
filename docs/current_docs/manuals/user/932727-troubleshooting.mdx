@@ -69,7 +69,7 @@ The Dagger Engine requires the `iptable_nat` Linux kernel module in order to fun
 
 You can load this module by running `sudo modprobe iptable_nat`.
 
-If you'd like to have this module loaded by default when your machine starts, then you can add it to the `/etc/modules-load.d/modules` file with the following command:
+To have this module loaded automatically on startup, add it to the `/etc/modules-load.d/modules` file with the following command:
 
 ```
 echo iptable_nat | sudo tee -a /etc/modules-load.d/modules
