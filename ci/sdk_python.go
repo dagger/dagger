@@ -77,19 +77,17 @@ func (t PythonSDK) Test(ctx context.Context) error {
 
 		// Test build
 		dist := t.pythonBase(version, false).
-			Pipeline("build").
 			WithMountedDirectory(
 				"/dist",
-				base.Pipeline("build").
+				base.
 					WithExec([]string{"hatch", "build", "--clean"}).
 					Directory("dist"),
 			)
 
-		for name, ext := range map[string]string{"sdist": "tar.gz", "bdist": "whl"} {
-			name := name
+		for _, ext := range map[string]string{"sdist": "tar.gz", "bdist": "whl"} {
 			ext := ext
 			eg.Go(func() error {
-				_, err := dist.Pipeline(name).
+				_, err := dist.
 					WithExec([]string{"sh", "-c", "pip install /dist/*" + ext}).
 					WithExec([]string{"python", "-c", "import dagger"}).
 					Sync(ctx)

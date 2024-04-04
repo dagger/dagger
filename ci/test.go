@@ -11,6 +11,14 @@ import (
 
 type Test struct {
 	Dagger *Dagger // +private
+
+	CacheConfig string // +private
+}
+
+func (t *Test) WithCache(config string) *Test {
+	clone := *t
+	clone.CacheConfig = config
+	return &clone
 }
 
 // Run all engine tests
@@ -147,31 +155,32 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithServiceBinding("dagger-engine", devEngineSvc).
 		WithServiceBinding("registry", registrySvc)
 
-	// TODO use Container.With() to set this. It'll be much nicer.
-	// cacheEnv, set := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")
-	// if set {
-	// 	tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv)
-	// }
+	if t.CacheConfig != "" {
+		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
+	}
 
 	return tests.
 			WithMountedFile(cliBinPath, devBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint),
-		// XXX: ...why is this necessary?
+		// TODO: re-enable this, to avoid rate-limiting
+		// introduced in https://github.com/dagger/dagger/commit/20241ba7a8d39da8f6ff185d512953b6b0ec1a55
 		// WithMountedDirectory("/root/.docker", util.HostDockerDir(dag)),
 		nil
 }
 
-func registry(c *Client) *Service {
-	return c.Pipeline("registry").Container().From("registry:2").
+func registry() *Service {
+	return dag.Container().
+		From("registry:2").
 		WithExposedPort(5000, ContainerWithExposedPortOpts{Protocol: Tcp}).
 		WithExec(nil).
 		AsService()
 }
 
-func privateRegistry(c *Client) *Service {
+func privateRegistry() *Service {
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
-	return c.Pipeline("private registry").Container().From("registry:2").
+	return dag.Container().
+		From("registry:2").
 		WithNewFile("/auth/htpasswd", ContainerWithNewFileOpts{Contents: htpasswd}).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").

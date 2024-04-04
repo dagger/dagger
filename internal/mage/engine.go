@@ -91,18 +91,27 @@ func (t Engine) TestPublish(ctx context.Context) error {
 
 // Test runs Engine tests
 func (t Engine) Test(ctx context.Context) error {
-	return util.DaggerCall(ctx, "test", "all")
+	return t.test(ctx, "all")
 }
 
 // TestRace runs Engine tests with go race detector enabled
 func (t Engine) TestRace(ctx context.Context) error {
-	return util.DaggerCall(ctx, "test", "all", "--race=true")
+	return t.test(ctx, "all", "--race=true")
 }
 
 // TestImportant runs Engine Container+Module tests, which give good basic coverage
 // of functionality w/out having to run everything
 func (t Engine) TestImportant(ctx context.Context) error {
-	return util.DaggerCall(ctx, "test", "important", "--race=true")
+	return t.test(ctx, "important", "--race=true")
+}
+
+func (t Engine) test(ctx context.Context, additional ...string) error {
+	args := []string{"test"}
+	if cfg, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG"); ok {
+		args = append(args, "with-cache", "--config="+cfg)
+	}
+	args = append(args, additional...)
+	return util.DaggerCall(ctx, args...)
 }
 
 // Dev builds and starts an Engine & CLI from local source code
