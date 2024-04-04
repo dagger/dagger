@@ -33,7 +33,7 @@ Here's a quick summary of what you'll see for each trace.
 
 |Field | Description |
 |---|---|
-|Status icon | Indication of run success or failure |
+|Status icon | Indication of the runs status: in progress, succeeded, or failed |
 |Command | The exact command used to invoke your pipeline |
 |Start | Run start time |
 |Duration | Run duration |
@@ -45,7 +45,7 @@ The **Traces** view does not yet include metadata for the user, branch, remote, 
 ### Trace Details page
 You can drill down into the details of a specific Trace by clicking it. This directs you to a run-specific **Trace Details** page.
 
-The **Trace Details** page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. 
+The **Trace Details** page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, the UI shows the errors at the top. Clicking any of the errors takes you directly to the step that failed, making it easy to debug your pipelines and collaborate with your teammates.  
 
 ![View Trace details](/img/current_docs/manuals/user/cloud/user-interface/trace-detail-error-list.png)
 
