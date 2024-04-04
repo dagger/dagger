@@ -157,11 +157,16 @@ jobs:
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: 1.0.x
-      - name: "Test TypeScript SDK"
+      - name: "Test TypeScript SDK (Node)"
         run: |
           cd sdk/typescript
           yarn install
-          yarn test -g 'Automatic Provisioned CLI Binary'
+          yarn test:node -g 'Automatic Provisioned CLI Binary'
+      - name: "Test TypeScript SDK (Bun)"
+        run: |
+          cd sdk/typescript
+          yarn install
+          yarn test:bun -g 'Automatic Provisioned CLI Binary'
 
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
@@ -298,11 +303,16 @@ jobs:
       - uses: oven-sh/setup-bun@v1
         with:
           bun-version: 1.0.x
-      - name: "Test TypeScript SDK"
+      - name: "Test TypeScript SDK (Node)"
         run: |
           cd sdk/typescript
           yarn install
-          yarn test -g 'Automatic Provisioned CLI Binary'
+          yarn test:node -g 'Automatic Provisioned CLI Binary'
+      - name: "Test TypeScript SDK (Bun)"
+        run: |
+          cd sdk/typescript
+          yarn install
+          yarn test:bun -g 'Automatic Provisioned CLI Binary'
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
