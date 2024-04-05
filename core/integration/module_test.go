@@ -540,11 +540,13 @@ func TestModuleGit(t *testing.T) {
 				"/dagger.gen.go",
 				"/internal/dagger/**",
 				"/internal/querybuilder/**",
+				"/internal/telemetry/**",
 			},
 			gitIgnoredFiles: []string{
 				"/dagger.gen.go",
 				"/internal/dagger",
 				"/internal/querybuilder",
+				"/internal/telemetry",
 			},
 		},
 		{
