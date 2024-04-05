@@ -320,6 +320,8 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	return nil
 }
 
+var errSessionTerminated = errors.New("session terminated")
+
 func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
 	defer telemetry.End(sessionSpan, func() error { return rerr })
@@ -375,9 +377,10 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
+	ctx, cancel := context.WithCancelCause(ctx)
 	c.eg.Go(func() error {
-		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
+		err := bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+			c, err := grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:            true,
 				ClientID:                  c.ID,
 				ServerID:                  c.ServerID,
@@ -389,7 +392,10 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 				CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 				DoNotTrack:                analytics.DoNotTrack(),
 			}.AppendToMD(meta))
+			return c, err
 		})
+		cancel(errSessionTerminated)
+		return err
 	})
 
 	// Try connecting to the session server to make sure it's running
@@ -424,18 +430,30 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 func retry(ctx context.Context, initialInterval time.Duration, fn func(time.Duration, context.Context) error) error {
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = initialInterval
+
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
+
 	start := time.Now()
-	return backoff.Retry(func() error {
-		if ctx.Err() != nil {
-			return backoff.Permanent(ctx.Err())
+
+	var lastErr error
+	err := backoff.Retry(func() error {
+		if err := ctx.Err(); err != nil {
+			return backoff.Permanent(err)
 		}
+
 		nextBackoff := bo.NextBackOff()
 		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
 		defer cancel()
-		return fn(time.Since(start), ctx)
+
+		lastErr = fn(time.Since(start), ctx)
+		return lastErr
 	}, backoff.WithContext(bo, connectRetryCtx))
+
+	if errors.Is(context.Cause(ctx), errSessionTerminated) {
+		return lastErr
+	}
+	return err
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
