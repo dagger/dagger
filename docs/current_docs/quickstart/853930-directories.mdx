@@ -47,7 +47,7 @@ Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all
 
 When a function returns a core type - for example, a directory - the caller typically continues the chain by calling a function from that directory - for example, export it to the local filesystem, modify it, mount it into a container, etc.
 
-### Export the returned directory
+### Export the built binary
 
 Using this knowledge of function chaining, call the builder function again and continue the chain by interacting with the resulting directory.
 
@@ -103,7 +103,7 @@ zenith
 
 This does look like the contents of the Dagger repository after build. Great!
 
-Next, export the compiled binary to the local filesystem. You can do this by chaining a call to the `File()` function, which returns a specific file (the compiled binary) from the directory, and then using the global `--output` flag to export that file to the host:
+Next, export the compiled binary to the local filesystem. You can do this by chaining a call to the `File()` function, which returns a specific file (the compiled Go binary) from the directory, and then using the global `--output` flag to export that file to the host:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger --os=$(uname -s | awk '{print tolower($0)}') file --path=dagger --output=./my-dagger-cli
