@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"dagger/util"
 	"path/filepath"
 
-	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
+
+	"github.com/dagger/dagger/ci/util"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 type Test struct {

@@ -2,10 +2,11 @@ package build
 
 import (
 	"context"
-	"dagger/consts"
-	"dagger/internal/dagger"
 	"fmt"
 	"strings"
+
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 type VersionInfo struct {

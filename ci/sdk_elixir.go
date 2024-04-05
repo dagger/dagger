@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"dagger/internal/dagger"
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/dagger/dagger/ci/internal/dagger"
 
 	"golang.org/x/sync/errgroup"
 )

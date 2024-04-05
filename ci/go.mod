@@ -1,17 +1,15 @@
-module dagger
+module github.com/dagger/dagger/ci
 
 go 1.21.7
 
 replace (
 	dagger.io/dagger => ../sdk/go
 	github.com/dagger/dagger => ../
-	github.com/dagger/dagger/ci => ./
 )
 
 require (
 	dagger.io/dagger v0.10.3
 	github.com/dagger/dagger v0.10.3
-	github.com/dagger/dagger/ci v0.0.0-00010101000000-000000000000
 )
 
 require (

@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"dagger/internal/dagger"
-	"dagger/util"
+
+	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/ci/util"
 )
 
 type Dagger struct {

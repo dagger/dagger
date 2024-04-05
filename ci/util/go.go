@@ -1,9 +1,10 @@
 package util
 
 import (
-	"dagger/consts"
-	"dagger/internal/dagger"
 	"fmt"
+
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 var dag = dagger.Connect()

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"dagger/build"
-	"dagger/internal/dagger"
-
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/ci/build"
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 type CLI struct {

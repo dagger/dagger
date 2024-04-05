@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"dagger/internal/dagger"
-	"dagger/util"
 	"fmt"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/ci/util"
 )
 
 // TODO: use dev module (this is just the mage port)

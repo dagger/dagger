@@ -5,8 +5,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"dagger/internal/dagger"
-	"dagger/util"
+	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/ci/util"
 )
 
 type Docs struct {

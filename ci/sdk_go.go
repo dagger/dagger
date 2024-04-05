@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
-	"dagger/consts"
-	"dagger/util"
 	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/util"
 )
 
 type GoSDK struct {

@@ -12,9 +12,9 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"dagger/consts"
-	"dagger/internal/dagger"
-	"dagger/util"
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/ci/util"
 )
 
 var dag = dagger.Connect()

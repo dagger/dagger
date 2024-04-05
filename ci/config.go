@@ -9,8 +9,8 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"dagger/consts"
-	"dagger/internal/dagger"
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 const (

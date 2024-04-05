@@ -8,8 +8,8 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"dagger/consts"
-	"dagger/internal/dagger"
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 func (build *Builder) pythonSDKContent(ctx context.Context) dagger.WithContainerFunc {

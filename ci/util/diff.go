@@ -2,8 +2,9 @@ package util
 
 import (
 	"context"
-	"dagger/internal/dagger"
 	"path/filepath"
+
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 func DiffDirectory(ctx context.Context, path string, original *dagger.Directory, modified *dagger.Directory) error {

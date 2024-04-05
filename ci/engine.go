@@ -11,10 +11,10 @@ import (
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
-	"dagger/build"
-	"dagger/consts"
-	"dagger/internal/dagger"
-	"dagger/util"
+	"github.com/dagger/dagger/ci/build"
+	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/ci/util"
 )
 
 type Engine struct {

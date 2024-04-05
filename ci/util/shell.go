@@ -1,8 +1,9 @@
 package util
 
 import (
-	"dagger/internal/dagger"
 	"strings"
+
+	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
 func ShellCmd(cmd string) dagger.WithContainerFunc {

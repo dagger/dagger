@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"dagger/internal/dagger"
-	"dagger/util"
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/ci/util"
 )
 
 const (
