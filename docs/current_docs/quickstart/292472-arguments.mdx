@@ -24,7 +24,7 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --help
 
 You should see output that looks like this:
 
-```shell
+```
 Say hello to the world!
 
 Usage:
@@ -51,7 +51,7 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjo
 
 You should see the following output:
 
-```shell
+```
 bonjour, daggernaut!
 ```
 
@@ -70,7 +70,7 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjo
 
 You should see the same output as before, but in giant letters!
 
-```shell
+```
  _                  _
 | |__   ___  _ __  (_) ___  _   _ _ __
 | '_ \ / _ \| '_ \ | |/ _ \| | | | '__|
@@ -105,7 +105,7 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjo
 
 You should see the image being pulled, then the following output:
 
-```shell
+```
  _                  _
 | |__   ___  _ __  (_) ___  _   _ _ __
 | '_ \ / _ \| '_ \ | |/ _ \| | | | '__|
@@ -128,7 +128,7 @@ dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --giant --greeti
 
 You should see an error telling you that `figlet` could not be found:
 
-```shell
+```
 ...
   ✘ Container.stdout: String! 0.7s
     ✘ exec figlet bonjour, daggernaut! 0.3s
@@ -145,7 +145,7 @@ dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir=.
 
 This example uses a file utility module and calls its `Tree()` function. The `Tree()` function accepts a directory (here, the current working directory) as argument and returns a tree representation of that directory. An abbreviated example of the output is shown below:
 
-```shell
+```
 .
 ├── README.md
 ├── cli
@@ -168,7 +168,7 @@ dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir='https:
 
 You should see the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
 
-```shell
+```
 .
 ├── call.go
 ├── cloud.go

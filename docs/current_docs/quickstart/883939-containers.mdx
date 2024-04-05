@@ -22,7 +22,7 @@ This Wolfi container builder module exposes a `Container()` function that return
 
 You can use this function to build and return a Wolfi container image containing specific packages - in this example, the `cowsay` package. You should see the container being built and the packages being added, as shown below:
 
-```shell
+```
 Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
 ```
 
@@ -48,7 +48,7 @@ cowsay "dagger"
 
 You should see output similar to the following:
 
-```shell
+```
  ________
 < dagger >
  --------
@@ -83,7 +83,7 @@ dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 \
 
 The output will be a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
-```shell
+```
 ttl.sh/dagger-cowsay-10939@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
 ```
 
@@ -95,7 +95,7 @@ docker run --rm -it ttl.sh/dagger-cowsay-10939 cowsay "dagger"
 
 You should see the output below:
 
-```shell
+```
  ________
 < dagger >
  --------

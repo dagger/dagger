@@ -29,7 +29,7 @@ By default, the Go builder Dagger Function builds a binary based on information 
 
 Once the command completes, you should see this output:
 
-```shell
+```
 Directory evaluated. Use "dagger call build --help" to see available sub-commands.
 ```
 
@@ -59,7 +59,7 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project
 
 The result should look like this:
 
-```shell
+```
 .changes
 .changie.yaml
 .dockerignore
@@ -101,40 +101,25 @@ tracing
 zenith
 ```
 
-This does look like the contents of the Dagger repository after build. Great! Next, export the directory to the local filesystem by chaining a call to the `Export()` function:
+This does look like the contents of the Dagger repository after build. Great!
+
+Next, export the compiled binary to the local filesystem. You can do this by chaining a call to the `File()` function, which returns a specific file (the compiled binary) from the directory, and then using the global `--output` flag to export that file to the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-dagger-build
-```
-
-This revised command builds the Go binary and exports the returned directory to the Dagger host. A new `my-dagger-build` directory is created in the current working directory on the Dagger host. This directory contains the contents of the Dagger repository, plus the compiled Go binary.
-
-Validate the compiled binary by executing the following commands on the Dagger host:
-
-```shell
-cd my-dagger-build
-./dagger version
-```
-
-You should see output similar to the following, which confirms that you've just remotely built a development version of the Dagger CLI:
-
-```shell
-dagger (registry.dagger.io/engine) linux/amd64
-```
-
-Instead of exporting the entire directory to the Dagger host, you can export just the compiled binary. This involves chaining calls to two functions: first, call the `File()` function to return a specific file from the directory and then, call the `Export()` function to export that file to the host:
-
-```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger file --path=dagger export --path=./my-dagger-cli
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger --os=$(uname -s | awk '{print tolower($0)}') file --path=dagger --output=./my-dagger-cli
 ```
 
 Validate the exported binary by calling it:
 
-```shell
+```
 ./my-dagger-cli version
 ```
 
-You should see the same output as before.
+You should see output similar to the following, which confirms that you've just remotely built a development version of the Dagger CLI:
+
+```
+dagger (registry.dagger.io/engine) linux/amd64
+```
 
 :::tip
 As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
