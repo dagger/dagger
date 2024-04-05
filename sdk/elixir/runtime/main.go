@@ -129,16 +129,12 @@ func (m *ElixirSdk) CodegenBase(
 		}).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath))
 
-	// Project not exists.
+	// Generate scaffolding code when no project exists.
 	if _, err = ctr.Directory(mod).File("mix.exs").Sync(ctx); err != nil {
 		ctr := ctr.
 			WithExec([]string{"mix", "new", "--sup", mod}).
 			WithExec([]string{"mkdir", "-p", mod + "/lib/mix/tasks"}).
-			// TODO: move to codegen.
-			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_mix_exs " + mod + " > " + mod + "/mix.exs"}).
-			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_module " + mod + " > " + mod + "/lib/" + mod + ".ex"}).
-			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_application " + mod + " > " + mod + "/lib/" + mod + "/application.ex"}).
-			WithExec([]string{"sh", "-c", "elixir /sdk/runtime/template.exs gen_mix_task " + mod + " > " + mod + "/lib/mix/tasks/dagger.invoke.ex"})
+			WithExec([]string{"elixir", "/sdk/runtime/template.exs", "generate", mod})
 
 		return ctr, nil
 	}
@@ -152,7 +148,6 @@ func (m *ElixirSdk) Base(version string) *Container {
 
 	mixCache := dag.CacheVolume(".mix-" + version)
 
-	// TODO: Mount cache.
 	return dag.Container().
 		From("hexpm/elixir:"+version).
 		WithMountedCache("/root/.mix", mixCache).

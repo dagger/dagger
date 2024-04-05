@@ -1,40 +1,26 @@
 defmodule Main do
   require EEx
 
-  # TODO: group all `run` functions to only one clause for performance.
+  def run(["generate", mod]) do
+    File.mkdir_p!(Path.join([mod, "lib", "mix", "tasks"]))
 
-  def run(["gen_mix_exs", module]) do
-    module = normalize_name(module)
+    mix_exs =
+      render_mix_exs(
+        module: Macro.camelize(mod),
+        application: atom(Macro.underscore(mod))
+      )
 
-    render_mix_exs(
-      module: Macro.camelize(module),
-      application: ":#{Macro.underscore(module)}"
-    )
-    |> IO.puts()
+    module = render_module(module: Macro.camelize(mod))
+    application_module = render_application(module: Macro.camelize(mod))
+    mix_task = render_mix_task(application: atom(Macro.underscore(mod)))
+
+    File.write!(Path.join([mod, "mix.exs"]), mix_exs)
+    File.write!(Path.join([mod, "lib", "#{mod}.ex"]), module)
+    File.write!(Path.join([mod, "lib", mod, "application.ex"]), application_module)
+    File.write!(Path.join([mod, "lib", "mix", "tasks", "dagger.invoke.ex"]), mix_task)
   end
 
-  def run(["gen_module", module]) do
-    module = normalize_name(module)
-
-    render_module(module: Macro.camelize(module))
-    |> IO.puts()
-  end
-
-  def run(["gen_mix_task", module]) do
-    render_mix_task(application: ":#{Macro.underscore(module)}")
-    |> IO.puts()
-  end
-
-  def run(["gen_application", module]) do
-    module = normalize_name(module)
-
-    render_application(module: Macro.camelize(module))
-    |> IO.puts()
-  end
-
-  defp normalize_name(module) do
-    String.replace(module, "-", "_")
-  end
+  defp atom(string), do: ":#{string}"
 
   @mix_exs """
   defmodule <%= @module %>.MixProject do
