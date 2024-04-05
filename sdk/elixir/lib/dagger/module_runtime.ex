@@ -127,7 +127,7 @@ defmodule Dagger.ModuleRuntime do
   end
 
   def invoke(dag, _parent, "", _fn_name, _input_args) do
-    # TODO: find the way on how to register multiple modules.
+    # TODO: Support multiple modules when root module return another module.
     [module] = Dagger.ModuleRuntime.Registry.all()
 
     dag

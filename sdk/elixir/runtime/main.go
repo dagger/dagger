@@ -174,7 +174,6 @@ func codegenPath() string {
 
 func mixProjectCaches(dag *Client, prefix string) (depsCache *CacheVolume, buildCache *CacheVolume) {
 	return dag.CacheVolume(prefix + "-deps"), dag.CacheVolume(prefix + "-build")
-
 }
 
 func normalizeModName(name string) string {
