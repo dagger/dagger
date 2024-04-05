@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/mage/util"
 )
 
 const (

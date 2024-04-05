@@ -3,8 +3,9 @@ package core
 import (
 	"testing"
 
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 func TestDIND(t *testing.T) {

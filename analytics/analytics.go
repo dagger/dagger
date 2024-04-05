@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
-	"github.com/vito/progrock"
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -78,30 +78,20 @@ func DoNotTrack() bool {
 
 type Config struct {
 	DoNotTrack bool
-	Labels     pipeline.Labels
+	Labels     telemetry.Labels
 	CloudToken string
 }
 
-func DefaultConfig() Config {
+func DefaultConfig(labels telemetry.Labels) Config {
 	cfg := Config{
 		DoNotTrack: DoNotTrack(),
 		CloudToken: os.Getenv("DAGGER_CLOUD_TOKEN"),
+		Labels:     labels,
 	}
 	// Backward compatibility with the old environment variable.
 	if cfg.CloudToken == "" {
 		cfg.CloudToken = os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN")
 	}
-
-	workdir, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to get cwd: %v\n", err)
-		return cfg
-	}
-
-	cfg.Labels.AppendCILabel()
-	cfg.Labels = append(cfg.Labels, pipeline.LoadVCSLabels(workdir)...)
-	cfg.Labels = append(cfg.Labels, pipeline.LoadClientLabels(engine.Version)...)
-
 	return cfg
 }
 
@@ -111,8 +101,7 @@ type queuedEvent struct {
 }
 
 type CloudTracker struct {
-	cfg    Config
-	labels map[string]string
+	cfg Config
 
 	closed bool
 	mu     sync.Mutex
@@ -128,13 +117,8 @@ func New(cfg Config) Tracker {
 
 	t := &CloudTracker{
 		cfg:    cfg,
-		labels: make(map[string]string),
 		stopCh: make(chan struct{}),
 		doneCh: make(chan struct{}),
-	}
-
-	for _, l := range cfg.Labels {
-		t.labels[l.Name] = l.Value
 	}
 
 	go t.start()
@@ -155,19 +139,19 @@ func (t *CloudTracker) Capture(ctx context.Context, event string, properties map
 		Type:       event,
 		Properties: properties,
 
-		DeviceID: t.labels["dagger.io/client.machine_id"],
+		DeviceID: t.cfg.Labels["dagger.io/client.machine_id"],
 
-		ClientVersion: t.labels["dagger.io/client.version"],
-		ClientOS:      t.labels["dagger.io/client.os"],
-		ClientArch:    t.labels["dagger.io/client.arch"],
+		ClientVersion: t.cfg.Labels["dagger.io/client.version"],
+		ClientOS:      t.cfg.Labels["dagger.io/client.os"],
+		ClientArch:    t.cfg.Labels["dagger.io/client.arch"],
 
-		CI:       t.labels["dagger.io/ci"] == "true",
-		CIVendor: t.labels["dagger.io/ci.vendor"],
+		CI:       t.cfg.Labels["dagger.io/ci"] == "true",
+		CIVendor: t.cfg.Labels["dagger.io/ci.vendor"],
 	}
-	if remote := t.labels["dagger.io/git.remote"]; remote != "" {
+	if remote := t.cfg.Labels["dagger.io/git.remote"]; remote != "" {
 		ev.GitRemoteEncoded = fmt.Sprintf("%x", base64.StdEncoding.EncodeToString([]byte(remote)))
 	}
-	if author := t.labels["dagger.io/git.author.email"]; author != "" {
+	if author := t.cfg.Labels["dagger.io/git.author.email"]; author != "" {
 		ev.GitAuthorHashed = fmt.Sprintf("%x", sha256.Sum256([]byte(author)))
 	}
 	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
@@ -203,21 +187,19 @@ func (t *CloudTracker) send() {
 	}
 
 	// grab the progrock recorder from the last event in the queue
-	rec := progrock.FromContext(queue[len(queue)-1].ctx)
-
 	payload := bytes.NewBuffer([]byte{})
 	enc := json.NewEncoder(payload)
 	for _, q := range queue {
 		err := enc.Encode(q.event)
 		if err != nil {
-			rec.Debug("analytics: encode failed", progrock.ErrorLabel(err))
+			slog.Debug("analytics: encode failed", "error", err)
 			continue
 		}
 	}
 
 	req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(payload.Bytes()))
 	if err != nil {
-		rec.Debug("analytics: new request failed", progrock.ErrorLabel(err))
+		slog.Debug("analytics: new request failed", "error", err)
 		return
 	}
 	if t.cfg.CloudToken != "" {
@@ -225,12 +207,12 @@ func (t *CloudTracker) send() {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		rec.Debug("analytics: do request failed", progrock.ErrorLabel(err))
+		slog.Debug("analytics: do request failed", "error", err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		rec.Debug("analytics: unexpected response", progrock.Labelf("status", resp.Status))
+		slog.Debug("analytics: unexpected response", "status", resp.Status)
 	}
 }
 

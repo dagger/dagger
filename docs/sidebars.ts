@@ -349,6 +349,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manuals/developer/go/services"
+            },
+            {
+              "type": "doc",
               "id": "manuals/developer/go/dependencies"
             },
             {
@@ -417,6 +421,10 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/services"
             },
             {
               "type": "doc",
@@ -492,6 +500,10 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/services"
             },
             {
               "type": "doc",

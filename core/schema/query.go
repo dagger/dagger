@@ -6,13 +6,12 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type querySchema struct {
@@ -34,7 +33,7 @@ func (s *querySchema) Install() {
 	core.TypeDefKinds.Install(s.srv)
 	core.ModuleSourceKindEnum.Install(s.srv)
 
-	dagql.MustInputSpec(pipeline.Label{}).Install(s.srv)
+	dagql.MustInputSpec(PipelineLabel{}).Install(s.srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(s.srv)
 	dagql.MustInputSpec(core.BuildArg{}).Install(s.srv)
 
@@ -60,15 +59,11 @@ func (s *querySchema) Install() {
 type pipelineArgs struct {
 	Name        string
 	Description string `default:""`
-	Labels      dagql.Optional[dagql.ArrayInput[dagql.InputObject[pipeline.Label]]]
+	Labels      dagql.Optional[dagql.ArrayInput[dagql.InputObject[PipelineLabel]]]
 }
 
 func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
-	return parent.WithPipeline(
-		args.Name,
-		args.Description,
-		collectInputs(args.Labels),
-	), nil
+	return parent.WithPipeline(args.Name, args.Description), nil
 }
 
 type checkVersionCompatibilityArgs struct {
@@ -76,11 +71,11 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (dagql.Boolean, error) {
-	recorder := progrock.FromContext(ctx)
+	logger := telemetry.GlobalLogger(ctx)
 
 	// Skip development version
 	if _, err := semver.Parse(engine.Version); err != nil {
-		recorder.Debug("Using development engine; skipping version compatibility check.")
+		logger.Debug("Using development engine; skipping version compatibility check.")
 		return true, nil
 	}
 
@@ -99,7 +94,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	// If the Engine is a major version above the SDK version, fails
 	// TODO: throw an error and abort the session
 	if engineVersion.Major > sdkVersion.Major {
-		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is significantly newer than the SDK's required version (%s). Please update your SDK.", engineVersion, sdkVersion))
+		logger.Warn(fmt.Sprintf("Dagger engine version (%s) is significantly newer than the SDK's required version (%s). Please update your SDK.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("Dagger engine version (%s) is not compatible with the SDK (%s)", engineVersion, sdkVersion)
 		return false, nil
@@ -108,7 +103,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	// If the Engine is older than the SDK, fails
 	// TODO: throw an error and abort the session
 	if engineVersion.LT(sdkVersion) {
-		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK's required version (%s). Please update your Dagger CLI.", engineVersion, sdkVersion))
+		logger.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK's required version (%s). Please update your Dagger CLI.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("API version is older than the SDK, please update your Dagger CLI")
 		return false, nil
@@ -116,7 +111,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 
 	// If the Engine is a minor version newer, warn
 	if engineVersion.Minor > sdkVersion.Minor {
-		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is newer than the SDK's required version (%s). Consider updating your SDK.", engineVersion, sdkVersion))
+		logger.Warn(fmt.Sprintf("Dagger engine version (%s) is newer than the SDK's required version (%s). Consider updating your SDK.", engineVersion, sdkVersion))
 	}
 
 	return true, nil

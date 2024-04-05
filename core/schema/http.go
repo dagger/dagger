@@ -3,12 +3,13 @@ package schema
 import (
 	"context"
 
+	"github.com/moby/buildkit/client/llb"
+	"github.com/opencontainers/go-digest"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/httpdns"
-	"github.com/moby/buildkit/client/llb"
-	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &httpSchema{}

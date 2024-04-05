@@ -34,6 +34,8 @@ func (s *gitSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRepository]{
+		dagql.Func("head", s.head).
+			Doc(`Returns details for HEAD.`),
 		dagql.Func("ref", s.ref).
 			Doc(`Returns details of a ref.`).
 			ArgDoc("name", `Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).`),
@@ -101,6 +103,13 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		SSHAuthSocket: authSock,
 		Services:      svcs,
 		Platform:      parent.Platform,
+	}, nil
+}
+
+func (s *gitSchema) head(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.GitRef, error) {
+	return &core.GitRef{
+		Query: parent.Query,
+		Repo:  parent,
 	}, nil
 }
 

@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+
+	"dagger.io/dagger"
 )
 
 var platformToUname = map[dagger.Platform]string{

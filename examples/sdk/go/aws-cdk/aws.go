@@ -8,12 +8,13 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/jsii-runtime-go"
+
+	"dagger.io/dagger"
 )
 
 type AWSClient struct {

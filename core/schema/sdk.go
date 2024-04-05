@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/distconsts"
 )
 
@@ -512,7 +512,6 @@ func (sdk *goSDK) baseWithCodegen(
 				Value: dagql.ArrayInput[dagql.String]{
 					"--module-context", goSDKUserModContextDirPath,
 					"--module-name", dagql.String(modName),
-					"--propagate-logs=true",
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},
 			},

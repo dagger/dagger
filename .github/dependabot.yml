@@ -13,6 +13,9 @@ updates:
       - "area/cli"
     groups:
       engine:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "gomod"
     directory: "/internal/mage"
@@ -22,6 +25,9 @@ updates:
       - "area/ci"
     groups:
       engine-tools:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
@@ -34,6 +40,9 @@ updates:
         update-types: ["version-update:semver-patch"]
     groups:
       sdk-typescript:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/website"
@@ -46,6 +55,9 @@ updates:
         update-types: ["version-update:semver-patch"]
     groups:
       website:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "gomod"
     directory: "/sdk/go"
@@ -58,6 +70,9 @@ updates:
         update-types: ["version-update:semver-patch"]
     groups:
       sdk-go:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
@@ -70,6 +85,9 @@ updates:
         update-types: ["version-update:semver-patch"]
     groups:
       sdk-python:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "maven"
     directory: "/sdk/java"
@@ -84,6 +102,9 @@ updates:
       - dependency-name: "org.apache.maven*"
     groups:
       sdk-java:
+        applies-to: version-updates
+        patterns:
+          - "*"
 
   # ignore all npm dependencies in sdk/rust
   - package-ecosystem: "npm"

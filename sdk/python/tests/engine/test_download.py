@@ -21,7 +21,6 @@ from dagger._engine import download
 from dagger._managers import asyncify
 
 
-@pytest.mark.anyio()
 @pytest.fixture(autouse=True)
 async def _setup(
     monkeypatch: pytest.MonkeyPatch,
@@ -56,7 +55,6 @@ async def _setup(
         monkeypatch.setattr(download.Downloader, "CLI_BASE_URL", base_url)
 
 
-@pytest.mark.anyio()
 @pytest.fixture()
 async def mock_cli_server(tmp_path_factory: pytest.TempPathFactory):
     async with AsyncExitStack() as stack:
@@ -107,7 +105,6 @@ def create_archive(cli_path: pathlib.Path, archive_path: pathlib.Path):
                 tar.addfile(tarinfo, f)
 
 
-@pytest.mark.anyio()
 @pytest.fixture()
 async def cache_dir(
     tmp_path_factory: pytest.TempPathFactory,

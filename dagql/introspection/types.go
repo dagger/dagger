@@ -6,9 +6,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func Install[T dagql.Typed](srv *dagql.Server) {

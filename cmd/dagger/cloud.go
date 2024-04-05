@@ -4,9 +4,10 @@ import (
 	"context"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
-	"github.com/spf13/cobra"
 )
 
 func init() {

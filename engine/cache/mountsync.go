@@ -16,7 +16,6 @@ import (
 	"github.com/containerd/containerd/diff/apply"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/mount"
-	"github.com/dagger/dagger/core"
 	"github.com/klauspost/compress/zstd"
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	solverpb "github.com/moby/buildkit/solver/pb"
@@ -24,6 +23,8 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/core"
 )
 
 func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {

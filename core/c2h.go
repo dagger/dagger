@@ -7,12 +7,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type c2hTunnel struct {
@@ -22,7 +22,7 @@ type c2hTunnel struct {
 	tunnelServicePorts []PortForward
 }
 
-func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
+func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	scratchDef, err := llb.Scratch().Marshal(ctx)
 	if err != nil {
 		return err
@@ -76,8 +76,9 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 		))
 	}
 
-	ctx, vtx := progrock.Span(ctx, identity.NewID(), strings.Join(args, " "))
-	defer func() { vtx.Done(err) }()
+	ctx, span := Tracer().Start(ctx, strings.Join(args, " "))
+	defer telemetry.End(span, func() error { return rerr })
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
 	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
 		Hostname: d.tunnelServiceHost,
@@ -92,16 +93,16 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 	//
 	// set a reasonable timeout on this since there have been funky hangs in the
 	// past
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cleanupCancel()
 
 	defer container.Release(cleanupCtx)
 
 	proc, err := container.Start(ctx, bkgw.StartRequest{
 		Args:   args,
-		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
-		Stdout: nopCloser{vtx.Stdout()},
-		Stderr: nopCloser{vtx.Stderr()},
+		Env:    append(telemetry.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
+		Stdout: nopCloser{stdout},
+		Stderr: nopCloser{stderr},
 	})
 	if err != nil {
 		return err

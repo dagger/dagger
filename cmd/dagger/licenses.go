@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 
 	"github.com/mitchellh/go-spdx"
-	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -60,20 +62,20 @@ var licenseFiles = []string{
 }
 
 func findOrCreateLicense(ctx context.Context, dir string) error {
-	rec := progrock.FromContext(ctx)
+	log := telemetry.ContextLogger(ctx, slog.LevelWarn)
 
 	id := licenseID
 	if id == "" {
 		if foundLicense, err := searchForLicense(dir); err == nil {
-			rec.Debug("found existing LICENSE file", progrock.Labelf("path", foundLicense))
+			log.Debug("found existing LICENSE file", "path", foundLicense)
 			return nil
 		}
 
 		id = defaultLicense
 	}
 
-	rec.Warn("no LICENSE file found; generating one for you, feel free to change or remove",
-		progrock.Labelf("license", id))
+	log.Warn("no LICENSE file found; generating one for you, feel free to change or remove",
+		"license", id)
 
 	license, err := spdx.License(id)
 	if err != nil {

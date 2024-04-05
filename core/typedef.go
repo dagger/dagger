@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 )
 
 type Function struct {
@@ -67,10 +68,16 @@ func (fn Function) Clone() *Function {
 
 func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 	spec := dagql.FieldSpec{
-		Name:           fn.Name,
-		Description:    formatGqlDescription(fn.Description),
-		Type:           fn.ReturnType.ToTyped(),
-		ImpurityReason: "Module functions are currently always impure.", // TODO
+		Name:        fn.Name,
+		Description: formatGqlDescription(fn.Description),
+		Type:        fn.ReturnType.ToTyped(),
+
+		// NB: functions actually _are_ cached per-session, which matches the
+		// lifetime of the server, so we might as well consider them pure. That way
+		// there will be locking around concurrent calls, so the user won't see
+		// multiple in parallel. Reconsider if/when we have a global cache and/or
+		// figure out function caching.
+		ImpurityReason: "",
 	}
 	for _, arg := range fn.Args {
 		input := arg.TypeDef.ToInput()

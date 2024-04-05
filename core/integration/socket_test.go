@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
 )
 
 //go:embed testdata/socket-echo.go

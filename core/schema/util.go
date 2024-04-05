@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/iancoleman/strcase"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/iancoleman/strcase"
 )
 
 type SchemaResolvers interface {
@@ -29,17 +30,6 @@ func Syncer[T Evaluatable]() dagql.Field[T] {
 		}
 		return dagql.NewID[T](self.ID()), nil
 	})
-}
-
-func collectInputs[T dagql.Type](inputs dagql.Optional[dagql.ArrayInput[dagql.InputObject[T]]]) []T {
-	if !inputs.Valid {
-		return nil
-	}
-	ts := make([]T, len(inputs.Value))
-	for i, input := range inputs.Value {
-		ts[i] = input.Value
-	}
-	return ts
 }
 
 func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {

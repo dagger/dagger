@@ -5,19 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/koron-go/prefixw"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
@@ -32,11 +32,16 @@ import (
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
+	"github.com/moby/buildkit/util/progress/progressui"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
+
+	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session"
 )
 
 const (
@@ -54,7 +59,6 @@ type Opts struct {
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
-	ProgSockPath          string
 	// MainClientCaller is the caller who initialized the server associated with this
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
@@ -80,11 +84,13 @@ type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remo
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
 	*Opts
-	session     *bksession.Session
-	job         *bksolver.Job
-	llbBridge   bkfrontend.FrontendLLBBridge
-	llbExec     executor.Executor
-	bk2progrock BK2Progrock
+
+	spanCtx trace.SpanContext
+
+	session   *bksession.Session
+	job       *bksolver.Job
+	llbBridge bkfrontend.FrontendLLBBridge
+	llbExec   executor.Executor
 
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
@@ -101,6 +107,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	client := &Client{
 		Opts:       opts,
+		spanCtx:    trace.SpanContextFromContext(ctx),
 		containers: make(map[bkgw.Container]struct{}),
 		closeCtx:   ctx,
 		cancel:     cancel,
@@ -142,10 +149,9 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		bkfrontend.FrontendLLBBridge
 		executor.Executor
 	})
-	gw := &recordingGateway{llbBridge: br}
+	gw := &opTrackingGateway{llbBridge: br}
 	client.llbBridge = gw
 	client.llbExec = br
-	client.bk2progrock = gw
 
 	client.dialer = &net.Dialer{}
 
@@ -173,7 +179,26 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		}
 	}
 
+	// NB(vito): break glass (replace with os.Stderr) to troubleshoot otel
+	// logging issues, since it's otherwise hard to see a command's output
+	go client.WriteStatusesTo(ctx, io.Discard)
+
 	return client, nil
+}
+
+func (c *Client) WriteStatusesTo(ctx context.Context, dest io.Writer) {
+	dest = prefixw.New(dest, fmt.Sprintf("[buildkit] [%s] ", c.ID()))
+	statusCh := make(chan *bkclient.SolveStatus, 8)
+	pw, err := progressui.NewDisplay(dest, progressui.PlainMode)
+	if err != nil {
+		bklog.G(ctx).WithError(err).Error("failed to initialize progress writer")
+		return
+	}
+	go pw.UpdateFrom(ctx, statusCh)
+	err = c.job.Status(ctx, statusCh)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		bklog.G(ctx).WithError(err).Error("failed to write status updates")
+	}
 }
 
 func (c *Client) ID() string {
@@ -291,8 +316,6 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 				execMeta = ContainerExecUncachedMetadata{
 					ParentClientIDs: clientMetadata.ClientIDs(),
 					ServerID:        clientMetadata.ServerID,
-					ProgSockPath:    c.ProgSockPath,
-					ProgParent:      progrock.FromContext(ctx).Parent,
 				}
 				c.execMetadata[*execOp.OpDigest] = execMeta
 			}
@@ -370,14 +393,27 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	return res, nil
 }
 
-func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
+func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt) (string, digest.Digest, []byte, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return "", "", nil, err
 	}
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
-	return c.llbBridge.ResolveImageConfig(ctx, ref, opt)
+
+	imr := sourceresolver.NewImageMetaResolver(c.llbBridge)
+	return imr.ResolveImageConfig(ctx, ref, opt)
+}
+
+func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.SourceOp, opt sourceresolver.Opt) (*sourceresolver.MetaResponse, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	ctx = withOutgoingContext(ctx)
+
+	return c.llbBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
 func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {
@@ -465,34 +501,6 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	}
 	c.containers[ctr] = struct{}{}
 	return ctr, nil
-}
-
-func (c *Client) WriteStatusesTo(ctx context.Context, recorder *progrock.Recorder) {
-	statusCh := make(chan *bkclient.SolveStatus, 8)
-	go func() {
-		err := c.job.Status(ctx, statusCh)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("failed to write status updates")
-		}
-	}()
-	go func() {
-		defer func() {
-			// drain channel on error
-			for range statusCh {
-			}
-		}()
-		for {
-			status, ok := <-statusCh
-			if !ok {
-				return
-			}
-			err := recorder.Record(c.bk2progrock.ConvertStatus(status))
-			if err != nil {
-				bklog.G(ctx).WithError(err).Error("failed to record status update")
-				return
-			}
-		}
-	}()
 }
 
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
@@ -763,9 +771,6 @@ func withOutgoingContext(ctx context.Context) context.Context {
 type ContainerExecUncachedMetadata struct {
 	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
 	ServerID        string   `json:"serverID,omitempty"`
-	// Progrock propagation
-	ProgSockPath string `json:"progSockPath,omitempty"`
-	ProgParent   string `json:"progParent,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {

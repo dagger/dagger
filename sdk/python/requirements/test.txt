@@ -17,7 +17,7 @@ frozenlist==1.4.1
     #   aiosignal
 h11==0.14.0
     # via httpcore
-httpcore==1.0.4
+httpcore==1.0.5
     # via httpx
 httpx==0.27.0
     # via pytest-httpx
@@ -32,19 +32,17 @@ multidict==6.0.5
     # via
     #   aiohttp
     #   yarl
-packaging==23.2
+packaging==24.0
     # via pytest
 pluggy==1.4.0
     # via pytest
 pytest==7.4.4
     # via
     #   pytest-httpx
-    #   pytest-lazy-fixture
     #   pytest-mock
     #   pytest-subprocess
 pytest-httpx==0.30.0
-pytest-lazy-fixture==0.6.3
-pytest-mock==3.12.0
+pytest-mock==3.14.0
 pytest-subprocess==1.5.0
 sniffio==1.3.1
     # via

@@ -11,17 +11,17 @@ import (
 	"strings"
 	"syscall"
 
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/vektah/gqlparser/v2/ast"
+
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/solver/pb"
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vito/progrock"
+	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -206,19 +206,13 @@ func (svc *Service) startContainer(
 	forwardStdin func(io.Writer, bkgw.ContainerProcess),
 	forwardStdout func(io.Reader),
 	forwardStderr func(io.Reader),
-) (running *RunningService, err error) {
+) (running *RunningService, rerr error) {
 	dig := id.Digest()
 
 	host, err := svc.Hostname(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-
-	rec := progrock.FromContext(ctx).WithGroup(
-		fmt.Sprintf("service %s", host),
-		progrock.Weak(),
-	)
-	ctx = progrock.ToContext(ctx, rec)
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
@@ -256,12 +250,13 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	ctx, vtx := progrock.Span(ctx, dig.String()+"."+identity.NewID(), "start "+strings.Join(execOp.Meta.Args, " "))
+	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
+	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 	defer func() {
-		if err != nil {
+		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
-			// an error starting. vtx.Done is called elsewhere.
-			vtx.Error(err)
+			// an error starting. span.End is called when the service exits.
+			telemetry.End(span, func() error { return rerr })
 		}
 	}()
 
@@ -319,7 +314,7 @@ func (svc *Service) startContainer(
 
 	defer func() {
 		if err != nil {
-			gc.Release(context.Background())
+			gc.Release(context.WithoutCancel(ctx))
 		}
 	}()
 
@@ -335,8 +330,6 @@ func (svc *Service) startContainer(
 	execMeta := buildkit.ContainerExecUncachedMetadata{
 		ParentClientIDs: clientMetadata.ClientIDs(),
 		ServerID:        clientMetadata.ServerID,
-		ProgSockPath:    bk.ProgSockPath,
-		ProgParent:      rec.Parent,
 	}
 	execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 	if err != nil {
@@ -345,6 +338,7 @@ func (svc *Service) startContainer(
 
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, proxyEnvList(execOp.Meta.ProxyEnv)...)
+	env = append(env, telemetry.PropagationEnv(ctx)...)
 	if interactive {
 		env = append(env, ShimEnableTTYEnvVar+"=1")
 	}
@@ -359,13 +353,13 @@ func (svc *Service) startContainer(
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
 	} else {
-		stdoutCtr = nopCloser{io.MultiWriter(vtx.Stdout(), outBuf)}
+		stdoutCtr = nopCloser{io.MultiWriter(stdout, outBuf)}
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
 	} else {
-		stderrCtr = nopCloser{io.MultiWriter(vtx.Stderr(), outBuf)}
+		stderrCtr = nopCloser{io.MultiWriter(stderr, outBuf)}
 	}
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -422,7 +416,9 @@ func (svc *Service) startContainer(
 			}
 		}
 
-		vtx.Done(err)
+		// terminate the span; we're not interested in setting an error, since
+		// services return a benign error like `exit status 1` on exit
+		span.End()
 	}()
 
 	stopSvc := func(ctx context.Context, force bool) error {
@@ -499,7 +495,7 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 }
 
 func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
-	svcCtx, stop := context.WithCancel(context.Background())
+	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	defer func() {
 		if rerr != nil {
 			stop()
@@ -511,8 +507,6 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 		return nil, err
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-
-	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
 
 	svcs := svc.Query.Services
 	bk := svc.Query.Buildkit
@@ -602,12 +596,6 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		return nil, err
 	}
 
-	rec := progrock.FromContext(ctx)
-
-	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-	svcCtx = progrock.ToContext(svcCtx, rec)
-
 	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
 
 	bk := svc.Query.Buildkit
@@ -630,6 +618,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	check := newHealth(bk, fullHost, checkPorts)
+
+	// NB: decouple from the incoming ctx cancel and add our own
+	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 
 	exited := make(chan error, 1)
 	go func() {

@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/engine"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -22,12 +21,12 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
-	"github.com/vito/progrock"
+
+	"github.com/dagger/dagger/engine"
 )
 
 func (c *Client) LocalImport(
 	ctx context.Context,
-	recorder *progrock.Recorder,
 	platform specs.Platform,
 	srcPath string,
 	excludePatterns []string,
@@ -80,15 +79,12 @@ func (c *Client) LocalImport(
 	}
 	copyPB := copyDef.ToPB()
 
-	RecordVertexes(recorder, copyPB)
-
 	return c.DefToBlob(ctx, copyPB)
 }
 
 // Import a directory from the engine container, as opposed to from a client
 func (c *Client) EngineContainerLocalImport(
 	ctx context.Context,
-	recorder *progrock.Recorder,
 	platform specs.Platform,
 	srcPath string,
 	excludePatterns []string,
@@ -102,7 +98,7 @@ func (c *Client) EngineContainerLocalImport(
 		ClientID:       c.ID(),
 		ClientHostname: hostname,
 	})
-	return c.LocalImport(ctx, recorder, platform, srcPath, excludePatterns, includePatterns)
+	return c.LocalImport(ctx, platform, srcPath, excludePatterns, includePatterns)
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
@@ -188,7 +184,7 @@ func (c *Client) LocalDirExport(
 		if rerr != nil {
 			lg = lg.WithError(rerr)
 		}
-		lg.Debug("finished exporting local dir")
+		lg.Trace("finished exporting local dir")
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -259,7 +255,7 @@ func (c *Client) LocalFileExport(
 		if rerr != nil {
 			lg = lg.WithError(rerr)
 		}
-		lg.Debug("finished exporting local file")
+		lg.Trace("finished exporting local file")
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -372,7 +368,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		if rerr != nil {
 			lg = lg.WithError(rerr)
 		}
-		lg.Debug("finished exporting bytes")
+		lg.Trace("finished exporting bytes")
 	}()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
