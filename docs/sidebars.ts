@@ -112,17 +112,17 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "label": "Call functions",
+              "label": "Function Calls",
               "id": "manuals/user/functions/call"
             },
             {
               "type": "doc",
-              "label": "Use arguments",
+              "label": "Arguments",
               "id": "manuals/user/functions/arguments"
             },
             {
               "type": "doc",
-              "label": "Chain functions into pipelines",
+              "label": "Chaining",
               "id": "manuals/user/functions/chaining"
             }
           ]
@@ -139,7 +139,7 @@ module.exports = {
           "items": [
             {
               "type": "category",
-              "label": "Produce artifacts",
+              "label": "Produce and Inspect Artifacts",
               "link": {
                 "type": "doc",
                 "id": "manuals/user/artifacts/production/produce"
@@ -149,29 +149,29 @@ module.exports = {
               "items": [
                 {
                   "type": "doc",
-                  "label": "Produce just-in-time containers",
+                  "label": "Just-in-Time Containers",
                   "id": "manuals/user/artifacts/production/containers"
                 },
                 {
                   "type": "doc",
-                  "label": "Produce just-in-time directories",
+                  "label": "Just-in-Time Directories",
                   "id": "manuals/user/artifacts/production/directories"
                 },
                 {
                   "type": "doc",
-                  "label": "Produce just-in-time files",
+                  "label": "Just-in-Time Files",
                   "id": "manuals/user/artifacts/production/files"
                 },
                 {
                   "type": "doc",
-                  "label": "Inspect artifacts",
+                  "label": "Artifact Inspection",
                   "id": "manuals/user/artifacts/production/inspect"
                 },
               ]
             },
             {
               "type": "category",
-              "label": "Consume artifacts",
+              "label": "Consume Artifacts",
               "link": {
                 "type": "doc",
                 "id": "manuals/user/artifacts/consumption/consume"
@@ -181,27 +181,27 @@ module.exports = {
               "items": [
                 {
                   "type": "doc",
-                  "label": "Export artifacts to the host filesystem",
+                  "label": "Artifact Export",
                   "id": "manuals/user/artifacts/consumption/export"
                 },
                 {
                   "type": "doc",
-                  "label": "Inspect containers interactively",
+                  "label": "Container Interaction",
                   "id": "manuals/user/artifacts/consumption/terminal"
                 },
                 {
                   "type": "doc",
-                  "label": "Publish containers to a registry",
+                  "label": "Container Publication",
                   "id": "manuals/user/artifacts/consumption/publish"
                 },
                 {
                   "type": "doc",
-                  "label": "Execute commands in containers",
+                  "label": "Container Command Execution",
                   "id": "manuals/user/artifacts/consumption/exec"
                 },
                 {
                   "type": "doc",
-                  "label": "Run containers as services for local development",
+                  "label": "Containers as Services",
                   "id": "manuals/user/artifacts/consumption/services"
                 },
               ]
@@ -220,17 +220,17 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "label": "Access the host filesystem",
+              "label": "Host Filesystem Access",
               "id": "manuals/user/host/host-fs"
             },
             {
               "type": "doc",
-              "label": "Access host environment variables",
+              "label": "Host Environment Access",
               "id": "manuals/user/host/host-env"
             },
             {
               "type": "doc",
-              "label": "Access host services",
+              "label": "Host Services Access",
               "id": "manuals/user/host/host-services"
             }
           ]
@@ -247,12 +247,12 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "label": "Fetch remote repositories",
+              "label": "Remote Repositories",
               "id": "manuals/user/remotes/remote-repositories"
             },
             {
               "type": "doc",
-              "label": "Fetch remote container images",
+              "label": "Remote Container Images",
               "id": "manuals/user/remotes/remote-images"
             },
 
@@ -270,12 +270,12 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "label": "Use the Dagger TUI",
+              "label": "Dagger TUI",
               "id": "manuals/user/visualization/tui"
             },
             {
               "type": "doc",
-              "label": "Get Started with Dagger Cloud",
+              "label": "Dagger Cloud",
               "id": "manuals/user/visualization/cloud-get-started"
             },
           ]
