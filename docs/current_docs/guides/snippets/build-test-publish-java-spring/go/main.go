@@ -10,16 +10,16 @@ func (m *MyModule) Build(ctx context.Context, source *Directory) (string, error)
 
 	mariadb := dag.Mariadb().Serve(dagger.MariadbServeOpts{Version: "10.11.2", DbName: "petclinic"})
 
-	dockerd := dag.Docker().Engine()
+	//dockerd := dag.Docker().Engine()
 
 	app := dag.Java().
 		WithJdk("17").
 		WithMaven("3.9.5").
 		WithProject(source.WithoutDirectory("dagger")).
-		Maven([]string{"-Dspring.profiles.active=mysql", "clean", "package"})
+		Maven([]string{"-X", "-Dspring.profiles.active=mysql", "clean", "package"})
 
 	build := app.WithServiceBinding("db", mariadb).
-		WithServiceBinding("docker", dockerd).
+		//WithServiceBinding("docker", dockerd).
 		WithEnvVariable("MYSQL_URL", "jdbc:mysql://db/petclinic").
 		WithEnvVariable("MYSQL_USER", "root").
 		WithEnvVariable("MYSQL_PASS", "")
