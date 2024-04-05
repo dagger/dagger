@@ -36,6 +36,11 @@ func (t Engine) Lint(ctx context.Context) error {
 	return util.DaggerCall(ctx, "engine", "lint")
 }
 
+// Lint lints the engine
+func (t Engine) Scan(ctx context.Context) error {
+	return util.DaggerCall(ctx, "engine", "scan")
+}
+
 // Publish builds and pushes Engine OCI image to a container registry
 func (t Engine) Publish(ctx context.Context, version string) error {
 	var commonArgs []string

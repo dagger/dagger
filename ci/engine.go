@@ -205,3 +205,26 @@ func (e *Engine) TestPublish(
 	}
 	return eg.Wait()
 }
+
+func (e *Engine) Scan(ctx context.Context) (string, error) {
+	target, err := e.Container(ctx, "")
+	if err != nil {
+		return "", err
+	}
+
+	return dag.Container().
+		From("aquasec/trivy:0.50.1").
+		WithMountedFile("/mnt/engine.tar", target.AsTarball()).
+		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
+		WithExec([]string{
+			"image",
+			"--format=json",
+			"--no-progress",
+			"--exit-code=1",
+			"--vuln-type=os,library",
+			"--severity=CRITICAL,HIGH",
+			"--input",
+			"/mnt/engine.tar",
+		}).
+		Stdout(ctx)
+}
