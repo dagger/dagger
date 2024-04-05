@@ -2,6 +2,8 @@ defmodule Dagger.ModuleRuntimeTest do
   use ExUnit.Case
   doctest Dagger.ModuleRuntime
 
+  alias Dagger.ModuleRuntime
+
   test "store function information" do
     defmodule A do
       use Dagger.ModuleRuntime, name: "A"
@@ -120,6 +122,41 @@ defmodule Dagger.ModuleRuntimeTest do
         end
       end
     end
+  end
+
+  test "decode/2" do
+    dag = Dagger.connect!()
+    on_exit(fn -> Dagger.close(dag) end)
+
+    assert {:ok, "hello"} = ModuleRuntime.decode(Jason.encode!("hello"), :string, dag)
+    assert {:ok, 1} = ModuleRuntime.decode(Jason.encode!(1), :integer, dag)
+    assert {:ok, true} = ModuleRuntime.decode(Jason.encode!(true), :boolean, dag)
+    assert {:ok, false} = ModuleRuntime.decode(Jason.encode!(false), :boolean, dag)
+
+    assert {:ok, [1, 2, 3]} =
+             ModuleRuntime.decode(Jason.encode!([1, 2, 3]), {:list, :integer}, dag)
+
+    {:ok, container_id} = dag |> Dagger.Client.container() |> Dagger.Container.id()
+
+    assert {:ok, %Dagger.Container{}} =
+             ModuleRuntime.decode(Jason.encode!(container_id), Dagger.Container, dag)
+
+    assert {:error, _} = ModuleRuntime.decode(Jason.encode!(1), :string, dag)
+  end
+
+  test "encode/2" do
+    dag = Dagger.connect!()
+    on_exit(fn -> Dagger.close(dag) end)
+
+    assert {:ok, "\"hello\""} = ModuleRuntime.encode("hello", :string)
+    assert {:ok, "1"} = ModuleRuntime.encode(1, :integer)
+    assert {:ok, "true"} = ModuleRuntime.encode(true, :boolean)
+    assert {:ok, "false"} = ModuleRuntime.encode(false, :boolean)
+    assert {:ok, "[1,2,3]"} = ModuleRuntime.encode([1, 2, 3], {:list, :integer})
+    assert {:ok, id} = ModuleRuntime.encode(Dagger.Client.container(dag), Dagger.Container)
+    assert is_binary(id)
+
+    assert {:error, _} = ModuleRuntime.encode(1, :string)
   end
 
   defp name_for(module) do

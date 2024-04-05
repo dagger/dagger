@@ -1,34 +1,65 @@
 defmodule Dagger.ModuleRuntime do
   @schema [
-    args: [
-      doc: """
-      Arguments of the function.
+            args: [
+              doc: """
+              Arguments of the function.
 
-      Everything declared in this keyword will pass into the second argument
-      of the function as a `map`.
-      """,
-      type: :keyword_list,
-      required: true,
-      keys: [
-        *: [
-          type: :non_empty_keyword_list,
-          required: true,
-          keys: [
-            type: [
-              doc: "Type of the argument.",
-              type: :atom,
+              Everything declared in this keyword will pass into the second argument
+              of the function as a `map`.
+              """,
+              type: :keyword_list,
+              required: true,
+              keys: [
+                *: [
+                  type: :non_empty_keyword_list,
+                  required: true,
+                  keys: [
+                    type: [
+                      doc: """
+                      Type of the argument.
+
+                      The possible values are:
+
+                      * `:boolean` - A boolean type.
+                      * `:integer` - A integer type.
+                      * `:string` - A string type.
+                      * `{:list, type}` - A list of `type`.
+                      * `module` - An Elixir module.
+                      """,
+                      type:
+                        {:or,
+                         [
+                           :atom,
+                           {:tuple, [:atom, :atom]}
+                         ]},
+                      required: true
+                    ]
+                  ]
+                ]
+              ]
+            ],
+            return: [
+              doc: """
+              Functionre\tbturn type.
+
+              The possible values are:
+
+              * `:boolean` - A boolean type.
+              * `:integer` - A integer type.
+              * `:string` - A string type.
+              * `{:list, type}` - A list of `type`.
+              * `module` - An Elixir module.
+              """,
+              type:
+                {:or,
+                 [
+                   :atom,
+                   {:tuple, [:atom, :atom]}
+                 ]},
               required: true
             ]
           ]
-        ]
-      ]
-    ],
-    return: [
-      doc: "Function return type.",
-      type: :atom,
-      required: true
-    ]
-  ]
+          |> NimbleOptions.new!()
 
   @moduledoc """
   `Dagger.ModuleRuntime` is a runtime for `Dagger` module for Elixir.
@@ -83,10 +114,7 @@ defmodule Dagger.ModuleRuntime do
          {:ok, parent_json} <- Dagger.FunctionCall.parent(fn_call),
          {:ok, parent} <- Jason.decode(parent_json),
          {:ok, input_args} <- Dagger.FunctionCall.input_args(fn_call),
-         # TODO: `result` needs to verify pattern before encoding it.
-         {:ok, result} <-
-           invoke(dag, parent, parent_name, fn_name, input_args),
-         {:ok, json} = encode(result),
+         {:ok, json} <- invoke(dag, parent, parent_name, fn_name, input_args),
          {:ok, _} <- Dagger.FunctionCall.return_value(fn_call, json) do
       :ok
     else
@@ -98,79 +126,128 @@ defmodule Dagger.ModuleRuntime do
     Dagger.close(dag)
   end
 
-  # NOTE: We can have only 1 module.
   def invoke(dag, _parent, "", _fn_name, _input_args) do
     # TODO: find the way on how to register multiple modules.
     [module] = Dagger.ModuleRuntime.Registry.all()
 
     dag
     |> Dagger.ModuleRuntime.Module.define(module)
-    |> Dagger.Module.id()
+    |> encode(Dagger.Module)
   end
 
-  def invoke(dag, parent, parent_name, fn_name, input_args) do
+  def invoke(dag, _parent, parent_name, fn_name, input_args) do
     case Dagger.ModuleRuntime.Registry.get(parent_name) do
       nil ->
         {:error,
-         "unknown object #{parent_name}, all have #{inspect(Dagger.ModuleRuntime.Registry.all())}"}
+         "unknown module #{parent_name}, please make sure the module is created and register to supervision tree in the application."}
 
       module ->
-        invoke_function(module, struct(module, dag: dag), parent, fn_name, input_args)
+        fun = fn_name |> Macro.underscore() |> String.to_existing_atom()
+        fun_def = Dagger.ModuleRuntime.Module.get_function_definition(module, fun)
+        args = decode_args(dag, input_args, Keyword.fetch!(fun_def, :args))
+        return_type = Keyword.fetch!(fun_def, :return)
+
+        case apply(module, fun, [struct(module, dag: dag), args]) do
+          {:error, _} = error -> error
+          {:ok, result} -> encode(result, return_type)
+          result -> encode(result, return_type)
+        end
     end
   end
 
-  def invoke_function(module, ctx, _parent, fn_name, input_args) do
-    fun = fn_name |> Macro.underscore() |> String.to_existing_atom()
-    fun_def = Dagger.ModuleRuntime.Module.get_function_definition(module, fun)
-
-    args =
-      Enum.into(input_args, %{}, fn arg ->
-        {:ok, name} = Dagger.FunctionCallArgValue.name(arg)
-        name = String.to_existing_atom(name)
-
-        value =
-          with {:ok, value} <- Dagger.FunctionCallArgValue.value(arg),
-               {:ok, value} <- Jason.decode(value) do
-            decode(value, get_in(fun_def, [:args, name, :type]), ctx.dag)
-          end
-
+  def decode_args(dag, input_args, args_def) do
+    Enum.into(input_args, %{}, fn arg ->
+      with {:ok, name} = Dagger.FunctionCallArgValue.name(arg),
+           name = String.to_existing_atom(name),
+           {:ok, value} <- Dagger.FunctionCallArgValue.value(arg),
+           {:ok, value} <- decode(value, get_in(args_def, [name, :type]), dag) do
         {name, value}
-      end)
-
-    {:ok, apply(module, fun, [ctx, args])}
+      end
+    end)
   end
 
-  # TODO: decode all possible type.
-
-  defp decode(value, :string, _) when is_binary(value) do
-    value
+  def decode(value, type, dag) do
+    with {:ok, value} <- Jason.decode(value) do
+      cast(value, type, dag)
+    end
   end
 
-  defp decode(value, module, dag) when is_atom(module) do
+  defp cast(value, :integer, _) when is_integer(value) do
+    {:ok, value}
+  end
+
+  defp cast(value, :boolean, _) when is_boolean(value) do
+    {:ok, value}
+  end
+
+  defp cast(value, :string, _) when is_binary(value) do
+    {:ok, value}
+  end
+
+  defp cast(values, {:list, type}, dag) when is_list(values) do
+    values =
+      for value <- values do
+        {:ok, value} = cast(value, type, dag)
+        value
+      end
+
+    {:ok, values}
+  end
+
+  defp cast(value, module, dag) when is_binary(value) and is_atom(module) do
     # NOTE: It feels like we really need a protocol for the module to 
     # load the data from id.
     ["Dagger", name] = Module.split(module)
     name = Macro.underscore(name)
     fun = String.to_existing_atom("load_#{name}_from_id")
-    apply(Dagger.Client, fun, [dag, value])
+    {:ok, apply(Dagger.Client, fun, [dag, value])}
   end
 
-  defp encode({:ok, result}) do
-    encode(result)
+  defp cast(value, type, _) do
+    {:error, "cannot cast value #{value} to type #{type}"}
   end
 
-  defp encode(%module{} = struct) do
-    if function_exported?(module, :id, 1) do
-      with {:ok, id} <- module.id(struct) do
-        encode(id)
-      end
-    else
-      encode(struct)
+  def encode(result, type) do
+    with {:ok, value} <- dump(result, type) do
+      Jason.encode(value)
     end
   end
 
-  defp encode(result) do
-    Jason.encode(result)
+  defp dump(value, :integer) when is_integer(value) do
+    {:ok, value}
+  end
+
+  defp dump(value, :boolean) when is_boolean(value) do
+    {:ok, value}
+  end
+
+  defp dump(value, :string) when is_binary(value) do
+    {:ok, value}
+  end
+
+  defp dump(values, {:list, type}) when is_list(values) do
+    values =
+      for value <- values do
+        {:ok, value} = dump(value, type)
+        value
+      end
+
+    {:ok, values}
+  end
+
+  defp dump(%module{} = struct, module) do
+    value =
+      if function_exported?(module, :id, 1) do
+        Dagger.ID.id!(struct)
+      else
+        struct
+      end
+
+    {:ok, value}
+  end
+
+  defp dump(value, type) do
+    {:error, "cannot dump value #{value} to type #{type}"}
   end
 
   defmacro __using__(opt) do
