@@ -18,8 +18,8 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/vektah/gqlparser/v2 v2.5.11
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
-	golang.org/x/mod v0.16.0
-	golang.org/x/sync v0.6.0
+	golang.org/x/mod v0.17.0
+	golang.org/x/sync v0.7.0
 )
 
 require (
@@ -33,7 +33,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.2.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
+	golang.org/x/sys v0.19.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240325203815-454cdb8f5daa // indirect
 	google.golang.org/grpc v1.62.1 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
