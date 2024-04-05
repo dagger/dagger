@@ -26,7 +26,6 @@ jobs:
     secrets: inherit
     with:
       mage-targets: engine:testrace
-      size: dagger-runner-16c-64g
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
@@ -57,4 +56,4 @@ jobs:
     secrets: inherit
     with:
       mage-targets: engine:scan
-
+      size: dagger-runner-docker-fix

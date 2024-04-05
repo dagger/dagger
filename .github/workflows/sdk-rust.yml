@@ -22,11 +22,9 @@ jobs:
     secrets: inherit
     with:
       mage-targets: sdk:rust:lint
-      size: dagger-runner-16c-64g
 
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
       mage-targets: sdk:rust:test
-      size: dagger-runner-16c-64g
