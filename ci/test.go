@@ -163,9 +163,6 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 			WithMountedFile(cliBinPath, devBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint),
-		// TODO: re-enable this, to avoid rate-limiting
-		// introduced in https://github.com/dagger/dagger/commit/20241ba7a8d39da8f6ff185d512953b6b0ec1a55
-		// WithMountedDirectory("/root/.docker", util.HostDockerDir(dag)),
 		nil
 }
 

@@ -184,7 +184,7 @@ The rest of this section gives some guidance on fixing these vulnerabilities whe
 
 ### Vulnerability in a Dagger binary
 
-If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `golangVersion` in `internal/mage/util/engine.go`.
+If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `GolangVersion` in `ci/consts/versions.go`.
 
 Otherwise, if a vulnerability is reported in a Go dependency, you'll want to track down where the dependency is coming from.
 
@@ -196,9 +196,9 @@ This can become a bit complicated since it's possible for multiple versions of a
 
 ### Vulnerability in a third-party binary
 
-If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `golangVersion` in `internal/mage/util/engine.go`.
+If a vulnerability is reported in the Go stdlib, we'll want to upgrade the version of Go we use to build everything. As of this writing, this can be done by changing `GolangVersion` in `ci/consts/versions.go`.
 
-Otherwise, you'll want to check if the binary in question has a newer version with the vulnerability gone. The versions of these binaries are also controlled in `internal/mage/util/engine.go`.
+Otherwise, you'll want to check if the binary in question has a newer version with the vulnerability gone. The versions of these binaries are also controlled in `ci/consts/versions.go`.
 
 If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on Github or Discord if you're unsure how to best proceed.
 

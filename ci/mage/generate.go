@@ -5,7 +5,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/internal/mage/sdk"
+	"github.com/dagger/dagger/ci/mage/sdk"
 )
 
 type generator interface {

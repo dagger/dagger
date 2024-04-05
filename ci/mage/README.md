@@ -1,0 +1,1 @@
+This directory contains the legacy mage scripts for running dagger's CI.

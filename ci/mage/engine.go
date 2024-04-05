@@ -11,8 +11,8 @@ import (
 	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
 
+	"github.com/dagger/dagger/ci/mage/util"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/internal/mage/util"
 )
 
 type Engine mg.Namespace

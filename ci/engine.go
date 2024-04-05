@@ -113,7 +113,7 @@ func (e *Engine) Service(
 
 // Lint the engine
 func (e *Engine) Lint(ctx context.Context) error {
-	pkgs := []string{"", "ci", "internal/mage"}
+	pkgs := []string{"", "ci"}
 
 	ctr := dag.Container().
 		From(consts.GolangLintImage).

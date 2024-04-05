@@ -226,6 +226,9 @@ func daggerCliPath(t testing.TB) string {
 }
 
 func daggerCliFile(t testing.TB, c *dagger.Client) *dagger.File {
+	// This loads the dagger-cli binary from the host into the container, that
+	// was set up by the test caller. This is used to communicate with the dev
+	// engine.
 	t.Helper()
 	return c.Host().File(daggerCliPath(t))
 }

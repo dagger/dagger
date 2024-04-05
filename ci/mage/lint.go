@@ -5,7 +5,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/dagger/dagger/ci/mage/util"
 )
 
 // Lint runs all linters

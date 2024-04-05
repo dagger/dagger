@@ -265,7 +265,7 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 ```console
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
-cd internal/mage
+cd ci
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require github.com/dagger/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
 cd ../..
