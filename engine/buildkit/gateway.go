@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/frontend"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -25,9 +25,9 @@ type opTrackingGateway struct {
 
 var _ frontend.FrontendLLBBridge = &opTrackingGateway{}
 
-// ResolveImageConfig calls the inner ResolveImageConfig.
-func (g *opTrackingGateway) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
-	return g.llbBridge.ResolveImageConfig(ctx, ref, opt)
+// ResolveSourceMetadata calls the inner ResolveSourceMetadata.
+func (g *opTrackingGateway) ResolveSourceMetadata(ctx context.Context, op *pb.SourceOp, opt sourceresolver.Opt) (resp *sourceresolver.MetaResponse, err error) {
+	return g.llbBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
 // Solve records the vertexes of the definition and frontend inputs as members

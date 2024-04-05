@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
@@ -392,14 +393,27 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	return res, nil
 }
 
-func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
+func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt) (string, digest.Digest, []byte, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return "", "", nil, err
 	}
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
-	return c.llbBridge.ResolveImageConfig(ctx, ref, opt)
+
+	imr := sourceresolver.NewImageMetaResolver(c.llbBridge)
+	return imr.ResolveImageConfig(ctx, ref, opt)
+}
+
+func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.SourceOp, opt sourceresolver.Opt) (*sourceresolver.MetaResponse, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	ctx = withOutgoingContext(ctx)
+
+	return c.llbBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
 func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {

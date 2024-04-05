@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -292,9 +293,11 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 
 	ref := reference.TagNameOnly(refName).String()
 
-	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
-		Platform:    ptr(platform.Spec()),
-		ResolveMode: llb.ResolveModeDefault.String(),
+	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, sourceresolver.Opt{
+		Platform: ptr(platform.Spec()),
+		ImageOpt: &sourceresolver.ResolveImageOpt{
+			ResolveMode: llb.ResolveModeDefault.String(),
+		},
 	})
 	if err != nil {
 		return nil, err
