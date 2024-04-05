@@ -3,24 +3,64 @@ slug: /manuals/user/cloud/741031/user-interface
 ---
 
 # User Interface
+:::info
+Dagger 0.11.0 adds support for visualizing Dagger Function calls in Dagger Cloud. With this update, Dagger Cloud will default to use the new **Traces** views for both `dagger call` and `dagger run` commands. Dagger v0.11.0 or later will automatically use the new **Traces** views. Older versions of Dagger will continue to use the legacy Runs experience.
+:::
 
-Dagger Cloud lets you visualize your Dagger pipelines in two ways: runs and changes.
-
-## Runs
+Dagger Cloud visualizes your Dagger pipeline runs invoked from your local development host and in CI. 
 
 A run is an invocation of a Dagger pipeline. When you run Dagger in CI, each call aligns with one run in Dagger Cloud. If you have many CI jobs configured to run for every pull/merge request, you may see several runs for a single commit.
 
 For instance, if 4 GitHub Actions workflows each call Dagger to run a pipeline for pull requessts, you will see four distinct runs in the Dagger Cloud UI. You may also see multiple runs if one GitHub workflow has multiple jobs defined with distinct calls to Dagger to run your pipelines. As you Daggerize your pipelines, you will likely have fewer distinct CI workflows.
 
-Because Dagger Cloud understands the Dagger engine's data model, it gives you visibility into the steps of your pipeline's Directed Acyclic Graph (DAG), including detailed logs for each step.
+Because Dagger Cloud understands the Dagger Engine's data model, it gives you visibility into the steps of your pipeline's Directed Acyclic Graph (DAG), including detailed logs for each step.
+
+## Traces
+:::info
+You will only see runs in the **Traces** view if you are using Dagger 0.11.0 or later. If you are using an older version of Dagger, you will see runs in the **Runs** view.
+:::
 
 :::note
-The Dagger team is working on a new user experience to group your Dagger runs by the pull or merge request (group commits by PR/MR).
+**Traces** is still under development and is in Beta. We welcome your feedback on how we can improve this page. Please join the [Dagger Discord](https://discord.gg/dagger-io) to join the Dagger community and share your feedback.
+:::
+
+### All Traces page
+The **Traces** page lists runs you've triggered from your local development host or in CI.
+
+![View Traces](/img/current_docs/manuals/user/cloud/user-interface/all-traces.png)
+
+Here's a quick summary of what you'll see for each trace.
+
+|Field | Description |
+|---|---|
+|Status icon | Indication of the runs status: in progress, succeeded, or failed |
+|Command | The exact command used to invoke your pipeline |
+|Start | Run start time |
+|Duration | Run duration |
+
+:::info
+The **Traces** view does not yet include metadata for the user, branch, remote, or commit. We are working on adding this metadata to the Traces view.
+:::
+
+### Trace Details page
+You can drill down into the details of a specific Trace by clicking it. This directs you to a run-specific **Trace Details** page.
+
+The **Trace Details** page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, the UI shows the errors at the top. Clicking any of the errors takes you directly to the step that failed, making it easy to debug your pipelines and collaborate with your teammates.  
+
+![View Trace details](/img/current_docs/manuals/user/cloud/user-interface/trace-detail-error-list.png)
+
+A Trace shows a detailed timeline for operations completed in a pipeline run. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates. Dagger Cloud also applies unique IDs and icons for related operations, which are essential for debugging your pipeline when something does wrong.
+
+![View Trace Timeline](/img/current_docs/manuals/user/cloud/user-interface/trace-detail-error-timeline.png)
+
+## Runs
+:::info
+The Runs views only apply to pipeline runs done with Dagger versions older than v0.11.0. This view has been replaced by the new [**Traces**](#traces) view in Dagger Cloud.
 :::
 
 ### All Runs page
 
-The *All Runs* page lists available runs.
+The **All Runs** page lists runs you've kicked off from your local development host and in CI.
 
 ![View runs](/img/current_docs/manuals/user/cloud/user-interface/all-runs.png)
 
@@ -45,11 +85,11 @@ You can display a subset of runs, such as runs related to a specific commit, bra
 
 ### Run Details page
 
-You can drill down into the details of a specific run by clicking it. This directs you to a run-specific *Run Details* page. When you run Dagger locally, this is the page you visit when you click the Dagger Cloud link in the CLI output.
+You can drill down into the details of a specific run by clicking it. This directs you to a run-specific **Run Details** page. When you run Dagger locally, this is the page you visit when you click the Dagger Cloud link in the CLI output.
 
 ![View run details](/img/current_docs/manuals/user/cloud/user-interface/run-details.png)
 
-The *Run Details* page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
+The **Run Details** page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
 
 ### Run Details: Step viewer
 Clicking into a specific step will open a drawer with several elements that can help you debug why your pipeline is failing and help you identify why a step might not have been cached.
@@ -58,12 +98,15 @@ Clicking into a specific step will open a drawer with several elements that can 
 
 
 ## Changes
+:::info
+The **Changes** views only apply to pipeline runs done with Dagger versions older than v0.11.0. These views have been replaced by the new **Traces** views in Dagger Cloud.
+:::
 
 A change is a group of runs for a specific commit or pull/merge request.
 
 ### All Changes page
 
-The *All Changes* page lists available groups.
+The **All Changes** page lists available groups.
 
 ![View changes](/img/current_docs/manuals/user/cloud/user-interface/all-changes.png)
 
@@ -84,7 +127,7 @@ Here's a quick summary of what you'll see for each change.
 
 
 ### Change Details page
-You can drill down into the details of a specific change by clicking it. This directs you to a *Change Details* page, as shown below:
+You can drill down into the details of a specific change by clicking it. This directs you to a **Change Details** page, as shown below:
 
 ![View change details](/img/current_docs/manuals/user/cloud/user-interface/change-details.png)
 

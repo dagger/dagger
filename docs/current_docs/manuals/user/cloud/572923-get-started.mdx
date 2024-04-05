@@ -82,10 +82,6 @@ To configure for local development, set your Dagger Cloud token as an environmen
 export DAGGER_CLOUD_TOKEN={your token}
 ```
 
-:::info BEST PRACTICES FOR VISUALIZING LOCAL RUNS IN DAGGER CLOUD
-Dagger Cloud uses metadata from your version control system (VCS), such as Git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned Git repository.
-:::
-
 ### Connect from your CI engine
 
 The general procedure to connect Dagger Cloud with a CI provider/CI tool is:
@@ -97,7 +93,7 @@ The general procedure to connect Dagger Cloud with a CI provider/CI tool is:
     :::
   - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
 - For **Team** plan subscribers with ephemeral CI runners only: Add a wait step (example below) for the Docker configuration to allow the Dagger Engine to push cache volumes to the experimental Dagger Cloud distributed cache. Subscribers on the **Individual** plan do not have access to the experimental distributed cache and do not need to add this step.
-- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub Check to your pull requests and links to the run status and pipeline visualization for the commit in Dagger Cloud.
+- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding pipeline visualization in Dagger Cloud.
 
 You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
 
@@ -110,11 +106,11 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Create a new secret for your GitHub repository named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
 
-1. Update your GitHub Actions workflow and add the secret to your `dagger run` step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
+1. Update your GitHub Actions workflow and add the secret to the Dagger pipeline step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
     [See an example of a sample GitHub Actions workflow file](../../../integrations/642920-github-actions.mdx)
 
-1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow run in Dagger Cloud.
+1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow job in Dagger Cloud.
 
 </TabItem>
 <TabItem value="GitLab CI">
@@ -202,14 +198,14 @@ At the end of this step, you will have data from one or more CI or local runs av
 
 ### Trigger runs from your local development host
 
-:::info Best practices for visualizing local runs in Dagger Cloud
-Dagger Cloud uses metadata from your version control system (VCS), such as Git, to populate some information in the user interface. Therefore, you should run your Dagger pipelines within a VCS context, such as a local directory linked to a cloned Git repository.
-:::
-
 Before completing these steps, ensure you've [added your Dagger Cloud token as an environment variable](#connect-from-your-local-development-host).
 
 1. In your terminal, call the Dagger Module. If your environment variable is properly defined, you will see a Dagger Cloud URL printed in the terminal.
 1. Click on the URL to view details of the run in Dagger Cloud.
+
+:::info
+Dagger 0.11.0 adds support for visualizing Dagger functions but does not yet print the Dagger Cloud URL for the pipeline run in the CLI output. We're adding this soon.
+:::
 
 To see this in action, commit a change to your forked and locally-cloned Dagger repository and call the Go builder module to build it.
 
@@ -235,9 +231,33 @@ git commit -a -m "Updated README"
 git push
 ```
 
-### Visualize a run
+### Visualize Dagger pipelines
 
-Navigate to the **All Runs** page of the Dagger Cloud dashboard. You should see your most recent run as the first entry in the table, as shown below:
+:::info
+Dagger 0.11.0 adds support for visualizing Dagger Function calls in Dagger Cloud. With this update, Dagger Cloud will default to use the new **Traces** views for both `dagger call` and `dagger run` commands. Dagger v0.11.0 or later will automatically use the new **Traces** views. Older versions of Dagger will continue to use the legacy Runs experience.
+:::
+
+#### Traces
+Navigate to the **Traces** page of the Dagger Cloud dashboard. You should see your most recent Dagger pipeline run as the first entry in the list, as shown below: 
+
+![View Traces](/img/current_docs/manuals/user/cloud/get-started/view-traces.png)
+
+A Trace represents one invocation of a Dagger pipeline, run locally or in CI. It contains detailed information about the steps performed by the pipeline.
+
+The **Traces** page provides an overview of all Dagger pipeline runs. You can drill down into the details of a specific run by clicking it. This directs you to a **Trace Details** page, as shown below:
+
+![View Trace Details](/img/current_docs/manuals/user/cloud/get-started/view-trace-details.png)
+
+The **Trace Details** page includes detailed status and duration metadata about the pipeline steps. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
+
+ A Dagger Trace shows a detailed timeline for operations completed in a pipeline run. Dagger Cloud also applies unique IDs and icons for related operations, which are essential for debugging your pipeline when something does wrong. To learn more about the **Traces** view, see the [Dagger Cloud user interface documentation](./741031-user-interface.mdx).
+
+#### Dagger Runs
+:::warning
+The Runs view only applies to pipeline runs with Dagger versions older than v0.11.0. 
+:::
+
+To view your runs, navigate to the **All Runs** page of the Dagger Cloud dashboard. You should see your most recent run as the first entry in the table, as shown below:
 
 ![View runs](/img/current_docs/manuals/user/cloud/get-started/view-runs.png)
 
@@ -248,10 +268,6 @@ The **All Runs** page provides an overview of all runs. You can drill down into 
 ![View run details](/img/current_docs/manuals/user/cloud/get-started/view-run-details-tree.png)
 
 The **Run Details** page includes detailed status and duration metadata about the pipeline steps. The tree view shows Dagger pipelines and steps within those pipelines. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list. You see detailed logs and output of each step, making it easy for you to debug your pipelines and collaborate with your teammates.
-
-:::note
-Dagger 0.10.0 introduced Dagger Functions. Full visualization of Dagger Functions in Dagger Cloud will be available shortly.
-:::
 
 When the run is performed in a Git context, the Dagger Cloud UI shows the VCS Git metadata associated with the commit.
 
