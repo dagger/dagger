@@ -41,7 +41,7 @@ class MyModule {
   @func()
   async publish(source: Directory, version: string, registryAddress: string, registryUsername: string, registryPassword: Secret, imageName: string): Promise<string> {
     let image = this.build(source)
-      .withLabel("org.opencontainers.image.title", "Laravel with Dagger")
+      .withLabel("org.opencontainers.image.title", "PHP with Dagger")
       .withLabel("org.opencontainers.image.version", version)
       // uncomment this to use a custom entrypoint file
       //.withEntrypoint(["/var/www/docker-entrypoint.sh"])
