@@ -8,9 +8,14 @@ type MyModule struct{}
 
 func (m *MyModule) Build(ctx context.Context, source *Directory) (string, error) {
 
-	mariadb := dag.Mariadb().Serve(dagger.MariadbServeOpts{Version: "10.11.2", DbName: "petclinic"})
-
-	//dockerd := dag.Docker().Engine()
+	mariadb := dag.Container().
+		From("mariadb:10.11.2").
+		WithEnvVariable("MARIADB_USER", "petclinic").
+		WithEnvVariable("MARIADB_PASSWORD", "petclinic").
+		WithEnvVariable("MARIADB_DATABASE", "petclinic").
+		WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
+		WithExposedPort(3306).
+		AsService()
 
 	app := dag.Java().
 		WithJdk("17").
@@ -19,10 +24,9 @@ func (m *MyModule) Build(ctx context.Context, source *Directory) (string, error)
 		Maven([]string{"-X", "-Dspring.profiles.active=mysql", "clean", "package"})
 
 	build := app.WithServiceBinding("db", mariadb).
-		//WithServiceBinding("docker", dockerd).
 		WithEnvVariable("MYSQL_URL", "jdbc:mysql://db/petclinic").
-		WithEnvVariable("MYSQL_USER", "root").
-		WithEnvVariable("MYSQL_PASS", "")
+		WithEnvVariable("MYSQL_USER", "petclinic").
+		WithEnvVariable("MYSQL_PASS", "petclinic")
 
 	deploy := dag.Container().
 		From("eclipse-temurin:17-alpine").
