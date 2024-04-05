@@ -19,20 +19,8 @@ class MyModule {
         .container()
         .from("php:8.2-apache-buster")
         .withExec(["apt-get", "update"])
-        .withExec([
-          "apt-get",
-          "install",
-          "--yes",
-          "git-core",
-          "zip",
-          "curl",
-        ])
-        .withExec([
-          "docker-php-ext-install",
-          "pdo",
-          "pdo_mysql",
-          "mysqli",
-        ])
+        .withExec(["apt-get", "install", "--yes", "git-core", "zip", "curl"])
+        .withExec(["docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"])
         .withExec([
           "sh",
           "-c",
@@ -56,7 +44,7 @@ class MyModule {
           "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
         ])
         .withExec(["composer", "install"])
-    );
+    )
   }
 
   /*
@@ -64,9 +52,7 @@ class MyModule {
    */
   @func()
   async test(source: Directory): Promise<string> {
-    return await this.build(source)
-      .withExec(["./vendor/bin/phpunit"])
-      .stdout();
+    return await this.build(source).withExec(["./vendor/bin/phpunit"]).stdout();
   }
 
   /*
@@ -80,21 +66,17 @@ class MyModule {
     registryUsername: string,
     registryPassword: Secret,
     imageName: string,
-): Promise<string> {
+  ): Promise<string> {
     const image = this.build(source)
       .withLabel("org.opencontainers.image.title", "Laravel with Dagger")
-      .withLabel("org.opencontainers.image.version", version);
-    // uncomment this to use a custom entrypoint file
-    //.withEntrypoint(["/var/www/docker-entrypoint.sh"])
+      .withLabel("org.opencontainers.image.version", version)
+      // uncomment this to use a custom entrypoint file
+      //.withEntrypoint(["/var/www/docker-entrypoint.sh"])
 
     const address = await image
-      .withRegistryAuth(
-        registryAddress,
-        registryUsername,
-        registryPassword,
-      )
-      .publish(`${registryUsername}/${imageName}`);
+      .withRegistryAuth(registryAddress, registryUsername, registryPassword)
+      .publish(`${registryUsername}/${imageName}`)
 
-    return address;
+    return address
   }
 }
