@@ -97,6 +97,7 @@ type Client struct {
 	httpClient *http.Client
 	bkClient   *bkclient.Client
 	bkSession  *bksession.Session
+	bkVersion  string
 
 	// A client for the dagger API that is directly hooked up to this engine client.
 	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
@@ -190,6 +191,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	if err := c.startEngine(connectCtx); err != nil {
 		return nil, nil, fmt.Errorf("start engine: %w", err)
 	}
+	err = engine.CheckVersionCompatibility(c.bkVersion, engine.MinimumEngineVersion)
+	if err != nil {
+		return nil, nil, fmt.Errorf("incompatible engine version: %w", err)
+	}
 
 	defer func() {
 		if rerr != nil {
@@ -260,6 +265,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return fmt.Errorf("new client: %w", err)
 	}
 	c.bkClient = bkClient
+	c.bkVersion = bkInfo.BuildkitVersion.Version
 
 	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
 		slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
@@ -349,6 +355,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:          c.ID,
+		ClientVersion:     engine.Version,
 		ClientSecretToken: c.SecretToken,
 		ClientHostname:    c.hostname,
 		Labels:            c.labels,
@@ -383,6 +390,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			c, err := grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:            true,
 				ClientID:                  c.ID,
+				ClientVersion:             engine.Version,
 				ServerID:                  c.ServerID,
 				ClientSecretToken:         c.SecretToken,
 				ClientHostname:            hostname,
@@ -669,6 +677,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 	} else {
 		conn, err = grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
 			ClientID:          c.ID,
+			ClientVersion:     engine.Version,
 			ServerID:          c.ServerID,
 			ClientSecretToken: c.SecretToken,
 			ClientHostname:    c.hostname,
