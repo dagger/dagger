@@ -257,7 +257,7 @@ workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-- [ ] `20mins` Bump the Go SDK version in our internal mage CI targets & check
+- [ ] `20mins` Bump the Go SDK version in our internal CI targets & check
       that Engine tests pass locally. If everything looks good, submit a new PR
       with this change so that we can check that all our workflows pass with the new
       SDK version before we create a new GitHub release and make it widely public.
@@ -274,6 +274,7 @@ cd ../..
 ./hack/make engine:test
 
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+# Update .github/workflows/_hack_make.yml dagger-version default to $ENGINE_VERSION
 # Commit & push
 
 # Test using the just-released CLI
