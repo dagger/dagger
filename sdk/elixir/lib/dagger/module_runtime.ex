@@ -157,7 +157,7 @@ defmodule Dagger.ModuleRuntime do
 
   def decode_args(dag, input_args, args_def) do
     Enum.into(input_args, %{}, fn arg ->
-      with {:ok, name} = Dagger.FunctionCallArgValue.name(arg),
+      with {:ok, name} <- Dagger.FunctionCallArgValue.name(arg),
            name = String.to_existing_atom(name),
            {:ok, value} <- Dagger.FunctionCallArgValue.value(arg),
            {:ok, value} <- decode(value, get_in(args_def, [name, :type]), dag) do
