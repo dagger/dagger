@@ -55,15 +55,11 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   end
 
   # Temporarily fixes for issue https://github.com/dagger/dagger/issues/6310.
-  @acronym_words %{
-    "GPU" => "Gpu",
-    "VCS" => "Vcs"
-  }
+  @acronym_re ~r/([A-Z]+)([A-Z])/
 
-  defp normalize_acronym_word(name, acronym_words \\ @acronym_words) do
-    acronym_words
-    |> Enum.reduce(name, fn {word, new_word}, name ->
-      String.replace(name, word, new_word)
+  defp normalize_acronym_word(name, acronym_re \\ @acronym_re) do
+    Regex.replace(acronym_re, name, fn _full, <<first::binary-size(1), rest::binary>>, g2 ->
+      [first, String.downcase(rest <> g2)]
     end)
   end
 
