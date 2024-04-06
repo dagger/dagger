@@ -166,7 +166,7 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                                 $(quoted(name)),
                                 Box::new(move || {
                                     let $(&n) = $(&n).clone();
-                                    Box::pin(async move { $(&n).id().await.unwrap().quote() })
+                                    Box::pin(async move { $(&n).into_id().await.unwrap().quote() })
                                 }),
                             );
                         })
@@ -293,8 +293,8 @@ fn format_function_args(
     let mut argument_description = Vec::new();
     if let Some(args) = field.args.as_ref() {
         let args = args
-            .into_iter()
-            .map(|a| {
+            .iter()
+            .filter_map(|a| {
                 a.as_ref().and_then(|s| {
                     if type_ref_is_optional(&s.input_value.type_) {
                         return None;
@@ -302,11 +302,9 @@ fn format_function_args(
 
                     let t = funcs.format_input_type(&s.input_value.type_);
 
-                    let t = t.trim_end_matches("Id");
                     let n = format_struct_name(&s.input_value.name);
-
                     if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
-                        if d != "" {
+                        if !d.is_empty() {
                             Some(write_comment_line(&format!("* `{n}` - {}", d)))
                         } else {
                             None
@@ -317,12 +315,18 @@ fn format_function_args(
                         });
                     }
 
-                    Some(quote! {
-                        $(n): $(t),
-                    })
+                    if t.ends_with("Id") {
+                        let into_id = rust::import("crate::id", "IntoID");
+                        Some(quote! {
+                            $(n): impl $(into_id)<$(t)>,
+                        })
+                    } else {
+                        Some(quote! {
+                            $(n): $(t),
+                        })
+                    }
                 })
             })
-            .flatten()
             .collect::<Vec<_>>();
         let required_args = quote! {
             &self,
@@ -378,12 +382,18 @@ fn format_required_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
-                    let t = t.trim_end_matches("Id");
                     let n = format_struct_name(&s.input_value.name);
 
-                    Some(quote! {
-                        $(n): $(t),
-                    })
+                    if t.ends_with("Id") {
+                        let into_id = rust::import("crate::id", "IntoID");
+                        Some(quote! {
+                            $(n): impl $(into_id)<$(t)>,
+                        })
+                    } else {
+                        Some(quote! {
+                            $(n): $(t),
+                        })
+                    }
                 })
             })
             .flatten()
