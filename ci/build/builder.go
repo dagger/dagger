@@ -22,7 +22,7 @@ var dag = dagger.Connect()
 type Builder struct {
 	source *dagger.Directory
 
-	version *VersionInfo
+	version string
 
 	platform     dagger.Platform
 	platformSpec ocispecs.Platform
@@ -32,12 +32,6 @@ type Builder struct {
 }
 
 func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
-	// FIXME: can we make this lazy?
-	version, err := getVersionFromGit(ctx, source.Directory(".git"))
-	if err != nil {
-		return nil, err
-	}
-
 	source = dag.Directory().WithDirectory("/", source, dagger.DirectoryWithDirectoryOpts{
 		Exclude: []string{
 			".git",
@@ -75,14 +69,15 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 
 	return &Builder{
 		source:       source,
-		version:      version,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 	}, nil
 }
 
-func (build *Builder) EngineVersion() string {
-	return build.version.EngineVersion()
+func (build *Builder) WithVersion(version string) *Builder {
+	b := *build
+	b.version = version
+	return &b
 }
 
 func (build *Builder) WithPlatform(p dagger.Platform) *Builder {
@@ -208,8 +203,8 @@ func (build *Builder) binary(pkg string, version bool) *dagger.File {
 	ldflags := []string{
 		"-s", "-w",
 	}
-	if version {
-		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version.EngineVersion())
+	if version && build.version != "" {
+		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version)
 	}
 
 	output := filepath.Join("./bin/", filepath.Base(pkg))

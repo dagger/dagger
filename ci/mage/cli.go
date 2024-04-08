@@ -13,7 +13,7 @@ type Cli mg.Namespace
 
 // Publish publishes dagger CLI using GoReleaser
 func (cl Cli) Publish(ctx context.Context, version string) error {
-	args := []string{"cli", "publish", "--version=" + version}
+	args := []string{"--version=" + version, "cli", "publish"}
 
 	if v, ok := os.LookupEnv("GH_ORG_NAME"); ok {
 		args = append(args, "--github-org-name="+v)

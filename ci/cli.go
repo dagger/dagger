@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/build"
@@ -26,6 +25,7 @@ func (cli *CLI) File(
 	if err != nil {
 		return nil, err
 	}
+	builder = builder.WithVersion(cli.Dagger.Version.String())
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -40,7 +40,6 @@ const (
 // Publish the CLI using GoReleaser
 func (cli *CLI) Publish(
 	ctx context.Context,
-	version string,
 
 	githubOrgName string,
 	githubToken *Secret,
@@ -54,19 +53,9 @@ func (cli *CLI) Publish(
 
 	artefactsFQDN *Secret,
 ) error {
-	if version == "" {
-		return fmt.Errorf("version tag must be specified")
-	}
-	var versionInfo build.VersionInfo
-	if semver.IsValid(version) {
-		versionInfo = build.VersionInfo{Tag: version}
-	} else {
-		versionInfo = build.VersionInfo{Commit: version}
-	}
-
 	args := []string{"release", "--clean", "--skip-validate", "--debug"}
-	if versionInfo.Tag != "" {
-		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", versionInfo.Tag))
+	if cli.Dagger.Version.Tag != "" {
+		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", cli.Dagger.Version.Tag))
 	} else {
 		// if this isn't an official semver version, do a dev release
 		args = append(args,
@@ -90,9 +79,9 @@ func (cli *CLI) Publish(
 		WithSecretVariable("AWS_REGION", awsRegion).
 		WithSecretVariable("AWS_BUCKET", awsBucket).
 		WithSecretVariable("ARTEFACTS_FQDN", artefactsFQDN).
-		WithEnvVariable("ENGINE_VERSION", versionInfo.EngineVersion()).
+		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version.String()).
 		With(func(ctr *dagger.Container) *dagger.Container {
-			if versionInfo.Tag == "" {
+			if cli.Dagger.Version.Tag == "" {
 				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
 				return ctr.WithExec([]string{"git", "tag", "0.0.0"})
 			}
@@ -118,6 +107,7 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	builder = builder.WithVersion(cli.Dagger.Version.String())
 
 	var eg errgroup.Group
 	for _, os := range oses {
