@@ -1,0 +1,43 @@
+---
+slug: /manuals/developer/typescript/356352/runtime
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Runtime (Experimental)"
+---
+
+# Runtime
+
+Multiple runtimes support TypeScript such as [NodeJS](https://nodejs.org/en), [Deno](https://deno.com/) and [Bun](https://bun.sh/).
+
+By default, the TypeScript SDK executes functions using the NodeJS runtime but you can configure a different runtime in the `package.json`.
+
+:::note
+For now, the TypeScript SDK only supports NodeJS and Bun.
+:::
+
+To change the Typescript SDK runtime, set the field `dagger.runtime` in the `package.json`.
+
+## Node  
+
+Set the field to `node` to use the `NodeJS` runtime, it's also the default runtime used if this field is ommited.
+
+```json
+  "dagger": {
+    "runtime": "node"
+  }
+```
+
+## Bun 
+
+Set the field to `bun` to use the Bun runtime.
+
+```json
+  "dagger": {
+    "runtime": "bun"
+  }
+```
+
+:::warning
+The Bun runtime support is still experimental, Dagger cannot guarantee the perfect execution of the function until
+Bun is fully compatible with Node. 
+:::

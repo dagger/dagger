@@ -393,6 +393,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manuals/developer/typescript/runtime"
+            },
+            {
+              "type": "doc",
               "label": "Reference",
               "id": "reference/typescript/modules"
             }
