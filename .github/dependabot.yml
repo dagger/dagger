@@ -2,7 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
-    schedule: &schedule-weekly
+    schedule:
       interval: "weekly"
       day: "monday"
       time: "07:00"
@@ -19,7 +19,11 @@ updates:
 
   - package-ecosystem: "gomod"
     directory: "/ci
-    schedule: *schedule-weekly
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "area/ci"
@@ -31,7 +35,11 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
-    schedule: *schedule-weekly
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "sdk/typescript"
@@ -46,7 +54,11 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/website"
-    schedule: *schedule-weekly
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "area/docs"
@@ -61,7 +73,11 @@ updates:
 
   - package-ecosystem: "gomod"
     directory: "/sdk/go"
-    schedule: *schedule-weekly
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "sdk/go"
@@ -76,7 +92,11 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
-    schedule: *schedule-weekly
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "sdk/python"
@@ -91,7 +111,11 @@ updates:
 
   - package-ecosystem: "maven"
     directory: "/sdk/java"
-    schedule: *schedule-weekly
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
     labels:
       - "kind/dependencies"
       - "sdk/java"
