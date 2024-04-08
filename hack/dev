@@ -3,7 +3,7 @@
 set -e -u -x
 
 DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
-MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
+MAGEDIR="$DAGGER_SRC_ROOT/ci/mage"
 
 pushd $MAGEDIR
 go run main.go -w $DAGGER_SRC_ROOT engine:dev

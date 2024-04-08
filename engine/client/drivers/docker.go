@@ -19,8 +19,8 @@ import (
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/internal/distconsts"
 	"github.com/dagger/dagger/telemetry"
 )
 

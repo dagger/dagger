@@ -1,0 +1,6 @@
+{
+  "name": "dagger",
+  "sdk": "go",
+  "source": "ci",
+  "engineVersion": "v0.10.3"
+}

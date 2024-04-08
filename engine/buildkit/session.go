@@ -16,7 +16,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const (

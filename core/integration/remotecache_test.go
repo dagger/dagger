@@ -53,8 +53,6 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
 	require.NoError(t, err)
 
-	// This loads the dagger-cli binary from the host into the container, that was set up by
-	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
 
 	outputA, err := c.Container().From(alpineImage).
@@ -212,8 +210,6 @@ func TestRemoteCacheS3(t *testing.T) {
 		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", 0)
 		require.NoError(t, err)
 
-		// This loads the dagger-cli binary from the host into the container, that was set up by
-		// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
 
 		outputA, err := c.Container().From(alpineImage).
@@ -288,8 +284,6 @@ func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
 	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 20)
 	require.NoError(t, err)
 
-	// This loads the dagger-cli binary from the host into the container, that was set up by
-	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
 
 	outputA, err := c.Container().From(alpineImage).
@@ -385,8 +379,6 @@ func TestRemoteCacheRegistrySeparateImportExport(t *testing.T) {
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		AsService()
 
-	// This loads the dagger-cli binary from the host into the container, that was set up by
-	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
 
 	cacheEnvA := "type=registry,ref=registry:5000/test-cache-a:latest,mode=max"
@@ -525,8 +517,6 @@ func TestRemoteCacheRegistryFastCacheBlobSource(t *testing.T) {
 	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
 	require.NoError(t, err)
 
-	// This loads the dagger-cli binary from the host into the container, that was set up by
-	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 	daggerCli := daggerCliFile(t, c)
 
 	dir := `{

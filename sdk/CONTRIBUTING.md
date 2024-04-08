@@ -315,7 +315,7 @@ When the codegen component is done, an easy win is to port the [integration test
 
 Our CI code is implemented with the Go SDK and run from Github Actions.
 
-Implement the necessary functions in [`internal/mage/sdk/`](../internal/mage/sdk/) and run locally with the [`./hack`](https://github.com/dagger/dagger/tree/main/hack) scripts (e.g., `./hack/make sdk:<name>:test`). Start with tests, linting and codegen.
+Implement the necessary functions in [`ci/`](../ci/) and [`ci/mage/sdk`](../ci/mage/sdk) and run locally with the [`./hack`](https://github.com/dagger/dagger/tree/main/hack) scripts (e.g., `./hack/make sdk:<name>:test`). Start with tests, linting and codegen.
 
 Add their corresponding jobs to [`.github/workflows/`](../.github/workflows/) for running in CI.
 

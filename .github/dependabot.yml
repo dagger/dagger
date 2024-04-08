@@ -18,7 +18,7 @@ updates:
           - "*"
 
   - package-ecosystem: "gomod"
-    directory: "/internal/mage"
+    directory: "/ci
     schedule: *schedule-weekly
     labels:
       - "kind/dependencies"
