@@ -44,7 +44,7 @@ This will generate a `dagger.json` module file, an initial `dagger/main.go` sour
 dagger develop --sdk=python
 ```
 
-This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
+This will generate a `dagger.json` module file, initial `dagger/src/main/__init__.py`, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -93,7 +93,7 @@ This new `BuildAndPublish()` function accepts two arguments - the source directo
 </TabItem>
 <TabItem value="Python">
 
-Update `dagger/src/main.py` with the following code:
+Update `dagger/src/main/__init__.py` with the following code:
 
 ```python file=./snippets/create/python/main.py
 ```
