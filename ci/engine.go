@@ -104,8 +104,7 @@ func (e *Engine) Service(
 		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName)).
 		WithExec(nil, ContainerWithExecOpts{
-			InsecureRootCapabilities:      true,
-			ExperimentalPrivilegedNesting: true,
+			InsecureRootCapabilities: true,
 		})
 
 	return devEngine.AsService(), nil
