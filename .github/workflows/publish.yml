@@ -27,6 +27,9 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "ci/go.sum"
+      - name: Install dagger
+        run: |
+          curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.10.3 BIN_DIR=/usr/local/bin/ sudo -E sh
       - name: "Publish Engine & CLI"
         run: |
           if [ $GITHUB_REF_NAME == 'main' ]; then

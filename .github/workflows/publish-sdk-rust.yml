@@ -11,6 +11,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
+      - name: Install dagger
+        run: |
+          curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
       - run: ./hack/make sdk:rust:publish ${{ github.ref_name }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
