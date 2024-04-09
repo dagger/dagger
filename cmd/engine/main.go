@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
@@ -64,6 +65,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"github.com/dagger/dagger/cmd/engine/cacerts"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -227,6 +229,15 @@ func main() { //nolint:gocyclo
 		}
 		ctx, cancel := context.WithCancel(appcontext.Context())
 		defer cancel()
+
+		// install CA certs in case the user has a custom engine w/ extra certs
+		// installed to /usr/local/share/ca-certificates
+		// TODO: test this works on the ubuntu GPU image
+		if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
+			bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
+		} else if out, err = exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
+			bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+		}
 
 		ctx, pubsub := InitTelemetry(ctx)
 

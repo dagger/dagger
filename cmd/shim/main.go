@@ -41,6 +41,11 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
+func init() {
+	// unset umask so permissions are created as specified
+	unix.Umask(0)
+}
+
 const (
 	metaMountPath = "/.dagger_meta_mount"
 	stdinPath     = metaMountPath + "/stdin"
@@ -57,6 +62,19 @@ var (
 	pipeWg     sync.WaitGroup
 )
 
+type exitError struct {
+	code int
+	err  error
+}
+
+func (e *exitError) Error() string {
+	return fmt.Sprintf("exit code %d: %v", e.code, e.err)
+}
+
+func newExitError(code int, err error) *exitError {
+	return &exitError{code: code, err: err}
+}
+
 /*
 There are two "subcommands" of this binary:
  1. The setupBundle command, which is invoked by buildkitd as the oci executor. It updates the
@@ -69,6 +87,12 @@ func main() {
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Fprintf(os.Stderr, "panic: %v %s\n", err, string(debug.Stack()))
+			if err, ok := err.(error); ok {
+				var exitErr *exitError
+				if errors.As(err, &exitErr) {
+					os.Exit(exitErr.code)
+				}
+			}
 			os.Exit(errorExitCode)
 		}
 	}()
@@ -182,7 +206,7 @@ func shim() (returnExitCode int) {
 	defer cancel()
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
-		return errorExitCode
+		return errorExitCode + 1
 	}
 
 	// Set up slog initially to log directly to stderr, in case something goes
@@ -232,7 +256,7 @@ func shim() (returnExitCode int) {
 	if isTTY {
 		// Re-enable onlcr now that we're in the container.
 		if err := toggleONLCR(true); err != nil {
-			panic(err)
+			panic(newExitError(errorExitCode+2, err))
 		}
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -251,7 +275,7 @@ func shim() (returnExitCode int) {
 		if found {
 			err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
 			if err != nil {
-				panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+				panic(newExitError(errorExitCode+3, fmt.Errorf("cannot load secrets to scrub: %w", err)))
 			}
 		}
 
@@ -260,7 +284,17 @@ func shim() (returnExitCode int) {
 
 		stdoutFile, err := os.Create(stdoutPath)
 		if err != nil {
-			panic(err)
+			switch {
+			case os.IsNotExist(err):
+				panic(newExitError(errorExitCode+40, err))
+			case os.IsPermission(err):
+				panic(newExitError(errorExitCode+41, err))
+			case os.IsExist(err):
+				panic(newExitError(errorExitCode+42, err))
+			case errors.Is(err, os.ErrInvalid):
+			default:
+				panic(newExitError(errorExitCode+4, err))
+			}
 		}
 		defer stdoutFile.Close()
 		stdoutRedirect := io.Discard
@@ -268,7 +302,7 @@ func shim() (returnExitCode int) {
 		if found {
 			stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+5, err))
 			}
 			defer stdoutRedirectFile.Close()
 			stdoutRedirect = stdoutRedirectFile
@@ -276,7 +310,7 @@ func shim() (returnExitCode int) {
 
 		stderrFile, err := os.Create(stderrPath)
 		if err != nil {
-			panic(err)
+			panic(newExitError(errorExitCode+6, err))
 		}
 		defer stderrFile.Close()
 		stderrRedirect := io.Discard
@@ -284,7 +318,7 @@ func shim() (returnExitCode int) {
 		if found {
 			stderrRedirectFile, err := os.Create(stderrRedirectPath)
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+7, err))
 			}
 			defer stderrRedirectFile.Close()
 			stderrRedirect = stderrRedirectFile
@@ -306,11 +340,11 @@ func shim() (returnExitCode int) {
 			envToScrub := os.Environ()
 			stdoutPipe, err := cmd.StdoutPipe()
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+8, err))
 			}
 			scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+9, err))
 			}
 			pipeWg.Add(1)
 			go func() {
@@ -320,11 +354,11 @@ func shim() (returnExitCode int) {
 
 			stderrPipe, err := cmd.StderrPipe()
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+10, err))
 			}
 			scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+11, err))
 			}
 			pipeWg.Add(1)
 			go func() {
@@ -339,13 +373,15 @@ func shim() (returnExitCode int) {
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			exitCode = exiterr.ExitCode()
 		} else {
-			exitCode = errorExitCode
-			fmt.Fprintln(os.Stderr, err.Error())
+			exitCode = errorExitCode + 12
+			// write to the cmds stderr so it actually shows up in the error message
+			// returned to the client
+			fmt.Fprintf(cmd.Stderr, "shim error: %v\n", err)
 		}
 	}
 
-	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0o600); err != nil {
-		panic(err)
+	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0o666); err != nil {
+		panic(newExitError(errorExitCode+13, err))
 	}
 
 	return exitCode
@@ -355,7 +391,7 @@ func setupBundle() int {
 	// If we're running with a TTY, disable onlcr; it gets re-enabled on the
 	// container side.
 	if err := toggleONLCR(false); err != nil {
-		panic(err)
+		panic(newExitError(errorExitCode+14, err))
 	}
 
 	// Figure out the path to the bundle dir, in which we can obtain the
@@ -379,13 +415,13 @@ func setupBundle() int {
 	configBytes, err := os.ReadFile(configPath)
 	if err != nil {
 		fmt.Printf("Error reading config.json: %v\n", err)
-		return errorExitCode
+		return errorExitCode + 15
 	}
 
 	var spec specs.Spec
 	if err := json.Unmarshal(configBytes, &spec); err != nil {
 		fmt.Printf("Error parsing config.json: %v\n", err)
-		return errorExitCode
+		return errorExitCode + 16
 	}
 
 	// Check to see if this is a dagger exec, currently by using
@@ -412,12 +448,12 @@ func setupBundle() int {
 		selfPath, err := os.Executable()
 		if err != nil {
 			fmt.Printf("Error getting self path: %v\n", err)
-			return errorExitCode
+			return errorExitCode + 17
 		}
 		selfPath, err = filepath.EvalSymlinks(selfPath)
 		if err != nil {
 			fmt.Printf("Error getting self path: %v\n", err)
-			return errorExitCode
+			return errorExitCode + 18
 		}
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: shimPath,
@@ -448,7 +484,7 @@ func setupBundle() int {
 		found, err := execMetadata.FromEnv(env)
 		if err != nil {
 			fmt.Printf("Error parsing env: %v\n", err)
-			return errorExitCode
+			return errorExitCode + 19
 		}
 		if found {
 			// remove the ftp_proxy env var from being set in the container
@@ -479,15 +515,15 @@ func setupBundle() int {
 
 			newResolv, err := os.Create(newResolvPath)
 			if err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+20, err))
 			}
 
 			if err := replaceSearch(newResolv, mnt.Source, searchDomains); err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+21, err))
 			}
 
 			if err := newResolv.Close(); err != nil {
-				panic(err)
+				panic(newExitError(errorExitCode+22, err))
 			}
 
 			spec.Mounts[i].Source = newResolvPath
@@ -507,7 +543,7 @@ func setupBundle() int {
 			// provide the server id to connect back to
 			if execMetadata.ServerID == "" {
 				fmt.Fprintln(os.Stderr, "missing server id")
-				return errorExitCode
+				return errorExitCode + 23
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
@@ -525,7 +561,7 @@ func setupBundle() int {
 
 			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
-				return errorExitCode
+				return errorExitCode + 24
 			}
 		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
 			_, gpuParams, _ = strings.Cut(env, "=")
@@ -574,11 +610,11 @@ func setupBundle() int {
 	configBytes, err = json.Marshal(spec)
 	if err != nil {
 		fmt.Printf("Error marshaling config.json: %v\n", err)
-		return errorExitCode
+		return errorExitCode + 25
 	}
 	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
 		fmt.Printf("Error writing config.json: %v\n", err)
-		return errorExitCode
+		return errorExitCode + 26
 	}
 
 	// Run the actual runc binary as a child process with the (possibly updated) config.
@@ -658,7 +694,7 @@ func execRunc() int {
 	args = append(args, os.Args[1:]...)
 	if err := unix.Exec(runcPath, args, os.Environ()); err != nil {
 		fmt.Printf("Error execing runc: %v\n", err)
-		return errorExitCode
+		return errorExitCode + 27
 	}
 	panic("congratulations: you've reached unreachable code, please report a bug!")
 }
