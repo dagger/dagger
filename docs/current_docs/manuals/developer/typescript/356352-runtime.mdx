@@ -40,3 +40,12 @@ Set the field to `bun` to use the Bun runtime.
 :::warning
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
 :::
+## Automatic Detection
+When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's lock files inside the project's `dagger` directory.
+
+- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
+- In the absence of the lock files mentioned above, if a `bun.lockb` file is present, Dagger will choose `bun` as the runtime.
+
+- If no or only unknown lock files are present, `node` is chosen.
+
+This behavior however should be seen as a sensible fallback and not as an explicit configuration.
