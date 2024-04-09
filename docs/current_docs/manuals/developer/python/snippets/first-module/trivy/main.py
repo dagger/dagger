@@ -1,7 +1,7 @@
 """Security scanning with Trivy."""
 from typing import Annotated
 
-from dagger import Doc, dag, function, object_type
+from dagger import Arg, Doc, dag, function, object_type
 
 
 @object_type
@@ -23,8 +23,9 @@ class Trivy:
             int,
             Doc("The exit code to return if vulnerabilities are found"),
         ] = 0,
-        format: Annotated[
+        format_: Annotated[
             str,
+            Arg("format"),
             Doc("The output format to use for the scan results"),
         ] = "table",
     ) -> str:
@@ -41,7 +42,7 @@ class Trivy:
                     "--exit-code",
                     str(exit_code),
                     "--format",
-                    format,
+                    format_,
                     image_ref,
                 ]
             )

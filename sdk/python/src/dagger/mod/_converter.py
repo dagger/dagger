@@ -67,7 +67,7 @@ def make_converter():
 
 
 @functools.cache
-def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901:
+def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901,PLR0912
     """Convert Python object to API type."""
     assert not is_annotated(
         annotation

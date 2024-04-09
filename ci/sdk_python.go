@@ -7,7 +7,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/ci/build"
 	"github.com/dagger/dagger/ci/internal/dagger"
 	"github.com/dagger/dagger/ci/util"
 )
@@ -46,8 +45,8 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current_docs"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current_docs"}).
+			WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
+			WithExec([]string{"black", "--check", "--diff", ".", "/docs"}).
 			Sync(ctx)
 		return err
 	})
@@ -215,7 +214,7 @@ func (t PythonSDK) pythonBase(version string, install bool) *Container {
 	if install {
 		base = base.
 			WithMountedDirectory(mountPath, src).
-			WithExec([]string{"pip", "install", "."})
+			WithExec([]string{"pip", "install", "--no-deps", "."})
 	}
 
 	return base

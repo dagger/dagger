@@ -105,6 +105,8 @@ ignore = [
     # TODO: Document public modules and packages.
     "D100",
     "D104",
+    # First line should end with a period.
+    "D400",
     # Imperative mood only makes sense in functions, not classes.
     "D401",
     # Not using timezones in this project.

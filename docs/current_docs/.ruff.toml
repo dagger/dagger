@@ -6,5 +6,7 @@ ignore = [
     "D1",    # docstrings
     "E501",  # line too long
     "S108",  # probable insecure usage of temporary file or directory
+    "S311",  # pseudo-random not safe
     "T201",  # `print` found
+    "PLR0913",  # too many arguments
 ]
