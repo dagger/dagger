@@ -11,16 +11,17 @@ It's essential to understand a few key concepts about Dagger Modules created for
 
 ## Python version
 
-Dagger Modules run in a [container](../overview/942201-execution-environment.mdx) that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It currently runs Python 3.11 by default but starting with [v0.11.0][v11] that can be changed.
+Dagger Modules run in a [container](../overview/942201-execution-environment.mdx) that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It currently runs Python 3.11 by default but, starting with [Dagger v0.11.0][v11], the version can be changed.
 
 The desired interpreter version can be pinned by creating a `.python-version` file next to your `pyproject.toml`:
+
 ```console
 echo "3.11" > .python-version
 ```
 
-This can be useful either to pin the version in case the default one gets an upgrade, or to choose another a newer version sooner.
+This can be useful either to pin the version in case the default one gets an upgrade, or to choose a newer version.
 
-As an alternative, setting [requires-python](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires) in `pyproject.toml` will also pin the version, but using a lower bound constraint (minimum version). For example, the following will use 3.11, even though there's a 3.12 available:
+As an alternative, setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires) in `pyproject.toml` will also pin the version, but using a lower bound constraint (minimum version). For example, the following will use Python 3.11, even though Python 3.12 is available:
 
 ```toml
 [project]
@@ -29,14 +30,14 @@ requires-python = ">=3.11"
 
 ## Base image
 
-The default base image is [python:VERSION-slim](https://hub.docker.com/_/python/tags?name=3.11-slim) (based on the [Python version](#python-version)), but it can be overridden in `pyproject.toml` since [v0.11][v11]:
+The default base image is [python:VERSION-slim](https://hub.docker.com/_/python/tags?name=3.11-slim) (based on the [Python version](#python-version)), but it can be overridden in `pyproject.toml` since [Dagger v0.11][v11]:
 
 ```toml
 [dagger.tool]
 base-image = "acme/python:3.11"
 ```
 
-This can be useful to add a few requirements to the module's execution environment, like operating system packages such as `git` for example.
+This can be useful to add a few requirements to the module's execution environment, such as system packages like `git`.
 
 :::warning
 Don't deviate from the default base image too much or it may break in a future version of Dagger. Override at own risk.
@@ -44,7 +45,7 @@ Don't deviate from the default base image too much or it may break in a future v
 
 ## Automatic SDK install
 
-Each release of Dagger bundles the Python SDK inside the Engine container image. During the Dagger Module's code generation phase, that directory is unpacked and installed automatically, including dependencies. That's the copy that is exported to the host on `dagger init --sdk=python` or `dagger develop --sdk=python`. It's **not** the same as installing from [dagger-io](https://pypi.org/project/dagger-io/).
+Each release of Dagger bundles the Python SDK inside the Engine container image. During the Dagger module's code generation phase, that directory is unpacked and installed automatically, including dependencies. That directory is the same one that is exported to the host as `./sdk` when running `dagger init --sdk=python` or `dagger develop --sdk=python`. Note that it is **not** the same as the directory obtained when installing from [dagger-io](https://pypi.org/project/dagger-io/).
 
 The runtime container installs the SDK as an editable install, similar to the following:
 
@@ -57,7 +58,7 @@ This is why the initial `pyproject.toml` file doesn't include any [dependencies]
 
 ### UV installer
 
-[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./077133-python-dependencies.mdx#lock-file) (starting with [v0.11.0][v11]). It's possible to specify a newer version if needed, in `pyproject.toml`:
+[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./077133-python-dependencies.mdx#lock-file) (starting with [Dagger v0.11.0][v11]). It's possible to specify a newer version, if needed, in `pyproject.toml`:
 
 ```toml
 [tool.dagger]
@@ -117,7 +118,7 @@ packages = [{ include = "main", from = "src" }]
 
 ## Default project layout
 
-The default template from `dagger init` creates a `main` package inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code, which prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+The default template from `dagger init` creates a `main` package inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
 
 Tools like [build](https://build.pypa.io/en/latest/), [Hatch](https://hatch.pypa.io/latest/), and [Poetry](https://python-poetry.org/docs/) already detect this project layout by default, but it's not required and can be overridden as long as `main` is installed correctly in `site-packages`, or is at least importable with `import main`.
 
@@ -153,11 +154,7 @@ cd acme
 dagger init --sdk=python --source=.
 ```
 
-Rye will create an initial `src/main/__init__.py` but Dagger won't recognize any Dagger Functions in it. Either remove it and let Dagger create the default one, or adapt to own's needs before running:
-
-```console
-dagger call
-```
+Rye will create an initial `src/main/__init__.py` but Dagger won't recognize any Dagger Functions in it. Either remove it and let Dagger create the default one, or adapt it to your needs before running `dagger call`.
 
 
 ## Poetry support
