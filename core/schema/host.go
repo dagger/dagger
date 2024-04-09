@@ -17,8 +17,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/internal/distconsts"
 )
 
 type hostSchema struct {

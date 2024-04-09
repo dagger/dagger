@@ -11,7 +11,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/internal/distconsts"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const (
@@ -327,11 +327,13 @@ func (sdk *goSDK) Codegen(
 			"dagger.gen.go",
 			"internal/dagger/**",
 			"internal/querybuilder/**",
+			"internal/telemetry/**",
 		},
 		VCSIgnoredPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger",
 			"internal/querybuilder",
+			"internal/telemetry",
 		},
 	}, nil
 }

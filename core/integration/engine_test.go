@@ -16,8 +16,9 @@ import (
 )
 
 func devEngineContainer(c *dagger.Client) *dagger.Container {
-	// This loads the engine.tar file from the host into the container, that was set up by
-	// internal/mage/engine.go:test or by ./hack/dev. This is used to spin up additional dev engines.
+	// This loads the engine.tar file from the host into the container, that
+	// was set up by the test caller. This is used to spin up additional dev
+	// engines.
 	var tarPath string
 	if v, ok := os.LookupEnv("_DAGGER_TESTS_ENGINE_TAR"); ok {
 		tarPath = v

@@ -52,25 +52,7 @@ jobs:
       mage-targets: engine:testpublish
 
   scan-engine:
-    if: ${{ github.repository == 'dagger/dagger' }}
-    # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
-    runs-on: dagger-runner-2c-8g
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.21"
-          cache-dependency-path: "internal/mage/go.sum"
-      - name: "Build Dev Engine"
-        run: |
-          ./hack/dev
-        env:
-          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
-          DAGGER_CLOUD_TOKEN: "${{ secrets.DAGGER_CLOUD_TOKEN }}"
-      - name: "Scan Dev Engine for Vulnerabilities"
-        uses: aquasecurity/trivy-action@0.11.2
-        with:
-          input: ./bin/engine.tar
-          format: "json"
-          exit-code: "1"
-          severity: "CRITICAL,HIGH"
+    uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
+    with:
+      mage-targets: engine:scan

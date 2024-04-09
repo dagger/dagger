@@ -24,12 +24,6 @@ The following code snippet shows how to use Python's
 ```python file=./snippets/documentation/docstrings/main.py
 ```
 
-:::note
-To use multiple Python source files, the `src/main.py` module needs to be converted
-into a [package][pypkg]: `src/main/__init__.py`. In this case, the Dagger Module
-is documented at the top of the `__init__.py` file, just like any Python package.
-:::
-
 ## Function arguments
 
 For function arguments, [annotate][typing-doc] with the [`dagger.Doc`][dag-doc] metadata:

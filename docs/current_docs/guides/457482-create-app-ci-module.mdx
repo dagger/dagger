@@ -56,7 +56,7 @@ This will generate a `dagger.json` module file, an initial `dagger/main.go` sour
 dagger init --name=my-module --sdk=python
 ```
 
-This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
+This will generate a `dagger.json` module file, initial `dagger/src/main/__init__.py`, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -106,7 +106,7 @@ This function does the following:
 </TabItem>
 <TabItem value="Python">
 
-Next, update the generated `dagger/src/main.py` file with the following code:
+Next, update the generated `dagger/src/main/__init__.py` file with the following code:
 
 ```python file=./snippets/create-app-ci-module/base/python/main.py
 ```

@@ -34,7 +34,7 @@ func appendToFile(path, podname string, aliases []string, ips []*net.IPNet) erro
 	return nil
 }
 
-// removeLineFromFile removes a given entry from the dnsmasq host file
+// removeFromFile removes a given entry from the dnsmasq host file
 func removeFromFile(livePath, hostname string) error {
 	newFile := fmt.Sprintf("%s.new", livePath)
 
