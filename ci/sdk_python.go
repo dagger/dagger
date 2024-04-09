@@ -107,18 +107,15 @@ func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	builder, err := build.NewBuilder(ctx, t.Dagger.Source)
+	introspection, err := t.Dagger.introspection(ctx, installer)
 	if err != nil {
 		return nil, err
 	}
-
 	generated := t.pythonBase(pythonDefaultVersion, true).
-		With(installer).
-		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
-		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		WithWorkdir("/sdk/python/codegen").
 		WithExec([]string{"pip", "install", "-r", "requirements.lock"}).
 		WithWorkdir("/").
+		WithMountedFile("/schema.json", introspection).
 		WithExec([]string{"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", pythonGeneratedAPIPath}).
 		WithExec([]string{"black", pythonGeneratedAPIPath}).
 		File(pythonGeneratedAPIPath)

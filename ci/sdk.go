@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+
+	"github.com/dagger/dagger/ci/build"
+	"github.com/dagger/dagger/ci/consts"
 )
 
 type SDK struct {
@@ -44,4 +47,17 @@ func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) 
 		}
 		return ctr
 	}, nil
+}
+
+func (ci *Dagger) introspection(ctx context.Context, installer func(*Container) *Container) (*File, error) {
+	builder, err := build.NewBuilder(ctx, ci.Source)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Container().
+		From(consts.AlpineImage).
+		With(installer).
+		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
+		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
+		File("/schema.json"), nil
 }
