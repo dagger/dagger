@@ -285,57 +285,6 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	var llbRes *bkfrontend.Result
 	switch {
 	case req.Definition != nil && req.Definition.Def != nil:
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		dag, err := DefToDAG(req.Definition)
-		if err != nil {
-			return nil, err
-		}
-		if err := dag.Walk(func(dag *OpDAG) error {
-			execOp, ok := dag.AsExec()
-			if !ok {
-				return nil
-			}
-			if execOp.Meta == nil {
-				execOp.Meta = &bksolverpb.Meta{}
-			}
-			if execOp.Meta.ProxyEnv == nil {
-				execOp.Meta.ProxyEnv = &bksolverpb.ProxyEnv{}
-			}
-
-			// If we already solved for this execop in this dagger session, use
-			// it's uncached metadata to preserve the same vertex digest.
-			// This results in buildkit's solver de-duping the op, instead of
-			// the scheduler's edge merge.
-			c.execMetadataMu.Lock()
-			execMeta, ok := c.execMetadata[*execOp.OpDigest]
-			if !ok {
-				execMeta = ContainerExecUncachedMetadata{
-					ParentClientIDs: clientMetadata.ClientIDs(),
-					ServerID:        clientMetadata.ServerID,
-				}
-				c.execMetadata[*execOp.OpDigest] = execMeta
-			}
-			c.execMetadataMu.Unlock()
-
-			var err error
-			execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
-			if err != nil {
-				return err
-			}
-			return nil
-		}); err != nil {
-			return nil, err
-		}
-		newDef, err := dag.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		req.Definition = newDef
-
 		llbRes, err = c.llbBridge.Solve(ctx, req, c.ID())
 		if err != nil {
 			return nil, wrapError(ctx, err, c.ID())
