@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
 
 	"github.com/dagger/dagger/ci/mage/util"
@@ -203,7 +204,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
 	_ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
 
-	err = util.DaggerCall(ctx, "cli", "file", "export", "--path="+binDest)
+	err = util.DaggerCall(ctx, "cli", "file", "--platform="+platforms.DefaultString(), "export", "--path="+binDest)
 	if err != nil {
 		return err
 	}
