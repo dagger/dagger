@@ -34,7 +34,7 @@ Create a new directory on your filesystem and run `dagger init` to bootstrap you
     cd potato
     ```
 
-This will generate a `dagger.json` module file, initial `dagger/src/main.py` and `dagger/pyproject.toml` files, as well as a generated `dagger/sdk` folder for local development.
+This will generate a `dagger.json` module file, initial `dagger/src/main/__init__.py`, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
 
 The auto-generated Dagger Module template comes with some example Dagger Functions. Test it with the `dagger call` command:
 
@@ -56,7 +56,7 @@ When using `dagger call`, all names (functions, arguments, struct fields, etc) a
 
 Dagger Modules contain one or more Dagger Functions. You saw one of them in the previous section, but you can also add your own.
 
-Replace the auto-generated examples in `dagger/src/main.py` with your own, simpler Dagger Function:
+Replace the auto-generated examples in `dagger/src/main/__init__.py` with your own, simpler Dagger Function:
 
 ```python file=./snippets/first-module/step2/main.py
 ```
@@ -130,7 +130,7 @@ Now, put everything you've learnt to the test, by building a Dagger Module and D
     cd trivy
     ```
 
-1. Replace the generated `dagger/src/main.py` file with the following code:
+1. Replace the generated `dagger/src/main/__init__.py` file with the following code:
 
     ```python file=./snippets/first-module/trivy/main.py
     ```
