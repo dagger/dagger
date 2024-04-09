@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"strings"
+
+	"github.com/iancoleman/strcase"
 )
 
 const (
@@ -178,5 +179,5 @@ func mixProjectCaches(dag *Client, prefix string) (depsCache *CacheVolume, build
 }
 
 func normalizeModName(name string) string {
-	return strings.Replace(strings.ToLower(name), "-", "_", -1)
+	return strcase.ToSnake(name)
 }
