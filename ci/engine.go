@@ -61,6 +61,7 @@ func (e *Engine) Container(
 	if err != nil {
 		return nil, err
 	}
+	builder = builder.WithVersion(e.Dagger.Version.String())
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -145,12 +146,8 @@ func (e *Engine) Publish(
 	if len(platform) == 0 {
 		platform = []Platform{Platform(platforms.DefaultString())}
 	}
-	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
-	if err != nil {
-		return "", err
-	}
 
-	ref := fmt.Sprintf("%s:%s", image, builder.EngineVersion())
+	ref := fmt.Sprintf("%s:%s", image, e.Dagger.Version)
 	if e.GPUSupport {
 		ref += "-gpu"
 	}

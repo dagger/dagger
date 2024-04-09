@@ -1,4 +1,4 @@
-package build
+package main
 
 import (
 	"context"
@@ -15,7 +15,7 @@ type VersionInfo struct {
 	TreeHash string
 }
 
-func getVersionFromGit(ctx context.Context, dir *dagger.Directory) (*VersionInfo, error) {
+func newVersionFromGit(ctx context.Context, dir *dagger.Directory) (*VersionInfo, error) {
 	base := dag.Container().
 		From(consts.AlpineImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -38,7 +38,7 @@ func getVersionFromGit(ctx context.Context, dir *dagger.Directory) (*VersionInfo
 	return info, nil
 }
 
-func (info VersionInfo) EngineVersion() string {
+func (info *VersionInfo) String() string {
 	if info.Tag != "" {
 		return info.Tag
 	}

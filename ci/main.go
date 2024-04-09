@@ -5,16 +5,39 @@ import (
 
 	"github.com/dagger/dagger/ci/internal/dagger"
 	"github.com/dagger/dagger/ci/util"
+	"golang.org/x/mod/semver"
 )
 
 type Dagger struct {
-	Source *Directory // +private
+	Source  *Directory // +private
+	Version *VersionInfo
 }
 
-func New(source *Directory) *Dagger {
-	return &Dagger{
-		Source: source,
+func New(
+	ctx context.Context,
+	source *Directory,
+
+	// +optional
+	version string,
+) (*Dagger, error) {
+	var versionInfo *VersionInfo
+	switch {
+	case version == "":
+		var err error
+		versionInfo, err = newVersionFromGit(ctx, source.Directory(".git"))
+		if err != nil {
+			return nil, err
+		}
+	case semver.IsValid(version):
+		versionInfo = &VersionInfo{Tag: version}
+	default:
+		versionInfo = &VersionInfo{Commit: version}
 	}
+
+	return &Dagger{
+		Source:  source,
+		Version: versionInfo,
+	}, nil
 }
 
 func (ci *Dagger) CLI() *CLI {

@@ -91,15 +91,17 @@ func (t GoSDK) Publish(
 	githubToken *Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
-		source:      "https://github.com/dagger/dagger.git",
-		sourcePath:  "sdk/go/",
-		sourceTag:   tag,
-		dest:        gitRepo,
-		destTag:     strings.TrimPrefix(tag, "sdk/go/"),
-		username:    gitUserName,
-		email:       gitUserEmail,
-		githubToken: githubToken,
-		dryRun:      dryRun,
+		source:       "https://github.com/dagger/dagger.git",
+		alpineBase:   util.GoBase(t.Dagger.Source),
+		sourceTag:    tag,
+		sourcePath:   "sdk/go/",
+		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
+		dest:         gitRepo,
+		destTag:      strings.TrimPrefix(tag, "sdk/go/"),
+		username:     gitUserName,
+		email:        gitUserEmail,
+		githubToken:  githubToken,
+		dryRun:       dryRun,
 	})
 }
 
@@ -125,17 +127,24 @@ type gitPublishOpts struct {
 	source, dest       string
 	sourceTag, destTag string
 	sourcePath         string
+	sourceFilter       string
 
 	username    string
 	email       string
 	githubToken *Secret
 
+	alpineBase *Container
+
 	dryRun bool
 }
 
 func gitPublish(ctx context.Context, opts gitPublishOpts) error {
-	git := dag.Container().
-		From(consts.AlpineImage).
+	base := opts.alpineBase
+	if base == nil {
+		base = dag.Container().From(consts.AlpineImage)
+	}
+
+	git := base.
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", opts.username}).
 		WithExec([]string{"git", "config", "--global", "user.email", opts.email})
@@ -159,7 +168,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", opts.sourcePath,
-			"--tree-filter", "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
+			"--tree-filter", opts.sourceFilter,
 			"--", opts.sourceTag,
 		})
 	if !opts.dryRun {

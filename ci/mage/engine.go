@@ -57,7 +57,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		commonArgs = append(commonArgs, "--registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD")
 	}
 
-	args := []string{"engine", "publish", "--version=" + version}
+	args := []string{"--version=" + version, "engine", "publish"}
 	args = append(args, commonArgs...)
 	for _, p := range publishedEnginePlatforms {
 		args = append(args, "--platform="+p)
@@ -67,7 +67,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
-	args = []string{"engine", "with-gpusupport", "publish", "--version=" + version}
+	args = []string{"--version=" + version, "engine", "with-gpusupport", "publish"}
 	args = append(args, commonArgs...)
 	for _, p := range publishedGPUEnginePlatforms {
 		args = append(args, "--platform="+p)
