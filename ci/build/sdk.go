@@ -19,7 +19,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) dagger.WithContainer
 				"pyproject.toml",
 				"src/**/*.py",
 				"src/**/*.typed",
-				"codegen/**/*.py",
+				"codegen/src/**/*.py",
 				"codegen/pyproject.toml",
 				"codegen/requirements.lock",
 				"runtime/",

@@ -13,8 +13,12 @@ build-backend = "hatchling.build"
 
 [tool.rye]
 managed = true
+dev-dependencies = [
+    "pytest>=8.1.1",
+]
 
 [tool.rye.scripts]
+test = "pytest"
 introspect = "dagger run go run ../../../cmd/codegen introspect -o schema.json"
 generate = "python -m codegen generate -i schema.json -o ../src/dagger/client/gen.py"
 format = "rye fmt ../src/dagger/client/gen.py"

@@ -10,3 +10,10 @@
 -e file:.
 graphql-core==3.2.3
     # via codegen
+iniconfig==2.0.0
+    # via pytest
+packaging==24.0
+    # via pytest
+pluggy==1.4.0
+    # via pytest
+pytest==8.1.1

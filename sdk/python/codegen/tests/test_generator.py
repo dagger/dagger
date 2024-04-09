@@ -14,7 +14,7 @@ from graphql import GraphQLObjectType as Object
 from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
 
-from dagger._codegen.generator import (
+from codegen.generator import (
     Context,
     _InputField,
     doc,
@@ -22,8 +22,8 @@ from dagger._codegen.generator import (
     format_name,
     format_output_type,
 )
-from dagger._codegen.generator import Enum as EnumHandler
-from dagger._codegen.generator import Scalar as ScalarHandler
+from codegen.generator import Enum as EnumHandler
+from codegen.generator import Scalar as ScalarHandler
 
 
 @pytest.fixture()
