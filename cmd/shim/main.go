@@ -41,11 +41,6 @@ import (
 	"github.com/dagger/dagger/telemetry"
 )
 
-func init() {
-	// unset umask so permissions are created as specified
-	unix.Umask(0)
-}
-
 const (
 	metaMountPath = "/.dagger_meta_mount"
 	stdinPath     = metaMountPath + "/stdin"
@@ -282,19 +277,9 @@ func shim() (returnExitCode int) {
 		currentDirPath := "/"
 		shimFS := os.DirFS(currentDirPath)
 
-		stdoutFile, err := os.Create(stdoutPath)
+		stdoutFile, err := os.OpenFile(stdoutPath, os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
-			switch {
-			case os.IsNotExist(err):
-				panic(newExitError(errorExitCode+40, err))
-			case os.IsPermission(err):
-				panic(newExitError(errorExitCode+41, err))
-			case os.IsExist(err):
-				panic(newExitError(errorExitCode+42, err))
-			case errors.Is(err, os.ErrInvalid):
-			default:
-				panic(newExitError(errorExitCode+4, err))
-			}
+			panic(newExitError(errorExitCode+4, err))
 		}
 		defer stdoutFile.Close()
 		stdoutRedirect := io.Discard
@@ -308,7 +293,7 @@ func shim() (returnExitCode int) {
 			stdoutRedirect = stdoutRedirectFile
 		}
 
-		stderrFile, err := os.Create(stderrPath)
+		stderrFile, err := os.OpenFile(stderrPath, os.O_WRONLY|os.O_APPEND, 0o666)
 		if err != nil {
 			panic(newExitError(errorExitCode+6, err))
 		}
@@ -432,6 +417,29 @@ func setupBundle() int {
 	for _, mnt := range spec.Mounts {
 		if mnt.Destination == metaMountPath {
 			isDaggerExec = true
+
+			// setup the metaMount dir/files with the final container uid/gid owner so that
+			// we guarantee the container init shim process can read/write them. This is needed
+			// for the ca cert installer case where we may run some commands as root when the actual
+			// user exec is non-root. Just setting 0666 perms isn't sufficient due to umask settings,
+			// which we don't want to play with as it could subtly impact other things.
+			if err := containerChownPath(mnt.Source, &spec); err != nil {
+				fmt.Printf("Error chowning meta mount path: %v\n", err)
+				return errorExitCode + 50
+			}
+			for _, path := range []string{
+				stdinPath,
+				stdoutPath,
+				stderrPath,
+				exitCodePath,
+			} {
+				path = filepath.Join(mnt.Source, strings.TrimPrefix(path, metaMountPath))
+				if err := containerTouchPath(path, 0o666, &spec); err != nil {
+					fmt.Printf("Error touching path %s: %v\n", path, err)
+					return errorExitCode + 51
+				}
+			}
+
 			break
 		}
 	}
@@ -941,4 +949,16 @@ func proxyOtelSocket(l net.Listener, endpoint string) {
 			io.Copy(conn, remote)
 		}()
 	}
+}
+
+func containerTouchPath(path string, perms os.FileMode, spec *specs.Spec) error {
+	// mknod w/ S_IFREG is equivalent to "touch"
+	if err := unix.Mknod(path, uint32(perms)|unix.S_IFREG, 0); err != nil && !errors.Is(err, unix.EEXIST) {
+		return err
+	}
+	return containerChownPath(path, spec)
+}
+
+func containerChownPath(path string, spec *specs.Spec) error {
+	return unix.Chown(path, int(spec.Process.User.UID), int(spec.Process.User.GID))
 }
