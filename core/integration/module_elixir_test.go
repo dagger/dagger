@@ -44,7 +44,6 @@ func TestModuleElixirInit(t *testing.T) {
 			require.NoError(t, err)
 			require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 		}
-
 	})
 
 	t.Run("with source", func(t *testing.T) {
