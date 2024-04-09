@@ -60,14 +60,20 @@ func (*GitRef) TypeDescription() string {
 
 func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
 	bk := ref.Query.Buildkit
-	st := ref.getState(ctx, bk)
-	return NewDirectorySt(ctx, ref.Query, *st, "", ref.Repo.Platform, ref.Repo.Services)
+	st, err := ref.getState(ctx, bk)
+	if err != nil {
+		return nil, err
+	}
+	return NewDirectorySt(ctx, ref.Query, st, "", ref.Repo.Platform, ref.Repo.Services)
 }
 
 func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	bk := ref.Query.Buildkit
-	st := ref.getState(ctx, bk)
-	p, err := resolveProvenance(ctx, bk, *st)
+	st, err := ref.getState(ctx, bk)
+	if err != nil {
+		return "", err
+	}
+	p, err := resolveProvenance(ctx, bk, st)
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +83,7 @@ func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	return p.Sources.Git[0].Commit, nil
 }
 
-func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State {
+func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) (llb.State, error) {
 	opts := []llb.GitOption{}
 
 	if ref.Repo.KeepGitDir {
@@ -96,26 +102,10 @@ func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State
 		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.Accessor))
 	}
 
-	useDNS := len(ref.Repo.Services) > 0
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err == nil && !useDNS {
-		useDNS = len(clientMetadata.ParentClientIDs) > 0
+	if err != nil {
+		return llb.State{}, err
 	}
 
-	var st llb.State
-	if useDNS {
-		// NB: only configure search domains if we're directly using a service, or
-		// if we're nested beneath another search domain.
-		//
-		// we have to be a bit selective here to avoid breaking Dockerfile builds
-		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
-		// networks API cap.
-		//
-		// TODO: add API cap
-		st = gitdns.Git(ref.Repo.URL, ref.Ref, clientMetadata.ClientIDs(), opts...)
-	} else {
-		st = llb.Git(ref.Repo.URL, ref.Ref, opts...)
-	}
-	return &st
+	return gitdns.Git(ref.Repo.URL, ref.Ref, clientMetadata.ServerID, opts...), nil
 }

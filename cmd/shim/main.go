@@ -501,11 +501,8 @@ func setupBundle() (returnExitCode int) {
 	}
 
 	var searchDomains []string
-	for _, parentClientID := range execMetadata.ParentClientIDs {
-		searchDomains = append(searchDomains, network.ClientDomain(parentClientID))
-	}
-	if len(searchDomains) > 0 {
-		spec.Process.Env = append(spec.Process.Env, "_DAGGER_PARENT_CLIENT_IDS="+strings.Join(execMetadata.ParentClientIDs, " "))
+	if ns := execMetadata.ServerID; ns != "" {
+		searchDomains = append(searchDomains, network.ClientDomain(ns))
 	}
 
 	var hostsFilePath string
@@ -733,12 +730,9 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
 
-	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
-
 	clientParams := client.Params{
-		SecretToken:     sessionToken.String(),
-		RunnerHost:      "unix:///.runner.sock",
-		ParentClientIDs: strings.Fields(parentClientIDsVal),
+		SecretToken: sessionToken.String(),
+		RunnerHost:  "unix:///.runner.sock",
 	}
 
 	if _, ok := internalEnv("_DAGGER_ENABLE_NESTING_IN_SAME_SESSION"); ok {

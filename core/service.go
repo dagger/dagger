@@ -260,7 +260,7 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
 
 	bk := svc.Query.Buildkit
 
@@ -328,8 +328,7 @@ func (svc *Service) startContainer(
 	}
 
 	execMeta := buildkit.ContainerExecUncachedMetadata{
-		ParentClientIDs: clientMetadata.ClientIDs(),
-		ServerID:        clientMetadata.ServerID,
+		ServerID: clientMetadata.ServerID,
 	}
 	execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
 	if err != nil {
@@ -596,7 +595,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		return nil, err
 	}
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
 
 	bk := svc.Query.Buildkit
 

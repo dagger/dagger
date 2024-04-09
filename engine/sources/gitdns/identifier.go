@@ -4,10 +4,10 @@ import (
 	bkgit "github.com/moby/buildkit/source/git"
 )
 
-const AttrGitClientIDs = "dagger.git.clientids"
+const AttrDNSNamespace = "dagger.dns.namespace"
 
 type GitIdentifier struct {
 	bkgit.GitIdentifier
 
-	ClientIDs []string
+	Namespace string
 }
