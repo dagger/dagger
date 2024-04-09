@@ -32,16 +32,19 @@ func TestModuleElixirInit(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=My-Module", "--sdk=elixir"))
+		for _, name := range []string{"My-Module", "MyModule"} {
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name="+name, "--sdk=elixir"))
 
-		out, err := modGen.
-			With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+			out, err := modGen.
+				With(daggerQuery(`{myModule{containerEcho(stringArg:"hello"){stdout}}}`)).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		}
+
 	})
 
 	t.Run("with source", func(t *testing.T) {
