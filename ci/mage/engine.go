@@ -51,8 +51,8 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	if v, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_REGISTRY"); ok {
 		commonArgs = append(commonArgs, "--registry="+v)
 	}
-	if _, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_USERNAME"); ok {
-		commonArgs = append(commonArgs, "--registry-username=env:DAGGER_ENGINE_IMAGE_USERNAME")
+	if v, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_USERNAME"); ok {
+		commonArgs = append(commonArgs, "--registry-username="+v)
 	}
 	if _, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_PASSWORD"); ok {
 		commonArgs = append(commonArgs, "--registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD")
