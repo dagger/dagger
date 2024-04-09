@@ -62,11 +62,6 @@ type ClientMetadata struct {
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels telemetry.Labels `json:"labels"`
 
-	// ParentClientIDs is a list of session ids that are parents of the current
-	// session. The first element is the direct parent, the second element is the
-	// parent of the parent, and so on.
-	ParentClientIDs []string `json:"parent_client_ids"`
-
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
 
@@ -78,11 +73,6 @@ type ClientMetadata struct {
 
 	// Disable analytics
 	DoNotTrack bool
-}
-
-// ClientIDs returns the ClientID followed by ParentClientIDs.
-func (m ClientMetadata) ClientIDs() []string {
-	return append([]string{m.ClientID}, m.ParentClientIDs...)
 }
 
 func (m ClientMetadata) ToGRPCMD() metadata.MD {

@@ -500,11 +500,8 @@ func setupBundle() (returnExitCode int) {
 	}
 
 	var searchDomains []string
-	for _, parentClientID := range execMetadata.ParentClientIDs {
-		searchDomains = append(searchDomains, network.ClientDomain(parentClientID))
-	}
-	if len(searchDomains) > 0 {
-		spec.Process.Env = append(spec.Process.Env, "_DAGGER_PARENT_CLIENT_IDS="+strings.Join(execMetadata.ParentClientIDs, " "))
+	if ns := execMetadata.ServerID; ns != "" {
+		searchDomains = append(searchDomains, network.ClientDomain(ns))
 	}
 
 	var hostsFilePath string
@@ -741,14 +738,11 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return errors.New("missing nested client server ID")
 	}
 
-	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
-
 	clientParams := client.Params{
-		ID:              clientID,
-		ServerID:        serverID,
-		SecretToken:     sessionToken.String(),
-		RunnerHost:      "unix:///.runner.sock",
-		ParentClientIDs: strings.Fields(parentClientIDsVal),
+		ID:          clientID,
+		ServerID:    serverID,
+		SecretToken: sessionToken.String(),
+		RunnerHost:  "unix:///.runner.sock",
 	}
 
 	sess, ctx, err := client.Connect(ctx, clientParams)

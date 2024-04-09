@@ -61,12 +61,6 @@ type Params struct {
 	// be reused across multiple servers.
 	ServerID string
 
-	// Parent client IDs of this Dagger client.
-	//
-	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
-	// passed from the parent.
-	ParentClientIDs []string
-
 	SecretToken string
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
@@ -327,7 +321,6 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		ClientSecretToken: c.SecretToken,
 		ClientHostname:    c.hostname,
 		Labels:            c.labels,
-		ParentClientIDs:   c.ParentClientIDs,
 	})
 
 	// filesync
@@ -356,7 +349,6 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 				ClientID:                  c.ID,
 				ServerID:                  c.ServerID,
 				ClientSecretToken:         c.SecretToken,
-				ParentClientIDs:           c.ParentClientIDs,
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
@@ -629,7 +621,6 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 			ServerID:          c.ServerID,
 			ClientSecretToken: c.SecretToken,
 			ClientHostname:    c.hostname,
-			ParentClientIDs:   c.ParentClientIDs,
 			Labels:            c.labels,
 		}.ToGRPCMD())
 	}

@@ -60,26 +60,11 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 		llb.Filename(filename),
 	}
 
-	useDNS := len(svcs) > 0
-
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err == nil && !useDNS {
-		useDNS = len(clientMetadata.ParentClientIDs) > 0
+	if err != nil {
+		return nil, err
 	}
 
-	var st llb.State
-	if useDNS {
-		// NB: only configure search domains if we're directly using a service, or
-		// if we're nested.
-		//
-		// we have to be a bit selective here to avoid breaking Dockerfile builds
-		// that use a Buildkit frontend (# syntax = ...).
-		//
-		// TODO: add API cap
-		st = httpdns.HTTP(args.URL, clientMetadata.ClientIDs(), opts...)
-	} else {
-		st = llb.HTTP(args.URL, opts...)
-	}
-
+	st := httpdns.HTTP(args.URL, clientMetadata.ServerID, opts...)
 	return core.NewFileSt(ctx, parent, st, filename, parent.Platform, svcs)
 }

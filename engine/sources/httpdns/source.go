@@ -76,8 +76,8 @@ func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, pl
 		HTTPIdentifier: *(srcid.(*srchttp.HTTPIdentifier)),
 	}
 
-	if v, ok := attrs[AttrHTTPClientIDs]; ok {
-		id.ClientIDs = strings.Split(v, ",")
+	if v, ok := attrs[AttrDNSNamespace]; ok {
+		id.Namespace = v
 	}
 
 	return id, nil
@@ -106,8 +106,8 @@ type httpSourceHandler struct {
 
 func (hs *httpSourceHandler) client(g session.Group) *http.Client {
 	clientDomains := []string{}
-	for _, clientID := range hs.src.ClientIDs {
-		clientDomains = append(clientDomains, network.ClientDomain(clientID))
+	if ns := hs.src.Namespace; ns != "" {
+		clientDomains = append(clientDomains, network.ClientDomain(ns))
 	}
 
 	dns := *hs.dns

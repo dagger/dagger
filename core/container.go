@@ -1181,8 +1181,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 	execMeta := buildkit.ContainerExecUncachedMetadata{
-		ParentClientIDs: clientMetadata.ClientIDs(),
-		ServerID:        clientMetadata.ServerID,
+		ServerID: clientMetadata.ServerID,
 	}
 	proxyVal, err := execMeta.ToPBFtpProxyVal()
 	if err != nil {

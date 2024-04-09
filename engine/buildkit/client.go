@@ -714,8 +714,7 @@ func withOutgoingContext(ctx context.Context) context.Context {
 // the "real" ftp proxy setting in here too and have the shim handle
 // leaving only that set in the actual env var.
 type ContainerExecUncachedMetadata struct {
-	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
-	ServerID        string   `json:"serverID,omitempty"`
+	ServerID string `json:"serverID,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {
