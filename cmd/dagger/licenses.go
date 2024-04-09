@@ -100,27 +100,46 @@ func searchForLicense(dir string) (string, error) {
 		dir = "."
 	}
 
-	for _, fileName := range licenseFiles {
-		licensePath := filepath.Join(dir, fileName)
-		if _, err := os.Stat(licensePath); err == nil {
-			return licensePath, nil
-		}
-	}
-
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-		// we reached the module root; time to give up
-		return "", errors.New("not found")
-	}
-
-	dir, err := filepath.Abs(dir)
+	dirs, err := pathsToContext(dir)
 	if err != nil {
 		return "", err
 	}
-	parent := filepath.Dir(dir)
-	if parent == dir {
-		// we reached the filesystem root; time to give up
-		return "", errors.New("not found")
+
+	for _, dir := range dirs {
+		for _, fileName := range licenseFiles {
+			licensePath := filepath.Join(dir, fileName)
+			if _, err := os.Stat(licensePath); err == nil {
+				return licensePath, nil
+			}
+		}
 	}
 
-	return searchForLicense(filepath.Dir(parent))
+	return "", errors.New("not found")
+}
+
+func pathsToContext(path string) ([]string, error) {
+	curPath := path
+
+	var paths []string
+	for {
+		paths = append(paths, curPath)
+
+		_, err := os.Stat(filepath.Join(curPath, ".git"))
+		if err == nil {
+			// at the module root; time to return
+			return paths, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+
+		if absPath, err := filepath.Abs(curPath); err != nil {
+			return nil, err
+		} else if absPath[len(absPath)-1] == os.PathSeparator {
+			// at the filesystem root; time to give up
+			return []string{path}, nil
+		}
+
+		curPath = filepath.Clean(filepath.Join(curPath, ".."))
+	}
 }
