@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix lock file updates
+time: 2024-04-09T16:21:55.252293Z
+custom:
+  Author: helderco
+  PR: "7064"
