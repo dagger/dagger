@@ -156,3 +156,50 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 		envName: distconsts.GoSDKManifestDigestEnvName,
 	}, nil
 }
+
+func (build *Builder) elixirSDKContent(ctx context.Context) (*sdkContent, error) {
+	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/elixir"), dagger.DirectoryWithDirectoryOpts{
+		Include: []string{
+			"**/*.ex",
+			"**/*.exs",
+			"LICENSE",
+			"README.md",
+			"runtime",
+			"dagger_codegen",
+		},
+		Exclude: []string{
+			"**/deps",
+			"**/_build",
+			"**/test",
+		},
+	})
+
+	sdkCtrTarball := dag.Container().
+		WithRootfs(rootfs).
+		WithFile("/codegen", build.CodegenBinary()).
+		AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.Uncompressed,
+		})
+
+	sdkDir := dag.Container().
+		From(consts.AlpineImage).
+		WithMountedDirectory("/out", dag.Directory()).
+		WithMountedFile("/sdk.tar", sdkCtrTarball).
+		WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
+		Directory("/out")
+
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
+		return nil, err
+	}
+
+	return &sdkContent{
+		index:   index,
+		sdkDir:  sdkDir,
+		envName: distconsts.ElixirSDKManifestDigestEnvName,
+	}, nil
+}

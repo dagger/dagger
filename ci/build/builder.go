@@ -96,7 +96,7 @@ func (build *Builder) WithUbuntuBase() *Builder {
 
 func (build *Builder) WithAlpineBase() *Builder {
 	b := *build
-	b.base = "alpine"
+	build.base = "alpine"
 	return &b
 }
 
@@ -108,7 +108,7 @@ func (build *Builder) WithWolfiBase() *Builder {
 
 func (build *Builder) WithGPUSupport() *Builder {
 	b := *build
-	b.gpuSupport = true
+	build.gpuSupport = true
 	return &b
 }
 
@@ -119,7 +119,7 @@ func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
+	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent, build.elixirSDKContent}
 	sdkContents := make([]*sdkContent, len(sdks))
 	for i, sdk := range sdks {
 		i, sdk := i, sdk
