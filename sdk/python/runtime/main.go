@@ -63,12 +63,8 @@ func New(
 		}),
 		// TODO: get an sdist build of the SDK into the engine rather than
 		// duplicating which files to include in the engine's publishing task.
-		SDKSourceDir: sdkSourceDir.
-			WithoutDirectory("runtime").
-			// TODO: remove the codegen CLI from the SDK source
-			// as it doesn't apply to Python.
-			WithoutFile("codegen"),
-		Container: dag.Container(),
+		SDKSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
+		Container:    dag.Container(),
 	}
 }
 
@@ -260,81 +256,63 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 
 // Add the SDK package to the source directory
 //
-// This also installs the package in the current virtual environemnt and
-// regenerates the client for the current API schema.
+// This includes regenerating the client for the current API schema.
 func (m *PythonSdk) WithSDK(introspectionJson string) *PythonSdk {
-	// Add the clean copy of the SDK  to the source directory, to avoid
-	// extrenuous files from build, *.pyc, or others.
+	// "codegen" dir included in the exported sdk directory to support
+	// extending the runtime module in a custom SDK.
 	m.Discovery.AddDirectory(GenDir, m.SDKSourceDir)
 
-	// Don't want to mount the entire source directory yet, to avoid cache
-	// invalidation. The full context directory will be mounted later, which
-	// will replace the mounts declared here.
-	ctr := m.Container.WithMountedDirectory(GenDir, m.SDKSourceDir)
-
-	// Support installing directly from a requirements.lock file to allow
-	// pinning dependencies.
-	if m.Discovery.HasFile(LockFilePath) {
-		ctr = ctr.
-			WithFile(LockFilePath, m.Discovery.GetFile(LockFilePath)).
-			// Don't install the current project yet.
-			WithExec([]string{
-				"sed", "-i",
-				"-e", `/-e file:\./d`,
-				"-e", `/-e \./d`,
-				LockFilePath,
-			}).
-			With(m.install("-r", LockFilePath))
-	}
-
-	// Generate the client.
-	// This is not strictly necessary on init (just call), but warms the cache.
-
-	// TODO: Decouple codegen from SDK. Rely on external introspection result.
-	// Need to install SDK for the codegen script.
-	ctr = ctr.With(m.install("-e", GenDir))
-
 	// Allow empty introspection to facilitate debugging the container with a
-	// `dagger call module-runtime terminal --cmd=bash` command.
+	// `dagger call module-runtime terminal` command.
 	if introspectionJson != "" {
-		genPath := path.Join(GenDir, GenPath)
-
-		genFile := ctr.
+		genFile := m.Container.
+			WithMountedDirectory("/codegen", m.SDKSourceDir.Directory("codegen")).
+			WithWorkdir("/codegen").
+			With(m.install("-r", LockFilePath)).
 			WithNewFile(SchemaPath, ContainerWithNewFileOpts{
 				Contents: introspectionJson,
 			}).
 			WithExec([]string{
-				"python", "-m", "dagger", "codegen",
-				"--output", genPath,
-				"--introspection", SchemaPath,
-			}, ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
+				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
 			}).
-			File(genPath)
+			File("/gen.py")
 
-		m.Discovery.AddFile(genPath, genFile)
-
-		// Mount the generated file for debugging purposes.
-		// It'll get replaced later with the ContextDir mount.
-		ctr = ctr.WithMountedFile(genPath, genFile)
+		m.Discovery.AddFile(path.Join(GenDir, GenPath), genFile)
 	}
-
-	m.Container = ctr
 
 	return m
 }
 
-// Add the module's source files and install the package
+// Add the module's source files and install
 func (m *PythonSdk) WithSource() *PythonSdk {
-	m.Container = m.Container.
-		WithMountedDirectory(ModSourceDirPath, m.Discovery.ContextDir).
-		With(m.install("-e", "."))
+	toml := "pyproject.toml"
+	sdkToml := path.Join(GenDir, toml)
+
+	ctr := m.Container.WithMountedDirectory(ModSourceDirPath, m.Discovery.ContextDir)
+
+	// Support installing directly from a requirements.lock file to allow
+	// pinning dependencies.
+	if m.Discovery.HasFile(LockFilePath) {
+		if m.UseUv() && !m.Discovery.IsInit {
+			ctr = ctr.WithExec([]string{
+				"uv", "pip", "compile", "--generate-hashes",
+				"-o", LockFilePath,
+				sdkToml,
+				toml,
+			})
+		}
+		// Install from lock separately to editable installs because of hashes.
+		ctr = ctr.With(m.install("-r", LockFilePath))
+	}
+
+	// Install the SDK as editable because of the generated client
+	ctr = ctr.With(m.install("-e", "./sdk", "-e", "."))
 
 	cmd := []string{"pip", "check"}
 	if m.UseUv() {
 		cmd = append([]string{"uv"}, cmd...)
 	}
-	m.Container = m.Container.WithExec(cmd)
+	m.Container = ctr.WithExec(cmd)
 
 	return m
 }

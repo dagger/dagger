@@ -19,6 +19,9 @@ func (build *Builder) pythonSDKContent(ctx context.Context) dagger.WithContainer
 				"pyproject.toml",
 				"src/**/*.py",
 				"src/**/*.typed",
+				"codegen/**/*.py",
+				"codegen/pyproject.toml",
+				"codegen/requirements.lock",
 				"runtime/",
 				"LICENSE",
 				"README.md",
@@ -27,7 +30,6 @@ func (build *Builder) pythonSDKContent(ctx context.Context) dagger.WithContainer
 
 		sdkCtrTarball := dag.Container().
 			WithRootfs(rootfs).
-			WithFile("/codegen", build.CodegenBinary()).
 			AsTarball(dagger.ContainerAsTarballOpts{
 				ForcedCompression: dagger.Uncompressed,
 			})

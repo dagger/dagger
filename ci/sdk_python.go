@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/ci/build"
 	"github.com/dagger/dagger/ci/internal/dagger"
 	"github.com/dagger/dagger/ci/util"
 )
@@ -106,11 +107,19 @@ func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
 	if err != nil {
 		return nil, err
 	}
+	builder, err := build.NewBuilder(ctx, t.Dagger.Source)
+	if err != nil {
+		return nil, err
+	}
 
 	generated := t.pythonBase(pythonDefaultVersion, true).
 		With(installer).
+		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
+		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
+		WithWorkdir("/sdk/python/codegen").
+		WithExec([]string{"pip", "install", "-r", "requirements.lock"}).
 		WithWorkdir("/").
-		WithExec([]string{"dagger", "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
+		WithExec([]string{"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", pythonGeneratedAPIPath}).
 		WithExec([]string{"black", pythonGeneratedAPIPath}).
 		File(pythonGeneratedAPIPath)
 	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil

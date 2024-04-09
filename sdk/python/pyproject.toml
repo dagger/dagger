@@ -139,6 +139,7 @@ known-first-party = ["dagger"]
 [tool.ruff.per-file-ignores]
 "./docs/*" = ["D1"]
 "./runtime/*" = ["D1"]
+"./codegen/*" = ["D1"]
 "./src/dagger/client/gen.py" = [
     # Not much control over field names and docs coming from the API.
     # Note: We could detect built-in shadowing like the reserved
@@ -177,7 +178,7 @@ known-first-party = ["dagger"]
 # Allow some patterns to redefine imports in __init__.
 "./src/**/__init__.py" = ["I001", "F403", "PLC0414"]
 # Typer uses boolean parameters for the CLI. Let it.
-"./src/**/cli.py" = ["FBT"]
+"./**/src/**/cli.py" = ["FBT"]
 
 [tool.ruff.pydocstyle]
 convention = "numpy"
