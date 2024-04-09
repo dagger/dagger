@@ -101,72 +101,58 @@ func (c *Client) EngineContainerLocalImport(
 	return c.LocalImport(ctx, platform, srcPath, excludePatterns, includePatterns)
 }
 
-func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer cancel()
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
+		return fmt.Errorf("failed to get requester session ID: %s", err)
 	}
-
-	ctx = engine.LocalImportOpts{
-		Path:               filepath.ToSlash(path),
-		ReadSingleFileOnly: true,
-		MaxFileSize:        MaxFileContentsChunkSize,
-	}.AppendToOutgoingContext(ctx)
+	ctx = opts.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session: %s", err)
+		return fmt.Errorf("failed to get requester session: %s", err)
 	}
 	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create diff copy client: %s", err)
+		return fmt.Errorf("failed to create diff copy client: %s", err)
 	}
 	defer diffCopyClient.CloseSend()
-	msg := filesync.BytesMessage{}
-	err = diffCopyClient.RecvMsg(&msg)
+
+	err = diffCopyClient.RecvMsg(msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to receive file bytes message: %s", err)
+		return fmt.Errorf("failed to receive file bytes message: %s", err)
+	}
+	return err
+}
+
+func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+	msg := filesync.BytesMessage{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
+		Path:               filepath.ToSlash(path),
+		ReadSingleFileOnly: true,
+		MaxFileSize:        MaxFileContentsChunkSize,
+	}, &msg)
+	if err != nil {
+		return nil, err
 	}
 	return msg.Data, nil
 }
 
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
-	ctx = engine.LocalImportOpts{
+	msg := fsutiltypes.Stat{}
+	err := c.diffcopy(ctx, engine.LocalImportOpts{
 		Path:              filepath.ToSlash(path),
 		StatPathOnly:      true,
 		StatReturnAbsPath: returnAbsPath,
-	}.AppendToOutgoingContext(ctx)
-
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	}, &msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session: %s", err)
-	}
-	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create diff copy client: %s", err)
-	}
-	defer diffCopyClient.CloseSend()
-	msg := fsutiltypes.Stat{}
-	err = diffCopyClient.RecvMsg(&msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to receive file bytes message: %s", err)
+		return nil, err
 	}
 	return &msg, nil
 }
