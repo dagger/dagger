@@ -20,8 +20,16 @@ permissions:
 
 jobs:
   test:
-    uses: ./.github/workflows/_hack_make.yml
-    secrets: inherit
-    with:
-      mage-targets: helm:test
-      timeout: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Helm test
+        uses: dagger/dagger-for-github@v5
+        with:
+          version: '0.11.1'
+          args: --source=. helm test
+      - name: Helm publish (dry-run)
+        uses: dagger/dagger-for-github@v5
+        with:
+          version: '0.11.1'
+          args: --source=. helm publish --dry-run=true --tag=main
