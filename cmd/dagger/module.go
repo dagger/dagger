@@ -924,7 +924,7 @@ func (m *moduleDef) GetInterface(name string) *modInterface {
 	return nil
 }
 
-// GetInterface retrieves a saved object or interface type definition from the module as a functionProvider.
+// GetFunctionProvider retrieves a saved object or interface type definition from the module as a functionProvider.
 func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
 	if obj := m.GetObject(name); obj != nil {
 		return obj
