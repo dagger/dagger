@@ -443,6 +443,9 @@ func (w *runcExecutor) run(
 	}
 	f.Close()
 
+	bklog.G(ctx).Debugf("> creating %s %v", id, process.Meta.Args)
+	defer bklog.G(ctx).Debugf("> container done %s %v", id, process.Meta.Args)
+
 	if installCACerts {
 		caInstaller, err := cacerts.NewInstaller(ctx, spec, func(ctx context.Context, args ...string) error {
 			id := randid.NewID()
@@ -472,22 +475,27 @@ func (w *runcExecutor) run(
 			)
 			return err
 		})
-		if err != nil {
-			return fmt.Errorf("failed to create cacerts installer: %w", err)
-		}
-		// TODO: make non-fatal, but be sure to cleanup any half-installed state
-		if err := caInstaller.Install(ctx); err != nil {
-			return fmt.Errorf("failed to install cacerts: %w", err)
-		}
-		defer func() {
-			if err := caInstaller.Uninstall(ctx); err != nil {
-				bklog.G(ctx).Errorf("failed to uninstall cacerts: %v", err)
+		if err == nil {
+			err = caInstaller.Install(ctx)
+			if errors.As(err, new(cacerts.CleanupErr)) {
+				// if install failed and cleanup failed too, we have no choice but to fail this exec; otherwise we're
+				// leaving the container in some weird half state
+				return fmt.Errorf("failed to install cacerts: %w", err)
 			}
-		}()
+			// if install failed but we were able to cleanup, then we should log it but don't need to fail the exec
+			if err != nil {
+				bklog.G(ctx).Errorf("failed to install cacerts but successfully cleaned up, continuing without CA certs: %v", err)
+			} else {
+				defer func() {
+					if err := caInstaller.Uninstall(ctx); err != nil {
+						bklog.G(ctx).Errorf("failed to uninstall cacerts: %v", err)
+					}
+				}()
+			}
+		} else {
+			bklog.G(ctx).Errorf("failed to create cacerts installer, falling back to not installing CA certs: %v", err)
+		}
 	}
-
-	bklog.G(ctx).Debugf("> creating %s %v", id, process.Meta.Args)
-	defer bklog.G(ctx).Debugf("> container done %s %v", id, process.Meta.Args)
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 	killer := newRunProcKiller(w.runc, id)

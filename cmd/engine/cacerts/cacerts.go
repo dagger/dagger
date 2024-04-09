@@ -42,8 +42,8 @@ func NewInstaller(
 	var eg errgroup.Group
 	matchChan := make(chan Installer, 1)
 	for _, installer := range []Installer{
-		&debianLike{ctrFS: ctrFS},
-		&rhelLike{ctrFS: ctrFS},
+		newDebianLike(ctrFS),
+		newRhelLike(ctrFS),
 	} {
 		installer := installer
 		eg.Go(func() error {

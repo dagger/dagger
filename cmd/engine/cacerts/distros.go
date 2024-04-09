@@ -23,6 +23,43 @@ More distros to handle:
 * Wolfi
 */
 
+// want identifiable separate type for cleanup errors since if those are
+// hit specifically we need to fail to the whole exec (whereas other errors
+// but successful cleanup can be non-fatal)
+type CleanupErr struct {
+	err error
+}
+
+func (c CleanupErr) Error() string {
+	return c.err.Error()
+}
+
+func (c CleanupErr) Unwrap() error {
+	return c.err
+}
+
+type cleanups struct {
+	funcs []func() error
+}
+
+func (c *cleanups) append(f func() error) {
+	c.funcs = append(c.funcs, f)
+}
+
+func (c *cleanups) prepend(f func() error) {
+	c.funcs = append([]func() error{f}, c.funcs...)
+}
+
+func (c *cleanups) run() error {
+	var rerr error
+	for i := len(c.funcs) - 1; i >= 0; i-- {
+		if err := c.funcs[i](); err != nil {
+			rerr = errors.Join(rerr, CleanupErr{err})
+		}
+	}
+	return rerr
+}
+
 /*
 This is anything that uses:
 * bundle path: /etc/ssl/certs/ca-certificates.crt
@@ -38,27 +75,16 @@ Which are obviously not all Debian derivatives...
 It's named debianLike for lack of a better name :-)
 */
 type debianLike struct {
-	ctrFS *containerFS
-
-	bundleExisted          bool
-	customCACertDirExisted bool
-	updateCommandExisted   bool
-
-	existingCerts  map[string]string
-	installedCerts map[string]string
-
-	existingBundledCerts map[string]struct{}
-
-	existingSymlinks  map[string]string
-	installedSymlinks map[string]string
+	*commonInstaller
 }
 
-func (debianLike) bundlePath() string {
-	return "/etc/ssl/certs/ca-certificates.crt"
-}
-
-func (debianLike) customCACertDir() string {
-	return "/usr/local/share/ca-certificates"
+func newDebianLike(ctrFS *containerFS) *debianLike {
+	return &debianLike{commonInstaller: &commonInstaller{
+		ctrFS:           ctrFS,
+		bundlePath:      "/etc/ssl/certs/ca-certificates.crt",
+		customCACertDir: "/usr/local/share/ca-certificates",
+		updateCmd:       []string{"update-ca-certificates"},
+	}}
 }
 
 func (d *debianLike) detect(ctx context.Context) (bool, error) {
@@ -88,177 +114,6 @@ func (d *debianLike) detect(ctx context.Context) (bool, error) {
 	)
 }
 
-func (d *debianLike) Install(ctx context.Context) error {
-	var err error
-	d.bundleExisted, err = d.ctrFS.PathExists(d.bundlePath())
-	if err != nil {
-		return err
-	}
-
-	d.customCACertDirExisted, err = d.ctrFS.PathExists(d.customCACertDir())
-	if err != nil {
-		return err
-	}
-
-	updateCmdPath, lookupErr := d.ctrFS.LookPath("update-ca-certificates")
-	d.updateCommandExisted = lookupErr == nil
-	if !d.updateCommandExisted && !errors.Is(lookupErr, exec.ErrNotFound) {
-		return fmt.Errorf("failed to lookup update-ca-certificates: %w", lookupErr)
-	}
-
-	d.installedCerts, d.installedSymlinks, err = ReadHostCustomCADir(EngineCustomCACertsDir)
-	if err != nil {
-		return fmt.Errorf("failed to read custom CA dir: %w", err)
-	}
-
-	if d.bundleExisted {
-		d.existingBundledCerts, err = d.ctrFS.ReadCABundleFile(d.bundlePath())
-		if err != nil {
-			return fmt.Errorf("failed to read existing bundle: %w", err)
-		}
-	}
-
-	if d.customCACertDirExisted {
-		d.existingCerts, d.existingSymlinks, err = d.ctrFS.ReadCustomCADir(d.customCACertDir())
-		if err != nil {
-			return fmt.Errorf("failed to read existing custom CA dir: %w", err)
-		}
-	} else {
-		// TODO: track what parent dirs we create so we can clean up fully
-		// TODO: double check perms here
-		if err := d.ctrFS.MkdirAll(d.customCACertDir(), 0755); err != nil {
-			return err
-		}
-	}
-
-	// install to custom CA dir even when command doesn't exist to handle case where the exec installs ca-certificates
-	// TODO: parallelize symlink+file install
-	for installSymlink, target := range d.installedSymlinks {
-		destPath := filepath.Join(d.customCACertDir(), installSymlink)
-		if _, err := d.ctrFS.Lstat(destPath); err == nil {
-			// already exists, skip
-			delete(d.installedSymlinks, installSymlink)
-			continue
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-		if err := d.ctrFS.Symlink(target, destPath); err != nil {
-			return err
-		}
-	}
-	for certContents, certFileName := range d.installedCerts {
-		destPath := filepath.Join(d.customCACertDir(), certFileName)
-		if _, err := d.ctrFS.Lstat(destPath); err == nil {
-			// already exists, skip
-			delete(d.installedCerts, certContents)
-			continue
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-		if err := d.ctrFS.WriteFile(destPath, []byte(certContents+"\n"), 0644); err != nil {
-			return err
-		}
-	}
-
-	if d.updateCommandExisted {
-		if err := d.ctrFS.Exec(ctx, updateCmdPath); err != nil {
-			return fmt.Errorf("failed to run update-ca-certificates for install: %w", err)
-		}
-		return nil
-	}
-
-	if !d.bundleExisted {
-		// TODO: track what parent dirs we create so we can clean up fully
-		// TODO: double check perms here
-		if err := d.ctrFS.MkdirAll(filepath.Dir(d.bundlePath()), 0755); err != nil {
-			return err
-		}
-	}
-
-	f, err := d.ctrFS.OpenFile(d.bundlePath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	for installCert := range d.installedCerts {
-		// skip installing certs that are already in the bundle
-		if _, exists := d.existingBundledCerts[installCert]; exists {
-			delete(d.installedCerts, installCert)
-			continue
-		}
-		if _, err := f.WriteString(installCert + "\n\n"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (d *debianLike) Uninstall(ctx context.Context) error {
-	// TODO: parallelize symlink+file uninstall
-	for installSymlink := range d.installedSymlinks {
-		destPath := filepath.Join(d.customCACertDir(), installSymlink)
-		// best effort, if it didn't exist because the exec deleted it, that's fine
-		d.ctrFS.Remove(destPath)
-	}
-	// TODO: it's *technically* possible that the exec overwrote a file here, in which case
-	// we don't want to delete it. Can use create time
-	for _, certFileName := range d.installedCerts {
-		destPath := filepath.Join(d.customCACertDir(), certFileName)
-		// best effort, if it didn't exist because the exec deleted it, that's fine
-		d.ctrFS.Remove(destPath)
-	}
-
-	// The update command could have existed before but got uninstalled, or it could have not existed
-	// before and got installed by the exec. Either way, need to check for it again now.
-	updateCmdPath, lookupErr := d.ctrFS.LookPath("update-ca-certificates")
-	updateCommandExists := lookupErr == nil
-	if !updateCommandExists && !errors.Is(lookupErr, exec.ErrNotFound) {
-		return fmt.Errorf("failed to lookup update-ca-certificates: %w", lookupErr)
-	}
-
-	// update the bundle using the command if available, otherwise manually remove the certs
-	if updateCommandExists {
-		if err := d.ctrFS.Exec(ctx, updateCmdPath); err != nil {
-			return fmt.Errorf("failed to run update-ca-certificates for uninstall: %w", err)
-		}
-	} else if err := d.ctrFS.RemoveCertsFromCABundle(d.bundlePath(), d.installedCerts); err != nil {
-		return err
-	}
-
-	if !d.bundleExisted {
-		// if the bundle didn't exist before, remove it provided it's now empty after removing our installed certs
-		stat, err := d.ctrFS.Stat(d.bundlePath())
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if stat != nil && stat.Size() == 0 {
-			if err := d.ctrFS.Remove(d.bundlePath()); err != nil {
-				return err
-			}
-		}
-	}
-
-	// only remove the custom CA dir if it didn't exist before and it expected to have been created or removed
-	// by the exec. We heuristically determine this by checking the before/after state of the update command, which
-	// tells us whether the dir is expected to exist or not.
-	cmdNeverExisted := !d.updateCommandExisted && !updateCommandExists
-	cmdWasRemoved := d.updateCommandExisted && !updateCommandExists
-	if (!d.customCACertDirExisted && cmdNeverExisted) || (d.customCACertDirExisted && cmdWasRemoved) {
-		// if the custom CA dir didn't exist before, remove it provided it's now empty after removing our installed certs
-		isEmpty, err := d.ctrFS.DirIsEmpty(d.customCACertDir())
-		if err != nil {
-			return err
-		}
-		if isEmpty {
-			if err := d.ctrFS.Remove(d.customCACertDir()); err != nil && !os.IsNotExist(err) {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
 /*
 RHEL and derivatives use:
 * bundle path: /etc/pki/tls/certs/ca-bundle.crt
@@ -272,31 +127,16 @@ This is known to include:
 * Amazon Linux
 */
 type rhelLike struct {
-	ctrFS *containerFS
-
-	bundleExisted          bool
-	customCACertDirExisted bool
-	updateCommandExisted   bool
-
-	existingCerts  map[string]string
-	installedCerts map[string]string
-
-	existingBundledCerts map[string]struct{}
-
-	existingSymlinks  map[string]string
-	installedSymlinks map[string]string
+	*commonInstaller
 }
 
-func (rhelLike) bundlePath() string {
-	return "/etc/pki/tls/certs/ca-bundle.crt"
-}
-
-func (rhelLike) customCACertDir() string {
-	return "/etc/pki/ca-trust/source/anchors"
-}
-
-func (rhelLike) updateCmd() []string {
-	return []string{"update-ca-trust"}
+func newRhelLike(ctrFS *containerFS) *rhelLike {
+	return &rhelLike{commonInstaller: &commonInstaller{
+		ctrFS:           ctrFS,
+		bundlePath:      "/etc/pki/tls/certs/ca-bundle.crt",
+		customCACertDir: "/etc/pki/ca-trust/source/anchors",
+		updateCmd:       []string{"update-ca-trust"},
+	}}
 }
 
 func (d *rhelLike) detect(ctx context.Context) (bool, error) {
@@ -325,22 +165,52 @@ func (d *rhelLike) detect(ctx context.Context) (bool, error) {
 	)
 }
 
-func (d *rhelLike) Install(ctx context.Context) error {
+// so far, the existing installers follow a common enough pattern that we can
+// abstract them into a common type and reduce duplication
+type commonInstaller struct {
+	ctrFS           *containerFS
+	bundlePath      string
+	customCACertDir string
+	updateCmd       []string
+
+	// all below are set internally
+	bundleExisted          bool
+	customCACertDirExisted bool
+	updateCommandExisted   bool
+
+	existingCerts  map[string]string
+	installedCerts map[string]string
+
+	existingBundledCerts map[string]struct{}
+
+	existingSymlinks  map[string]string
+	installedSymlinks map[string]string
+}
+
+func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
+	cleanups := &cleanups{}
+	defer func() {
+		if rerr == nil {
+			return
+		}
+		rerr = errors.Join(rerr, cleanups.run())
+	}()
+
 	var err error
-	d.bundleExisted, err = d.ctrFS.PathExists(d.bundlePath())
+	d.bundleExisted, err = d.ctrFS.PathExists(d.bundlePath)
 	if err != nil {
 		return err
 	}
 
-	d.customCACertDirExisted, err = d.ctrFS.PathExists(d.customCACertDir())
+	d.customCACertDirExisted, err = d.ctrFS.PathExists(d.customCACertDir)
 	if err != nil {
 		return err
 	}
 
-	_, lookupErr := d.ctrFS.LookPath(d.updateCmd()[0])
+	_, lookupErr := d.ctrFS.LookPath(d.updateCmd[0])
 	d.updateCommandExisted = lookupErr == nil
 	if !d.updateCommandExisted && !errors.Is(lookupErr, exec.ErrNotFound) {
-		return fmt.Errorf("failed to lookup %s: %w", d.updateCmd()[0], lookupErr)
+		return fmt.Errorf("failed to lookup %s: %w", d.updateCmd[0], lookupErr)
 	}
 
 	d.installedCerts, d.installedSymlinks, err = ReadHostCustomCADir(EngineCustomCACertsDir)
@@ -349,29 +219,32 @@ func (d *rhelLike) Install(ctx context.Context) error {
 	}
 
 	if d.bundleExisted {
-		d.existingBundledCerts, err = d.ctrFS.ReadCABundleFile(d.bundlePath())
+		d.existingBundledCerts, err = d.ctrFS.ReadCABundleFile(d.bundlePath)
 		if err != nil {
 			return fmt.Errorf("failed to read existing bundle: %w", err)
 		}
 	}
 
 	if d.customCACertDirExisted {
-		d.existingCerts, d.existingSymlinks, err = d.ctrFS.ReadCustomCADir(d.customCACertDir())
+		d.existingCerts, d.existingSymlinks, err = d.ctrFS.ReadCustomCADir(d.customCACertDir)
 		if err != nil {
 			return fmt.Errorf("failed to read existing custom CA dir: %w", err)
 		}
 	} else {
 		// TODO: track what parent dirs we create so we can clean up fully
 		// TODO: double check perms here
-		if err := d.ctrFS.MkdirAll(d.customCACertDir(), 0755); err != nil {
+		if err := d.ctrFS.MkdirAll(d.customCACertDir, 0755); err != nil {
 			return err
 		}
+		cleanups.append(func() error {
+			return d.ctrFS.Remove(d.customCACertDir)
+		})
 	}
 
 	// install to custom CA dir even when command doesn't exist to handle case where the exec installs ca-certificates
 	// TODO: parallelize symlink+file install
 	for installSymlink, target := range d.installedSymlinks {
-		destPath := filepath.Join(d.customCACertDir(), installSymlink)
+		destPath := filepath.Join(d.customCACertDir, installSymlink)
 		if _, err := d.ctrFS.Lstat(destPath); err == nil {
 			// already exists, skip
 			delete(d.installedSymlinks, installSymlink)
@@ -382,9 +255,12 @@ func (d *rhelLike) Install(ctx context.Context) error {
 		if err := d.ctrFS.Symlink(target, destPath); err != nil {
 			return err
 		}
+		cleanups.append(func() error {
+			return d.ctrFS.Remove(destPath)
+		})
 	}
 	for certContents, certFileName := range d.installedCerts {
-		destPath := filepath.Join(d.customCACertDir(), certFileName)
+		destPath := filepath.Join(d.customCACertDir, certFileName)
 		if _, err := d.ctrFS.Lstat(destPath); err == nil {
 			// already exists, skip
 			delete(d.installedCerts, certContents)
@@ -395,11 +271,18 @@ func (d *rhelLike) Install(ctx context.Context) error {
 		if err := d.ctrFS.WriteFile(destPath, []byte(certContents+"\n"), 0644); err != nil {
 			return err
 		}
+		cleanups.append(func() error {
+			return d.ctrFS.Remove(destPath)
+		})
 	}
 
 	if d.updateCommandExisted {
-		if err := d.ctrFS.Exec(ctx, d.updateCmd()...); err != nil {
-			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd(), err)
+		// prepend cleanup instead of append so uninstall runs last after other cleanups have ran
+		cleanups.prepend(func() error {
+			return d.ctrFS.Exec(ctx, d.updateCmd...)
+		})
+		if err := d.ctrFS.Exec(ctx, d.updateCmd...); err != nil {
+			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd, err)
 		}
 		return nil
 	}
@@ -407,12 +290,24 @@ func (d *rhelLike) Install(ctx context.Context) error {
 	if !d.bundleExisted {
 		// TODO: track what parent dirs we create so we can clean up fully
 		// TODO: double check perms here
-		if err := d.ctrFS.MkdirAll(filepath.Dir(d.bundlePath()), 0755); err != nil {
+		if err := d.ctrFS.MkdirAll(filepath.Dir(d.bundlePath), 0755); err != nil {
 			return err
 		}
+		cleanups.append(func() error {
+			return d.ctrFS.Remove(d.bundlePath)
+		})
+	} else {
+		origBundleContents, err := d.ctrFS.ReadFile(d.bundlePath)
+		if err != nil {
+			return err
+		}
+		cleanups.append(func() error {
+			// TODO: preserve mtime
+			return d.ctrFS.WriteFile(d.bundlePath, origBundleContents, 0644)
+		})
 	}
 
-	f, err := d.ctrFS.OpenFile(d.bundlePath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := d.ctrFS.OpenFile(d.bundlePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
@@ -426,50 +321,51 @@ func (d *rhelLike) Install(ctx context.Context) error {
 		if _, err := f.WriteString(installCert + "\n\n"); err != nil {
 			return err
 		}
+		// cleanup handled above with origBundleContents
 	}
 	return nil
 }
 
-func (d *rhelLike) Uninstall(ctx context.Context) error {
+func (d *commonInstaller) Uninstall(ctx context.Context) error {
 	// TODO: parallelize symlink+file uninstall
 	for installSymlink := range d.installedSymlinks {
-		destPath := filepath.Join(d.customCACertDir(), installSymlink)
+		destPath := filepath.Join(d.customCACertDir, installSymlink)
 		// best effort, if it didn't exist because the exec deleted it, that's fine
 		d.ctrFS.Remove(destPath)
 	}
 	// TODO: it's *technically* possible that the exec overwrote a file here, in which case
 	// we don't want to delete it. Can use create time
 	for _, certFileName := range d.installedCerts {
-		destPath := filepath.Join(d.customCACertDir(), certFileName)
+		destPath := filepath.Join(d.customCACertDir, certFileName)
 		// best effort, if it didn't exist because the exec deleted it, that's fine
 		d.ctrFS.Remove(destPath)
 	}
 
 	// The update command could have existed before but got uninstalled, or it could have not existed
 	// before and got installed by the exec. Either way, need to check for it again now.
-	_, lookupErr := d.ctrFS.LookPath(d.updateCmd()[0])
+	_, lookupErr := d.ctrFS.LookPath(d.updateCmd[0])
 	updateCommandExists := lookupErr == nil
 	if !updateCommandExists && !errors.Is(lookupErr, exec.ErrNotFound) {
-		return fmt.Errorf("failed to lookup %s: %w", d.updateCmd()[0], lookupErr)
+		return fmt.Errorf("failed to lookup %s: %w", d.updateCmd[0], lookupErr)
 	}
 
 	// update the bundle using the command if available, otherwise manually remove the certs
 	if updateCommandExists {
-		if err := d.ctrFS.Exec(ctx, d.updateCmd()...); err != nil {
-			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd(), err)
+		if err := d.ctrFS.Exec(ctx, d.updateCmd...); err != nil {
+			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd, err)
 		}
-	} else if err := d.ctrFS.RemoveCertsFromCABundle(d.bundlePath(), d.installedCerts); err != nil {
+	} else if err := d.ctrFS.RemoveCertsFromCABundle(d.bundlePath, d.installedCerts); err != nil {
 		return err
 	}
 
 	if !d.bundleExisted {
 		// if the bundle didn't exist before, remove it provided it's now empty after removing our installed certs
-		stat, err := d.ctrFS.Stat(d.bundlePath())
+		stat, err := d.ctrFS.Stat(d.bundlePath)
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		if stat != nil && stat.Size() == 0 {
-			if err := d.ctrFS.Remove(d.bundlePath()); err != nil {
+			if err := d.ctrFS.Remove(d.bundlePath); err != nil {
 				return err
 			}
 		}
@@ -482,12 +378,12 @@ func (d *rhelLike) Uninstall(ctx context.Context) error {
 	cmdWasRemoved := d.updateCommandExisted && !updateCommandExists
 	if (!d.customCACertDirExisted && cmdNeverExisted) || (d.customCACertDirExisted && cmdWasRemoved) {
 		// if the custom CA dir didn't exist before, remove it provided it's now empty after removing our installed certs
-		isEmpty, err := d.ctrFS.DirIsEmpty(d.customCACertDir())
+		isEmpty, err := d.ctrFS.DirIsEmpty(d.customCACertDir)
 		if err != nil {
 			return err
 		}
 		if isEmpty {
-			if err := d.ctrFS.Remove(d.customCACertDir()); err != nil && !os.IsNotExist(err) {
+			if err := d.ctrFS.Remove(d.customCACertDir); err != nil && !os.IsNotExist(err) {
 				return err
 			}
 		}
