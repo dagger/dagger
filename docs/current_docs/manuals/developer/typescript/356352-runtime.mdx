@@ -2,24 +2,24 @@
 slug: /manuals/developer/typescript/356352/runtime
 displayed_sidebar: "current"
 toc_max_heading_level: 2
-title: "Runtime (Experimental)"
+title: "Runtimes"
 ---
 
-# Runtime
+# Runtimes
 
-Multiple runtimes support TypeScript such as [NodeJS](https://nodejs.org/en), [Deno](https://deno.com/) and [Bun](https://bun.sh/).
+Multiple runtimes support TypeScript such as [Node.js](https://nodejs.org/en), [Deno](https://deno.com/) and [Bun](https://bun.sh/).
 
-By default, the TypeScript SDK executes functions using the NodeJS runtime but you can configure a different runtime in the `package.json`.
+By default, the TypeScript SDK executes functions using the Node.js runtime, but you can configure an alternative runtime in the `package.json` file.
 
 :::note
-For now, the TypeScript SDK only supports NodeJS and Bun.
+For now, the TypeScript SDK only supports Node.js (stable) and Bun (experimental).
 :::
 
-To change the Typescript SDK runtime, set the field `dagger.runtime` in the `package.json`.
+To change the TypeScript SDK runtime, set the field `dagger.runtime` in the `package.json` file.
 
 ## Node  
 
-Set the field to `node` to use the `NodeJS` runtime, it's also the default runtime used if this field is ommited.
+Set the field to `node` to use the Node.js runtime. Node.js is also the default runtime used if this field is omitted.
 
 ```json
   "dagger": {
@@ -38,6 +38,5 @@ Set the field to `bun` to use the Bun runtime.
 ```
 
 :::warning
-The Bun runtime support is still experimental, Dagger cannot guarantee the perfect execution of the function until
-Bun is fully compatible with Node. 
+Bun runtime support is still experimental. Unexpected results may occur in some cases.
 :::
