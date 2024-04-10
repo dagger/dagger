@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -53,10 +54,12 @@ type Frontend struct {
 	err         error
 
 	// updated as events are written
-	db           *DB
-	eof          bool
-	backgrounded bool
-	logsView     *LogsView
+	db *DB
+	// for streaming output
+	streamingExporter *streamingExporter
+	eof               bool
+	backgrounded      bool
+	logsView          *LogsView
 
 	// global logs
 	messagesView *Vterm
@@ -75,11 +78,12 @@ type Frontend struct {
 }
 
 func New() *Frontend {
-	profile := ui.ColorProfile()
+	profile := ColorProfile()
 	logsView := NewVterm()
 	logsOut := new(strings.Builder)
 	return &Frontend{
-		db: NewDB(),
+		db:                NewDB(),
+		streamingExporter: newStreamingExporter(),
 
 		fps:          30, // sane default, fine-tune if needed
 		profile:      profile,
@@ -87,7 +91,7 @@ func New() *Frontend {
 		view:         new(strings.Builder),
 		messagesView: logsView,
 		messagesBuf:  logsOut,
-		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
+		messagesW:    NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
 	}
 }
 
@@ -158,7 +162,7 @@ func (fe *Frontend) SetPrimary(spanID trace.SpanID) {
 
 func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
 	// NOTE: establish color cache before we start consuming stdin
-	fe.out = ui.NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
+	fe.out = NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
 	// Bubbletea will just receive an `io.Reader` for its input rather than the
 	// raw TTY *os.File, so we need to set up the TTY ourselves.
@@ -207,7 +211,7 @@ func (fe *Frontend) finalRender() error {
 
 	fe.recalculateView()
 
-	out := termenv.NewOutput(os.Stderr)
+	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 
 	if fe.messagesBuf.Len() > 0 {
 		fmt.Fprintln(out, fe.messagesBuf.String())
@@ -299,6 +303,14 @@ func (fe *Frontend) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySp
 			"span", span.Name(),
 		)
 	}
+
+	if fe.Plain {
+		// just collect spanNames
+		if err := fe.streamingExporter.ExportSpans(ctx, spans); err != nil {
+			return err
+		}
+	}
+
 	return fe.db.ExportSpans(ctx, spans)
 }
 
@@ -308,15 +320,33 @@ func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) erro
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	slog.Debug("frontend exporting logs", "logs", len(logs))
+
+	if fe.Plain {
+		if err := fe.streamingExporter.ExportLogs(ctx, logs); err != nil {
+			return err
+		}
+	}
 	return fe.db.ExportLogs(ctx, logs)
 }
 
-func (fe *Frontend) Shutdown(ctx context.Context) error {
-	// TODO this gets called twice (once for traces, once for logs)
-	if err := fe.db.Shutdown(ctx); err != nil {
-		return err
+func (fe *Frontend) Shutdown(c context.Context) error {
+	eg, ctx := errgroup.WithContext(c)
+
+	if fe.Plain {
+		eg.Go(func() error {
+			return fe.streamingExporter.Shutdown(ctx)
+		})
 	}
-	return fe.Close()
+
+	eg.Go(func() error {
+		// TODO this gets called twice (once for traces, once for logs)
+		if err := fe.db.Shutdown(ctx); err != nil {
+			return err
+		}
+		return fe.Close()
+	})
+
+	return eg.Wait()
 }
 
 type eofMsg struct{}
@@ -506,7 +536,7 @@ func (fe *Frontend) SetWindowSize(msg tea.WindowSizeMsg) {
 func (fe *Frontend) render() {
 	fe.mu.Lock()
 	fe.view.Reset()
-	fe.Render(ui.NewOutput(fe.view, termenv.WithProfile(fe.profile)))
+	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
 	fe.mu.Unlock()
 }
 
@@ -626,7 +656,7 @@ func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Cal
 	}
 
 	if span != nil {
-		fe.renderStatus(out, span, depth)
+		fe.renderStatus(out, span)
 	}
 
 	if id.ReceiverDigest != "" {
@@ -696,7 +726,7 @@ func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Cal
 
 func (fe *Frontend) renderVertex(out *termenv.Output, span *Span, depth int) error {
 	indent(out, depth)
-	fe.renderStatus(out, span, depth)
+	fe.renderStatus(out, span)
 	fmt.Fprint(out, span.Name())
 	// TODO: when a span has child spans that have progress, do 2-d progress
 	// fe.renderVertexTasks(out, span, depth)
@@ -748,7 +778,7 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	}
 }
 
-func (fe *Frontend) renderStatus(out *termenv.Output, span *Span, depth int) {
+func (fe *Frontend) renderStatus(out *termenv.Output, span *Span) {
 	var symbol string
 	var color termenv.Color
 	switch {
