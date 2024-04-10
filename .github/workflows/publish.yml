@@ -175,10 +175,6 @@ jobs:
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
-      - name: "ALWAYS print kernel logs - especially useful on failure"
-        if: always()
-        run: sudo dmesg
-
   test-provision-go-linux:
     name: "Test SDK Provision / go / linux"
     needs: publish
@@ -219,9 +215,6 @@ jobs:
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
-      - name: "ALWAYS print kernel logs - especially useful on failure"
-        if: always()
-        run: sudo dmesg
 
   test-provision-python-linux:
     name: "Test SDK Provision / python / linux"
@@ -266,9 +259,6 @@ jobs:
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
-      - name: "ALWAYS print kernel logs - especially useful on failure"
-        if: always()
-        run: sudo dmesg
 
   test-provision-typescript-linux:
     name: "Test SDK Provision / TypeScript / linux"
@@ -319,6 +309,3 @@ jobs:
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
-      - name: "ALWAYS print kernel logs - especially useful on failure"
-        if: always()
-        run: sudo dmesg

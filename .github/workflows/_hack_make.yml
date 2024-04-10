@@ -52,9 +52,6 @@ jobs:
       - name: ${{ inputs.mage-targets }}
         run: |
           ./hack/make ${{ inputs.mage-targets }}
-      - name: "ALWAYS print kernel logs - especialy useful on failure"
-        if: always()
-        run: sudo dmesg
 
   # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
   dagger-runner:
@@ -93,6 +90,3 @@ jobs:
           ./hack/make ${{ inputs.mage-targets }}
         env:
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: "ALWAYS print kernel logs - especialy useful on failure"
-        if: always()
-        run: sudo dmesg
