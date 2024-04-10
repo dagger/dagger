@@ -2,8 +2,10 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 func DaggerCall(ctx context.Context, args ...string) error {
@@ -16,5 +18,6 @@ func DaggerCall(ctx context.Context, args ...string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	fmt.Println(">", strings.Join(cmd.Args, " "))
 	return cmd.Run()
 }
