@@ -322,8 +322,9 @@ func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) erro
 	slog.Debug("frontend exporting logs", "logs", len(logs))
 
 	if fe.Plain {
-		// streaming output only
-		return fe.streamingExporter.ExportLogs(ctx, logs)
+		if err := fe.streamingExporter.ExportLogs(ctx, logs); err != nil {
+			return err
+		}
 	}
 	return fe.db.ExportLogs(ctx, logs)
 }
