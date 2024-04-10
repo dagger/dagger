@@ -3,7 +3,9 @@ import * as fs from "fs"
 const tsConfigPath = `./tsconfig.json`
 
 const daggerPathAlias = "@dagger.io/dagger"
+const daggerTelemetryPathAlias = "@dagger.io/dagger/telemetry"
 const daggerPath = "./sdk"
+const daggerTelemetryPath = "./sdk/telemetry"
 
 // If the tsconfig.json file doesn't exist, create it with default config.
 if (!fs.existsSync(tsConfigPath)) {
@@ -14,6 +16,7 @@ if (!fs.existsSync(tsConfigPath)) {
       experimentalDecorators: true,
       paths: {
         "@dagger.io/dagger": ["./sdk"],
+        "@dagger.io/dagger/telemetry": ["./sdk/telemetry"],
       },
     },
   }
@@ -54,6 +57,9 @@ if (
   !tsconfig.compilerOptions.paths[daggerPathAlias].includes(daggerPath)
 ) {
   tsconfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
+  tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
+    daggerTelemetryPath,
+  ]
 
   fs.writeFileSync(tsConfigPath, JSON.stringify(tsconfig, null, 2))
 }
