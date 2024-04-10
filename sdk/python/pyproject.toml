@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Typing :: Typed",
@@ -85,7 +86,7 @@ warn_unused_ignores = true
 
 [tool.black]
 include = '\.pyi?$'
-target-version = ["py310", "py311"]
+target-version = ["py310", "py311", "py312"]
 
 [tool.ruff]
 src = ["src", "tests", "dev/src"]
