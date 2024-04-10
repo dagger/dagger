@@ -30,7 +30,6 @@ requires-python = ">=3.10"
 dependencies = [
     "anyio>=3.6.2",
     "cattrs>=22.2.0",
-    "graphql-core>=3.2.3",
     "gql[httpx]>=3.5.0",
     "beartype>=0.18.2",
     "platformdirs>=2.6.2",
