@@ -1477,15 +1477,15 @@ type GitRepository {
     name: String!
   ): GitRef!
 
-  """Header to authenticate to remote with."""
+  """Header to authenticate the remote with."""
   withAuthHeader(
     """Secret used to populate the Authorization HTTP header"""
     header: SecretID!
   ): GitRepository!
 
-  """Token to authenticate to remote with."""
+  """Token to authenticate the remote with."""
   withAuthToken(
-    """Secret used to populate the basic password during HTTP Authorization"""
+    """Secret used to populate the password during basic HTTP Authorization"""
     token: SecretID!
   ): GitRepository!
 }

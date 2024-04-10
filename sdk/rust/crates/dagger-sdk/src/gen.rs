@@ -3788,7 +3788,7 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Header to authenticate to remote with.
+    /// Header to authenticate the remote with.
     ///
     /// # Arguments
     ///
@@ -3808,11 +3808,11 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Token to authenticate to remote with.
+    /// Token to authenticate the remote with.
     ///
     /// # Arguments
     ///
-    /// * `token` - Secret used to populate the basic password during HTTP Authorization
+    /// * `token` - Secret used to populate the password during basic HTTP Authorization
     pub fn with_auth_token(&self, token: Secret) -> GitRepository {
         let mut query = self.selection.select("withAuthToken");
         query = query.arg_lazy(

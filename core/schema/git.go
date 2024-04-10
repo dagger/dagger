@@ -50,10 +50,10 @@ func (s *gitSchema) Install() {
 			// TODO: id is normally a reserved word; we should probably rename this
 			ArgDoc("id", `Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
 		dagql.Func("withAuthToken", s.withAuthToken).
-			Doc(`Token to authenticate to remote with.`).
-			ArgDoc("token", `Secret used to populate the basic password during HTTP Authorization`),
+			Doc(`Token to authenticate the remote with.`).
+			ArgDoc("token", `Secret used to populate the password during basic HTTP Authorization`),
 		dagql.Func("withAuthHeader", s.withAuthHeader).
-			Doc(`Header to authenticate to remote with.`).
+			Doc(`Header to authenticate the remote with.`).
 			ArgDoc("header", `Secret used to populate the Authorization HTTP header`),
 	}.Install(s.srv)
 

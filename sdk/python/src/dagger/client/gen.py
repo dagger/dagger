@@ -3671,7 +3671,7 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
     def with_auth_header(self, header: "Secret") -> Self:
-        """Header to authenticate to remote with.
+        """Header to authenticate the remote with.
 
         Parameters
         ----------
@@ -3685,12 +3685,12 @@ class GitRepository(Type):
         return GitRepository(_ctx)
 
     def with_auth_token(self, token: "Secret") -> Self:
-        """Token to authenticate to remote with.
+        """Token to authenticate the remote with.
 
         Parameters
         ----------
         token:
-            Secret used to populate the basic password during HTTP
+            Secret used to populate the password during basic HTTP
             Authorization
         """
         _args = [

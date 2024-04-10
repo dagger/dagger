@@ -72,7 +72,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Header to authenticate to remote with.
+     * Header to authenticate the remote with.
      */
     public function withAuthHeader(SecretId|Secret $header): GitRepository
     {
@@ -82,7 +82,7 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Token to authenticate to remote with.
+     * Token to authenticate the remote with.
      */
     public function withAuthToken(SecretId|Secret $token): GitRepository
     {
