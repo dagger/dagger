@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vito/progrock/ui"
-
 	"os"
 	"sync"
 	"sync/atomic"
@@ -38,7 +36,7 @@ type streamingExporter struct {
 
 func newStreamingExporter() *streamingExporter {
 	return &streamingExporter{
-		output:      ui.NewOutput(os.Stderr, termenv.WithProfile(ui.ColorProfile()), termenv.WithTTY(true)),
+		output:      NewOutput(os.Stderr),
 		done:        make(chan struct{}),
 		frameTicker: time.NewTicker(50 * time.Millisecond),
 	}

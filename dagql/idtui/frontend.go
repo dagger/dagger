@@ -78,7 +78,7 @@ type Frontend struct {
 }
 
 func New() *Frontend {
-	profile := ui.ColorProfile()
+	profile := ColorProfile()
 	logsView := NewVterm()
 	logsOut := new(strings.Builder)
 	return &Frontend{
@@ -91,7 +91,7 @@ func New() *Frontend {
 		view:         new(strings.Builder),
 		messagesView: logsView,
 		messagesBuf:  logsOut,
-		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile), termenv.WithTTY(true)),
+		messagesW:    NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
 	}
 }
 
@@ -162,7 +162,7 @@ func (fe *Frontend) SetPrimary(spanID trace.SpanID) {
 
 func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
 	// NOTE: establish color cache before we start consuming stdin
-	fe.out = ui.NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
+	fe.out = NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
 	// Bubbletea will just receive an `io.Reader` for its input rather than the
 	// raw TTY *os.File, so we need to set up the TTY ourselves.
@@ -211,7 +211,7 @@ func (fe *Frontend) finalRender() error {
 
 	fe.recalculateView()
 
-	out := ui.NewOutput(os.Stderr, termenv.WithProfile(fe.profile), termenv.WithTTY(true))
+	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 
 	if fe.messagesBuf.Len() > 0 {
 		fmt.Fprintln(out, fe.messagesBuf.String())
@@ -536,7 +536,7 @@ func (fe *Frontend) SetWindowSize(msg tea.WindowSizeMsg) {
 func (fe *Frontend) render() {
 	fe.mu.Lock()
 	fe.view.Reset()
-	fe.Render(ui.NewOutput(fe.view, termenv.WithProfile(fe.profile), termenv.WithTTY(true)))
+	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
 	fe.mu.Unlock()
 }
 
