@@ -49,6 +49,12 @@ func (s *gitSchema) Install() {
 			Doc(`Returns details of a commit.`).
 			// TODO: id is normally a reserved word; we should probably rename this
 			ArgDoc("id", `Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+		dagql.Func("withAuthToken", s.withAuthToken).
+			Doc(`Token to authenticate the remote with.`).
+			ArgDoc("token", `Secret used to populate the password during basic HTTP Authorization`),
+		dagql.Func("withAuthHeader", s.withAuthHeader).
+			Doc(`Header to authenticate the remote with.`).
+			ArgDoc("header", `Secret used to populate the Authorization HTTP header`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
@@ -159,6 +165,34 @@ func (s *gitSchema) tag(ctx context.Context, parent *core.GitRepository, args ta
 		Ref:   args.Name,
 		Repo:  parent,
 	}, nil
+}
+
+type withAuthTokenArgs struct {
+	Token core.SecretID
+}
+
+func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepository, args withAuthTokenArgs) (*core.GitRepository, error) {
+	token, err := args.Token.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	repo := *parent
+	repo.AuthToken = token.Self
+	return &repo, nil
+}
+
+type withAuthHeaderArgs struct {
+	Header core.SecretID
+}
+
+func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitRepository, args withAuthHeaderArgs) (*core.GitRepository, error) {
+	header, err := args.Header.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	repo := *parent
+	repo.AuthHeader = header.Self
+	return &repo, nil
 }
 
 type treeArgs struct {

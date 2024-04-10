@@ -24,6 +24,9 @@ type GitRepository struct {
 
 	Services ServiceBindings `json:"services"`
 	Platform Platform        `json:"platform,omitempty"`
+
+	AuthToken  *Secret `json:"authToken"`
+	AuthHeader *Secret `json:"authHeader"`
 }
 
 func (*GitRepository) Type() *ast.Type {
@@ -85,6 +88,12 @@ func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) *llb.State
 	}
 	if ref.Repo.SSHAuthSocket != nil {
 		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.SSHID()))
+	}
+	if ref.Repo.AuthToken != nil {
+		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.Accessor))
+	}
+	if ref.Repo.AuthHeader != nil {
+		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.Accessor))
 	}
 
 	useDNS := len(ref.Repo.Services) > 0
