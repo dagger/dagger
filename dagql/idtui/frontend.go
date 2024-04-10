@@ -655,7 +655,7 @@ func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Cal
 	}
 
 	if span != nil {
-		fe.renderStatus(out, span, depth)
+		fe.renderStatus(out, span)
 	}
 
 	if id.ReceiverDigest != "" {
@@ -725,7 +725,7 @@ func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Cal
 
 func (fe *Frontend) renderVertex(out *termenv.Output, span *Span, depth int) error {
 	indent(out, depth)
-	fe.renderStatus(out, span, depth)
+	fe.renderStatus(out, span)
 	fmt.Fprint(out, span.Name())
 	// TODO: when a span has child spans that have progress, do 2-d progress
 	// fe.renderVertexTasks(out, span, depth)
@@ -777,7 +777,7 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	}
 }
 
-func (fe *Frontend) renderStatus(out *termenv.Output, span *Span, depth int) {
+func (fe *Frontend) renderStatus(out *termenv.Output, span *Span) {
 	var symbol string
 	var color termenv.Color
 	switch {

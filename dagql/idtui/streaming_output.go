@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
 	"github.com/vito/progrock/ui"
 
 	"os"
@@ -122,7 +123,6 @@ type batchPrinter struct {
 	spanID      trace.SpanID
 	getSpanName func(spanID trace.SpanID) string
 
-	lineCount     int
 	latestPrintAt time.Time
 
 	lines []string
