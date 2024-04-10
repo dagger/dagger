@@ -355,10 +355,14 @@ func shim() (returnExitCode int) {
 
 func setupBundle() (returnExitCode int) {
 	var errWriter io.Writer = os.Stderr
+	var stderrFile *os.File
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Fprintf(errWriter, "shim error: %v\n%s", err, string(debug.Stack()))
 			returnExitCode = errorExitCode
+		}
+		if stderrFile != nil {
+			stderrFile.Close()
 		}
 	}()
 
@@ -427,7 +431,8 @@ func setupBundle() (returnExitCode int) {
 				// for stderr specifically, also update errWriter to that file so that any
 				// errors here actually show up in the final error message passed to clients
 				if metaPath == stderrPath {
-					stderrFile, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o666)
+					var err error
+					stderrFile, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o666)
 					if err != nil {
 						panic(err)
 					}
