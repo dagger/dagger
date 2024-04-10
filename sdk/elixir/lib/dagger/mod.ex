@@ -1,4 +1,4 @@
-defmodule Dagger.ModuleRuntime do
+defmodule Dagger.Mod do
   @schema [
             args: [
               doc: """
@@ -62,7 +62,7 @@ defmodule Dagger.ModuleRuntime do
           |> NimbleOptions.new!()
 
   @moduledoc """
-  `Dagger.ModuleRuntime` is a runtime for `Dagger` module for Elixir.
+  A behaviour for implementing Dagger Module.
 
   ## Function schema
 
@@ -128,22 +128,22 @@ defmodule Dagger.ModuleRuntime do
 
   def invoke(dag, _parent, "", _fn_name, _input_args) do
     # TODO: Support multiple modules when root module return another module.
-    [module] = Dagger.ModuleRuntime.Registry.all()
+    [module] = Dagger.Mod.Registry.all()
 
     dag
-    |> Dagger.ModuleRuntime.Module.define(module)
+    |> Dagger.Mod.Module.define(module)
     |> encode(Dagger.Module)
   end
 
   def invoke(dag, _parent, parent_name, fn_name, input_args) do
-    case Dagger.ModuleRuntime.Registry.get(parent_name) do
+    case Dagger.Mod.Registry.get(parent_name) do
       nil ->
         {:error,
          "unknown module #{parent_name}, please make sure the module is created and register to supervision tree in the application."}
 
       module ->
         fun = fn_name |> Macro.underscore() |> String.to_existing_atom()
-        fun_def = Dagger.ModuleRuntime.Module.get_function_definition(module, fun)
+        fun_def = Dagger.Mod.Module.get_function_definition(module, fun)
         args = decode_args(dag, input_args, Keyword.fetch!(fun_def, :args))
         return_type = Keyword.fetch!(fun_def, :return)
 
@@ -260,10 +260,10 @@ defmodule Dagger.ModuleRuntime do
     quote bind_quoted: [name: name] do
       use GenServer
 
-      import Dagger.ModuleRuntime
+      import Dagger.Mod
 
       @name name
-      @on_definition Dagger.ModuleRuntime
+      @on_definition Dagger.Mod
       @functions []
 
       Module.register_attribute(__MODULE__, :name, persist: true)
@@ -274,7 +274,7 @@ defmodule Dagger.ModuleRuntime do
       end
 
       def init([]) do
-        Dagger.ModuleRuntime.Registry.register(__MODULE__)
+        Dagger.Mod.Registry.register(__MODULE__)
         {:ok, []}
       end
     end

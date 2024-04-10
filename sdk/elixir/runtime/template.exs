@@ -59,7 +59,7 @@ defmodule Main do
     Documentation for `<%= @module %>`.
     \"\"\"
 
-    use Dagger.ModuleRuntime, name: "<%= @module %>"
+    use Dagger.Mod, name: "<%= @module %>"
 
     defstruct [:dag]
 
@@ -105,7 +105,7 @@ defmodule Main do
       Mix.ensure_application!(:inets)
       Application.ensure_all_started(:dagger)
       Application.ensure_all_started(<%= @application %>)
-      Dagger.ModuleRuntime.invoke()
+      Dagger.Mod.invoke()
     end
   end
   """
@@ -123,7 +123,7 @@ defmodule Main do
     @impl true
     def start(_type, _args) do
       children = [
-        Dagger.ModuleRuntime.Registry, 
+        Dagger.Mod.Registry, 
         <%= @module %>
       ]
 

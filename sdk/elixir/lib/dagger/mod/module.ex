@@ -1,8 +1,8 @@
-defmodule Dagger.ModuleRuntime.Module do
+defmodule Dagger.Mod.Module do
   @moduledoc false
 
-  alias Dagger.ModuleRuntime.Function
-  alias Dagger.ModuleRuntime.Helper
+  alias Dagger.Mod.Function
+  alias Dagger.Mod.Helper
 
   @doc """
   Define a Dagger module.

@@ -1,7 +1,5 @@
-defmodule Dagger.ModuleRuntime.Registry do
-  @moduledoc """
-  TBD.
-  """
+defmodule Dagger.Mod.Registry do
+  @moduledoc false
 
   use Agent
 
@@ -14,7 +12,7 @@ defmodule Dagger.ModuleRuntime.Registry do
   Register a module.
   """
   def register(pid \\ __MODULE__, module) do
-    name = Dagger.ModuleRuntime.Module.name_for(module)
+    name = Dagger.Mod.Module.name_for(module)
     fun = fn modules -> Map.put(modules, name, module) end
     Agent.update(pid, fun)
   end

@@ -1,4 +1,4 @@
-defmodule Dagger.ModuleRuntime.Helper do
+defmodule Dagger.Mod.Helper do
   @moduledoc false
 
   @doc """
