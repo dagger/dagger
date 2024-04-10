@@ -91,7 +91,7 @@ func New() *Frontend {
 		view:         new(strings.Builder),
 		messagesView: logsView,
 		messagesBuf:  logsOut,
-		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
+		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile), termenv.WithTTY(true)),
 	}
 }
 
@@ -211,7 +211,7 @@ func (fe *Frontend) finalRender() error {
 
 	fe.recalculateView()
 
-	out := termenv.NewOutput(os.Stderr)
+	out := ui.NewOutput(os.Stderr, termenv.WithProfile(fe.profile), termenv.WithTTY(true))
 
 	if fe.messagesBuf.Len() > 0 {
 		fmt.Fprintln(out, fe.messagesBuf.String())
@@ -535,7 +535,7 @@ func (fe *Frontend) SetWindowSize(msg tea.WindowSizeMsg) {
 func (fe *Frontend) render() {
 	fe.mu.Lock()
 	fe.view.Reset()
-	fe.Render(ui.NewOutput(fe.view, termenv.WithProfile(fe.profile)))
+	fe.Render(ui.NewOutput(fe.view, termenv.WithProfile(fe.profile), termenv.WithTTY(true)))
 	fe.mu.Unlock()
 }
 

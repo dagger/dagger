@@ -38,7 +38,7 @@ type streamingExporter struct {
 
 func newStreamingExporter() *streamingExporter {
 	return &streamingExporter{
-		output:      termenv.NewOutput(os.Stdout, termenv.WithProfile(ui.ColorProfile()), termenv.WithUnsafe()),
+		output:      ui.NewOutput(os.Stdout, termenv.WithProfile(ui.ColorProfile()), termenv.WithTTY(true)),
 		done:        make(chan struct{}),
 		frameTicker: time.NewTicker(50 * time.Millisecond),
 	}
