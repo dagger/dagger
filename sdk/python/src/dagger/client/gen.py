@@ -3670,6 +3670,44 @@ class GitRepository(Type):
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)
 
+    def with_auth_header(self, header: "Secret") -> Self:
+        """Header to authenticate the remote with.
+
+        Parameters
+        ----------
+        header:
+            Secret used to populate the Authorization HTTP header
+        """
+        _args = [
+            Arg("header", header),
+        ]
+        _ctx = self._select("withAuthHeader", _args)
+        return GitRepository(_ctx)
+
+    def with_auth_token(self, token: "Secret") -> Self:
+        """Token to authenticate the remote with.
+
+        Parameters
+        ----------
+        token:
+            Secret used to populate the password during basic HTTP
+            Authorization
+        """
+        _args = [
+            Arg("token", token),
+        ]
+        _ctx = self._select("withAuthToken", _args)
+        return GitRepository(_ctx)
+
+    def with_(
+        self, cb: Callable[["GitRepository"], "GitRepository"]
+    ) -> "GitRepository":
+        """Call the provided callable with current GitRepository.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
 
 @typecheck
 class Host(Type):

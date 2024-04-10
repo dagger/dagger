@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -231,6 +232,56 @@ sleep infinity
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
+}
+
+func TestGitAuth(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))
+
+	t.Run("no auth", func(t *testing.T) {
+		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.ErrorContains(t, err, "git error")
+		require.ErrorContains(t, err, "failed to fetch remote")
+	})
+
+	t.Run("incorrect auth", func(t *testing.T) {
+		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+			WithAuthToken(c.SetSecret("token-wrong", "wrong")).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.ErrorContains(t, err, "git error")
+		require.ErrorContains(t, err, "failed to fetch remote")
+	})
+
+	t.Run("token auth", func(t *testing.T) {
+		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+			WithAuthToken(c.SetSecret("token", "foobar")).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", dt)
+	})
+
+	t.Run("header auth", func(t *testing.T) {
+		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+			WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar")))).
+			Branch("main").
+			Tree().
+			File("README.md").
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Hello, world!", dt)
+	})
 }
 
 func TestGitKeepGitDir(t *testing.T) {

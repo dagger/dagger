@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	pythonVersions = []string{"3.10", "3.11"}
+	pythonVersions = []string{"3.10", "3.11", "3.12"}
 )
 
 type PythonSDK struct {

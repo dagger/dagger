@@ -160,11 +160,16 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
 	}
 
-	return tests.
-			WithMountedFile(cliBinPath, devBinary).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint),
-		nil
+	// TODO: should use c.Dagger.installer (but this currently can't connect to services)
+	tests = tests.
+		WithMountedFile(cliBinPath, devBinary).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
+	if t.Dagger.HostDockerConfig != nil {
+		// this avoids rate limiting in our ci tests
+		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.HostDockerConfig)
+	}
+	return tests, nil
 }
 
 func registry() *Service {

@@ -3387,6 +3387,14 @@ type GitRepository struct {
 
 	id *GitRepositoryID
 }
+type WithGitRepositoryFunc func(r *GitRepository) *GitRepository
+
+// With calls the provided function with current GitRepository.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *GitRepository) With(f WithGitRepositoryFunc) *GitRepository {
+	return f(r)
+}
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
@@ -3479,6 +3487,28 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	q = q.Arg("name", name)
 
 	return &GitRef{
+		query: q,
+	}
+}
+
+// Header to authenticate the remote with.
+func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
+	assertNotNil("header", header)
+	q := r.query.Select("withAuthHeader")
+	q = q.Arg("header", header)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Token to authenticate the remote with.
+func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
+	assertNotNil("token", token)
+	q := r.query.Select("withAuthToken")
+	q = q.Arg("token", token)
+
+	return &GitRepository{
 		query: q,
 	}
 }

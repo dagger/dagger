@@ -5,8 +5,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vito/progrock/ui"
-
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 )
@@ -21,7 +19,7 @@ func main() {
 		panic(err)
 	}
 	fe := idtui.New()
-	if err := fe.DumpID(ui.NewOutput(os.Stdout), &idp); err != nil {
+	if err := fe.DumpID(idtui.NewOutput(os.Stdout), &idp); err != nil {
 		panic(err)
 	}
 }

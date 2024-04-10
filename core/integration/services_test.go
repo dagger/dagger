@@ -13,6 +13,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -1708,10 +1710,82 @@ func gitServiceWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, c
 	gitDaemon := c.Container().
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		WithDirectory("/root/srv", makeGitDir(c, content, branchName)).
+		WithExposedPort(gitPort).
+		WithExec([]string{"sh", "-c", "git daemon --verbose --export-all --base-path=/root/srv"}).
+		AsService()
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	return gitDaemon, repoURL
+}
+
+func gitServiceHTTPWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string, token *dagger.Secret) (*dagger.Service, string) {
+	t.Helper()
+
+	var tokenPlaintext string
+	if token != nil {
+		tokenPlaintext, _ = token.Plaintext(ctx)
+	}
+
+	tmpl, err := template.New("").Parse(`
+server {
+	listen       80;
+	server_name  localhost;
+
+	location / {
+		root   /usr/share/nginx/html;
+		index  index.html index.htm;
+	}
+
+	{{ if .token }}
+	auth_basic            "Restricted";
+	auth_basic_user_file  /usr/share/nginx/htpasswd;
+	{{ end }}
+}
+`)
+	if err != nil {
+		panic(err)
+	}
+
+	var config bytes.Buffer
+	err = tmpl.Execute(&config, map[string]any{
+		"token": tokenPlaintext,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	gitDaemon := c.Container().
+		From("nginx").
+		WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{
+			Contents: config.String(),
+		}).
+		WithMountedDirectory("/usr/share/nginx/html", makeGitDir(c, content, branchName)).
+		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd", "x-access-token:{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
+			Owner: "nginx",
+		}).
+		WithExposedPort(80).
+		AsService()
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("http://%s/repo.git", gitHost)
+
+	return gitDaemon, repoURL
+}
+
+func makeGitDir(c *dagger.Client, content *dagger.Directory, branchName string) *dagger.Directory {
+	return c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/root/repo", content).
-		WithMountedFile("/root/start.sh",
-			c.Directory().
-				WithNewFile("start.sh", fmt.Sprintf(`#!/bin/sh
+		WithNewFile("/root/create.sh", dagger.ContainerWithNewFileOpts{
+			Contents: fmt.Sprintf(`#!/bin/sh
 
 set -e -u -x
 
@@ -1731,21 +1805,14 @@ cd ..
 
 cd srv
 	git clone --bare ../repo repo.git
+	cd repo.git
+		git update-server-info
+	cd ..
 cd ..
-
-git daemon --verbose --export-all --base-path=/root/srv
-`, branchName)).
-				File("start.sh")).
-		WithExposedPort(gitPort).
-		WithExec([]string{"sh", "/root/start.sh"}).
-		AsService()
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
-
-	return gitDaemon, repoURL
+`, branchName),
+		}).
+		WithExec([]string{"sh", "/root/create.sh"}).
+		Directory("/root/srv")
 }
 
 // signalService is a little helper service that writes assorted signals that
