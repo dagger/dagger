@@ -79,7 +79,7 @@ defmodule Dagger.GitRepository do
     }
   end
 
-  @doc "Header to authorize with."
+  @doc "Header to authenticate to remote with."
   @spec with_auth_header(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
   def with_auth_header(%__MODULE__{} = git_repository, header) do
     selection =
@@ -93,7 +93,7 @@ defmodule Dagger.GitRepository do
     }
   end
 
-  @doc "Token to authorize with."
+  @doc "Token to authenticate to remote with."
   @spec with_auth_token(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
   def with_auth_token(%__MODULE__{} = git_repository, token) do
     selection =

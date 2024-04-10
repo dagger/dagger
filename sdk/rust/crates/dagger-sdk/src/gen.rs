@@ -3788,11 +3788,11 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Header to authorize with.
+    /// Header to authenticate to remote with.
     ///
     /// # Arguments
     ///
-    /// * `header` - TODO
+    /// * `header` - Secret used to populate the Authorization HTTP header
     pub fn with_auth_header(&self, header: Secret) -> GitRepository {
         let mut query = self.selection.select("withAuthHeader");
         query = query.arg_lazy(
@@ -3808,11 +3808,11 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Token to authorize with.
+    /// Token to authenticate to remote with.
     ///
     /// # Arguments
     ///
-    /// * `token` - TODO
+    /// * `token` - Secret used to populate the basic password during HTTP Authorization
     pub fn with_auth_token(&self, token: Secret) -> GitRepository {
         let mut query = self.selection.select("withAuthToken");
         query = query.arg_lazy(

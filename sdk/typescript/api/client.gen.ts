@@ -4672,8 +4672,8 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Header to authorize with.
-   * @param header TODO
+   * Header to authenticate to remote with.
+   * @param header Secret used to populate the Authorization HTTP header
    */
   withAuthHeader = (header: Secret): GitRepository => {
     return new GitRepository({
@@ -4689,8 +4689,8 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Token to authorize with.
-   * @param token TODO
+   * Token to authenticate to remote with.
+   * @param token Secret used to populate the basic password during HTTP Authorization
    */
   withAuthToken = (token: Secret): GitRepository => {
     return new GitRepository({

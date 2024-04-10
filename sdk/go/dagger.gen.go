@@ -3491,7 +3491,7 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	}
 }
 
-// Header to authorize with.
+// Header to authenticate to remote with.
 func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 	assertNotNil("header", header)
 	q := r.query.Select("withAuthHeader")
@@ -3502,7 +3502,7 @@ func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 	}
 }
 
-// Token to authorize with.
+// Token to authenticate to remote with.
 func (r *GitRepository) WithAuthToken(token *Secret) *GitRepository {
 	assertNotNil("token", token)
 	q := r.query.Select("withAuthToken")
