@@ -116,9 +116,6 @@ func (t Engine) test(ctx context.Context, additional ...string) error {
 	if cfg, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG"); ok {
 		args = append(args, "with-cache", "--config="+cfg)
 	}
-	if dockerPath, err := util.HostDockerDir(); err == nil {
-		args = append(args, "with-host-docker", "--directory="+dockerPath)
-	}
 	args = append(args, additional...)
 	return util.DaggerCall(ctx, args...)
 }

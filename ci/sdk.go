@@ -32,11 +32,16 @@ func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) 
 	cliBinaryPath := "/.dagger-cli"
 
 	return func(ctr *Container) *Container {
-		return ctr.
+		ctr = ctr.
 			WithServiceBinding("dagger-engine", engineSvc).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint).
 			WithMountedFile(cliBinaryPath, cliBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
 			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
+		if ci.HostDockerConfig != nil {
+			// this avoids rate limiting in our ci tests
+			ctr = ctr.WithMountedSecret("/root/.docker/config.json", ci.HostDockerConfig)
+		}
+		return ctr
 	}, nil
 }

@@ -13,19 +13,12 @@ import (
 type Test struct {
 	Dagger *Dagger // +private
 
-	CacheConfig   string     // +private
-	HostDockerDir *Directory // +private
+	CacheConfig string // +private
 }
 
 func (t *Test) WithCache(config string) *Test {
 	clone := *t
 	clone.CacheConfig = config
-	return &clone
-}
-
-func (t *Test) WithHostDocker(directory *Directory) *Test {
-	clone := *t
-	clone.HostDockerDir = directory
 	return &clone
 }
 
@@ -167,13 +160,14 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
 	}
 
+	// TODO: should use c.Dagger.installer (but this currently can't connect to services)
 	tests = tests.
 		WithMountedFile(cliBinPath, devBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
-	if t.HostDockerDir != nil {
+	if t.Dagger.HostDockerConfig != nil {
 		// this avoids rate limiting in our ci tests
-		tests = tests.WithMountedDirectory("/root/.docker", t.HostDockerDir)
+		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.HostDockerConfig)
 	}
 	return tests, nil
 }
