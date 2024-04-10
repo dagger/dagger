@@ -155,6 +155,11 @@ func (w *batchPrinter) render(out *termenv.Output, final bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	spanName := w.getSpanName(w.spanID)
+	if spanName == "" {
+		return
+	}
+
 	lineCount := len(w.lines)
 
 	if lineCount == 0 {
@@ -164,7 +169,7 @@ func (w *batchPrinter) render(out *termenv.Output, final bool) {
 	if final || lineCount > 10 || time.Since(w.latestPrintAt) > time.Second {
 		_, _ = fmt.Fprint(out, out.String(fmt.Sprintf("%d: ", w.num)).Foreground(termenv.ANSIBrightMagenta))
 		_, _ = fmt.Fprint(out, out.String("in ").Foreground(termenv.ANSICyan))
-		_, _ = fmt.Fprintf(out, "%s\n", w.getSpanName(w.spanID))
+		_, _ = fmt.Fprintf(out, "%s\n", spanName)
 
 		for _, line := range w.lines {
 			_, _ = fmt.Fprint(out, out.String(fmt.Sprintf("%d: ", w.num)).Foreground(termenv.ANSIBrightMagenta))
