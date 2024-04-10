@@ -11,6 +11,10 @@ import (
 type Dagger struct {
 	Source  *Directory // +private
 	Version *VersionInfo
+
+	// Can be used by nested clients to forward docker credentials to avoid
+	// rate limits
+	HostDockerConfig *Secret // +private
 }
 
 func New(
@@ -19,6 +23,8 @@ func New(
 
 	// +optional
 	version string,
+	// +optional
+	hostDockerConfig *Secret,
 ) (*Dagger, error) {
 	var versionInfo *VersionInfo
 	switch {
@@ -35,8 +41,9 @@ func New(
 	}
 
 	return &Dagger{
-		Source:  source,
-		Version: versionInfo,
+		Source:           source,
+		Version:          versionInfo,
+		HostDockerConfig: hostDockerConfig,
 	}, nil
 }
 
