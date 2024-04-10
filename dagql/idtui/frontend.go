@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 
 	"github.com/dagger/dagger/dagql/call"
@@ -53,10 +54,12 @@ type Frontend struct {
 	err         error
 
 	// updated as events are written
-	db           *DB
-	eof          bool
-	backgrounded bool
-	logsView     *LogsView
+	db *DB
+	// for streaming output
+	streamingExporter *streamingExporter
+	eof               bool
+	backgrounded      bool
+	logsView          *LogsView
 
 	// global logs
 	messagesView *Vterm
@@ -79,7 +82,8 @@ func New() *Frontend {
 	logsView := NewVterm()
 	logsOut := new(strings.Builder)
 	return &Frontend{
-		db: NewDB(),
+		db:                NewDB(),
+		streamingExporter: newStreamingExporter(),
 
 		fps:          30, // sane default, fine-tune if needed
 		profile:      profile,
@@ -299,6 +303,14 @@ func (fe *Frontend) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySp
 			"span", span.Name(),
 		)
 	}
+
+	if fe.Plain {
+		// just collect spanNames
+		if err := fe.streamingExporter.ExportSpans(ctx, spans); err != nil {
+			return err
+		}
+	}
+
 	return fe.db.ExportSpans(ctx, spans)
 }
 
@@ -308,15 +320,32 @@ func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) erro
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	slog.Debug("frontend exporting logs", "logs", len(logs))
+
+	if fe.Plain {
+		// streaming output only
+		return fe.streamingExporter.ExportLogs(ctx, logs)
+	}
 	return fe.db.ExportLogs(ctx, logs)
 }
 
-func (fe *Frontend) Shutdown(ctx context.Context) error {
-	// TODO this gets called twice (once for traces, once for logs)
-	if err := fe.db.Shutdown(ctx); err != nil {
-		return err
+func (fe *Frontend) Shutdown(c context.Context) error {
+	eg, ctx := errgroup.WithContext(c)
+
+	if fe.Plain {
+		eg.Go(func() error {
+			return fe.streamingExporter.Shutdown(ctx)
+		})
 	}
-	return fe.Close()
+
+	eg.Go(func() error {
+		// TODO this gets called twice (once for traces, once for logs)
+		if err := fe.db.Shutdown(ctx); err != nil {
+			return err
+		}
+		return fe.Close()
+	})
+
+	return eg.Wait()
 }
 
 type eofMsg struct{}
