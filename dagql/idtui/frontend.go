@@ -87,7 +87,7 @@ func New() *Frontend {
 		view:         new(strings.Builder),
 		messagesView: logsView,
 		messagesBuf:  logsOut,
-		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
+		messagesW:    ui.NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile), termenv.WithUnsafe()),
 	}
 }
 
