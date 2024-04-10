@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-/* TODO: open questions
+/* TODO:Open questions
 * Alpine has both /etc/ssl/ and /etc/ssl1.1 dirs...
 * LibreSSL does it's own thing? https://wiki.archlinux.org/title/Transport_Layer_Security
 * GNUTLS too; uses pkcs11 stuff (can other things be custom compiled to use that?)
@@ -23,56 +23,15 @@ More distros to handle:
 * Wolfi
 */
 
-// want identifiable separate type for cleanup errors since if those are
-// hit specifically we need to fail to the whole exec (whereas other errors
-// but successful cleanup can be non-fatal)
-type CleanupErr struct {
-	err error
-}
-
-func (c CleanupErr) Error() string {
-	return c.err.Error()
-}
-
-func (c CleanupErr) Unwrap() error {
-	return c.err
-}
-
-type cleanups struct {
-	funcs []func() error
-}
-
-func (c *cleanups) append(f func() error) {
-	c.funcs = append(c.funcs, f)
-}
-
-func (c *cleanups) prepend(f func() error) {
-	c.funcs = append([]func() error{f}, c.funcs...)
-}
-
-func (c *cleanups) run() error {
-	var rerr error
-	for i := len(c.funcs) - 1; i >= 0; i-- {
-		if err := c.funcs[i](); err != nil {
-			rerr = errors.Join(rerr, CleanupErr{err})
-		}
-	}
-	return rerr
-}
-
 /*
-This is anything that uses:
-* bundle path: /etc/ssl/certs/ca-certificates.crt
-* custom CA dir: /usr/local/share/ca-certificates
-* update command: update-ca-certificates
-
-This is known to include:
+debianLike includes:
 * Debian/Ubuntu/other derivatives
 * Alpine
 * Gentoo
 
-Which are obviously not all Debian derivatives...
-It's named debianLike for lack of a better name :-)
+Which are obviously not all Debian derivatives... They all use
+the same pattern for CA certs though. It's named debianLike
+for lack of a better name :-)
 */
 type debianLike struct {
 	*commonInstaller
@@ -87,7 +46,7 @@ func newDebianLike(ctrFS *containerFS) *debianLike {
 	}}
 }
 
-func (d *debianLike) detect(ctx context.Context) (bool, error) {
+func (d *debianLike) detect() (bool, error) {
 	if exists, err := d.ctrFS.AnyPathExists([]string{
 		"/etc/debian_version",
 		"/etc/alpine-release",
@@ -115,12 +74,7 @@ func (d *debianLike) detect(ctx context.Context) (bool, error) {
 }
 
 /*
-RHEL and derivatives use:
-* bundle path: /etc/pki/tls/certs/ca-bundle.crt
-* custom CA dir: /etc/pki/ca-trust/source/anchors
-* update command: trust extract
-
-This is known to include:
+rhelLike includes:
 * RHEL
 * Fedora
 * CentOS
@@ -139,7 +93,7 @@ func newRhelLike(ctrFS *containerFS) *rhelLike {
 	}}
 }
 
-func (d *rhelLike) detect(ctx context.Context) (bool, error) {
+func (d *rhelLike) detect() (bool, error) {
 	if exists, err := d.ctrFS.AnyPathExists([]string{
 		"/etc/redhat-release",
 		"/etc/redhat-version",

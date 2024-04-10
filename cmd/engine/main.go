@@ -230,13 +230,15 @@ func main() { //nolint:gocyclo
 		ctx, cancel := context.WithCancel(appcontext.Context())
 		defer cancel()
 
-		// install CA certs in case the user has a custom engine w/ extra certs
-		// installed to /usr/local/share/ca-certificates
-		// TODO: test this works on the ubuntu GPU image
+		// install CA certs in case the user has a custom engine w/ extra certs installed to
+		// /usr/local/share/ca-certificates
 		if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
 			bklog.G(ctx).WithError(err).Warnf("failed to update ca-certificates: %s", out)
-		} else if out, err = exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
-			bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+		} else {
+			//nolint:gosec // it thinks we're using untrusted input even though we're only using consts here...?
+			if out, err := exec.CommandContext(ctx, "c_rehash", cacerts.EngineCustomCACertsDir).CombinedOutput(); err != nil {
+				bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
+			}
 		}
 
 		ctx, pubsub := InitTelemetry(ctx)

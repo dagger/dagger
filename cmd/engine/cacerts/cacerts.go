@@ -13,10 +13,17 @@ const (
 	EngineCustomCACertsDir = "/usr/local/share/ca-certificates"
 )
 
+// Installer is an implementation of installing+uninstalling custom CA certs for a container,
+// usually based on the distro.
 type Installer interface {
+	// Install installs the custom CA certs into the container. In case of an error part way through,
+	// it should attempt to cleanup after itself and return the error. If cleanup itself errors, it should
+	// be returned wrapped in a CleanupErr type.
 	Install(ctx context.Context) error
+	// Uninstall removes the custom CA certs from the container.
 	Uninstall(context.Context) error
-	detect(context.Context) (bool, error)
+	// detect checks if the container is a match for this installer.
+	detect() (bool, error)
 }
 
 type executeContainerFunc func(ctx context.Context, args ...string) error
@@ -39,6 +46,9 @@ func NewInstaller(
 		return nil, err
 	}
 
+	// Run detection in parallel but unblock as soon as one match is found
+	// in which case it will be used. This way, we only block on every detect
+	// finishing in the case where no match is found or any error happens.
 	var eg errgroup.Group
 	matchChan := make(chan Installer, 1)
 	for _, installer := range []Installer{
@@ -47,7 +57,7 @@ func NewInstaller(
 	} {
 		installer := installer
 		eg.Go(func() error {
-			match, err := installer.detect(ctx)
+			match, err := installer.detect()
 			if err != nil {
 				return err
 			}
@@ -88,6 +98,43 @@ func NewInstaller(
 
 type noopInstaller struct{}
 
-func (noopInstaller) Install(context.Context) error        { return nil }
-func (noopInstaller) Uninstall(context.Context) error      { return nil }
-func (noopInstaller) detect(context.Context) (bool, error) { return false, nil }
+func (noopInstaller) Install(context.Context) error   { return nil }
+func (noopInstaller) Uninstall(context.Context) error { return nil }
+func (noopInstaller) detect() (bool, error)           { return false, nil }
+
+// Want identifiable separate type for cleanup errors since if those are
+// hit specifically we need to fail to the whole exec (whereas other errors
+// but successful cleanup can be non-fatal)
+type CleanupErr struct {
+	err error
+}
+
+func (c CleanupErr) Error() string {
+	return c.err.Error()
+}
+
+func (c CleanupErr) Unwrap() error {
+	return c.err
+}
+
+type cleanups struct {
+	funcs []func() error
+}
+
+func (c *cleanups) append(f func() error) {
+	c.funcs = append(c.funcs, f)
+}
+
+func (c *cleanups) prepend(f func() error) {
+	c.funcs = append([]func() error{f}, c.funcs...)
+}
+
+func (c *cleanups) run() error {
+	var rerr error
+	for i := len(c.funcs) - 1; i >= 0; i-- {
+		if err := c.funcs[i](); err != nil {
+			rerr = errors.Join(rerr, CleanupErr{err})
+		}
+	}
+	return rerr
+}

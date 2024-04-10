@@ -15,14 +15,27 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
+// containerFS is a vfs-like abstraction for operating on a container's filesystem without
+// needing to actually create all the mounts and unmount them (which can be expensive).
+type containerFS struct {
+	spec             *specs.Spec
+	executeContainer executeContainerFunc
+	mounts           []mount
+}
+
+type mount struct {
+	specs.Mount
+	// in the case the destination of a mount includes any symlinks in its path, ResolvedDest
+	// is the resolved path of the destination
+	ResolvedDest string
+}
+
 func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*containerFS, error) {
 	// hopefully the source is never a symlink, but resolve them just in case
 	// in order to simplify later code
 	for i, m := range spec.Mounts {
-		switch m.Type {
-		case "proc", "sysfs", "tmpfs", "devpts", "shm", "mqueue", "cgroup", "cgroup2":
+		if ok := isSpecialMountType(m.Type); ok {
 			continue
-		default:
 		}
 		var err error
 		if m.Source, err = filepath.EvalSymlinks(m.Source); err != nil {
@@ -32,6 +45,8 @@ func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*c
 	}
 
 	ctrFS := &containerFS{spec: spec, executeContainer: executeContainer}
+
+	// resolve all the destinations of the mounts
 	ctrFS.mounts = []mount{{
 		Mount: specs.Mount{
 			Destination: "/",
@@ -39,7 +54,6 @@ func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*c
 		},
 		ResolvedDest: "/",
 	}}
-
 	for _, m := range spec.Mounts {
 		resolvedDest, err := ctrFS.mountPointPath(m.Destination)
 		if err != nil {
@@ -51,17 +65,6 @@ func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*c
 		})
 	}
 	return ctrFS, nil
-}
-
-type containerFS struct {
-	spec             *specs.Spec
-	executeContainer executeContainerFunc
-	mounts           []mount
-}
-
-type mount struct {
-	specs.Mount
-	ResolvedDest string
 }
 
 func (ctrFS *containerFS) Open(name string) (fs.File, error) {
@@ -157,7 +160,7 @@ func (ctrFS *containerFS) LookPath(cmd string) (string, error) {
 		return cmd, nil
 	}
 
-	// TODO: may caller need to augment PATH with sbins when user not root
+	// TODO: caller may need to augment PATH with sbins when user not root?
 	var pathEnvVal string
 	for _, env := range ctrFS.spec.Process.Env {
 		if strings.HasPrefix(env, "PATH=") {
@@ -214,7 +217,6 @@ func (ctrFS *containerFS) PathExists(path string) (bool, error) {
 }
 
 func (ctrFS *containerFS) OSReleaseFileContains(ids [][]byte, idLikes [][]byte) (bool, error) {
-	// read /etc/os-release line by line
 	f, err := ctrFS.Open("/etc/os-release")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -263,6 +265,8 @@ func (ctrFS *containerFS) OSReleaseFileContains(ids [][]byte, idLikes [][]byte) 
 	return false, nil
 }
 
+// Returned map is keyed with the contents of each cert in the bundle, with all newlines stripped.
+// The bundle file is presumed to have the format of each cert separated by a blank line.
 func (ctrFS *containerFS) ReadCABundleFile(path string) (map[string]struct{}, error) {
 	certs := make(map[string]struct{})
 	f, err := ctrFS.Open(path)
@@ -364,18 +368,39 @@ func (ctrFS *containerFS) DirIsEmpty(path string) (bool, error) {
 }
 
 func (ctrFS *containerFS) mountPointPath(containerPath string) (string, error) {
+	// resolveBase is true because runc will follow a symlink if it's the dest of
+	// a mount
 	containerPath, _, err := ctrFS.resolvePath(containerPath, true, 0)
 	return containerPath, err
 }
 
 func (ctrFS *containerFS) hostPath(containerPath string) (string, error) {
+	// resolveBase is false since we want to support e.g. Lstat on a symlink path
+	// (while still resolving symlinks in the parent dirs)
 	_, hostPath, err := ctrFS.resolvePath(containerPath, false, 0)
 	if hostPath == "" {
+		// happens when the mount containerPath is under is a special mount (tmpfs, proc, etc.)
 		return "", fmt.Errorf("cannot resolve path %q", containerPath)
 	}
 	return hostPath, err
 }
 
+/*
+resolvePath returns the container path (i.e. the path inside the container after mounts
+are setup) and the host path (i.e. the path on the host under mount Sources) for a given
+path in the container after resolving any symlinks.
+
+This is extra tricky due to the fact that symlinks may be present in any part of the path,
+including parent "dirs" AND that those symlinks may themselves point to paths that have
+other symlinks in their path (including parent "dirs" again)...
+
+If resolveBase is true, symlinks are resolved for the final part of the path.
+
+linkCount is used to prevent infinite loops in case of symlink loops.
+
+TODO: this may benefit from memoization if it becomes a performance bottleneck, but need to reset
+the memo after any modifications are made (or mounts added, etc.)
+*/
 func (ctrFS *containerFS) resolvePath(path string, resolveBase bool, linkCount int) (
 	containerPath string,
 	hostPath string,
@@ -385,11 +410,19 @@ func (ctrFS *containerFS) resolvePath(path string, resolveBase bool, linkCount i
 		return "", "", errors.New("too many links")
 	}
 	if !filepath.IsAbs(path) {
-		path = filepath.Join("/", path)
+		return "", "", fmt.Errorf("path %q is not absolute", path)
 	}
 
+	/*
+		The basic idea here is to split the path into each component and resolve each component
+		one-by-one. Each iteration of the loop needs to re-check which mount it's under to handle
+		cases like one mount at /foo and another mount at /foo/bar with path being /foo/bar/baz.
+
+		In the case a symlink is found, we just recursively start over with the new path pointed
+		to by the symlink.
+	*/
 	split := strings.Split(path, "/")
-	curPath := "/" // invariant: curPath never contains symlinks at beginning of each loop
+	curPath := "/" // invariant: curPath never contains symlinks at beginning of each loop iteration
 	var srcPath string
 	for i, part := range split {
 		if part == "" {
@@ -398,7 +431,9 @@ func (ctrFS *containerFS) resolvePath(path string, resolveBase bool, linkCount i
 		curPath = filepath.Join(curPath, part)
 		rest := strings.Join(split[i+1:], "/")
 
-		// figure out the mount point that must contain curPath
+		// Figure out the mount point that must contain curPath. Iterate in reverse order
+		// so we prefer e.g. /foo/bar over /foo if there are mounts at both paths. If no
+		// explicit mount is found, this results in defaulting to being under the rootfs
 		var resolvedMount *mount
 		var relPath string
 		for j := len(ctrFS.mounts) - 1; j >= 0; j-- {
@@ -413,11 +448,9 @@ func (ctrFS *containerFS) resolvePath(path string, resolveBase bool, linkCount i
 			}
 		}
 
-		switch resolvedMount.Type {
-		case "proc", "sysfs", "tmpfs", "devpts", "shm", "mqueue", "cgroup", "cgroup2":
+		if ok := isSpecialMountType(resolvedMount.Type); ok {
 			// can't resolve any paths under special mounts
 			return filepath.Join(curPath, rest), "", nil
-		default:
 		}
 
 		srcPath = filepath.Join(resolvedMount.Source, relPath)
@@ -439,6 +472,8 @@ func (ctrFS *containerFS) resolvePath(path string, resolveBase bool, linkCount i
 			if err != nil {
 				return "", "", err
 			}
+			// TODO: this could be optimized slightly by checking if the target is still under the current mount,
+			// in which case we don't need to start over entirely.
 			if filepath.IsAbs(target) {
 				return ctrFS.resolvePath(filepath.Join(target, rest), resolveBase, linkCount+1)
 			}
@@ -473,7 +508,7 @@ func ReadHostCustomCADir(path string) (
 			}
 			symlinks[dirEnt.Name()] = linkPath
 		case os.ModeDir:
-			// TODO: handle?
+			// TODO: handle subdirs
 		default:
 			// TODO: only read .pem/.crt files?
 			bs, err := os.ReadFile(dirEntPath)
@@ -484,4 +519,13 @@ func ReadHostCustomCADir(path string) (
 		}
 	}
 	return certsToFileName, symlinks, nil
+}
+
+func isSpecialMountType(mntType string) bool {
+	switch mntType {
+	case "proc", "sysfs", "tmpfs", "devpts", "shm", "mqueue", "cgroup", "cgroup2":
+		return true
+	default:
+		return false
+	}
 }
