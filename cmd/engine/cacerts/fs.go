@@ -378,11 +378,14 @@ func (ctrFS *containerFS) hostPath(containerPath string) (string, error) {
 	// resolveBase is false since we want to support e.g. Lstat on a symlink path
 	// (while still resolving symlinks in the parent dirs)
 	_, hostPath, err := ctrFS.resolvePath(containerPath, false, 0)
+	if err != nil {
+		return "", err
+	}
 	if hostPath == "" {
 		// happens when the mount containerPath is under is a special mount (tmpfs, proc, etc.)
 		return "", fmt.Errorf("cannot resolve path %q", containerPath)
 	}
-	return hostPath, err
+	return hostPath, nil
 }
 
 /*
