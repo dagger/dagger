@@ -52,7 +52,9 @@ jobs:
       mage-targets: engine:testpublish
 
   scan-engine:
+    name: "Scan Engine Image for Vulnerabilities"
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
       mage-targets: engine:scan
+
