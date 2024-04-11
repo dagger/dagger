@@ -9,14 +9,14 @@ Just-in-time artifacts such as containers, directories and files expose an `Expo
 Here is an example of exporting the directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build
 ```
 
 :::info
 The Dagger CLI also has a global `--output` flag, which can be used as an alternative to the `Export()` function when exporting artifacts to the host. Here is an example:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger --output=./my-build
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger --output=./my-build
 ```
 
 The `--output` flag returns the absolute path of the saved resource on the host, instead of a simple Boolean `true` or `false`.
@@ -27,13 +27,13 @@ By default, the `Export()` function exports the files that exist in the returned
 Here is an example of exporting the build directory returned by the same Dagger Function above, deleting and replacing files as needed in the `./my-build` directory on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build --wipe
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build --wipe
 ```
 
 Instead of exporting an entire directory, you can also export a file. Here is an example of exporting a single file from the directory returned by the same Go builder Dagger Function, as `./my-binary-file` on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger file --path=dagger export --path=./my-binary-file
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger file --path=dagger export --path=./my-binary-file
 ```
 
 Here is another example, this time exporting the rules file used by a linter Dagger Function as `/tmp/rules` on the host:

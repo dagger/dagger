@@ -34,8 +34,8 @@ Here is an example of chaining a `WithExec()` function call to do the reverse: m
 dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container with-exec --args="rm","/etc/os-release" with-exec --args="ls","/etc" stdout
 ```
 
-Here is another example which chains multiple `WithExec()` calls to install the `curl` package in a Wolfi container, use it to send an HTTP request, and return the output:
+Here is another example which chains multiple `WithExec()` calls to install the `curl` package in a Wolfi container, send an HTTP request, and return the output:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/wolfi@v0.1.3 call container with-exec --args "apk,add,curl" with-exec --args "curl,-L,dagger.io" stdout
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container with-exec --args="apk,add,curl" with-exec --args="curl,-L,dagger.io" stdout
 ```
