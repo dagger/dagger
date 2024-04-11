@@ -53,6 +53,10 @@ const (
 	// span represents.
 	LLBOpAttr = "dagger.io/llb.op"
 
+	// The digests of the LLB operations that this span depends on, allowing the
+	// UI to attribute their future "cost."
+	LLBDigestsAttr = "dagger.io/llb.digests"
+
 	// The amount of progress that needs to be reached.
 	ProgressTotalAttr = "dagger.io/progress.total"
 

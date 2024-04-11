@@ -11,6 +11,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 )
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
@@ -61,28 +63,60 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 
 		if err != nil {
 			// NB: we do +id.Display() instead of setting it as a field to avoid
-			// dobule quoting
+			// double quoting
 			slog.Warn("error resolving "+id.Display(), "error", err)
 		}
 
-		// don't consider loadFooFromID to be a 'creator' as that would only
-		// obfuscate the real ID.
+		// Record an object result as an output of this call.
 		//
-		// NB: so long as the simplifying process rejects larger IDs, this
-		// shouldn't be necessary, but it seems like a good idea to just never even
-		// consider it.
-		isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
+		// This allows the UI to "simplify" the returned object's ID back to the
+		// current call's ID, so we can show the user myMod().unit().stdout()
+		// instead of container().from().[...].stdout().
+		if obj, ok := res.(dagql.Object); ok {
+			// Don't consider loadFooFromID to be a 'creator' as that would only
+			// obfuscate the real ID.
+			//
+			// NB: so long as the simplifying process rejects larger IDs, this
+			// shouldn't be necessary, but it seems like a good idea to just never even
+			// consider it.
+			isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
+			if !isLoader {
+				objDigest := obj.ID().Digest()
+				span.SetAttributes(attribute.String(DagOutputAttr, objDigest.String()))
+			}
+		}
 
-		// record an object result as an output of this vertex
+		// Record any LLB op digests that the value depends on.
 		//
-		// this allows the UI to "simplify" this ID back to its creator ID when it
-		// sees it in the future if it wants to, e.g. showing mymod.unit().stdout()
-		// instead of the full container().from().[...].stdout() ID
-		if obj, ok := res.(dagql.Object); ok && !isLoader {
-			objDigest := obj.ID().Digest()
-			span.SetAttributes(attribute.String(DagOutputAttr, objDigest.String()))
+		// This allows the UI to track the 'cause and effect' between lazy
+		// operations and their eventual execution. The listed digests will be
+		// correlated to spans coming from Buildkit which set the matching digest
+		// as the 'vertex' span attribute.
+		if hasPBs, ok := res.(hasPBDefinitions); ok {
+			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
+				slog.Warn("failed to get LLB definitions", "err", err)
+			} else {
+				seen := make(map[digest.Digest]bool)
+				var ops []string
+				for _, def := range defs {
+					for _, op := range def.Def {
+						dig := digest.FromBytes(op)
+						if seen[dig] {
+							continue
+						}
+						seen[dig] = true
+						ops = append(ops, dig.String())
+					}
+				}
+				span.SetAttributes(attribute.StringSlice(LLBDigestsAttr, ops))
+			}
 		}
 	}
+}
+
+// Also defined in core package.
+type hasPBDefinitions interface {
+	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
 // isIntrospection detects whether an ID is an introspection query.
