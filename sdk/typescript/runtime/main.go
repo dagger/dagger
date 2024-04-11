@@ -14,7 +14,7 @@ const (
 	bunVersion  = "1.0.27"
 	nodeVersion = "21.3"
 
-	nodeImageDigest = "sha256:cacb4e3a208aa34e0f821b56256e446ad984960d4f9aca66c7026e16b87db89f"
+	nodeImageDigest = "sha256:3dab5cc219983a5f1904d285081cceffc9d181e64bed2a4a18855d2d62c64ccb"
 	bunImageDigest  = "sha256:82d3d3b8ad96c4eea45c88167ce46e7e24afc726897d48e48cc6d6bf230c061c"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
@@ -234,7 +234,7 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	// Try to detect runtime from package.json
 	source := modSource.ContextDirectory().Directory(subPath)
-	
+
 	// read contents of package.json
 	json, err := source.File("package.json").Contents(ctx)
 	if err == nil {
