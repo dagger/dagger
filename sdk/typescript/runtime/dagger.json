@@ -1,9 +1,6 @@
 {
   "name": "TypeScriptSDK",
   "sdk": "go",
-  "root-for": [
-    {
-      "source": "."
-    }
-  ]
+  "source": ".",
+  "engineVersion": "v0.10.3"
 }
