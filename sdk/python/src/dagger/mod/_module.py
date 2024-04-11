@@ -19,6 +19,7 @@ from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
 from dagger import dag
+from dagger.client._otel import tracer
 from dagger.log import configure_logging
 
 from ._converter import make_converter
@@ -190,27 +191,40 @@ class Module:
             await self._serve()
 
     async def _serve(self):
-        mod_name = await dag.current_module().name()
         parent_name = await self._fn_call.parent_name()
+        mod_name = await dag.current_module().name()
         resolvers = self.get_resolvers(mod_name)
 
-        result = (
-            await self._invoke(resolvers, parent_name)
-            if parent_name
-            else await self._register(resolvers, to_pascal_case(mod_name))
-        )
+        with contextlib.ExitStack() as stack:
+            if parent_name:
+                stack.enter_context(
+                    tracer.start_as_current_span(
+                        "python module execution",
+                        attributes={
+                            "dagger.io/ui.passthrough": True,
+                        },
+                    ),
+                )
+                result = await self._invoke(resolvers, parent_name)
+            else:
+                stack.enter_context(
+                    tracer.start_as_current_span(
+                        "python module registration",
+                    ),
+                )
+                result = await self._register(resolvers, to_pascal_case(mod_name))
 
-        try:
-            output = json.dumps(result)
-        except (TypeError, ValueError) as e:
-            msg = f"Failed to serialize result: {e}"
-            raise InternalError(msg) from e
+            try:
+                output = json.dumps(result)
+            except (TypeError, ValueError) as e:
+                msg = f"Failed to serialize result: {e}"
+                raise InternalError(msg) from e
 
-        logger.debug(
-            "output => %s",
-            textwrap.shorten(repr(output), 144),
-        )
-        await self._fn_call.return_value(dagger.JSON(output))
+            logger.debug(
+                "output => %s",
+                textwrap.shorten(repr(output), 144),
+            )
+            await self._fn_call.return_value(dagger.JSON(output))
 
     async def _register(self, resolvers: Resolvers, mod_name: str) -> dagger.ModuleID:
         # Resolvers are collected at import time, but only actually

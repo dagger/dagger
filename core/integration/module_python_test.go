@@ -464,7 +464,8 @@ func TestModulePythonAltRuntime(t *testing.T) {
 
 	base := goGitBase(t, c).
 		WithMountedDirectory("/work/runtime", c.Host().Directory(runtimeSrcPath)).
-		WithMountedDirectory("/work/extended", c.Host().Directory(extSrcPath))
+		WithMountedDirectory("/work/extended", c.Host().Directory(extSrcPath)).
+		WithExec([]string{"sed", "-i", "s#../../../../../sdk/python/##", "/work/extended/dagger.json"})
 
 	t.Run("git dependency", func(t *testing.T) {
 		out, err := base.
