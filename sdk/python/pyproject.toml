@@ -30,7 +30,6 @@ requires-python = ">=3.10"
 dependencies = [
     "anyio>=3.6.2",
     "cattrs>=22.2.0",
-    "graphql-core>=3.2.3",
     "gql[httpx]>=3.5.0",
     "beartype>=0.18.2",
     "platformdirs>=2.6.2",
@@ -106,6 +105,8 @@ ignore = [
     # TODO: Document public modules and packages.
     "D100",
     "D104",
+    # First line should end with a period.
+    "D400",
     # Imperative mood only makes sense in functions, not classes.
     "D401",
     # Not using timezones in this project.
@@ -139,6 +140,7 @@ known-first-party = ["dagger"]
 [tool.ruff.per-file-ignores]
 "./docs/*" = ["D1"]
 "./runtime/*" = ["D1"]
+"./codegen/*" = ["D1"]
 "./src/dagger/client/gen.py" = [
     # Not much control over field names and docs coming from the API.
     # Note: We could detect built-in shadowing like the reserved
@@ -177,7 +179,7 @@ known-first-party = ["dagger"]
 # Allow some patterns to redefine imports in __init__.
 "./src/**/__init__.py" = ["I001", "F403", "PLC0414"]
 # Typer uses boolean parameters for the CLI. Let it.
-"./src/**/cli.py" = ["FBT"]
+"./**/src/**/cli.py" = ["FBT"]
 
 [tool.ruff.pydocstyle]
 convention = "numpy"

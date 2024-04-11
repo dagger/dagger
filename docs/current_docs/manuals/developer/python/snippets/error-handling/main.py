@@ -6,5 +6,6 @@ class MyModule:
     @function
     def divide(self, a: int, b: int) -> float:
         if b == 0:
-            raise ValueError("cannot divide by zero")
+            msg = "cannot divide by zero"
+            raise ValueError(msg)
         return a / b

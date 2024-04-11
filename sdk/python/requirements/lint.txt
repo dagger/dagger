@@ -15,5 +15,5 @@ pathspec==0.12.1
 platformdirs==4.2.0
     # via black
 ruff==0.1.15
-typing-extensions==4.10.0
+typing-extensions==4.11.0
     # via mypy

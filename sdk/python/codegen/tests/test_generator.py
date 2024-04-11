@@ -1,6 +1,16 @@
 from textwrap import dedent
 
 import pytest
+from codegen.generator import (
+    Context,
+    _InputField,
+    doc,
+    format_input_type,
+    format_name,
+    format_output_type,
+)
+from codegen.generator import Enum as EnumHandler
+from codegen.generator import Scalar as ScalarHandler
 from graphql import GraphQLArgument as Argument
 from graphql import GraphQLEnumType, GraphQLEnumValue, GraphQLID
 from graphql import GraphQLField as Field
@@ -13,17 +23,6 @@ from graphql import GraphQLNonNull as NonNull
 from graphql import GraphQLObjectType as Object
 from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
-
-from dagger._codegen.generator import (
-    Context,
-    _InputField,
-    doc,
-    format_input_type,
-    format_name,
-    format_output_type,
-)
-from dagger._codegen.generator import Enum as EnumHandler
-from dagger._codegen.generator import Scalar as ScalarHandler
 
 
 @pytest.fixture()

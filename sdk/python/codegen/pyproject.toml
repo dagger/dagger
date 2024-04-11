@@ -1,0 +1,26 @@
+[project]
+name = "codegen"
+version = "0.0.0"
+description = "Codegen for the Python SDK"
+dependencies = [
+    "graphql-core>=3.2.3",
+]
+requires-python = ">= 3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pytest>=8.1.1",
+]
+
+[tool.rye.scripts]
+test = "pytest"
+introspect = "dagger run go run ../../../cmd/codegen introspect -o schema.json"
+generate = "python -m codegen generate -i schema.json -o ../src/dagger/client/gen.py"
+format = "rye fmt ../src/dagger/client/gen.py"
+clean = "rm schema.json"
+codegen = { chain = ["introspect", "generate", "format", "clean"]}

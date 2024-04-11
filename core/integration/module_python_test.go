@@ -421,7 +421,7 @@ def relaxed() -> str:
 			With(fileContents(".python-version", "3.12")).
 			With(pyprojectExtra(`
                 [tool.dagger]
-                base-image = "python:3.10.10-alpine@sha256:5fb31782a701cacb606e2eca0bb7c75409e10e467ac2a1ceb75a878073d09acf"
+                base-image = "python:3.10.13@sha256:d5b1fbbc00fd3b55620a9314222498bebf09c4bf606425bf464709ed6a79f202"
             `)).
 			With(source).
 			With(daggerInitPython()).
@@ -429,7 +429,7 @@ def relaxed() -> str:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.10.10", out)
+		require.Equal(t, "3.10.13", out)
 	})
 
 	t.Run("default", func(t *testing.T) {
@@ -712,26 +712,67 @@ func TestModulePythonLockHashes(t *testing.T) {
 func TestModulePythonLockAddedDep(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
-	out, err := daggerCliBase(t, c).
-		With(pyprojectExtra(`dependencies = ["asyncer<0.0.5"]`)).
-		With(pythonSource(`
+	source := pythonSource(`
 from importlib import metadata
 from dagger import function
 
 @function
 def version() -> str:
-    return metadata.version("asyncer")
+    return metadata.version("packaging")
 `,
-		)).
-		With(daggerInitPython()).
-		WithExec([]string{"grep", "asyncer==0.0.4", "requirements.lock"}).
-		With(daggerCall("version")).
-		Stdout(ctx)
+	)
 
-	require.NoError(t, err)
-	require.Equal(t, "0.0.4", out)
+	t.Run("new module", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`dependencies = ["packaging<24.0"]`)).
+			With(source).
+			With(daggerInitPython()).
+			WithExec([]string{"grep", "packaging==23.2", "requirements.lock"}).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "23.2", out)
+	})
+
+	t.Run("existing module", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		out, err := daggerCliBase(t, c).
+			With(daggerInitPython()).
+			// Add dependency to pyproject.toml
+			WithExec([]string{"sed", "-i", `/dependencies/ s/.*/dependencies = ["packaging<24.0"]/`, "pyproject.toml"}).
+			With(source).
+			With(daggerExec("develop")).
+			WithExec([]string{"grep", "packaging==23.2", "requirements.lock"}).
+			With(daggerCall("version")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "23.2", out)
+	})
+
+	t.Run("sdk overrides local changes", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		_, err := daggerCliBase(t, c).
+			With(daggerInitPython()).
+			// Add dependency to sdk/pyproject.toml
+			WithExec([]string{"sed", "-i", `/platformdirs>=/ a  = "packaging<24.0",/`, "sdk/pyproject.toml"}).
+			With(source).
+			With(daggerCall("version")).
+			Sync(ctx)
+
+		require.ErrorContains(t, err, "No package metadata was found for packaging")
+	})
 }
 
 func TestModulePythonSignatures(t *testing.T) {

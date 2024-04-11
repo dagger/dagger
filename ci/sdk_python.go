@@ -45,8 +45,8 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 					},
 				},
 			).
-			WithExec([]string{"ruff", "check", "--diff", ".", "../../docs/current_docs"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "../../docs/current_docs"}).
+			WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
+			WithExec([]string{"black", "--check", "--diff", ".", "/docs"}).
 			Sync(ctx)
 		return err
 	})
@@ -106,11 +106,16 @@ func (t PythonSDK) Generate(ctx context.Context) (*Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	introspection, err := t.Dagger.introspection(ctx, installer)
+	if err != nil {
+		return nil, err
+	}
 	generated := t.pythonBase(pythonDefaultVersion, true).
-		With(installer).
+		WithWorkdir("/sdk/python/codegen").
+		WithExec([]string{"pip", "install", "-r", "requirements.lock"}).
 		WithWorkdir("/").
-		WithExec([]string{"dagger", "run", "python", "-m", "dagger", "codegen", "-o", pythonGeneratedAPIPath}).
+		WithMountedFile("/schema.json", introspection).
+		WithExec([]string{"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", pythonGeneratedAPIPath}).
 		WithExec([]string{"black", pythonGeneratedAPIPath}).
 		File(pythonGeneratedAPIPath)
 	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil
@@ -209,7 +214,7 @@ func (t PythonSDK) pythonBase(version string, install bool) *Container {
 	if install {
 		base = base.
 			WithMountedDirectory(mountPath, src).
-			WithExec([]string{"pip", "install", "."})
+			WithExec([]string{"pip", "install", "--no-deps", "."})
 	}
 
 	return base
