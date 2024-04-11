@@ -40,7 +40,7 @@ This will install all dependencies, start the docs web server locally and open [
 3. Once created and previsualized, run `npm run build` from the `/docs` directory. This command verifies no links are broken when parsing markdown, among other things, so it's a good way to "test" your new doc.
 
 This new doc will not be added to the navigation.
-We prefer to keep the organisation of doc pages, and writing them separate.
+We prefer to keep the organization of doc pages, and writing them separate.
 For the time being - 2022 Q1 - the focus is on writing self-contained doc content.
 Don't worry about where to fit this content, it's enough to keep this in mind: [Writing effective documentation](https://www.youtube.com/watch?v=R6zeikbTgVc&t=19s).
 
