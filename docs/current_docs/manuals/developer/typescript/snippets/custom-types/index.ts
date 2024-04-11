@@ -37,7 +37,7 @@ class Github {
     const organization = new Organization()
 
     organization.url = "https://github.com/dagger"
-    organization.repository = [dag.git(`${organisation.url}/dagger`)]
+    organization.repository = [dag.git(`${organization.url}/dagger`)]
     organization.members = [
       new Account("jane", "jane@example.com"),
       new Account("john", "john@example.com"),
