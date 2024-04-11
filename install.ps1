@@ -7,13 +7,11 @@ param (
     [Parameter(Mandatory = $false)] [System.Boolean]$InteractiveInstall = $false
 )
 
-@"
----------------------------------------------------------------------------------
-Author: Alessandro Festa
-Co Author: Brittan DeYoung
-Dagger Installation Utility for Windows users
----------------------------------------------------------------------------------
-"@
+# ---------------------------------------------------------------------------------
+# Author: Alessandro Festa
+# Co Author: Brittan DeYoung
+# Dagger Installation Utility for Windows users
+# ---------------------------------------------------------------------------------
 
 $name="dagger"
 $base="https://dl.dagger.io"
