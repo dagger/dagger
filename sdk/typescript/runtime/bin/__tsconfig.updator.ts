@@ -51,10 +51,14 @@ if (!tsconfig.compilerOptions.paths) {
   tsconfig.compilerOptions.paths = {}
 }
 
-// If `@dagger.io/dagger` isn't part of the tsconfig paths, update it.
+// If `@dagger.io/dagger` or `@dagger.io/dagger/telemetry` are not part of the tsconfig paths, update it
 if (
   !tsconfig.compilerOptions.paths[daggerPathAlias] ||
-  !tsconfig.compilerOptions.paths[daggerPathAlias].includes(daggerPath)
+  !tsconfig.compilerOptions.paths[daggerPathAlias].includes(daggerPath) ||
+  !tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] ||
+  !tsconfig.compilerOptions.paths[daggerTelemetryPathAlias].includes(
+    daggerTelemetryPath,
+  )
 ) {
   tsconfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
   tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [

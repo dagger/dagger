@@ -1,7 +1,9 @@
+import * as opentelemetry from "@opentelemetry/api"
 import { Client } from "./api/client.gen.js"
 import { ConnectOpts } from "./connectOpts.js"
 import { Context, defaultContext } from "./context/context.js"
 import { CLI_VERSION } from "./provisioning/index.js"
+import { getContext } from "./telemetry/otlp.js"
 
 export type CallbackFct = (client: Client) => Promise<void>
 
@@ -26,9 +28,12 @@ export async function connection(
   fct: () => Promise<void>,
   cfg: ConnectOpts = {},
 ) {
-  await defaultContext.connection(cfg)
+  // Wrap connection into the otpl context
+  await opentelemetry.context.with(getContext(), async () => {
+    await defaultContext.connection(cfg)
 
-  await fct().finally(() => close())
+    await fct().finally(() => close())
+  })
 }
 
 /**

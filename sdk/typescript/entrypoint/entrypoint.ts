@@ -10,12 +10,7 @@ import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
-import {
-  getContext,
-  tracer,
-  grpcExporter,
-  consoleExporter,
-} from "../telemetry/otpl.js"
+import { getContext, tracer, forceFlush } from "../telemetry/otlp.js"
 import { context, SpanStatusCode } from "@opentelemetry/api"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -46,9 +41,9 @@ export async function entrypoint() {
           return tracer.startActiveSpan(
             "typescript module registration",
             {
-              //  attributes: {
-              //    "dagger.io/ui.passthrough": true,
-              //  },
+              attributes: {
+                "dagger.io/ui.passthrough": true,
+              },
             },
             async (span) => {
               try {
@@ -65,8 +60,7 @@ export async function entrypoint() {
                 throw e
               } finally {
                 span.end()
-                grpcExporter.shutdown()
-                consoleExporter.shutdown()
+                await forceFlush()
               }
             },
           )
@@ -91,8 +85,8 @@ export async function entrypoint() {
             "typescript module execution",
             {
               attributes: {
-                //  "dagger.io/ui.mask": true,
-                //  "dagger.io/ui.passthrough": true,
+                "dagger.io/ui.mask": true,
+                "dagger.io/ui.passthrough": true,
               },
             },
             async (span) => {
@@ -116,8 +110,7 @@ export async function entrypoint() {
                 process.exit(1)
               } finally {
                 span.end()
-                grpcExporter.shutdown()
-                consoleExporter.shutdown()
+                await forceFlush()
               }
             },
           )
