@@ -111,7 +111,7 @@ var rootCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("create profile: %w", err)
 			}
-
+			defer profF.Close()
 			pprof.StartCPUProfile(profF)
 			cobra.OnFinalize(pprof.StopCPUProfile)
 
@@ -121,7 +121,7 @@ var rootCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("create trace: %w", err)
 			}
-
+			defer traceF.Close()
 			if err := runtimetrace.Start(traceF); err != nil {
 				return fmt.Errorf("start trace: %w", err)
 			}
