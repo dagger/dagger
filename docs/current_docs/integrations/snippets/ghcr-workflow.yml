@@ -20,7 +20,7 @@ jobs:
         with:
           version: "0.11.0"
           verb: call
-          args: build-and-push --registry=$DOCKER_REGISTRY --image-name=$DOCKER_IMAGE_NAME --username=$DOCKER_USERNAME --password=env:DOCKER_PASSWORD --build-context .
+          args: build-and-push --registry=$DOCKER_REGISTRY --image-name=$DOCKER_IMAGE_NAME --username=$DOCKER_USERNAME --password=env:DOCKER_PASSWORD --build-context=.
         env:
           DOCKER_REGISTRY: ghcr.io
           DOCKER_IMAGE_NAME: ${{ github.repository }}
