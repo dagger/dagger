@@ -23,7 +23,7 @@ Nothing in the dagger module is specific to GHCR, it's just:
 * Use `ctr.WithRegistryAuth(registry, username, password).Publish(ctx, registry+"/"+imageName)`
   to publish the container to the ghcr registry.
 
-Here's the complete [`dagger/main.go`](dagger/main.go):
+Here's the complete [`dagger/main.go`](https://github.com/lukemarsden/dagger-ghcr-demo/blob/main/dagger/main.go):
 
 ```yaml title="dagger/main.go" file=./snippets/ghcr-main.go
 ```
