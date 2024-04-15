@@ -34,15 +34,15 @@ class Organization {
 class Github {
   @func()
   daggerOrganization(): Organization {
-    const organisation = new Organization()
+    const organization = new Organization()
 
-    organisation.url = "https://github.com/dagger"
-    organisation.repository = [dag.git(`${organisation.url}/dagger`)]
-    organisation.members = [
+    organization.url = "https://github.com/dagger"
+    organization.repository = [dag.git(`${organization.url}/dagger`)]
+    organization.members = [
       new Account("jane", "jane@example.com"),
       new Account("john", "john@example.com"),
     ]
 
-    return organisation
+    return organization
   }
 }

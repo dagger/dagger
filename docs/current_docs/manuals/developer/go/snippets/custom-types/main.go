@@ -5,7 +5,7 @@ type Github struct{}
 func (module *Github) DaggerOrganization() *Organization {
 	return &Organization{
 		URL:          "https://github.com/dagger",
-		Repositories: []*GitRepository{dag.Git(`${organisation.url}/dagger`)},
+		Repositories: []*GitRepository{dag.Git(`${organization.url}/dagger`)},
 		Members: []*Account{
 			{"jane", "jane@example.com"},
 			{"john", "john@example.com"},
