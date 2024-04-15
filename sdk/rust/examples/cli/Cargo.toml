@@ -1,0 +1,12 @@
+workspace = { members = ["app"] }
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dagger-sdk = { path = "../../crates/dagger-sdk" }
+eyre = "0.6.12"
+tokio = "1.37.0"
