@@ -89,7 +89,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Node:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"npm", "install"}).
+			WithExec([]string{"yarn"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -176,34 +176,63 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Add generated code
 		WithDirectory(GenDir, gen)
 
+	moduleFiles, err := base.Directory(".").Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not list rootfs entries: %v", err)
+	}
+	packageJsonExist := slices.Contains(moduleFiles, "package.json")
+
 	switch detectedRuntime {
 	case Bun:
-		base = base.
-			// Check if the project has existing source:
-			// if it does: add sdk as dev dependency
-			// if not: copy the template and replace QuickStart with the module name
-			WithExec([]string{"sh", "-c",
-				"if [ -f package.json ]; then  bun install ./sdk  --dev  && bun /opt/module/bin/__tsconfig.updator.ts; else cp -r /opt/module/template/*.json .; fi",
-			})
+		// Check if the project has existing source:
+		// if it does: add sdk as dev dependency
+		// if not: copy the template and replace QuickStart with the module name
+		if packageJsonExist {
+			base = base.
+				WithExec([]string{"bun", "install", genDir}).
+				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"})
+		} else {
+			base = base.
+				WithExec([]string{"sh", "-c", "cp -r /opt/module/template/*.json ."})
+		}
+
 	case Node:
-		base = base.
-			// Check if the project has existing source:
-			// if it does: add sdk as dev dependency
-			// if not: copy the template and replace QuickStart with the module name
-			WithExec([]string{"sh", "-c",
-				"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/module/bin/__tsconfig.updator.ts; else cp -r /opt/module/template/*.json .; fi",
-			})
+		// Check if the project has existing source:
+		// if it does: add sdk as dev dependency
+		// if not: copy the template and replace QuickStart with the module name
+		if packageJsonExist {
+			base = base.
+				WithExec([]string{"yarn", "--production", genDir}).
+				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"})
+		} else {
+			base = base.
+				WithExec([]string{"sh", "-c", "cp -r /opt/module/template/*.json ."})
+		}
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", detectedRuntime)
 	}
 
-	return base.
-		// Check if there's a src directory with .ts files in it.
-		// If not, add the template file and replace QuickStart with the module name
-		// This cover the case where there's a package.json but no src directory.
-		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/module/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
-		), nil
+	if !slices.Contains(moduleFiles, "src") {
+		base = base.WithDirectory("src", dag.Directory())
+	}
+
+	moduleSourceFiles, err := base.Directory("src").Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not list module source entries: %v", err)
+	}
+
+	// Check if there's a src directory with .ts files in it.
+	// If not, add the template file and replace QuickStart with the module name
+	// This cover the case where there's a package.json but no src directory.
+	if !slices.ContainsFunc(moduleSourceFiles, func(s string) bool {
+		return path.Ext(s) == ".ts"
+	}) {
+		base = base.
+			WithExec([]string{"cp", "/opt/module/template/src/index.ts", "src/index.ts"}).
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
+	}
+
+	return base, nil
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
