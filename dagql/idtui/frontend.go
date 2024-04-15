@@ -164,15 +164,20 @@ func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.F
 	// NOTE: establish color cache before we start consuming stdin
 	fe.out = NewOutput(ttyOut, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
-	// Bubbletea will just receive an `io.Reader` for its input rather than the
-	// raw TTY *os.File, so we need to set up the TTY ourselves.
-	ttyFd := int(ttyIn.Fd())
-	oldState, err := term.MakeRaw(ttyFd)
-	if err != nil {
-		return err
+	var stdin io.Reader
+	if ttyIn != nil {
+		stdin = ttyIn
+
+		// Bubbletea will just receive an `io.Reader` for its input rather than the
+		// raw TTY *os.File, so we need to set up the TTY ourselves.
+		ttyFd := int(ttyIn.Fd())
+		oldState, err := term.MakeRaw(ttyFd)
+		if err != nil {
+			return err
+		}
+		fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
+		defer fe.restore()
 	}
-	fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
-	defer fe.restore()
 
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
@@ -181,7 +186,7 @@ func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.F
 
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
-		tea.WithInput(ttyIn),
+		tea.WithInput(stdin),
 		tea.WithOutput(fe.out),
 		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
 		// counter-productive.
