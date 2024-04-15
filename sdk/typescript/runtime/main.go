@@ -78,7 +78,7 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	entrypointPath := path.Join(ModSourceDirPath, subPath, EntrypointExecutablePath)
 	tsConfigPath := path.Join(ModSourceDirPath, subPath, "tsconfig.json")
 
-	ctr = ctr.WithMountedFile(entrypointPath, ctr.Directory("/opt/bin").File(EntrypointExecutableFile))
+	ctr = ctr.WithMountedFile(entrypointPath, ctr.Directory("/opt/module/bin").File(EntrypointExecutableFile))
 
 	switch detectedRuntime {
 	case Bun:
@@ -148,7 +148,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Add codegen binary into a special path
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Add template directory
-		WithMountedDirectory("/opt", dag.CurrentModule().Source().Directory(".")).
+		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
 		// Mount users' module
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
@@ -184,16 +184,15 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			// if it does: add sdk as dev dependency
 			// if not: copy the template and replace QuickStart with the module name
 			WithExec([]string{"sh", "-c",
-				"if [ -f package.json ]; then  bun install ./sdk  --dev  && bun /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
+				"if [ -f package.json ]; then  bun install ./sdk  --dev  && bun /opt/module/bin/__tsconfig.updator.ts; else cp -r /opt/module/template/*.json .; fi",
 			})
 	case Node:
 		base = base.
-			WithExec([]string{"npm", "install", "-g", "tsx"}).
 			// Check if the project has existing source:
 			// if it does: add sdk as dev dependency
 			// if not: copy the template and replace QuickStart with the module name
 			WithExec([]string{"sh", "-c",
-				"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/bin/__tsconfig.updator.ts; else cp -r /opt/template/*.json .; fi",
+				"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/module/bin/__tsconfig.updator.ts; else cp -r /opt/module/template/*.json .; fi",
 			})
 	default:
 		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
@@ -204,7 +203,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// If not, add the template file and replace QuickStart with the module name
 		// This cover the case where there's a package.json but no src directory.
 		WithExec([]string{"sh", "-c",
-			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
+			fmt.Sprintf("mkdir -p src && if ls src/*.ts >/dev/null 2>&1; then true; else cp /opt/module/template/src/index.ts src/index.ts && sed -i -e 's/QuickStart/%s/g' ./src/index.ts; fi", strcase.ToCamel(name))},
 		), nil
 }
 
@@ -214,13 +213,14 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	case Bun:
 		return dag.Container().
 			From(bunImageRef).
-			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-$s", bunVersion))).
-			WithoutEntrypoint(), nil
+			WithoutEntrypoint().
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))), nil
 	case Node:
 		return dag.Container().
 			From(nodeImageRef).
+			WithoutEntrypoint().
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
-			WithoutEntrypoint(), nil
+			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %v", runtime)
 	}
