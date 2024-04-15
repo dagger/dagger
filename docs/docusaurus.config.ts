@@ -168,6 +168,108 @@ const config: Config = {
       // Refer to https://github.com/francoischalifour/medium-zoom#options
       config: {},
     },
+    footer: {
+      links: [
+        {
+          title: "Resources",
+          items: [
+            {
+              label: "Docs",
+              to: "https://docs.dagger.io/",
+            },
+            {
+              label: "Resources",
+              to: "https://dagger.io/resources",
+            },
+            {
+              label: "Blog",
+              to: "https://dagger.io/blog",
+            },
+            {
+              label: "Get Involved",
+              to: "https://dagger.io/community",
+            },
+            {
+              label: "Dagger love",
+              to: "https://dagger.io/dagger-love",
+            }, 
+            {
+              label: "Playground",
+              to: "https://play.dagger.cloud/playground",
+            },
+            {
+              label: "Changlog",
+              to: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
+            },
+            {
+              label: "Status",
+              to: "https://status.dagger.io",
+            }
+          ],
+        },
+        {
+          title: "Product",
+          items: [
+            {
+              label: "Dagger engine",
+              to: "https://dagger.io/dagger-engine",
+            },
+            {
+              label: "Dagger cloud",
+              to: "https://dagger.io/cloud",
+            },
+            {
+              label: "Daggerverse",
+              to: "https://daggerverse.dev",
+            },
+            {
+              label: "Pricing",
+              to: "https://dagger.io/pricing",
+            }
+          ],
+        },
+        {
+          title: "Company",
+          items: [
+            {
+              label: "Partners",
+              to: "https://dagger.io/partners",
+            },
+            {
+              label:"Brand",
+              to: "https://dagger.io/brand",
+            },
+            {
+              label: "Terms of Service",
+              to: "https://dagger.io/terms-of-service",
+            },
+            {
+              label: "Privacy Policy",
+              to: "https://dagger.io/privacy-policy",
+            },
+            {
+              label: "Trademark Guidelines",
+              to: "https://dagger.io/trademark-guidelines",
+            },{
+              label: "Dagger Trust Center",
+              to: "https://trust.dagger.io",
+            }
+          ],
+        },
+      ],
+      copyright: `
+        <hr />
+        <div class="flex justify-between">
+          <small>© Dagger 2022-2024</small>
+          <div class="flex gap-8">
+              <a target="_blank" class="footer-discord-link" href="https://discord.gg/dagger-io">
+              </a>
+              <a target="_blank" class="footer-x-link" href="https://twitter.com/dagger_io">
+              </a>
+          </div>
+        </div>
+      `,
+    },
   } satisfies Preset.ThemeConfig,
 };
 

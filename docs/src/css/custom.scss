@@ -82,11 +82,12 @@ html[data-theme="dark"] {
   }
 }
 
-.header-discord-link{
+.header-discord-link, .footer-discord-link, .footer-x-link {
   background-color: white;
   height: 30px;
   margin: 0;
   mask-image: url("/img/discord-icon.svg");
+  mask-position: center;
   mask-size: 35px;
   padding: 0;
   width: 30px;
@@ -101,6 +102,13 @@ html[data-theme="dark"] {
   @include mobile {
     margin: auto;
   }
+}
+
+.footer-x-link {
+  mask-size: 20px;
+  mask-image: url("/img/x-icon.svg");
+  mask-repeat: no-repeat;
+  mask-position: center;
 }
 
 html[data-theme="light"] {
@@ -148,4 +156,41 @@ html[data-theme="light"] {
 pre {
   background: #0D0C1B;
   border: 1px solid rgba(75,75,90, 0.3);
+}
+
+.footer {
+  background-color: #0D0C1B;
+  color: white;
+  padding: 4rem 0 1.5rem;
+
+  .flex {
+    display: flex;
+  }
+
+  .gap-8 {
+    gap: 24px;
+  }
+
+  hr {
+    background-color: #4b4968;
+  }
+
+  .justify-between {
+    justify-content: space-between;
+  }
+
+  .footer__link-item {
+    color: white;
+    font-size: 0.875rem;
+  }
+
+  .footer__col {
+    text-align: center;
+  }
+
+  .discord-icon {
+    background-color: white;
+    mask-image: url('/img/discord-icon.svg');
+    mask-size: 100%;
+  }
 }
