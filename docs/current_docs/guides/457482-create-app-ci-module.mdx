@@ -159,7 +159,7 @@ Add a new function that runs tests for the example application, by executing the
 This function does the following:
 
 - It calls the `node` module's constructor function via the `dag` client and passes it the container returned by the `BuildBaseImage()` function. The `Node` constructor returns a `Node` object.
-- It calls the `Node.Commands()` functions, which returns a revised `Container` configured with various pre-defined commands.
+- It calls the `Node.Commands()` function, which returns a revised `Container` configured with various pre-defined commands.
 - It calls the `Node.Run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
 - It uses the `Container.Stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
 
@@ -171,7 +171,8 @@ This function does the following:
 
 This function does the following:
 
-- It calls the `node` module's `with_container()` function via the `dag` client and passes it the container returned by the `build_base_image()` function. The `Node.with_container()` function returns a `Node` object.
+- It calls the `node` module's constructor function via the `dag` client and passes it the container returned by the `build_base_image()` function. The `Node` constructor returns a `Node` object.
+- It calls the `Node.commands()` function, which returns a revised `Container` configured with various pre-defined commands.
 - It calls the `Node.run()` function, which returns a revised `Node` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
 - It uses the `Container.stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
 
@@ -184,7 +185,7 @@ This function does the following:
 This function does the following:
 
 - It calls the `node` module's constructor function via the `dag` client and passes it the container returned by the `buildBaseImage()` function. The `Node` constructor returns a `Node` object.
-- It calls the `Node.commands()` functions, which returns a revised `Container` configured with various pre-defined commands.
+- It calls the `Node.commands()` function, which returns a revised `Container` configured with various pre-defined commands.
 - It calls the `Node.run()` function, which returns a revised `Container` object after setting the commands to run in the container image - in this case, the command `npm run test:unit run`.
 - It uses the `Container.stdout()` function to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
 
@@ -229,7 +230,7 @@ Add a new function that creates a production build of the example application:
 This function does the following:
 
 - It calls the `node` module's constructor function via the `dag` client and passes it the container returned by the `BuildBaseImage()` function. The `Node` constructor returns a `Node` object.
-- It calls the `Node.Commands()` functions, which returns a revised `Container` configured with various pre-defined commands.
+- It calls the `Node.Commands()` function, which returns a revised `Container` configured with various pre-defined commands.
 - It calls the `Node.Build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
 - It obtains a reference to the `dist/` directory in the container with the `Container.Directory()` function. This function returns a `Directory` object.
 
@@ -241,7 +242,8 @@ This function does the following:
 
 This function does the following:
 
-- It calls the `node` module's `with_container()` function via the `dag` client and passes it the container returned by the `build_base_image()` function. The `Node.with_container()` function returns a `Node` object.
+- It calls the `node` module's constructor function via the `dag` client and passes it the container returned by the `build_base_image()` function. The `Node` constructor returns a `Node` object.
+- It calls the `Node.commands()` function, which returns a revised `Container` configured with various pre-defined commands.
 - It calls the `Node.build()` function, which returns a revised `Node` object after setting the `npm run build` command to run in the container image. This command builds the application and places the build in a `dist/` directory in the container filesystem.
 - It obtains a reference to the `dist/` directory in the container with the `Container.directory()` function. This function returns a `Directory` object.
 
