@@ -10,7 +10,7 @@ type MyModule struct{}
 func (m *MyModule) Test(ctx context.Context, source *Directory) (string, error) {
 	return dag.Node(NodeOpts{Ctr: m.buildBaseImage(source)}).
 		Commands().
-		Run([]string{"run", "test:unit", "run"}).
+		Run([]string{"test:unit", "run"}).
 		Stdout(ctx)
 }
 

@@ -9,7 +9,7 @@ class MyModule {
   serve(source: Directory): Service {
     return this.package(source).asService()
   }
-  
+
   /*
    * Publish an image
    */
@@ -40,11 +40,11 @@ class MyModule {
     return dag
       .node({ ctr: this.buildBaseImage(source) })
       .commands()
-      .build()  
+      .build()
       .directory("./dist")
   }
 
-  /* 
+  /*
    * Run unit tests
    */
   @func()
