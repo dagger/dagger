@@ -1,6 +1,0 @@
-kind: Added
-body: Support custom OpenTelemetry spans
-time: 2024-04-08T17:25:52.215972Z
-custom:
-  Author: helderco
-  PR: "7015"
