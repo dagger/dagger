@@ -38,7 +38,7 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	}
 
 	if _, ok := os.LookupEnv("HEX_API_KEY"); ok {
-		args = append(args, "--hex-api-key=env:HEX_API_KEY")
+		args = append(args, "--hex-apikey=env:HEX_API_KEY")
 	}
 
 	return util.DaggerCall(ctx, args...)
