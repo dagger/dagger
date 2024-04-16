@@ -31,7 +31,7 @@ func (Elixir) Generate(ctx context.Context) error {
 
 // Publish publishes the Elixir SDK
 func (Elixir) Publish(ctx context.Context, tag string) error {
-	args := []string{"sdk", "go", "publish", "--tag=" + tag}
+	args := []string{"sdk", "elixir", "publish", "--tag=" + tag}
 
 	if dryRun, _ := strconv.ParseBool(os.Getenv("DRY_RUN")); dryRun {
 		args = append(args, "--dry-run=true")
@@ -46,5 +46,5 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 
 // Bump the Elixir SDK's Engine dependency
 func (Elixir) Bump(ctx context.Context, engineVersion string) error {
-	return util.DaggerCall(ctx, "sdk", "go", "bump", "--version="+engineVersion, "export", "--path=.")
+	return util.DaggerCall(ctx, "sdk", "elixir", "bump", "--version="+engineVersion, "export", "--path=.")
 }
