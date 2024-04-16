@@ -16,6 +16,6 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
         uses: dagger/dagger-for-github@v5
         with:
-          version: '0.11.0'
+          version: '0.11.1'
           module: 'github.com/gerhard/daggerverse/notify@2024-02-13'
           args: discord --webhook-url env:DISCORD_WEBHOOK --message '${{ inputs.message }}'
