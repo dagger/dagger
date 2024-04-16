@@ -81,7 +81,8 @@ func (labels Labels) WithVCSLabels(workdir string) Labels {
 
 func (labels Labels) WithGitLabels(workdir string) Labels {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
-		DetectDotGit: true,
+		DetectDotGit:          true,
+		EnableDotGitCommonDir: true,
 	})
 	if err != nil {
 		if !errors.Is(err, git.ErrRepositoryNotExists) {

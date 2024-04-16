@@ -412,7 +412,8 @@ forced), to avoid mistakenly depending on uncommitted files.
 				return fmt.Errorf("module must be fully initialized")
 			}
 			repo, err := git.PlainOpenWithOptions(modConf.LocalRootSourcePath, &git.PlainOpenOptions{
-				DetectDotGit: true,
+				DetectDotGit:          true,
+				EnableDotGitCommonDir: true,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to open git repo: %w", err)
