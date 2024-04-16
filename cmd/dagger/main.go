@@ -334,7 +334,7 @@ func toUpperBold(s string) string {
 	return termenv.String(upperCase).Bold().String()
 }
 
-const usageTemplate = `{{ "Usage" | toUpperBold }}:
+const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .Runnable}}
   {{.UseLine}}
@@ -345,28 +345,28 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}:
 
 {{- if gt (len .Aliases) 0}}
 
-{{ "Aliases" | toUpperBold }}:
+{{ "Aliases" | toUpperBold }}
   {{.NameAndAliases}}
 
 {{- end}}
 
 {{- if isExperimental .}}
 
-{{ "EXPERIMENTAL" | toUpperBold }}:
+{{ "EXPERIMENTAL" | toUpperBold }}
   {{.CommandPath}} is currently under development and may change in the future.
 
 {{- end}}
 
 {{- if .HasExample}}
 
-{{ "Examples" | toUpperBold }}:
+{{ "Examples" | toUpperBold }}
 {{ .Example }}
 
 {{- end}}
 
 {{- if .HasAvailableLocalFlags}}
 
-{{ "Flags" | toUpperBold }}:
+{{ "Flags" | toUpperBold }}
 {{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
 
 {{- end}}
@@ -374,7 +374,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}:
 {{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
 {{- if eq (len .Groups) 0}}
 
-{{ "Available Commands" | toUpperBold }}:
+{{ "Available Commands" | toUpperBold }}
 {{- range $cmds }}
 {{- if (or .IsAvailableCommand (eq .Name "help"))}}
 {{cmdShortWrapped .}}
@@ -384,7 +384,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}:
 {{- else}}
 {{- range $group := .Groups}}
 
-{{.Title | toUpperBold}}:
+{{.Title | toUpperBold}}
 {{- range $cmds }}
 {{- if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
 {{cmdShortWrapped .}}
@@ -394,7 +394,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}:
 
 {{- if not .AllChildCommandsHaveGroup}}
 
-{{ "Additional Commands" | toUpperBold }}:
+{{ "Additional Commands" | toUpperBold }}
 {{- range $cmds }}
 {{- if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
 {{cmdShortWrapped .}}
@@ -406,14 +406,14 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}:
 
 {{- if .HasAvailableInheritedFlags}}
 
-{{ "Global Flags" | toUpperBold }}:
+{{ "Global Flags" | toUpperBold }}
 {{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces}}
 
 {{- end}}
 
 {{- if .HasHelpSubCommands}}
 
-{{ "Additional help topics" | toUpperBold }}:
+{{ "Additional help topics" | toUpperBold }}
 {{- range .Commands}}
 {{- if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}
