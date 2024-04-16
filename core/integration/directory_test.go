@@ -725,7 +725,7 @@ func main() {
 	t.Run("default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -742,7 +742,7 @@ CMD goenv
 	t.Run("custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -761,7 +761,7 @@ CMD goenv
 	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -780,7 +780,7 @@ CMD goenv
 	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -801,7 +801,7 @@ CMD goenv
 	t.Run("with build args", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 ARG FOOARG=bar
 WORKDIR /src
 COPY main.go .
@@ -823,7 +823,7 @@ CMD goenv
 	t.Run("with target", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine AS base
+				`FROM golang AS base
 CMD echo "base"
 
 FROM base AS stage1
@@ -850,7 +850,7 @@ CMD echo "stage2"
 
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 RUN --mount=type=secret,id=my-secret test "$(cat /run/secrets/my-secret)" = "barbar"
 RUN --mount=type=secret,id=my-secret cp /run/secrets/my-secret  /secret

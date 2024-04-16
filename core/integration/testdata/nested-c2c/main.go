@@ -85,7 +85,7 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 	args = append(args, mirrorURL)
 
 	out, err := c.Container().
-		From("golang:1.21.7-alpine").
+		From(golangImage).
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
 		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
@@ -116,7 +116,7 @@ func mirror(ctx context.Context, c *dagger.Client, mode, svcURL string) (*dagger
 		srv = srv.WithExec([]string{"wget", svcURL})
 		return httpService(ctx, c,
 			c.Container().
-				From("alpine:3.16.2").
+				From("alpine").
 				WithWorkdir("/srv/www").
 				WithExec([]string{"wget", svcURL}).
 				Directory("."))
@@ -135,7 +135,7 @@ func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, 
 	switch mode {
 	case "exec":
 		return c.Container().
-			From("alpine:3.16.2").
+			From("alpine").
 			WithEnvVariable("NOW", identity.NewID()).
 			WithExec([]string{"cat", "/etc/resolv.conf"}).
 			WithExec([]string{"wget", "-O-", svcURL}).
@@ -176,7 +176,7 @@ func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (
 func gitService(ctx context.Context, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	const gitPort = 9418
 	gitDaemon := c.Container().
-		From("alpine:3.16.2").
+		From("alpine").
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/repo", content).
 		WithMountedFile("/root/start.sh",

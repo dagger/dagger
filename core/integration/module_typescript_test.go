@@ -151,7 +151,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 				class ExistingSource {
 				  @func()
 				  helloWorld(stringArg: string): Container {
-					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+					return dag.container().from("alpine").withExec(["echo", stringArg])
 				  }
 				}
 

@@ -35,7 +35,7 @@ import (
 type Test struct {}
 
 func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
-	return dag.Container().From("alpine:3.18").WithExec([]string{"apk", "add", "curl"}).
+	return dag.Container().From("alpine").WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("daserver", svc).
 		WithExec([]string{"curl", "http://daserver:8000"}).
 		Stdout(ctx)
@@ -617,7 +617,7 @@ func (m *Minimal) Fn() []*Foo {
 				Contents: `package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18").WithExec([]string{"echo", "hello", "world"})}
+	return &Test{Ctr: dag.Container().From("alpine").WithExec([]string{"echo", "hello", "world"})}
 }
 
 type Test struct {
@@ -759,7 +759,7 @@ type Test struct {
 				Contents: `package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18").WithExec([]string{"echo", "hello", "world"})}
+	return &Test{Ctr: dag.Container().From("alpine").WithExec([]string{"echo", "hello", "world"})}
 }
 
 type Test struct {
@@ -790,7 +790,7 @@ func TestModuleDaggerCallCoreChaining(t *testing.T) {
 				Contents: `package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18.5")}
+	return &Test{Ctr: dag.Container().From("alpine")}
 }
 
 type Test struct {

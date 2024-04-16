@@ -154,7 +154,7 @@ func TestDaggerRun(t *testing.T) {
 
 	runCommand := `
 	export NO_COLOR=1
-	jq -n '{query:"{container{from(address: \"alpine:3.18.2\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+	jq -n '{query:"{container{from(address: \"alpine\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
 	dagger run sh -c 'curl -s \
 		-u $DAGGER_SESSION_TOKEN: \
 		-H "content-type:application/json" \

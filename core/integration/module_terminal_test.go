@@ -32,7 +32,7 @@ import "context"
 func New(ctx context.Context) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("mirror.gcr.io/alpine:3.18").
+			From("alpine").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir"),
 	}
@@ -101,7 +101,7 @@ import "context"
 func New(ctx context.Context) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("mirror.gcr.io/alpine:3.18").
+			From("alpine").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithDefaultTerminalCmd([]string{"/bin/sh"}),
@@ -171,7 +171,7 @@ import "context"
 func New(ctx context.Context) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("mirror.gcr.io/alpine:3.18").
+			From("alpine").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithExec([]string{"apk", "add", "python3"}).

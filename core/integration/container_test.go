@@ -98,7 +98,7 @@ func main() {
 	t.Run("default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -115,7 +115,7 @@ CMD goenv
 	t.Run("custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -134,7 +134,7 @@ CMD goenv
 	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -153,7 +153,7 @@ CMD goenv
 	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
@@ -174,7 +174,7 @@ CMD goenv
 	t.Run("with build args", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 ARG FOOARG=bar
 WORKDIR /src
 COPY main.go .
@@ -196,7 +196,7 @@ CMD goenv
 	t.Run("with target", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine AS base
+				`FROM golang AS base
 CMD echo "base"
 
 FROM base AS stage1
@@ -221,7 +221,7 @@ CMD echo "stage2"
 
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+				`FROM golang
 WORKDIR /src
 RUN --mount=type=secret,id=my-secret,required=true test "$(cat /run/secrets/my-secret)" = "barbar"
 RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /secret
@@ -929,7 +929,7 @@ func TestContainerVariables(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
+				from(address: "golang") {
 					envVariables {
 						name
 						value
@@ -963,7 +963,7 @@ func TestContainerVariable(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
+				from(address: "golang") {
 					envVariable(name: "GOLANG_VERSION")
 				}
 			}
@@ -975,7 +975,7 @@ func TestContainerVariable(t *testing.T) {
 	err = testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
+				from(address: "golang") {
 					envVariable(name: "UNKNOWN")
 				}
 			}
@@ -1003,7 +1003,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
+				from(address: "golang") {
 					withoutEnvVariable(name: "GOLANG_VERSION") {
 						envVariables {
 							name
@@ -1043,7 +1043,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
+				from(address: "golang") {
 					withEnvVariable(name: "GOPATH", value: "/gone") {
 						envVariables {
 							name
@@ -1217,7 +1217,7 @@ func TestContainerWorkdir(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-			  from(address: "golang:1.18.2-alpine") {
+			  from(address: "golang") {
 				workdir
 				withExec(args: ["pwd"]) {
 				  stdout
@@ -1249,7 +1249,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
+				from(address: "golang") {
 					withWorkdir(path: "/usr") {
 						workdir
 						withExec(args: ["pwd"]) {
@@ -2694,7 +2694,7 @@ func TestContainerMultiFrom(t *testing.T) {
 				from(address: "node:18.10.0-alpine") {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						withExec(args: ["sh", "-c", "node --version >> /mnt/versions"]) {
-							from(address: "golang:1.18.2-alpine") {
+							from(address: "golang") {
 								withExec(args: ["sh", "-c", "go version >> /mnt/versions"]) {
 									withExec(args: ["cat", "/mnt/versions"]) {
 										stdout

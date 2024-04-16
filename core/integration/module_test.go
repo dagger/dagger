@@ -3917,7 +3917,7 @@ import (
 )
 
 func New(ctx context.Context) (Test, error) {
-	v, err := dag.Container().From("alpine:3.18.4").File("/etc/alpine-release").Contents(ctx)
+	v, err := dag.Container().From("alpine").File("/etc/alpine-release").Contents(ctx)
 	if err != nil {
 		return Test{}, err
 	}
@@ -3943,7 +3943,7 @@ class Test:
     async def create(cls) -> "Test":
         return cls(alpine_version=await (
             dag.container()
-            .from_("alpine:3.18.4")
+            .from_("alpine")
             .file("/etc/alpine-release")
             .contents()
         ))
@@ -3963,7 +3963,7 @@ class Test {
   // This is only for testing purpose but it shouldn't be done in real usage.
   constructor() {
     return (async () => {
-      this.alpineVersion = await dag.container().from("alpine:3.18.4").file("/etc/alpine-release").contents()
+      this.alpineVersion = await dag.container().from("alpine").file("/etc/alpine-release").contents()
 
       return this; // Return the newly-created instance
     })();
@@ -5125,7 +5125,7 @@ func TestModuleDaggerListen(t *testing.T) {
 			var out []byte
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
-				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine"){file(path:"/etc/alpine-release"){contents}}}}`)
 				callCmd.Env = append(callCmd.Env, os.Environ()...)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.CombinedOutput()
@@ -5163,7 +5163,7 @@ func TestModuleDaggerListen(t *testing.T) {
 			var err error
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
-				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine"){file(path:"/etc/alpine-release"){contents}}}}`)
 				callCmd.Env = append(callCmd.Env, os.Environ()...)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.CombinedOutput()
