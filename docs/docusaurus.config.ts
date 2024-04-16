@@ -186,11 +186,11 @@ const config: Config = {
               to: "https://dagger.io/blog",
             },
             {
-              label: "Get Involved",
+              label: "Get involved",
               to: "https://dagger.io/community",
             },
             {
-              label: "Dagger love",
+              label: "Dagger Love",
               to: "https://dagger.io/dagger-love",
             }, 
             {
@@ -211,11 +211,11 @@ const config: Config = {
           title: "Product",
           items: [
             {
-              label: "Dagger engine",
+              label: "Dagger Engine",
               to: "https://dagger.io/dagger-engine",
             },
             {
-              label: "Dagger cloud",
+              label: "Dagger Cloud",
               to: "https://dagger.io/cloud",
             },
             {
