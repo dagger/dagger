@@ -12,6 +12,7 @@ This describes how to release Dagger:
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
+- [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
 - [🐙 dagger-for-github ⏱ `2mins`](#-dagger-for-github--2mins#)
 - [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins#)
 - [❄️ nix ⏱ `2mins`](#-nix--2mins#)
@@ -488,6 +489,12 @@ update once there's a new release of the Dagger Engine.
 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
   to the just-released version. cc @marcosnils @matipan @sipsma
+
+## 🪣 Install scripts ⏱ `2mins`
+
+- [ ] If the install scripts `install.sh` or `install.ps1` have changed since
+  the last release, they must be manually updated on Amazon S3 (CloudFront
+  should also be manually invalidated). cc @gerhard
 
 ## 🐙 dagger-for-github ⏱ `2mins`
 
