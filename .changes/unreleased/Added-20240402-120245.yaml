@@ -1,6 +1,0 @@
-kind: Added
-body: Add `withAuthToken` and `withAuthHeader` fields to `GitRepository`
-time: 2024-04-02T12:02:45.030276269+01:00
-custom:
-  Author: jedevc
-  PR: "6992"
