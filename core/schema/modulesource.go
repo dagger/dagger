@@ -1057,9 +1057,6 @@ func callerHostFindUpContext(
 	bk *buildkit.Client,
 	curDirPath string,
 ) (string, bool, error) {
-	// if !filepath.IsAbs(curDirPath) {
-	// 	return "", false, fmt.Errorf("path is not absolute: %s", curDirPath)
-	// }
 	_, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"), false)
 	if err == nil {
 		return curDirPath, true, nil
