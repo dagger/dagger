@@ -88,6 +88,7 @@ func init() {
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
+	cobra.AddTemplateFunc("useLine", useLine)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -328,19 +329,37 @@ func cmdShortWrapped(c *cobra.Command) string {
 	return name + description
 }
 
+// toUpperBold returns the given string in uppercase and bold.
 func toUpperBold(s string) string {
 	upperCase := strings.ToUpper(s)
 
 	return termenv.String(upperCase).Bold().String()
 }
 
+// custom useLine function that print options instead of flags.
+func useLine(c *cobra.Command) string {
+	var useline string
+	if c.HasParent() {
+		useline = c.Parent().CommandPath() + " " + c.Use
+	} else {
+		useline = c.Use
+	}
+	if c.DisableFlagsInUseLine {
+		return useline
+	}
+	if c.HasAvailableFlags() && !strings.Contains(useline, "[OPTIONS]") {
+		useline += " [OPTIONS]"
+	}
+	return useline
+}
+
 const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .Runnable}}
-  {{.UseLine}}
+  {{. | useLine}}
 {{- end}}
 {{- if .HasAvailableSubCommands}}
-  {{ .CommandPath}}{{ if .HasAvailableFlags}} [ARGUMENTS]{{end}} [COMMAND]
+  {{ .CommandPath}}{{ if .HasAvailableFlags}} [OPTIONS]{{end}} [COMMAND]
 {{- end}}
 
 {{- if gt (len .Aliases) 0}}
@@ -366,7 +385,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableLocalFlags}}
 
-{{ "Arguments" | toUpperBold }}
+{{ "Options" | toUpperBold }}
 {{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
 
 {{- end}}

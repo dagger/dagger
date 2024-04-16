@@ -82,7 +82,7 @@ dagger config -m github.com/dagger/hello-dagger
 }
 
 var configViewsCmd = configSubcmd{
-	Use:   "views [name]",
+	Use:   "views [NAME]",
 	Short: "Get or set the views of a Dagger module",
 	Long:  "Get or set the views of a Dagger module. By default, print the views of the specified module.",
 	PersistentFlags: func(fs *pflag.FlagSet) {
