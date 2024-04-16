@@ -34,7 +34,7 @@ const (
 
 var funcGroup = &cobra.Group{
 	ID:    "functions",
-	Title: "Function Commands",
+	Title: "Functions",
 }
 
 var funcCmds = FuncCommands{
@@ -43,7 +43,7 @@ var funcCmds = FuncCommands{
 }
 
 var funcListCmd = &FuncCommand{
-	Name:  "functions [flags] [FUNCTION]...",
+	Name:  "functions [ARGUMENTS] [FUNCTION]...",
 	Short: `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 

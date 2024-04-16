@@ -340,7 +340,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
   {{.UseLine}}
 {{- end}}
 {{- if .HasAvailableSubCommands}}
-  {{ .CommandPath}}{{ if .HasAvailableFlags}} [flags]{{end}} [command]
+  {{ .CommandPath}}{{ if .HasAvailableFlags}} [ARGUMENTS]{{end}} [COMMAND]
 {{- end}}
 
 {{- if gt (len .Aliases) 0}}
@@ -366,7 +366,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableLocalFlags}}
 
-{{ "Flags" | toUpperBold }}
+{{ "Arguments" | toUpperBold }}
 {{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
 
 {{- end}}
@@ -424,6 +424,6 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableSubCommands }}
 
-Use "{{.CommandPath}} [command] --help" for more information about a command.
+Use "{{.CommandPath}} [COMMAND] --help" for more information about a command.
 {{- end}}
 `
