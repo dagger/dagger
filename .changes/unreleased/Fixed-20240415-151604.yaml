@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed regression that caused crash on windows when TUI output was enabled
-time: 2024-04-15T15:16:04.645921317+01:00
-custom:
-  Author: jedevc
-  PR: "7095"
