@@ -67,6 +67,7 @@ type Opts struct {
 	MainClientCallerID string
 	DNSConfig          *oci.DNSConfig
 	Frontends          map[string]bkfrontend.Frontend
+	BuildkitLogSink    io.Writer
 	sharedClientState
 }
 
@@ -179,9 +180,11 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		}
 	}
 
-	// NB(vito): break glass (replace with os.Stderr) to troubleshoot otel
-	// logging issues, since it's otherwise hard to see a command's output
-	go client.WriteStatusesTo(ctx, io.Discard)
+	bkLogsW := opts.BuildkitLogSink
+	if bkLogsW == nil {
+		bkLogsW = io.Discard
+	}
+	go client.WriteStatusesTo(ctx, bkLogsW)
 
 	return client, nil
 }

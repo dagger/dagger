@@ -71,6 +71,7 @@ type BuildkitControllerOpts struct {
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	DNSConfig              *oci.DNSConfig
+	BuildkitLogSink        io.Writer
 }
 
 func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, error) {
