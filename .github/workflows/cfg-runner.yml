@@ -1,0 +1,67 @@
+# This is run asynchronously, triggered from "hack/make".
+# The purpose is to compare the behaviour of different runner configurations.
+name: cfg-runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      mage-targets:
+        description: "The mage target(s) to execute"
+        type: string
+        required: true
+      dev-engine:
+        description: "Run against a dev Engine"
+        type: boolean
+        default: false
+        required: false
+      dagger-cloud-cache:
+        description: "Use Dagger Cloud Cache"
+        type: boolean
+        default: false
+        required: false
+      runner:
+        description: "Runner"
+        type: string
+        default: "dagger-v011-on-k8s-gerhard-production"
+        required: false
+      concurrency-group:
+        description: "Concurrency group"
+        type: string
+        default: "global"
+        required: false
+
+jobs:
+  depot-runner:
+    if: ${{ github.repository == 'dagger/dagger' }}
+    runs-on: ${{ inputs.runner }}
+    name: ${{ inputs.mage-targets }} on ${{ inputs.runner }} dev-engine:${{ inputs.dev-engine }} dagger-cloud-cache:${{ inputs.dagger-cloud-cache }}
+    concurrency:
+      group: ${{ inputs.concurrency-group }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+          cache-dependency-path: "internal/mage/go.sum"
+      - name: Waiting for Dagger Engine to be ready...
+        run: |
+          if [ "${{ inputs.dev-engine }}" == "true" ]
+          then
+            ./hack/dev
+            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+            echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
+            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
+          fi
+          ./hack/make engine:connect
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          if [ "${{ inputs.dagger-cloud-cache }}" == "true" ]
+          then
+            export DAGGER_CLOUD_TOKEN="${{ secrets.DAGGER_CLOUD_TOKEN }}"
+          fi
+          ./hack/make ${{ inputs.mage-targets }}
+        env:
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
