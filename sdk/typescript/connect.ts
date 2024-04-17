@@ -28,7 +28,7 @@ export async function connection(
   fct: () => Promise<void>,
   cfg: ConnectOpts = {},
 ) {
-  // Wrap connection into the otpl context
+  // Wrap connection into the otlp context
   await opentelemetry.context.with(getContext(), async () => {
     await defaultContext.connection(cfg)
 

@@ -9,12 +9,6 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc"
 import * as opentelemetry from "@opentelemetry/api"
 import { SpanStatusCode } from "@opentelemetry/api"
 import { credentials } from "@grpc/grpc-js"
-import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks"
-
-// Initialiaze the context manager so we can extract and inject values
-// manually
-const contextManager = new AsyncHooksContextManager()
-contextManager.enable()
 
 // Initialiaze the OTLP exporter, it takes his configuration from
 // the environment variables prefixed by "OTLP_"
@@ -24,12 +18,9 @@ const exporter = new OTLPTraceExporter({
 
 // Create the node SDK with the context manager, the resource and the exporter.
 const sdk = new NodeSDK({
-  contextManager: contextManager,
   resource: new Resource({
     [SEMRESATTRS_SERVICE_NAME]: "dagger-typescript-sdk",
   }),
-  instrumentations: [], // We can provide automatic instrumention here, for now it's only user's custom span
-  spanProcessors: [new BatchSpanProcessor(exporter)],
 })
 
 // Register the SDK to the OpenTelemetry API
@@ -63,11 +54,14 @@ export function getContext() {
 }
 
 /**
- * Execute the functions with a custom span with the given name.
+ * Execute the functions with a custom span with the given name using startActiveSpan.
+ * The function executed will use the parent context of the function (it can be another span
+ * or the main function).
+ * 
  * @param name The name of the span
  * @param fn The functions to execute
  *
- * WithTracer returns the result of the executed functions.
+ * WithTracingSpan returns the result of the executed functions.
  *
  * The span is automatically ended when the function is done.
  * The span is automatically marked as an error if the function throws an error.
@@ -75,21 +69,22 @@ export function getContext() {
  *
  * @example
  * ```
- * return withTracer(name, async () => {
+ * return withTracingSpan(name, async () => {
  *   return this.containerEcho("test").stdout()
  * })
  * ```
  */
-export async function withTracer<T>(
+export async function withTracingSpan<T>(
   name: string,
   fn: (span: opentelemetry.Span) => Promise<T>,
 ): Promise<T> {
   return await opentelemetry.context.with(getContext(), async () => {
-    return tracer.startActiveSpan(name, {}, async (span) => {
+    return tracer.startActiveSpan(name, async (span) => {
       try {
         return await fn(span)
       } catch (e) {
         if (e instanceof Error) {
+          span.recordException(e)
           span.setStatus({
             code: SpanStatusCode.ERROR,
             message: e.message,

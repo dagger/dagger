@@ -40,11 +40,6 @@ export async function entrypoint() {
         result = await context.with(getContext(), async () => {
           return tracer.startActiveSpan(
             "typescript module registration",
-            {
-              attributes: {
-                "dagger.io/ui.passthrough": true,
-              },
-            },
             async (span) => {
               try {
                 // It's a registration, we register the module and assign the module id
