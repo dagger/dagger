@@ -77,8 +77,9 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
+  # Everything in all three places
   dagger-runner-gerhard-production:
-    if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' && inputs.mage-targets == 'engine:testrace' }}
+    if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: dagger-v011-on-k8s-gerhard-production
     concurrency:
       group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-vertical-scaling
@@ -112,7 +113,41 @@ jobs:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: ${{ inputs.size }}
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}
+      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-legacy
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache-dependency-path: "internal/mage/go.sum"
+      - name: Install dagger
+        run: |
+          curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
+      - name: Waiting for Dagger Engine to be ready...
+        run: |
+          ./hack/dev
+
+          export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+          chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+          echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
+
+          echo _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev >> "$GITHUB_ENV"
+
+          ./hack/make engine:connect
+        env:
+          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      - name: ${{ inputs.mage-targets }}
+        run: |
+          ./hack/make ${{ inputs.mage-targets }}
+        env:
+          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+
+  dagger-runner-legacy-compare:
+    if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' && inputs.mage-targets != 'engine:testrace' }}
+    runs-on: dagger-runner-2c-8g
+    concurrency:
+      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-legacy-compare
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
