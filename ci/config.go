@@ -40,7 +40,8 @@ exec {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKe
 `
 
 const engineConfigTmpl = `
-debug = true
+debug = {{.Debug}}
+trace = {{.Trace}}
 insecure-entitlements = ["security.insecure"]
 {{ range $key := .ConfigKeys }}
 [{{ $key }}]
@@ -87,7 +88,7 @@ func generateEntrypoint(kvs []string) (*File, error) {
 	return entrypoint, nil
 }
 
-func generateConfig(kvs []string) (*File, error) {
+func generateConfig(debug, trace bool, kvs []string) (*File, error) {
 	opts := map[string]string{}
 	for _, kv := range kvs {
 		k, v, ok := strings.Cut(kv, "=")
@@ -100,12 +101,16 @@ func generateConfig(kvs []string) (*File, error) {
 	sort.Strings(keys)
 
 	type configTmplParams struct {
+		Debug         bool
+		Trace         bool
 		ConfigEntries map[string]string
 		ConfigKeys    []string
 	}
 	tmpl := template.Must(template.New("config").Parse(engineConfigTmpl))
 	buf := new(bytes.Buffer)
 	err := tmpl.Execute(buf, configTmplParams{
+		Debug:         debug,
+		Trace:         trace,
 		ConfigEntries: opts,
 		ConfigKeys:    keys,
 	})
