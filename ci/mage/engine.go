@@ -125,7 +125,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	gpuSupport := os.Getenv(util.GPUSupportEnvName) != ""
 	trace := os.Getenv(util.TraceEnvName) != ""
 
-	args := []string{"engine", "with-debug"}
+	args := []string{"engine"}
 	if gpuSupport {
 		args = append(args, "with-gpusupport")
 	}

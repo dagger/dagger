@@ -23,7 +23,6 @@ type Engine struct {
 	Args   []string // +private
 	Config []string // +private
 
-	Debug bool // +private
 	Trace bool // +private
 
 	GPUSupport bool // +private
@@ -44,11 +43,6 @@ func (e *Engine) WithGPUSupport() *Engine {
 	return e
 }
 
-func (e *Engine) WithDebug() *Engine {
-	e.Debug = true
-	return e
-}
-
 func (e *Engine) WithTrace() *Engine {
 	e.Trace = true
 	return e
@@ -61,7 +55,7 @@ func (e *Engine) Container(
 	// +optional
 	platform dagger.Platform,
 ) (*Container, error) {
-	cfg, err := generateConfig(e.Debug, e.Trace, e.Config)
+	cfg, err := generateConfig(e.Trace, e.Config)
 	if err != nil {
 		return nil, err
 	}
