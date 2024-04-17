@@ -190,7 +190,8 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 }
 
 func (c *Client) WriteStatusesTo(ctx context.Context, dest io.Writer) {
-	dest = prefixw.New(dest, fmt.Sprintf("[buildkit] [%s] ", c.ID()))
+	prefix := fmt.Sprintf("[buildkit] [trace=%s] [client=%s] ", c.spanCtx.TraceID(), c.ID())
+	dest = prefixw.New(dest, prefix)
 	statusCh := make(chan *bkclient.SolveStatus, 8)
 	pw, err := progressui.NewDisplay(dest, progressui.PlainMode)
 	if err != nil {
