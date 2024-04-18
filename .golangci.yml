@@ -5,6 +5,7 @@ linters:
     - dogsled
     - dupl
     - exportloopref
+    - errorlint
     - gocritic
     - gocyclo
     - gofmt
@@ -46,4 +47,9 @@ linters-settings:
 
   govet:
     enable:
-      - nilness
+
+  errorlint:
+    errorf: true
+    errorf-multi: false
+    asserts: false
+    comparison: false

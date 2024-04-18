@@ -89,13 +89,13 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	engineVersionStr := strings.TrimPrefix(engine.Version, "v")
 	engineVersion, err := semver.Parse(engineVersionStr)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse engine version as semver: %s", err)
+		return false, fmt.Errorf("failed to parse engine version as semver: %w", err)
 	}
 
 	sdkVersionStr := strings.TrimPrefix(args.Version, "v")
 	sdkVersion, err := semver.Parse(sdkVersionStr)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse SDK version as semver: %s", err)
+		return false, fmt.Errorf("failed to parse SDK version as semver: %w", err)
 	}
 
 	// If the Engine is a major version above the SDK version, fails

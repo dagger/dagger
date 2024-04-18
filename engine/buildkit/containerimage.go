@@ -48,12 +48,12 @@ func (c *Client) PublishContainerImage(
 
 	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
 	}
 
 	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to export: %s", err)
+		return nil, fmt.Errorf("failed to export: %w", err)
 	}
 	if descRef != nil {
 		descRef.Release()
@@ -95,12 +95,12 @@ func (c *Client) ExportContainerImage(
 
 	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID from client metadata: %s", err)
+		return nil, fmt.Errorf("failed to get requester session ID from client metadata: %w", err)
 	}
 
 	ctx = engine.LocalExportOpts{
@@ -110,7 +110,7 @@ func (c *Client) ExportContainerImage(
 
 	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to export: %s", err)
+		return nil, fmt.Errorf("failed to export: %w", err)
 	}
 	if descRef != nil {
 		descRef.Release()
@@ -148,12 +148,12 @@ func (c *Client) ContainerImageToTarball(
 
 	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "dagger-tarball")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp dir for tarball export: %s", err)
+		return nil, fmt.Errorf("failed to create temp dir for tarball export: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 	destPath := path.Join(tmpDir, fileName)
@@ -165,7 +165,7 @@ func (c *Client) ContainerImageToTarball(
 
 	_, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to export: %s", err)
+		return nil, fmt.Errorf("failed to export: %w", err)
 	}
 	if descRef != nil {
 		defer descRef.Release()
@@ -173,7 +173,7 @@ func (c *Client) ContainerImageToTarball(
 
 	pbDef, _, err := c.EngineContainerLocalImport(ctx, engineHostPlatform, tmpDir, nil, []string{fileName})
 	if err != nil {
-		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %s", err)
+		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %w", err)
 	}
 	return pbDef, nil
 }
@@ -193,11 +193,11 @@ func (c *Client) getContainerResult(
 			Evaluate:   true,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
+			return nil, fmt.Errorf("failed to solve for container publish: %w", err)
 		}
 		cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert result: %s", err)
+			return nil, fmt.Errorf("failed to convert result: %w", err)
 		}
 		ref, err := cacheRes.SingleRef()
 		if err != nil {

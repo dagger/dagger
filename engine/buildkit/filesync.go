@@ -92,7 +92,7 @@ func (c *Client) EngineContainerLocalImport(
 ) (*bksolverpb.Definition, specs.Descriptor, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, specs.Descriptor{}, fmt.Errorf("failed to get hostname for engine local import: %s", err)
+		return nil, specs.Descriptor{}, fmt.Errorf("failed to get hostname for engine local import: %w", err)
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
 		ClientID:       c.ID(),
@@ -110,23 +110,23 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
+		return fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 	ctx = opts.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session: %s", err)
+		return fmt.Errorf("failed to get requester session: %w", err)
 	}
 	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create diff copy client: %s", err)
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 	defer diffCopyClient.CloseSend()
 
 	err = diffCopyClient.RecvMsg(msg)
 	if err != nil {
-		return fmt.Errorf("failed to receive file bytes message: %s", err)
+		return fmt.Errorf("failed to receive file bytes message: %w", err)
 	}
 	return err
 }
@@ -186,11 +186,11 @@ func (c *Client) LocalDirExport(
 
 	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def})
 	if err != nil {
-		return fmt.Errorf("failed to solve for local export: %s", err)
+		return fmt.Errorf("failed to solve for local export: %w", err)
 	}
 	cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
 	if err != nil {
-		return fmt.Errorf("failed to convert result: %s", err)
+		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
 	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
@@ -200,12 +200,12 @@ func (c *Client) LocalDirExport(
 
 	expInstance, err := exporter.Resolve(ctx, 0, nil)
 	if err != nil {
-		return fmt.Errorf("failed to resolve exporter: %s", err)
+		return fmt.Errorf("failed to resolve exporter: %w", err)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
+		return fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 
 	ctx = engine.LocalExportOpts{
@@ -215,7 +215,7 @@ func (c *Client) LocalDirExport(
 
 	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
 	if err != nil {
-		return fmt.Errorf("failed to export: %s", err)
+		return fmt.Errorf("failed to export: %w", err)
 	}
 	if descRef != nil {
 		descRef.Release()
@@ -257,40 +257,40 @@ func (c *Client) LocalFileExport(
 
 	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def, Evaluate: true})
 	if err != nil {
-		return fmt.Errorf("failed to solve for local export: %s", err)
+		return fmt.Errorf("failed to solve for local export: %w", err)
 	}
 	ref, err := res.SingleRef()
 	if err != nil {
-		return fmt.Errorf("failed to get single ref: %s", err)
+		return fmt.Errorf("failed to get single ref: %w", err)
 	}
 
 	mountable, err := ref.getMountable(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get mountable: %s", err)
+		return fmt.Errorf("failed to get mountable: %w", err)
 	}
 	mounter := snapshot.LocalMounter(mountable)
 	mountPath, err := mounter.Mount()
 	if err != nil {
-		return fmt.Errorf("failed to mount: %s", err)
+		return fmt.Errorf("failed to mount: %w", err)
 	}
 	defer mounter.Unmount()
 	mntFilePath, err := fs.RootPath(mountPath, filePath)
 	if err != nil {
-		return fmt.Errorf("failed to get root path: %s", err)
+		return fmt.Errorf("failed to get root path: %w", err)
 	}
 	file, err := os.Open(mntFilePath)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %s", err)
+		return fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 	stat, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to stat file: %s", err)
+		return fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
+		return fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 
 	ctx = engine.LocalExportOpts{
@@ -303,11 +303,11 @@ func (c *Client) LocalFileExport(
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session: %s", err)
+		return fmt.Errorf("failed to get requester session: %w", err)
 	}
 	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create diff copy client: %s", err)
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 	defer diffCopyClient.CloseSend()
 
@@ -320,26 +320,26 @@ func (c *Client) LocalFileExport(
 			err = nil
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read file: %s", err)
+			return fmt.Errorf("failed to read file: %w", err)
 		}
 		fileSizeLeft -= n
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
 			if err != nil {
-				return fmt.Errorf("diff copy client error: %s", err)
+				return fmt.Errorf("diff copy client error: %w", err)
 			}
 		} else if err != nil {
-			return fmt.Errorf("failed to send file chunk: %s", err)
+			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 	}
 	if err := diffCopyClient.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %s", err)
+		return fmt.Errorf("failed to close send: %w", err)
 	}
 	// wait for receiver to finish
 	var msg filesync.BytesMessage
 	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
-		return fmt.Errorf("unexpected closing recv msg: %s", err)
+		return fmt.Errorf("unexpected closing recv msg: %w", err)
 	}
 	return nil
 }
@@ -359,7 +359,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
+		return fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 
 	ctx = engine.LocalExportOpts{
@@ -371,11 +371,11 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
-		return fmt.Errorf("failed to get requester session: %s", err)
+		return fmt.Errorf("failed to get requester session: %w", err)
 	}
 	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create diff copy client: %s", err)
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 	defer diffCopyClient.CloseSend()
 
@@ -389,25 +389,25 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 			err = nil
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read file: %s", err)
+			return fmt.Errorf("failed to read file: %w", err)
 		}
 		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
 		if errors.Is(err, io.EOF) {
 			err := diffCopyClient.RecvMsg(struct{}{})
 			if err != nil {
-				return fmt.Errorf("diff copy client error: %s", err)
+				return fmt.Errorf("diff copy client error: %w", err)
 			}
 		} else if err != nil {
-			return fmt.Errorf("failed to send file chunk: %s", err)
+			return fmt.Errorf("failed to send file chunk: %w", err)
 		}
 	}
 	if err := diffCopyClient.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %s", err)
+		return fmt.Errorf("failed to close send: %w", err)
 	}
 	// wait for receiver to finish
 	var msg filesync.BytesMessage
 	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
-		return fmt.Errorf("unexpected closing recv msg: %s", err)
+		return fmt.Errorf("unexpected closing recv msg: %w", err)
 	}
 	return nil
 }

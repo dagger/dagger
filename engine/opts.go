@@ -273,10 +273,10 @@ func decodeMeta(md metadata.MD, key string, dest interface{}) error {
 	}
 	jsonPayload, err := base64.StdEncoding.DecodeString(vals[0])
 	if err != nil {
-		return fmt.Errorf("failed to base64-decode %s: %v", key, err)
+		return fmt.Errorf("failed to base64-decode %s: %w", key, err)
 	}
 	if err := json.Unmarshal(jsonPayload, dest); err != nil {
-		return fmt.Errorf("failed to JSON-unmarshal %s: %v", key, err)
+		return fmt.Errorf("failed to JSON-unmarshal %s: %w", key, err)
 	}
 	return nil
 }
