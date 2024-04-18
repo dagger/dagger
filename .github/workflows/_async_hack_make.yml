@@ -1,6 +1,6 @@
 # This is run asynchronously, triggered from "hack/make".
 # The purpose is to compare the behaviour of different runner configurations.
-name: cfg-runner
+name: "async/hack/make"
 
 on:
   workflow_dispatch:

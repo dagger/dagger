@@ -94,10 +94,10 @@ jobs:
       cancel-in-progress: true
     steps:
       # https://github.com/benc-uk/workflow-dispatch/tree/v1
-      - name: Trigger ${{ inputs.mage-targets }} on 
+      - name: Trigger ${{ inputs.mage-targets }} on dagger-v011-on-k8s-gerhard-production
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: ./.github/workflows/cfg-runner.yml
+          workflow: ./.github/workflows/_async_hack_make.yml
           inputs: '{ "mage-targets": "${{ inputs.mage-targets }}", "concurrency-group": "${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp", "runner": "dagger-v011-on-k8s-gerhard-production" }'
 
   # Use legacy Dagger runners when running in the dagger/dagger repo (including PRs) & needing Docker
