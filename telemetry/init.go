@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/telemetry/inflight"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploggrpc"
@@ -34,8 +36,30 @@ var ocnfiguredCloudExportersOnce sync.Once
 
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.LogExporter, bool) {
 	ocnfiguredCloudExportersOnce.Do(func() {
-		cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN")
-		if cloudToken == "" {
+		var (
+			authHeader string
+			orgID      string
+		)
+
+		// Try token auth first
+		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
+			authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(cloudToken+":"))
+		}
+		// Try OAuth next
+		if authHeader == "" {
+			token, err := auth.Token(ctx)
+			if err != nil {
+				return
+			}
+			authHeader = token.Type() + " " + token.AccessToken
+			orgID, err = auth.Org()
+			if err != nil {
+				return
+			}
+		}
+
+		// No auth provided, abort
+		if authHeader == "" {
 			return
 		}
 
@@ -54,7 +78,10 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 		logsURL := cloudEndpoint.JoinPath("v1", "logs")
 
 		headers := map[string]string{
-			"Authorization": "Bearer " + cloudToken,
+			"Authorization": authHeader,
+		}
+		if orgID != "" {
+			headers["X-Dagger-Org"] = orgID
 		}
 
 		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,
