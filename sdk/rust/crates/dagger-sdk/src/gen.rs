@@ -1635,11 +1635,8 @@ impl Container {
     }
     /// Returns a File representing the container serialized to a tarball.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_tarball(&self) -> File {
         let query = self.selection.select("asTarball");
@@ -1653,11 +1650,8 @@ impl Container {
 
     /// Returns a File representing the container serialized to a tarball.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_tarball_opts(&self, opts: ContainerAsTarballOpts) -> File {
         let mut query = self.selection.select("asTarball");
@@ -1680,11 +1674,8 @@ impl Container {
     }
     /// Initializes this container from a Dockerfile build.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `context` - Directory context used by the Dockerfile.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn build(&self, context: impl IntoID<DirectoryId>) -> Container {
@@ -1707,11 +1698,8 @@ impl Container {
 
     /// Initializes this container from a Dockerfile build.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `context` - Directory context used by the Dockerfile.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn build_opts<'a>(
@@ -1756,11 +1744,8 @@ impl Container {
     /// Retrieves a directory at the given path.
     /// Mounts are included.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path of the directory to retrieve (e.g., "./src").
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -1781,11 +1766,8 @@ impl Container {
     }
     /// Retrieves the value of the specified environment variable.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the environment variable to retrieve (e.g., "PATH").
     pub async fn env_variable(&self, name: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("envVariable");
@@ -1820,11 +1802,8 @@ impl Container {
     /// Configures the provided list of devices to be accessible to this container.
     /// This currently works for Nvidia devices only.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `devices` - List of devices to be accessible to this container.
     pub fn experimental_with_gpu(&self, devices: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("experimentalWithGPU");
@@ -1847,11 +1826,8 @@ impl Container {
     /// Return true on success.
     /// It can also export platform variants.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Host's destination path (e.g., "./tarball").
     ///
     /// Path can be relative to the engine's workdir or absolute.
@@ -1868,11 +1844,8 @@ impl Container {
     /// Return true on success.
     /// It can also export platform variants.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Host's destination path (e.g., "./tarball").
     ///
     /// Path can be relative to the engine's workdir or absolute.
@@ -1911,11 +1884,8 @@ impl Container {
     /// Retrieves a file at the given path.
     /// Mounts are included.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path of the file to retrieve (e.g., "./README.md").
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
@@ -1930,11 +1900,8 @@ impl Container {
     }
     /// Initializes this container from a pulled base image.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `address` - Image's address from its registry.
     ///
     /// Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
@@ -1963,11 +1930,8 @@ impl Container {
     }
     /// Reads the container from an OCI tarball.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `source` - File to read the container from.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn import(&self, source: impl IntoID<FileId>) -> Container {
@@ -1990,11 +1954,8 @@ impl Container {
 
     /// Reads the container from an OCI tarball.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `source` - File to read the container from.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn import_opts<'a>(
@@ -2023,11 +1984,8 @@ impl Container {
     }
     /// Retrieves the value of the specified label.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the label (e.g., "org.opencontainers.artifact.created").
     pub async fn label(&self, name: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("label");
@@ -2054,11 +2012,8 @@ impl Container {
     }
     /// Creates a named sub-pipeline.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the sub-pipeline.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline(&self, name: impl Into<String>) -> Container {
@@ -2075,11 +2030,8 @@ impl Container {
 
     /// Creates a named sub-pipeline.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the sub-pipeline.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline_opts<'a>(
@@ -2113,11 +2065,8 @@ impl Container {
     /// Publish returns a fully qualified ref.
     /// It can also publish platform variants.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `address` - Registry's address to publish the image to.
     ///
     /// Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
@@ -2134,11 +2083,8 @@ impl Container {
     /// Publish returns a fully qualified ref.
     /// It can also publish platform variants.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `address` - Registry's address to publish the image to.
     ///
     /// Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
@@ -2196,11 +2142,8 @@ impl Container {
     }
     /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal(&self) -> Terminal {
         let query = self.selection.select("terminal");
@@ -2214,11 +2157,8 @@ impl Container {
 
     /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn terminal_opts<'a>(&self, opts: ContainerTerminalOpts<'a>) -> Terminal {
         let mut query = self.selection.select("terminal");
@@ -2250,11 +2190,8 @@ impl Container {
     }
     /// Configures default arguments for future commands.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     pub fn with_default_args(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
@@ -2272,11 +2209,8 @@ impl Container {
     }
     /// Set the default command to invoke for the container's terminal API.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - The args of the command.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_default_terminal_cmd(&self, args: Vec<impl Into<String>>) -> Container {
@@ -2296,11 +2230,8 @@ impl Container {
 
     /// Set the default command to invoke for the container's terminal API.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - The args of the command.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_default_terminal_cmd_opts(
@@ -2332,11 +2263,8 @@ impl Container {
     }
     /// Retrieves this container plus a directory written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written directory (e.g., "/tmp/directory").
     /// * `directory` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2365,11 +2293,8 @@ impl Container {
 
     /// Retrieves this container plus a directory written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written directory (e.g., "/tmp/directory").
     /// * `directory` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2407,11 +2332,8 @@ impl Container {
     }
     /// Retrieves this container but with a different command entrypoint.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_entrypoint(&self, args: Vec<impl Into<String>>) -> Container {
@@ -2431,11 +2353,8 @@ impl Container {
 
     /// Retrieves this container but with a different command entrypoint.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_entrypoint_opts(
@@ -2461,11 +2380,8 @@ impl Container {
     }
     /// Retrieves this container plus the given environment variable.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the environment variable (e.g., "HOST").
     /// * `value` - The value of the environment variable. (e.g., "localhost").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2488,11 +2404,8 @@ impl Container {
 
     /// Retrieves this container plus the given environment variable.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the environment variable (e.g., "HOST").
     /// * `value` - The value of the environment variable. (e.g., "localhost").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2518,11 +2431,8 @@ impl Container {
     }
     /// Retrieves this container after executing the specified command inside it.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     ///
     /// If empty, the container's default command is used.
@@ -2544,11 +2454,8 @@ impl Container {
 
     /// Retrieves this container after executing the specified command inside it.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `args` - Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     ///
     /// If empty, the container's default command is used.
@@ -2597,11 +2504,8 @@ impl Container {
     /// - For health checks and introspection, when running services
     /// - For setting the EXPOSE OCI field when publishing the container
     ///
-
     /// # Arguments
-
     ///
-
     /// * `port` - Port number to expose
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_exposed_port(&self, port: isize) -> Container {
@@ -2621,11 +2525,8 @@ impl Container {
     /// - For health checks and introspection, when running services
     /// - For setting the EXPOSE OCI field when publishing the container
     ///
-
     /// # Arguments
-
     ///
-
     /// * `port` - Port number to expose
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_exposed_port_opts<'a>(
@@ -2654,11 +2555,8 @@ impl Container {
     }
     /// Retrieves this container plus the contents of the given file copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2683,11 +2581,8 @@ impl Container {
 
     /// Retrieves this container plus the contents of the given file copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2722,11 +2617,8 @@ impl Container {
     }
     /// Retrieves this container plus the contents of the given files copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location where copied files should be placed (e.g., "/src").
     /// * `sources` - Identifiers of the files to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2745,11 +2637,8 @@ impl Container {
 
     /// Retrieves this container plus the contents of the given files copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location where copied files should be placed (e.g., "/src").
     /// * `sources` - Identifiers of the files to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2788,11 +2677,8 @@ impl Container {
     }
     /// Retrieves this container plus the given label.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the label (e.g., "org.opencontainers.artifact.created").
     /// * `value` - The value of the label (e.g., "2023-01-01T00:00:00Z").
     pub fn with_label(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
@@ -2809,11 +2695,8 @@ impl Container {
     }
     /// Retrieves this container plus a cache volume mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2842,11 +2725,8 @@ impl Container {
 
     /// Retrieves this container plus a cache volume mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2884,11 +2764,8 @@ impl Container {
     }
     /// Retrieves this container plus a directory mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
     /// * `source` - Identifier of the mounted directory.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2917,11 +2794,8 @@ impl Container {
 
     /// Retrieves this container plus a directory mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
     /// * `source` - Identifier of the mounted directory.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2953,11 +2827,8 @@ impl Container {
     }
     /// Retrieves this container plus a file mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the mounted file.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -2986,11 +2857,8 @@ impl Container {
 
     /// Retrieves this container plus a file mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the mounted file.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -3022,11 +2890,8 @@ impl Container {
     }
     /// Retrieves this container plus a secret mounted into a file at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
     /// * `source` - Identifier of the secret to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -3055,11 +2920,8 @@ impl Container {
 
     /// Retrieves this container plus a secret mounted into a file at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
     /// * `source` - Identifier of the secret to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -3094,11 +2956,8 @@ impl Container {
     }
     /// Retrieves this container plus a temporary directory mounted at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the temporary directory (e.g., "/tmp/temp_dir").
     pub fn with_mounted_temp(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withMountedTemp");
@@ -3113,11 +2972,8 @@ impl Container {
     }
     /// Retrieves this container plus a new file written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file(&self, path: impl Into<String>) -> Container {
@@ -3134,11 +2990,8 @@ impl Container {
 
     /// Retrieves this container plus a new file written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file_opts<'a>(
@@ -3167,11 +3020,8 @@ impl Container {
     }
     /// Retrieves this container with a registry authentication for a given address.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `address` - Registry's address to bind the authentication to.
     ///
     /// Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
@@ -3203,11 +3053,8 @@ impl Container {
     }
     /// Retrieves the container with the given directory mounted to /.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `directory` - Directory to mount.
     pub fn with_rootfs(&self, directory: impl IntoID<DirectoryId>) -> Container {
         let mut query = self.selection.select("withRootfs");
@@ -3228,11 +3075,8 @@ impl Container {
     }
     /// Retrieves this container plus an env variable containing the given secret.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the secret variable (e.g., "API_SECRET").
     /// * `secret` - The identifier of the secret value.
     pub fn with_secret_variable(
@@ -3262,11 +3106,8 @@ impl Container {
     /// The service will be reachable from the container via the provided hostname alias.
     /// The service dependency will also convey to any files or directories produced by the container.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `alias` - A name that can be used to reach the service from the container
     /// * `service` - Identifier of the service container
     pub fn with_service_binding(
@@ -3293,11 +3134,8 @@ impl Container {
     }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
     /// * `source` - Identifier of the socket to forward.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -3326,11 +3164,8 @@ impl Container {
 
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
     /// * `source` - Identifier of the socket to forward.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -3362,11 +3197,8 @@ impl Container {
     }
     /// Retrieves this container with a different command user.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The user to set (e.g., "root").
     pub fn with_user(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withUser");
@@ -3381,11 +3213,8 @@ impl Container {
     }
     /// Retrieves this container with a different working directory.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path to set as the working directory (e.g., "/app").
     pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
@@ -3410,11 +3239,8 @@ impl Container {
     }
     /// Retrieves this container with an unset command entrypoint.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_entrypoint(&self) -> Container {
         let query = self.selection.select("withoutEntrypoint");
@@ -3428,11 +3254,8 @@ impl Container {
 
     /// Retrieves this container with an unset command entrypoint.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_entrypoint_opts(&self, opts: ContainerWithoutEntrypointOpts) -> Container {
         let mut query = self.selection.select("withoutEntrypoint");
@@ -3449,11 +3272,8 @@ impl Container {
     }
     /// Retrieves this container minus the given environment variable.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the environment variable (e.g., "HOST").
     pub fn without_env_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutEnvVariable");
@@ -3468,11 +3288,8 @@ impl Container {
     }
     /// Unexpose a previously exposed port.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `port` - Port number to unexpose
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_exposed_port(&self, port: isize) -> Container {
@@ -3489,11 +3306,8 @@ impl Container {
 
     /// Unexpose a previously exposed port.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `port` - Port number to unexpose
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_exposed_port_opts(
@@ -3527,11 +3341,8 @@ impl Container {
     }
     /// Retrieves this container minus the given environment label.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the label to remove (e.g., "org.opencontainers.artifact.created").
     pub fn without_label(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutLabel");
@@ -3546,11 +3357,8 @@ impl Container {
     }
     /// Retrieves this container after unmounting everything at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
@@ -3565,11 +3373,8 @@ impl Container {
     }
     /// Retrieves this container without the registry authentication of a given address.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `address` - Registry's address to remove the authentication from.
     ///
     /// Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
@@ -3586,11 +3391,8 @@ impl Container {
     }
     /// Retrieves this container with a previously added Unix socket removed.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the socket to remove (e.g., "/tmp/socket").
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
@@ -3674,11 +3476,8 @@ impl CurrentModule {
     }
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory to access (e.g., ".").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn workdir(&self, path: impl Into<String>) -> Directory {
@@ -3695,11 +3494,8 @@ impl CurrentModule {
 
     /// Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory to access (e.g., ".").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn workdir_opts<'a>(
@@ -3725,11 +3521,8 @@ impl CurrentModule {
     }
     /// Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the file to retrieve (e.g., "README.md").
     pub fn workdir_file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("workdirFile");
@@ -3835,11 +3628,8 @@ pub struct DirectoryWithNewFileOpts {
 impl Directory {
     /// Load the directory as a Dagger module
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module(&self) -> Module {
         let query = self.selection.select("asModule");
@@ -3853,11 +3643,8 @@ impl Directory {
 
     /// Load the directory as a Dagger module
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module_opts<'a>(&self, opts: DirectoryAsModuleOpts<'a>) -> Module {
         let mut query = self.selection.select("asModule");
@@ -3874,11 +3661,8 @@ impl Directory {
     }
     /// Gets the difference between this directory and an another directory.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `other` - Identifier of the directory to compare.
     pub fn diff(&self, other: impl IntoID<DirectoryId>) -> Directory {
         let mut query = self.selection.select("diff");
@@ -3899,11 +3683,8 @@ impl Directory {
     }
     /// Retrieves a directory at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory to retrieve (e.g., "/src").
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -3918,11 +3699,8 @@ impl Directory {
     }
     /// Builds a new Docker container from this directory.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build(&self) -> Container {
         let query = self.selection.select("dockerBuild");
@@ -3936,11 +3714,8 @@ impl Directory {
 
     /// Builds a new Docker container from this directory.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build_opts<'a>(&self, opts: DirectoryDockerBuildOpts<'a>) -> Container {
         let mut query = self.selection.select("dockerBuild");
@@ -3969,11 +3744,8 @@ impl Directory {
     }
     /// Returns a list of files and directories at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn entries(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("entries");
@@ -3983,11 +3755,8 @@ impl Directory {
 
     /// Returns a list of files and directories at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn entries_opts<'a>(
         &self,
@@ -4003,11 +3772,8 @@ impl Directory {
     }
     /// Writes the contents of the directory to a path on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the copied directory (e.g., "logs/").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
@@ -4020,11 +3786,8 @@ impl Directory {
 
     /// Writes the contents of the directory to a path on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the copied directory (e.g., "logs/").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export_opts(
@@ -4043,11 +3806,8 @@ impl Directory {
     }
     /// Retrieves a file at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the file to retrieve (e.g., "README.md").
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
@@ -4062,11 +3822,8 @@ impl Directory {
     }
     /// Returns a list of files and directories that matche the given pattern.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `pattern` - Pattern to match (e.g., "*.md").
     pub async fn glob(&self, pattern: impl Into<String>) -> Result<Vec<String>, DaggerError> {
         let mut query = self.selection.select("glob");
@@ -4083,11 +3840,8 @@ impl Directory {
     }
     /// Creates a named sub-pipeline.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the sub-pipeline.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline(&self, name: impl Into<String>) -> Directory {
@@ -4104,11 +3858,8 @@ impl Directory {
 
     /// Creates a named sub-pipeline.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the sub-pipeline.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline_opts<'a>(
@@ -4140,11 +3891,8 @@ impl Directory {
     }
     /// Retrieves this directory plus a directory written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written directory (e.g., "/src/").
     /// * `directory` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4173,11 +3921,8 @@ impl Directory {
 
     /// Retrieves this directory plus a directory written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written directory (e.g., "/src/").
     /// * `directory` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4212,11 +3957,8 @@ impl Directory {
     }
     /// Retrieves this directory plus the contents of the given file copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the copied file (e.g., "/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4241,11 +3983,8 @@ impl Directory {
 
     /// Retrieves this directory plus the contents of the given file copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the copied file (e.g., "/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4277,11 +4016,8 @@ impl Directory {
     }
     /// Retrieves this directory plus the contents of the given files copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location where copied files should be placed (e.g., "/src").
     /// * `sources` - Identifiers of the files to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4300,11 +4036,8 @@ impl Directory {
 
     /// Retrieves this directory plus the contents of the given files copied to the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location where copied files should be placed (e.g., "/src").
     /// * `sources` - Identifiers of the files to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4330,11 +4063,8 @@ impl Directory {
     }
     /// Retrieves this directory plus a new directory created at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory created (e.g., "/logs").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_directory(&self, path: impl Into<String>) -> Directory {
@@ -4351,11 +4081,8 @@ impl Directory {
 
     /// Retrieves this directory plus a new directory created at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory created (e.g., "/logs").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_directory_opts(
@@ -4378,11 +4105,8 @@ impl Directory {
     }
     /// Retrieves this directory plus a new file written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written file (e.g., "/file.txt").
     /// * `contents` - Content of the written file (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4401,11 +4125,8 @@ impl Directory {
 
     /// Retrieves this directory plus a new file written at the given path.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written file (e.g., "/file.txt").
     /// * `contents` - Content of the written file (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4431,11 +4152,8 @@ impl Directory {
     }
     /// Retrieves this directory with all file/dir timestamps set to the given time.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `timestamp` - Timestamp to set dir/files in.
     ///
     /// Formatted in seconds following Unix epoch (e.g., 1672531199).
@@ -4452,11 +4170,8 @@ impl Directory {
     }
     /// Retrieves this directory with the directory at the given path removed.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory to remove (e.g., ".github/").
     pub fn without_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutDirectory");
@@ -4471,11 +4186,8 @@ impl Directory {
     }
     /// Retrieves this directory with the file at the given path removed.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the file to remove (e.g., "/file.txt").
     pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
@@ -4576,11 +4288,8 @@ impl File {
     }
     /// Writes the file to a file path on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written directory (e.g., "output.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
@@ -4593,11 +4302,8 @@ impl File {
 
     /// Writes the file to a file path on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the written directory (e.g., "output.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export_opts(
@@ -4640,11 +4346,8 @@ impl File {
     }
     /// Retrieves this file with its created/modified timestamps set to the given time.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `timestamp` - Timestamp to set dir/files in.
     ///
     /// Formatted in seconds following Unix epoch (e.g., 1672531199).
@@ -4718,11 +4421,8 @@ impl Function {
     }
     /// Returns the function with the provided argument
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the argument
     /// * `type_def` - The type of the argument
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4747,11 +4447,8 @@ impl Function {
 
     /// Returns the function with the provided argument
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the argument
     /// * `type_def` - The type of the argument
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -4786,11 +4483,8 @@ impl Function {
     }
     /// Returns the function with the given doc string.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `description` - The doc string to set.
     pub fn with_description(&self, description: impl Into<String>) -> Function {
         let mut query = self.selection.select("withDescription");
@@ -4891,11 +4585,8 @@ impl FunctionCall {
     }
     /// Set the return value of the function call to the provided value.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `value` - JSON serialization of the return value.
     pub async fn return_value(&self, value: Json) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("returnValue");
@@ -5086,11 +4777,8 @@ impl GitRef {
     }
     /// The filesystem tree at this ref.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree(&self) -> Directory {
         let query = self.selection.select("tree");
@@ -5104,11 +4792,8 @@ impl GitRef {
 
     /// The filesystem tree at this ref.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree_opts<'a>(&self, opts: GitRefTreeOpts<'a>) -> Directory {
         let mut query = self.selection.select("tree");
@@ -5137,11 +4822,8 @@ pub struct GitRepository {
 impl GitRepository {
     /// Returns details of a branch.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Branch's name (e.g., "main").
     pub fn branch(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("branch");
@@ -5156,11 +4838,8 @@ impl GitRepository {
     }
     /// Returns details of a commit.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     pub fn commit(&self, id: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("commit");
@@ -5191,11 +4870,8 @@ impl GitRepository {
     }
     /// Returns details of a ref.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Ref's name (can be a commit identifier, a tag name, a branch name, or a fully-qualified ref).
     pub fn r#ref(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("ref");
@@ -5210,11 +4886,8 @@ impl GitRepository {
     }
     /// Returns details of a tag.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Tag's name (e.g., "v0.3.9").
     pub fn tag(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("tag");
@@ -5317,11 +4990,8 @@ pub struct HostTunnelOpts {
 impl Host {
     /// Accesses a directory on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory to access (e.g., ".").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
@@ -5338,11 +5008,8 @@ impl Host {
 
     /// Accesses a directory on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the directory to access (e.g., ".").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
@@ -5368,11 +5035,8 @@ impl Host {
     }
     /// Accesses a file on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the file to retrieve (e.g., "README.md").
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
@@ -5393,11 +5057,8 @@ impl Host {
     }
     /// Creates a service that forwards traffic to a specified address via the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `ports` - Ports to expose via the service, forwarding through the host network.
     ///
     /// If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
@@ -5418,11 +5079,8 @@ impl Host {
 
     /// Creates a service that forwards traffic to a specified address via the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `ports` - Ports to expose via the service, forwarding through the host network.
     ///
     /// If a port's frontend is unspecified or 0, it defaults to the same as the backend port.
@@ -5446,11 +5104,8 @@ impl Host {
     /// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
     /// The file is limited to a size of 512000 bytes.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The user defined name for this secret.
     /// * `path` - Location of the file to set as a secret.
     pub fn set_secret_file(&self, name: impl Into<String>, path: impl Into<String>) -> Secret {
@@ -5467,11 +5122,8 @@ impl Host {
     }
     /// Creates a tunnel that forwards traffic from the host to a service.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `service` - Service to send traffic from the tunnel.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tunnel(&self, service: impl IntoID<ServiceId>) -> Service {
@@ -5494,11 +5146,8 @@ impl Host {
 
     /// Creates a tunnel that forwards traffic from the host to a service.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `service` - Service to send traffic from the tunnel.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tunnel_opts(&self, service: impl IntoID<ServiceId>, opts: HostTunnelOpts) -> Service {
@@ -5526,11 +5175,8 @@ impl Host {
     }
     /// Accesses a Unix socket on the host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - Location of the Unix socket (e.g., "/var/run/docker.sock").
     pub fn unix_socket(&self, path: impl Into<String>) -> Socket {
         let mut query = self.selection.select("unixSocket");
@@ -5832,11 +5478,8 @@ impl Module {
     }
     /// Retrieves the module with the given description
     ///
-
     /// # Arguments
-
     ///
-
     /// * `description` - The description to set
     pub fn with_description(&self, description: impl Into<String>) -> Module {
         let mut query = self.selection.select("withDescription");
@@ -5887,11 +5530,8 @@ impl Module {
     }
     /// Retrieves the module with basic configuration loaded if present.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `source` - The module source to initialize from.
     pub fn with_source(&self, source: impl IntoID<ModuleSourceId>) -> Module {
         let mut query = self.selection.select("withSource");
@@ -6021,11 +5661,8 @@ impl ModuleSource {
     }
     /// The directory containing the module configuration and source code (source code may be in a subdir).
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path from the source directory to select.
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -6070,11 +5707,8 @@ impl ModuleSource {
     }
     /// Resolve the provided module source arg as a dependency relative to this module source.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `dep` - The dependency module source to resolve.
     pub fn resolve_dependency(&self, dep: impl IntoID<ModuleSourceId>) -> ModuleSource {
         let mut query = self.selection.select("resolveDependency");
@@ -6095,11 +5729,8 @@ impl ModuleSource {
     }
     /// Load a directory from the caller optionally with a given view applied.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path on the caller's filesystem to load.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn resolve_directory_from_caller(&self, path: impl Into<String>) -> Directory {
@@ -6116,11 +5747,8 @@ impl ModuleSource {
 
     /// Load a directory from the caller optionally with a given view applied.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path on the caller's filesystem to load.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn resolve_directory_from_caller_opts<'a>(
@@ -6165,11 +5793,8 @@ impl ModuleSource {
     }
     /// Retrieve a named view defined for this module source.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the view to retrieve.
     pub fn view(&self, name: impl Into<String>) -> ModuleSourceView {
         let mut query = self.selection.select("view");
@@ -6194,11 +5819,8 @@ impl ModuleSource {
     }
     /// Update the module source with a new context directory. Only valid for local sources.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `dir` - The directory to set as the context directory.
     pub fn with_context_directory(&self, dir: impl IntoID<DirectoryId>) -> ModuleSource {
         let mut query = self.selection.select("withContextDirectory");
@@ -6219,11 +5841,8 @@ impl ModuleSource {
     }
     /// Append the provided dependencies to the module source's dependency list.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `dependencies` - The dependencies to append.
     pub fn with_dependencies(&self, dependencies: Vec<ModuleDependencyId>) -> ModuleSource {
         let mut query = self.selection.select("withDependencies");
@@ -6238,11 +5857,8 @@ impl ModuleSource {
     }
     /// Update the module source with a new name.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name to set.
     pub fn with_name(&self, name: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withName");
@@ -6257,11 +5873,8 @@ impl ModuleSource {
     }
     /// Update the module source with a new SDK.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `sdk` - The SDK to set.
     pub fn with_sdk(&self, sdk: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSDK");
@@ -6276,11 +5889,8 @@ impl ModuleSource {
     }
     /// Update the module source with a new source subpath.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `path` - The path to set as the source subpath.
     pub fn with_source_subpath(&self, path: impl Into<String>) -> ModuleSource {
         let mut query = self.selection.select("withSourceSubpath");
@@ -6295,11 +5905,8 @@ impl ModuleSource {
     }
     /// Update the module source with a new named view.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the view to set.
     /// * `patterns` - The patterns to set as the view filters.
     pub fn with_view(
@@ -6527,11 +6134,8 @@ pub struct QuerySecretOpts<'a> {
 impl Query {
     /// Retrieves a content-addressed blob.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `digest` - Digest of the blob
     /// * `size` - Size of the blob
     /// * `media_type` - Media type of the blob
@@ -6558,11 +6162,8 @@ impl Query {
     }
     /// Retrieves a container builtin to the engine.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `digest` - Digest of the image manifest
     pub fn builtin_container(&self, digest: impl Into<String>) -> Container {
         let mut query = self.selection.select("builtinContainer");
@@ -6577,11 +6178,8 @@ impl Query {
     }
     /// Constructs a cache volume for a given cache key.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
@@ -6596,11 +6194,8 @@ impl Query {
     }
     /// Checks if the current Dagger Engine is compatible with an SDK's required version.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `version` - Version required by the SDK.
     pub async fn check_version_compatibility(
         &self,
@@ -6615,11 +6210,8 @@ impl Query {
     /// Creates a scratch container.
     /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container(&self) -> Container {
         let query = self.selection.select("container");
@@ -6634,11 +6226,8 @@ impl Query {
     /// Creates a scratch container.
     /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container_opts(&self, opts: QueryContainerOpts) -> Container {
         let mut query = self.selection.select("container");
@@ -6695,11 +6284,8 @@ impl Query {
     }
     /// Creates an empty directory.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self) -> Directory {
         let query = self.selection.select("directory");
@@ -6713,11 +6299,8 @@ impl Query {
 
     /// Creates an empty directory.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts(&self, opts: QueryDirectoryOpts) -> Directory {
         let mut query = self.selection.select("directory");
@@ -6751,11 +6334,8 @@ impl Query {
     }
     /// Creates a function.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the function, in its original format from the implementation language.
     /// * `return_type` - Return type of the function.
     pub fn function(
@@ -6800,11 +6380,8 @@ impl Query {
     }
     /// Queries a Git repository.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `url` - URL of the git repository.
     ///
     /// Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
@@ -6825,11 +6402,8 @@ impl Query {
 
     /// Queries a Git repository.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `url` - URL of the git repository.
     ///
     /// Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
@@ -6871,11 +6445,8 @@ impl Query {
     }
     /// Returns a file containing an http remote url content.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn http(&self, url: impl Into<String>) -> File {
@@ -6892,11 +6463,8 @@ impl Query {
 
     /// Returns a file containing an http remote url content.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn http_opts(&self, url: impl Into<String>, opts: QueryHttpOpts) -> File {
@@ -7519,11 +7087,8 @@ impl Query {
     }
     /// Create a new module dependency configuration from a module source and name
     ///
-
     /// # Arguments
-
     ///
-
     /// * `source` - The source of the dependency
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn module_dependency(&self, source: impl IntoID<ModuleSourceId>) -> ModuleDependency {
@@ -7546,11 +7111,8 @@ impl Query {
 
     /// Create a new module dependency configuration from a module source and name
     ///
-
     /// # Arguments
-
     ///
-
     /// * `source` - The source of the dependency
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn module_dependency_opts<'a>(
@@ -7579,11 +7141,8 @@ impl Query {
     }
     /// Create a new module source instance from a source ref string.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `ref_string` - The string ref representation of the module source
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn module_source(&self, ref_string: impl Into<String>) -> ModuleSource {
@@ -7600,11 +7159,8 @@ impl Query {
 
     /// Create a new module source instance from a source ref string.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `ref_string` - The string ref representation of the module source
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn module_source_opts(
@@ -7627,11 +7183,8 @@ impl Query {
     }
     /// Creates a named sub-pipeline.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the sub-pipeline.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline(&self, name: impl Into<String>) -> Query {
@@ -7648,11 +7201,8 @@ impl Query {
 
     /// Creates a named sub-pipeline.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - Name of the sub-pipeline.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline_opts<'a>(&self, name: impl Into<String>, opts: QueryPipelineOpts<'a>) -> Query {
@@ -7674,11 +7224,8 @@ impl Query {
     }
     /// Reference a secret by name.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn secret(&self, name: impl Into<String>) -> Secret {
         let mut query = self.selection.select("secret");
@@ -7694,11 +7241,8 @@ impl Query {
 
     /// Reference a secret by name.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn secret_opts<'a>(&self, name: impl Into<String>, opts: QuerySecretOpts<'a>) -> Secret {
         let mut query = self.selection.select("secret");
@@ -7717,11 +7261,8 @@ impl Query {
     /// Sets a secret given a user defined name to its plaintext and returns the secret.
     /// The plaintext value is limited to a size of 128000 bytes.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The user defined name for this secret
     /// * `plaintext` - The plaintext of the secret
     pub fn set_secret(&self, name: impl Into<String>, plaintext: impl Into<String>) -> Secret {
@@ -7836,11 +7377,8 @@ impl Service {
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
     /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn endpoint(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("endpoint");
@@ -7852,11 +7390,8 @@ impl Service {
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
     /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn endpoint_opts<'a>(
         &self,
@@ -7904,11 +7439,8 @@ impl Service {
     }
     /// Stop the service.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn stop(&self) -> Result<ServiceId, DaggerError> {
         let query = self.selection.select("stop");
@@ -7918,11 +7450,8 @@ impl Service {
 
     /// Stop the service.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn stop_opts(&self, opts: ServiceStopOpts) -> Result<ServiceId, DaggerError> {
         let mut query = self.selection.select("stop");
@@ -7935,11 +7464,8 @@ impl Service {
     }
     /// Creates a tunnel that forwards traffic from the caller's network to this service.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn up(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("up");
@@ -7949,11 +7475,8 @@ impl Service {
 
     /// Creates a tunnel that forwards traffic from the caller's network to this service.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn up_opts(&self, opts: ServiceUpOpts) -> Result<Void, DaggerError> {
         let mut query = self.selection.select("up");
@@ -8107,11 +7630,8 @@ impl TypeDef {
     }
     /// Adds a static field for an Object TypeDef, failing if the type is not an object.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the field in the object
     /// * `type_def` - The type of the field
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -8136,11 +7656,8 @@ impl TypeDef {
 
     /// Adds a static field for an Object TypeDef, failing if the type is not an object.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `name` - The name of the field in the object
     /// * `type_def` - The type of the field
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
@@ -8190,11 +7707,8 @@ impl TypeDef {
     }
     /// Returns a TypeDef of kind Interface with the provided name.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_interface(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withInterface");
@@ -8210,11 +7724,8 @@ impl TypeDef {
 
     /// Returns a TypeDef of kind Interface with the provided name.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_interface_opts<'a>(
         &self,
@@ -8267,11 +7778,8 @@ impl TypeDef {
     /// Returns a TypeDef of kind Object with the provided name.
     /// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_object(&self, name: impl Into<String>) -> TypeDef {
         let mut query = self.selection.select("withObject");
@@ -8288,11 +7796,8 @@ impl TypeDef {
     /// Returns a TypeDef of kind Object with the provided name.
     /// Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
     ///
-
     /// # Arguments
-
     ///
-
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_object_opts<'a>(
         &self,

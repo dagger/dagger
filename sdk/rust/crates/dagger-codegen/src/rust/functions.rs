@@ -340,9 +340,9 @@ fn format_function_args(
             });
 
             let description = quote! {
-                $(if argument_description.len() > 0 => $(format!("///\n")))
-                $(if argument_description.len() > 0 => $(format!("/// # Arguments\n")))
-                $(if argument_description.len() > 0 => $(format!("///\n")))
+                $(if argument_description.len() > 0 => $(format!("///")))
+                $(if argument_description.len() > 0 => $(format!("/// # Arguments")))
+                $(if argument_description.len() > 0 => $(format!("///")))
                 $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
             };
 
@@ -356,9 +356,9 @@ fn format_function_args(
             ))
         } else {
             let description = quote! {
-                $(if argument_description.len() > 0 => $(format!("///\n")))
-                $(if argument_description.len() > 0 => $(format!("/// # Arguments\n")))
-                $(if argument_description.len() > 0 => $(format!("///\n")))
+                $(if argument_description.len() > 0 => $(format!("///")))
+                $(if argument_description.len() > 0 => $(format!("/// # Arguments")))
+                $(if argument_description.len() > 0 => $(format!("///")))
                 $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
             };
             Some((required_args, description, false))
