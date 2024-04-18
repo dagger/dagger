@@ -287,6 +287,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 			cmd.PrintErrln("Error:", rerr.Error())
 
 			if fc.showHelp {
+				// Intentionally add newline to separate error from usage
+				cmd.PrintErrln()
+
 				// Explicitly show the help here while still returning the error.
 				// This handles the case of `dagger call --help` run on a broken module; in that case
 				// we want to error out since we can't actually load the module and show all subcommands
