@@ -20,6 +20,17 @@ Available functionality:
 > engine) as defined in [`.github/workflows/_hack_make.yml`](../.github/workflows/_hack_make.yml).
 > Without this, you may hit unexpected errors or other weird behavior.
 
+## Developing after a fresh clone
+
+If you want to develop this module following a repository clone, remember to
+run the following one-off command:
+
+    cd ..
+    dagger develop --sdk go --source ci
+
+This will re-create all the files required by your code editor - see
+`.gitignore` for a list of what they are.
+
 ## Tests
 
 Run all tests:
