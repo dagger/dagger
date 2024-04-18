@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -921,10 +923,12 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		switch {
 		case err == nil:
 			if err := json.Unmarshal(configBytes, &modCfg); err != nil {
-				return nil, fmt.Errorf("error unmarshaling config at %s: %s", configPath, err)
+				return nil, fmt.Errorf("error unmarshaling config at %s: %w", configPath, err)
 			}
 
-		case strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "not found"):
+		// TODO: remove the strings.Contains check here (which aren't cross-platform),
+		// since we now set NotFound (since v0.11.2)
+		case status.Code(err) == codes.NotFound || strings.Contains(err.Error(), "no such file or directory"):
 			// This is only allowed for the top-level module (which may be in the process of being newly initialized).
 			// sentinel via nil modCfg unless there's WithSDK/WithDependencies/etc. to be applied
 			if !topLevel {
@@ -1061,7 +1065,9 @@ func callerHostFindUpContext(
 	if err == nil {
 		return curDirPath, true, nil
 	}
-	if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "not found") {
+	// TODO: remove the strings.Contains check here (which aren't cross-platform),
+	// since we now set NotFound (since v0.11.2)
+	if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
 		return "", false, fmt.Errorf("failed to lstat .git: %w", err)
 	}
 

@@ -40,6 +40,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
@@ -848,6 +849,9 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 		// just stream the file bytes to the caller
 		fileContents, err := os.ReadFile(opts.Path)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return status.Errorf(codes.NotFound, "stat path: %s", err)
+			}
 			return fmt.Errorf("read file: %w", err)
 		}
 		if len(fileContents) > int(opts.MaxFileSize) {
@@ -860,6 +864,9 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 	if opts.StatPathOnly {
 		stat, err := fsutil.Stat(opts.Path)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return status.Errorf(codes.NotFound, "stat path: %s", err)
+			}
 			return fmt.Errorf("stat path: %w", err)
 		}
 		if opts.StatReturnAbsPath {
