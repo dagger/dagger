@@ -15,6 +15,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
+	"github.com/muesli/termenv"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -86,6 +87,7 @@ func init() {
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
+	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -326,7 +328,13 @@ func cmdShortWrapped(c *cobra.Command) string {
 	return name + description
 }
 
-const usageTemplate = `Usage:
+// toUpperBold returns the given string in uppercase and bold.
+func toUpperBold(s string) string {
+	upperCase := strings.ToUpper(s)
+	return termenv.String(upperCase).Bold().String()
+}
+
+const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .Runnable}}
   {{.UseLine}}
@@ -337,28 +345,28 @@ const usageTemplate = `Usage:
 
 {{- if gt (len .Aliases) 0}}
 
-Aliases:
+{{ "Aliases" | toUpperBold }}
   {{.NameAndAliases}}
 
 {{- end}}
 
 {{- if isExperimental .}}
 
-EXPERIMENTAL:
+{{ "EXPERIMENTAL" | toUpperBold }}
   {{.CommandPath}} is currently under development and may change in the future.
 
 {{- end}}
 
 {{- if .HasExample}}
 
-Examples:
+{{ "Examples" | toUpperBold }}
 {{ .Example }}
 
 {{- end}}
 
 {{- if .HasAvailableLocalFlags}}
 
-Flags:
+{{ "Flags" | toUpperBold }}
 {{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
 
 {{- end}}
@@ -366,7 +374,7 @@ Flags:
 {{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
 {{- if eq (len .Groups) 0}}
 
-Available Commands:
+{{ "Available Commands" | toUpperBold }}
 {{- range $cmds }}
 {{- if (or .IsAvailableCommand (eq .Name "help"))}}
 {{cmdShortWrapped .}}
@@ -376,7 +384,7 @@ Available Commands:
 {{- else}}
 {{- range $group := .Groups}}
 
-{{.Title}}:
+{{.Title | toUpperBold}}
 {{- range $cmds }}
 {{- if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
 {{cmdShortWrapped .}}
@@ -386,7 +394,7 @@ Available Commands:
 
 {{- if not .AllChildCommandsHaveGroup}}
 
-Additional Commands:
+{{ "Additional Commands" | toUpperBold }}
 {{- range $cmds }}
 {{- if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
 {{cmdShortWrapped .}}
@@ -398,14 +406,14 @@ Additional Commands:
 
 {{- if .HasAvailableInheritedFlags}}
 
-Global Flags:
+{{ "Global Flags" | toUpperBold }}
 {{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces}}
 
 {{- end}}
 
 {{- if .HasHelpSubCommands}}
 
-Additional help topics:
+{{ "Additional help topics" | toUpperBold }}
 {{- range .Commands}}
 {{- if .IsAdditionalHelpTopicCommand}}
   {{rpad .CommandPath .CommandPathPadding}} {{.Short}}
