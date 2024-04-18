@@ -42,12 +42,7 @@ func (m *MyModule) Publish(ctx context.Context, source *Directory, version strin
 		// uncomment this to use a custom entrypoint file
 		// .WithEntrypoint([]string{"/var/www/docker-entrypoint.sh"})
 
-	address, err := image.
+	return image.
 		WithRegistryAuth(registryAddress, registryUsername, registryPassword).
 		Publish(ctx, fmt.Sprintf("%s/%s", registryUsername, imageName))
-
-	if err != nil {
-		return "", err
-	}
-	return address, nil
 }
