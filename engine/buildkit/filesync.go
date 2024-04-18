@@ -134,7 +134,7 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
 	msg := filesync.BytesMessage{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
-		Path:               filepath.ToSlash(path),
+		Path:               path,
 		ReadSingleFileOnly: true,
 		MaxFileSize:        MaxFileContentsChunkSize,
 	}, &msg)
@@ -147,7 +147,7 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsPath bool) (*fsutiltypes.Stat, error) {
 	msg := fsutiltypes.Stat{}
 	err := c.diffcopy(ctx, engine.LocalImportOpts{
-		Path:              filepath.ToSlash(path),
+		Path:              path,
 		StatPathOnly:      true,
 		StatReturnAbsPath: returnAbsPath,
 	}, &msg)

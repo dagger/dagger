@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"unicode"
 
@@ -127,13 +128,34 @@ type LocalImportOpts struct {
 }
 
 func (o LocalImportOpts) ToGRPCMD() metadata.MD {
-	// set both the dagger metadata and the ones used by buildkit
+	o.Path = filepath.ToSlash(o.Path)
 	md := encodeMeta(localImportOptsMetaKey, o)
 	md[localDirImportDirNameMetaKey] = []string{o.Path}
 	md[localDirImportIncludePatternsMetaKey] = o.IncludePatterns
 	md[localDirImportExcludePatternsMetaKey] = o.ExcludePatterns
 	md[localDirImportFollowPathsMetaKey] = o.FollowPaths
 	return encodeOpts(md)
+}
+
+func (o *LocalImportOpts) FromGRPCMD(md metadata.MD) error {
+	if _, ok := md[localImportOptsMetaKey]; ok {
+		err := decodeMeta(md, localImportOptsMetaKey, o)
+		if err != nil {
+			return err
+		}
+	} else {
+		// otherwise, this is coming from buildkit directly
+		dirNameVals := md[localDirImportDirNameMetaKey]
+		if len(dirNameVals) != 1 {
+			return fmt.Errorf("expected exactly one %s, got %d", localDirImportDirNameMetaKey, len(dirNameVals))
+		}
+		o.Path = dirNameVals[0]
+		o.IncludePatterns = md[localDirImportIncludePatternsMetaKey]
+		o.ExcludePatterns = md[localDirImportExcludePatternsMetaKey]
+		o.FollowPaths = md[localDirImportFollowPathsMetaKey]
+	}
+	o.Path = filepath.FromSlash(o.Path)
+	return nil
 }
 
 func (o LocalImportOpts) AppendToOutgoingContext(ctx context.Context) context.Context {
@@ -156,23 +178,9 @@ func LocalImportOptsFromContext(ctx context.Context) (*LocalImportOpts, error) {
 	md := decodeOpts(metadata.Join(incomingMD, outgoingMD))
 
 	opts := &LocalImportOpts{}
-	_, ok := md[localImportOptsMetaKey]
-	if ok {
-		if err := decodeMeta(md, localImportOptsMetaKey, opts); err != nil {
-			return nil, err
-		}
-		return opts, nil
+	if err := opts.FromGRPCMD(md); err != nil {
+		return nil, err
 	}
-
-	// otherwise, this is coming from buildkit directly
-	dirNameVals := md[localDirImportDirNameMetaKey]
-	if len(dirNameVals) != 1 {
-		return nil, fmt.Errorf("expected exactly one %s, got %d", localDirImportDirNameMetaKey, len(dirNameVals))
-	}
-	opts.Path = dirNameVals[0]
-	opts.IncludePatterns = md[localDirImportIncludePatternsMetaKey]
-	opts.ExcludePatterns = md[localDirImportExcludePatternsMetaKey]
-	opts.FollowPaths = md[localDirImportFollowPathsMetaKey]
 	return opts, nil
 }
 
@@ -189,7 +197,16 @@ type LocalExportOpts struct {
 }
 
 func (o LocalExportOpts) ToGRPCMD() metadata.MD {
+	o.Path = filepath.ToSlash(o.Path)
 	return encodeMeta(localExportOptsMetaKey, o)
+}
+
+func (o *LocalExportOpts) FromGRPCMD(md metadata.MD) error {
+	if err := decodeMeta(md, localExportOptsMetaKey, o); err != nil {
+		return err
+	}
+	o.Path = filepath.FromSlash(o.Path)
+	return nil
 }
 
 func (o LocalExportOpts) AppendToOutgoingContext(ctx context.Context) context.Context {
@@ -212,7 +229,7 @@ func LocalExportOptsFromContext(ctx context.Context) (*LocalExportOpts, error) {
 	md := metadata.Join(incomingMD, outgoingMD)
 
 	opts := &LocalExportOpts{}
-	if err := decodeMeta(md, localExportOptsMetaKey, opts); err != nil {
+	if err := opts.FromGRPCMD(md); err != nil {
 		return nil, err
 	}
 	return opts, nil
