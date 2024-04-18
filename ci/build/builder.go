@@ -195,6 +195,13 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		ctr = ctr.With(content.apply)
 	}
 
+	// for now, include buildkit scheduler debug logs to help with:
+	// https://github.com/dagger/dagger/issues/6234
+	// https://github.com/dagger/dagger/issues/6111
+	// this should be removed once those issues are resolved
+	// (relevant buildkit code: https://github.com/moby/buildkit/blob/cbb116dcc38acb40408743697b575f0ff2a7df6a/solver/scheduler.go#L21-L21)
+	ctr = ctr.WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1")
+
 	return ctr, nil
 }
 
