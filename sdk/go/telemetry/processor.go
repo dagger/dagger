@@ -60,7 +60,7 @@ func (ssp *simpleSpanProcessor) OnEnd(s trace.ReadOnlySpan) {
 	}
 }
 
-// OnStart does nothing.
+// OnUpdate does nothing.
 func (ssp *simpleSpanProcessor) OnUpdate(s trace.ReadOnlySpan) {
 	ssp.exporterMu.Lock()
 	defer ssp.exporterMu.Unlock()
