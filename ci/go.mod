@@ -5,8 +5,8 @@ go 1.21.7
 replace github.com/dagger/dagger => ../
 
 require (
-	dagger.io/dagger v0.11.0
-	github.com/dagger/dagger v0.11.0
+	dagger.io/dagger v0.11.1
+	github.com/dagger/dagger v0.11.1
 )
 
 require (

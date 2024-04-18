@@ -11,7 +11,9 @@ import (
 	"dagger.io/dagger"
 	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
+	"golang.org/x/mod/semver"
 
+	"github.com/dagger/dagger/ci/mage/sdk"
 	"github.com/dagger/dagger/ci/mage/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
@@ -76,6 +78,15 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	err = util.DaggerCall(ctx, args...)
 	if err != nil {
 		return err
+	}
+
+	if semver.IsValid(version) {
+		sdks := sdk.All{}
+		if err := sdks.Bump(ctx, version); err != nil {
+			return err
+		}
+	} else {
+		fmt.Println("skipping image bump in SDKs")
 	}
 
 	return nil
