@@ -769,6 +769,11 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		},
 	}
 
+	bkLogsW := io.Discard
+	if cfg.Debug {
+		bkLogsW = os.Stderr
+	}
+
 	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
 		WorkerController:       wc,
@@ -783,6 +788,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
 		DNSConfig:              getDNSConfig(cfg.DNS),
+		BuildkitLogSink:        bkLogsW,
 	})
 	if err != nil {
 		return nil, nil, err

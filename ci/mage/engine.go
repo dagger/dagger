@@ -133,14 +133,15 @@ func (t Engine) test(ctx context.Context, additional ...string) error {
 
 // Dev builds and starts an Engine & CLI from local source code
 func (t Engine) Dev(ctx context.Context) error {
-	gpuSupport := false
-	if v := os.Getenv(util.GPUSupportEnvName); v != "" {
-		gpuSupport = true
-	}
+	gpuSupport := os.Getenv(util.GPUSupportEnvName) != ""
+	trace := os.Getenv(util.TraceEnvName) != ""
 
 	args := []string{"engine"}
 	if gpuSupport {
 		args = append(args, "with-gpusupport")
+	}
+	if trace {
+		args = append(args, "with-trace")
 	}
 	tarPath := "./bin/engine.tar"
 	args = append(args, "container", "export", "--path="+tarPath)

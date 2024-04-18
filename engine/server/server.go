@@ -152,6 +152,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 			MainClientCallerID:    s.mainClientCallerID,
 			DNSConfig:             e.DNSConfig,
 			Frontends:             e.Frontends,
+			BuildkitLogSink:       e.BuildkitLogSink,
 		},
 		Services:          s.services,
 		Platform:          core.Platform(e.worker.Platforms(true)[0]),
