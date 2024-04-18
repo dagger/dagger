@@ -38,6 +38,12 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
                 }
             }
 
+            impl $(into_id)<$(name)> for $(name) {
+                fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<$(name), DaggerError>> + Send>> {
+                    Box::pin(async move { Ok::<$(name), DaggerError>(self) })
+                }
+            }
+
             impl $(name) {
                 fn quote(&self) -> String {
                     format!(r#""{}""#, self.0.clone())
