@@ -480,7 +480,8 @@ func (jl *Solver) loadUnlocked(ctx context.Context, v, parent Vertex, j *Job, ca
 	} else if debugScheduler {
 		lg := bklog.G(ctx).
 			WithField("vertex_name", v.Name()).
-			WithField("vertex_digest", v.Digest())
+			WithField("vertex_digest", v.Digest()).
+			WithField("actives_digest_key", dgst)
 		if j != nil {
 			lg = lg.WithField("job", j.id)
 		}
