@@ -11,7 +11,6 @@ import {
 import { Commands } from "./commands"
 
 @object()
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class Node {
   @field()
   version = "18-alpine"
