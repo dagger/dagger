@@ -364,13 +364,6 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- end}}
 
-{{- if .HasAvailableLocalFlags}}
-
-{{ "Flags" | toUpperBold }}
-{{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
-
-{{- end}}
-
 {{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
 {{- if eq (len .Groups) 0}}
 
@@ -403,6 +396,13 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 {{- end}}{{/* if not .AllChildCommandsHaveGroup */}}
 {{- end}}{{/* if eq (len .Groups) 0 */}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
+
+{{- if .HasAvailableLocalFlags}}
+
+{{ "Flags" | toUpperBold }}
+{{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
+
+{{- end}}
 
 {{- if .HasAvailableInheritedFlags}}
 
