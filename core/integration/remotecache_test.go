@@ -16,20 +16,9 @@ import (
 const cliBinPath = "/.dagger-cli"
 
 func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName string, index uint8) (devEngineSvc *dagger.Service, endpoint string, err error) {
-	id := identity.NewID()
-	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	devEngineSvc = devEngineContainer(c).
-		WithServiceBinding(cacheName, cache).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithEnvVariable("ENGINE_ID", id).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec([]string{
-			"--network-name", fmt.Sprintf("remotecache%d", index),
-			"--network-cidr", networkCIDR,
-		}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).
-		AsService()
+	devEngineSvc = devEngineContainer(c, 50+index, func(c *dagger.Container) *dagger.Container {
+		return c.WithServiceBinding(cacheName, cache)
+	}).AsService()
 
 	endpoint, err = devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Port:   1234,

@@ -15,7 +15,10 @@ import (
 	"dagger.io/dagger"
 )
 
-func devEngineContainer(c *dagger.Client) *dagger.Container {
+// devEngineContainer returns a nested dev engine.
+//
+// Note! engineInstance *must* be unique for concurrent instances of dagger.
+func devEngineContainer(c *dagger.Client, engineInstance uint8, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that
 	// was set up by the test caller. This is used to spin up additional dev
 	// engines.
@@ -26,8 +29,24 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 		tarPath = "./bin/engine.tar"
 	}
 	devEngineTar := c.Host().File(tarPath)
-	return c.Container().Import(devEngineTar).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
+
+	ctr := c.Container().Import(devEngineTar)
+	for _, with := range withs {
+		ctr = with(ctr)
+	}
+	return ctr.
+		WithEnvVariable("ENGINE_ID", fmt.Sprint(engineInstance)).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExec([]string{
+			"--addr", "tcp://0.0.0.0:1234",
+			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
+			// avoid network conflicts with other tests
+			"--network-name", fmt.Sprintf("dagger%d", engineInstance),
+			"--network-cidr", fmt.Sprintf("10.88.%d.0/24", engineInstance),
+		}, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		})
 }
 
 func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
@@ -52,8 +71,8 @@ func TestEngineExitsZeroOnSignal(t *testing.T) {
 	// engine should shutdown with exit code 0 when receiving SIGTERM
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	_, err := devEngineContainer(c).
-		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
+	_, err := devEngineContainer(c, 101, func(c *dagger.Container) *dagger.Container {
+		return c.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents: `#!/bin/sh
 set -ex
 /usr/local/bin/dagger-engine --debug &
@@ -65,12 +84,8 @@ wait $engine_pid
 exit $?
 `,
 			Permissions: 0o700,
-		}).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec(nil, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).
-		Sync(ctx)
+		})
+	}).Sync(ctx)
 	require.NoError(t, err)
 }
 
@@ -79,22 +94,20 @@ func TestClientWaitsForEngine(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	devEngine := devEngineContainer(c).
-		WithNewFile("/usr/local/bin/slow-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-			Contents: strings.Join([]string{
-				`#!/bin/sh`,
-				`set -eux`,
-				`sleep 15`,
-				`echo my hostname is $(hostname)`,
-				`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
-			}, "\n"),
-			Permissions: 0o700,
-		}).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"}).
-		WithExec(nil, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		})
+	devEngine := devEngineContainer(c, 102, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithNewFile("/usr/local/bin/slow-entrypoint.sh", dagger.ContainerWithNewFileOpts{
+				Contents: strings.Join([]string{
+					`#!/bin/sh`,
+					`set -eux`,
+					`sleep 15`,
+					`echo my hostname is $(hostname)`,
+					`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
+				}, "\n"),
+				Permissions: 0o700,
+			}).
+			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
+	})
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine.AsService())
 	require.NoError(t, err)
@@ -112,12 +125,9 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	c, ctx := connect(t)
 
 	engineName := "my-special-engine"
-	devEngineSvc := devEngineContainer(c).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).AsService()
+	devEngineSvc := devEngineContainer(c, 103, func(c *dagger.Container) *dagger.Container {
+		return c.WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName)
+	}).AsService()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
@@ -137,12 +147,7 @@ func TestDaggerRun(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	devEngine := devEngineContainer(c).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec(nil, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).
-		AsService()
+	devEngine := devEngineContainer(c, 104).AsService()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
@@ -174,17 +179,7 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
-	devEngine := devEngineContainer(c).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec([]string{
-			"--addr", "tcp://0.0.0.0:1234",
-			"--network-cidr", "10.89.0.0/16", // avoid conflicts with other tests
-			"--network-name", "daglabels",
-		}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).
-		AsService()
-
+	devEngine := devEngineContainer(c, 105).AsService()
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
