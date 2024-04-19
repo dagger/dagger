@@ -783,9 +783,11 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 	}
 
 	bkLogsW := io.Discard
+	/* TODO:
 	if cfg.Debug {
 		bkLogsW = os.Stderr
 	}
+	*/
 
 	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{

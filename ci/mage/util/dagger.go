@@ -17,7 +17,7 @@ func DaggerCall(ctx context.Context, args ...string) error {
 	}
 
 	cmd := exec.CommandContext(ctx, binary)
-	cmd.Args = append(cmd.Args, "--debug", "call", "--source=.")
+	cmd.Args = append(cmd.Args, "--progress=plain", "call", "--source=.")
 	if path, err := hostDockerConfig(); err == nil {
 		cmd.Args = append(cmd.Args, "--host-docker-config=file:"+path)
 	}

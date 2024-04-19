@@ -78,7 +78,7 @@ func (t *Test) test(
 		// TODO:
 		// TODO:
 		// TODO:
-		"-run=TestModulePythonLockHashes",
+		"-run=TestModule",
 	}
 
 	if race {
@@ -100,7 +100,7 @@ func (t *Test) test(
 	}
 
 	var eg errgroup.Group
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 2; i++ {
 		eg.Go(func() error {
 			_, err := cmd.
 				WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
