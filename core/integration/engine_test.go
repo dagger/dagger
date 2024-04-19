@@ -148,6 +148,7 @@ func TestDaggerRun(t *testing.T) {
 	require.NoError(t, err)
 
 	runCommand := `
+	export NO_COLOR=1
 	jq -n '{query:"{container{from(address: \"alpine:3.18.2\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
 	dagger run sh -c 'curl -s \
 		-u $DAGGER_SESSION_TOKEN: \
