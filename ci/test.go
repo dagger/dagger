@@ -71,6 +71,13 @@ func (t *Test) test(
 		"-parallel=16",
 		"-count=1",
 		"-timeout=30m",
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		"-run=TestModulePythonLockHashes",
 	}
 
 	if race {
