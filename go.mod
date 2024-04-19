@@ -71,7 +71,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.17.0
-	github.com/tonistiigi/fsutil v0.0.0-20240301111122-7525a1af2bb5
+	github.com/tonistiigi/fsutil v0.0.0-20240418180507-497d33b008ef
 	github.com/urfave/cli v1.22.14
 	github.com/vektah/gqlparser/v2 v2.5.11
 	github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452
@@ -255,5 +255,3 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240123012728-ef4313101c80 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
-
-replace github.com/tonistiigi/fsutil => github.com/jedevc/fsutil v0.0.0-20240415151737-86c9caf572e5
