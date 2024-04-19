@@ -19,7 +19,7 @@ func newGenCmd() *cobra.Command {
 	)
 
 	var cmd = &cobra.Command{
-		Use:    "gen [options] FILE",
+		Use:    "gen [options] <file>",
 		Short:  "Generate CLI reference documentation",
 		Long:   "Generate CLI reference documentation in the given file path.",
 		Args:   cobra.NoArgs,
