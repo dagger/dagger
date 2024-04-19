@@ -186,6 +186,7 @@ type commonInstaller struct {
 	installedSymlinks map[string]string
 }
 
+//nolint:gocyclo
 func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 	cleanups := &cleanups{}
 	defer func() {
@@ -342,6 +343,7 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 	return nil
 }
 
+//nolint:gocyclo
 func (d *commonInstaller) Uninstall(ctx context.Context) error {
 	bundleExists, err := d.ctrFS.PathExists(d.bundlePath)
 	if err != nil {
