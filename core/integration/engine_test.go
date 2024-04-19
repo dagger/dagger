@@ -168,6 +168,7 @@ func TestDaggerRun(t *testing.T) {
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stdout, "3.18.2")
+	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "3.18.2\n"}}}}}`, stdout)
 
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
