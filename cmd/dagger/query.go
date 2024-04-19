@@ -115,37 +115,6 @@ func getKVInput(kvs []string) map[string]interface{} {
 }
 
 func init() {
-	// changing usage template so examples are displayed below flags
-	queryCmd.SetUsageTemplate(`Usage:{{if .Runnable}}
-  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
-  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
-
-Aliases:
-  {{.NameAndAliases}}{{end}}{{if .HasAvailableSubCommands}}{{$cmds := .Commands}}{{if eq (len .Groups) 0}}
-
-Available Commands:{{range $cmds}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{else}}{{range $group := .Groups}}
-
-{{.Title}}{{range $cmds}}{{if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if not .AllChildCommandsHaveGroup}}
-
-Additional Commands:{{range $cmds}}{{if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
-
-Flags:
-{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}{{if .HasExample}}
-
-Examples:
-{{.Example}}{{end}}
-Global Flags:
-{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasHelpSubCommands}}
-
-Additional help topics:{{range .Commands}}{{if .IsAdditionalHelpTopicCommand}}
-  {{rpad .CommandPath .CommandPathPadding}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableSubCommands}}
-
-Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
-`)
-
 	queryCmd.Flags().StringVar(&queryFile, "doc", "", "Read query from file (defaults to reading from stdin)")
 	queryCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "List of query variables, in key=value format")
 	queryCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "Query variables in JSON format (overrides --var)")
