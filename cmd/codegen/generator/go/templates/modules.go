@@ -1007,7 +1007,7 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 	}
 }
 
-var pragmaCommentRegexp = regexp.MustCompile(`\+\s*(\S+?)(?:=(.+))?(?:\n|$)`)
+var pragmaCommentRegexp = regexp.MustCompile(`\+\s*(\S+?)(?:=(.+?))?(?:\r?\n|$)`)
 
 // parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
 func parsePragmaComment(comment string) (data map[string]string, rest string) {
