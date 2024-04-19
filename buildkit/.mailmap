@@ -1,0 +1,53 @@
+# Generate AUTHORS: scripts/generate-authors.sh
+
+# Tip for finding duplicates (besides scanning the output of AUTHORS for name
+# duplicates that aren't also email duplicates): scan the output of:
+#   git log --format='%aE - %aN' | sort -uf
+#
+# For explanation on this file format: man git-shortlog
+
+Aaron L. Xu <likexu@harmonycloud.cn>
+Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp>
+Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp> <suda.kyoto@gmail.com>
+Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp> <suda.akihiro@lab.ntt.co.jp>
+Allen Sun <allen.sun@daocloud.io>
+Andrey Smirnov <smirnov.andrey@gmail.com>
+Andrey Smirnov <smirnov.andrey@gmail.com> <andrey.smirnov@talos-systems.com>
+Bin Liu <liubin0329@gmail.com>
+CrazyMax <github@crazymax.dev>
+CrazyMax <github@crazymax.dev> <1951866+crazy-max@users.noreply.github.com>
+CrazyMax <github@crazymax.dev> <crazy-max@users.noreply.github.com>
+Daniel Nephin <dnephin@gmail.com>
+Daniel Nephin <dnephin@gmail.com> <dnephin@docker.com>
+David Gageot <david.gageot@docker.com>
+David Gageot <david.gageot@docker.com> <david.gageot@doctolib.com>
+Edgar Lee <edgarhinshunlee@gmail.com>
+Edgar Lee <edgarhinshunlee@gmail.com> <edgarl@netflix.com>
+Fernando Miguel <github@FernandoMiguel.net>
+Fernando Miguel <github@FernandoMiguel.net> <FernandoMiguel@users.noreply.github.com>
+Helen Xie <chenjg@harmonycloud.cn>
+Himanshu Pandey <hpandey@pivotal.io>
+Hiromu Nakamura <abctail30@gmail.com>
+Jessica Frazelle <acidburn@microsoft.com>
+Jessica Frazelle <acidburn@microsoft.com> <acidburn@docker.com>
+Kohei Tokunaga <ktokunaga.mail@gmail.com>
+Kohei Tokunaga <ktokunaga.mail@gmail.com> <43872416+ktock@users.noreply.github.com>
+Natasha Jarus <linuxmercedes@gmail.com>
+Nick Santos <nick.santos@docker.com>
+Nick Santos <nick.santos@docker.com> <nicholas.j.santos@gmail.com>
+Nick Santos <nick.santos@docker.com> <nick@tilt.dev>
+Sebastiaan van Stijn <github@gone.nl>
+Sebastiaan van Stijn <github@gone.nl> <thaJeztah@users.noreply.github.com>
+Tibor Vass <tibor@docker.com>
+Tibor Vass <tibor@docker.com> <tiborvass@users.noreply.github.com>
+Tomohiro Kusumoto <zabio1192@gmail.com>
+Tõnis Tiigi <tonistiigi@gmail.com>
+Victor Vieux <victorvieux@gmail.com>
+Victor Vieux <victorvieux@gmail.com> <vieux@docker.com>
+Vincent Demeester <vincent.demeester@docker.com>
+Vincent Demeester <vincent.demeester@docker.com> <vincent@sbr.pm>
+Vlad A. Ionescu <vladaionescu@users.noreply.github.com>
+Vlad A. Ionescu <vladaionescu@users.noreply.github.com> <446771+vladaionescu@users.noreply.github.com>
+Ziv Tsarfati <digger18@gmail.com>
+Ziv Tsarfati <digger18@gmail.com> <digger18@users.noreply.github.com>
+郑泽宇 <perhapszzy@sina.com>

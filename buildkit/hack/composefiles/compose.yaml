@@ -1,0 +1,50 @@
+name: buildkit
+services:
+  buildkit:
+    container_name: buildkit-dev
+    build:
+      context: ../..
+      args:
+        BUILDKIT_DEBUG: 1
+    image: moby/buildkit:local
+    ports:
+      - 127.0.0.1:5000:5000
+      - 127.0.0.1:6060:6060
+    restart: always
+    privileged: true
+    environment:
+      DELVE_PORT: 5000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    configs:
+      - source: buildkit_config
+        target: /etc/buildkit/buildkitd.toml
+    volumes:
+      - buildkit:/var/lib/buildkit
+    depends_on:
+      - otel-collector
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - 127.0.0.1:16686:16686
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.92.0
+    restart: always
+    configs:
+      - source: otelcol_config
+        target: /etc/otelcol-contrib/config.yaml
+    ports:
+      - 127.0.0.1:4317:4317
+    depends_on:
+      - jaeger
+
+volumes:
+  buildkit:
+
+configs:
+  buildkit_config:
+    file: ./buildkitd.toml
+
+  otelcol_config:
+    file: ./otelcol.yaml

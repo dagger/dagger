@@ -1,0 +1,27 @@
+lint:
+  directories:
+    exclude:
+      - vendor
+
+  rules:
+    no_default: true
+
+    add:
+      # syntax
+      - INDENT
+      - SYNTAX_CONSISTENT
+      - QUOTE_CONSISTENT
+
+      # ordering
+      - IMPORTS_SORTED
+
+      # naming
+      - PACKAGE_NAME_LOWER_CASE
+      - RPC_NAMES_UPPER_CAMEL_CASE
+      - RPC_NAMES_CASE
+      - SERVICE_NAMES_UPPER_CAMEL_CASE
+
+  rules_option:
+    indent:
+      style: tab
+      not_insert_newline: true

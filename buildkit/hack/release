@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+
+: "${GITHUB_ACTIONS=}"
+: "${GITHUB_REPOSITORY=}"
+: "${GITHUB_RUN_ID=}"
+
+: "${BUILDX_CMD=docker buildx}"
+: "${DESTDIR=./bin/release}"
+: "${CACHE_FROM=}"
+: "${CACHE_TO=}"
+: "${RELEASE=false}"
+: "${PLATFORMS=}"
+
+if [ -n "$CACHE_FROM" ]; then
+  for cfrom in $CACHE_FROM; do
+    setFlags+=(--set "*.cache-from=$cfrom")
+  done
+fi
+if [ -n "$CACHE_TO" ]; then
+  for cto in $CACHE_TO; do
+    setFlags+=(--set "*.cache-to=$cto")
+  done
+fi
+if [ -n "$PLATFORMS" ]; then
+  setFlags+=(--set "*.platform=$PLATFORMS")
+fi
+if ${BUILDX_CMD} build --help 2>&1 | grep -- '--attest' >/dev/null; then
+  prvattrs="mode=max"
+  if [ "$GITHUB_ACTIONS" = "true" ]; then
+    prvattrs="$prvattrs,builder-id=https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+  fi
+  setFlags+=(--set "*.attest=type=sbom")
+  setFlags+=(--set "*.attest=type=provenance,$prvattrs")
+fi
+if [[ "$RELEASE" = "true" ]] && [[ "$GITHUB_ACTIONS" = "true" ]]; then
+  setFlags+=(--set "*.no-cache-filter=git,gobuild-base")
+fi
+
+output=$(mktemp -d -t buildkit-output.XXXXXXXXXX)
+
+(
+  set -x
+  ${BUILDX_CMD} bake "${setFlags[@]}" --set "*.args.BUILDKIT_MULTI_PLATFORM=true" --set "*.output=$output" release
+)
+
+for pdir in "${output}"/*/; do
+  (
+    cd "$pdir"
+    releasetar=$(find . -name '*.tar.gz')
+    filename=$(basename "${releasetar%.tar.gz}")
+    mv "provenance.json" "${filename}.provenance.json"
+    mv "sbom-binaries.spdx.json" "${filename}.sbom.json"
+    find . -name 'sbom*.json' -exec rm {} \;
+  )
+done
+
+mkdir -p "$DESTDIR"
+mv "$output"/**/* "$DESTDIR/"
+rm -rf "$output"

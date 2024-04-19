@@ -1,0 +1,28 @@
+{
+  "cniVersion": "0.4.0",
+  "name": "buildkitdns",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "buildkitdns0",
+      "isDefaultGateway": true,
+      "ipMasq": true,
+      "hairpinMode": true,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [
+            { "subnet": "10.11.0.0/16" }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "firewall"
+    },
+    {
+      "type": "dnsname",
+      "domainName": "dns.buildkit"
+    }
+  ]
+}

@@ -1,0 +1,246 @@
+# BuildKit maintainers file
+#
+# This file describes the maintainer groups within the moby/buildkit project.
+# More detail on Moby project governance is available in the
+# https://github.com/moby/moby/blob/master/project/GOVERNANCE.md file.
+#
+# It is structured to be consumable by both humans and programs.
+# To extract its contents programmatically, use any TOML-compliant
+# parser.
+#
+
+[Rules]
+
+		[Rules.maintainers]
+
+		title = "What is a maintainer?"
+
+		text = """
+There are different types of maintainers, with different
+responsibilities, but all maintainers have 3 things in common:
+
+1) They share responsibility in the project's success.
+2) They have made a long-term, recurring time investment to improve
+   the project.
+3) They spend that time doing whatever needs to be done, not
+   necessarily what is the most interesting or fun.
+
+Maintainers are often under-appreciated, because their work is harder
+to appreciate.  It's easy to appreciate a really cool and technically
+advanced feature. It's harder to appreciate the absence of bugs, the
+slow but steady improvement in stability, or the reliability of a
+release process. But those things distinguish a good project from a
+great one.
+"""
+
+		[Rules.adding-maintainers]
+
+		title = "How are maintainers added?"
+
+		text = """
+Maintainers are first and foremost contributors that have shown they
+are committed to the long term success of a project. Contributors
+wanting to become maintainers are expected to be deeply involved in
+contributing code, pull request review, and triage of issues in the
+project for more than three months.
+
+Just contributing does not make you a maintainer, it is about building
+trust with the current maintainers of the project and being a person
+that they can depend on and trust to make decisions in the best
+interest of the project.
+
+Periodically, the existing maintainers curate a list of contributors
+that have shown regular activity on the project over the prior
+months. From this list, maintainer candidates are selected.
+
+After a candidate has been announced, the existing maintainers are
+given five business days to discuss the candidate, raise objections
+and cast their vote. Candidates must be approved by at least 66% of
+the current maintainers by adding their vote on the slack
+channel. Only maintainers of the repository that the candidate is
+proposed for are allowed to vote.
+
+If a candidate is approved, a maintainer will contact the candidate to
+invite the candidate to open a pull request that adds the contributor
+to the MAINTAINERS file. The candidate becomes a maintainer once the
+pull request is merged.
+"""
+
+		[Rules.stepping-down-policy]
+
+		title = "Stepping down policy"
+
+		text = """
+Life priorities, interests, and passions can change. If you're a
+maintainer but feel you must remove yourself from the list, inform
+other maintainers that you intend to step down, and if possible, help
+find someone to pick up your work.  At the very least, ensure your
+work can be continued where you left off.
+
+After you've informed other maintainers, create a pull request to
+remove yourself from the MAINTAINERS file.
+"""
+
+		[Rules.inactive-maintainers]
+
+		title = "Removal of inactive maintainers"
+
+		text = """
+Similar to the procedure for adding new maintainers, existing
+maintainers can be removed from the list if they do not show
+significant activity on the project. Periodically, the maintainers
+review the list of maintainers and their activity over the last three
+months.
+
+If a maintainer has shown insufficient activity over this period, a
+neutral person will contact the maintainer to ask if they want to
+continue being a maintainer. If the maintainer decides to step down as
+a maintainer, they open a pull request to be removed from the
+MAINTAINERS file.
+
+If the maintainer wants to remain a maintainer, but is unable to
+perform the required duties they can be removed with a vote of at
+least 66% of the current maintainers.  The voting period is five
+business days. Issues related to a maintainer's performance should be
+discussed with them among the other maintainers so that they are not
+surprised by a pull request removing them.
+"""
+
+		[Rules.DCO]
+
+		title = "Helping contributors with the DCO"
+
+		text = """
+The [DCO or `Sign your work`](
+https://github.com/moby/buildkit/blob/master/CONTRIBUTING.md#sign-your-work)
+requirement is not intended as a roadblock or speed bump.
+
+Some BuildKit contributors are not as familiar with `git`, or have
+used a web based editor, and thus asking them to `git commit --amend
+-s` is not the best way forward.
+
+In this case, maintainers can update the commits based on clause (c)
+of the DCO.  The most trivial way for a contributor to allow the
+maintainer to do this, is to add a DCO signature in a pull requests's
+comment, or a maintainer can simply note that the change is
+sufficiently trivial that it does not substantially change the
+existing contribution - i.e., a spelling change.
+
+When you add someone's DCO, please also add your own to keep a log.
+"""
+
+		[Rules."no direct push"]
+
+		title = "I'm a maintainer. Should I make pull requests too?"
+
+		text = """
+Yes. Nobody should ever push to master directly. All changes should be
+made through a pull request.
+"""
+
+		[Rules.meta]
+
+		title = "How is this process changed?"
+
+		text = "Just like everything else: by making a pull request :)"
+
+
+[Org]
+
+	[Org.Maintainers]
+
+		people = [
+			"akihirosuda",
+			"coryb",
+			"crazy-max",
+			"gabriel-samfira",
+			"hinshun",
+			"ijc",
+			"jedevc",
+			"ktock",
+			"sipsma",
+			"tiborvass",
+			"tonistiigi",
+		]
+
+	[Org.Curators]
+
+	# The curators help ensure that incoming issues and pull requests are properly triaged and
+	# that our various contribution and reviewing processes are respected. With their knowledge of
+	# the repository activity, they can also guide contributors to relevant material or
+	# discussions.
+	#
+	# They are neither code nor docs reviewers, so they are never expected to merge. They can
+	# however:
+	# - close an issue or pull request when it's an exact duplicate
+	# - close an issue or pull request when it's inappropriate or off-topic
+
+		people = [
+			"thajeztah",
+		]
+
+[people]
+
+# A reference list of all people associated with the project.
+# All other sections should refer to people by their canonical key
+# in the people section.
+
+	[people.akihirosuda]
+	Name = "Akihiro Suda"
+	Email = "akihiro.suda.cz@hco.ntt.co.jp"
+	GitHub = "AkihiroSuda"
+
+	[people.coryb]
+	Name = "Cory Bennett"
+	Email = "github@corybennett.org"
+	GitHub = "coryb"
+
+	[people.crazy-max]
+	Name = "Kevin Alvarez"
+	Email = "contact@crazymax.dev"
+	GitHub = "crazy-max"
+
+	[people.gabriel-samfira]
+	Name = "Gabriel Adrian Samfira"
+	Email = "gsamfira@cloudbasesolutions.com"
+	GitHub = "gabriel-samfira"
+
+	[people.hinshun]
+	Name = "Edgar Lee"
+	Email = "edgarhinshunlee@gmail.com"
+	GitHub = "hinshun"
+
+	[people.ijc]
+	Name = "Ian Campbell"
+	Email = "ian.campbell@docker.com"
+	GitHub = "ijc"
+
+	[people.jedevc]
+	Name = "Justin Chadwell"
+	Email = "me@jedevc.com"
+	GitHub = "jedevc"
+
+	[people.ktock]
+	Name = "Kohei Tokunaga"
+	Email = "ktokunaga.mail@gmail.com"
+	GitHub = "ktock"
+
+	[people.sipsma]
+	Name = "Erik Sipsma"
+	Email = "erik@sipsma.dev"
+	GitHub = "sipsma"
+
+	[people.thajeztah]
+	Name = "Sebastiaan van Stijn"
+	Email = "github@gone.nl"
+	GitHub = "thaJeztah"
+
+	[people.tiborvass]
+	Name = "Tibor Vass"
+	Email = "tibor@docker.com"
+	GitHub = "tiborvass"
+
+	[people.tonistiigi]
+	Name = "Tõnis Tiigi"
+	Email = "tonis@docker.com"
+	GitHub = "tonistiigi"

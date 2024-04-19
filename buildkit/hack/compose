@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+# Use to set up a dev environment for buildkit using docker compose.
+# See composefiles/README.md for more details.
+
+. $(dirname $0)/util
+set -eu -o pipefail
+
+filesDir=$(dirname $0)/composefiles
+args=(compose '-f' "$filesDir/compose.yaml")
+
+dockerCmd "${args[@]}" "$@"

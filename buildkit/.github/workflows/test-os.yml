@@ -1,0 +1,232 @@
+name: test-os
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - 'master'
+      - 'v[0-9]+.[0-9]+'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'frontend/dockerfile/docs/**'
+
+env:
+  GO_VERSION: "1.21"
+  DESTDIR: "./bin"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - windows/amd64
+          - freebsd/amd64
+    steps:
+      -
+        name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      -
+        name: Build
+        uses: docker/bake-action@v4
+        with:
+          provenance: false
+          targets: binaries-for-test
+          set: |
+            *.platform=${{ matrix.platform }}
+            *.cache-from=type=gha,scope=binaries-for-test-${{ env.PLATFORM_PAIR }}
+            *.cache-to=type=gha,scope=binaries-for-test-${{ env.PLATFORM_PAIR }}
+      -
+        name: List artifacts
+        run: |
+          tree -nh ${{ env.DESTDIR }}
+      -
+        name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildkit-${{ env.PLATFORM_PAIR }}
+          path: ${{ env.DESTDIR }}/*
+          if-no-files-found: error
+          retention-days: 1
+
+  test-windows-amd64:
+    runs-on: windows-2022
+    needs:
+      - build
+    env:
+      TESTFLAGS: "-v --parallel=6 --timeout=30m"
+      GOTESTSUM_FORMAT: "standard-verbose"
+    strategy:
+      fail-fast: false
+      matrix:
+        worker:
+          - containerd
+        pkg:
+          - ./client
+          - ./cmd/buildctl
+          - ./worker/containerd
+          - ./solver
+          - ./frontend
+          - ./frontend/dockerfile
+        include:
+          -
+            pkg: ./...
+            skip-integration-tests: 1
+    steps:
+      -
+        name: Prepare
+        run: |
+          echo "TEST_REPORT_NAME=${{ github.job }}-$(echo "${{ matrix.pkg }}-${{ matrix.skip-integration-tests }}-${{ matrix.worker }}" | tr -dc '[:alnum:]-\n\r' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          testFlags="${{ env.TESTFLAGS }}"
+          if [ -n "${{ matrix.worker }}" ]; then
+            testFlags="${testFlags} --run=//worker=${{ matrix.worker }}$"
+          fi
+          echo "TESTFLAGS=${testFlags}" >> $GITHUB_ENV
+        shell: bash
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v3
+      -
+        name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+          cache: false
+      -
+        name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: buildkit-windows-amd64
+          path: ${{ github.workspace }}\bin
+      -
+        name: Add bin folder to Path
+        run: |
+          echo "${{ github.workspace }}\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      -
+        name: Test
+        env:
+          TMPDIR: ${{ runner.temp }}
+          SKIP_INTEGRATION_TESTS: ${{ matrix.skip-integration-tests }}
+        run: |
+          mkdir -p ./bin/testreports
+          gotestsum \
+            --jsonfile="./bin/testreports/go-test-report-${{ env.TEST_REPORT_NAME }}.json" \
+            --junitfile="./bin/testreports/junit-report-${{ env.TEST_REPORT_NAME }}.xml" \
+            --packages="${{ matrix.pkg }}" \
+            -- \
+              "-mod=vendor" \
+              "-coverprofile" "./bin/testreports/coverage-${{ env.TEST_REPORT_NAME }}.txt" \
+              "-covermode" "atomic" ${{ env.TESTFLAGS }}
+        shell: bash
+      -
+        name: Send to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ./bin/testreports
+          env_vars: RUNNER_OS
+          flags: unit
+          token: ${{ secrets.CODECOV_TOKEN }}  # used to upload coverage reports: https://github.com/moby/buildkit/pull/4660#issue-2142122533
+      -
+        name: Generate annotations
+        if: always()
+        uses: crazy-max/.github/.github/actions/gotest-annotations@fa6141aedf23596fb8bdcceab9cce8dadaa31bd9
+        with:
+          directory: ./bin/testreports
+      -
+        name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ env.TEST_REPORT_NAME }}
+          path: ./bin/testreports
+          retention-days: 1
+      -
+        name: Dump context
+        if: failure()
+        uses: crazy-max/ghaction-dump-context@v2
+
+  test-freebsd-amd64:
+    runs-on: macos-13
+    needs:
+      - build
+    env:
+      VAGRANT_VAGRANTFILE: hack/Vagrantfile.freebsd13
+      GOOS: freebsd
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: buildkit-freebsd-amd64
+          path: ${{ env.DESTDIR }}
+      -
+        name: Cache Vagrant boxes
+        uses: actions/cache@v4
+        with:
+          path: ~/.vagrant.d/boxes
+          key: ${{ runner.os }}-vagrant-${{ hashFiles('hack/Vagrantfile.freebsd13') }}
+          restore-keys: |
+            ${{ runner.os }}-vagrant-
+      -
+        name: Install vagrant and VirtualBox
+        run: |
+          set -x
+          brew tap hashicorp/tap
+          brew install hashicorp/tap/hashicorp-vagrant
+          brew install --cask virtualbox
+      -
+        name: Check versions
+        run: |
+          set -x
+          vagrant --version
+          VBoxManage -v
+      -
+        name: Set up vagrant
+        run: |
+          vagrant up --no-tty
+      -
+        name: Smoke test
+        uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e  # v3.0.0
+        with:
+          timeout_minutes: 20
+          max_attempts: 5
+          command: |
+            vagrant up --provision-with=test-smoke
+      -
+        name: BuildKit logs
+        if: always()
+        run: |
+          vagrant ssh -- "sudo cat /vagrant/.tmp/logs/buildkitd"
+      -
+        name: Containerd logs
+        if: always()
+        run: |
+          vagrant ssh -- "sudo cat /vagrant/.tmp/logs/containerd"
+      -
+        name: Dump context
+        if: failure()
+        uses: crazy-max/ghaction-dump-context@v2

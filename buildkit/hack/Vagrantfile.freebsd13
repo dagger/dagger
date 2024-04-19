@@ -1,0 +1,78 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.define "fbsd_13_2" do |fbsd_13_2|
+    fbsd_13_2.vm.box = "freebsd/FreeBSD-13.2-RELEASE"
+  end
+
+  config.vm.boot_timeout = 900
+  config.vm.synced_folder ".", "/vagrant", type: "rsync"
+  config.ssh.keep_alive = true
+
+  config.vm.provision "init", type: "shell", run: "once" do |sh|
+    sh.inline = <<~SHELL
+      #!/usr/bin/env bash
+      set -eux -o pipefail
+      kldload nullfs
+      pkg install -y git runj
+      mkdir -p /vagrant/coverage /vagrant/.tmp/logs
+    SHELL
+  end
+
+  config.vm.provision "install-buildkitd", type: "shell", run: "once" do |sh|
+    sh.inline = <<~SHELL
+      #!/usr/bin/env bash
+      set -eux -o pipefail
+      cd /vagrant
+      install -m 755 bin/buildkitd /usr/local/bin/buildkitd
+      type /usr/local/bin/buildkitd
+      buildkitd --version
+    SHELL
+  end
+
+  config.vm.provision "install-buildctl", type: "shell", run: "once" do |sh|
+    sh.inline = <<~SHELL
+      #!/usr/bin/env bash
+      set -eux -o pipefail
+      cd /vagrant
+      install -m 755 bin/buildctl /usr/local/bin/buildctl
+      type /usr/local/bin/buildctl
+    SHELL
+  end
+
+  config.vm.provision "run-containerd", type: "shell", run: "once" do |sh|
+    sh.inline = <<~SHELL
+      #!/usr/bin/env bash
+      set -eux -o pipefail
+      cd /vagrant
+      install -m 755 bin/containerd /bin/containerd
+      containerd --version
+      daemon -o /vagrant/.tmp/logs/containerd containerd
+    SHELL
+  end
+
+  config.vm.provision "run-buildkitd", type: "shell", run: "once" do |sh|
+    sh.inline = <<~SHELL
+      #!/usr/bin/env bash
+      set -eux -o pipefail
+      mkdir -p /run/buildkit
+      daemon -o /vagrant/.tmp/logs/buildkitd /usr/local/bin/buildkitd --addr=unix:///run/buildkit/buildkitd.sock
+      sleep 3
+    SHELL
+  end
+
+  config.vm.provision "test-smoke", type: "shell", run: "never" do |sh|
+    sh.inline = <<~SHELL
+      #!/usr/bin/env bash
+      set -eux -o pipefail
+      mkdir -p /vagrant/.tmp/freebsd-smoke
+      cd /vagrant/.tmp/freebsd-smoke
+      cat > Dockerfile <<EOF
+FROM dougrabson/freebsd-minimal:13
+RUN echo "Hello, buildkit!"
+EOF
+      buildctl build --frontend dockerfile.v0 --local context=. --local dockerfile=.
+    SHELL
+  end
+end

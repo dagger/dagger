@@ -1,0 +1,218 @@
+name: buildkit
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+  push:
+    branches:
+      - 'master'
+      - 'v[0-9]+.[0-9]+'
+    tags:
+      - 'v*'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'frontend/dockerfile/docs/**'
+
+env:
+  GO_VERSION: "1.21"
+  SETUP_BUILDX_VERSION: "latest"
+  SETUP_BUILDKIT_IMAGE: "moby/buildkit:latest"
+  IMAGE_NAME: "moby/buildkit"
+  PLATFORMS: "linux/amd64,linux/arm/v7,linux/arm64,linux/s390x,linux/ppc64le,linux/riscv64"
+  DESTDIR: "./bin"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.prep.outputs.tag }}
+      push: ${{ steps.prep.outputs.push }}
+      platforms: ${{ steps.prep.outputs.platforms }}
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Prepare
+        id: prep
+        run: |
+          TAG=pr
+          PUSH=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TAG=nightly
+            PUSH=push
+          elif [[ $GITHUB_REF == refs/tags/v* ]]; then
+            TAG=${GITHUB_REF#refs/tags/}
+            PUSH=push
+          elif [[ $GITHUB_REF == refs/heads/* ]]; then
+            TAG=$(echo ${GITHUB_REF#refs/heads/} | sed -r 's#/+#-#g')
+            if [ $GITHUB_REF = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+              PUSH=push
+            fi
+          fi
+          if [ "$GITHUB_REPOSITORY" != "moby/buildkit" ]; then
+            PUSH=false
+          fi
+          echo "tag=${TAG}" >>${GITHUB_OUTPUT}
+          echo "push=${PUSH}" >>${GITHUB_OUTPUT}
+          platforms=$(docker buildx bake release --print | jq -cr '.target."release".platforms')
+          echo "platforms=$platforms" >>${GITHUB_OUTPUT}
+
+  binaries:
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJson(needs.prepare.outputs.platforms) }}
+    steps:
+      -
+        name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      -
+        name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v3
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: ${{ env.SETUP_BUILDX_VERSION }}
+          driver-opts: image=${{ env.SETUP_BUILDKIT_IMAGE }}
+          buildkitd-flags: --debug
+      -
+        name: Build
+        run: |
+          make release
+        env:
+          RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          PLATFORMS: ${{ matrix.platform }}
+          CACHE_FROM: type=gha,scope=binaries-${{ env.PLATFORM_PAIR }}
+          CACHE_TO: type=gha,scope=binaries-${{ env.PLATFORM_PAIR }}
+      -
+        name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildkit-${{ env.PLATFORM_PAIR }}
+          path: ${{ env.DESTDIR }}/*
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    uses: ./.github/workflows/.test.yml
+    secrets: inherit
+    needs:
+      - binaries
+    with:
+      cache_scope: build-integration-tests
+      pkgs: ./client ./cmd/buildctl ./worker/containerd ./solver ./frontend
+      kinds: integration
+      codecov_flags: core
+      includes: |
+        - pkg: ./...
+          skip-integration-tests: 1
+          typ: integration gateway
+        - pkg: ./client
+          worker: containerd
+          tags: nydus
+          typ: integration
+        - pkg: ./client
+          worker: oci
+          tags: nydus
+          typ: integration
+        - pkg: ./...
+          tags: nydus
+          skip-integration-tests: 1
+          typ: integration
+
+  image:
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - test
+    strategy:
+      fail-fast: false
+      matrix:
+        target-stage:
+          - ''
+          - rootless
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v3
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: ${{ env.SETUP_BUILDX_VERSION }}
+          driver-opts: image=${{ env.SETUP_BUILDKIT_IMAGE }}
+          buildkitd-flags: --debug
+      -
+        name: Login to DockerHub
+        if: needs.prepare.outputs.push == 'push'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Build ${{ needs.prepare.outputs.tag }}
+        run: |
+          ./hack/images "${{ needs.prepare.outputs.tag }}" "$IMAGE_NAME" "${{ needs.prepare.outputs.push }}"
+        env:
+          RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          TARGET: ${{ matrix.target-stage }}
+          CACHE_FROM: type=gha,scope=image${{ matrix.target-stage }}
+          CACHE_TO: type=gha,scope=image${{ matrix.target-stage }}
+
+  release:
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - test
+      - binaries
+      - image
+    steps:
+      -
+        name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.DESTDIR }}
+          pattern: buildkit-*
+          merge-multiple: true
+      -
+        name: List artifacts
+        run: |
+          tree -nh ${{ env.DESTDIR }}
+      -
+        name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564  # v2.0.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          draft: true
+          files: ${{ env.DESTDIR }}/*
+          name: ${{ needs.prepare.outputs.tag }}

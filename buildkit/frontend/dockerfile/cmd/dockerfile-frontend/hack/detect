@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+usage() {
+  echo "./detect channel"
+  exit 1
+}
+
+if [ "$#" == 0 ]; then
+  usage
+fi
+
+channel=$1
+suffix=""
+
+if [ "$channel" == "mainline" ]; then
+  channel=""
+fi
+
+if [ ! -z "$channel" ]; then
+  suffix="-$channel"
+fi
+
+name=$(git describe --always --tags --match "dockerfile/[0-9]*$suffix")
+
+if [[ ! "$name" =~ "dockerfile" ]]; then
+  name=${name}$suffix
+fi
+
+echo -n $name

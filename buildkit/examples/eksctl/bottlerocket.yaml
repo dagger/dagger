@@ -1,0 +1,25 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: bottlerocket
+  region: us-west-2
+  version: '1.27'
+
+nodeGroups:
+  - name: buildkit
+    desiredCapacity: 1
+    amiFamily: Bottlerocket
+    iam:
+      attachPolicyARNs:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+    bottlerocket:
+      settings:
+        kernel:
+          sysctl:
+            # Adjust the value as needed
+            "user.max_user_namespaces": "16384"

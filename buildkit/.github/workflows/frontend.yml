@@ -1,0 +1,142 @@
+name: frontend
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'master'
+      - 'v[0-9]+.[0-9]+'
+    tags:
+      - 'dockerfile/*'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - 'frontend/dockerfile/docs/**'
+
+env:
+  GO_VERSION: "1.21"
+  SETUP_BUILDX_VERSION: "latest"
+  SETUP_BUILDKIT_TAG: "moby/buildkit:latest"
+  IMAGE_NAME: "docker/dockerfile-upstream"
+  PLATFORMS: "linux/386,linux/amd64,linux/arm/v7,linux/arm64,linux/mips,linux/mipsle,linux/mips64,linux/mips64le,linux/s390x,linux/ppc64le,linux/riscv64"
+
+jobs:
+  test:
+    uses: ./.github/workflows/.test.yml
+    secrets: inherit
+    with:
+      cache_scope: frontend-integration-tests
+      pkgs: ./frontend/dockerfile
+      kinds: |
+        integration
+        dockerfile
+      codecov_flags: dockerfile-frontend
+
+  prepare:
+    runs-on: ubuntu-22.04
+    if: github.event_name != 'schedule'
+    outputs:
+      typ: ${{ steps.prep.outputs.typ }}
+      push: ${{ steps.prep.outputs.push }}
+      tag: ${{ steps.prep.outputs.tag }}
+      tags: ${{ steps.prep.outputs.tags }}
+    steps:
+      -
+        name: Prepare
+        id: prep
+        run: |
+          TYP=master
+          TAG=mainline
+          PUSH=false
+          if [[ $GITHUB_REF == refs/tags/dockerfile/* ]]; then
+            TYP=tag
+            TAG=${GITHUB_REF#refs/tags/}
+            PUSH=push
+          elif [[ $GITHUB_REF == refs/heads/* ]]; then
+            if [ $GITHUB_REF = "refs/heads/${{ github.event.repository.default_branch }}" ]; then
+              PUSH=push
+            fi
+          fi
+          if [ "$GITHUB_REPOSITORY" != "moby/buildkit" ]; then
+            PUSH=false
+          fi
+          echo "typ=${TYP}" >>${GITHUB_OUTPUT}
+          echo "push=${PUSH}" >>${GITHUB_OUTPUT}
+          echo "tag=${TAG}" >>${GITHUB_OUTPUT}
+          if [ "${TYP}" = "master" ]; then
+            echo "tags=$(jq -cn --arg tag "$TAG" '[$tag, "labs"]')" >>${GITHUB_OUTPUT}
+          else
+            echo "tags=$(jq -cn --arg tag "$TAG" '[$tag]')" >>${GITHUB_OUTPUT}
+          fi
+
+  image:
+    runs-on: ubuntu-22.04
+    needs:
+      - test
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJson(needs.prepare.outputs.tags) }}
+    steps:
+      -
+        name: Prepare
+        run: |
+          if [[ "${{ matrix.tag }}" = "labs" ]] || [[ "${{ matrix.tag }}" == *-labs ]]; then
+            echo "CACHE_SCOPE=frontend-labs" >>${GITHUB_ENV}
+          else
+            echo "CACHE_SCOPE=frontend-mainline" >>${GITHUB_ENV}
+          fi
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v3
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: ${{ env.SETUP_BUILDX_VERSION }}
+          driver-opts: image=${{ env.SETUP_BUILDKIT_TAG }}
+          buildkitd-flags: --debug
+      -
+        name: Login to DockerHub
+        uses: docker/login-action@v3
+        if: needs.prepare.outputs.push == 'push'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      -
+        name: Build
+        run: |
+          ./frontend/dockerfile/cmd/dockerfile-frontend/hack/release "${{ needs.prepare.outputs.typ }}" "${{ matrix.tag }}" "$IMAGE_NAME" "${{ needs.prepare.outputs.push }}"
+        env:
+          RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          CACHE_FROM: type=gha,scope=${{ env.CACHE_SCOPE }}
+          CACHE_TO: type=gha,scope=${{ env.CACHE_SCOPE }}
+
+  release:
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/dockerfile')
+    needs:
+      - prepare
+      - test
+      - image
+    steps:
+      -
+        name: GitHub Release
+        uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564  # v2.0.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          draft: true
+          name: ${{ needs.prepare.outputs.tag }}

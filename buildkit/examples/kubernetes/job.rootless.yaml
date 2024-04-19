@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: buildkit
+spec:
+  template:
+    metadata:
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/buildkit: unconfined
+    # see buildkit/docs/rootless.md for caveats of rootless mode
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: prepare
+          image: alpine:3.10
+          command:
+            - sh
+            - -c
+            - "echo FROM hello-world > /workspace/Dockerfile"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      containers:
+        - name: buildkit
+          image: moby/buildkit:master-rootless
+          env:
+            - name: BUILDKITD_FLAGS
+              value: --oci-worker-no-process-sandbox
+          command:
+            - buildctl-daemonless.sh
+          args:
+            - build
+            - --frontend
+            - dockerfile.v0
+            - --local
+            - context=/workspace
+            - --local
+            - dockerfile=/workspace
+          # To push the image to a registry, add
+          # `--output type=image,name=docker.io/username/image,push=true`
+          securityContext:
+            # Needs Kubernetes >= 1.19
+            seccompProfile:
+              type: Unconfined
+            # To change UID/GID, you need to rebuild the image
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: workspace
+              readOnly: true
+              mountPath: /workspace
+            # Dockerfile has `VOLUME /home/user/.local/share/buildkit` by default too,
+            # but the default VOLUME does not work with rootless on Google's Container-Optimized OS
+            # as it is mounted with `nosuid,nodev`.
+            # https://github.com/moby/buildkit/issues/879#issuecomment-1240347038
+            - mountPath: /home/user/.local/share/buildkit
+              name: buildkitd
+      # To push the image, you also need to create `~/.docker/config.json` secret
+      # and set $DOCKER_CONFIG to `/path/to/.docker` directory.
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: buildkitd
+          emptyDir: {}

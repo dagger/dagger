@@ -1,0 +1,10 @@
+Package cap is the libcap API for Linux Capabilities written in
+Go. The official release announcement site for libcap is:
+
+   https://sites.google.com/site/fullycapable/
+
+Like libcap, the cap package is distributed with a "you choose"
+License. Specifically: BSD three clause, or GPL2. See the License
+file.
+
+Andrew G. Morgan <morgan@kernel.org>

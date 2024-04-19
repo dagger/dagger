@@ -1,0 +1,4 @@
+debug = true
+
+[grpc]
+  debugAddress = "0.0.0.0:6060"

@@ -1,0 +1,20 @@
+services:
+  otel-collector:
+    command: >-
+      --config=file:/etc/otelcol-contrib/config.yaml
+      --config=file:/etc/otelcol-contrib/buildx.yaml
+    configs:
+      - source: otelcol_buildx_config
+        target: /etc/otelcol-contrib/buildx.yaml
+
+configs:
+  otelcol_buildx_config:
+    content: |
+      processors:
+        filter/buildx:
+          metrics::metric:
+            - 'instrumentation_scope.name != "github.com/docker/buildx"'
+      exporters::debug::verbosity: detailed
+      service::pipelines::metrics::receivers: [otlp]
+      service::pipelines::metrics::processors: [filter/buildx]
+      service::pipelines::metrics::exporters: [debug]

@@ -1,0 +1,8 @@
+(from "hello-world")
+(env "A" "path")
+(env "B" "another\\\\path")
+(env "C" "trailing\\\\backslash\\\\")
+(env "D" "This should not be appended to C")
+(env "E" "helloworld")
+(env "F" "hello world")
+(env "G" "hello world")

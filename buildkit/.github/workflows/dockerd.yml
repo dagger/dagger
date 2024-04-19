@@ -1,0 +1,134 @@
+name: dockerd
+
+on:
+  # TODO: add event to build on command in PR (e.g., /test-dockerd)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Docker version'
+        required: true
+        default: '25.0.2'
+
+env:
+  SETUP_BUILDX_VERSION: "latest"
+  SETUP_BUILDKIT_IMAGE: "moby/buildkit:latest"
+  TESTFLAGS: "-v --parallel=1 --timeout=30m"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    steps:
+      -
+        name: Prepare
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = `${{ inputs.version }}` || '25.0.2';
+            let build = 'true';
+            try {
+              new URL(version);
+            } catch (e) {
+              build = 'false';
+            }
+            core.exportVariable('DOCKER_VERSION', version);
+            core.exportVariable('DOCKER_BUILD', build);
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: ${{ env.SETUP_BUILDX_VERSION }}
+          driver-opts: image=${{ env.SETUP_BUILDKIT_IMAGE }}
+          buildkitd-flags: --debug
+      -
+        name: Build
+        if: ${{ env.DOCKER_BUILD == 'true' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ env.DOCKER_VERSION }}
+          target: binary
+          outputs: /tmp/moby
+      -
+        name: Rename binary
+        if: ${{ env.DOCKER_BUILD == 'true' }}
+        run: |
+          if [ -L "/tmp/moby/binary-daemon/dockerd" ]; then
+            mv -f $(readlink /tmp/moby/binary-daemon/dockerd) /tmp/moby/dockerd
+          fi
+      -
+        name: Download
+        if: ${{ env.DOCKER_BUILD != 'true' }}
+        run: |
+          mkdir -p /tmp/moby
+          cd /tmp/moby
+          wget -qO- "https://download.docker.com/linux/static/stable/x86_64/docker-${{ env.DOCKER_VERSION }}.tgz" | tar xvz --strip 1
+      -
+        name: Upload dockerd
+        uses: actions/upload-artifact@v4
+        with:
+          name: dockerd
+          path: /tmp/moby/dockerd
+          if-no-files-found: error
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        worker:
+          - dockerd
+          - dockerd-containerd
+        pkg:
+          - ./client
+          - ./cmd/buildctl
+          - ./solver
+          - ./frontend
+          - ./frontend/dockerfile
+        typ:
+          - integration
+        include:
+          - pkg: ./...
+            skip-integration-tests: 1
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v3
+      -
+        name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: ${{ env.SETUP_BUILDX_VERSION }}
+          driver-opts: image=${{ env.SETUP_BUILDKIT_IMAGE }}
+          buildkitd-flags: --debug
+      -
+        name: Download dockerd
+        uses: actions/download-artifact@v4
+        with:
+          name: dockerd
+          path: ./build/
+      -
+        name: Fix dockerd perms
+        run: |
+          chmod +x ./build/dockerd
+      -
+        name: Test
+        run: |
+          ./hack/test ${{ matrix.typ }}
+        env:
+          TEST_DOCKERD: "1"
+          TEST_DOCKERD_BINARY: "./build/dockerd"
+          TESTPKGS: "${{ matrix.pkg }}"
+          TESTFLAGS: "${{ env.TESTFLAGS }} --run=//worker=${{ matrix.worker }}$"
+          SKIP_INTEGRATION_TESTS: "${{ matrix.skip-integration-tests }}"
+          CACHE_FROM: "type=gha,scope=build-integration-tests"
+          BUILDKIT_INTEGRATION_DOCKERD_FLAGS: |
+            --bip=10.66.66.1/24
+            --default-address-pool=base=10.66.66.0/16,size=24

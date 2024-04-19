@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -e
+
+function clean() {
+  docker rmi $(cat $iidfile)
+}
+
+iidfile=$(mktemp -t docker-iidfile.XXXXXXXXXX)
+DOCKER_BUILDKIT=1 docker build --iidfile $iidfile --build-arg BUILDKIT_DEBUG --target dev-env .
+
+trap clean EXIT
+SSH=
+if [ -n "$MOUNT_SSH_AUTH_SOCK" ]; then
+  SSH="-v $SSH_AUTH_SOCK:$SSH_AUTH_SOCK -e SSH_AUTH_SOCK"
+fi
+
+volumes=
+if [ -n "$MOUNT_BUILDKIT_SOURCE" ]; then
+  volumes="-v $(pwd):/src"
+fi
+
+set -x
+docker run $SSH $volumes -it --privileged -v /tmp -e BUILDKIT_REGISTRY_MIRROR_DIR=/root/.cache/registry --rm $(cat $iidfile) ash

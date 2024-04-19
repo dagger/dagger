@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    open-pull-requests-limit: 10
+    directory: "/"
+    schedule:
+      interval: "daily"
+    ignore:
+      # ignore this dependency
+      # it seems a bug with dependabot as pining to commit sha should not
+      # trigger a new version: https://github.com/docker/buildx/pull/2222#issuecomment-1919092153
+      - dependency-name: "docker/docs"
+    labels:
+      - "dependencies"
+      - "bot"

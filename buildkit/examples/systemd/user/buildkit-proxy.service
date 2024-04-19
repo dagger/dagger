@@ -1,0 +1,12 @@
+[Unit]
+Requires=buildkit.service
+After=buildkit.service
+Requires=buildkit-proxy.socket
+After=buildkit-proxy.socket
+
+[Service]
+# need to use proxy because rootlesskit does not forward the fd://3
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd %t/buildkit/rootless
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+TAG=$1
+REPO=$2
+PUSH=$3
+
+. $(dirname $0)/util
+set -eu -o pipefail
+
+: "${RELEASE=false}"
+: "${PLATFORMS=}"
+: "${TARGET=}"
+: "${BUILDKIT_DEBUG=}"
+
+versionTag=$(git describe --always --tags --match "v[0-9]*")
+
+if [[ ! "$versionTag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  versionTag=""
+fi
+
+usage() {
+  echo "usage: $0 <tag> <repo> [push]"
+  exit 1
+}
+
+if [ -z "$TAG" ] || [ -z "$REPO" ]; then
+  usage
+fi
+
+platformFlag=""
+if [ -n "$PLATFORMS" ]; then
+  platformFlag="--platform=$PLATFORMS"
+fi
+
+localmode=""
+if [[ "$TAG" == "local" ]]; then
+  localmode="1"
+  if [ "$PUSH" = "push" ]; then
+    echo >&2 "local images cannot be pushed"
+    exit 1
+  fi
+fi
+
+attestFlags="$(buildAttestFlags)"
+
+outputFlag="--output=type=image,push=false"
+if [ "$PUSH" = "push" ]; then
+  outputFlag="--output=type=image,push=true"
+fi
+if [ -n "$localmode" ]; then
+  outputFlag="--output=type=docker"
+  attestFlags=""
+fi
+
+targetFlag=""
+if [ -n "$TARGET" ]; then
+  targetFlag="--target=$TARGET"
+fi
+
+tagNames="$REPO:$TAG"
+if [ -n "$TARGET" ]; then
+  tagNames="$tagNames-$TARGET"
+fi
+
+if [[ "$versionTag" == "$TAG" ]]; then
+  if [ -n "$TARGET" ]; then
+    tagNames="$tagNames $REPO:$TARGET"
+  else
+    tagNames="$tagNames $REPO:latest"
+  fi
+fi
+
+importCacheFlags=""
+for tagName in $tagNames; do
+  importCacheFlags="$importCacheFlags--cache-from=type=registry,ref=$tagName "
+done
+if [ -n "$cacheFromFlags" ]; then
+  importCacheFlags="$importCacheFlags$cacheFromFlags"
+fi
+if [ -n "$localmode" ]; then
+  importCacheFlags=""
+fi
+
+exportCacheFlags=""
+if [ -n "$cacheToFlags" ]; then
+  exportCacheFlags="$cacheToFlags"
+elif [ "$PUSH" = "push" ]; then
+  exportCacheFlags="$exportCacheFlags--cache-to=type=inline "
+fi
+
+tagFlags=""
+for tagName in $tagNames; do
+  tagFlags="$tagFlags--tag=$tagName "
+done
+
+nocacheFilterFlag=""
+if [[ "$RELEASE" = "true" ]] && [[ "$GITHUB_ACTIONS" = "true" ]]; then
+  nocacheFilterFlag="--no-cache-filter=git,buildkit-export,gobuild-base"
+fi
+
+buildxCmd build --build-arg BUILDKIT_DEBUG $platformFlag $targetFlag $importCacheFlags $exportCacheFlags $tagFlags $outputFlag $nocacheFilterFlag $attestFlags \
+  $currentcontext

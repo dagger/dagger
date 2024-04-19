@@ -1,0 +1,26 @@
+# Run `sysctl -w user.max_user_namespaces=63359` on all the nodes,
+# for errors like "/proc/sys/user/max_user_namespaces needs to be set to non-zero"
+# on running rootless buildkitd pods.
+#
+# This workaround is known to be needed on Bottlerocket OS.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: sysctl-userns
+  name: sysctl-userns
+spec:
+  selector:
+    matchLabels:
+      app: sysctl-userns
+  template:
+    metadata:
+      labels:
+        app: sysctl-userns
+    spec:
+      containers:
+        - name: sysctl-userns
+          image: busybox
+          command: ["sh", "-euxc", "sysctl -w user.max_user_namespaces=63359 && sleep infinity"]
+          securityContext:
+            privileged: true

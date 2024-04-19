@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+. $(dirname $0)/../../../../../hack/util
+set -eu
+
+: "${RELEASE=false}"
+: "${PLATFORMS=}"
+
+usage() {
+  echo "$0 (master|tag) (tag|channel) <repo> [push]"
+  exit 1
+}
+
+if [ $# != 4 ]; then
+  usage
+fi
+
+parseTag() {
+  local prefix=$(echo $1 | cut -d/ -f 1)
+  if [[ "$prefix" != "dockerfile" ]]; then
+    echo "invalid tag $1"
+    exit 1
+  fi
+  local suffix=$(echo $1 | awk -F- '{print $NF}')
+  local tagf=./frontend/dockerfile/release/$suffix/tags
+  if [ "$suffix" == "$1" ] || [ ! -f $tagf ]; then
+    suffix="mainline"
+  fi
+
+  local mainTag=$(echo $1 | cut -d/ -f 2)
+
+  publishedNames=$REPO:$mainTag
+
+  local versioned=""
+  # \d.\d.\d becomes latest
+  if [[ "$mainTag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    publishedNames=${publishedNames},$REPO:latest
+    versioned=1
+  fi
+
+  # \d.\d.\d-channel becomes <channel>
+  if [[ "$mainTag" =~ ^[0-9]+\.[0-9]+\.[0-9]+-$suffix$ ]] && [ -f $tagf ]; then
+    publishedNames=${publishedNames},$REPO:$suffix
+    versioned=1
+  fi
+
+  # \d.\d.\d* -> \d.\d* -> \d* (except "0")
+  if [ "$versioned" == "1" ]; then
+    publishedNames=${publishedNames},$REPO:$(echo $mainTag | sed -E 's#^([0-9]+\.[0-9]+)\.[0-9]+#\1#')
+    if [ "$(echo $mainTag | sed -E 's#^([0-9]+)\.[0-9]+\.[0-9]+.*$#\1#')" != "0" ]; then
+      publishedNames=${publishedNames},$REPO:$(echo $mainTag | sed -E 's#^([0-9]+)\.[0-9]+\.[0-9]+#\1#')
+    fi
+  fi
+
+  TAG=$suffix
+}
+
+TYP=$1
+TAG=$2
+REPO=$3
+PUSH=$4
+
+platformFlag=""
+if [ -n "$PLATFORMS" ]; then
+  platformFlag="--platform=$PLATFORMS"
+fi
+
+pushFlag="push=false"
+if [ "$PUSH" = "push" ]; then
+  pushFlag="push=true"
+fi
+
+nocacheFilterFlag=""
+if [[ "$RELEASE" = "true" ]] && [[ "$GITHUB_ACTIONS" = "true" ]]; then
+  nocacheFilterFlag="--no-cache-filter=base"
+fi
+
+case $TYP in
+"master")
+  tagf=./frontend/dockerfile/release/$TAG/tags
+  if [ ! -f $tagf ]; then
+    echo "invalid release $TAG"
+    exit 1
+  fi
+
+  buildTags=$(cat $tagf)
+  pushTag="master"
+  if [ "$TAG" != "mainline" ]; then
+    pushTag=${pushTag}-$TAG
+  fi
+
+  buildxCmd build $platformFlag $cacheFromFlags $cacheToFlags $nocacheFilterFlag $(buildAttestFlags) \
+    --build-arg "CHANNEL=$TAG" \
+    --build-arg "BUILDTAGS=$buildTags" \
+    --output "type=image,name=$REPO:$pushTag,$pushFlag" \
+    --file "./frontend/dockerfile/cmd/dockerfile-frontend/Dockerfile" \
+    $currentcontext
+  ;;
+"tag")
+  publishedNames=""
+  parseTag $TAG
+  tagf=./frontend/dockerfile/release/$TAG/tags
+  if [ ! -f $tagf ]; then
+    echo "no build tags found for $TAG"
+    exit 1
+  fi
+  buildTags=$(cat $tagf)
+
+  buildxCmd build $platformFlag $cacheFromFlags $cacheToFlags $nocacheFilterFlag $(buildAttestFlags) \
+    --build-arg "CHANNEL=$TAG" \
+    --build-arg "BUILDTAGS=$buildTags" \
+    --output "type=image,\"name=$publishedNames\",$pushFlag" \
+    --file "./frontend/dockerfile/cmd/dockerfile-frontend/Dockerfile" \
+    $currentcontext
+  ;;
+esac

@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+
+. $(dirname $0)/util
+set -eu -o pipefail
+
+: "${ALPINE_VERSION=}"
+: "${GO_VERSION=}"
+: "${BUILDKITD_TAGS=}"
+: "${HTTP_PROXY=}"
+: "${HTTPS_PROXY=}"
+: "${NO_PROXY=}"
+: "${GOBUILDFLAGS=}"
+: "${VERIFYFLAGS=}"
+: "${CGO_ENABLED=}"
+
+: "${TEST_IMAGE_BUILD=1}"
+: "${TEST_IMAGE_ID=buildkit-tests}"
+: "${TEST_INTEGRATION=}"
+: "${TEST_GATEWAY=}"
+: "${TEST_DOCKERFILE=}"
+: "${TEST_DOCKERD=}"
+: "${TEST_DOCKERD_BINARY=$(which dockerd)}"
+: "${TEST_REPORT_SUFFIX=}"
+: "${TEST_KEEP_CACHE=}"
+: "${TESTFLAGS=}"
+
+: "${DOCKERFILE_RELEASES=}"
+: "${BUILDKIT_WORKER_RANDOM=}"
+: "${BUILDKIT_TEST_DISABLE_FEATURES=}"
+
+if [ "$TEST_DOCKERD" == "1" ]; then
+  if [ ! -f "$TEST_DOCKERD_BINARY" ]; then
+    echo >&2 "dockerd binary not found"
+    exit 1
+  fi
+  if [ ! -x "$TEST_DOCKERD_BINARY" ]; then
+    chmod +x "$TEST_DOCKERD_BINARY"
+  fi
+  if ! file "$TEST_DOCKERD_BINARY" | grep "statically linked" >/dev/null; then
+    echo >&2 "dockerd binary needs to be statically linked"
+    exit 1
+  fi
+  if [ -z "$BUILDKIT_TEST_DISABLE_FEATURES" ]; then
+    echo >&2 "WARN: BUILDKIT_TEST_DISABLE_FEATURES not set with TEST_DOCKERD=1. This might cause tests to fail."
+  fi
+fi
+
+if [ "$#" == 0 ]; then TEST_INTEGRATION=1; fi
+
+while test $# -gt 0; do
+  case "$1" in
+    gateway)
+      TEST_GATEWAY=1
+      ;;
+    dockerfile)
+      TEST_DOCKERFILE=1
+      ;;
+    integration)
+      TEST_INTEGRATION=1
+      ;;
+    *)
+      echo "unknown arg $1"
+      ;;
+  esac
+  shift
+done
+
+testReportsDir="$(pwd)/bin/testreports"
+mkdir -p "$testReportsDir"
+testReportsVol="-v $testReportsDir:/testreports"
+gotestsumArgs="--format=standard-verbose --jsonfile=/testreports/go-test-report$TEST_REPORT_SUFFIX.json --junitfile=/testreports/junit-report$TEST_REPORT_SUFFIX.xml"
+gotestArgs="-mod=vendor -coverprofile=/testreports/coverage-report$TEST_REPORT_SUFFIX.txt -covermode=atomic"
+
+if [[ "$GOBUILDFLAGS" == *"-race"* ]]; then
+  if [ "$CGO_ENABLED" != "1" ]; then
+    echo >&2 "go race detector requires CGO_ENABLED=1"
+    exit 1
+  fi
+  # force buildkitd to halt on detected race conditions, which will cause the tests to fail
+  export GORACE="halt_on_error=1"
+  export VERIFYFLAGS="" # prevent -static verification
+fi
+
+if [ "$TEST_IMAGE_BUILD" = "1" ]; then
+  buildxCmd build $cacheFromFlags \
+    --build-arg ALPINE_VERSION \
+    --build-arg GO_VERSION \
+    --build-arg BUILDKITD_TAGS \
+    --build-arg HTTP_PROXY \
+    --build-arg HTTPS_PROXY \
+    --build-arg NO_PROXY \
+    --build-arg GOBUILDFLAGS \
+    --build-arg VERIFYFLAGS \
+    --build-arg CGO_ENABLED \
+    --target "integration-tests" \
+    --output "type=docker,name=$TEST_IMAGE_ID" \
+    $currentcontext
+fi
+
+cacheVolume="buildkit-test-cache"
+if ! docker container inspect "$cacheVolume" >/dev/null 2>/dev/null; then
+  dockerCmd create -v /root/.cache -v /root/.cache/registry -v /go/pkg/mod --name "$cacheVolume" alpine
+fi
+if [ "$TEST_KEEP_CACHE" != "1" ]; then
+  trap 'docker rm -v $cacheVolume' EXIT
+fi
+
+baseCreateFlags="--rm --privileged \
+-v /tmp $testReportsVol \
+--volumes-from=$cacheVolume \
+-e CGO_ENABLED \
+-e GITHUB_REF \
+-e ACTIONS_RUNTIME_TOKEN \
+-e ACTIONS_CACHE_URL \
+-e TEST_DOCKERD \
+-e BUILDKIT_TEST_ENABLE_FEATURES \
+-e BUILDKIT_TEST_DISABLE_FEATURES \
+-e GOTESTSUM_FORMAT \
+-e BUILDKIT_REGISTRY_MIRROR_DIR=/root/.cache/registry \
+-e BUILDKIT_INTEGRATION_DOCKERD_FLAGS \
+-e GORACE"
+
+if [ "$TEST_INTEGRATION" == 1 ]; then
+  cid=$(dockerCmd create $baseCreateFlags \
+    ${BUILDKIT_INTEGRATION_SNAPSHOTTER:+"-eBUILDKIT_INTEGRATION_SNAPSHOTTER"} \
+    -e SKIP_INTEGRATION_TESTS \
+    $TEST_IMAGE_ID \
+    gotestsum $gotestsumArgs --packages="${TESTPKGS:-./...}" -- $gotestArgs ${TESTFLAGS:--v})
+  if [ "$TEST_DOCKERD" = "1" ]; then
+    dockerCmd cp "$TEST_DOCKERD_BINARY" $cid:/usr/bin/dockerd
+  fi
+  dockerCmd start -a $cid
+fi
+
+if [ "$TEST_GATEWAY" == 1 ]; then
+  # Build-test "github.com/moby/buildkit/frontend/gateway/client", which isn't otherwise built by CI
+  # It really only needs buildkit-base. We have integration-tests in $TEST_IMAGE_ID, which is a direct child of buildkit-base.
+  cid=$(dockerCmd create --rm --volumes-from=$cacheVolume --entrypoint="" $TEST_IMAGE_ID go build -v ./frontend/gateway/client)
+  dockerCmd start -a $cid
+fi
+
+DOCKERFILE_RELEASES_CUSTOM=""
+if [ "$TEST_DOCKERFILE" == 1 ]; then
+  if [ -z $DOCKERFILE_RELEASES ]; then
+    DOCKERFILE_RELEASES="mainline labs"
+  else
+    DOCKERFILE_RELEASES_CUSTOM=1
+  fi
+
+  # These tests run only on single random worker by default because the test matrix is big.
+  # If flags are set then this is disabled and you need to use the flags to set specific worker.
+  if [ -z "$BUILDKIT_WORKER_RANDOM" ] && [ -z "$TESTFLAGS" ]; then
+    export BUILDKIT_WORKER_RANDOM=1
+  fi
+
+  for release in $DOCKERFILE_RELEASES; do
+    buildtags=$(cat ./frontend/dockerfile/release/$release/tags)
+    tarout=$(mktemp -t dockerfile-frontend.XXXXXXXXXX)
+
+    buildxCmd build $cacheFromFlags \
+      --build-arg "BUILDTAGS=$buildtags" \
+      --file "./frontend/dockerfile/cmd/dockerfile-frontend/Dockerfile" \
+      --output "type=oci,dest=$tarout" \
+      $currentcontext
+
+    if [ -s $tarout ]; then
+      if [ "$release" = "mainline" ] || [ "$release" = "labs" ] || [ -n "$DOCKERFILE_RELEASES_CUSTOM" ] || [ "$GITHUB_ACTIONS" = "true" ]; then
+        cid=$(dockerCmd create $baseCreateFlags \
+          -e BUILDKIT_WORKER_RANDOM \
+          -e FRONTEND_GATEWAY_ONLY=local:/$release.tar \
+          -e EXTERNAL_DF_FRONTEND=/dockerfile-frontend \
+          $TEST_IMAGE_ID \
+          gotestsum $gotestsumArgs --packages=./frontend/dockerfile -- $gotestArgs --count=1 -tags "$buildtags" ${TESTFLAGS:--v})
+        dockerCmd cp $tarout $cid:/$release.tar
+        if [ "$TEST_DOCKERD" = "1" ]; then
+          dockerCmd cp "$TEST_DOCKERD_BINARY" $cid:/usr/bin/dockerd
+        fi
+        dockerCmd start -a $cid
+      fi
+    fi
+    rm $tarout
+  done
+fi
