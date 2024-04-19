@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -55,7 +56,7 @@ func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*c
 		ResolvedDest: "/",
 	}}
 	for _, m := range spec.Mounts {
-		resolvedDest, err := ctrFS.mountPointPath(m.Destination)
+		resolvedDest, err := ctrFS.resolvedContainerPath(m.Destination)
 		if err != nil {
 			return nil, err
 		}
@@ -123,6 +124,10 @@ func (ctrFS *containerFS) Readlink(name string) (string, error) {
 	return os.Readlink(hostPath)
 }
 
+func (ctrFS *containerFS) EvaluateSymlinks(name string) (string, error) {
+	return ctrFS.resolvedContainerPath(name)
+}
+
 func (ctrFS *containerFS) ReadFile(path string) ([]byte, error) {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
@@ -147,12 +152,66 @@ func (ctrFS *containerFS) Remove(path string) error {
 	return os.Remove(hostPath)
 }
 
-func (ctrFS *containerFS) MkdirAll(path string, perm fs.FileMode) error {
+func (ctrFS *containerFS) RemoveAll(path string) error {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return err
 	}
-	return os.MkdirAll(hostPath, perm)
+	return os.RemoveAll(hostPath)
+}
+
+// MkdirAll is like os.MkdirAll but returns the uppermost container parent dir that was created
+func (ctrFS *containerFS) MkdirAll(path string, perm fs.FileMode) (createdDir string, rerr error) {
+	split := strings.Split(path, "/")
+	curPath := "/"
+	for _, part := range split {
+		if part == "" {
+			continue
+		}
+		curPath = filepath.Join(curPath, part)
+		hostPath, err := ctrFS.hostPath(curPath)
+		if err != nil {
+			return "", err
+		}
+
+		stat, err := os.Stat(hostPath) // purposely resolve symlinks here
+		switch {
+		case err == nil:
+			if !stat.IsDir() {
+				return "", fmt.Errorf("non-dir path part in MkdirAll: %s %s", stat.Mode().Type(), curPath)
+			}
+		case errors.Is(err, os.ErrNotExist):
+			if createdDir == "" {
+				createdDir = curPath
+			}
+			if err := os.Mkdir(hostPath, perm); err != nil {
+				return "", err
+			}
+		default:
+			return "", err
+		}
+	}
+	return createdDir, nil
+}
+
+func (ctrFS *containerFS) MtimeOf(path string) (int64, error) {
+	hostPath, err := ctrFS.hostPath(path)
+	if err != nil {
+		return 0, err
+	}
+	fi, err := os.Lstat(hostPath)
+	if err != nil {
+		return 0, err
+	}
+	return fi.ModTime().UnixNano(), nil
+}
+
+func (ctrFS *containerFS) SetMtime(path string, t int64) error {
+	hostPath, err := ctrFS.hostPath(path)
+	if err != nil {
+		return err
+	}
+	return os.Chtimes(hostPath, time.Time{}, time.Unix(0, t))
 }
 
 func (ctrFS *containerFS) LookPath(cmd string) (string, error) {
@@ -367,22 +426,23 @@ func (ctrFS *containerFS) DirIsEmpty(path string) (bool, error) {
 	return len(dirEnts) == 0, nil
 }
 
-func (ctrFS *containerFS) mountPointPath(containerPath string) (string, error) {
-	// resolveBase is true because runc will follow a symlink if it's the dest of
-	// a mount
+// resolvedContainerPath returns the resolved path in the container for the given path, including
+// resolving any symlinks in the path (including parent dirs and the base path)
+func (ctrFS *containerFS) resolvedContainerPath(containerPath string) (string, error) {
 	containerPath, _, err := ctrFS.resolvePath(containerPath, true, 0)
 	return containerPath, err
 }
 
+// hostPath returns the host path for a given path in the container without resolving
+// symlinks in the base path (parent dir symlinks *are* resolved though), which supports
+// e.g. Lstat on a symlink path
 func (ctrFS *containerFS) hostPath(containerPath string) (string, error) {
-	// resolveBase is false since we want to support e.g. Lstat on a symlink path
-	// (while still resolving symlinks in the parent dirs)
 	_, hostPath, err := ctrFS.resolvePath(containerPath, false, 0)
 	if err != nil {
 		return "", err
 	}
 	if hostPath == "" {
-		// happens when the mount containerPath is under is a special mount (tmpfs, proc, etc.)
+		// happens when the containerPath is under is a special mount (tmpfs, proc, etc.)
 		return "", fmt.Errorf("cannot resolve path %q", containerPath)
 	}
 	return hostPath, nil

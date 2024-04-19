@@ -153,20 +153,20 @@ DNS.1 = server
 			Contents: `ssl_certificate /etc/ssl/certs/server.crt;
 ssl_certificate_key /etc/ssl/private/server.key;
 `}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
-		Contents: `ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+		Contents: fmt.Sprintf(`ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
 ssl_prefer_server_ciphers on;
 ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
 ssl_ecdh_curve secp384r1;
 ssl_session_cache shared:SSL:10m;
 ssl_session_tickets off;
 ssl_stapling_verify on;
-resolver 10.90.0.1 valid=300s;
+resolver 10.%d.0.1 valid=300s;
 resolver_timeout 5s;
 add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
 add_header X-Frame-Options DENY;
 add_header X-Content-Type-Options nosniff;
 ssl_dhparam /etc/ssl/certs/dhparam.pem;
-`}).WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{
+`, netID)}).WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{
 		Contents: `server {
 	listen 80 default_server;
 	listen [::]:80 default_server;
@@ -202,6 +202,7 @@ server {
 		})
 	}
 }
+
 func TestContainerSystemCACerts(t *testing.T) {
 	t.Parallel()
 
@@ -229,6 +230,20 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 			require.NotContains(t, bundleContents, f.caCertContents)
 			require.Equal(t, initialBundleContents, bundleContents)
+		}},
+
+		caCertsTest{"alpine empty diff", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+			ctr := c.Container().From(alpineImage)
+			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
+			ents, err := diff.Glob(ctx, "**/*")
+			require.NoError(t, err)
+			require.Empty(t, ents)
+
+			ctr = ctr.WithExec([]string{"apk", "add", "ca-certificates"})
+			diff = ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
+			ents, err = diff.Glob(ctx, "**/*")
+			require.NoError(t, err)
+			require.Empty(t, ents)
 		}},
 
 		caCertsTest{"alpine non-root user", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
@@ -290,29 +305,29 @@ func TestContainerSystemCACerts(t *testing.T) {
 				WithNewFile("/src/main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
 
-				import (
-					"fmt"
-					"net/http"
-					"io"
-				)
+					import (
+						"fmt"
+						"net/http"
+						"io"
+					)
 
-				func main() {
-					resp, err := http.Get("https://server")
-					if err != nil {
-						panic(err)
+					func main() {
+						resp, err := http.Get("https://server")
+						if err != nil {
+							panic(err)
+						}
+						if resp.StatusCode != 200 {
+							panic(fmt.Sprintf("unexpected status code: %d", resp.StatusCode))
+						}
+						bs, err := io.ReadAll(resp.Body)
+						if err != nil {
+							panic(err)
+						}
+						if string(bs) != "hello" {
+							panic("unexpected response: " + string(bs))
+						}
 					}
-					if resp.StatusCode != 200 {
-						panic(fmt.Sprintf("unexpected status code: %d", resp.StatusCode))
-					}
-					bs, err := io.ReadAll(resp.Body)
-					if err != nil {
-						panic(err)
-					}
-					if string(bs) != "hello" {
-						panic("unexpected response: " + string(bs))
-					}
-				}
-				`}).
+					`}).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
 				WithServiceBinding("server", f.serverCtr.AsService()).
@@ -352,6 +367,20 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 			require.NotContains(t, bundleContents, f.caCertContents)
 			require.Equal(t, initialBundleContents, bundleContents)
+		}},
+
+		caCertsTest{"debian empty diff", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+			ctr := c.Container().From(debianImage)
+			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
+			ents, err := diff.Glob(ctx, "**/*")
+			require.NoError(t, err)
+			require.Empty(t, ents)
+
+			ctr = ctr.WithExec([]string{"sh", "-c", "apt update && apt install -y ca-certificates"})
+			diff = ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
+			ents, err = diff.Glob(ctx, "**/*")
+			require.NoError(t, err)
+			require.Empty(t, ents)
 		}},
 
 		caCertsTest{"debian non-root user", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
@@ -405,29 +434,29 @@ func TestContainerSystemCACerts(t *testing.T) {
 				WithNewFile("/src/main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
 
-					import (
-						"fmt"
-						"net/http"
-						"io"
-					)
+						import (
+							"fmt"
+							"net/http"
+							"io"
+						)
 
-					func main() {
-						resp, err := http.Get("https://server")
-						if err != nil {
-							panic(err)
+						func main() {
+							resp, err := http.Get("https://server")
+							if err != nil {
+								panic(err)
+							}
+							if resp.StatusCode != 200 {
+								panic(fmt.Sprintf("unexpected status code: %d", resp.StatusCode))
+							}
+							bs, err := io.ReadAll(resp.Body)
+							if err != nil {
+								panic(err)
+							}
+							if string(bs) != "hello" {
+								panic("unexpected response: " + string(bs))
+							}
 						}
-						if resp.StatusCode != 200 {
-							panic(fmt.Sprintf("unexpected status code: %d", resp.StatusCode))
-						}
-						bs, err := io.ReadAll(resp.Body)
-						if err != nil {
-							panic(err)
-						}
-						if string(bs) != "hello" {
-							panic("unexpected response: " + string(bs))
-						}
-					}
-					`}).
+						`}).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
 				WithServiceBinding("server", f.serverCtr.AsService()).
@@ -463,6 +492,14 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 			require.NotContains(t, bundleContents, f.caCertContents)
 			require.Equal(t, initialBundleContents, bundleContents)
+		}},
+
+		caCertsTest{"rhel empty diff", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+			ctr := c.Container().From(rhelImage)
+			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
+			ents, err := diff.Glob(ctx, "**/*")
+			require.NoError(t, err)
+			require.Empty(t, ents)
 		}},
 
 		caCertsTest{"rhel non-root user", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {

@@ -24,6 +24,8 @@ type Installer interface {
 	Uninstall(context.Context) error
 	// detect checks if the container is a match for this installer.
 	detect() (bool, error)
+	// initialize sets the installer's initial internal state
+	initialize(*containerFS) error
 }
 
 type executeContainerFunc func(ctx context.Context, args ...string) error
@@ -52,11 +54,14 @@ func NewInstaller(
 	var eg errgroup.Group
 	matchChan := make(chan Installer, 1)
 	for _, installer := range []Installer{
-		newDebianLike(ctrFS),
-		newRhelLike(ctrFS),
+		&debianLike{},
+		&rhelLike{},
 	} {
 		installer := installer
 		eg.Go(func() error {
+			if err := installer.initialize(ctrFS); err != nil {
+				return err
+			}
 			match, err := installer.detect()
 			if err != nil {
 				return err
@@ -101,6 +106,7 @@ type noopInstaller struct{}
 func (noopInstaller) Install(context.Context) error   { return nil }
 func (noopInstaller) Uninstall(context.Context) error { return nil }
 func (noopInstaller) detect() (bool, error)           { return false, nil }
+func (noopInstaller) initialize(*containerFS) error   { return nil }
 
 // Want identifiable separate type for cleanup errors since if those are
 // hit specifically we need to fail to the whole exec (whereas other errors

@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"golang.org/x/sys/unix"
 )
 
 /* TODO:Open questions
@@ -37,13 +39,28 @@ type debianLike struct {
 	*commonInstaller
 }
 
-func newDebianLike(ctrFS *containerFS) *debianLike {
-	return &debianLike{commonInstaller: &commonInstaller{
+func (d *debianLike) initialize(ctrFS *containerFS) error {
+	bundlePath := "/etc/ssl/certs/ca-certificates.crt"
+	resolvedBundlePath, err := ctrFS.EvaluateSymlinks(bundlePath)
+	switch {
+	case err == nil:
+		bundlePath = resolvedBundlePath
+	case errors.Is(err, os.ErrNotExist):
+		// didn't exist, ignore
+	case errors.Is(err, unix.EINVAL):
+		// not a symlink, ignore
+	default:
+		return fmt.Errorf("failed to evaluate symlinks for %s: %w", bundlePath, err)
+	}
+
+	d.commonInstaller = &commonInstaller{
 		ctrFS:           ctrFS,
-		bundlePath:      "/etc/ssl/certs/ca-certificates.crt",
+		bundlePath:      bundlePath,
 		customCACertDir: "/usr/local/share/ca-certificates",
 		updateCmd:       []string{"update-ca-certificates"},
-	}}
+	}
+
+	return nil
 }
 
 func (d *debianLike) detect() (bool, error) {
@@ -84,13 +101,35 @@ type rhelLike struct {
 	*commonInstaller
 }
 
-func newRhelLike(ctrFS *containerFS) *rhelLike {
-	return &rhelLike{commonInstaller: &commonInstaller{
+func (d *rhelLike) initialize(ctrFS *containerFS) error {
+	bundlePath := "/etc/pki/tls/certs/ca-bundle.crt"
+	resolvedBundlePath, err := ctrFS.EvaluateSymlinks(bundlePath)
+	switch {
+	case err == nil:
+		bundlePath = resolvedBundlePath
+	case errors.Is(err, os.ErrNotExist):
+		// didn't exist, ignore
+	case errors.Is(err, unix.EINVAL):
+		// not a symlink, ignore
+	default:
+		return fmt.Errorf("failed to evaluate symlinks for %s: %w", bundlePath, err)
+	}
+
+	d.commonInstaller = &commonInstaller{
 		ctrFS:           ctrFS,
-		bundlePath:      "/etc/pki/tls/certs/ca-bundle.crt",
+		bundlePath:      bundlePath,
 		customCACertDir: "/etc/pki/ca-trust/source/anchors",
-		updateCmd:       []string{"update-ca-trust"},
-	}}
+		updateCmd: []string{"trust", "extract",
+			"--filter=ca-anchors",
+			"--format=pem-bundle",
+			"--purpose=server-auth",
+			"--overwrite",
+			"--comment",
+			bundlePath,
+		},
+	}
+
+	return nil
 }
 
 func (d *rhelLike) detect() (bool, error) {
@@ -129,8 +168,14 @@ type commonInstaller struct {
 
 	// all below are set internally
 	bundleExisted          bool
+	originalBundleMtime    int64
+	updatedBundleMtime     int64
+	createdBundleParentDir string
+
 	customCACertDirExisted bool
-	updateCommandExisted   bool
+	createdCACertDirParent string
+
+	updateCommandExisted bool
 
 	existingCerts  map[string]string
 	installedCerts map[string]string
@@ -153,7 +198,7 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 	var err error
 	d.bundleExisted, err = d.ctrFS.PathExists(d.bundlePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to check if bundle exists: %w", err)
 	}
 
 	d.customCACertDirExisted, err = d.ctrFS.PathExists(d.customCACertDir)
@@ -177,6 +222,10 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 		if err != nil {
 			return fmt.Errorf("failed to read existing bundle: %w", err)
 		}
+		d.originalBundleMtime, err = d.ctrFS.MtimeOf(d.bundlePath)
+		if err != nil {
+			return fmt.Errorf("failed to get mtime of bundle: %w", err)
+		}
 	}
 
 	if d.customCACertDirExisted {
@@ -185,13 +234,12 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 			return fmt.Errorf("failed to read existing custom CA dir: %w", err)
 		}
 	} else {
-		// TODO: track what parent dirs we create so we can clean up fully
-		// TODO: double check perms here
-		if err := d.ctrFS.MkdirAll(d.customCACertDir, 0755); err != nil {
+		d.createdCACertDirParent, err = d.ctrFS.MkdirAll(d.customCACertDir, 0755)
+		if err != nil {
 			return err
 		}
 		cleanups.append(func() error {
-			return d.ctrFS.Remove(d.customCACertDir)
+			return d.ctrFS.RemoveAll(d.createdCACertDirParent)
 		})
 	}
 
@@ -238,32 +286,42 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 		if err := d.ctrFS.Exec(ctx, d.updateCmd...); err != nil {
 			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd, err)
 		}
+		d.updatedBundleMtime, err = d.ctrFS.MtimeOf(d.bundlePath)
+		if err != nil {
+			return fmt.Errorf("failed to get mtime of updated bundle: %w", err)
+		}
 		return nil
 	}
 
-	if !d.bundleExisted {
-		// TODO: track what parent dirs we create so we can clean up fully
-		// TODO: double check perms here
-		if err := d.ctrFS.MkdirAll(filepath.Dir(d.bundlePath), 0755); err != nil {
-			return err
-		}
-		cleanups.append(func() error {
-			return d.ctrFS.Remove(d.bundlePath)
-		})
-	} else {
+	if d.bundleExisted {
 		origBundleContents, err := d.ctrFS.ReadFile(d.bundlePath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read existing bundle: %w", err)
 		}
 		cleanups.append(func() error {
-			// TODO: preserve mtime
-			return d.ctrFS.WriteFile(d.bundlePath, origBundleContents, 0644)
+			if err := d.ctrFS.WriteFile(d.bundlePath, origBundleContents, 0644); err != nil {
+				return err
+			}
+			if err := d.ctrFS.SetMtime(d.bundlePath, d.originalBundleMtime); err != nil {
+				return fmt.Errorf("failed to set mtime of bundle during install: %w", err)
+			}
+			return nil
 		})
+	} else {
+		d.createdBundleParentDir, err = d.ctrFS.MkdirAll(filepath.Dir(d.bundlePath), 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create bundle parent dir: %w", err)
+		}
+		if d.createdBundleParentDir != "" {
+			cleanups.append(func() error {
+				return d.ctrFS.RemoveAll(d.createdBundleParentDir)
+			})
+		}
 	}
 
 	f, err := d.ctrFS.OpenFile(d.bundlePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open bundle for writing: %w", err)
 	}
 	defer f.Close()
 	for installCert := range d.installedCerts {
@@ -277,10 +335,27 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 		}
 		// cleanup handled above with origBundleContents
 	}
+	d.updatedBundleMtime, err = d.ctrFS.MtimeOf(d.bundlePath)
+	if err != nil {
+		return fmt.Errorf("failed to get mtime of updated bundle: %w", err)
+	}
 	return nil
 }
 
 func (d *commonInstaller) Uninstall(ctx context.Context) error {
+	bundleExists, err := d.ctrFS.PathExists(d.bundlePath)
+	if err != nil {
+		return fmt.Errorf("failed to check if bundle exists: %w", err)
+	}
+	var curBundleMtime int64
+	if bundleExists {
+		// grab the mtime of the bundle as set after the user exec before we potentially modify it below
+		curBundleMtime, err = d.ctrFS.MtimeOf(d.bundlePath)
+		if err != nil {
+			return fmt.Errorf("failed to get mtime of updated bundle: %w", err)
+		}
+	}
+
 	// TODO: parallelize symlink+file uninstall
 	for installSymlink := range d.installedSymlinks {
 		destPath := filepath.Join(d.customCACertDir, installSymlink)
@@ -303,28 +378,6 @@ func (d *commonInstaller) Uninstall(ctx context.Context) error {
 		return fmt.Errorf("failed to lookup %s: %w", d.updateCmd[0], lookupErr)
 	}
 
-	// update the bundle using the command if available, otherwise manually remove the certs
-	if updateCommandExists {
-		if err := d.ctrFS.Exec(ctx, d.updateCmd...); err != nil {
-			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd, err)
-		}
-	} else if err := d.ctrFS.RemoveCertsFromCABundle(d.bundlePath, d.installedCerts); err != nil {
-		return err
-	}
-
-	if !d.bundleExisted {
-		// if the bundle didn't exist before, remove it provided it's now empty after removing our installed certs
-		stat, err := d.ctrFS.Stat(d.bundlePath)
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if stat != nil && stat.Size() == 0 {
-			if err := d.ctrFS.Remove(d.bundlePath); err != nil {
-				return err
-			}
-		}
-	}
-
 	// only remove the custom CA dir if it didn't exist before and it expected to have been created or removed
 	// by the exec. We heuristically determine this by checking the before/after state of the update command, which
 	// tells us whether the dir is expected to exist or not.
@@ -337,8 +390,49 @@ func (d *commonInstaller) Uninstall(ctx context.Context) error {
 			return err
 		}
 		if isEmpty {
-			if err := d.ctrFS.Remove(d.customCACertDir); err != nil && !os.IsNotExist(err) {
+			rmDir := d.customCACertDir
+			if d.createdCACertDirParent != "" {
+				rmDir = d.createdCACertDirParent
+			}
+			if err := d.ctrFS.RemoveAll(rmDir); err != nil && !os.IsNotExist(err) {
 				return err
+			}
+		}
+	}
+
+	// update the bundle using the command if available, otherwise manually remove the certs
+	if updateCommandExists {
+		if err := d.ctrFS.Exec(ctx, d.updateCmd...); err != nil {
+			return fmt.Errorf("failed to run %v for install: %w", d.updateCmd, err)
+		}
+	} else if err := d.ctrFS.RemoveCertsFromCABundle(d.bundlePath, d.installedCerts); err != nil {
+		return err
+	}
+
+	switch {
+	case d.bundleExisted && bundleExists:
+		// existed previously and now, if the mtime of the bundle is the same as last we changed it (i.e.,
+		// the user exec didn't modify it), then restore it to its original mtime
+		if curBundleMtime == d.updatedBundleMtime {
+			if err := d.ctrFS.SetMtime(d.bundlePath, d.originalBundleMtime); err != nil {
+				return fmt.Errorf("failed to set mtime of bundle during uninstall: %w", err)
+			}
+		}
+	case !d.bundleExisted && bundleExists:
+		// if the bundle didn't exist before but does now, remove it provided it's now empty after
+		// removing our installed certs above
+		stat, err := d.ctrFS.Stat(d.bundlePath)
+		if err != nil {
+			return err
+		}
+		if stat.Size() == 0 {
+			if err := d.ctrFS.Remove(d.bundlePath); err != nil {
+				return err
+			}
+			if d.createdBundleParentDir != "" {
+				if err := d.ctrFS.RemoveAll(d.createdBundleParentDir); err != nil {
+					return err
+				}
 			}
 		}
 	}

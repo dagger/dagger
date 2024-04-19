@@ -46,7 +46,7 @@ const (
 	stdinPath     = metaMountPath + "/stdin"
 	exitCodePath  = metaMountPath + "/exitCode"
 	runcPath      = "/usr/local/bin/runc"
-	shimPath      = "/_shim"
+	shimPath      = metaMountPath + "/shim"
 
 	errorExitCode = 125
 )
