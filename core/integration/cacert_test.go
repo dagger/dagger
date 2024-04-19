@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +26,7 @@ func customCACertTests(
 	ctx context.Context,
 	t *testing.T,
 	c *dagger.Client,
-	netID int,
+	netID uint8,
 	tests ...caCertsTest,
 ) {
 	t.Helper()
@@ -99,16 +98,9 @@ DNS.1 = server
 		serverKey := genCtr.File("/server.key")
 		dhParam := genCtr.File("/dhparam.pem")
 
-		devEngine := devEngineContainer(c).
-			WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", caRootCert).
-			WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-			WithExec([]string{
-				"--addr", "tcp://0.0.0.0:1234",
-				"--network-cidr", fmt.Sprintf("10.%d.0.0/16", netID), // avoid conflicts with other tests
-				"--network-name", "testcacerts",
-			}, dagger.ContainerWithExecOpts{
-				InsecureRootCapabilities: true,
-			})
+		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", caRootCert)
+		})
 
 		thisRepoPath, err := filepath.Abs("../..")
 		require.NoError(t, err)
