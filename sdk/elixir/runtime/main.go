@@ -48,15 +48,9 @@ func (m *ElixirSdk) ModuleRuntime(
 	}
 
 	mod := normalizeModName(modName)
-	modDepsCache, modBuildCache := mixProjectCaches(dag, "module-"+mod)
-
 	entrypoint := path.Join(ModSourceDirPath, subPath, mod)
-	depsPath := path.Join(entrypoint, "deps")
-	buildPath := path.Join(entrypoint, "_build")
 
 	return ctr.
-		WithMountedCache(depsPath, modDepsCache).
-		WithMountedCache(buildPath, modBuildCache).
 		WithEntrypoint([]string{
 			"mix", "cmd",
 			"--cd", entrypoint,

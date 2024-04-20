@@ -32,7 +32,7 @@ func TestModuleElixirInit(t *testing.T) {
 
 		for _, name := range []string{"My-Module", "MyModule"} {
 			modGen := daggerCliBase(t, c).
-				With(daggerExec("init", "-vv", "--name="+name, "--sdk=elixir"))
+				With(daggerExec("init", "--name="+name, "--sdk=elixir"))
 
 			sourceEnts, err := modGen.Directory("dagger").Entries(ctx)
 			require.NoError(t, err)
@@ -52,13 +52,7 @@ func TestModuleElixirInit(t *testing.T) {
 		c, ctx := connect(t)
 
 		modGen := daggerCliBase(t, c).
-			With(daggerExec("init", "-vv", "--name=bare", "--sdk=elixir", "--source=some/subdir"))
-
-		out, err := modGen.
-			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+			With(daggerExec("init", "--name=bare", "--sdk=elixir", "--source=some/subdir"))
 
 		sourceSubdirEnts, err := modGen.Directory("some/subdir").Entries(ctx)
 		require.NoError(t, err)
@@ -67,5 +61,11 @@ func TestModuleElixirInit(t *testing.T) {
 		sourceRootEnts, err := modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, sourceRootEnts, "src")
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 }
