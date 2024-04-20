@@ -54,8 +54,7 @@ defmodule Dagger.MixProject do
     [
       source_ref: "v#{@version}",
       source_url: @source_url,
-      main: "Dagger",
-      extras: ["getting_started.livemd"]
+      main: "Dagger"
     ]
   end
 end
