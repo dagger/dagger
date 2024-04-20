@@ -70,14 +70,17 @@ func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	introspection, err := t.Dagger.introspection(ctx, installer)
+	if err != nil {
+		return nil, err
+	}
 	gen := t.elixirBase(elixirVersions[0]).
 		With(installer).
-		WithExec([]string{"mix", "run", "scripts/fetch_introspection.exs"}).
 		WithWorkdir("dagger_codegen").
 		WithExec([]string{"mix", "deps.get"}).
 		WithExec([]string{"mix", "escript.build"}).
-		WithExec([]string{"./dagger_codegen", "generate", "--introspection", "../introspection.json", "--outdir", "gen"}).
+		WithMountedFile("/schema.json", introspection).
+		WithExec([]string{"./dagger_codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"}).
 		WithExec([]string{"mix", "format", "gen/*.ex"}).
 		Directory("gen")
 
