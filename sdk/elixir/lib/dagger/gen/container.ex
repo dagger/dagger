@@ -1047,7 +1047,7 @@ defmodule Dagger.Container do
   @doc """
   Retrieves this container with an unset working directory.
 
-  Should default to \"/\".
+  Should default to "/".
   """
   @spec without_workdir(t()) :: Dagger.Container.t()
   def without_workdir(%__MODULE__{} = container) do
