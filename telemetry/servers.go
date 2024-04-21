@@ -213,13 +213,13 @@ func logValue(v *otlpcommonv1.AnyValue) log.Value {
 	case *otlpcommonv1.AnyValue_BoolValue:
 		return log.BoolValue(v.GetBoolValue())
 	case *otlpcommonv1.AnyValue_KvlistValue:
-		kvs := make([]log.KeyValue, len(x.KvlistValue.GetValues()))
+		kvs := make([]log.KeyValue, 0, len(x.KvlistValue.GetValues()))
 		for _, kv := range x.KvlistValue.GetValues() {
 			kvs = append(kvs, logKeyValue(kv))
 		}
 		return log.MapValue(kvs...)
 	case *otlpcommonv1.AnyValue_ArrayValue:
-		vals := make([]log.Value, len(x.ArrayValue.GetValues()))
+		vals := make([]log.Value, 0, len(x.ArrayValue.GetValues()))
 		for _, v := range x.ArrayValue.GetValues() {
 			vals = append(vals, logValue(v))
 		}
