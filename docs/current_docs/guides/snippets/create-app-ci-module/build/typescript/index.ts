@@ -10,11 +10,11 @@ class MyModule {
     return dag
       .node({ ctr: this.buildBaseImage(source) })
       .commands()
-      .build()  
+      .build()
       .directory("./dist")
   }
 
-  /* 
+  /*
    * Run unit tests
    */
   @func()
@@ -29,7 +29,7 @@ class MyModule {
   /*
    * Build base image
    */
-   buildBaseImage(source: Directory): Container {
+  buildBaseImage(source: Directory): Container {
     return dag
       .node({ version: "21" })
       .withNpm()

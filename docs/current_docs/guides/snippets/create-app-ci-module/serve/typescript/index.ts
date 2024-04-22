@@ -1,4 +1,11 @@
-import { dag, Container, Directory, object, func, Service } from "@dagger.io/dagger"
+import {
+  dag,
+  Container,
+  Directory,
+  object,
+  func,
+  Service,
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -59,7 +66,7 @@ class MyModule {
   /*
    * Build base image
    */
-   buildBaseImage(source: Directory): Container {
+  buildBaseImage(source: Directory): Container {
     return dag
       .node({ version: "21" })
       .withNpm()
