@@ -1,11 +1,13 @@
 .dagger:
   image: alpine:latest
   variables:
-    _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/dagger/buildkitd.sock"
+    # assumes the Dagger Cloud token is
+    # in a masked/protected variable named DAGGER_CLOUD_TOKEN
+    # set via the GitLab UI
     DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
   before_script:
     - apk add curl
-    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+    - curl -sfL https://releases.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.0 BIN_DIR=/tmp sh
 build:
   extends: [.dagger]
   script:

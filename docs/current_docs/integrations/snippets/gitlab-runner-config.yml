@@ -6,7 +6,7 @@ data:
   config.toml: |
     concurrent = 10
     [[runners]]
-      environment = ["HOME=/tmp","FF_GITLAB_REGISTRY_HELPER_IMAGE=1"]
+      environment = ["HOME=/tmp","FF_GITLAB_REGISTRY_HELPER_IMAGE=1", "_EXPERIMENTAL_DAGGER_RUNNER_HOST"="unix:///var/run/dagger/buildkitd.sock"]
       name = "GitLab Runner with Dagger"
       url = YOUR-GITLAB-URL
       executor = "kubernetes"
