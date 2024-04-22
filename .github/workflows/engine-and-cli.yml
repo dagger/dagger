@@ -15,6 +15,11 @@ on:
       - docs/**
   # Enable manual trigger for easy debugging
   workflow_dispatch:
+    inputs:
+      runs-on:
+        type: string
+        default: ""
+        required: false
 
 permissions:
   contents: read
@@ -26,7 +31,7 @@ jobs:
     secrets: inherit
     with:
       mage-targets: engine:testrace
-      size: dagger-runner-16c-64g
+      size: ${{ inputs.runs-on != "" && inputs.runs-on || "dagger-runner-16c-64g" }}
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
@@ -44,12 +49,14 @@ jobs:
     secrets: inherit
     with:
       mage-targets: cli:testpublish
+      size: ${{ inputs.runs-on != "" && inputs.runs-on }}
 
   test-publish-engine:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
       mage-targets: engine:testpublish
+      size: ${{ inputs.runs-on != "" && inputs.runs-on }}
 
   scan-engine:
     name: "Scan Engine Image for Vulnerabilities"
@@ -57,4 +64,4 @@ jobs:
     secrets: inherit
     with:
       mage-targets: engine:scan
-
+      size: ${{ inputs.runs-on != "" && inputs.runs-on }}
