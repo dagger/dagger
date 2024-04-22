@@ -30,7 +30,10 @@ func (m *MyModule) Build(source *Directory) *Container {
 // return result of unit tests
 func (m *MyModule) Test(ctx context.Context, source *Directory) (string, error) {
 	return m.Build(source).
-		WithExec([]string{"./vendor/bin/phpunit"}).
+		WithEnvVariable("PATH", "./vendor/bin:$PATH", ContainerWithEnvVariableOpts{
+			Expand: true,
+		}).
+		WithExec([]string{"phpunit"}).
 		Stdout(ctx)
 }
 
