@@ -306,9 +306,15 @@ func main() { //nolint:gocyclo
 		// TODO:
 		// TODO:
 		// TODO:
+		lch := make(chan time.Time, 999999)
+		go func() {
+			for t := range time.Tick(200 * time.Millisecond) {
+				lch <- t
+			}
+		}()
 		go func() {
 			i := 0
-			for range time.Tick(100 * time.Millisecond) {
+			for range lch {
 				bklog.G(ctx).Debugf("LOG SENTINEL: %d", i)
 				i++
 			}
