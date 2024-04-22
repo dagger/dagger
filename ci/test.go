@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 
 	"github.com/moby/buildkit/identity"
@@ -94,7 +97,7 @@ func (t *Test) test(
 
 	args = append(args, pkg)
 
-	cmd, err := t.testCmd(ctx)
+	cmd, stateVol, err := t.testCmd(ctx)
 	if err != nil {
 		return err
 	}
@@ -111,10 +114,24 @@ func (t *Test) test(
 			return err
 		})
 	}
-	return eg.Wait()
+	err = eg.Wait()
+	if _, exportErr := dag.Container().From("alpine:3.18").
+		WithMountedCache("/state", stateVol).
+		WithExec([]string{"cp", "/state/engine.log", "/engine.log"}).
+		File("/engine.log").
+		Export(ctx, "engine.log"); exportErr != nil {
+		return fmt.Errorf("failed to export engine.log: %w", exportErr)
+	}
+	f, fErr := os.Open("engine.log")
+	if fErr != nil {
+		return fmt.Errorf("failed to open engine.log: %w", fErr)
+	}
+	defer f.Close()
+	io.Copy(os.Stdout, f)
+	return err
 }
 
-func (t *Test) testCmd(ctx context.Context) (*Container, error) {
+func (t *Test) testCmd(ctx context.Context) (*Container, *CacheVolume, error) {
 	engine := t.Dagger.Engine().
 		WithConfig(`registry."registry:5000"`, `http = true`).
 		WithConfig(`registry."privateregistry:5000"`, `http = true`).
@@ -124,12 +141,12 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithArg(`network-cidr`, `10.88.0.0/16`)
 	devEngine, err := engine.Container(ctx, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	devBinary, err := t.Dagger.CLI().File(ctx, "")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// This creates an engine.tar container file that can be used by the integration tests.
@@ -145,12 +162,13 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 			Permissions: 0755,
 		})
 
+	stateVol := dag.CacheVolume("dagger-dev-engine-test-state" + identity.NewID())
 	registrySvc := registry()
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithMountedCache(distconsts.EngineDefaultStateDir, stateVol).
 		WithExec(nil, ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).
@@ -158,7 +176,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 
 	endpoint, err := devEngineSvc.Endpoint(ctx, ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cliBinPath := "/.dagger-cli"
@@ -186,7 +204,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		// this avoids rate limiting in our ci tests
 		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.HostDockerConfig)
 	}
-	return tests, nil
+	return tests, stateVol, nil
 }
 
 func registry() *Service {
