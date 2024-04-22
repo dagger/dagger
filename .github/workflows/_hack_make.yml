@@ -12,6 +12,13 @@ on:
         type: boolean
         default: false
         required: false
+      timeout:
+        description: "How many minutes to timeout after"
+        type: number
+        required: false
+        # none of our jobs should take longer than a hour to run (and if they do,
+        # should require *explicit* config)
+        default: 60  
       size:
         type: string
         default: "dagger-runner-2c-8g"
@@ -49,9 +56,11 @@ jobs:
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
           fi
           ./hack/make engine:connect
+        timeout-minutes: ${{ inputs.timeout }}
       - name: ${{ inputs.mage-targets }}
         run: |
           ./hack/make ${{ inputs.mage-targets }}
+        timeout-minutes: ${{ inputs.timeout }}
 
   # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
   dagger-runner:

@@ -24,3 +24,4 @@ jobs:
     secrets: inherit
     with:
       mage-targets: helm:test
+      timeout: 10
