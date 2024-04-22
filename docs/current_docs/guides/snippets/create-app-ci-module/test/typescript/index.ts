@@ -2,7 +2,7 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  /* 
+  /*
    * Run unit tests
    */
   @func()
@@ -17,7 +17,7 @@ class MyModule {
   /*
    * Build base image
    */
-   buildBaseImage(source: Directory): Container {
+  buildBaseImage(source: Directory): Container {
     return dag
       .node({ version: "21" })
       .withNpm()
