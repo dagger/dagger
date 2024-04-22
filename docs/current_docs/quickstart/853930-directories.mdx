@@ -65,10 +65,10 @@ dagger
 
 This does look like a compiled binary. Great!
 
-Next, export the directory to the host filesystem. You can do this by using the global `--output` flag to export the directory to a custom path (`./my-dagger-build`) on the host:
+Next, export the directory to the host filesystem. You can do this by using the global `-o` (shorthand for `--output`) flag to export the directory to a custom path (`./my-dagger-build`) on the host:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger --os=$(uname -s | awk '{print tolower($0)}') --output=./my-dagger-build
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger --os=$(uname -s | awk '{print tolower($0)}') -o=./my-dagger-build
 ```
 
 Validate the exported binary by calling it:
