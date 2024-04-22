@@ -1,20 +1,14 @@
 import { NodeSDK } from "@opentelemetry/sdk-node"
 import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions"
 import { Resource } from "@opentelemetry/resources"
-import {
-  BatchSpanProcessor,
-  NodeTracerProvider,
-} from "@opentelemetry/sdk-trace-node"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc"
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node"
 import * as opentelemetry from "@opentelemetry/api"
 import { SpanStatusCode } from "@opentelemetry/api"
-import { credentials } from "@grpc/grpc-js"
 
-// Initialiaze the OTLP exporter, it takes his configuration from
-// the environment variables prefixed by "OTLP_"
-const exporter = new OTLPTraceExporter({
-  credentials: credentials.createInsecure(),
-})
+// Look for variables prefixed with OTEL to see if OTEL is enabled
+const OTEL_ENABLED = Object.keys(process.env).some((key) =>
+  key.startsWith("OTEL_"),
+)
 
 // Create the node SDK with the context manager, the resource and the exporter.
 const sdk = new NodeSDK({
@@ -23,8 +17,10 @@ const sdk = new NodeSDK({
   }),
 })
 
-// Register the SDK to the OpenTelemetry API
-sdk.start()
+// Register the SDK to the OpenTelemetry API if OTEL is enabled
+if (OTEL_ENABLED) {
+  sdk.start()
+}
 
 // The TypeScript SDK tracer to use globally.
 export const tracer = opentelemetry.trace
@@ -57,7 +53,7 @@ export function getContext() {
  * Execute the functions with a custom span with the given name using startActiveSpan.
  * The function executed will use the parent context of the function (it can be another span
  * or the main function).
- * 
+ *
  * @param name The name of the span
  * @param fn The functions to execute
  *
@@ -93,6 +89,7 @@ export async function withTracingSpan<T>(
         throw e
       } finally {
         span.end()
+        await forceFlush()
       }
     })
   })

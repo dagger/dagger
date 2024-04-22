@@ -1,3 +1,3 @@
-import { withTracingSpan } from "./otlp.js"
+import { withTracingSpan } from "./telemetry.js"
 
 export { withTracingSpan }

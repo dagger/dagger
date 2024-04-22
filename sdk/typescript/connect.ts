@@ -3,7 +3,7 @@ import { Client } from "./api/client.gen.js"
 import { ConnectOpts } from "./connectOpts.js"
 import { Context, defaultContext } from "./context/context.js"
 import { CLI_VERSION } from "./provisioning/index.js"
-import { getContext } from "./telemetry/otlp.js"
+import { getContext } from "./telemetry/telemetry.js"
 
 export type CallbackFct = (client: Client) => Promise<void>
 

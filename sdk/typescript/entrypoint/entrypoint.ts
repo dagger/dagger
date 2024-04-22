@@ -10,8 +10,7 @@ import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
-import { getContext, tracer, forceFlush } from "../telemetry/otlp.js"
-import { context, SpanStatusCode } from "@opentelemetry/api"
+import { withTracingSpan } from "../telemetry/index.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -37,29 +36,10 @@ export async function entrypoint() {
       let result: any
 
       if (parentName === "") {
-        result = await context.with(getContext(), async () => {
-          return tracer.startActiveSpan(
-            "typescript module registration",
-            async (span) => {
-              try {
-                // It's a registration, we register the module and assign the module id
-                // to the result
-                return await register(files, scanResult)
-              } catch (e) {
-                if (e instanceof Error) {
-                  span.setStatus({
-                    code: SpanStatusCode.ERROR,
-                    message: e.message,
-                  })
-                }
-                throw e
-              } finally {
-                span.end()
-                await forceFlush()
-              }
-            },
-          )
-        })
+        result = await withTracingSpan(
+          "typescript module registration",
+          async () => await register(files, scanResult),
+        )
       } else {
         // Invocation
         const fnName = await fnCall.name()
@@ -75,41 +55,30 @@ export async function entrypoint() {
 
         await load(files)
 
-        result = await context.with(getContext(), async () => {
-          return await tracer.startActiveSpan(
+        try {
+          result = await withTracingSpan(
             "typescript module execution",
-            {
-              attributes: {
+            async (span) => {
+              span.setAttributes({
                 "dagger.io/ui.mask": true,
                 "dagger.io/ui.passthrough": true,
-              },
-            },
-            async (span) => {
-              try {
-                return await invoke(scanResult, {
-                  parentName,
-                  fnName,
-                  parentArgs,
-                  fnArgs: args,
-                })
-              } catch (e) {
-                if (e instanceof Error) {
-                  console.error(`${e.name}: ${e.message}`)
+              })
 
-                  span.setStatus({
-                    code: SpanStatusCode.ERROR,
-                    message: e.message,
-                  })
-                }
-
-                process.exit(1)
-              } finally {
-                span.end()
-                await forceFlush()
-              }
+              return await invoke(scanResult, {
+                parentName,
+                fnName,
+                parentArgs,
+                fnArgs: args,
+              })
             },
           )
-        })
+        } catch (e) {
+          if (e instanceof Error) {
+            console.error(`Error: ${e.message}`)
+          } else {
+            console.error(e)
+          }
+        }
       }
 
       // If result is set, we stringify it
