@@ -303,6 +303,17 @@ func main() { //nolint:gocyclo
 		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
+		// TODO:
+		// TODO:
+		// TODO:
+		go func() {
+			i := 0
+			for range time.Tick(100 * time.Millisecond) {
+				bklog.G(ctx).Debugf("LOG SENTINEL: %d", i)
+				i++
+			}
+		}()
+
 		if cfg.GRPC.DebugAddress != "" {
 			if err := setupDebugHandlers(cfg.GRPC.DebugAddress); err != nil {
 				return err
