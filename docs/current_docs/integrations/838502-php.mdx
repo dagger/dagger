@@ -65,13 +65,13 @@ Update the generated `dagger/src/index.ts` file with the following code:
 The code sample above is illustrative only. Modify it to your application's specific requirements.
 :::
 
-Here is an example of calling the `Test()` Dagger Function to run an application's unit tests:
+Here is an example of calling the Dagger Function to run an application's unit tests:
 
 ```shell
-dagger call publish --source=.
+dagger call test --source=.
 ```
 
-Here is an example of calling the `Publish()` Dagger Function to publish the application image to Docker Hub. Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub credentials.
+Here is an example of calling the Dagger Function to publish the application image to Docker Hub. Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub credentials.
 
 ```shell
 export REGISTRY_PASSWORD=DOCKER-HUB-PASSWORD

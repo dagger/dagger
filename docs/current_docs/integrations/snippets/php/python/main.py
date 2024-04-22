@@ -32,8 +32,6 @@ class MyModule:
             .with_workdir("/var/www")
             .with_exec(["chown", "-R", "www-data:www-data", "/var/www"])
             .with_exec(["chmod", "-R", "775", "/var/www"])
-            # uncomment this to use a custom entrypoint file
-            # .with_exec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
             .with_exec(
                 [
                     "sh",
@@ -65,11 +63,12 @@ class MyModule:
             .with_label("org.opencontainers.image.title", "PHP with Dagger")
             .with_label("org.opencontainers.image.version", version)
             # uncomment this to use a custom entrypoint file
+            # .with_exec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
             # .with_entrypoint(["/var/www/docker-entrypoint.sh"])
         )
 
         address = await image.with_registry_auth(
             registry_address, registry_username, registry_password
-        ).publish(f"{registry_username}/{image_name}")
+        ).publish(f"{registry_address}/{registry_username}/{image_name}")
 
         return address

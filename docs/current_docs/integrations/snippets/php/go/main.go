@@ -17,12 +17,11 @@ func (m *MyModule) Build(source *Directory) *Container {
 		WithExec([]string{"sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"}).
 		WithExec([]string{"sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"}).
 		WithExec([]string{"a2enmod", "rewrite"}).
-		WithDirectory("/var/www", source.WithoutDirectory("dagger")).
+		WithDirectory("/var/www", source.WithoutDirectory("dagger"), ContainerWithDirectoryOpts{
+			Owner: "www-data",
+		}).
 		WithWorkdir("/var/www").
-		WithExec([]string{"chown", "-R", "www-data:www-data", "/var/www"}).
 		WithExec([]string{"chmod", "-R", "775", "/var/www"}).
-		// uncomment this to use a custom entrypoint file
-		//WithExec([]string{"chmod", "+x", "/var/www/docker-entrypoint.sh"}).
 		WithExec([]string{"sh", "-c", "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"}).
 		WithExec([]string{"composer", "install"})
 }
@@ -43,9 +42,10 @@ func (m *MyModule) Publish(ctx context.Context, source *Directory, version strin
 		WithLabel("org.opencontainers.image.title", "PHP with Dagger").
 		WithLabel("org.opencontainers.image.version", version)
 		// uncomment this to use a custom entrypoint file
+		// .WithExec([]string{"chmod", "+x", "/var/www/docker-entrypoint.sh"}).
 		// .WithEntrypoint([]string{"/var/www/docker-entrypoint.sh"})
 
 	return image.
 		WithRegistryAuth(registryAddress, registryUsername, registryPassword).
-		Publish(ctx, fmt.Sprintf("%s/%s", registryUsername, imageName))
+		Publish(ctx, fmt.Sprintf("%s/%s/%s", registryAddress, registryUsername, imageName))
 }

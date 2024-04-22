@@ -36,8 +36,6 @@ class MyModule {
         .withWorkdir("/var/www")
         .withExec(["chown", "-R", "www-data:www-data", "/var/www"])
         .withExec(["chmod", "-R", "775", "/var/www"])
-        // uncomment this to use a custom entrypoint file
-        // .withExec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
         .withExec([
           "sh",
           "-c",
@@ -70,12 +68,13 @@ class MyModule {
     const image = this.build(source)
       .withLabel("org.opencontainers.image.title", "Laravel with Dagger")
       .withLabel("org.opencontainers.image.version", version)
-    // uncomment this to use a custom entrypoint file
-    //.withEntrypoint(["/var/www/docker-entrypoint.sh"])
+      // uncomment this to use a custom entrypoint file
+      // .withExec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
+      // .withEntrypoint(["/var/www/docker-entrypoint.sh"])
 
     const address = await image
       .withRegistryAuth(registryAddress, registryUsername, registryPassword)
-      .publish(`${registryUsername}/${imageName}`)
+      .publish(`${registryAddress}/${registryUsername}/${imageName}`)
 
     return address
   }
