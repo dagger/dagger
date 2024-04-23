@@ -275,7 +275,10 @@ cd ..
 ./hack/make engine:test
 
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+
 # Update .github/workflows/_hack_make.yml dagger-version default to $ENGINE_VERSION
+# Update docs/current_docs files to point to new dagger version
+
 # Commit & push
 
 # Test using the just-released CLI
