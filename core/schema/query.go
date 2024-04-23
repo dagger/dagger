@@ -50,6 +50,9 @@ func (s *querySchema) Install() {
 			ArgDoc("description", "Description of the sub-pipeline.").
 			ArgDoc("labels", "Labels to apply to the sub-pipeline."),
 
+		dagql.Func("version", s.version).
+			Doc(`Get the current Dagger Engine version.`),
+
 		dagql.Func("checkVersionCompatibility", s.checkVersionCompatibility).
 			Doc(`Checks if the current Dagger Engine is compatible with an SDK's required version.`).
 			ArgDoc("version", "Version required by the SDK."),
@@ -64,6 +67,10 @@ type pipelineArgs struct {
 
 func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
 	return parent.WithPipeline(args.Name, args.Description), nil
+}
+
+func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
+	return engine.Version, nil
 }
 
 type checkVersionCompatibilityArgs struct {

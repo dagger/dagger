@@ -383,3 +383,9 @@ func TypeDef() *dagger.TypeDef {
 	client := initClient()
 	return client.TypeDef()
 }
+
+// Get the current Dagger Engine version.
+func Version(ctx context.Context) (string, error) {
+	client := initClient()
+	return client.Version(ctx)
+}
