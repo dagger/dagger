@@ -96,13 +96,13 @@ func (build *Builder) WithUbuntuBase() *Builder {
 
 func (build *Builder) WithAlpineBase() *Builder {
 	b := *build
-	build.base = "alpine"
+	b.base = "alpine"
 	return &b
 }
 
 func (build *Builder) WithGPUSupport() *Builder {
 	b := *build
-	build.gpuSupport = true
+	b.gpuSupport = true
 	return &b
 }
 
