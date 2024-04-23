@@ -32,15 +32,16 @@ class MyModule {
           "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf",
         ])
         .withExec(["a2enmod", "rewrite"])
-        .withDirectory("/var/www", source.withoutDirectory("dagger"))
+        .withDirectory("/var/www", source.withoutDirectory("dagger"), {owner: "www-data"})
         .withWorkdir("/var/www")
-        .withExec(["chown", "-R", "www-data:www-data", "/var/www"])
         .withExec(["chmod", "-R", "775", "/var/www"])
         .withExec([
           "sh",
           "-c",
           "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
         ])
+        .withMountedCache("/root/.composer/cache", dag.cacheVolume("composer-cache"))
+        .withMountedCache("/var/www/vendor", dag.cacheVolume("composer-vendor-cache"))
         .withExec(["composer", "install"])
     )
   }
@@ -50,7 +51,7 @@ class MyModule {
    */
   @func()
   async test(source: Directory): Promise<string> {
-    return await this.build(source).withExec(["./vendor/bin/phpunit"]).stdout()
+    return await this.build(source).withEnvVariable("PATH", "./vendor/bin:$PATH", {expand:true}).withExec(["phpunit"]).stdout()
   }
 
   /*

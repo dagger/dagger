@@ -28,9 +28,10 @@ class MyModule:
                 ]
             )
             .with_exec(["a2enmod", "rewrite"])
-            .with_directory("/var/www", source.without_directory("dagger"))
+            .with_directory(
+                "/var/www", source.without_directory("dagger"), owner="www-data"
+            )
             .with_workdir("/var/www")
-            .with_exec(["chown", "-R", "www-data:www-data", "/var/www"])
             .with_exec(["chmod", "-R", "775", "/var/www"])
             .with_exec(
                 [
@@ -45,7 +46,12 @@ class MyModule:
     @function
     async def test(self, source: dagger.Directory) -> str:
         """Return result of unit tests"""
-        return await self.build(source).with_exec(["./vendor/bin/phpunit"]).stdout()
+        return (
+            await self.build(source)
+            .with_env_variable("PATH", "./vendor/bin:$PATH", expand=True)
+            .with_exec(["phpunit"])
+            .stdout()
+        )
 
     @function
     async def publish(
