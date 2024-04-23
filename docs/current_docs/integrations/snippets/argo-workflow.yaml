@@ -26,7 +26,7 @@ spec:
             mode: 0755
             http:
               # replace with the latest available version of Dagger for your platform
-              url: https://github.com/dagger/dagger/releases/download/vX.Y.Z/dagger_vX.Y.Z_PLATFORM_ARCH.tar.gz
+              url: https://github.com/dagger/dagger/releases/download/vX.Y.Z/dagger_vX.Y.Z_OS_ARCH.tar.gz
       container:
         image: alpine:latest
         command: ["sh", "-c"]
