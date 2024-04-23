@@ -106,6 +106,8 @@ class _DaggerPropagationConfigurator(_BaseConfigurator):
 
 
 def _init_tracing(exporters: dict[str, type[SpanExporter]]):
+    # By default this is a NoOpTracerProvider, unless OTEL_PYTHON_TRACER_PROVIDER
+    # is set, which is done in _prepare_env.
     provider = get_tracer_provider()
 
     if isinstance(provider, TracerProvider):
