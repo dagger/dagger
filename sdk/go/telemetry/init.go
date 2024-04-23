@@ -87,7 +87,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 				// TODO: use const
 				// TODO: use const
 				// TODO: use const
-				otlptracegrpc.WithDialOption(grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588))),
+				otlptracegrpc.WithDialOption(grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588))),
 			}
 			if u.Scheme == "unix" {
 				dialer := func(ctx context.Context, addr string) (net.Conn, error) {
@@ -100,7 +100,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 						// TODO: use const
 						// TODO: use const
 						// TODO: use const
-						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588)),
 					),
 					otlptracegrpc.WithInsecure())
 			}

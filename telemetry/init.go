@@ -144,7 +144,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 					// TODO: use const
 					// TODO: use const
 					// TODO: use const
-					grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+					grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588)),
 				),
 			}
 			if u.Scheme == "unix" {
@@ -158,7 +158,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 						// TODO: use const
 						// TODO: use const
 						// TODO: use const
-						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588)),
 					),
 					otlptracegrpc.WithInsecure())
 			}
@@ -237,7 +237,7 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 					// TODO: use const
 					// TODO: use const
 					// TODO: use const
-					grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+					grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588)),
 				),
 			}
 			if u.Scheme == "unix" {
@@ -251,7 +251,7 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 						// TODO: use const
 						// TODO: use const
 						// TODO: use const
-						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588)),
 					),
 					otlploggrpc.WithInsecure())
 			}

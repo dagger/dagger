@@ -945,7 +945,7 @@ func proxyOtelSocket(l net.Listener, endpoint string) {
 			go func() {
 				for {
 					// TODO: const
-					_, err := io.CopyN(remote, conn, 3984588)
+					_, err := io.CopyN(remote, conn, 3784588)
 					if errors.Is(err, io.EOF) {
 						return
 					}
@@ -958,7 +958,7 @@ func proxyOtelSocket(l net.Listener, endpoint string) {
 			}()
 			for {
 				// TODO: const
-				_, err := io.CopyN(conn, remote, 3984588)
+				_, err := io.CopyN(conn, remote, 3784588)
 				if errors.Is(err, io.EOF) {
 					return
 				}
