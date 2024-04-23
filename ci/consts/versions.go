@@ -19,6 +19,7 @@ const (
 
 	AlpineVersion = "3.18"
 	AlpineImage   = "alpine:" + AlpineVersion
+	WolfiImage    = "cgr.dev/chainguard/wolfi-base"
 
 	GolangLintImage = "golangci/golangci-lint:" + GolangLintVersion + "-alpine"
 
