@@ -941,8 +941,33 @@ func proxyOtelSocket(l net.Listener, endpoint string) {
 			}
 			defer remote.Close()
 
-			go io.Copy(remote, conn)
-			io.Copy(conn, remote)
+			// TODO:
+			go func() {
+				for {
+					// TODO: const
+					_, err := io.CopyN(remote, conn, 3984588)
+					if errors.Is(err, io.EOF) {
+						return
+					}
+					if err != nil {
+						// TODO: where does this go? is this write to remote?
+						slog.Error("failed to copy from conn to remote", "error", err)
+						return
+					}
+				}
+			}()
+			for {
+				// TODO: const
+				_, err := io.CopyN(conn, remote, 3984588)
+				if errors.Is(err, io.EOF) {
+					return
+				}
+				if err != nil {
+					// TODO: where does this go? is this write to remote?
+					slog.Error("failed to copy from conn to remote", "error", err)
+					return
+				}
+			}
 		}()
 	}
 }
