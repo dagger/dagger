@@ -14,12 +14,12 @@ from gql.transport.exceptions import (
     TransportServerError,
 )
 from gql.transport.httpx import HTTPXAsyncTransport
+from opentelemetry import propagate
 from typing_extensions import Self
 
 from dagger import ClientConnectionError
 from dagger._config import ConnectConfig, Retry
 from dagger._managers import ResourceManager
-from dagger.client import _otel as otel
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,11 @@ class ConnectParams:
             msg = f"Invalid DAGGER_SESSION_PORT: {port}"
             raise ClientConnectionError(msg) from e
 
+class TelemetryTransport(httpx.AsyncHTTPTransport):
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        # Get traceparent into request headers if present.
+        propagate.inject(request.headers)
+        return await super().handle_async_request(request)
 
 class ClientSession(ResourceManager):
     """Establish a GraphQL client connection to the engine."""
@@ -65,7 +70,7 @@ class ClientSession(ResourceManager):
 
         transport = HTTPXAsyncTransport(
             conn.url,
-            transport=otel.AsyncTransport(),
+            transport=TelemetryTransport(),
             timeout=cfg.timeout,
             auth=(conn.session_token, ""),
         )
@@ -91,9 +96,6 @@ class ClientSession(ResourceManager):
         async with self.get_stack() as stack:
             logger.debug("Establishing client session to GraphQL server")
 
-            await stack.enter_async_context(
-                otel.start_as_current_span("python client session"),
-            )
             try:
                 session = await stack.enter_async_context(self.client)
             except TimeoutError as e:
