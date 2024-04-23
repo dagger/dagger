@@ -40,6 +40,12 @@ class MyModule:
                     "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
                 ]
             )
+            .with_mounted_cache(
+                "/root/.composer", dag.cache_volume("composer-cache")
+            )
+            .with_mounted_cache(
+                "/var/www/vendor", dag.cache_volume("composer-vendor-cache")
+            )
             .with_exec(["composer", "install"])
         )
 

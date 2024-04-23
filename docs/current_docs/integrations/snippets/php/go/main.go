@@ -23,6 +23,8 @@ func (m *MyModule) Build(source *Directory) *Container {
 		WithWorkdir("/var/www").
 		WithExec([]string{"chmod", "-R", "775", "/var/www"}).
 		WithExec([]string{"sh", "-c", "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"}).
+		WithMountedCache("/root/.composer", dag.CacheVolume("composer-cache")).
+		WithMountedCache("/var/www/vendor", dag.CacheVolume("composer-vendor-cache")).
 		WithExec([]string{"composer", "install"})
 }
 
