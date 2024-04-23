@@ -20,7 +20,6 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/containerd/containerd/defaults"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -250,8 +249,15 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 			}),
 			// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
 			// Shrinking IDs might help.
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
-			grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
+			// grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(3784588)),
+			grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3784588)),
 			// Uncomment to measure telemetry traffic.
 			// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
 			// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
