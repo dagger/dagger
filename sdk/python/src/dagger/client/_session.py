@@ -53,11 +53,13 @@ class ConnectParams:
             msg = f"Invalid DAGGER_SESSION_PORT: {port}"
             raise ClientConnectionError(msg) from e
 
+
 class TelemetryTransport(httpx.AsyncHTTPTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         # Get traceparent into request headers if present.
         propagate.inject(request.headers)
         return await super().handle_async_request(request)
+
 
 class ClientSession(ResourceManager):
     """Establish a GraphQL client connection to the engine."""

@@ -191,7 +191,8 @@ class Module:
             mod_name = await dag.current_module().name()
             parent_name = await self._fn_call.parent_name()
             fn = (
-                functools.partial(self._invoke, parent_name) if parent_name
+                functools.partial(self._invoke, parent_name)
+                if parent_name
                 else self._register
             )
             await fn(mod_name)
@@ -221,7 +222,9 @@ class Module:
                         textwrap.shorten(repr(output), 144),
                     )
                     await dag.current_function_call().return_value(dagger.JSON(output))
+
             return wrapper
+
         return _serve
 
     @serve("python module registration")
