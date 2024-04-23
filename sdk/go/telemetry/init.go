@@ -89,7 +89,14 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 					return net.Dial(u.Scheme, u.Path)
 				}
 				opts = append(opts,
-					otlptracegrpc.WithDialOption(grpc.WithContextDialer(dialer)),
+					otlptracegrpc.WithDialOption(
+						grpc.WithContextDialer(dialer),
+						// TODO: use const
+						// TODO: use const
+						// TODO: use const
+						// TODO: use const
+						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+					),
 					otlptracegrpc.WithInsecure())
 			}
 			configuredSpanExporter, err = otlptracegrpc.New(ctx, opts...)
