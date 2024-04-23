@@ -10,8 +10,12 @@ Install the `dagger` CLI following the steps below.
 <Tabs>
 <TabItem value="macOS">
 
-We assume that you have [Homebrew](https://brew.sh/) installed. If you do, you can install `dagger` with a single command:
+We assume that you have [MacPorts](https://macports.org) or [Homebrew](https://brew.sh/) installed. If you do, you can install `dagger` with a single command:
 
+```shell
+sudo port install dagger
+```
+or
 ```shell
 brew install dagger/tap/dagger
 ```
@@ -34,6 +38,12 @@ curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.9.7 sh
 
 ./bin/dagger version
 dagger 0.9.7 (GIT_SHA) darwin/arm64
+```
+
+With Macports, this would look like:
+
+```shell
+sudo port install dagger @0.11.0
 ```
 
 If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
