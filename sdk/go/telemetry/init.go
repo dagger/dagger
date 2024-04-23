@@ -83,6 +83,11 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 			}
 			opts := []otlptracegrpc.Option{
 				otlptracegrpc.WithEndpointURL(endpoint),
+				// TODO: use const
+				// TODO: use const
+				// TODO: use const
+				// TODO: use const
+				otlptracegrpc.WithDialOption(grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588))),
 			}
 			if u.Scheme == "unix" {
 				dialer := func(ctx context.Context, addr string) (net.Conn, error) {
@@ -175,7 +180,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 
 	// Log to slog.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		slog.Error("OpenTelemetry error", "error", err)
+		slog.Error("Go SDK OpenTelemetry error", "error", err)
 	}))
 
 	if cfg.Detect {
