@@ -139,7 +139,13 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 				return
 			}
 			opts := []otlptracegrpc.Option{
-				otlptracegrpc.WithEndpointURL(endpoint),
+				otlptracegrpc.WithDialOption(
+					// TODO: use const
+					// TODO: use const
+					// TODO: use const
+					// TODO: use const
+					grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+				),
 			}
 			if u.Scheme == "unix" {
 				dialer := func(ctx context.Context, addr string) (net.Conn, error) {
@@ -225,7 +231,14 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.LogExporter, bool) {
 					return net.Dial(u.Scheme, u.Path)
 				}
 				opts = append(opts,
-					otlploggrpc.WithDialOption(grpc.WithContextDialer(dialer)),
+					otlploggrpc.WithDialOption(
+						grpc.WithContextDialer(dialer),
+						// TODO: use const
+						// TODO: use const
+						// TODO: use const
+						// TODO: use const
+						grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(3984588)),
+					),
 					otlploggrpc.WithInsecure())
 			}
 			client := otlploggrpc.NewClient(opts...)
