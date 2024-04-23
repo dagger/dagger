@@ -215,7 +215,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
 			ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
 		} else if build.base == "wolfi" {
-			ctr = ctr.With(util.ShellCmd(`apk add wget && wget -q -O /etc/apk/keys/chainguard-extras.rsa.pub > https://packages.cgr.dev/extras/chainguard-extras.rsa.pub`))
+			ctr = ctr.With(util.ShellCmd(`apk add chainguard-keys`))
 			ctr = ctr.With(util.ShellCmd(`echo "https://packages.cgr.dev/extras" >> /etc/apk/repositories`))
 			ctr = ctr.With(util.ShellCmd(`apk update && apk add nvidia-driver nvidia-tools`))
 		}
