@@ -23,7 +23,7 @@ var (
 )
 
 var listenCmd = &cobra.Command{
-	Use:     "listen",
+	Use:     "listen [options]",
 	Aliases: []string{"l"},
 	RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN")),
 	Hidden:  true,

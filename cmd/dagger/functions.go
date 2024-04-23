@@ -43,7 +43,7 @@ var funcCmds = FuncCommands{
 }
 
 var funcListCmd = &FuncCommand{
-	Name:  "functions [flags] [FUNCTION]...",
+	Name:  "functions [options] [FUNCTION]...",
 	Short: `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 
@@ -441,10 +441,11 @@ func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fn
 
 func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
-		Use:     cliName(fn.Name),
-		Short:   strings.SplitN(fn.Description, "\n", 2)[0],
-		Long:    fn.Description,
-		GroupID: funcGroup.ID,
+		Use:                   cliName(fn.Name) + " [options]",
+		Short:                 strings.SplitN(fn.Description, "\n", 2)[0],
+		Long:                  fn.Description,
+		GroupID:               funcGroup.ID,
+		DisableFlagsInUseLine: true,
 		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
 			if err := fc.addArgsForFunction(cmd, args, fn, dag); err != nil {
 				return err

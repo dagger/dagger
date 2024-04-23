@@ -78,7 +78,7 @@ func init() {
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:   "init [flags] [PATH]",
+	Use:   "init [options] [PATH]",
 	Short: "Initialize a new Dagger module",
 	Long: `Initialize a new Dagger module in a local directory.
 By default, create a new dagger.json configuration in the current working directory. If the positional argument PATH is provided, create the module in that directory instead.
@@ -173,7 +173,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 }
 
 var moduleInstallCmd = &cobra.Command{
-	Use:     "install [flags] MODULE",
+	Use:     "install [options] MODULE",
 	Aliases: []string{"use"},
 	Short:   "Add a new dependency to a Dagger module",
 	Long:    "Add a Dagger module as a dependency of a local module.",
@@ -289,7 +289,7 @@ var moduleInstallCmd = &cobra.Command{
 }
 
 var moduleDevelopCmd = &cobra.Command{
-	Use:   "develop",
+	Use:   "develop [options]",
 	Short: "Setup or update all the resources needed to develop on a module locally",
 	Long: `Setup or update all the resources needed to develop on a module locally.
 
@@ -383,7 +383,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 const daDaggerverse = "https://daggerverse.dev"
 
 var modulePublishCmd = &cobra.Command{
-	Use:    "publish",
+	Use:    "publish [options]",
 	Hidden: true, // Hide while we finalize publishing workflow
 	Short:  "Publish a Dagger module to the Daggerverse",
 	Long: fmt.Sprintf(`Publish a local module to the Daggerverse (%s).

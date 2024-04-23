@@ -10,7 +10,7 @@ import (
 )
 
 var versionCmd = &cobra.Command{
-	Use:   "version",
+	Use:   "version [options]",
 	Short: "Print dagger version",
 	// Disable version hook here to avoid double version check
 	PersistentPreRun:  func(*cobra.Command, []string) {},

@@ -49,7 +49,7 @@ by appending it to the end of the command (for example, `stdout`, `entries`, or
 
 
 ```
-dagger call [flags] [FUNCTION]...
+dagger call [options] [FUNCTION]...
 ```
 
 ### Examples
@@ -90,7 +90,7 @@ Get or set the configuration of a Dagger module
 Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.
 
 ```
-dagger config [flags]
+dagger config [options]
 ```
 
 ### Examples
@@ -141,7 +141,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 
 
 ```
-dagger develop [flags]
+dagger develop [options]
 ```
 
 ### Options
@@ -178,7 +178,7 @@ available functions.
 
 
 ```
-dagger functions [flags] [FUNCTION]...
+dagger functions [options] [FUNCTION]...
 ```
 
 ### Options
@@ -219,7 +219,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 
 
 ```
-dagger init [flags] [PATH]
+dagger init [options] [PATH]
 ```
 
 ### Examples
@@ -259,7 +259,7 @@ Add a new dependency to a Dagger module
 Add a Dagger module as a dependency of a local module.
 
 ```
-dagger install [flags] MODULE
+dagger install [options] MODULE
 ```
 
 ### Examples
@@ -293,7 +293,7 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 Log in to Dagger Cloud
 
 ```
-dagger login [flags]
+dagger login
 ```
 
 ### Options inherited from parent commands
@@ -314,7 +314,7 @@ dagger login [flags]
 Log out from Dagger Cloud
 
 ```
-dagger logout [flags]
+dagger logout
 ```
 
 ### Options inherited from parent commands
@@ -345,7 +345,7 @@ queries in the document.
 
 
 ```
-dagger query [flags] [OPERATION]
+dagger query [options] [OPERATION]
 ```
 
 ### Examples
@@ -410,7 +410,7 @@ jq -n '{query:"{container{id}}"}' | \
 ```
 
 ```
-dagger run [flags] COMMAND
+dagger run [options] COMMAND
 ```
 
 ### Examples
@@ -446,7 +446,7 @@ dagger run python main.py
 Print dagger version
 
 ```
-dagger version [flags]
+dagger version [options]
 ```
 
 ### Options inherited from parent commands
