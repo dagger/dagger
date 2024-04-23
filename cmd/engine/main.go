@@ -303,13 +303,6 @@ func main() { //nolint:gocyclo
 		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
-		lf, err := os.OpenFile(filepath.Join(cfg.Root, "engine.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-		if err != nil {
-			return err
-		}
-		defer lf.Close()
-		logrus.SetOutput(lf)
-
 		// TODO:
 		// TODO:
 		// TODO:
