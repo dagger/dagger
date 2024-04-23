@@ -15,10 +15,14 @@ import (
 
 // Defaults for BatchSpanProcessorOptions.
 const (
-	DefaultMaxQueueSize       = 2048
-	DefaultScheduleDelay      = 5000
-	DefaultExportTimeout      = 30000
-	DefaultMaxExportBatchSize = 512
+	DefaultMaxQueueSize  = 2048
+	DefaultScheduleDelay = 5000
+	DefaultExportTimeout = 30000
+	// TODO:
+	// TODO:
+	// TODO:
+	// DefaultMaxExportBatchSize = 512
+	DefaultMaxExportBatchSize = 102
 
 	defaultSpanKeepAlive = 30 * time.Second
 )
