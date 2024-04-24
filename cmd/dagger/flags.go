@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 
@@ -44,6 +45,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &moduleSourceValue{}
 	case Module:
 		return &moduleValue{}
+	case Platform:
+		return &platformValue{}
 	}
 	return nil
 }
@@ -69,6 +72,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*moduleSourceValue]{}
 	case Module:
 		return &sliceValue[*moduleValue]{}
+	case Platform:
+		return &sliceValue[*platformValue]{}
 	}
 	return nil
 }
@@ -590,6 +595,36 @@ func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagg
 		return nil, fmt.Errorf("failed to get module configuration: %w", err)
 	}
 	return modConf.Source, nil
+}
+
+type platformValue struct {
+	platform string
+}
+
+func (v *platformValue) Type() string {
+	return Platform
+}
+
+func (v *platformValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("platform cannot be empty")
+	}
+	if s == "current" {
+		s = platforms.DefaultString()
+	}
+	v.platform = s
+	return nil
+}
+
+func (v *platformValue) String() string {
+	return v.platform
+}
+
+func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+	if v.platform == "" {
+		return nil, fmt.Errorf("platform cannot be empty")
+	}
+	return v.platform, nil
 }
 
 // AddFlag adds a flag appropriate for the argument type. Should return a

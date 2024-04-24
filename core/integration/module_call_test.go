@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -526,6 +527,9 @@ func (m *Test) ToPlatform(platform string) Platform {
 		out, err := modGen.With(daggerCall("from-platform", "--platform", "linux/amd64")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "linux/amd64", out)
+		out, err = modGen.With(daggerCall("from-platform", "--platform", "current")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, platforms.DefaultString(), out)
 		_, err = modGen.With(daggerCall("from-platform", "--platform", "invalid")).Stdout(ctx)
 		require.ErrorContains(t, err, "unknown operating system or architecture")
 
