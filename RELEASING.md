@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-April%2003,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-April%2016,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -12,6 +12,7 @@ This describes how to release Dagger:
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
+- [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
 - [🐙 dagger-for-github ⏱ `2mins`](#-dagger-for-github--2mins#)
 - [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins#)
 - [❄️ nix ⏱ `2mins`](#-nix--2mins#)
@@ -151,9 +152,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.0.md`
+      `.changes/v0.11.1.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.0-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.1-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -268,18 +269,21 @@ go mod tidy
 cd ci
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require github.com/dagger/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
-cd ../..
+cd ..
 
 # Check that the most important workflow works locally (requires local Docker):
 ./hack/make engine:test
 
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+
 # Update .github/workflows/_hack_make.yml dagger-version default to $ENGINE_VERSION
+# Update docs/current_docs files to point to new dagger version
+
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.0 sh
-# mv ~/.local/bin/dagger{,-0.11.0}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.1 sh
+# mv ~/.local/bin/dagger{,-0.11.1}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 dagger run ./hack/make engine:test
 ```
@@ -488,6 +492,12 @@ update once there's a new release of the Dagger Engine.
 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
   to the just-released version. cc @marcosnils @matipan @sipsma
+
+## 🪣 Install scripts ⏱ `2mins`
+
+- [ ] If the install scripts `install.sh` or `install.ps1` have changed since
+  the last release, they must be manually updated on Amazon S3 (CloudFront
+  should also be manually invalidated). cc @gerhard
 
 ## 🐙 dagger-for-github ⏱ `2mins`
 

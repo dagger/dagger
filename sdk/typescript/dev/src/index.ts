@@ -8,7 +8,6 @@ import {
 } from "@dagger.io/dagger"
 
 @object()
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class TypescriptSdkDev {
   /**
    * Project dev environment container.

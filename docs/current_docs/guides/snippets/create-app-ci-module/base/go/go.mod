@@ -1,6 +1,6 @@
-module main
+module dagger/my-module
 
-go 1.21.3
+go 1.21.7
 
 require (
 	github.com/99designs/gqlgen v0.17.31
@@ -10,4 +10,4 @@ require (
 	golang.org/x/sync v0.6.0
 )
 
-require github.com/stretchr/testify v1.8.3 // indirect
+require github.com/stretchr/testify v1.9.0 // indirect

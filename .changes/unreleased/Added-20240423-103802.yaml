@@ -1,0 +1,6 @@
+kind: Added
+body: New version field to get engine version details
+time: 2024-04-23T10:38:02.356725015+01:00
+custom:
+  Author: jedevc
+  PR: "7029"

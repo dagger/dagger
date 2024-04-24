@@ -8,7 +8,7 @@ import (
 
 func ShellCmd(cmd string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithExec([]string{"sh", "-c", cmd})
+		return ctr.WithExec([]string{"sh", "-c", cmd}, dagger.ContainerWithExecOpts{SkipEntrypoint: true})
 	}
 }
 

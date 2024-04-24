@@ -11,7 +11,9 @@ import (
 	"dagger.io/dagger"
 	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
+	"golang.org/x/mod/semver"
 
+	"github.com/dagger/dagger/ci/mage/sdk"
 	"github.com/dagger/dagger/ci/mage/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
@@ -78,6 +80,15 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
+	if semver.IsValid(version) {
+		sdks := sdk.All{}
+		if err := sdks.Bump(ctx, version); err != nil {
+			return err
+		}
+	} else {
+		fmt.Println("skipping image bump in SDKs")
+	}
+
 	return nil
 }
 
@@ -122,14 +133,15 @@ func (t Engine) test(ctx context.Context, additional ...string) error {
 
 // Dev builds and starts an Engine & CLI from local source code
 func (t Engine) Dev(ctx context.Context) error {
-	gpuSupport := false
-	if v := os.Getenv(util.GPUSupportEnvName); v != "" {
-		gpuSupport = true
-	}
+	gpuSupport := os.Getenv(util.GPUSupportEnvName) != ""
+	trace := os.Getenv(util.TraceEnvName) != ""
 
 	args := []string{"engine"}
 	if gpuSupport {
 		args = append(args, "with-gpusupport")
+	}
+	if trace {
+		args = append(args, "with-trace")
 	}
 	tarPath := "./bin/engine.tar"
 	args = append(args, "container", "export", "--path="+tarPath)

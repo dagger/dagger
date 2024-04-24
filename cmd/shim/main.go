@@ -46,7 +46,7 @@ const (
 	stdinPath     = metaMountPath + "/stdin"
 	exitCodePath  = metaMountPath + "/exitCode"
 	runcPath      = "/usr/local/bin/runc"
-	shimPath      = "/_shim"
+	shimPath      = metaMountPath + "/shim"
 
 	errorExitCode = 125
 )
@@ -68,7 +68,6 @@ There are two "subcommands" of this binary:
 func main() {
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Fprintf(os.Stderr, "panic: %v %s\n", err, string(debug.Stack()))
 			os.Exit(errorExitCode)
 		}
 	}()
@@ -178,11 +177,18 @@ func pollForPort(network, addr string) (string, error) {
 }
 
 func shim() (returnExitCode int) {
+	var errWriter io.Writer = os.Stderr
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Fprintf(errWriter, "shim error: %v\n%s", err, string(debug.Stack()))
+			returnExitCode = errorExitCode
+		}
+	}()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
-		return errorExitCode
+		panic(fmt.Errorf("usage: %s <path> [<args>]", os.Args[0]))
 	}
 
 	// Set up slog initially to log directly to stderr, in case something goes
@@ -193,7 +199,7 @@ func shim() (returnExitCode int) {
 	if err == nil {
 		defer cleanup()
 	} else {
-		fmt.Fprintln(os.Stderr, "failed to set up opentelemetry proxy:", err)
+		fmt.Fprintln(errWriter, "failed to set up opentelemetry proxy:", err)
 	}
 
 	traceCfg := telemetry.Config{
@@ -245,8 +251,40 @@ func shim() (returnExitCode int) {
 			cmd.Stdin = nil
 		}
 
-		var secretsToScrub core.SecretToScrubInfo
+		stderrFile, err := os.OpenFile(stderrPath, os.O_WRONLY|os.O_APPEND, 0o666)
+		if err != nil {
+			panic(err)
+		}
+		defer stderrFile.Close()
+		errWriter = io.MultiWriter(stderrFile, stderrOtel, os.Stderr)
+		stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
+		if found {
+			stderrRedirectFile, err := os.Create(stderrRedirectPath)
+			if err != nil {
+				panic(err)
+			}
+			defer stderrRedirectFile.Close()
+			errWriter = io.MultiWriter(stderrFile, stderrRedirectFile, stderrOtel, os.Stderr)
+		}
 
+		var outWriter io.Writer = os.Stdout
+		stdoutFile, err := os.OpenFile(stdoutPath, os.O_WRONLY|os.O_APPEND, 0o666)
+		if err != nil {
+			panic(err)
+		}
+		defer stdoutFile.Close()
+		outWriter = io.MultiWriter(stdoutFile, stdoutOtel, os.Stdout)
+		stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
+		if found {
+			stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
+			if err != nil {
+				panic(err)
+			}
+			defer stdoutRedirectFile.Close()
+			outWriter = io.MultiWriter(stdoutFile, stdoutRedirectFile, stdoutOtel, os.Stdout)
+		}
+
+		var secretsToScrub core.SecretToScrubInfo
 		secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
 		if found {
 			err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
@@ -257,41 +295,6 @@ func shim() (returnExitCode int) {
 
 		currentDirPath := "/"
 		shimFS := os.DirFS(currentDirPath)
-
-		stdoutFile, err := os.Create(stdoutPath)
-		if err != nil {
-			panic(err)
-		}
-		defer stdoutFile.Close()
-		stdoutRedirect := io.Discard
-		stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
-		if found {
-			stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
-			if err != nil {
-				panic(err)
-			}
-			defer stdoutRedirectFile.Close()
-			stdoutRedirect = stdoutRedirectFile
-		}
-
-		stderrFile, err := os.Create(stderrPath)
-		if err != nil {
-			panic(err)
-		}
-		defer stderrFile.Close()
-		stderrRedirect := io.Discard
-		stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
-		if found {
-			stderrRedirectFile, err := os.Create(stderrRedirectPath)
-			if err != nil {
-				panic(err)
-			}
-			defer stderrRedirectFile.Close()
-			stderrRedirect = stderrRedirectFile
-		}
-
-		outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, stdoutOtel, os.Stdout)
-		errWriter := io.MultiWriter(stderrFile, stderrRedirect, stderrOtel, os.Stderr)
 
 		// Direct slog to the new stderr. This is only for dev time debugging, and
 		// runtime errors/warnings.
@@ -339,19 +342,30 @@ func shim() (returnExitCode int) {
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			exitCode = exiterr.ExitCode()
 		} else {
-			exitCode = errorExitCode
-			fmt.Fprintln(os.Stderr, err.Error())
+			panic(err)
 		}
 	}
 
-	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0o600); err != nil {
+	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0o666); err != nil {
 		panic(err)
 	}
 
 	return exitCode
 }
 
-func setupBundle() int {
+func setupBundle() (returnExitCode int) {
+	var errWriter io.Writer = os.Stderr
+	var stderrFile *os.File
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Fprintf(errWriter, "shim error: %v\n%s", err, string(debug.Stack()))
+			returnExitCode = errorExitCode
+		}
+		if stderrFile != nil {
+			stderrFile.Close()
+		}
+	}()
+
 	// If we're running with a TTY, disable onlcr; it gets re-enabled on the
 	// container side.
 	if err := toggleONLCR(false); err != nil {
@@ -378,14 +392,12 @@ func setupBundle() int {
 	configPath := filepath.Join(bundleDir, "config.json")
 	configBytes, err := os.ReadFile(configPath)
 	if err != nil {
-		fmt.Printf("Error reading config.json: %v\n", err)
-		return errorExitCode
+		panic(fmt.Errorf("error reading config.json: %w", err))
 	}
 
 	var spec specs.Spec
 	if err := json.Unmarshal(configBytes, &spec); err != nil {
-		fmt.Printf("Error parsing config.json: %v\n", err)
-		return errorExitCode
+		panic(fmt.Errorf("error parsing config.json: %w", err))
 	}
 
 	// Check to see if this is a dagger exec, currently by using
@@ -396,6 +408,40 @@ func setupBundle() int {
 	for _, mnt := range spec.Mounts {
 		if mnt.Destination == metaMountPath {
 			isDaggerExec = true
+
+			// setup the metaMount dir/files with the final container uid/gid owner so that
+			// we guarantee the container init shim process can read/write them. This is needed
+			// for the ca cert installer case where we may run some commands as root when the actual
+			// user exec is non-root. Just setting 0666 perms isn't sufficient due to umask settings,
+			// which we don't want to play with as it could subtly impact other things.
+			if err := containerChownPath(mnt.Source, &spec); err != nil {
+				panic(fmt.Errorf("error chowning meta mount path: %w", err))
+			}
+			for _, metaPath := range []string{
+				stdinPath,
+				stdoutPath,
+				stderrPath,
+				exitCodePath,
+			} {
+				path := filepath.Join(mnt.Source, strings.TrimPrefix(metaPath, metaMountPath))
+				if err := containerTouchPath(path, 0o666, &spec); err != nil {
+					panic(fmt.Errorf("error touching path %s: %w", path, err))
+				}
+
+				// for stderr specifically, also update errWriter to that file so that any
+				// errors here actually show up in the final error message passed to clients
+				if metaPath == stderrPath {
+					var err error
+					stderrFile, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o666)
+					if err != nil {
+						panic(err)
+					}
+					// don't both closing, will be closed when we exit and closing in defer here
+					// break panic defer at beginning
+					errWriter = io.MultiWriter(stderrFile, os.Stderr)
+				}
+			}
+
 			break
 		}
 	}
@@ -411,13 +457,11 @@ func setupBundle() int {
 		// mount this executable into the container so it can be invoked as the shim
 		selfPath, err := os.Executable()
 		if err != nil {
-			fmt.Printf("Error getting self path: %v\n", err)
-			return errorExitCode
+			panic(fmt.Errorf("error getting self path: %w", err))
 		}
 		selfPath, err = filepath.EvalSymlinks(selfPath)
 		if err != nil {
-			fmt.Printf("Error getting self path: %v\n", err)
-			return errorExitCode
+			panic(fmt.Errorf("error getting self path: %w", err))
 		}
 		spec.Mounts = append(spec.Mounts, specs.Mount{
 			Destination: shimPath,
@@ -447,8 +491,7 @@ func setupBundle() int {
 	for i, env := range spec.Process.Env {
 		found, err := execMetadata.FromEnv(env)
 		if err != nil {
-			fmt.Printf("Error parsing env: %v\n", err)
-			return errorExitCode
+			panic(fmt.Errorf("error parsing env: %w", err))
 		}
 		if found {
 			// remove the ftp_proxy env var from being set in the container
@@ -507,7 +550,7 @@ func setupBundle() int {
 			// provide the server id to connect back to
 			if execMetadata.ServerID == "" {
 				fmt.Fprintln(os.Stderr, "missing server id")
-				return errorExitCode
+				return errorExitCode + 23
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
@@ -525,7 +568,7 @@ func setupBundle() int {
 
 			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
-				return errorExitCode
+				return errorExitCode + 24
 			}
 		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
 			_, gpuParams, _ = strings.Cut(env, "=")
@@ -573,12 +616,10 @@ func setupBundle() int {
 	// write the updated config
 	configBytes, err = json.Marshal(spec)
 	if err != nil {
-		fmt.Printf("Error marshaling config.json: %v\n", err)
-		return errorExitCode
+		panic(fmt.Errorf("error marshaling config.json: %w", err))
 	}
 	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
-		fmt.Printf("Error writing config.json: %v\n", err)
-		return errorExitCode
+		panic(fmt.Errorf("error writing config.json: %w", err))
 	}
 
 	// Run the actual runc binary as a child process with the (possibly updated) config.
@@ -657,8 +698,7 @@ func execRunc() int {
 	args := []string{runcPath}
 	args = append(args, os.Args[1:]...)
 	if err := unix.Exec(runcPath, args, os.Environ()); err != nil {
-		fmt.Printf("Error execing runc: %v\n", err)
-		return errorExitCode
+		panic(fmt.Errorf("error execing runc: %w", err))
 	}
 	panic("congratulations: you've reached unreachable code, please report a bug!")
 }
@@ -905,4 +945,16 @@ func proxyOtelSocket(l net.Listener, endpoint string) {
 			io.Copy(conn, remote)
 		}()
 	}
+}
+
+func containerTouchPath(path string, perms os.FileMode, spec *specs.Spec) error {
+	// mknod w/ S_IFREG is equivalent to "touch"
+	if err := unix.Mknod(path, uint32(perms)|unix.S_IFREG, 0); err != nil && !errors.Is(err, unix.EEXIST) {
+		return err
+	}
+	return containerChownPath(path, spec)
+}
+
+func containerChownPath(path string, spec *specs.Spec) error {
+	return unix.Chown(path, int(spec.Process.User.UID), int(spec.Process.User.GID))
 }

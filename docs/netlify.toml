@@ -52,63 +52,75 @@
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/533927-argo-workflows"
   to = "/integrations/533927/argo-workflows"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/642920-github-actions"
   to = "/integrations/642920/github-actions"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/734201-gitlab"
   to = "/integrations/734201/gitlab"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/592501-circleci"
   to = "/integrations/592501/circleci"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/322019-jenkins"
   to = "/integrations/322019/jenkins"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/197291-azure-pipelines"
   to = "/integrations/197291/azure-pipelines"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user manual
+  # redirect CI pages from user guide
   from = "/user-guide/ci/963919-aws-codebuild"
   to = "/integrations/963919/aws-codebuild"
   status = 301
 
 [[redirects]]
-  # redirect cloud orgs admin page from user manual
+  # redirect cloud orgs admin page from user guide
   from = "/user-guide/cloud/609601/org-administration"
   to = "/manuals/administrator/609601/organizations"
   status = 301
 
 [[redirects]]
-  # redirect cloud roles and permissions page from user manual
+  # redirect cloud roles and permissions page from user guide
   from = "/user-guide/cloud/968372/roles-permissions"
   to = "/manuals/administrator/968372/roles-permissions"
   status = 301
 
 [[redirects]]
-  # redirect cloud get started page
+  # redirect cloud get started page from user guide
   from = "/user-guide/cloud/572923/get-started"
-  to = "/manuals/user/cloud/572923/get-started"
+  to = "/manuals/user/572923/cloud-get-started"
+  status = 301
+
+[[redirects]]
+  # redirect cloud get started page from user manual
+  from = "/manuals/user/cloud/572923/get-started"
+  to = "/manuals/user/572923/cloud-get-started"
+  status = 301
+
+[[redirects]]
+  # redirect cloud user interface page from user manual
+  from = "/manuals/user/cloud/741031/user-interface"
+  to = "/manuals/user/572923/cloud-get-started"
   status = 301
 
 [[redirects]]

@@ -14,8 +14,11 @@ module.exports = {
     {
       "type": "category",
       "label": "Quickstart",
+      "link": {
+        "type": "doc",
+        "id": "quickstart/index"
+      },
       "items": [
-        "quickstart/index",
         "quickstart/cli",
         "quickstart/hello",
         "quickstart/arguments",
@@ -99,23 +102,182 @@ module.exports = {
       "items": [
         {
           "type": "category",
-          "label": "Dagger Cloud",
+          "label": "Functions and Chaining",
           "link": {
             "type": "doc",
-            "id": "manuals/user/cloud/index"
+            "id": "manuals/user/functions/functions"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
             {
               "type": "doc",
-              "label": "Get Started",
-              "id": "manuals/user/cloud/get-started"
+              "label": "Function Calls",
+              "id": "manuals/user/functions/call"
             },
             {
               "type": "doc",
-              "id": "manuals/user/cloud/user-interface"
+              "label": "Arguments",
+              "id": "manuals/user/functions/arguments"
+            },
+            {
+              "type": "doc",
+              "label": "Chaining",
+              "id": "manuals/user/functions/chaining"
             }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Just-in-Time Artifacts",
+          "collapsible": true,
+          "collapsed": true,
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/artifacts/artifacts"
+          },
+          "items": [
+            {
+              "type": "category",
+              "label": "Produce and Inspect Artifacts",
+              "link": {
+                "type": "doc",
+                "id": "manuals/user/artifacts/production/produce"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                {
+                  "type": "doc",
+                  "label": "Just-in-Time Containers",
+                  "id": "manuals/user/artifacts/production/containers"
+                },
+                {
+                  "type": "doc",
+                  "label": "Just-in-Time Directories",
+                  "id": "manuals/user/artifacts/production/directories"
+                },
+                {
+                  "type": "doc",
+                  "label": "Just-in-Time Files",
+                  "id": "manuals/user/artifacts/production/files"
+                },
+                {
+                  "type": "doc",
+                  "label": "Artifact Inspection",
+                  "id": "manuals/user/artifacts/production/inspect"
+                },
+              ]
+            },
+            {
+              "type": "category",
+              "label": "Consume Artifacts",
+              "link": {
+                "type": "doc",
+                "id": "manuals/user/artifacts/consumption/consume"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                {
+                  "type": "doc",
+                  "label": "Artifact Export",
+                  "id": "manuals/user/artifacts/consumption/export"
+                },
+                {
+                  "type": "doc",
+                  "label": "Container Interaction",
+                  "id": "manuals/user/artifacts/consumption/terminal"
+                },
+                {
+                  "type": "doc",
+                  "label": "Container Publication",
+                  "id": "manuals/user/artifacts/consumption/publish"
+                },
+                {
+                  "type": "doc",
+                  "label": "Container Command Execution",
+                  "id": "manuals/user/artifacts/consumption/exec"
+                },
+                {
+                  "type": "doc",
+                  "label": "Containers as Services",
+                  "id": "manuals/user/artifacts/consumption/services"
+                },
+              ]
+            },
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Host Access",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/host/host"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Host Filesystem Access",
+              "id": "manuals/user/host/host-fs"
+            },
+            {
+              "type": "doc",
+              "label": "Host Environment Access",
+              "id": "manuals/user/host/host-env"
+            },
+            {
+              "type": "doc",
+              "label": "Host Services Access",
+              "id": "manuals/user/host/host-services"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Remote Resources",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/remotes/remotes"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Remote Repositories",
+              "id": "manuals/user/remotes/remote-repositories"
+            },
+            {
+              "type": "doc",
+              "label": "Remote Container Images",
+              "id": "manuals/user/remotes/remote-images"
+            },
+
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Visualization",
+          "link": {
+            "type": "doc",
+            "id": "manuals/user/visualization/visualization"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "label": "Dagger TUI",
+              "id": "manuals/user/visualization/tui"
+            },
+            {
+              "type": "doc",
+              "label": "Dagger Cloud",
+              "id": "manuals/user/visualization/cloud-get-started"
+            },
           ]
         },
         {
@@ -163,7 +325,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Developing with Go",
+          "label": "Develop with Go",
           "link": {
             "type": "doc",
             "id": "manuals/developer/go/index"
@@ -238,7 +400,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Developing with Python",
+          "label": "Develop with Python",
           "link": {
             "type": "doc",
             "id": "manuals/developer/python/index"
@@ -317,7 +479,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Developing with TypeScript",
+          "label": "Develop with TypeScript",
           "link": {
             "type": "doc",
             "id": "manuals/developer/typescript/index"
@@ -390,6 +552,10 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/debugging"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/runtime"
             },
             {
               "type": "doc",

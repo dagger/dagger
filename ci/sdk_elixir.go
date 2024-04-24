@@ -97,7 +97,7 @@ func (t ElixirSDK) Publish(
 ) error {
 	var (
 		version = strings.TrimPrefix(tag, "sdk/elixir/v")
-		mixFile = "sdk/elixir/mix.exs"
+		mixFile = "/sdk/elixir/mix.exs"
 	)
 
 	ctr := t.elixirBase(elixirVersions[1])

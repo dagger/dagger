@@ -2,32 +2,36 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  // create a production build
+  /*
+   * Create a production build
+   */
   @func()
   build(source: Directory): Directory {
     return dag
-      .node()
-      .withContainer(this.buildBaseImage(source))
+      .node({ ctr: this.buildBaseImage(source) })
+      .commands()
       .build()
-      .container()
       .directory("./dist")
   }
 
-  // run unit tests
+  /*
+   * Run unit tests
+   */
   @func()
   async test(source: Directory): Promise<string> {
     return await dag
-      .node()
-      .withContainer(this.buildBaseImage(source))
-      .run(["run", "test:unit", "run"])
+      .node({ ctr: this.buildBaseImage(source) })
+      .commands()
+      .run(["test:unit", "run"])
       .stdout()
   }
 
-  // build base image
+  /*
+   * Build base image
+   */
   buildBaseImage(source: Directory): Container {
     return dag
-      .node()
-      .withVersion("21")
+      .node({ version: "21" })
       .withNpm()
       .withSource(source)
       .install([])

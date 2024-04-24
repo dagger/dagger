@@ -107,8 +107,8 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
-	tty, isTTY := findTTY()
-	if !isTTY {
+	ttyIn, ttyOut := findTTYs()
+	if ttyOut == nil {
 		// Simplify logic elsewhere by just setting Plain to true.
 		fe.Plain = true
 	}
@@ -124,7 +124,7 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 		runErr = run(ctx)
 	} else {
 		// run the TUI until it exits and cleans up the TTY
-		runErr = fe.runWithTUI(ctx, tty, run)
+		runErr = fe.runWithTUI(ctx, ttyIn, ttyOut, run)
 	}
 
 	// print the final output display to stderr
@@ -160,19 +160,24 @@ func (fe *Frontend) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Unlock()
 }
 
-func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(context.Context) error) error {
+func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
 	// NOTE: establish color cache before we start consuming stdin
-	fe.out = NewOutput(tty, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
+	fe.out = NewOutput(ttyOut, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
-	// Bubbletea will just receive an `io.Reader` for its input rather than the
-	// raw TTY *os.File, so we need to set up the TTY ourselves.
-	ttyFd := int(tty.Fd())
-	oldState, err := term.MakeRaw(ttyFd)
-	if err != nil {
-		return err
+	var stdin io.Reader
+	if ttyIn != nil {
+		stdin = ttyIn
+
+		// Bubbletea will just receive an `io.Reader` for its input rather than the
+		// raw TTY *os.File, so we need to set up the TTY ourselves.
+		ttyFd := int(ttyIn.Fd())
+		oldState, err := term.MakeRaw(ttyFd)
+		if err != nil {
+			return err
+		}
+		fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
+		defer fe.restore()
 	}
-	fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
-	defer fe.restore()
 
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
@@ -181,7 +186,7 @@ func (fe *Frontend) runWithTUI(ctx context.Context, tty *os.File, run func(conte
 
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
-		tea.WithInput(tty),
+		tea.WithInput(stdin),
 		tea.WithOutput(fe.out),
 		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
 		// counter-productive.
@@ -279,14 +284,17 @@ func (fe *Frontend) renderPrimaryOutput() error {
 	return nil
 }
 
-func findTTY() (*os.File, bool) {
-	// some of these may be redirected
-	for _, f := range []*os.File{os.Stderr, os.Stdout, os.Stdin} {
+func findTTYs() (in *os.File, out *os.File) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		in = os.Stdin
+	}
+	for _, f := range []*os.File{os.Stderr, os.Stdout} {
 		if term.IsTerminal(int(f.Fd())) {
-			return f, true
+			out = f
+			break
 		}
 	}
-	return nil, false
+	return
 }
 
 var _ sdktrace.SpanExporter = (*Frontend)(nil)

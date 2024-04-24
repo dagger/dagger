@@ -412,7 +412,8 @@ forced), to avoid mistakenly depending on uncommitted files.
 				return fmt.Errorf("module must be fully initialized")
 			}
 			repo, err := git.PlainOpenWithOptions(modConf.LocalRootSourcePath, &git.PlainOpenOptions{
-				DetectDotGit: true,
+				DetectDotGit:          true,
+				EnableDotGitCommonDir: true,
 			})
 			if err != nil {
 				return fmt.Errorf("failed to open git repo: %w", err)
@@ -679,12 +680,13 @@ func findUp(curDirPath string) (string, bool, error) {
 		return "", false, fmt.Errorf("failed to lstat %s: %s", configPath, err)
 	}
 
-	// didn't exist, try parent unless we've hit "/" or a git repo checkout root
+	// didn't exist, try parent unless we've hit the root or a git repo checkout root
 	curDirAbsPath, err := filepath.Abs(curDirPath)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get absolute path for %s: %s", curDirPath, err)
 	}
-	if curDirAbsPath == "/" {
+	if curDirAbsPath[len(curDirAbsPath)-1] == os.PathSeparator {
+		// path ends in separator, we're at root
 		return "", false, nil
 	}
 

@@ -487,7 +487,25 @@ func TestModuleInitLICENSE(t *testing.T) {
 		require.Contains(t, content, "Apache License, Version 2.0")
 	})
 
-	t.Run("does not bootstrap LICENSE file if it exists in the parent dir", func(t *testing.T) {
+	t.Run("does not bootstrap LICENSE file if it exists in the parent context", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/LICENSE", dagger.ContainerWithNewFileOpts{
+				Contents: "doesnt matter",
+			}).
+			WithWorkdir("/work/sub").
+			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
+
+		_, err := modGen.File("LICENSE").Contents(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("does not bootstrap LICENSE file if it exists in an arbitrary parent dir", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -501,8 +519,9 @@ func TestModuleInitLICENSE(t *testing.T) {
 			WithWorkdir("/work/sub").
 			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
 
-		_, err := modGen.File("LICENSE").Contents(ctx)
-		require.Error(t, err)
+		content, err := modGen.File("LICENSE").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "Apache License, Version 2.0")
 	})
 
 	t.Run("bootstraps a LICENSE file when requested, even if it exists in the parent dir", func(t *testing.T) {
@@ -510,7 +529,7 @@ func TestModuleInitLICENSE(t *testing.T) {
 
 		c, ctx := connect(t)
 
-		modGen := c.Container().From(golangImage).
+		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/LICENSE", dagger.ContainerWithNewFileOpts{

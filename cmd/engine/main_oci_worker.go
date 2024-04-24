@@ -334,7 +334,20 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 		cfg.Labels["maxParallelism"] = strconv.Itoa(cfg.MaxParallelism)
 	}
 
-	opt, err := runc.NewWorkerOpt(common.config.Root, snFactory, cfg.Rootless, processMode, cfg.Labels, idmapping, nc, dns, cfg.Binary, cfg.ApparmorProfile, cfg.SELinux, parallelismSem, common.traceSocket, cfg.DefaultCgroupParent)
+	opt, err := NewWorkerOpt(
+		common.config.Root,
+		snFactory,
+		processMode,
+		cfg.Labels,
+		idmapping,
+		nc,
+		dns,
+		cfg.ApparmorProfile,
+		cfg.SELinux,
+		parallelismSem,
+		common.traceSocket,
+		cfg.DefaultCgroupParent,
+	)
 	if err != nil {
 		return nil, err
 	}
