@@ -6,7 +6,6 @@ title: "Build a binary with a function"
 
 # Quickstart
 
-
 ## Build a binary with a function
 
 Not only can functions use Dagger's core types in their arguments; they can use them in their return value as well.
@@ -21,7 +20,7 @@ Try calling this Go builder function:
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project https://github.com/dagger/dagger --args ./cmd/dagger
 ```
 
-This function takes a `proj` argument of type `Directory`. Similar to how the CLI can pass a `Container` from a remote OCI address, it can also pass a `Directory` from a local path or remote Git address. Here, you're passing the address of Dagger's open-source repository.
+This function takes a `project` argument of type `Directory`. Here, you're passing the address of Dagger's open-source repository.
 
 Once the command completes, you should see this output:
 
