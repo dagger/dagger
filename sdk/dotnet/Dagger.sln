@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK", "Dagger.SDK\Dagger.SDK.csproj", "{2E89D0C5-43BE-443B-BAD5-DEE6B1168E22}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK.Tests", "Dagger.SDK.Tests\Dagger.SDK.Tests.csproj", "{9B811549-D265-4E16-AC82-48C364A827E3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2E89D0C5-43BE-443B-BAD5-DEE6B1168E22}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E89D0C5-43BE-443B-BAD5-DEE6B1168E22}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E89D0C5-43BE-443B-BAD5-DEE6B1168E22}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E89D0C5-43BE-443B-BAD5-DEE6B1168E22}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B811549-D265-4E16-AC82-48C364A827E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B811549-D265-4E16-AC82-48C364A827E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B811549-D265-4E16-AC82-48C364A827E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B811549-D265-4E16-AC82-48C364A827E3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
