@@ -1,4 +1,4 @@
-﻿namespace DaggerSDK.GraphQL;
+namespace DaggerSDK.GraphQL;
 
 public class GraphQLQuery
 {

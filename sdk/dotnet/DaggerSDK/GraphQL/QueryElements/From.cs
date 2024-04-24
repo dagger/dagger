@@ -1,4 +1,4 @@
-﻿namespace DaggerSDK.GraphQL.QueryElements;
+namespace DaggerSDK.GraphQL.QueryElements;
 
 public class From : GraphQLElement
 {

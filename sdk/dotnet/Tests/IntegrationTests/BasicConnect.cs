@@ -1,4 +1,4 @@
-﻿using DaggerSDK.GraphQL;
+using DaggerSDK.GraphQL;
 using IntegrationTests.TestData;
 using Newtonsoft.Json;
 

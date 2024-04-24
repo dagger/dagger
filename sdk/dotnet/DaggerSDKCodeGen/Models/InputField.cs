@@ -1,4 +1,4 @@
-﻿namespace DaggerSDKCodeGen.Models;
+namespace DaggerSDKCodeGen.Models;
 
 public class InputField
 {

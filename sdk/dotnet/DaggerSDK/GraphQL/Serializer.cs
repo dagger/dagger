@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Unicode;
@@ -39,7 +39,7 @@ public class Serializer
         {
             result.Append(element.Label).Append(": ");
         }
-        
+
         result.Append(element.Name);
         AddArgs(result, element.Params);
 

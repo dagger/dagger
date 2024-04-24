@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Json;
+using System.Net.Http.Json;
 using System.Text;
 
 namespace DaggerSDK.GraphQL;
@@ -17,7 +17,7 @@ public class GraphQLClient
         _http = new HttpClient();
         _http.DefaultRequestHeaders.Add("Authorization", $"Basic {token}");
         _http.DefaultRequestHeaders.Add("Accept", "application/json");
-        _http.BaseAddress= new Uri(url);
+        _http.BaseAddress = new Uri(url);
     }
 
     public async Task<HttpResponseMessage> RequestAsync(string body)

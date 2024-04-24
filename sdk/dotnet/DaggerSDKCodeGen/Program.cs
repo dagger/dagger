@@ -1,4 +1,4 @@
-﻿using DaggerSDK.GraphQL;
+using DaggerSDK.GraphQL;
 using DaggerSDKCodeGen;
 using DaggerSDKCodeGen.Models;
 using System.Text.Json;
@@ -19,10 +19,11 @@ var schema = doc.RootElement.GetProperty("data").GetProperty("__schema");
 var directives = JsonSerializer.Deserialize<List<QueryDirective>>(schema.GetProperty("directives"), opt)
     ?? throw new Exception("Failed to deserialize directives");
 var types = JsonSerializer.Deserialize<List<QueryType>>(schema.GetProperty("types"), opt)
-    ?? throw new Exception("Failed to deserialize types");;
+    ?? throw new Exception("Failed to deserialize types"); ;
 
 Console.WriteLine("Writing introspect-api.json");
-File.WriteAllText("introspect-api.json", JsonSerializer.Serialize(new {
+File.WriteAllText("introspect-api.json", JsonSerializer.Serialize(new
+{
     directives = schema.GetProperty("directives"),
     types = schema.GetProperty("types"),
 }, opt));

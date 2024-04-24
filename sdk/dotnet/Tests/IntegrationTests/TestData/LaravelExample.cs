@@ -1,4 +1,4 @@
-﻿using DaggerSDK;
+using DaggerSDK;
 using DaggerSDK.GraphQL.QueryElements;
 
 namespace IntegrationTests.TestData;
