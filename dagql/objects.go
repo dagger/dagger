@@ -221,7 +221,7 @@ func (o Instance[T]) Type() *ast.Type {
 
 var _ Object = Instance[Typed]{}
 
-// ID returns the ID of the instance.
+// ObjectType returns the ObjectType of the instance.
 func (r Instance[T]) ObjectType() ObjectType {
 	return r.Class
 }
@@ -238,7 +238,7 @@ type Wrapper interface {
 
 var _ Wrapper = Instance[Typed]{}
 
-// Inner returns the inner value of the instance.
+// Unwrap returns the inner value of the instance.
 func (r Instance[T]) Unwrap() Typed {
 	return r.Self
 }
@@ -583,15 +583,13 @@ func FormatDescription(paras ...string) string {
 	return strings.Join(paras, "\n\n")
 }
 
-// Doc sets the description of the field. Each argument is joined by two empty
-// lines.
 func (field Field[T]) DynamicReturnType(ret Typed) Field[T] {
 	field.Spec.Type = ret
 	return field
 }
 
-// Impure marks the field as "impure", meaning its result may change over time,
-// or it has side effects.
+// Deprecated marks the field as deprecated, meaning it should not be used by
+// new code.
 func (field Field[T]) Deprecated(paras ...string) Field[T] {
 	field.Spec.DeprecatedReason = FormatDescription(paras...)
 	return field
@@ -610,7 +608,7 @@ func (field Field[T]) Meta() Field[T] {
 	return field
 }
 
-// Definition returns the schema definition of the field.
+// FieldDefinition returns the schema definition of the field.
 func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
 	spec := field.Spec
 	if spec.Type == nil {
