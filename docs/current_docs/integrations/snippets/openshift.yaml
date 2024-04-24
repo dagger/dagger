@@ -4,7 +4,7 @@ fullnameOverride: ""
 engine:
   image:
     repository: registry.dagger.io/engine
-    tag: v0.11.0
+    tag: latest
   tolerations:
     - effect: NoSchedule
       key: dagger-node
