@@ -19,8 +19,8 @@ jobs:
           version: "latest"
           verb: call
           # modify to use different function(s) as needed
-          module: github.com/lukemarsden/dagger-ghcr-demo@v0.1.4
-          args: build-and-push --registry=$DOCKER_REGISTRY --image-name=$DOCKER_IMAGE_NAME --username=$DOCKER_USERNAME --password=env:DOCKER_PASSWORD --build-context=github.com/lukemarsden/dagger-ghcr-demo
+          module: github.com/daggerverse/dagger-ghcr-demo@v0.1.4
+          args: build-and-push --registry=$DOCKER_REGISTRY --image-name=$DOCKER_IMAGE_NAME --username=$DOCKER_USERNAME --password=env:DOCKER_PASSWORD --build-context=github.com/daggerverse/dagger-ghcr-demo
           # assumes the Dagger Cloud token is in
           # a repository secret named DAGGER_CLOUD_TOKEN
           # set via the GitHub UI/CLI
