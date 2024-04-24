@@ -10,7 +10,7 @@ import (
 )
 
 var watchCmd = &cobra.Command{
-	Use:    "watch [options] COMMAND",
+	Use:    "watch",
 	Hidden: true,
 	Annotations: map[string]string{
 		"experimental": "true",
