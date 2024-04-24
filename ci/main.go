@@ -83,6 +83,10 @@ func (ci *Dagger) SDK() *SDK {
 	}
 }
 
+func (ci *Dagger) Helm() *Helm {
+	return &Helm{Dagger: ci}
+}
+
 // Creates a dev container that has a running CLI connected to a dagger engine
 func (ci *Dagger) Dev(
 	ctx context.Context,
