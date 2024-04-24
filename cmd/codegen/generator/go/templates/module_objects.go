@@ -367,10 +367,7 @@ func (spec *parsedObjectType) marshalJSONMethodCode() (*Statement, error) {
 		}
 		concreteFields = append(concreteFields, fieldCode)
 
-		getFieldCode, err := spec.setFieldsToMarshalStructCode(field)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate get field code: %w", err)
-		}
+		getFieldCode := spec.setFieldsToMarshalStructCode(field)
 		getFieldCodes = append(getFieldCodes, getFieldCode)
 	}
 
@@ -475,8 +472,8 @@ func (spec *parsedObjectType) setFieldsFromUnmarshalStructCode(field *fieldSpec)
 	return s, nil
 }
 
-func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) (*Statement, error) {
-	return Empty().Id("concrete").Dot(field.goName).Op("=").Id("r").Dot(field.goName), nil
+func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *Statement {
+	return Empty().Id("concrete").Dot(field.goName).Op("=").Id("r").Dot(field.goName)
 }
 
 type fieldSpec struct {

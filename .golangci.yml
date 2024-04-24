@@ -26,21 +26,34 @@ linters:
     - typecheck
     - unconvert
     - unused
+    - unparam
     - whitespace
 
 issues:
   exclude-rules:
     - path: _test\.go
       linters:
+        # tests are very repetitive
         - dupl
+        # tests are allowed to do silly things
         - gosec
+    - path: docs/
+      linters:
+        # example dagger module code might use extra ctx/err in signatures for clarity
+        - unparam
+    - text: ".* always receives .*"
+      linters:
+        # this is sometimes done for clarity
+        - unparam
+
 
 linters-settings:
   revive:
     rules:
-      # This rule is annoying. Often you want to name the
-      # parameters for clarity because it conforms to an
-      # interface.
+      # This rule is annoying. Often you want to name the parameters for
+      # clarity because it conforms to an interface. Additionally, unparam
+      # finds a good number of cases for this anyways (with fewer false
+      # positives).
       - name: unused-parameter
         severity: warning
         disabled: true

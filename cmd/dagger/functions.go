@@ -384,7 +384,7 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 
 	if obj.Constructor != nil {
 		// add constructor args as top-level flags
-		if err := fc.addArgsForFunction(c, a, obj.Constructor, dag); err != nil {
+		if err := fc.addArgsForFunction(c, a, obj.Constructor); err != nil {
 			return nil, nil, err
 		}
 		fc.selectFunc(obj.Name, obj.Constructor, c, dag)
@@ -454,7 +454,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 		GroupID:               funcGroup.ID,
 		DisableFlagsInUseLine: true,
 		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
-			if err := fc.addArgsForFunction(cmd, args, fn, dag); err != nil {
+			if err := fc.addArgsForFunction(cmd, args, fn); err != nil {
 				return err
 			}
 
@@ -542,7 +542,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 	return newCmd
 }
 
-func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, fn *modFunction, dag *dagger.Client) error {
+func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, fn *modFunction) error {
 	fc.mod.LoadTypeDef(fn.ReturnType)
 
 	for _, arg := range fn.Args {
@@ -550,7 +550,7 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 	}
 
 	for _, arg := range fn.Args {
-		_, err := arg.AddFlag(cmd.Flags(), dag)
+		_, err := arg.AddFlag(cmd.Flags())
 		if err != nil {
 			return err
 		}

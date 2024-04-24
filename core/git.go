@@ -8,7 +8,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 )
 
@@ -59,8 +58,7 @@ func (*GitRef) TypeDescription() string {
 }
 
 func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
-	bk := ref.Query.Buildkit
-	st, err := ref.getState(ctx, bk)
+	st, err := ref.getState(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +67,7 @@ func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
 
 func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	bk := ref.Query.Buildkit
-	st, err := ref.getState(ctx, bk)
+	st, err := ref.getState(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +81,7 @@ func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	return p.Sources.Git[0].Commit, nil
 }
 
-func (ref *GitRef) getState(ctx context.Context, bk *buildkit.Client) (llb.State, error) {
+func (ref *GitRef) getState(ctx context.Context) (llb.State, error) {
 	opts := []llb.GitOption{}
 
 	if ref.Repo.KeepGitDir {

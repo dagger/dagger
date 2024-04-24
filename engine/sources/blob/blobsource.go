@@ -75,8 +75,11 @@ func IdentifierFromPB(op *pb.SourceOp) (*SourceIdentifier, error) {
 	if !ok {
 		return nil, fmt.Errorf("invalid blob source identifier %q", op.Identifier)
 	}
+	if scheme != BlobScheme {
+		return nil, fmt.Errorf("invalid blob source identifier %q", op.Identifier)
+	}
 	bs := &blobSource{}
-	return bs.identifier(scheme, ref, op.GetAttrs(), nil)
+	return bs.identifier(ref, op.GetAttrs(), nil)
 }
 
 func NewSource(opt Opt) (source.Source, error) {
@@ -91,10 +94,10 @@ func (bs *blobSource) Schemes() []string {
 }
 
 func (bs *blobSource) Identifier(scheme, ref string, sourceAttrs map[string]string, p *pb.Platform) (source.Identifier, error) {
-	return bs.identifier(scheme, ref, sourceAttrs, p)
+	return bs.identifier(ref, sourceAttrs, p)
 }
 
-func (bs *blobSource) identifier(scheme, ref string, sourceAttrs map[string]string, _ *pb.Platform) (*SourceIdentifier, error) {
+func (bs *blobSource) identifier(ref string, sourceAttrs map[string]string, _ *pb.Platform) (*SourceIdentifier, error) {
 	desc := ocispecs.Descriptor{
 		Digest:      digest.Digest(ref),
 		Annotations: map[string]string{},

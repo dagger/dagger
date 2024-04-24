@@ -297,7 +297,7 @@ func (bsp *batchLogProcessor) enqueue(log *LogData) {
 	if bsp.o.BlockOnQueueFull {
 		bsp.enqueueBlockOnQueueFull(ctx, log)
 	} else {
-		bsp.enqueueDrop(ctx, log)
+		bsp.enqueueDrop(log)
 	}
 }
 
@@ -310,7 +310,7 @@ func (bsp *batchLogProcessor) enqueueBlockOnQueueFull(ctx context.Context, log *
 	}
 }
 
-func (bsp *batchLogProcessor) enqueueDrop(ctx context.Context, log *LogData) bool {
+func (bsp *batchLogProcessor) enqueueDrop(log *LogData) bool {
 	select {
 	case bsp.queue <- log:
 		return true

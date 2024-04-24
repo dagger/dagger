@@ -40,7 +40,6 @@ func newModFunction(
 	ctx context.Context,
 	root *Query,
 	mod *Module,
-	modID *call.ID,
 	objDef *ObjectTypeDef,
 	runtime *Container,
 	metadata *Function,
