@@ -547,8 +547,10 @@ defmodule Dagger.Container do
   end
 
   @doc "Retrieves this container plus the given environment variable."
-  @spec with_env_variable(t(), String.t(), String.t(), [{:expand, boolean() | nil}]) ::
-          Dagger.Container.t()
+  @spec with_env_variable(t(), String.t(), String.t(), [
+          {:expand, boolean() | nil},
+          {:no_expand, boolean() | nil}
+        ]) :: Dagger.Container.t()
   def with_env_variable(%__MODULE__{} = container, name, value, optional_args \\ []) do
     selection =
       container.selection
@@ -556,6 +558,7 @@ defmodule Dagger.Container do
       |> put_arg("name", name)
       |> put_arg("value", value)
       |> maybe_put_arg("expand", optional_args[:expand])
+      |> maybe_put_arg("noExpand", optional_args[:no_expand])
 
     %Dagger.Container{
       selection: selection,

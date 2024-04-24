@@ -117,10 +117,11 @@ func (s *containerSchema) Install() {
 			Doc(`Retrieves this container plus the given environment variable.`).
 			ArgDoc("name", `The name of the environment variable (e.g., "HOST").`).
 			ArgDoc("value", `The value of the environment variable. (e.g., "localhost").`).
-			ArgDoc("expand",
-				"Replace `${VAR}` or `$VAR` in the value according to the current "+
+			ArgDoc("noExpand",
+				"Do not replace `${VAR}` or `$VAR` in the value according to the current "+
 					`environment variables defined in the container (e.g.,
-				"/opt/bin:$PATH").`),
+				"/opt/bin:$PATH").`).
+			ArgDeprecated("expand", "The environment variable will be expand by default."),
 
 		dagql.Func("withSecretVariable", s.withSecretVariable).
 			Doc(`Retrieves this container plus an env variable containing the given secret.`).
@@ -725,16 +726,17 @@ func (s *containerSchema) workdir(ctx context.Context, parent *core.Container, a
 }
 
 type containerWithVariableArgs struct {
-	Name   string
-	Value  string
-	Expand bool `default:"false"`
+	Name     string
+	Value    string
+	Expand   bool `default:"false"`
+	NoExpand bool `default:"false"`
 }
 
 func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		value := args.Value
 
-		if args.Expand {
+		if !args.NoExpand || args.Expand {
 			value = os.Expand(value, func(k string) string {
 				v, _ := core.LookupEnv(cfg.Env, k)
 				return v

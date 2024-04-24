@@ -468,13 +468,21 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus the given environment variable.
      */
-    public function withEnvVariable(string $name, string $value, ?bool $expand = false): Container
+    public function withEnvVariable(
+        string $name,
+        string $value,
+        ?bool $expand = false,
+        ?bool $noExpand = false,
+    ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnvVariable');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('value', $value);
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $noExpand) {
+        $innerQueryBuilder->setArgument('noExpand', $noExpand);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

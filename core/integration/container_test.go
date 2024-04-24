@@ -1090,7 +1090,16 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 	t.Run("add env var without expansion", func(t *testing.T) {
 		out, err := c.Container().
 			From(alpineImage).
-			WithEnvVariable("FOO", "foo:$PATH").
+			WithEnvVariable("FOO", "foo:$PATH", dagger.ContainerWithEnvVariableOpts{Expand: false, NoExpand: true}).
+			WithExec([]string{"printenv", "FOO"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo:$PATH\n", out)
+
+		out, err = c.Container().
+			From(alpineImage).
+			WithEnvVariable("FOO", "foo:$PATH", dagger.ContainerWithEnvVariableOpts{NoExpand: true}).
 			WithExec([]string{"printenv", "FOO"}).
 			Stdout(ctx)
 
@@ -1099,24 +1108,63 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 	})
 
 	t.Run("add env var with expansion", func(t *testing.T) {
-		out, err := c.Container().
+		expected := "/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
+
+		ctr := c.Container().
 			From(alpineImage).
-			WithEnvVariable("USER_PATH", "/opt").
+			WithEnvVariable("USER_PATH", "/opt")
+
+		out, err := ctr.
 			WithEnvVariable(
 				"PATH",
 				"${USER_PATH}/bin:$PATH",
 				dagger.ContainerWithEnvVariableOpts{
-					Expand: true,
+					Expand:   true,
+					NoExpand: true,
 				},
 			).
 			WithExec([]string{"printenv", "PATH"}).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t,
-			"/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
-			out,
-		)
+		require.Equal(t, expected, out)
+
+		out, err = ctr.
+			WithEnvVariable(
+				"PATH",
+				"${USER_PATH}/bin:$PATH",
+				dagger.ContainerWithEnvVariableOpts{
+					NoExpand: false,
+				},
+			).
+			WithExec([]string{"printenv", "PATH"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, out)
+
+		out, err = ctr.
+			WithEnvVariable("PATH", "${USER_PATH}/bin:$PATH").
+			WithExec([]string{"printenv", "PATH"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, out)
+
+		out, err = ctr.
+			WithEnvVariable(
+				"PATH",
+				"${USER_PATH}/bin:$PATH",
+				dagger.ContainerWithEnvVariableOpts{
+					Expand:   true,
+					NoExpand: true,
+				},
+			).
+			WithExec([]string{"printenv", "PATH"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, expected, out)
 	})
 }
 

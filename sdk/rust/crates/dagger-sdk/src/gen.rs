@@ -1346,9 +1346,12 @@ pub struct ContainerWithEntrypointOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
-    /// Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+    /// DEPRECATED: The environment variable will be expand by default.
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Do not replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+    #[builder(setter(into, strip_option), default)]
+    pub no_expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
@@ -2201,6 +2204,9 @@ impl Container {
         query = query.arg("value", value.into());
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(no_expand) = opts.no_expand {
+            query = query.arg("noExpand", no_expand);
         }
         Container {
             proc: self.proc.clone(),

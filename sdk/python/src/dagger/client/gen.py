@@ -1203,6 +1203,7 @@ class Container(Type):
         value: str,
         *,
         expand: bool | None = False,
+        no_expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus the given environment variable.
 
@@ -1213,14 +1214,17 @@ class Container(Type):
         value:
             The value of the environment variable. (e.g., "localhost").
         expand:
-            Replace `${VAR}` or `$VAR` in the value according to the current
-            environment variables defined in the container (e.g.,
+            DEPRECATED: The environment variable will be expand by default.
+        no_expand:
+            Do not replace `${VAR}` or `$VAR` in the value according to the
+            current environment variables defined in the container (e.g.,
             "/opt/bin:$PATH").
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
             Arg("expand", expand, False),
+            Arg("noExpand", no_expand, False),
         ]
         _ctx = self._select("withEnvVariable", _args)
         return Container(_ctx)

@@ -1064,8 +1064,10 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 
 // ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
 type ContainerWithEnvVariableOpts struct {
-	// Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+	// DEPRECATED: The environment variable will be expand by default.
 	Expand bool
+	// Do not replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+	NoExpand bool
 }
 
 // Retrieves this container plus the given environment variable.
@@ -1075,6 +1077,10 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
+		}
+		// `noExpand` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoExpand) {
+			q = q.Arg("noExpand", opts[i].NoExpand)
 		}
 	}
 	q = q.Arg("name", name)

@@ -441,14 +441,17 @@ type Container {
 
   """Retrieves this container plus the given environment variable."""
   withEnvVariable(
-    """
-    Replace `${VAR}` or `$VAR` in the value according to the current environment
-    variables defined in the container (e.g., "/opt/bin:$PATH").
-    """
+    """DEPRECATED: The environment variable will be expand by default."""
     expand: Boolean = false
 
     """The name of the environment variable (e.g., "HOST")."""
     name: String!
+
+    """
+    Do not replace `${VAR}` or `$VAR` in the value according to the current
+    environment variables defined in the container (e.g., "/opt/bin:$PATH").
+    """
+    noExpand: Boolean = false
 
     """The value of the environment variable. (e.g., "localhost")."""
     value: String!

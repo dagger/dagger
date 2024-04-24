@@ -260,9 +260,14 @@ export type ContainerWithEntrypointOpts = {
 
 export type ContainerWithEnvVariableOpts = {
   /**
-   * Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+   * DEPRECATED: The environment variable will be expand by default.
    */
   expand?: boolean
+
+  /**
+   * Do not replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+   */
+  noExpand?: boolean
 }
 
 export type ContainerWithExecOpts = {
@@ -1978,7 +1983,8 @@ export class Container extends BaseClient {
    * Retrieves this container plus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    * @param value The value of the environment variable. (e.g., "localhost").
-   * @param opts.expand Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+   * @param opts.expand DEPRECATED: The environment variable will be expand by default.
+   * @param opts.noExpand Do not replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
    */
   withEnvVariable = (
     name: string,
