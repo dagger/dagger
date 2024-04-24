@@ -1,3 +1,5 @@
+// Everything you need to develop the Dagger Engine
+// https://dagger.io
 package main
 
 import (
@@ -8,6 +10,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+// A dev environment for the Dagger Engine
 type Dagger struct {
 	Source  *Directory // +private
 	Version *VersionInfo
@@ -47,22 +50,27 @@ func New(
 	}, nil
 }
 
+// Develop the Dagger CLI
 func (ci *Dagger) CLI() *CLI {
 	return &CLI{Dagger: ci}
 }
 
+// Develop the Dagger engine container
 func (ci *Dagger) Engine() *Engine {
 	return &Engine{Dagger: ci}
 }
 
+// Develop the Dagger documentation
 func (ci *Dagger) Docs() *Docs {
 	return &Docs{Dagger: ci}
 }
 
+// Run all tests
 func (ci *Dagger) Test() *Test {
 	return &Test{Dagger: ci}
 }
 
+// Develop Dagger SDKs
 func (ci *Dagger) SDK() *SDK {
 	return &SDK{
 		Go:         &GoSDK{Dagger: ci},
@@ -75,11 +83,17 @@ func (ci *Dagger) SDK() *SDK {
 	}
 }
 
+func (ci *Dagger) Helm() *Helm {
+	return &Helm{Dagger: ci}
+}
+
 // Creates a dev container that has a running CLI connected to a dagger engine
 func (ci *Dagger) Dev(
 	ctx context.Context,
+	// Mount a directory into the container's workdir, for convenience
 	// +optional
 	target *Directory,
+	// Enable experimental GPU support
 	// +optional
 	experimentalGPUSupport bool,
 ) (*Container, error) {

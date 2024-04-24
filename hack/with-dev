@@ -2,7 +2,7 @@
 
 set -e -u
 
-DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+DAGGER_SRC_ROOT="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}"))/.. && pwd)"
 
 export _EXPERIMENTAL_DAGGER_CLI_BIN=$DAGGER_SRC_ROOT/bin/dagger
 export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev

@@ -924,7 +924,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				return nil, fmt.Errorf("error unmarshaling config at %s: %s", configPath, err)
 			}
 
-		case strings.Contains(err.Error(), "no such file or directory"):
+		case strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "not found"):
 			// This is only allowed for the top-level module (which may be in the process of being newly initialized).
 			// sentinel via nil modCfg unless there's WithSDK/WithDependencies/etc. to be applied
 			if !topLevel {
@@ -1057,21 +1057,19 @@ func callerHostFindUpContext(
 	bk *buildkit.Client,
 	curDirPath string,
 ) (string, bool, error) {
-	if !filepath.IsAbs(curDirPath) {
-		return "", false, fmt.Errorf("path is not absolute: %s", curDirPath)
-	}
 	_, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"), false)
 	if err == nil {
 		return curDirPath, true, nil
 	}
-	if !strings.Contains(err.Error(), "no such file or directory") {
+	if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "not found") {
 		return "", false, fmt.Errorf("failed to lstat .git: %s", err)
 	}
 
-	if curDirPath == "/" {
+	nextDirPath := filepath.Dir(curDirPath)
+	if curDirPath == nextDirPath {
 		return "", false, nil
 	}
-	return callerHostFindUpContext(ctx, bk, filepath.Dir(curDirPath))
+	return callerHostFindUpContext(ctx, bk, nextDirPath)
 }
 
 func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
@@ -1083,13 +1081,11 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	},
 ) (inst dagql.Instance[*core.Directory], err error) {
 	path := args.Path
-	if !filepath.IsAbs(path) {
-		stat, err := src.Query.Buildkit.StatCallerHostPath(ctx, path, true)
-		if err != nil {
-			return inst, fmt.Errorf("failed to stat caller path: %w", err)
-		}
-		path = stat.Path
+	stat, err := src.Query.Buildkit.StatCallerHostPath(ctx, path, true)
+	if err != nil {
+		return inst, fmt.Errorf("failed to stat caller path: %w", err)
 	}
+	path = stat.Path
 
 	var includes []string
 	var excludes []string

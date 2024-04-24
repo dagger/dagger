@@ -1,0 +1,49 @@
+---
+slug: /manuals/user/384829/services
+---
+
+# Containers as Services for Local Development
+
+Dagger Functions enable users to spin up long-running services (as containers) and communicate with those services from other Dagger Functions or from the calling host by forwarding their ports. This is akin to a "programmable docker-compose".
+
+:::note
+It is also possible to [pass host network services to a Dagger Function](../../host/053831-host-services.mdx), by explicitly specifying them as arguments in the form `tcp://<host>:<port>` when executing `dagger call`.
+:::
+
+- Each service container has a canonical, content-addressed hostname and an optional set of exposed ports.
+- Service containers are started just-in-time, de-duplicated, and stopped when no longer needed.
+- Service containers are health checked prior to running clients.
+
+Some common scenarios for using services with Dagger Functions are:
+
+- Starting a database service in a function and using it for storage or testing
+- Instantiating a service in a function against which end-to-end integration tests can run
+- Running sidecar services
+
+To start a service returned by a Dagger Function and have it forward traffic to a specified address via the host, use  `dagger call ... up`. If no port information is supplied, all of the service's ports are forwarded.
+
+Here is another example of starting an NGINX service on host port 80 with the `Container()` function of the `nginx` module:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/nginx@v0.1.0 call container as-service up
+```
+
+By default, each port maps to the same port on the host. To specify a different mapping, use the additional `--ports` argument with a list of host/service port mappings. To bind ports randomly, use the `--random` argument.
+
+To start the same service and map NGINX port 80 to host port 8080, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/nginx@v0.1.0 call container as-service up --ports=8080:80
+```
+
+The service can now be accessed on the specified port - for example, in another terminal, execute the following command to receive the default NGINX welcome page:
+
+```shell
+curl localhost:8080
+```
+
+To start the same service and map NGINX port 80 to a random port on the host, use:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/nginx@v0.1.0 call container as-service up --random
+```

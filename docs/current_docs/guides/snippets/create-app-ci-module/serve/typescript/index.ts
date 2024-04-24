@@ -2,20 +2,24 @@ import {
   dag,
   Container,
   Directory,
-  Service,
   object,
   func,
+  Service,
 } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  // create a service from the production image
+  /*
+   * Create a service from the production image
+   */
   @func()
   serve(source: Directory): Service {
     return this.package(source).asService()
   }
 
-  // publish an image
+  /*
+   * Publish an image
+   */
   @func()
   async publish(source: Directory): Promise<string> {
     return await this.package(source).publish(
@@ -23,7 +27,9 @@ class MyModule {
     )
   }
 
-  // create a production image
+  /*
+   * Create a production image
+   */
   @func()
   package(source: Directory): Container {
     return dag
@@ -33,32 +39,36 @@ class MyModule {
       .withExposedPort(80)
   }
 
-  // create a production build
+  /*
+   * Create a production build
+   */
   @func()
   build(source: Directory): Directory {
     return dag
-      .node()
-      .withContainer(this.buildBaseImage(source))
+      .node({ ctr: this.buildBaseImage(source) })
+      .commands()
       .build()
-      .container()
       .directory("./dist")
   }
 
-  // run unit tests
+  /*
+   * Run unit tests
+   */
   @func()
   async test(source: Directory): Promise<string> {
     return await dag
-      .node()
-      .withContainer(this.buildBaseImage(source))
-      .run(["run", "test:unit", "run"])
+      .node({ ctr: this.buildBaseImage(source) })
+      .commands()
+      .run(["test:unit", "run"])
       .stdout()
   }
 
-  // build base image
+  /*
+   * Build base image
+   */
   buildBaseImage(source: Directory): Container {
     return dag
-      .node()
-      .withVersion("21")
+      .node({ version: "21" })
       .withNpm()
       .withSource(source)
       .install([])

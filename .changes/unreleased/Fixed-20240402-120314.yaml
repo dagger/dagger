@@ -1,6 +1,0 @@
-kind: Fixed
-body: Git can now be used with dumb HTTP clones
-time: 2024-04-02T12:03:14.07420328+01:00
-custom:
-  Author: jedevc
-  PR: "6992"

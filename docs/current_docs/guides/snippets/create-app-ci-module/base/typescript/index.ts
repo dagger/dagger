@@ -2,11 +2,12 @@ import { dag, Container, Directory, object } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  // build base image
+  /*
+   * Build base image
+   */
   buildBaseImage(source: Directory): Container {
     return dag
-      .node()
-      .withVersion("21")
+      .node({ version: "21" })
       .withNpm()
       .withSource(source)
       .install([])

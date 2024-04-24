@@ -1,0 +1,31 @@
+---
+slug: /manuals/user/472010/containers
+---
+
+# Just-in-Time Containers
+
+Just-in-time containers are produced by calling a Dagger Function that returns the `Container` type. This type provides a complete API for building, running and distributing containers.
+
+Just-in-time containers might be produced by a Dagger Function that:
+
+- Builds a container
+- Minifies a container
+- Downloads a container image from a running registry
+- Exports a container from Docker or other container runtimes
+- Snapshots the state of a running container
+
+You can think of a just-in-time container, and the `Container` type that represents it, as a build stage in Dockerfile. Each operation produces a new immutable state, which can be further processed, or exported as an OCI image. Dagger Functions can accept, return and pass containers between themselves, just like regular variables.
+
+Here is an example of a Wolfi container builder Dagger Function that returns a base Wolfi container image with a list of additional specified packages:
+
+```shell
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=cowsay
+```
+
+Once the command completes, you should see this output:
+
+```shell
+Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
+```
+
+This means that the build succeeded, and a `Container` type representing the built container image was returned.

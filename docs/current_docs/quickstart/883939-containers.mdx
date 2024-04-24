@@ -65,7 +65,7 @@ While most terminal programs such as `htop` or `vim` work with `dagger ... termi
 
 ### Execute commands in the container
 
-The `Container` type has a `withExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same result as before (although non-interactively) by chaining a function call to `withExec()` on the `Container` returned previously, as shown in the following command:
+The `Container` type has a `WithExec()` function, which returns the container after executing a specific command inside it. So, you could achieve the same result as before (although non-interactively) by chaining a function call to `withExec()` on the `Container` returned previously, as shown in the following command:
 
 ```shell
 dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=cowsay with-exec --args cowsay,dagger stdout

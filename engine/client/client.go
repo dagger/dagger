@@ -868,6 +868,7 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 				return fmt.Errorf("get abs path: %w", err)
 			}
 		}
+		stat.Path = filepath.ToSlash(stat.Path)
 		return stream.SendMsg(stat)
 	}
 
@@ -907,7 +908,7 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 
 	if !opts.IsFileStream {
 		// we're writing a full directory tree, normal fsutil.Receive is good
-		if err := os.MkdirAll(opts.Path, 0o700); err != nil {
+		if err := os.MkdirAll(filepath.FromSlash(opts.Path), 0o700); err != nil {
 			return fmt.Errorf("failed to create synctarget dest dir %s: %w", opts.Path, err)
 		}
 

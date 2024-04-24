@@ -2,7 +2,7 @@
 
 set -e -u -x
 
-DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+DAGGER_SRC_ROOT="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}"))/.. && pwd)"
 MAGEDIR="$DAGGER_SRC_ROOT/ci/mage"
 
 pushd $MAGEDIR

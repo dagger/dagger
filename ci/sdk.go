@@ -7,14 +7,22 @@ import (
 	"github.com/dagger/dagger/ci/consts"
 )
 
+// A dev environment for the official Dagger SDKs
 type SDK struct {
+	// Develop the Dagger Go SDK
 	Go         *GoSDK
+	// Develop the Dagger Python SDK
 	Python     *PythonSDK
+	// Develop the Dagger Typescript SDK
 	Typescript *TypescriptSDK
 
+	// Develop the Dagger Elixir SDK (experimental)
 	Elixir *ElixirSDK
+	// Develop the Dagger Rust SDK (experimental)
 	Rust   *RustSDK
+	// Develop the Dagger Java SDK (experimental)
 	Java   *JavaSDK
+	// Develop the Dagger PHP SDK (experimental)
 	PHP    *PHPSDK
 }
 

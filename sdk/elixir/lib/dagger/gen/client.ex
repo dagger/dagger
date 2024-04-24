@@ -750,4 +750,13 @@ defmodule Dagger.Client do
       client: client.client
     }
   end
+
+  @doc "Get the current Dagger Engine version."
+  @spec version(t()) :: {:ok, String.t()} | {:error, term()}
+  def version(%__MODULE__{} = client) do
+    selection =
+      client.selection |> select("version")
+
+    execute(selection, client.client)
+  end
 end
