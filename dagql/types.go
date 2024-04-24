@@ -876,9 +876,6 @@ func (e *EnumValues[T]) Install(srv *Server) {
 	srv.scalars[zero.Type().Name()] = e
 }
 
-// InputType represents a GraphQL Input Object type.
-type InputType[T Type] struct{}
-
 func MustInputSpec(val Type) InputObjectSpec {
 	spec := InputObjectSpec{
 		Name: val.TypeName(),
