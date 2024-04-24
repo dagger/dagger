@@ -14,8 +14,8 @@ So far, you've learned the basics of calling Dagger Functions. The next step is 
 
 Here are the basic steps to Daggerizing an existing project:
 
-1. Initialize a new Dagger Module with `dagger init`
-2. Install other useful Dagger Modules as dependencies with `dagger install`
+1. Initialize a new Dagger module with `dagger init`
+2. Install other useful Dagger modules as dependencies with `dagger install`
 3. Call useful Dagger Functions with `dagger call`
 4. Add useful `dagger call` commands to existing scripts and CI configuration
 
@@ -64,11 +64,9 @@ git add dagger.json
 git commit -m 'dagger init'
 ```
 
-Congratulations! Your repository is now a Dagger Module.
-
 ### Install a dependency
 
-Now that your project is a Dagger Module, you can install other modules into it, as dependencies. A dependency is just a Dagger Module installed into another. Since the project is a Go project, install the Go builder module from earlier as a dependency:
+Now that your project has a Dagger module, you can install other modules into it, as dependencies. A dependency is just a Dagger module installed into another. Since the project is a Go project, install the Go builder module from earlier as a dependency:
 
 ```shell
 dagger install github.com/kpenfound/dagger-modules/golang@v0.1.8
@@ -129,4 +127,4 @@ You should see the following output:
 Hello, world!
 ```
 
-Your project is slowly becoming more and more Daggerized...you're now able to build it, containerize it and publish it, all with a single Dagger Function call. If you like, you can integrate this call into your existing shell scripts, or perhaps a Makefile. Or, you can create a custom Dagger Module, which enables you to connect one or more Dagger Functions together in portable, expressive workflows with all the benefits of a native programming language.
+Your project is slowly becoming more and more Daggerized...you're now able to build it, containerize it and publish it, all with a single Dagger Function call. If you like, you can integrate this call into your existing shell scripts, or perhaps a Makefile. Or, you can create a custom Dagger module, which enables you to connect one or more Dagger Functions together in portable, expressive workflows with all the benefits of a native programming language.

@@ -118,7 +118,7 @@ dagger (registry.dagger.io/engine) linux/amd64
 ```
 
 :::tip
-As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
+As you've seen in the previous examples, Dagger modules can contain one or more Dagger Functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 functions
