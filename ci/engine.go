@@ -124,24 +124,36 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
+	eg, ctx := errgroup.WithContext(ctx)
+
 	pkgs := []string{""}
 	// pkgs := []string{"", "ci"}
-
-	ctr := dag.Container().
-		From(consts.GolangLintImage).
-		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source))
 
 	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
 	if all {
 		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
 	}
 	for _, pkg := range pkgs {
-		ctr = ctr.
+		golangci := dag.Container().
+			From(consts.GolangLintImage).
+			WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
 			WithWorkdir(path.Join("/app", pkg)).
 			WithExec(cmd)
+		eg.Go(func() error {
+			_, err := golangci.Sync(ctx)
+			return err
+		})
+
+		eg.Go(func() error {
+			return util.DiffDirectoryF(ctx, util.GoDirectory(e.Dagger.Source), func(ctx context.Context) (*dagger.Directory, error) {
+				return util.GoBase(e.Dagger.Source).
+					WithExec([]string{"go", "mod", "tidy"}).
+					Directory("."), nil
+			}, "go.mod", "go.sum")
+		})
 	}
-	_, err := ctr.Sync(ctx)
-	return err
+
+	return eg.Wait()
 }
 
 // Publish all engine images to a registry

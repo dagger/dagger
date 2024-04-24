@@ -53,7 +53,7 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, pythonGeneratedAPIPath, t.Dagger.Source, t.Generate)
+		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, pythonGeneratedAPIPath)
 	})
 
 	return eg.Wait()

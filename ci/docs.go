@@ -50,10 +50,7 @@ func (d Docs) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, generatedSchemaPath, d.Dagger.Source, d.Generate)
-	})
-	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, generatedCliZenPath, d.Dagger.Source, d.Generate)
+		return util.DiffDirectoryF(ctx, d.Dagger.Source, d.Generate, generatedSchemaPath, generatedCliZenPath)
 	})
 
 	// Go is already linted by engine:lint
