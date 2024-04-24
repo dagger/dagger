@@ -973,6 +973,23 @@ impl PortId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ScalarTypeDefId(pub String);
+impl Into<ScalarTypeDefId> for &str {
+    fn into(self) -> ScalarTypeDefId {
+        ScalarTypeDefId(self.to_string())
+    }
+}
+impl Into<ScalarTypeDefId> for String {
+    fn into(self) -> ScalarTypeDefId {
+        ScalarTypeDefId(self.clone())
+    }
+}
+impl ScalarTypeDefId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(pub String);
 impl From<&str> for SecretId {
     fn from(value: &str) -> Self {
@@ -6236,6 +6253,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a ScalarTypeDef from its ID.
+    pub fn load_scalar_type_def_from_id(&self, id: ScalarTypeDef) -> ScalarTypeDef {
+        let mut query = self.selection.select("loadScalarTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.id().await.unwrap().quote() })
+            }),
+        );
+        ScalarTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Secret from its ID.
     pub fn load_secret_from_id(&self, id: impl IntoID<SecretId>) -> Secret {
         let mut query = self.selection.select("loadSecretFromID");
@@ -6527,6 +6560,34 @@ impl Query {
     }
 }
 #[derive(Clone)]
+pub struct ScalarTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ScalarTypeDef {
+    /// A doc string for the scalar, if any.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this ScalarTypeDef.
+    pub async fn id(&self) -> Result<ScalarTypeDefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the scalar.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct Secret {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -6736,6 +6797,11 @@ pub struct TypeDefWithObjectOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithScalarOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+}
 impl TypeDef {
     /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
     pub fn as_input(&self) -> InputTypeDef {
@@ -6768,6 +6834,15 @@ impl TypeDef {
     pub fn as_object(&self) -> ObjectTypeDef {
         let query = self.selection.select("asObject");
         ObjectTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+    pub fn as_scalar(&self) -> ScalarTypeDef {
+        let query = self.selection.select("asScalar");
+        ScalarTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -6982,6 +7057,41 @@ impl TypeDef {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Returns a TypeDef of kind Scalar with the provided name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_scalar(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withScalar");
+        query = query.arg("name", name.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns a TypeDef of kind Scalar with the provided name.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_scalar_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: TypeDefWithScalarOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withScalar");
+        query = query.arg("name", name.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
@@ -7038,6 +7148,8 @@ pub enum TypeDefKind {
     ListKind,
     #[serde(rename = "OBJECT_KIND")]
     ObjectKind,
+    #[serde(rename = "SCALAR_KIND")]
+    ScalarKind,
     #[serde(rename = "STRING_KIND")]
     StringKind,
     #[serde(rename = "VOID_KIND")]

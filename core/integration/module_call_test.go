@@ -499,6 +499,80 @@ func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (stri
 		require.Equal(t, "foo\nbar\n", out)
 	})
 
+	t.Run("platform args", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+type Test struct {}
+
+func (m *Test) FromPlatform(platform Platform) string {
+	return string(platform)
+}
+
+func (m *Test) ToPlatform(platform string) Platform {
+	return Platform(platform)
+}
+`,
+			})
+
+		out, err := modGen.With(daggerCall("from-platform", "--platform", "linux/amd64")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "linux/amd64", out)
+		_, err = modGen.With(daggerCall("from-platform", "--platform", "invalid")).Stdout(ctx)
+		require.ErrorContains(t, err, "unknown operating system or architecture")
+
+		out, err = modGen.With(daggerCall("to-platform", "--platform", "linux/amd64")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "linux/amd64", out)
+		_, err = modGen.With(daggerCall("from-platform", "--platform", "invalid")).Stdout(ctx)
+		require.ErrorContains(t, err, "unknown operating system or architecture")
+	})
+
+	t.Run("enum args", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+type Test struct {}
+
+func (m *Test) FromProto(proto NetworkProtocol) string {
+	return string(proto)
+}
+
+func (m *Test) ToProto(proto string) NetworkProtocol {
+	return NetworkProtocol(proto)
+}
+`,
+			})
+
+		out, err := modGen.With(daggerCall("from-proto", "--proto", "TCP")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "TCP", out)
+		_, err = modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
+		require.ErrorContains(t, err, "invalid enum value")
+
+		out, err = modGen.With(daggerCall("to-proto", "--proto", "TCP")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "TCP", out)
+		_, err = modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
+		require.ErrorContains(t, err, "invalid enum value")
+	})
+
 	t.Run("module args", func(t *testing.T) {
 		t.Parallel()
 

@@ -2886,6 +2886,49 @@ class Foo {
 	}
 }
 
+func TestModuleScalarType(t *testing.T) {
+	// Verify use of a core scalar as an argument type.
+
+	t.Parallel()
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+type Foo struct{}
+
+func (m *Foo) SayHello(platform Platform) string {
+	return "hello " + string(platform)
+}`,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+			c, ctx := connect(t)
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
+				With(sdkSource(tc.sdk, tc.source))
+
+			out, err := modGen.With(daggerQuery(`{foo{sayHello(platform: "linux/amd64")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello linux/amd64", gjson.Get(out, "foo.sayHello").String())
+
+			_, err = modGen.With(daggerQuery(`{foo{sayHello(platform: "invalid")}}`)).Stdout(ctx)
+			require.ErrorContains(t, err, "unknown operating system or architecture")
+		})
+	}
+}
+
 func TestModuleConflictingSameNameDeps(t *testing.T) {
 	// A -> B -> Dint
 	// A -> C -> Dstr

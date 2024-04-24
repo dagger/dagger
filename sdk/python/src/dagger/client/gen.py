@@ -156,6 +156,11 @@ class PortID(Scalar):
     type Port."""
 
 
+class ScalarTypeDefID(Scalar):
+    """The `ScalarTypeDefID` scalar type represents an identifier for an
+    object of type ScalarTypeDef."""
+
+
 class SecretID(Scalar):
     """The `SecretID` scalar type represents an identifier for an object
     of type Secret."""
@@ -264,6 +269,9 @@ class TypeDefKind(Enum):
 
     Always paired with an ObjectTypeDef.
     """
+
+    SCALAR_KIND = "SCALAR_KIND"
+    """A scalar value of any basic kind."""
 
     STRING_KIND = "STRING_KIND"
     """A string value."""
@@ -5869,6 +5877,14 @@ class Client(Root):
         _ctx = self._select("loadPortFromID", _args)
         return Port(_ctx)
 
+    def load_scalar_type_def_from_id(self, id: ScalarTypeDefID) -> "ScalarTypeDef":
+        """Load a ScalarTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadScalarTypeDefFromID", _args)
+        return ScalarTypeDef(_ctx)
+
     def load_secret_from_id(self, id: SecretID) -> "Secret":
         """Load a Secret from its ID."""
         _args = [
@@ -6073,6 +6089,99 @@ class Client(Root):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
+
+
+@typecheck
+class ScalarTypeDef(Type):
+    """A definition of a custom scalar defined in a Module."""
+
+    async def description(self) -> str:
+        """A doc string for the scalar, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> ScalarTypeDefID:
+        """A unique identifier for this ScalarTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ScalarTypeDefID
+            The `ScalarTypeDefID` scalar type represents an identifier for an
+            object of type ScalarTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ScalarTypeDefID)
+
+    async def name(self) -> str:
+        """The name of the scalar.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def source_module_name(self) -> str:
+        """If this ScalarTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -6456,6 +6565,14 @@ class TypeDef(Type):
         _ctx = self._select("asObject", _args)
         return ObjectTypeDef(_ctx)
 
+    def as_scalar(self) -> ScalarTypeDef:
+        """If kind is SCALAR, the scalar-specific type definition. If kind is not
+        SCALAR, this will be null.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asScalar", _args)
+        return ScalarTypeDef(_ctx)
+
     async def id(self) -> TypeDefID:
         """A unique identifier for this TypeDef.
 
@@ -6624,6 +6741,20 @@ class TypeDef(Type):
         _ctx = self._select("withOptional", _args)
         return TypeDef(_ctx)
 
+    def with_scalar(
+        self,
+        name: str,
+        *,
+        description: str | None = "",
+    ) -> Self:
+        """Returns a TypeDef of kind Scalar with the provided name."""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, ""),
+        ]
+        _ctx = self._select("withScalar", _args)
+        return TypeDef(_ctx)
+
     def with_(self, cb: Callable[["TypeDef"], "TypeDef"]) -> "TypeDef":
         """Call the provided callable with current TypeDef.
 
@@ -6701,6 +6832,8 @@ __all__ = [
     "Port",
     "PortForward",
     "PortID",
+    "ScalarTypeDef",
+    "ScalarTypeDefID",
     "Secret",
     "SecretID",
     "Service",

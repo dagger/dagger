@@ -615,6 +615,17 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 		val, _ := getDefaultValue[bool](r)
 		return flags.Bool(name, val, usage), nil
 
+	case dagger.ScalarKind:
+		scalarName := r.TypeDef.AsScalar.Name
+
+		if val := GetCustomFlagValue(scalarName); val != nil {
+			flags.Var(val, name, usage)
+			return val, nil
+		}
+
+		val, _ := getDefaultValue[string](r)
+		return flags.String(name, val, usage), nil
+
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
@@ -652,6 +663,17 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 		case dagger.BooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
 			return flags.BoolSlice(name, val, usage), nil
+
+		case dagger.ScalarKind:
+			scalarName := r.TypeDef.AsScalar.Name
+
+			if val := GetCustomFlagValueSlice(scalarName); val != nil {
+				flags.Var(val, name, usage)
+				return val, nil
+			}
+
+			val, _ := getDefaultValue[[]string](r)
+			return flags.StringSlice(name, val, usage), nil
 
 		case dagger.ObjectKind:
 			objName := elementType.AsObject.Name

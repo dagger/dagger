@@ -471,6 +471,75 @@ func (s String) SetField(v reflect.Value) error {
 	}
 }
 
+type ScalarValue interface {
+	ScalarType
+	Input
+}
+
+// Scalar is a GraphQL scalar.
+type Scalar[T ScalarValue] struct {
+	Name  string
+	Value T
+}
+
+func NewScalar[T ScalarValue](name string, val T) Scalar[T] {
+	return Scalar[T]{name, val}
+}
+
+var _ Typed = Scalar[ScalarValue]{}
+
+func (s Scalar[T]) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: s.Name,
+		NonNull:   true,
+	}
+}
+
+var _ ScalarValue = Scalar[ScalarValue]{}
+
+func (s Scalar[T]) TypeName() string {
+	return s.Name
+}
+
+func (s Scalar[T]) TypeDefinition() *ast.Definition {
+	def := &ast.Definition{
+		Kind: ast.Scalar,
+		Name: s.TypeName(),
+	}
+	var val T
+	if isType, ok := any(val).(Descriptive); ok {
+		def.Description = isType.TypeDescription()
+	}
+	return def
+}
+
+func (s Scalar[T]) DecodeInput(val any) (Input, error) {
+	var empty T
+	input, err := empty.DecodeInput(val)
+	if err != nil {
+		return nil, err
+	}
+	return NewScalar[T](s.Name, input.(T)), nil
+}
+
+var _ Input = Scalar[ScalarValue]{}
+
+func (s Scalar[T]) Decoder() InputDecoder {
+	return s
+}
+
+func (s Scalar[T]) ToLiteral() call.Literal {
+	return s.Value.ToLiteral()
+}
+
+func (s Scalar[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.Value)
+}
+
+func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
+	return json.Unmarshal(p, &s.Value)
+}
+
 // ID is a type-checked ID scalar.
 type ID[T Typed] struct {
 	id    *call.ID

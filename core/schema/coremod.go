@@ -71,12 +71,19 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			Underlying: underlyingType,
 		}
 
+	case core.TypeDefKindScalar:
+		_, ok := m.Dag.ScalarType(typeDef.AsScalar.Value.Name)
+		if !ok {
+			return nil, false, nil
+		}
+		modType = &CoreModScalar{coreMod: m, name: typeDef.AsScalar.Value.Name}
+
 	case core.TypeDefKindObject:
 		_, ok := m.Dag.ObjectType(typeDef.AsObject.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}
-		modType = &CoreModObject{coreMod: m}
+		modType = &CoreModObject{coreMod: m, name: typeDef.AsObject.Value.Name}
 
 	case core.TypeDefKindInterface:
 		// core does not yet defined any interfaces
@@ -204,6 +211,48 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 	return typeDefs, nil
 }
 
+// CoreModScalar represents scalars from core (Platform, etc)
+type CoreModScalar struct {
+	coreMod *CoreMod
+	name    string
+}
+
+var _ core.ModType = (*CoreModScalar)(nil)
+
+func (obj *CoreModScalar) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+	s, ok := obj.coreMod.Dag.ScalarType(obj.name)
+	if !ok {
+		return nil, fmt.Errorf("CoreModScalar.ConvertFromSDKResult: found no scalar type")
+	}
+	return s.DecodeInput(value)
+}
+
+func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
+	s, ok := obj.coreMod.Dag.ScalarType(obj.name)
+	if !ok {
+		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: found no scalar type")
+	}
+	val, ok := value.(dagql.Scalar[dagql.String])
+	if !ok {
+		// we assume all core scalars are strings
+		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: core scalar should be string")
+	}
+	return s.DecodeInput(string(val.Value))
+}
+
+func (obj *CoreModScalar) SourceMod() core.Mod {
+	return obj.coreMod
+}
+
+func (obj *CoreModScalar) TypeDef() *core.TypeDef {
+	return &core.TypeDef{
+		Kind: core.TypeDefKindScalar,
+		AsScalar: dagql.NonNull(&core.ScalarTypeDef{
+			Name: obj.name,
+		}),
+	}
+}
+
 // CoreModObject represents objects from core (Container, Directory, etc.)
 type CoreModObject struct {
 	coreMod *CoreMod
@@ -291,8 +340,9 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 		case string(introspection.ScalarBoolean):
 			typeDef.Kind = core.TypeDefKindBoolean
 		default:
-			// default to saying it's a string for now
-			typeDef.Kind = core.TypeDefKindString
+			// assume that all core scalars are strings
+			typeDef.Kind = core.TypeDefKindScalar
+			typeDef.AsScalar = dagql.NonNull(core.NewScalarTypeDef(introspectionType.Name, ""))
 		}
 
 		return typeDef, true, nil

@@ -2289,6 +2289,9 @@ type Query {
   """Load a Port from its ID."""
   loadPortFromID(id: PortID!): Port!
 
+  """Load a ScalarTypeDef from its ID."""
+  loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
+
   """Load a Secret from its ID."""
   loadSecretFromID(id: SecretID!): Secret!
 
@@ -2369,6 +2372,28 @@ type Query {
   """Get the current Dagger Engine version."""
   version: String!
 }
+
+"""A definition of a custom scalar defined in a Module."""
+type ScalarTypeDef {
+  """A doc string for the scalar, if any."""
+  description: String!
+
+  """A unique identifier for this ScalarTypeDef."""
+  id: ScalarTypeDefID!
+
+  """The name of the scalar."""
+  name: String!
+
+  """
+  If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
+}
+
+"""
+The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
+"""
+scalar ScalarTypeDefID
 
 """
 A reference to a secret value, which can be handled more safely than the value itself.
@@ -2500,6 +2525,11 @@ type TypeDef {
   """
   asObject: ObjectTypeDef
 
+  """
+  If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+  """
+  asScalar: ScalarTypeDef
+
   """A unique identifier for this TypeDef."""
   id: TypeDefID!
 
@@ -2555,6 +2585,9 @@ type TypeDef {
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
+
+  """Returns a TypeDef of kind Scalar with the provided name."""
+  withScalar(description: String = "", name: String!): TypeDef!
 }
 
 """
@@ -2572,6 +2605,9 @@ enum TypeDefKind {
 
   """A boolean value."""
   BOOLEAN_KIND
+
+  """A scalar value of any basic kind."""
+  SCALAR_KIND
 
   """
   A list of values all having the same type.

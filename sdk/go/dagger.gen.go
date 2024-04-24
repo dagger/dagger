@@ -198,6 +198,9 @@ type Platform string
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID string
 
+// The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
+type ScalarTypeDefID string
+
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID string
 
@@ -5853,6 +5856,16 @@ func (r *Client) LoadPortFromID(id PortID) *Port {
 	}
 }
 
+// Load a ScalarTypeDef from its ID.
+func (r *Client) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
+	q := r.query.Select("loadScalarTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
 // Load a Secret from its ID.
 func (r *Client) LoadSecretFromID(id SecretID) *Secret {
 	q := r.query.Select("loadSecretFromID")
@@ -6044,6 +6057,101 @@ func (r *Client) TypeDef() *TypeDef {
 // Get the current Dagger Engine version.
 func (r *Client) Version(ctx context.Context) (string, error) {
 	q := r.query.Select("version")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A definition of a custom scalar defined in a Module.
+type ScalarTypeDef struct {
+	query *querybuilder.Selection
+
+	description      *string
+	id               *ScalarTypeDefID
+	name             *string
+	sourceModuleName *string
+}
+
+func (r *ScalarTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ScalarTypeDef {
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// A doc string for the scalar, if any.
+func (r *ScalarTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this ScalarTypeDef.
+func (r *ScalarTypeDef) ID(ctx context.Context) (ScalarTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ScalarTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ScalarTypeDef) XXX_GraphQLType() string {
+	return "ScalarTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ScalarTypeDef) XXX_GraphQLIDType() string {
+	return "ScalarTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ScalarTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ScalarTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the scalar.
+func (r *ScalarTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
 
 	var response string
 
@@ -6511,6 +6619,15 @@ func (r *TypeDef) AsObject() *ObjectTypeDef {
 	}
 }
 
+// If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+func (r *TypeDef) AsScalar() *ScalarTypeDef {
+	q := r.query.Select("asScalar")
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
 // A unique identifier for this TypeDef.
 func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
 	if r.id != nil {
@@ -6698,6 +6815,27 @@ func (r *TypeDef) WithOptional(optional bool) *TypeDef {
 	}
 }
 
+// TypeDefWithScalarOpts contains options for TypeDef.WithScalar
+type TypeDefWithScalarOpts struct {
+	Description string
+}
+
+// Returns a TypeDef of kind Scalar with the provided name.
+func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDef {
+	q := r.query.Select("withScalar")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
 type CacheSharingMode string
 
 func (CacheSharingMode) IsEnum() {}
@@ -6785,6 +6923,9 @@ const (
 	//
 	// Always paired with an ObjectTypeDef.
 	ObjectKind TypeDefKind = "OBJECT_KIND"
+
+	// A scalar value of any basic kind.
+	ScalarKind TypeDefKind = "SCALAR_KIND"
 
 	// A string value.
 	StringKind TypeDefKind = "STRING_KIND"

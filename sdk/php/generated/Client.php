@@ -474,6 +474,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a ScalarTypeDef from its ID.
+     */
+    public function loadScalarTypeDefFromID(ScalarTypeDefId|ScalarTypeDef $id): ScalarTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadScalarTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\ScalarTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Secret from its ID.
      */
     public function loadSecretFromID(SecretId|Secret $id): Secret

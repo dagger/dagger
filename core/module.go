@@ -317,6 +317,21 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 			return nil, false, nil
 		}
 
+	case TypeDefKindScalar:
+		if checkDirectDeps {
+			// check to see if this is from a *direct* dependency
+			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get type from dependency: %w", err)
+			}
+			if ok {
+				return depType, true, nil
+			}
+		}
+
+		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
+		return nil, false, nil
+
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
