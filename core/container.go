@@ -38,8 +38,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
-var ErrContainerNoExec = errors.New("no command has been executed")
-
 type DefaultTerminalCmdOpts struct {
 	Args []string
 
