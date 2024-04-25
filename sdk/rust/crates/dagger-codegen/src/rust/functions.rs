@@ -135,11 +135,6 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                         }
                     }
 
-                    if type_ref_is_enum(&s.input_value.type_) {
-                        return Some(quote! {
-                            query = query.arg_enum($(quoted(name)), $(n));
-                        })
-                    }
 
                     if type_ref_is_list(&s.input_value.type_) {
                         let inner = *s
@@ -206,14 +201,6 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
 
                     let n = format_struct_name(&s.input_value.name);
                     let name = &s.input_value.name;
-
-                    if type_ref_is_enum(&s.input_value.type_) {
-                        return Some(quote! {
-                            if let Some($(&n)) = opts.$(&n) {
-                                query = query.arg_enum($(quoted(name)), $(n));
-                            }
-                        });
-                    }
 
                     Some(quote! {
                         if let Some($(&n)) = opts.$(&n) {

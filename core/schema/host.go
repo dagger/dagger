@@ -41,11 +41,11 @@ func (s *hostSchema) Install() {
 		}) (*core.Directory, error) {
 			dig, err := digest.Parse(args.Digest)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse digest: %s", err)
+				return nil, fmt.Errorf("failed to parse digest: %w", err)
 			}
 			uncompressedDig, err := digest.Parse(args.Uncompressed)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse digest: %s", err)
+				return nil, fmt.Errorf("failed to parse digest: %w", err)
 			}
 			blobDef, err := blob.LLB(specs.Descriptor{
 				MediaType: args.MediaType,
@@ -58,7 +58,7 @@ func (s *hostSchema) Install() {
 				},
 			}).Marshal(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal blob source: %s", err)
+				return nil, fmt.Errorf("failed to marshal blob source: %w", err)
 			}
 			return core.NewDirectory(parent, blobDef.ToPB(), "/", parent.Platform, nil), nil
 		}).Doc("Retrieves a content-addressed blob."),

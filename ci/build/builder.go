@@ -11,6 +11,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/consts"
 	"github.com/dagger/dagger/ci/internal/dagger"
@@ -95,13 +96,13 @@ func (build *Builder) WithUbuntuBase() *Builder {
 
 func (build *Builder) WithAlpineBase() *Builder {
 	b := *build
-	build.base = "alpine"
+	b.base = "alpine"
 	return &b
 }
 
 func (build *Builder) WithGPUSupport() *Builder {
 	b := *build
-	build.gpuSupport = true
+	b.gpuSupport = true
 	return &b
 }
 
@@ -110,6 +111,22 @@ func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
 }
 
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
+	eg, ctx := errgroup.WithContext(ctx)
+
+	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
+	sdkContents := make([]*sdkContent, len(sdks))
+	for i, sdk := range sdks {
+		i, sdk := i, sdk
+		eg.Go(func() error {
+			content, err := sdk(ctx)
+			if err != nil {
+				return err
+			}
+			sdkContents[i] = content
+			return nil
+		})
+	}
+
 	var base *dagger.Container
 	switch build.base {
 	case "alpine", "":
@@ -156,9 +173,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
 		WithFile("/usr/local/bin/runc", build.runcBin(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
 		WithDirectory("/usr/local/bin", build.qemuBins()).
-		With(build.goSDKContent(ctx)).
-		With(build.pythonSDKContent(ctx)).
-		With(build.typescriptSDKContent(ctx)).
 		WithDirectory("/", build.cniPlugins()).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
@@ -172,6 +186,13 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
 		ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
 		ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	for _, content := range sdkContents {
+		ctr = ctr.With(content.apply)
 	}
 
 	return ctr, nil

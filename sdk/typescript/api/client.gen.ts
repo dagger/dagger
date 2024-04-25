@@ -6866,6 +6866,7 @@ export class Port extends BaseClient {
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
+  private readonly _version?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -6874,11 +6875,13 @@ export class Client extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _checkVersionCompatibility?: boolean,
     _defaultPlatform?: Platform,
+    _version?: string,
   ) {
     super(parent)
 
     this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
+    this._version = _version
   }
 
   /**
@@ -7849,6 +7852,23 @@ export class Client extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * Get the current Dagger Engine version.
+   */
+  version = async (): Promise<string> => {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "version",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**

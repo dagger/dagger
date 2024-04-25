@@ -119,17 +119,26 @@ func (e *Engine) Service(
 }
 
 // Lint the engine
-func (e *Engine) Lint(ctx context.Context) error {
+func (e *Engine) Lint(
+	ctx context.Context,
+	// +optional
+	all bool,
+) error {
 	pkgs := []string{""}
 	// pkgs := []string{"", "ci"}
 
 	ctr := dag.Container().
 		From(consts.GolangLintImage).
 		WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source))
+
+	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
+	if all {
+		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
+	}
 	for _, pkg := range pkgs {
 		ctr = ctr.
 			WithWorkdir(path.Join("/app", pkg)).
-			WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"})
+			WithExec(cmd)
 	}
 	_, err := ctr.Sync(ctx)
 	return err

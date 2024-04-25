@@ -23,3 +23,4 @@ jobs:
     secrets: inherit
     with:
       mage-targets: docs:lint
+      timeout: 10

@@ -296,7 +296,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, caller *call.ID, opts *CallO
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
 	dec.UseNumber()
 	if err := dec.Decode(&returnValue); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal result: %s", err)
+		return nil, fmt.Errorf("failed to unmarshal result: %w", err)
 	}
 
 	returnValueTyped, err := fn.returnType.ConvertFromSDKResult(ctx, returnValue)

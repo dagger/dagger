@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
@@ -638,7 +640,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 
 	sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get source root relative path: %s", err)
+		return inst, fmt.Errorf("failed to get source root relative path: %w", err)
 	}
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
@@ -656,7 +658,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	for _, rootPath := range sourceRootPaths {
 		rootRelPath, err := filepath.Rel(contextAbsPath, rootPath)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get source root relative path: %s", err)
+			return inst, fmt.Errorf("failed to get source root relative path: %w", err)
 		}
 		if !filepath.IsLocal(rootRelPath) {
 			return inst, fmt.Errorf("local module dep source path %q escapes context %q", rootRelPath, contextAbsPath)
@@ -695,7 +697,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			absPath := filepath.Join(sourceRootAbsPath, path)
 			relPath, err := filepath.Rel(contextAbsPath, absPath)
 			if err != nil {
-				return fmt.Errorf("failed to get relative path of config include/exclude: %s", err)
+				return fmt.Errorf("failed to get relative path of config include/exclude: %w", err)
 			}
 			if !filepath.IsLocal(relPath) {
 				return fmt.Errorf("local module dep source include/exclude path %q escapes context %q", relPath, contextAbsPath)
@@ -720,7 +722,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		// always include the config file
 		configRelPath, err := filepath.Rel(contextAbsPath, filepath.Join(rootPath, modules.Filename))
 		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path: %s", err)
+			return inst, fmt.Errorf("failed to get relative path: %w", err)
 		}
 		includeSet[configRelPath] = struct{}{}
 
@@ -732,7 +734,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		sourceAbsSubpath := filepath.Join(rootPath, source)
 		sourceRelSubpath, err := filepath.Rel(contextAbsPath, sourceAbsSubpath)
 		if err != nil {
-			return inst, fmt.Errorf("failed to get relative path: %s", err)
+			return inst, fmt.Errorf("failed to get relative path: %w", err)
 		}
 		if !filepath.IsLocal(sourceRelSubpath) {
 			return inst, fmt.Errorf("local module source path %q escapes context %q", sourceRelSubpath, contextAbsPath)
@@ -909,7 +911,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 	_, _, err := collectedDeps.GetOrInitialize(ctx, sourceRootAbsPath, func(ctx context.Context) (*callerLocalDep, error) {
 		sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get source root relative path: %s", err)
+			return nil, fmt.Errorf("failed to get source root relative path: %w", err)
 		}
 		if !filepath.IsLocal(sourceRootRelPath) {
 			return nil, fmt.Errorf("local module dep source path %q escapes context %q", sourceRootRelPath, contextAbsPath)
@@ -921,10 +923,12 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		switch {
 		case err == nil:
 			if err := json.Unmarshal(configBytes, &modCfg); err != nil {
-				return nil, fmt.Errorf("error unmarshaling config at %s: %s", configPath, err)
+				return nil, fmt.Errorf("error unmarshaling config at %s: %w", configPath, err)
 			}
 
-		case strings.Contains(err.Error(), "no such file or directory") || strings.Contains(err.Error(), "not found"):
+		// TODO: remove the strings.Contains check here (which aren't cross-platform),
+		// since we now set NotFound (since v0.11.2)
+		case status.Code(err) == codes.NotFound || strings.Contains(err.Error(), "no such file or directory"):
 			// This is only allowed for the top-level module (which may be in the process of being newly initialized).
 			// sentinel via nil modCfg unless there's WithSDK/WithDependencies/etc. to be applied
 			if !topLevel {
@@ -935,7 +939,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			}
 
 		default:
-			return nil, fmt.Errorf("error reading config %s: %s", configPath, err)
+			return nil, fmt.Errorf("error reading config %s: %w", configPath, err)
 		}
 
 		if topLevel {
@@ -1004,7 +1008,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				callerCwd := callerCwdStat.Path
 				sdkCallerRelPath, err := filepath.Rel(callerCwd, sdkPath)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get relative path of local sdk: %s", err)
+					return nil, fmt.Errorf("failed to get relative path of local sdk: %w", err)
 				}
 				var sdkMod dagql.Instance[*core.Module]
 				err = s.dag.Select(ctx, s.dag.Root(), &sdkMod,
@@ -1061,8 +1065,10 @@ func callerHostFindUpContext(
 	if err == nil {
 		return curDirPath, true, nil
 	}
-	if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "not found") {
-		return "", false, fmt.Errorf("failed to lstat .git: %s", err)
+	// TODO: remove the strings.Contains check here (which aren't cross-platform),
+	// since we now set NotFound (since v0.11.2)
+	if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
+		return "", false, fmt.Errorf("failed to lstat .git: %w", err)
 	}
 
 	nextDirPath := filepath.Dir(curDirPath)

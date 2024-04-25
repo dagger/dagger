@@ -16,6 +16,7 @@ dagger-sdk = { workspace = true }
 eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_graphql_input = { workspace = true }
 
 genco.workspace = true
 convert_case.workspace = true

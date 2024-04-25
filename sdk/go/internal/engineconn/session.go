@@ -192,7 +192,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		if rerr != nil {
 			stderrContents := stderrBuf.String()
 			if stderrContents != "" {
-				rerr = fmt.Errorf("%s: %s", rerr, stderrContents)
+				rerr = fmt.Errorf("%w: %s", rerr, stderrContents)
 			}
 		}
 	}()

@@ -1,6 +1,7 @@
 # ruff: noqa: BLE001
 import contextlib
 import dataclasses
+import functools
 import inspect
 import json
 import logging
@@ -18,19 +19,17 @@ from rich.console import Console
 from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
-from dagger import dag
-from dagger.client._otel import tracer
+from dagger import dag, telemetry
 from dagger.log import configure_logging
-
-from ._converter import make_converter
-from ._exceptions import (
+from dagger.mod._converter import make_converter
+from dagger.mod._exceptions import (
     FatalError,
     FunctionError,
     InternalError,
     NameConflictError,
     UserError,
 )
-from ._resolver import (
+from dagger.mod._resolver import (
     FieldResolver,
     Func,
     Function,
@@ -39,13 +38,14 @@ from ._resolver import (
     R,
     Resolver,
 )
-from ._types import APIName, FieldDefinition, ObjectDefinition
-from ._utils import (
+from dagger.mod._types import APIName, FieldDefinition, ObjectDefinition
+from dagger.mod._utils import (
     asyncify,
     get_doc,
     to_pascal_case,
     transform_error,
 )
+from dagger.telemetry.attributes import UI_MASK, UI_PASSTHROUGH
 
 errors = Console(stderr=True, style="bold red")
 logger = logging.getLogger(__name__)
@@ -188,45 +188,50 @@ class Module:
 
     async def _run(self):
         async with await dagger.connect():
-            await self._serve()
-
-    async def _serve(self):
-        parent_name = await self._fn_call.parent_name()
-        mod_name = await dag.current_module().name()
-        resolvers = self.get_resolvers(mod_name)
-
-        with contextlib.ExitStack() as stack:
-            if parent_name:
-                stack.enter_context(
-                    tracer.start_as_current_span(
-                        "python module execution",
-                        attributes={
-                            "dagger.io/ui.passthrough": True,
-                        },
-                    ),
-                )
-                result = await self._invoke(resolvers, parent_name)
-            else:
-                stack.enter_context(
-                    tracer.start_as_current_span(
-                        "python module registration",
-                    ),
-                )
-                result = await self._register(resolvers, to_pascal_case(mod_name))
-
-            try:
-                output = json.dumps(result)
-            except (TypeError, ValueError) as e:
-                msg = f"Failed to serialize result: {e}"
-                raise InternalError(msg) from e
-
-            logger.debug(
-                "output => %s",
-                textwrap.shorten(repr(output), 144),
+            mod_name = await dag.current_module().name()
+            parent_name = await self._fn_call.parent_name()
+            fn = (
+                functools.partial(self._invoke, parent_name)
+                if parent_name
+                else self._register
             )
-            await self._fn_call.return_value(dagger.JSON(output))
+            await fn(mod_name)
 
-    async def _register(self, resolvers: Resolvers, mod_name: str) -> dagger.ModuleID:
+    @staticmethod
+    def serve(span_name: str, passthrough: bool = False):
+        def _serve(func):
+            @functools.wraps(func)
+            async def wrapper(*args, **kwargs):
+                with telemetry.get_tracer().start_as_current_span(
+                    span_name,
+                    attributes={
+                        UI_MASK: True,
+                        UI_PASSTHROUGH: passthrough,
+                    },
+                ):
+                    result = await func(*args, **kwargs)
+
+                    try:
+                        output = json.dumps(result)
+                    except (TypeError, ValueError) as e:
+                        msg = f"Failed to serialize result: {e}"
+                        raise InternalError(msg) from e
+
+                    logger.debug(
+                        "output => %s",
+                        textwrap.shorten(repr(output), 144),
+                    )
+                    await dag.current_function_call().return_value(dagger.JSON(output))
+
+            return wrapper
+
+        return _serve
+
+    @serve("python module registration")
+    async def _register(self, mod_name: str) -> dagger.ModuleID:
+        resolvers = self.get_resolvers(mod_name)
+        mod_name = to_pascal_case(mod_name)
+
         # Resolvers are collected at import time, but only actually
         # registered during "serve".
         mod = self._mod
@@ -252,11 +257,9 @@ class Module:
 
         return await mod.id()
 
-    async def _invoke(
-        self,
-        resolvers: Resolvers,
-        parent_name: str,
-    ) -> Any:
+    @serve("python module execution", passthrough=True)
+    async def _invoke(self, parent_name: str, mod_name: str) -> Any:
+        resolvers = self.get_resolvers(mod_name)
         name = await self._fn_call.name()
         parent_json = await self._fn_call.parent()
         input_args = await self._fn_call.input_args()

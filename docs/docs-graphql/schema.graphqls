@@ -2365,6 +2365,9 @@ type Query {
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
+
+  """Get the current Dagger Engine version."""
+  version: String!
 }
 
 """

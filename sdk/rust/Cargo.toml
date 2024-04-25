@@ -17,6 +17,7 @@ eyre = "0.6.9"
 color-eyre = "0.6.2"
 serde = { version = "1.0.195", features = ["derive"] }
 serde_json = "1.0.111"
+serde_graphql_input = { version = "0.1.1" }
 tokio = { version = "1.35.1", features = ["full"] }
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-subscriber = { version = "0.3.18", features = [

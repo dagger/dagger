@@ -79,7 +79,7 @@ impl Selection {
     {
         let mut s = self.clone();
 
-        let val = serde_json::to_string(&value).unwrap();
+        let val = serde_graphql_input::to_string_pretty(&value).unwrap();
 
         match s.args.as_mut() {
             Some(args) => {
@@ -116,34 +116,11 @@ impl Selection {
         s
     }
 
-    pub fn arg_enum<S>(&self, name: &str, value: S) -> Selection
-    where
-        S: Serialize,
-    {
-        let mut s = self.clone();
-
-        let val = serde_json::to_string(&value).unwrap();
-        let val = val[1..val.len() - 1].to_string();
-
-        match s.args.as_mut() {
-            Some(args) => {
-                let _ = args.insert(name.to_string(), val.into());
-            }
-            None => {
-                let mut hm = HashMap::new();
-                let _ = hm.insert(name.to_string(), val.into());
-                s.args = Some(hm);
-            }
-        }
-
-        s
-    }
-
     pub async fn build(&self) -> Result<String, DaggerError> {
         let mut fields = vec!["query".to_string()];
 
         for sel in self.path() {
-            if let Some(mut query) = sel.name.map(|q| q.clone()) {
+            if let Some(mut query) = sel.name {
                 if let Some(args) = sel.args {
                     let mut actualargs = Vec::new();
                     for (name, arg) in args.iter() {
@@ -348,8 +325,7 @@ mod tests {
 
         assert_eq!(
             query,
-            r#"query{a(arg:{"name":"some-name","s":{"name":"some-other-name","s":null}})}"#
-                .to_string()
+            r#"query{a(arg:{name:"some-name",s:{name:"some-other-name",s:null}})}"#.to_string()
         )
     }
 }

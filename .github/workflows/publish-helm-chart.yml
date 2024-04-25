@@ -15,11 +15,15 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: "Publish Helm Chart"
-        run: ./hack/make helm:publish ${{ github.ref_name }}
+      - name: Helm test
+        uses: dagger/dagger-for-github@v5
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+        with:
+          version: '0.11.1'
+          args: --source=. helm publish --tag=${{ github.ref_name }} --github-token=env:GITHUB_TOKEN
+
 
   notify:
     needs: publish
