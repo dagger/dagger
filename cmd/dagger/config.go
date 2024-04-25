@@ -359,7 +359,7 @@ func (c configSubcmd) Command() *cobra.Command {
 	if c.SetCmd != nil {
 		setCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Use:     "set [options] <pattern>",
+			Use:     "set [options] <pattern>...",
 			Short:   "Set the configuration value",
 			Long:    "Set the configuration value",
 			Example: c.SetExample,
@@ -378,7 +378,7 @@ func (c configSubcmd) Command() *cobra.Command {
 	if c.AddCmd != nil {
 		addCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Use:     "add [options]",
+			Use:     "add [options] <pattern>...",
 			Short:   "Add a value to the configuration",
 			Long:    "Add a value to the configuration",
 			Example: c.AddExample,
@@ -397,7 +397,7 @@ func (c configSubcmd) Command() *cobra.Command {
 	if c.RemoveCmd != nil {
 		removeCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Use:     "remove [options]",
+			Use:     "remove [options] <pattern>...",
 			Short:   "Remove a value from the configuration",
 			Long:    "Remove a value from the configuration",
 			Example: c.RemoveExample,
