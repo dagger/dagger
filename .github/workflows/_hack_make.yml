@@ -21,7 +21,7 @@ on:
         default: 60  
       size:
         type: string
-        default: "dagger-runner-2c-8g"
+        default: "ubuntu-latest"
         required: false
       dagger-version:
         type: string
@@ -62,8 +62,8 @@ jobs:
           ./hack/make ${{ inputs.mage-targets }}
         timeout-minutes: ${{ inputs.timeout }}
 
-  # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
-  dagger-runner:
+  # Allow larger GitHub Runners when running in the dagger/dagger repo (including PRs)
+  github-larger-runner:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on: ${{ inputs.size }}
     concurrency:
@@ -89,11 +89,9 @@ jobs:
             echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
 
             export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
           fi
 
-          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
-        env:
-          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
       - name: Waiting for Dagger Engine to be ready...
         run: |
           ./hack/make engine:connect
