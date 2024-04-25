@@ -11,6 +11,7 @@ import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
 import { withTracingSpan } from "../telemetry/index.js"
+import { UI_MASK, UI_PASSTHROUGH } from "../telemetry/attributes.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -60,8 +61,8 @@ export async function entrypoint() {
             "typescript module execution",
             async (span) => {
               span.setAttributes({
-                "dagger.io/ui.mask": true,
-                "dagger.io/ui.passthrough": true,
+                [UI_MASK]: true,
+                [UI_PASSTHROUGH]: true,
               })
 
               return await invoke(scanResult, {

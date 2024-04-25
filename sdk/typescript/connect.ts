@@ -3,7 +3,7 @@ import { Client } from "./api/client.gen.js"
 import { ConnectOpts } from "./connectOpts.js"
 import { Context, defaultContext } from "./context/context.js"
 import { CLI_VERSION } from "./provisioning/index.js"
-import { getContext } from "./telemetry/telemetry.js"
+import * as telemetry from "./telemetry/telemetry.js"
 
 export type CallbackFct = (client: Client) => Promise<void>
 
@@ -28,12 +28,16 @@ export async function connection(
   fct: () => Promise<void>,
   cfg: ConnectOpts = {},
 ) {
+  telemetry.initiliaze()
+
   // Wrap connection into the otlp context
-  await opentelemetry.context.with(getContext(), async () => {
+  await opentelemetry.context.with(telemetry.initContext(), async () => {
     await defaultContext.connection(cfg)
 
     await fct().finally(() => close())
   })
+
+  await telemetry.close()
 }
 
 /**
