@@ -54,6 +54,13 @@ available functions.
 		"`",
 	),
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
+		// Manually check for --help in the arguments
+		for _, arg := range cmd.Flags().Args() {
+			if arg == "--help" || arg == "-h" {
+				return cmd.Help()
+			}
+		}
+
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 		var o functionProvider = fc.mod.GetMainObject()
 		fmt.Fprintf(tw, "%s\t%s\n",
