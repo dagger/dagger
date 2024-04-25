@@ -497,14 +497,14 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 	}
 	cacheRes, err := ConvertToWorkerCacheResult(ctx, combinedResult)
 	if err != nil {
-		return fmt.Errorf("failed to convert result: %s", err)
+		return fmt.Errorf("failed to convert result: %w", err)
 	}
 	bklog.G(ctx).Debugf("converting to solverRes")
 	solverRes, err := solverresult.ConvertResult(combinedResult, func(rf *ref) (bksolver.CachedResult, error) {
 		return rf.resultProxy.Result(ctx)
 	})
 	if err != nil {
-		return fmt.Errorf("failed to convert result: %s", err)
+		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
 	sessionGroup := bksession.NewGroup(c.ID())
@@ -580,13 +580,13 @@ func (c *Client) ListenHostToContainer(
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("failed to get requester session ID: %s", err)
+		return nil, nil, fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("failed to get requester session: %s", err)
+		return nil, nil, fmt.Errorf("failed to get requester session: %w", err)
 	}
 
 	conn := clientCaller.Conn()
@@ -596,7 +596,7 @@ func (c *Client) ListenHostToContainer(
 	listener, err := tunnelClient.Listen(ctx)
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("failed to listen: %s", err)
+		return nil, nil, fmt.Errorf("failed to listen: %w", err)
 	}
 
 	err = listener.Send(&session.ListenRequest{
@@ -605,13 +605,13 @@ func (c *Client) ListenHostToContainer(
 	})
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("failed to send listen request: %s", err)
+		return nil, nil, fmt.Errorf("failed to send listen request: %w", err)
 	}
 
 	listenRes, err := listener.Recv()
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("failed to receive listen response: %s", err)
+		return nil, nil, fmt.Errorf("failed to receive listen response: %w", err)
 	}
 
 	conns := map[string]net.Conn{}

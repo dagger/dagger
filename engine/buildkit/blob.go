@@ -32,7 +32,7 @@ func (c *Client) DefToBlob(
 	}
 	resultProxy, err := res.SingleRef()
 	if err != nil {
-		return nil, desc, fmt.Errorf("failed to get single ref: %s", err)
+		return nil, desc, fmt.Errorf("failed to get single ref: %w", err)
 	}
 	cachedRes, err := resultProxy.Result(ctx)
 	if err != nil {
@@ -51,7 +51,7 @@ func (c *Client) DefToBlob(
 	// is tricky and ultimately only result in a marginal performance optimization.
 	err = ref.Extract(ctx, nil)
 	if err != nil {
-		return nil, desc, fmt.Errorf("failed to extract ref: %s", err)
+		return nil, desc, fmt.Errorf("failed to extract ref: %w", err)
 	}
 
 	remotes, err := ref.GetRemotes(ctx, true, cacheconfig.RefConfig{
@@ -64,7 +64,7 @@ func (c *Client) DefToBlob(
 		},
 	}, false, nil)
 	if err != nil {
-		return nil, desc, fmt.Errorf("failed to get remotes: %s", err)
+		return nil, desc, fmt.Errorf("failed to get remotes: %w", err)
 	}
 	if len(remotes) != 1 {
 		return nil, desc, fmt.Errorf("expected 1 remote, got %d", len(remotes))
@@ -78,7 +78,7 @@ func (c *Client) DefToBlob(
 
 	blobDef, err := blob.LLB(desc).Marshal(ctx)
 	if err != nil {
-		return nil, desc, fmt.Errorf("failed to marshal blob source: %s", err)
+		return nil, desc, fmt.Errorf("failed to marshal blob source: %w", err)
 	}
 	blobPB := blobDef.ToPB()
 

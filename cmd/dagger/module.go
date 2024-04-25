@@ -602,7 +602,7 @@ func getModuleConfigurationForSourceRef(
 			}
 			var modCfg modules.ModuleConfig
 			if err := json.Unmarshal(contents, &modCfg); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal %s: %s", configPath, err)
+				return nil, fmt.Errorf("failed to unmarshal %s: %w", configPath, err)
 			}
 
 			namedDep, ok := modCfg.DependencyByName(srcRefStr)
@@ -677,13 +677,13 @@ func findUp(curDirPath string) (string, bool, error) {
 		return curDirPath, true, nil
 
 	default:
-		return "", false, fmt.Errorf("failed to lstat %s: %s", configPath, err)
+		return "", false, fmt.Errorf("failed to lstat %s: %w", configPath, err)
 	}
 
 	// didn't exist, try parent unless we've hit the root or a git repo checkout root
 	curDirAbsPath, err := filepath.Abs(curDirPath)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to get absolute path for %s: %s", curDirPath, err)
+		return "", false, fmt.Errorf("failed to get absolute path for %s: %w", curDirPath, err)
 	}
 	if curDirAbsPath[len(curDirAbsPath)-1] == os.PathSeparator {
 		// path ends in separator, we're at root
