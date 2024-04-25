@@ -192,8 +192,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 				WithExec([]string{"bun", "install", genDir}).
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
-			base = base.
-				WithExec([]string{"sh", "-c", "cp -r /opt/module/template/*.json ."})
+			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 		}
 
 	case Node:
@@ -205,8 +204,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 				WithExec([]string{"yarn", "--production", genDir}).
 				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
-			base = base.
-				WithExec([]string{"sh", "-c", "cp -r /opt/module/template/*.json ."})
+			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 		}
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", detectedRuntime)
