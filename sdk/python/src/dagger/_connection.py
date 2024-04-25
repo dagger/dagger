@@ -2,7 +2,7 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
-from dagger import Config
+from dagger import Config, telemetry
 
 from ._engine.conn import Engine, provision_engine
 from ._managers import ResourceManager
@@ -54,6 +54,7 @@ class Connection(ResourceManager):
         self.cfg = config or Config()
 
     async def __aenter__(self) -> "Client":
+        telemetry.initialize()
         logger.debug("Establishing connection with isolated client")
         async with self.get_stack() as stack:
             engine = await Engine(self.cfg, stack).provision()
@@ -104,6 +105,7 @@ async def connection(config: Config | None = None):
 
         anyio.run(main)
     """
+    telemetry.initialize()
     logger.debug("Establishing connection with shared client")
     async with provision_engine(config or Config()) as engine:
         conn = engine.get_shared_client_connection()
