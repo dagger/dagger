@@ -930,10 +930,10 @@ impl Container {
             query = query.arg("platformVariants", platform_variants);
         }
         if let Some(forced_compression) = opts.forced_compression {
-            query = query.arg_enum("forcedCompression", forced_compression);
+            query = query.arg("forcedCompression", forced_compression);
         }
         if let Some(media_types) = opts.media_types {
-            query = query.arg_enum("mediaTypes", media_types);
+            query = query.arg("mediaTypes", media_types);
         }
         File {
             proc: self.proc.clone(),
@@ -1108,10 +1108,10 @@ impl Container {
             query = query.arg("platformVariants", platform_variants);
         }
         if let Some(forced_compression) = opts.forced_compression {
-            query = query.arg_enum("forcedCompression", forced_compression);
+            query = query.arg("forcedCompression", forced_compression);
         }
         if let Some(media_types) = opts.media_types {
-            query = query.arg_enum("mediaTypes", media_types);
+            query = query.arg("mediaTypes", media_types);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -1316,10 +1316,10 @@ impl Container {
             query = query.arg("platformVariants", platform_variants);
         }
         if let Some(forced_compression) = opts.forced_compression {
-            query = query.arg_enum("forcedCompression", forced_compression);
+            query = query.arg("forcedCompression", forced_compression);
         }
         if let Some(media_types) = opts.media_types {
-            query = query.arg_enum("mediaTypes", media_types);
+            query = query.arg("mediaTypes", media_types);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -1708,7 +1708,7 @@ impl Container {
         let mut query = self.selection.select("withExposedPort");
         query = query.arg("port", port);
         if let Some(protocol) = opts.protocol {
-            query = query.arg_enum("protocol", protocol);
+            query = query.arg("protocol", protocol);
         }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
@@ -1898,7 +1898,7 @@ impl Container {
             query = query.arg("source", source);
         }
         if let Some(sharing) = opts.sharing {
-            query = query.arg_enum("sharing", sharing);
+            query = query.arg("sharing", sharing);
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
@@ -2392,7 +2392,7 @@ impl Container {
         let mut query = self.selection.select("withoutExposedPort");
         query = query.arg("port", port);
         if let Some(protocol) = opts.protocol {
-            query = query.arg_enum("protocol", protocol);
+            query = query.arg("protocol", protocol);
         }
         Container {
             proc: self.proc.clone(),
@@ -6296,7 +6296,7 @@ impl TypeDef {
     /// Sets the kind of the type.
     pub fn with_kind(&self, kind: TypeDefKind) -> TypeDef {
         let mut query = self.selection.select("withKind");
-        query = query.arg_enum("kind", kind);
+        query = query.arg("kind", kind);
         TypeDef {
             proc: self.proc.clone(),
             selection: query,

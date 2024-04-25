@@ -16,7 +16,7 @@ const (
 	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
 
 	// https://hub.docker.com/_/rust
-	rustDockerStable = "rust:1.71-bookworm"
+	rustDockerStable = "rust:1.77-bookworm"
 	cargoChefVersion = "0.1.62"
 )
 
