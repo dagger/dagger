@@ -1,0 +1,40 @@
+---
+slug: /quickstart/582966/basics
+hide_table_of_contents: true
+title: "Understand the basics of Dagger"
+---
+
+# Quickstart
+
+## Understand the basics of Dagger
+
+Before diving into the code, let's address some common questions about Dagger:
+
+### What is Dagger?
+
+Dagger is a open source CI/CD engine that runs your pipelines in containers. It lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
+
+- Encapsulate all your project's tasks and workflows into simple functions, written in your programming language of choice.
+- Dagger packages your functions into a custom GraphQL API.
+- Run your functions from the command line, your language interpreter, or a custom HTTP client.
+- Package your functions into a module, to reuse in your next project or share with the community.
+- Search for existing modules, and import them into yours. All Dagger modules can reuse each other's functions - regardless of which language they are written in.
+
+Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
+
+### Who is Dagger for?
+
+Dagger may be a good fit if you are...
+
+- Your team's "designated devops person", hoping to replace a pile of artisanal scripts with something more powerful.
+- A platform engineer writing custom tooling, with the goal of unifying application delivery across organizational silos.
+- A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice.
+
+### How does Dagger work?
+
+To use Dagger, you call Dagger Functions. Dagger Functions are regular code, written in a supported programming language, and run in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
+- The Dagger Engine provides some core functions, but you are encouraged to write your own and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. Functions are packaged, shared and reused using modules.
+- You can call functions from external modules in exactly the same way as you would call core functions.
+- Modules don't need to be installed locally. Dagger lets you consume modules from GitHub repositories as well.
+
+The simplest and most common way to use Dagger Functions is via the Dagger CLI. The Dagger CLI is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI configuration. But Dagger Functions can also be called from other Dagger Functions (more on this later).

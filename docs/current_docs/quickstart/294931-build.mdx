@@ -1,0 +1,19 @@
+---
+slug: /quickstart/294931/build
+hide_table_of_contents: true
+title: "Build the application"
+---
+
+# Quickstart
+
+## Build the application
+
+
+```shell
+# build
+dagger -m golang call build --source=. --args=.
+
+# chaining
+dagger -m golang call build --source=. --args=. entries
+dagger -m golang call build --source=. --args=. export --path=./build
+```
