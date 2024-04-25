@@ -8,7 +8,6 @@ import (
 type MyModule struct{}
 
 func (m *MyModule) Build(ctx context.Context, source *Directory) *File {
-
 	return dag.Java().
 		WithJdk("17").
 		WithMaven("3.9.5").
