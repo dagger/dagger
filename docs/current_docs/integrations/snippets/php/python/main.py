@@ -75,6 +75,8 @@ class MyModule:
             # uncomment this to use a custom entrypoint file
             # .with_exec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
             # .with_entrypoint(["/var/www/docker-entrypoint.sh"])
-            .with_registry_auth(registry_address, registry_username, registry_password)
+            .with_registry_auth(
+                registry_address, registry_username, registry_password
+            )
             .publish(f"{registry_address}/{registry_username}/{image_name}")
         )
