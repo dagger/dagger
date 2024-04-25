@@ -783,7 +783,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 	}
 
 	bkLogsW := io.Discard
-	if cfg.Debug {
+	if c.IsSet("extra-debug") {
 		bkLogsW = os.Stderr
 	}
 
