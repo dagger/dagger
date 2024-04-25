@@ -48,6 +48,8 @@ const (
 	runcPath      = "/usr/local/bin/runc"
 	shimPath      = metaMountPath + "/shim"
 
+	engineEnvPrefix = "DAGGER_ENGINE_"
+
 	errorExitCode = 125
 )
 
@@ -585,6 +587,17 @@ func setupBundle() (returnExitCode int) {
 		}
 	}
 	spec.Process.Env = keepEnv
+
+	// propagate DAGGER_ENGINE_* environ variables on the engine container to pipeline containers
+	for _, env := range os.Environ() {
+		if strings.HasPrefix(env, engineEnvPrefix) {
+			kv, _ := strings.CutPrefix(env, engineEnvPrefix)
+			k, _, _ := strings.Cut(kv, "=")
+			if k != "" {
+				spec.Process.Env = append(spec.Process.Env, kv)
+			}
+		}
+	}
 
 	if otelEndpoint != "" {
 		if strings.HasPrefix(otelEndpoint, "/") {
