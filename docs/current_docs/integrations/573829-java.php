@@ -43,6 +43,12 @@ Bootstrap a new module:
 dagger init --name=my-module --sdk=python
 ```
 
+Install the Java module from the Daggerverse:
+
+```shell
+dagger install github.com/jcsirot/daggerverse/java@c591e9e0b99def2fc8a67bb090fca5cd06cf6a1d
+```
+
 Update the generated `dagger/src/main.py` file with the following code:
 
 FIXME
@@ -54,6 +60,12 @@ Bootstrap a new module:
 
 ```shell
 dagger init --name=my-module --sdk=typescript
+```
+
+Install the Java module from the Daggerverse:
+
+```shell
+dagger install github.com/jcsirot/daggerverse/java@c591e9e0b99def2fc8a67bb090fca5cd06cf6a1d
 ```
 
 Update the generated `dagger/src/index.ts` file with the following code:

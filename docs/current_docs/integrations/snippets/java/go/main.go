@@ -13,7 +13,7 @@ func (m *MyModule) Build(ctx context.Context, source *Directory) *File {
 		WithMaven("3.9.5").
 		WithProject(source.WithoutDirectory("dagger")).
 		Maven([]string{"package"}).
-		File("target/*.jar")
+		File("target/spring-petclinic-3.2.0-SNAPSHOT.jar")
 }
 
 func (m *MyModule) Publish(ctx context.Context, source *Directory, version string, registryAddress string, registryUsername string, registryPassword *Secret, imageName string) (string, error) {
@@ -22,8 +22,8 @@ func (m *MyModule) Publish(ctx context.Context, source *Directory, version strin
 		From("eclipse-temurin:17-alpine").
 		WithLabel("org.opencontainers.image.title", "Java with Dagger").
 		WithLabel("org.opencontainers.image.version", version).
-		WithFile("/app/myapp-0.0.1-SNAPSHOT.jar", m.Build(source)).
-		WithEntrypoint([]string{"java", "-jar", "/app/myapp-0.0.1-SNAPSHOT.jar"}).
+		WithFile("/app/spring-petclinic-3.2.0-SNAPSHOT.jar", m.Build(ctx, source)).
+		WithEntrypoint([]string{"java", "-jar", "/app/spring-petclinic-3.2.0-SNAPSHOT.jar"}).
 		WithRegistryAuth(registryAddress, registryUsername, registryPassword).
 		Publish(ctx, fmt.Sprintf("%s/%s/%s", registryAddress, registryUsername, imageName))
 }
