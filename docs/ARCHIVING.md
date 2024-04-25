@@ -174,30 +174,36 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
   - Delete `zenith-generation` reference doc entry from `plugins` object
 
-      [
-        "docusaurus-plugin-typedoc",
-        {
-          id: "zenith-generation",
-          entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
-          tsconfig: '../sdk/typescript/tsconfig.json',
-          // Zenith reference
-          out: '../versioned_docs/version-zenith/reference/typescript/',
-          excludeProtected: true,
-          exclude: '../sdk/typescript/node_modules/**',
-          skipErrorChecking: true,
-          disableSources: true,
-          sidebar: {
-            categoryLabel: 'TypeScript SDK Reference',
+        [
+          "docusaurus-plugin-typedoc",
+          {
+            id: "zenith-generation",
+            entryPoints: ['../sdk/typescript/connect.ts', '../sdk/typescript/api/client.gen.ts', '../sdk/typescript/common/errors/index.ts'],
+            tsconfig: '../sdk/typescript/tsconfig.json',
+            // Zenith reference
+            out: '../versioned_docs/version-zenith/reference/typescript/',
+            excludeProtected: true,
+            exclude: '../sdk/typescript/node_modules/**',
+            skipErrorChecking: true,
+            disableSources: true,
+            sidebar: {
+              categoryLabel: 'TypeScript SDK Reference',
+            },
+            frontmatter: {
+              displayed_sidebar: 'zenith',
+              sidebar_label: 'TypeScript SDK Reference',
+              title: "TypeScript SDK Reference"
+            },
+            hideMembersSymbol: true,
+            requiredToBeDocumented: ["Class"]
           },
-          frontmatter: {
-            displayed_sidebar: 'zenith',
-            sidebar_label: 'TypeScript SDK Reference',
-            title: "TypeScript SDK Reference"
-          },
-          hideMembersSymbol: true,
-          requiredToBeDocumented: ["Class"]
-        },
-      ],
+        ],
+
+  - Add noindex metadata to each page
+
+        metadata: [
+          { name: 'robots', content: 'noindex, nofollow' },
+        ]
 
 - In `docs/current_docs/` sub-directory:
   - Replace `(/cli` URL links with `(/0.9/cli` URL links
