@@ -12,13 +12,13 @@ So far, you've been calling individual Dagger Functions using the Dagger CLI. As
 
 A better approach is to develop your own custom Dagger Function, which offers greater control and flexibility. Creating your own Dagger Module enables you to transform your workflows into structured, discrete and composable units with clear inputs and outputs, with all the benefits of using a native programming language.
 
+FIXME: find a reason to do this ie. extend/customize/do some additional op
+
 ```shell
 dagger develop --sdk=go
 ```
 
 ```go
-FIXME: find a reason to do this ie. extend/customize/do some additional op
-
 func (m *GreetingsApi) Test(ctx context.Context, source *Directory) (string, error) {
 	return dag.Golang().Test(ctx, dagger.GolangTestOpts{
 		Source: source, Args: []string{"."},
@@ -37,3 +37,5 @@ func (m *GreetingsApi) Publish(ctx context.Context, source *Directory) (string, 
 	return ...
 }
 ```
+
+FIXME: Add tabs for Python and TypeScript
