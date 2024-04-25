@@ -12,11 +12,9 @@ import TabItem from "@theme/TabItem";
 
 So far, you've been calling individual Dagger Functions using the Dagger CLI. But what if you want to combine multiple Dagger Function calls?
 
-One option is, of course, to stitch together calls using the CLI and a shell script or a Makefile However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
+One option is to stitch together calls using the CLI and a shell script or a Makefile However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
 
 A better approach is to create one or more Dagger Function(s), which can then call other Dagger Functions to achieve the required results. Creating your own Dagger Function(s) enables you to transform your workflows into structured, discrete and composable units with clear inputs and outputs, with all the benefits of using a native programming language.
-
-By creating your own Dagger Function, you can express more complex workflows and operations by reusing Dagger Functions created by others and connecting them together using the programming language you're most comfortable with.
 
 To see this in action, create a custom Dagger Function that uses two other Dagger modules to build your project, add it to a custom container image of your choice, and publish the result to a registry.
 

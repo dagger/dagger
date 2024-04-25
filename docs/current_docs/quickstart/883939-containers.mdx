@@ -76,7 +76,7 @@ Hello from Dagger
 
 ### Publish the container image to a registry
 
-The `Container` type also makes a number of other functions available. To see some of these in action, call the previous function again, chaining additional function calls to `WithEntrypoint()` and `Publish()` on the returned `Container` to, respectively, set the container entrypoint command and publish it to a registry:
+The `Container` type also makes a number of other functions available. To see some of these in action, call the previous function again, chaining additional function calls to `WithEntrypoint()` and `Publish()` on the returned `Container` to set the container entrypoint command and publish it to a registry:
 
 ```shell
 dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call \
