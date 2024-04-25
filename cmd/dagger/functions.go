@@ -329,12 +329,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		return cmd.Help()
 	}
 
-	err = cmd.RunE(cmd, flags)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return cmd.RunE(cmd, flags)
 }
 
 func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _ []string, rerr error) {
@@ -371,7 +366,19 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 	fc.mod = modDef
 
 	if fc.Execute != nil {
-		// if `Execute` is set, there's no need for sub-commands.
+		// If `Execute` is set, there's no need for sub-commands,
+		// but recover interspersed flag parsing in case there's flags
+		// mixed with the command's positional arguments.
+		c.Flags().SetInterspersed(true)
+
+		if err := c.ParseFlags(a); err != nil {
+			// This gives a chance for FuncCommand implementations to
+			// handle errors from parsing flags.
+			return nil, nil, c.FlagErrorFunc()(c, err)
+		}
+
+		fc.showHelp, _ = c.Flags().GetBool("help")
+
 		return c, nil, nil
 	}
 
