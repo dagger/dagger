@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -28,8 +27,6 @@ func (*CacheVolume) Type() *ast.Type {
 func (*CacheVolume) TypeDescription() string {
 	return "A directory whose contents persist across runs."
 }
-
-var ErrInvalidCacheVolumeID = errors.New("invalid cache ID; create one using cacheVolume")
 
 func NewCache(keys ...string) *CacheVolume {
 	return &CacheVolume{Keys: keys}
