@@ -66,17 +66,13 @@ class MyModule {
     registryPassword: Secret,
     imageName: string,
   ): Promise<string> {
-    const image = this.build(source)
+    return await this.build(source)
       .withLabel("org.opencontainers.image.title", "Laravel with Dagger")
       .withLabel("org.opencontainers.image.version", version)
       // uncomment this to use a custom entrypoint file
       // .withExec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
       // .withEntrypoint(["/var/www/docker-entrypoint.sh"])
-
-    const address = await image
       .withRegistryAuth(registryAddress, registryUsername, registryPassword)
       .publish(`${registryAddress}/${registryUsername}/${imageName}`)
-
-    return address
   }
 }
