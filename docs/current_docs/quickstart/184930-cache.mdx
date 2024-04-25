@@ -1,0 +1,18 @@
+---
+slug: /quickstart/184930/cache
+hide_table_of_contents: true
+title: "Use caching"
+---
+
+# Quickstart
+
+## Use caching
+
+One of Dagger's most powerful features is its ability to cache data across pipeline runs. This is typically most useful when dealing with package managers such as npm, maven, pip and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs.
+
+Dagger lets you define one or more such directories as cache volumes and persist their contents across runs. This enables you to reuse the contents of the cache volume(s) every time the pipeline runs, and thereby speed up pipeline operations.
+
+```shell
+# update previous to add a Go cache volume
+# maybe this goes in develop a custom function, as the custom thing we do?
+```

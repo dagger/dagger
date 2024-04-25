@@ -1,0 +1,15 @@
+---
+slug: /quickstart/372400/publish
+hide_table_of_contents: true
+title: "Package and publish the application"
+---
+
+# Quickstart
+
+## Package and publish the application
+
+```shell
+dagger call \
+  build-container --source=. --args=. \
+  publish --address=ttl.sh/my-container-$RANDOM
+```

@@ -19,14 +19,19 @@ module.exports = {
         "id": "quickstart/index"
       },
       "items": [
+        "quickstart/index",
+        "quickstart/basics",
         "quickstart/cli",
-        "quickstart/hello",
-        "quickstart/directories",
-        "quickstart/containers",
-        "quickstart/daggerize",
-        "quickstart/custom-function",
+        "quickstart/setup",
+        "quickstart/install",
+        "quickstart/test",
+        "quickstart/build",
+        "quickstart/publish",
+        "quickstart/develop",
+        "quickstart/create",
+        "quickstart/cache",
         "quickstart/daggerverse",
-        "quickstart/conclusion"
+        "quickstart/conclusion",
       ]
     },
     {
