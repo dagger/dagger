@@ -40,14 +40,12 @@ func (m *MyModule) Test(ctx context.Context, source *Directory) (string, error) 
 
 // return address of published container image
 func (m *MyModule) Publish(ctx context.Context, source *Directory, version string, registryAddress string, registryUsername string, registryPassword *Secret, imageName string) (string, error) {
-	image := m.Build(source).
+	return m.Build(source).
 		WithLabel("org.opencontainers.image.title", "PHP with Dagger").
-		WithLabel("org.opencontainers.image.version", version)
+		WithLabel("org.opencontainers.image.version", version).
 		// uncomment this to use a custom entrypoint file
 		// .WithExec([]string{"chmod", "+x", "/var/www/docker-entrypoint.sh"}).
-		// .WithEntrypoint([]string{"/var/www/docker-entrypoint.sh"})
-
-	return image.
+		// .WithEntrypoint([]string{"/var/www/docker-entrypoint.sh"}).
 		WithRegistryAuth(registryAddress, registryUsername, registryPassword).
 		Publish(ctx, fmt.Sprintf("%s/%s/%s", registryAddress, registryUsername, imageName))
 }
