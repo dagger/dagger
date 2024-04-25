@@ -94,6 +94,8 @@ func init() {
 	// we'll add it in the last line of the usage template
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
+
+	disableFlagsInUseLine(rootCmd)
 }
 
 var rootCmd = &cobra.Command{
@@ -169,6 +171,15 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 			fmt.Println("Error hiding flag: "+fl, err)
 			os.Exit(1)
 		}
+	}
+}
+
+// disableFlagsInUseLine disables the automatic addition of [flags]
+// when calling UseLine.
+func disableFlagsInUseLine(cmd *cobra.Command) {
+	for _, c := range cmd.Commands() {
+		c.DisableFlagsInUseLine = true
+		disableFlagsInUseLine(c)
 	}
 }
 
@@ -340,7 +351,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
   {{.UseLine}}
 {{- end}}
 {{- if .HasAvailableSubCommands}}
-  {{ .CommandPath}}{{ if .HasAvailableFlags}} [flags]{{end}} [command]
+  {{ .CommandPath}}{{ if .HasAvailableFlags}} [options]{{end}} [command]
 {{- end}}
 
 {{- if gt (len .Aliases) 0}}
@@ -399,14 +410,14 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableLocalFlags}}
 
-{{ "Flags" | toUpperBold }}
+{{ "Options" | toUpperBold }}
 {{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
 
 {{- end}}
 
 {{- if .HasAvailableInheritedFlags}}
 
-{{ "Global Flags" | toUpperBold }}
+{{ "Inherited Options" | toUpperBold }}
 {{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces}}
 
 {{- end}}

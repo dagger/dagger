@@ -23,7 +23,7 @@ var sessionLabels = telemetry.NewLabelFlag()
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "session",
+		Use:          "session [options]",
 		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger Engine. It is not intended to be used by humans directly.",
 		Hidden:       true,
 		RunE:         EngineSession,

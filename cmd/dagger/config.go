@@ -28,7 +28,7 @@ func init() {
 }
 
 var configCmd = &cobra.Command{
-	Use:   "config",
+	Use:   "config [options]",
 	Short: "Get or set the configuration of a Dagger module",
 	Long:  "Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.",
 	Example: strings.TrimSpace(`
@@ -82,7 +82,7 @@ dagger config -m github.com/dagger/hello-dagger
 }
 
 var configViewsCmd = configSubcmd{
-	Use:   "views [name]",
+	Use:   "views [options] [name]",
 	Short: "Get or set the views of a Dagger module",
 	Long:  "Get or set the views of a Dagger module. By default, print the views of the specified module.",
 	PersistentFlags: func(fs *pflag.FlagSet) {
@@ -359,7 +359,7 @@ func (c configSubcmd) Command() *cobra.Command {
 	if c.SetCmd != nil {
 		setCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Use:     "set",
+			Use:     "set [options] <pattern>...",
 			Short:   "Set the configuration value",
 			Long:    "Set the configuration value",
 			Example: c.SetExample,
@@ -378,7 +378,7 @@ func (c configSubcmd) Command() *cobra.Command {
 	if c.AddCmd != nil {
 		addCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Use:     "add",
+			Use:     "add [options] <pattern>...",
 			Short:   "Add a value to the configuration",
 			Long:    "Add a value to the configuration",
 			Example: c.AddExample,
@@ -397,7 +397,7 @@ func (c configSubcmd) Command() *cobra.Command {
 	if c.RemoveCmd != nil {
 		removeCmd := &cobra.Command{
 			// TODO: make these specific based on the parent
-			Use:     "remove",
+			Use:     "remove [options] <pattern>...",
 			Short:   "Remove a value from the configuration",
 			Long:    "Remove a value from the configuration",
 			Example: c.RemoveExample,
