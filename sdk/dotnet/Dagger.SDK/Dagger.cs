@@ -1,4 +1,4 @@
-namespace Dagger.SDK;
+﻿namespace Dagger.SDK;
 
 public class Dagger
 {
