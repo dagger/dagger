@@ -141,9 +141,6 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	def := Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
 		kind,
 	)
-	if spec.isPtr {
-		def = def.Dot("WithOptional").Call(Lit(true))
-	}
 	return def, nil
 }
 
