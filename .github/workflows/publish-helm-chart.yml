@@ -21,7 +21,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
         with:
-          version: '0.11.1'
+          version: '0.11.2'
           args: --source=. helm publish --tag=${{ github.ref_name }} --github-token=env:GITHUB_TOKEN
 
 
