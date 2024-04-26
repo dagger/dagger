@@ -1,6 +1,0 @@
-kind: Changed
-body: 'cli: style headings in BOLD UPPERCASE to help break sections visually'
-time: 2024-04-25T22:45:37.308754-07:00
-custom:
-  Author: grouville
-  PR: "7126"

@@ -1,6 +1,0 @@
-kind: Changed
-body: 'cli: move arguments section below functions/commands in usage, for better readability'
-time: 2024-04-25T22:49:02.30331-07:00
-custom:
-  Author: grouville
-  PR: "7134"
