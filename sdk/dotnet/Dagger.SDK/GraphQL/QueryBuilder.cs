@@ -45,7 +45,7 @@ public class QueryBuilder
             if (selection.Args.Count > 0)
             {
                 builder.Append('(');
-                builder.Append(string.Join(",", selection.Args.ConvertAll(arg => $"{arg.Key}:{arg.FormatValue()}")));
+                builder.Append(string.Join(",", selection.Args.Select(arg => $"{arg.Key}:{arg.FormatValue()}")));
                 builder.Append(')');
             }
         }
