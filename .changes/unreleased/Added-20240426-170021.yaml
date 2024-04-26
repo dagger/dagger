@@ -1,0 +1,6 @@
+kind: Added
+body: 'engine: propagate DAGGER_ENGINE_* env variables to pipelines'
+time: 2024-04-26T17:00:21.476822377+08:00
+custom:
+  Author: haoqixu
+  PR: "7186"
