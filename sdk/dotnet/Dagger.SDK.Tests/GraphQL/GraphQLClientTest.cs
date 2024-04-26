@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Dagger.SDK.GraphQL;
 
 namespace Dagger.SDK.Tests.GraphQL;
@@ -27,20 +28,8 @@ public class GraphQLClientTest
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        dynamic? data = await response.Content.ReadFromJsonAsync(new
-        {
-            data = new
-            {
-                container = new
-                {
-                    from = new
-                    {
-                        withExec = new { stdout = "" }
-                    }
-                }
-            }
-        }.GetType());
+        JsonElement data = await response.Content.ReadFromJsonAsync<JsonElement>();
 
-        Assert.Equal("hello\n", data!.data.container.from.withExec.stdout);
+        Assert.Equal("hello\n", data.GetProperty("data").GetProperty("container").GetProperty("from").GetProperty("withExec").GetProperty("stdout").GetString());
     }
 }
