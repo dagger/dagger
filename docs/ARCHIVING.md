@@ -12,8 +12,9 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
 ## Build 0.1 sub-site
 
-- Clone branch `v0.1.0` at last commit
+- Clone branch `v0.1.0` at last commit eebd918
 - In `docusaurus.config.js`:
+  - Set `url: 'https://archive.docs.dagger.io'`
   - Set `baseUrl: "/0.1/"`
   - Add announcement bar in `themeConfig` object
 
@@ -47,7 +48,15 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
   - Delete edit URL
 
-          editUrl: "https://github.com/dagger/dagger/edit/main/website",
+        editUrl: "https://github.com/dagger/dagger/edit/main/website",
+
+  - Add noindex metadata in `themeConfig` object
+
+        themeConfig: {
+          metadata: [
+            { name: 'robots', content: 'noindex, nofollow' },
+          ],
+        }
 
 - In `docs/` sub-directory:
   - Replace `/img` paths with `/0.1/img` paths
@@ -55,11 +64,10 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
 ## Build 0.2 sub-site
 
-- Clone branch `v0.2.x` at last commit
-- Delete `v0.1/` sub-directory
+- Clone branch `v0.2.36` at last commit ea275a3
 - In `sidebars.js`:
   - Delete `0.1` sidebar entry
-  - Delete 0.2 link in `0.1` sidebar list
+  - Delete 0.1 link in `0.2` sidebar list
 
         {
           type: "link",
@@ -68,6 +76,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
         },
 
 - In `docusaurus.config.js`:
+  - Set `url: 'https://archive.docs.dagger.io'`
   - Set `baseUrl: "/0.2/"`
   - Add announcement bar in `themeConfig` object
 
@@ -81,6 +90,14 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
             textColor: '#000000',
             isCloseable: false,
           },
+        }
+
+  - Add noindex metadata in `themeConfig` object
+
+        themeConfig: {
+          metadata: [
+            { name: 'robots', content: 'noindex, nofollow' },
+          ]
         }
 
   - Delete search bar
@@ -99,19 +116,23 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
           appId: "XEIYPBWGOI",
         },
 
+  - Delete Hotjar config
+
+        hotjar: {
+          siteId: "2541514",
+        },
+
   - Delete edit URL
 
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
 
-- In `docs/v0.2` sub-directory:
-  - Replace `/img` paths with `/0.2/img` paths in React component code in `dgr18-overview.mdx`
-  - Replace `/img` paths with `/0.2/img` paths in React component code in `getting-started/1242-install.mdx`
-  - Replace `/img` paths with `/0.2/img` paths in `getting-started/f44rm-how-it-works.mdx`
+- In `docs/` sub-directory:
+  - Replace `/img` paths with `/0.2/img` paths in all files
 - Run `npm run build` and store the `build/` directory as `site/0.2`
 
 ## Build 0.9 sub-site
 
-- Clone branch `v0.9.x` at last commit
+- Clone branch `v0.9.x` at last commit 77a53a8
 - Delete `docs/versioned_docs/version-zenith` sub-directory
 - Delete `docs/versioned_sidebars/version-zenith-sidebars.json` file
 - Remove `zenith` entry from `docs/versions.json`
@@ -199,7 +220,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
           },
         ],
 
-  - Add noindex metadata to each page
+  - Add noindex metadata in `themeConfig` object
 
         metadata: [
           { name: 'robots', content: 'noindex, nofollow' },
