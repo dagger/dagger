@@ -1,7 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text.Json;
 using Dagger.SDK.GraphQL;
 
 namespace Dagger.SDK.Tests.GraphQL;
@@ -28,8 +26,8 @@ public class GraphQLClientTest
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        JsonElement data = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-        Assert.Equal("hello\n", data.GetProperty("data").GetProperty("container").GetProperty("from").GetProperty("withExec").GetProperty("stdout").GetString());
+        var gqlResponse = await response.Content.ReadFromJsonAsync<GraphQLResponse>();
+        Assert.Null(gqlResponse!.Errors);
+        Assert.Equal("hello\n", gqlResponse!.Data.GetProperty("container").GetProperty("from").GetProperty("withExec").GetProperty("stdout").GetString());
     }
 }
