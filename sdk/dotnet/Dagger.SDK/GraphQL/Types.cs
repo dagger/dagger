@@ -2,12 +2,12 @@ using System.Text;
 
 namespace Dagger.SDK.GraphQL;
 
-public abstract class GraphQLType
+public abstract class Value
 {
     public abstract string Format();
 }
 
-public class StringType(string s) : GraphQLType
+public class StringValue(string s) : Value
 {
     private readonly string value = s;
 
@@ -17,7 +17,7 @@ public class StringType(string s) : GraphQLType
     }
 }
 
-public class IntType(int n) : GraphQLType
+public class IntValue(int n) : Value
 {
     private readonly int value = n;
 
@@ -27,7 +27,7 @@ public class IntType(int n) : GraphQLType
     }
 }
 
-public class FloatType(float f) : GraphQLType
+public class FloatValue(float f) : Value
 {
     private readonly float value = f;
 
@@ -37,7 +37,7 @@ public class FloatType(float f) : GraphQLType
     }
 }
 
-public class BooleanType(bool f) : GraphQLType
+public class BooleanValue(bool f) : Value
 {
     private readonly bool value = f;
 
@@ -54,9 +54,9 @@ public class BooleanType(bool f) : GraphQLType
     }
 }
 
-public class ListType(List<GraphQLType> list) : GraphQLType
+public class ListValue(List<Value> list) : Value
 {
-    private readonly List<GraphQLType> value = list;
+    private readonly List<Value> value = list;
 
     public override string Format()
     {
@@ -68,9 +68,9 @@ public class ListType(List<GraphQLType> list) : GraphQLType
     }
 }
 
-public class ObjecType(List<KeyValuePair<string, GraphQLType>> obj) : GraphQLType
+public class ObjectValue(List<KeyValuePair<string, Value>> obj) : Value
 {
-    private readonly List<KeyValuePair<string, GraphQLType>> value = obj;
+    private readonly List<KeyValuePair<string, Value>> value = obj;
 
     public override string Format()
     {

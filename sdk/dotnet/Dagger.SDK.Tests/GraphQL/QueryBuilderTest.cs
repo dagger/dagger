@@ -21,7 +21,7 @@ public class QueryBuilderTest
         var query = QueryBuilder
                         .Builder()
                         .Select("container")
-                        .Select("from", [new Argument("address", new StringType("nginx"))])
+                        .Select("from", [new Argument("address", new StringValue("nginx"))])
                         .Build();
 
         Assert.Equal("query{container{from(address:\"nginx\")}}", query);
@@ -29,7 +29,7 @@ public class QueryBuilderTest
         query = QueryBuilder
                     .Builder()
                     .Select("container")
-                    .Select("withExec", [new Argument("args", new ListType([new StringType("echo"), new StringType("hello")]))])
+                    .Select("withExec", [new Argument("args", new ListValue([new StringValue("echo"), new StringValue("hello")]))])
                     .Build();
 
         Assert.Equal("query{container{withExec(args:[\"echo\",\"hello\"])}}", query);
@@ -41,9 +41,9 @@ public class QueryBuilderTest
                         [
                             new Argument(
                                 "buildArgs",
-                                new ObjecType(
+                                new ObjectValue(
                                     [
-                                        KeyValuePair.Create("key", new StringType("value") as GraphQLType)
+                                        KeyValuePair.Create("key", new StringValue("value") as Value)
                                     ]
                                 )
                             )
@@ -55,7 +55,7 @@ public class QueryBuilderTest
 
         query = QueryBuilder
                         .Builder()
-                        .Select("withEnvVariable", [new Argument("expand", new BooleanType(true))])
+                        .Select("withEnvVariable", [new Argument("expand", new BooleanValue(true))])
                         .Build();
 
         Assert.Equal("query{withEnvVariable(expand:true)}", query);
