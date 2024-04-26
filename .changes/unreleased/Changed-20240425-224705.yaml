@@ -1,0 +1,6 @@
+kind: Changed
+body: 'cli: remove discrepancy in usage between dagger query and the rest of the commands'
+time: 2024-04-25T22:47:05.958162-07:00
+custom:
+  Author: grouville
+  PR: "7124"

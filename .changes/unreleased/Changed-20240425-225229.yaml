@@ -1,0 +1,6 @@
+kind: Changed
+body: 'cli: adopt options terminology instead of flags'
+time: 2024-04-25T22:52:29.345099-07:00
+custom:
+  Author: grouville
+  PR: "7170"
