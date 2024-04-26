@@ -38,6 +38,9 @@ spec:
         fsGroup: 1001
         fsGroupChangePolicy: "OnRootMismatch"
       serviceAccountName: {{ include "dagger.serviceAccountName" . }}
+      {{- if .Values.engine.priorityClassName }}
+      priorityClassName: {{ .Values.engine.priorityClassName }}
+      {{- end }}
       containers:
         - name: dagger-engine
           image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}

@@ -40,6 +40,8 @@ engine:
   #       - matchExpressions:
   #         - key: actions-runner
   #           operator: Exists
+  ### Set priorityClassName to avoid eviction
+  priorityClassName: ""
   readinessProbeSettings: 
     initialDelaySeconds: 5
     timeoutSeconds: 30
