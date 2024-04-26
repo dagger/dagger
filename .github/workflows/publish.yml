@@ -99,7 +99,7 @@ jobs:
       always() &&
       github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-    runs-on: macos-latest
+    runs-on: macos-12
     steps:
       - name: "Set CLI Test URL"
         run: |
