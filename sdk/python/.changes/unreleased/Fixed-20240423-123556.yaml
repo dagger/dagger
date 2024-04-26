@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix unnecessary telemetry initialization
-time: 2024-04-23T12:35:56.28819Z
-custom:
-  Author: helderco
-  PR: "7167"
