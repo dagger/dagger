@@ -21,7 +21,7 @@ on:
         default: 60  
       size:
         type: string
-        default: "dagger-v0-11-1"
+        default: "dagger-v0-11-1-4c-nvme"
         required: false
       dagger-version:
         type: string
