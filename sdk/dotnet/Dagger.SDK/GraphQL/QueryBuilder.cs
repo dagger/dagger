@@ -6,13 +6,13 @@ namespace Dagger.SDK.GraphQL;
 
 public class QueryBuilder
 {
-    private readonly ImmutableList<Field> children = [];
+    public readonly ImmutableList<Field> Path = [];
 
     public QueryBuilder() { }
 
     public QueryBuilder(ImmutableList<Field> children)
     {
-        this.children = children;
+        this.Path = children;
     }
 
     public QueryBuilder Select(string name)
@@ -27,7 +27,7 @@ public class QueryBuilder
 
     public QueryBuilder Select(Field field)
     {
-        return new QueryBuilder(children.Add(field));
+        return new QueryBuilder(Path.Add(field));
     }
 
     /// <summary>
@@ -38,7 +38,7 @@ public class QueryBuilder
     {
         var builder = new StringBuilder();
         builder.Append("query");
-        foreach (var selection in children)
+        foreach (var selection in Path)
         {
             builder.Append('{');
             builder.Append(selection.Name);
@@ -49,7 +49,7 @@ public class QueryBuilder
                 builder.Append(')');
             }
         }
-        builder.Append(new string('}', children.Count));
+        builder.Append(new string('}', Path.Count));
         return builder.ToString();
     }
 
