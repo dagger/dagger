@@ -127,7 +127,11 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
           editUrl: "https://github.com/dagger/dagger/edit/main/website",
 
 - In `docs/` sub-directory:
-  - Replace `/img` paths with `/0.2/img` paths in all files
+  - Replace `/img` path with `/0.2/img` paths in `dgr18-overview.mdx`
+  - Replace `/img` path with `/0.2/img` paths in `getting-started/f44rm-how-it-works.mdx`
+  - Replace `/img` path with `/0.2/img` paths in `getting-started/1242-install.mdx`
+  - Delete all instances of `displayed_sidebar: '0.1'`
+- Replace `/img` path with `/0.2/img` paths in `website/src/components/atoms/linkCTA.js`
 - Run `npm run build` and store the `build/` directory as `site/0.2`
 
 ## Build 0.9 sub-site
