@@ -18,13 +18,15 @@ spec:
           - name: project-source
             path: /work
             git:
+              # replace with your repository URL
               repo: YOUR_REPOSITORY_URL_HERE
               revision: "main"
           - name: dagger-cli
             path: /usr/local/bin
             mode: 0755
             http:
-              url: https://github.com/dagger/dagger/releases/download/v0.10.2/dagger_v0.10.2_linux_arm64.tar.gz
+              # replace with the latest available version of Dagger for your platform
+              url: https://github.com/dagger/dagger/releases/download/vX.Y.Z/dagger_vX.Y.Z_OS_ARCH.tar.gz
       container:
         image: alpine:latest
         command: ["sh", "-c"]
