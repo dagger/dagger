@@ -13,9 +13,7 @@ const (
 	sdkSrc           = "/sdk"
 	genDir           = "sdk"
 	schemaPath       = "/schema.json"
-	elixirVersion    = "1.16.2"
-	otpVersion       = "26.2.4"
-	elixirImage      = "hexpm/elixir:" + elixirVersion + "-erlang-" + otpVersion + "-debian-bookworm-20240423-slim@sha256:279f65ecc3e57a683362e62a46fcfb502ea156b0de76582c2f8e5cdccccbdd54"
+	elixirImage      = "hexpm/elixir:1.16.2-erlang-26.2.4-debian-bookworm-20240423-slim@sha256:279f65ecc3e57a683362e62a46fcfb502ea156b0de76582c2f8e5cdccccbdd54"
 )
 
 func New(
@@ -91,14 +89,10 @@ func (m *ElixirSdk) CodegenBase(
 
 	mod := normalizeModName(modName)
 
-	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
-
 	ctr := m.Base().
-		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
-		WithMountedCache(codegenPath()+"/deps", codegenDepsCache).
-		WithMountedCache(codegenPath()+"/_build", codegenBuildCache).
-		With(installCodegen).
+		WithMountedFile("/root/.mix/escripts/dagger_codegen", m.daggerCodegen()).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
@@ -140,7 +134,7 @@ func (m *ElixirSdk) CodegenBase(
 }
 
 func (m *ElixirSdk) Base() *Container {
-	mixCache := dag.CacheVolume(fmt.Sprintf(".mix-%s-%s", elixirVersion, otpVersion))
+	mixCache := dag.CacheVolume(".mix")
 
 	return dag.Container().
 		From(elixirImage).
@@ -154,16 +148,17 @@ func (m *ElixirSdk) Base() *Container {
 		})
 }
 
-func installCodegen(ctr *Container) *Container {
-	return ctr.
-		WithWorkdir(codegenPath()).
+func (m *ElixirSdk) daggerCodegen() *File {
+	codegenPath := path.Join(sdkSrc, "dagger_codegen")
+	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
+	return m.Base().
+		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
+		WithMountedCache(path.Join(codegenPath, "deps"), codegenDepsCache).
+		WithMountedCache(path.Join(codegenPath, "_build"), codegenBuildCache).
+		WithWorkdir(codegenPath).
 		WithExec([]string{"mix", "deps.get"}).
 		WithExec([]string{"mix", "escript.build"}).
-		WithExec([]string{"mix", "escript.install", "--force"})
-}
-
-func codegenPath() string {
-	return path.Join(sdkSrc, "dagger_codegen")
+		File("dagger_codegen")
 }
 
 func mixProjectCaches(prefix string) (depsCache *CacheVolume, buildCache *CacheVolume) {
