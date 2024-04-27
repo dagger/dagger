@@ -9,11 +9,13 @@ import (
 )
 
 const (
-	ModSourceDirPath     = "/src"
-	sdkSrc               = "/sdk"
-	genDir               = "sdk"
-	schemaPath           = "/schema.json"
-	defaultElixirVersion = "1.16.1-erlang-26.2.2-debian-bookworm-20240130-slim"
+	ModSourceDirPath = "/src"
+	sdkSrc           = "/sdk"
+	genDir           = "sdk"
+	schemaPath       = "/schema.json"
+	elixirVersion    = "1.16.2"
+	otpVersion       = "26.2.4"
+	elixirImage      = "hexpm/elixir:" + elixirVersion + "-erlang-" + otpVersion + "-debian-bookworm-20240423-slim@sha256:279f65ecc3e57a683362e62a46fcfb502ea156b0de76582c2f8e5cdccccbdd54"
 )
 
 func New(
@@ -89,9 +91,9 @@ func (m *ElixirSdk) CodegenBase(
 
 	mod := normalizeModName(modName)
 
-	codegenDepsCache, codegenBuildCache := mixProjectCaches(dag, "dagger-codegen")
+	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
 
-	ctr := m.Base("").
+	ctr := m.Base().
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
 		WithMountedCache(codegenPath()+"/deps", codegenDepsCache).
@@ -137,15 +139,11 @@ func (m *ElixirSdk) CodegenBase(
 	return ctr, nil
 }
 
-func (m *ElixirSdk) Base(version string) *Container {
-	if version == "" {
-		version = defaultElixirVersion
-	}
-
-	mixCache := dag.CacheVolume(".mix-" + version)
+func (m *ElixirSdk) Base() *Container {
+	mixCache := dag.CacheVolume(fmt.Sprintf(".mix-%s-%s", elixirVersion, otpVersion))
 
 	return dag.Container().
-		From("hexpm/elixir:"+version).
+		From(elixirImage).
 		WithMountedCache("/root/.mix", mixCache).
 		WithExec([]string{"apt", "update"}).
 		WithExec([]string{"apt", "install", "-y", "--no-install-recommends", "git"}).
@@ -168,7 +166,7 @@ func codegenPath() string {
 	return path.Join(sdkSrc, "dagger_codegen")
 }
 
-func mixProjectCaches(dag *Client, prefix string) (depsCache *CacheVolume, buildCache *CacheVolume) {
+func mixProjectCaches(prefix string) (depsCache *CacheVolume, buildCache *CacheVolume) {
 	return dag.CacheVolume(prefix + "-deps"), dag.CacheVolume(prefix + "-build")
 }
 
