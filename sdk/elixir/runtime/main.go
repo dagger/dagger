@@ -91,11 +91,11 @@ func (m *ElixirSdk) CodegenBase(
 
 	ctr := m.Base().
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
-		WithMountedFile("/root/.mix/escripts/dagger_codegen", m.daggerCodegen()).
-		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
+		WithMountedFile("/root/.mix/escripts/dagger_codegen", m.daggerCodegen()).
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
 		WithDirectory(
 			"dagger",
@@ -110,7 +110,7 @@ func (m *ElixirSdk) CodegenBase(
 				"test",
 			}},
 		).
-		WithWorkdir(path.Join(ModSourceDirPath, subPath, "dagger")).
+		WithWorkdir("dagger").
 		WithExec([]string{
 			"dagger_codegen", "generate",
 			"--outdir", "lib/dagger/gen",
