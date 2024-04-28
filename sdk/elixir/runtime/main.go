@@ -10,7 +10,7 @@ import (
 const (
 	ModSourceDirPath = "/src"
 	sdkSrc           = "/sdk"
-	genDir           = "dagger"
+	genDir           = "dagger_sdk"
 	schemaPath       = "/schema.json"
 	elixirImage      = "hexpm/elixir:1.16.2-erlang-26.2.4-debian-bookworm-20240423-slim@sha256:279f65ecc3e57a683362e62a46fcfb502ea156b0de76582c2f8e5cdccccbdd54"
 )

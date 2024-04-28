@@ -45,7 +45,7 @@ defmodule Main do
 
     defp deps do
       [
-        {:dagger, path: "../dagger"}
+        {:dagger, path: "../dagger_sdk"}
       ]
     end
   end
