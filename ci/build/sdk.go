@@ -163,20 +163,24 @@ func (build *Builder) elixirSDKContent(ctx context.Context) (*sdkContent, error)
 			"**/*.ex",
 			"**/*.exs",
 			"LICENSE",
-			"README.md",
 			"runtime",
 			"dagger_codegen",
 		},
 		Exclude: []string{
-			"**/deps",
+			"**/.changes",
 			"**/_build",
+			"**/deps",
+			"**/lib/dagger/gen",
+			"**/scripts",
 			"**/test",
+			"*.livemd",
+			"*.md",
+			".credo.exs",
 		},
 	})
 
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
-		WithFile("/codegen", build.CodegenBinary()).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.Uncompressed,
 		})

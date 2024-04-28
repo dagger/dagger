@@ -91,35 +91,18 @@ func (m *ElixirSdk) CodegenBase(
 
 	ctr := m.Base().
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
-		WithNewFile(schemaPath, ContainerWithNewFileOpts{
-			Contents: introspectionJson,
-		}).
-		WithMountedFile("/root/.mix/escripts/dagger_codegen", m.daggerCodegen()).
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
-		WithDirectory(
-			"dagger",
-			m.SDKSourceDir,
-			ContainerWithDirectoryOpts{Exclude: []string{
-				"*.livemd",
-				"*.md",
-				".changes",
+		WithDirectory("dagger", m.SDKSourceDir, ContainerWithDirectoryOpts{
+			// Excludes all unnecessary files from official SDK.
+			Exclude: []string{
 				"dagger_codegen",
+				// We'll do generate code on the next step.
+				"lib/dagger/gen",
 				"runtime",
-				"scripts",
-				"test",
-			}},
-		).
-		WithWorkdir("dagger").
-		WithExec([]string{
-			"dagger_codegen", "generate",
-			"--outdir", "lib/dagger/gen",
-			"--introspection", schemaPath,
+			},
 		}).
-		WithExec([]string{
-			"mix", "format",
-		}).
-		WithWorkdir(path.Join(ModSourceDirPath, subPath))
+		WithDirectory("dagger/lib/dagger/gen", m.GenerateCode(introspectionJson))
 
 	// Generate scaffolding code when no project exists.
 	if _, err = ctr.Directory(mod).File("mix.exs").Sync(ctx); err != nil {
@@ -135,7 +118,6 @@ func (m *ElixirSdk) CodegenBase(
 
 func (m *ElixirSdk) Base() *Container {
 	mixCache := dag.CacheVolume(".mix")
-
 	return dag.Container().
 		From(elixirImage).
 		WithMountedCache("/root/.mix", mixCache).
@@ -148,7 +130,8 @@ func (m *ElixirSdk) Base() *Container {
 		})
 }
 
-func (m *ElixirSdk) daggerCodegen() *File {
+// A `dagger_codegen` container.
+func (m *ElixirSdk) DaggerCodegen() *Container {
 	codegenPath := path.Join(sdkSrc, "dagger_codegen")
 	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
 	return m.Base().
@@ -157,8 +140,21 @@ func (m *ElixirSdk) daggerCodegen() *File {
 		WithMountedCache(path.Join(codegenPath, "_build"), codegenBuildCache).
 		WithWorkdir(codegenPath).
 		WithExec([]string{"mix", "deps.get"}).
-		WithExec([]string{"mix", "escript.build"}).
-		File("dagger_codegen")
+		WithExec([]string{"mix", "escript.install", "--force"})
+}
+
+// Generate code from introspection schema.
+func (m *ElixirSdk) GenerateCode(introspectionJson string) *Directory {
+	return m.DaggerCodegen().
+		WithNewFile(schemaPath, ContainerWithNewFileOpts{
+			Contents: introspectionJson,
+		}).
+		WithExec([]string{
+			"dagger_codegen", "generate",
+			"--outdir", "/gen",
+			"--introspection", schemaPath,
+		}).
+		Directory("/gen")
 }
 
 func mixProjectCaches(prefix string) (depsCache *CacheVolume, buildCache *CacheVolume) {
