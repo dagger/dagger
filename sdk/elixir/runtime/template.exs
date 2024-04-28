@@ -4,6 +4,10 @@ defmodule Main do
   def run(["generate", mod]) do
     File.mkdir_p!(Path.join([mod, "lib", "mix", "tasks"]))
 
+    # Go strcase convert a module that end with digits to `<string>_<digit>` but 
+    # Elixir convert back to `<string><digit>`. 
+    mod_name = mod |> Macro.camelize() |> Macro.underscore()
+
     mix_exs =
       render_mix_exs(
         module: Macro.camelize(mod),
@@ -15,8 +19,8 @@ defmodule Main do
     mix_task = render_mix_task(application: atom(Macro.underscore(mod)))
 
     File.write!(Path.join([mod, "mix.exs"]), mix_exs)
-    File.write!(Path.join([mod, "lib", "#{mod}.ex"]), module)
-    File.write!(Path.join([mod, "lib", mod, "application.ex"]), application_module)
+    File.write!(Path.join([mod, "lib", "#{mod_name}.ex"]), module)
+    File.write!(Path.join([mod, "lib", mod_name, "application.ex"]), application_module)
     File.write!(Path.join([mod, "lib", "mix", "tasks", "dagger.invoke.ex"]), mix_task)
   end
 
