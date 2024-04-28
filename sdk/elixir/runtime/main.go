@@ -105,8 +105,6 @@ func (m *ElixirSdk) Base(modSource *ModuleSource, subPath string) *ElixirSdk {
 // Generate a new Elixir package named by `modName`. This step will ignored if the
 // package already generated.
 func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *ElixirSdk {
-	ctx, span := Tracer().Start(ctx, "WithNewElixirPackage")
-	defer span.End()
 	// Generate scaffolding code when no project exists.
 	if _, err := m.Container.Directory(modName).File("mix.exs").Sync(ctx); err != nil {
 		m.Container = m.Container.
@@ -134,7 +132,7 @@ func (m *ElixirSdk) WithSDK(introspectionJson string) *ElixirSdk {
 	return m
 }
 
-func (m *ElixirSdk) DaggerCodegen() *Container {
+func (m *ElixirSdk) WithDaggerCodegen() *Container {
 	codegenPath := path.Join(sdkSrc, "dagger_codegen")
 	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
 	return m.baseContainer(dag.Container()).
@@ -147,7 +145,7 @@ func (m *ElixirSdk) DaggerCodegen() *Container {
 }
 
 func (m *ElixirSdk) GenerateCode(introspectionJson string) *Directory {
-	return m.DaggerCodegen().
+	return m.WithDaggerCodegen().
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
