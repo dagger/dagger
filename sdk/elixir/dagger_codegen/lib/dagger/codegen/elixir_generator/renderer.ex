@@ -59,7 +59,7 @@ defmodule Dagger.Codegen.ElixirGenerator.Renderer do
   def render_doc(%{description: ""}), do: ""
 
   def render_doc(%{description: description}) do
-    ["@doc", ~c" ", render_string(Formatter.format_doc(description))]
+    ["@doc", ~c" ", render_string(description)]
     |> IO.iodata_to_binary()
   end
 
