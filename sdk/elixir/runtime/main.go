@@ -31,6 +31,8 @@ type ElixirSdk struct {
 	RequiredPaths []string
 
 	Container *Container
+	// An error during processing.
+	err error
 }
 
 func (m *ElixirSdk) ModuleRuntime(
@@ -87,11 +89,13 @@ func (m *ElixirSdk) Common(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	ctr := m.Base(modSource, subPath).
+	m = m.Base(modSource, subPath).
 		WithSDK(introspectionJson).
-		WithNewElixirPackage(ctx, normalizeModName(modName)).
-		Container
-	return ctr, nil
+		WithNewElixirPackage(ctx, normalizeModName(modName))
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.Container, nil
 }
 
 func (m *ElixirSdk) Base(modSource *ModuleSource, subPath string) *ElixirSdk {
@@ -105,8 +109,23 @@ func (m *ElixirSdk) Base(modSource *ModuleSource, subPath string) *ElixirSdk {
 // Generate a new Elixir package named by `modName`. This step will ignored if the
 // package already generated.
 func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *ElixirSdk {
+	// Ensure to have a directory to list files/directories.
+	ctr := m.Container.WithExec([]string{"mkdir", "-p", modName})
+	entries, err := ctr.Directory(modName).Entries(ctx)
+	if err != nil {
+		m.err = err
+		return m
+	}
+
+	alreadyNewPackage := false
+	for _, entry := range entries {
+		if entry == "mix.exs" {
+			alreadyNewPackage = true
+		}
+	}
+
 	// Generate scaffolding code when no project exists.
-	if _, err := m.Container.Directory(modName).File("mix.exs").Sync(ctx); err != nil {
+	if !alreadyNewPackage {
 		m.Container = m.Container.
 			WithExec([]string{"mix", "new", "--sup", modName}).
 			WithExec([]string{"mkdir", "-p", modName + "/lib/mix/tasks"}).
@@ -118,6 +137,9 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 
 // Generate the SDK into the container.
 func (m *ElixirSdk) WithSDK(introspectionJson string) *ElixirSdk {
+	if m.err != nil {
+		return m
+	}
 	m.Container = m.Container.
 		WithDirectory(genDir, m.SDKSourceDir, ContainerWithDirectoryOpts{
 			// Excludes all unnecessary files from official SDK.
