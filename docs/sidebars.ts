@@ -82,6 +82,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "integrations/php"
+        },
+        {
+          "type": "doc",
           "id": "integrations/podman"
         },
         {
