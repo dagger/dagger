@@ -374,7 +374,7 @@ func (spec *parsedObjectType) marshalJSONMethodCode() (*Statement, error) {
 		getFieldCodes = append(getFieldCodes, getFieldCode)
 	}
 
-	return Func().Params(Id("r").Id(spec.name)).
+	return Func().Params(Id("r").Op("*").Id(spec.name)).
 		Id("MarshalJSON").
 		Params().
 		Params(Id("[]byte"), Id("error")).
