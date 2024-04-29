@@ -17,12 +17,12 @@ func (m *MyModule) Build(source *Directory) *Container {
 		WithExec([]string{"sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"}).
 		WithExec([]string{"sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"}).
 		WithExec([]string{"a2enmod", "rewrite"}).
+		WithExec([]string{"sh", "-c", "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"}).
 		WithDirectory("/var/www", source.WithoutDirectory("dagger"), ContainerWithDirectoryOpts{
 			Owner: "www-data",
 		}).
 		WithWorkdir("/var/www").
 		WithExec([]string{"chmod", "-R", "775", "/var/www"}).
-		WithExec([]string{"sh", "-c", "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer"}).
 		WithMountedCache("/root/.composer", dag.CacheVolume("composer-cache")).
 		WithMountedCache("/var/www/vendor", dag.CacheVolume("composer-vendor-cache")).
 		WithExec([]string{"composer", "install"})

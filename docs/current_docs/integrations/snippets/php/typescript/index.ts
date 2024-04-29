@@ -32,14 +32,14 @@ class MyModule {
           "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf",
         ])
         .withExec(["a2enmod", "rewrite"])
-        .withDirectory("/var/www", source.withoutDirectory("dagger"), {owner: "www-data"})
-        .withWorkdir("/var/www")
-        .withExec(["chmod", "-R", "775", "/var/www"])
         .withExec([
           "sh",
           "-c",
           "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
         ])
+        .withDirectory("/var/www", source.withoutDirectory("dagger"), {owner: "www-data"})
+        .withWorkdir("/var/www")
+        .withExec(["chmod", "-R", "775", "/var/www"])
         .withMountedCache("/root/.composer", dag.cacheVolume("composer-cache"))
         .withMountedCache("/var/www/vendor", dag.cacheVolume("composer-vendor-cache"))
         .withExec(["composer", "install"])

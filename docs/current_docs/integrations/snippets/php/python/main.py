@@ -28,11 +28,6 @@ class MyModule:
                 ]
             )
             .with_exec(["a2enmod", "rewrite"])
-            .with_directory(
-                "/var/www", source.without_directory("dagger"), owner="www-data"
-            )
-            .with_workdir("/var/www")
-            .with_exec(["chmod", "-R", "775", "/var/www"])
             .with_exec(
                 [
                     "sh",
@@ -40,6 +35,11 @@ class MyModule:
                     "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
                 ]
             )
+            .with_directory(
+                "/var/www", source.without_directory("dagger"), owner="www-data"
+            )
+            .with_workdir("/var/www")
+            .with_exec(["chmod", "-R", "775", "/var/www"])
             .with_mounted_cache("/root/.composer", dag.cache_volume("composer-cache"))
             .with_mounted_cache(
                 "/var/www/vendor", dag.cache_volume("composer-vendor-cache")
