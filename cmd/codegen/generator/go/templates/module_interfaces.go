@@ -327,10 +327,7 @@ func (spec *parsedIfaceType) graphqlIDMethodCode() *Statement {
 /*
 The MarshalJSON method attached to the concrete implementation of the interface. e.g.:
 
-	func (r *customIfaceImpl) MarshalJSON() ([]byte, error) {
-		if r == nil {
-			return []byte("\"\""), nil
-		}
+	func (r customIfaceImpl) MarshalJSON() ([]byte, error) {
 		id, err := r.ID(context.Background())
 		if err != nil {
 			return nil, err
@@ -339,13 +336,11 @@ The MarshalJSON method attached to the concrete implementation of the interface.
 	}
 */
 func (spec *parsedIfaceType) marshalJSONMethodCode() *Statement {
-	return Func().Params(Id("r").Op("*").Id(spec.concreteStructName())).
+	return Func().Params(Id("r").Id(spec.concreteStructName())).
 		Id("MarshalJSON").
 		Params().
 		Params(Id("[]byte"), Id("error")).
 		BlockFunc(func(g *Group) {
-			g.If(Id("r").Op("==").Nil()).Block(Return(Index().Byte().Parens(Lit(`""`)), Nil()))
-
 			g.List(Id("id"), Id("err")).Op(":=").Id("r").Dot("ID").Call(Id("marshalCtx"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Nil(), Id("err")))
 			g.Return(Id("json").Dot("Marshal").Call(Id("id")))
