@@ -10,7 +10,7 @@ import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
-import { withTracingSpan } from "../telemetry/index.js"
+import { getTracer } from "../telemetry/index.js"
 import { UI_MASK, UI_PASSTHROUGH } from "../telemetry/attributes.js"
 
 const __filename = fileURLToPath(import.meta.url)
@@ -37,9 +37,12 @@ export async function entrypoint() {
       let result: any
 
       if (parentName === "") {
-        result = await withTracingSpan(
+        result = await getTracer().startActiveSpan(
           "typescript module registration",
-          async () => await register(files, scanResult),
+          async () => {
+            return await register(files, scanResult)
+          },
+          { [UI_MASK]: true },
         )
       } else {
         // Invocation
@@ -57,20 +60,19 @@ export async function entrypoint() {
         await load(files)
 
         try {
-          result = await withTracingSpan(
+          result = await getTracer().startActiveSpan(
             "typescript module execution",
-            async (span) => {
-              span.setAttributes({
-                [UI_MASK]: true,
-                [UI_PASSTHROUGH]: true,
-              })
-
+            async () => {
               return await invoke(scanResult, {
                 parentName,
                 fnName,
                 parentArgs,
                 fnArgs: args,
               })
+            },
+            {
+              [UI_MASK]: true,
+              [UI_PASSTHROUGH]: true,
             },
           )
         } catch (e) {

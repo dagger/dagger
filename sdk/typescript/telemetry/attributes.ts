@@ -4,7 +4,7 @@
 export const UI_MASK = "dagger.io/ui.mask"
 
 /**
- * Reveal only child spans (e.g., `python runtime execution` parent span).
+ * Reveal only child spans (e.g., `typescript runtime execution` parent span).
  */
 export const UI_PASSTHROUGH = "dagger.io/ui.passthrough"
 

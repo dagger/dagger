@@ -1,3 +1,3 @@
-import { withTracingSpan, getTracer } from "./telemetry.js"
+import { getTracer } from "./telemetry.js"
 
-export { withTracingSpan, getTracer }
+export { getTracer }

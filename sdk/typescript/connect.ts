@@ -30,14 +30,19 @@ export async function connection(
 ) {
   telemetry.initiliaze()
 
-  // Wrap connection into the otlp context
-  await opentelemetry.context.with(telemetry.initContext(), async () => {
-    await defaultContext.connection(cfg)
-
-    await fct().finally(() => close())
-  })
-
-  await telemetry.close()
+  try {
+    // Wrap connection into the otlp context
+    await opentelemetry.context.with(telemetry.getContext(), async () => {
+      try {
+        await defaultContext.connection(cfg)
+        await fct()
+      } finally {
+        close()
+      }
+    })
+  } finally {
+    await telemetry.close()
+  }
 }
 
 /**
