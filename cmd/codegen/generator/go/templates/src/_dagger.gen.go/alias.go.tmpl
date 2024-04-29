@@ -1,8 +1,10 @@
 import (
-  "context"
+	"context"
 	"log/slog"
 
 	"{{.PackageImport}}/internal/dagger"
+	"{{.PackageImport}}/internal/telemetry"
+	"{{.PackageImport}}/internal/querybuilder"
 
 	"go.opentelemetry.io/otel/trace"
 )
