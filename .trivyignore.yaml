@@ -1,0 +1,5 @@
+vulnerabilities:
+  # https://github.com/advisories/GHSA-c5pj-mqfh-rvc3
+  # This issue is not fixed in a version of runc we can feasibly upgrade to. We
+  # simply do not use CRI-O for starting runc, so this is a false positive.
+  - id: CVE-2024-3154

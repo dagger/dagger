@@ -225,19 +225,37 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return dag.Container().
-		From("aquasec/trivy:0.50.1").
+	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source, DirectoryWithDirectoryOpts{
+		Include: []string{
+			".trivyignore",
+			".trivyignore.yml",
+			".trivyignore.yaml",
+		},
+	})
+	ignoreFileNames, err := ignoreFiles.Entries(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	ctr := dag.Container().
+		From("aquasec/trivy:0.50.4").
 		WithMountedFile("/mnt/engine.tar", target.AsTarball()).
-		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
-		WithExec([]string{
-			"image",
-			"--format=json",
-			"--no-progress",
-			"--exit-code=1",
-			"--vuln-type=os,library",
-			"--severity=CRITICAL,HIGH",
-			"--input",
-			"/mnt/engine.tar",
-		}).
-		Stdout(ctx)
+		WithMountedDirectory("/mnt/ignores", ignoreFiles).
+		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"))
+
+	args := []string{
+		"image",
+		"--format=json",
+		"--no-progress",
+		"--exit-code=1",
+		"--vuln-type=os,library",
+		"--severity=CRITICAL,HIGH",
+		"--show-suppressed",
+	}
+	if len(ignoreFileNames) > 0 {
+		args = append(args, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
+	}
+	args = append(args, "--input", "/mnt/engine.tar")
+
+	return ctr.WithExec(args).Stdout(ctx)
 }
