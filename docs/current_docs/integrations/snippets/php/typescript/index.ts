@@ -5,7 +5,7 @@ import {
   Secret,
   object,
   func,
-} from "@dagger.io/dagger";
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -49,7 +49,7 @@ class MyModule {
         "/var/www/vendor",
         dag.cacheVolume("composer-vendor-cache"),
       )
-      .withExec(["composer", "install"]);
+      .withExec(["composer", "install"])
   }
 
   /*
@@ -60,7 +60,7 @@ class MyModule {
     return await this.build(source)
       .withEnvVariable("PATH", "./vendor/bin:$PATH", { expand: true })
       .withExec(["phpunit"])
-      .stdout();
+      .stdout()
   }
 
   /*
@@ -77,15 +77,15 @@ class MyModule {
   ): Promise<string> {
     const image = this.build(source)
       .withLabel("org.opencontainers.image.title", "Laravel with Dagger")
-      .withLabel("org.opencontainers.image.version", version);
+      .withLabel("org.opencontainers.image.version", version)
     // uncomment this to use a custom entrypoint file
     // .withExec(["chmod", "+x", "/var/www/docker-entrypoint.sh"])
     // .withEntrypoint(["/var/www/docker-entrypoint.sh"])
 
     const address = await image
       .withRegistryAuth(registryAddress, registryUsername, registryPassword)
-      .publish(`${registryAddress}/${registryUsername}/${imageName}`);
+      .publish(`${registryAddress}/${registryUsername}/${imageName}`)
 
-    return address;
+    return address
   }
 }
