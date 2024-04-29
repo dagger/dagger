@@ -207,7 +207,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
 		}
 		if build.platformSpec.Architecture != "amd64" {
-			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "ubuntu", build.platformSpec.Architecture)
+			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
 		}
 
 		if build.base == "ubuntu" {
