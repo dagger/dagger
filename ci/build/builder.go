@@ -329,7 +329,7 @@ func (build *Builder) cniPlugins() *dagger.Directory {
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
 	case "wolfi":
-		ctr = ctr.From("cgr.dev/chainguard/wolfi-base:latest").
+		ctr = ctr.From(fmt.Sprintf("%s:%s", consts.WolfiImage, consts.WolfiVersion)).
 			WithExec([]string{"apk", "add", "build-base", "go", "git"})
 	}
 
