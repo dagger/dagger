@@ -138,6 +138,11 @@ func TestModuleGoInit(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, generated, "module example.com/test")
 		})
+
+		t.Run("no new go.mod", func(t *testing.T) {
+			_, err := modGen.File("dagger/go.mod").Contents(ctx)
+			require.ErrorContains(t, err, "no such file or directory")
+		})
 	})
 
 	t.Run("respects existing go.work", func(t *testing.T) {
@@ -148,9 +153,7 @@ func TestModuleGoInit(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithExec([]string{"go", "work", "init"}).
-			WithExec([]string{"go", "work", "use", "."}).
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
 
 		out, err := modGen.
@@ -162,12 +165,11 @@ func TestModuleGoInit(t *testing.T) {
 		t.Run("go.work is edited", func(t *testing.T) {
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "\t.\n")
-			require.Contains(t, generated, "\t./dagger\n")
+			require.Contains(t, generated, "use ./dagger\n")
 		})
 	})
 
-	t.Run("respects existing go.work for top-level source", func(t *testing.T) {
+	t.Run("respects existing go.work with existing module", func(t *testing.T) {
 		t.Parallel()
 
 		c, ctx := connect(t)
@@ -177,7 +179,8 @@ func TestModuleGoInit(t *testing.T) {
 			WithWorkdir("/work").
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
+			WithExec([]string{"go", "work", "use", "."}).
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -200,9 +203,7 @@ func TestModuleGoInit(t *testing.T) {
 		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithExec([]string{"go", "work", "init"}).
-			WithExec([]string{"go", "work", "use", "."}).
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "subdir"))
 
 		out, err := modGen.
@@ -215,8 +216,7 @@ func TestModuleGoInit(t *testing.T) {
 		t.Run("go.work is edited", func(t *testing.T) {
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "\t.\n")
-			require.Contains(t, generated, "\t./subdir/dagger\n")
+			require.Contains(t, generated, "use ./subdir/dagger\n")
 		})
 	})
 
@@ -228,9 +228,7 @@ func TestModuleGoInit(t *testing.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithExec([]string{"go", "work", "init"}).
-			WithExec([]string{"go", "work", "use", "."}).
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "subdir"))
 
 		// we can't write to the go.work at the top-level so it should remain
@@ -247,7 +245,7 @@ func TestModuleGoInit(t *testing.T) {
 		t.Run("go.work is unedited", func(t *testing.T) {
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "use .\n")
+			require.NotContains(t, generated, "use")
 		})
 	})
 
