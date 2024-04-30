@@ -192,13 +192,13 @@ const config: Config = {
             {
               label: "Dagger Love",
               to: "https://dagger.io/dagger-love",
-            }, 
+            },
             {
               label: "Playground",
               to: "https://play.dagger.cloud/playground",
             },
             {
-              label: "Changlog",
+              label: "Changelog",
               to: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
             },
             {
