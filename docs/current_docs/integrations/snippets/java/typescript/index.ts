@@ -1,11 +1,4 @@
-import {
-  dag,
-  File,
-  Directory,
-  Secret,
-  object,
-  func,
-} from "@dagger.io/dagger"
+import { dag, File, Directory, Secret, object, func } from "@dagger.io/dagger"
 
 @object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars

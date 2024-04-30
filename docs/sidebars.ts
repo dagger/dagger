@@ -69,6 +69,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "integrations/java"
+        },
+        {
+          "type": "doc",
           "id": "integrations/jenkins"
         },
         {
