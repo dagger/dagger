@@ -52,16 +52,26 @@ docker restart "$DAGGER_ENGINE_DOCKER_CONTAINER"
 
 You should now be able to re-run your Dagger Function successfully.
 
-## Calling a Dagger Function fails when `DOCKER_DEFAULT_PLATFORM` is set
+## Calling a Dagger Function fails
 
-A Dagger Function may fail with an error like `unable to start container process` and/or cause the Dagger Engine to crash. This can occur when you have the `DOCKER_DEFAULT_PLATFORM` environment variable set.
+A Dagger Function may fail with one of the following errors and/or cause the Dagger Engine to crash:
 
-To resolve this error, remove the `DOCKER_DEFAULT_PLATFORM` variable, restart the shell, and recreate the Dagger Engine container with the commands below:
+- `unable to start container process`
+- `failed to update codegen and runtime`
+- `failed to generate code`
+- `failed to get modified source directory for go module sdk codegen`
 
-```shell
-DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
-docker restart "$DAGGER_ENGINE_DOCKER_CONTAINER"
-```
+This can occur when you have the `DOCKER_DEFAULT_PLATFORM` environment variable set and/or when Rosetta is enabled in Docker Desktop for Mac.
+
+To resolve this error, you must remove the environment variable, disable Rosetta if applicable, and remove existing Dagger Engine containers.
+
+1. Remove the `DOCKER_DEFAULT_PLATFORM` variable in your current shell and/or your equivalent shell config files (`.bashrc`, `.profile`, `.zshrc`, ...) and restart the shell.
+1. Ensure that [Rosetta is disabled in Docker Desktop on Mac](https://docs.docker.com/desktop/settings/mac/).
+1. Remove any running Dagger Engine containers and Docker images:
+
+    ```shell
+    docker rm -fv $(docker ps --filter name="dagger-engine-*" -q) && docker rmi $(docker images -q --filter reference=registry.dagger.io/engine)
+    ```
 
 ## Dagger restarts with a "CNI setup error"
 
