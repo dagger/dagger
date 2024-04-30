@@ -39,18 +39,23 @@ func (e *Engine) WithArg(key, value string) *Engine {
 	return e
 }
 
-func (e *Engine) WithGPUSupport() *Engine {
-	e.GPUSupport = true
-	return e
-}
-
 func (e *Engine) WithTrace() *Engine {
 	e.Trace = true
 	return e
 }
 
-func (e *Engine) WithBase(image string) *Engine {
-	e.ImageBase = image
+func (e *Engine) WithBase(
+	// +optional
+	image *string,
+	// +optional
+	gpuSupport *bool,
+) *Engine {
+	if image != nil {
+		e.ImageBase = *image
+	}
+	if gpuSupport != nil {
+		e.GPUSupport = *gpuSupport
+	}
 	return e
 }
 
@@ -88,7 +93,7 @@ func (e *Engine) Container(
 		case "ubuntu":
 			builder = builder.WithUbuntuBase()
 		default:
-			return nil, fmt.Errorf("unknown image type %s", e.ImageBase)
+			return nil, fmt.Errorf("unknown base image type %s", e.ImageBase)
 		}
 	}
 

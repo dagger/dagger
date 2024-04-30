@@ -70,7 +70,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
-	args = []string{"--version=" + version, "engine", "with-gpusupport", "publish"}
+	args = []string{"--version=" + version, "engine", "with-base", "--image=ubuntu", "--gpu-support=true", "publish"}
 	args = append(args, commonArgs...)
 	for _, p := range publishedGPUEnginePlatforms {
 		args = append(args, "--platform="+p)
@@ -99,7 +99,7 @@ func (t Engine) TestPublish(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	err = util.DaggerCall(ctx, "engine", "with-gpusupport", "test-publish")
+	err = util.DaggerCall(ctx, "engine", "with-base", "--image=ubuntu", "--gpu-support=true", "test-publish")
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	args := []string{"engine"}
 	if gpuSupport {
-		args = append(args, "with-gpusupport")
+		args = append(args, "with-base", "--image=ubuntu", "--gpu-support=true")
 	}
 	if trace {
 		args = append(args, "with-trace")

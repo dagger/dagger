@@ -99,7 +99,8 @@ func (ci *Dagger) Dev(
 
 	engine := ci.Engine()
 	if experimentalGPUSupport {
-		engine = engine.WithGPUSupport()
+		img := "ubuntu"
+		engine = engine.WithBase(&img, &experimentalGPUSupport)
 	}
 	svc, err := engine.Service(ctx, "dev")
 	if err != nil {
