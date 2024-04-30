@@ -62,7 +62,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, typescriptGeneratedAPIPath, t.Dagger.Source, t.Generate)
+		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, typescriptGeneratedAPIPath)
 	})
 
 	return eg.Wait()

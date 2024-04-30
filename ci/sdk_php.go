@@ -22,7 +22,7 @@ type PHPSDK struct {
 
 // Lint the PHP SDK
 func (t PHPSDK) Lint(ctx context.Context) error {
-	return util.DiffDirectoryF(ctx, filepath.Join(phpSDKPath, phpSDKGeneratedDir), t.Dagger.Source, t.Generate)
+	return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, filepath.Join(phpSDKPath, phpSDKGeneratedDir))
 }
 
 // Test the PHP SDK

@@ -7,21 +7,27 @@ import (
 	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
-func DiffDirectory(ctx context.Context, path string, original *dagger.Directory, modified *dagger.Directory) error {
-	_, err := dag.Container().
+func DiffDirectory(ctx context.Context, original *dagger.Directory, modified *dagger.Directory, paths ...string) error {
+	ctr := dag.Container().
 		From("alpine").
 		WithMountedDirectory("/mnt/original", original).
 		WithMountedDirectory("/mnt/modified", modified).
-		WithWorkdir("/mnt").
-		WithExec([]string{"diff", "-r", filepath.Join("original", path), filepath.Join("modified", path)}).
-		Sync(ctx)
-	return err
+		WithWorkdir("/mnt")
+	for _, path := range paths {
+		_, err := ctr.
+			WithExec([]string{"diff", "-r", filepath.Join("original", path), filepath.Join("modified", path)}).
+			Sync(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func DiffDirectoryF(ctx context.Context, path string, original *dagger.Directory, modifiedF func(context.Context) (*dagger.Directory, error)) error {
+func DiffDirectoryF(ctx context.Context, original *dagger.Directory, modifiedF func(context.Context) (*dagger.Directory, error), paths ...string) error {
 	modified, err := modifiedF(ctx)
 	if err != nil {
 		return err
 	}
-	return DiffDirectory(ctx, path, original, modified)
+	return DiffDirectory(ctx, original, modified, paths...)
 }
