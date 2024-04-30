@@ -13,12 +13,15 @@ Dagger has two distinct caching mechanisms:
 ## Implementation
 
 Both cache mechanisms are namespaced by Dagger Cloud Organization name.
-- The cache key for the layers cache is `bucket / organization-name / content-address`
-- The cache key for the volumes cache is `bucket / organization-name / volume-name`, where the volume name is set by the user using the Dagger API
-
-No cache data is shared across organizations.
+- The cache key for the layers cache is `bucket / organization-name / content-address`.
+- The cache key for the volumes cache is `bucket / organization-name / volume-name`, where the volume name is set by the user using the Dagger API.
+- Manifests of the layers cache are sent to Dagger Cloud to support merging layers between runs (not supported by Buildkit).
 
 The cache is shared across pipelines and runs, within the same Dagger Cloud organization. This implies that users in the same organization share the same cache.
+
+:::important
+No cache data is shared across organizations.
+:::
 
 ## Security
 
