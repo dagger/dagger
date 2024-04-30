@@ -5628,6 +5628,118 @@ func TestModuleUnicodePath(t *testing.T) {
 	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
 }
 
+func TestModuleStartServices(t *testing.T) {
+	t.Parallel()
+
+	// regression test for https://github.com/dagger/dagger/pull/6914
+	t.Run("use service in multiple functions", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+	import (
+		"context"
+		"fmt"
+	)
+
+	type Test struct {
+	}
+
+	func (m *Test) FnA(ctx context.Context) (*Sub, error) {
+		svc := dag.Container().
+			From("python").
+			WithMountedDirectory(
+				"/srv/www",
+				dag.Directory().WithNewFile("index.html", "hey there"),
+			).
+			WithWorkdir("/srv/www").
+			WithExposedPort(23457).
+			WithExec([]string{"python", "-m", "http.server", "23457"}).
+			AsService()
+
+		ctr := dag.Container().
+			From("alpine:3.18.6").
+			WithServiceBinding("svc", svc).
+			WithExec([]string{"wget", "-O", "-", "http://svc:23457"})
+
+		out, err := ctr.Stdout(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if out != "hey there" {
+			return nil, fmt.Errorf("unexpected output: %q", out)
+		}
+		return &Sub{Ctr: ctr}, nil
+	}
+
+	type Sub struct {
+		Ctr *Container
+	}
+
+	func (m *Sub) FnB(ctx context.Context) (string, error) {
+		return m.Ctr.
+			WithExec([]string{"wget", "-O", "-", "http://svc:23457"}).
+			Stdout(ctx)
+	}
+	`,
+			}).
+			With(daggerCall("fnA", "fnB")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hey there", strings.TrimSpace(out))
+	})
+
+	// regression test for https://github.com/dagger/dagger/issues/6951
+	t.Run("service in multiple containers", func(t *testing.T) {
+		t.Parallel()
+		c, ctx := connect(t)
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+import (
+	"context"
+)
+
+type Test struct {
+}
+
+func (m *Test) Fn(ctx context.Context) *Container {
+	redis := dag.Container().
+		From("redis").
+		WithExposedPort(6379).
+		AsService()
+	cli := dag.Container().
+		From("redis").
+		WithoutEntrypoint().
+		WithServiceBinding("redis", redis)
+
+	ctrA := cli.WithExec([]string{"sh", "-c", "redis-cli -h redis info >> /tmp/out.txt"})
+
+	file := ctrA.Directory("/tmp").File("/out.txt")
+
+	ctrB := dag.Container().
+		From("alpine").
+		WithFile("/out.txt", file)
+
+	return ctrB.WithExec([]string{"cat", "/out.txt"})
+}
+	`,
+			}).
+			With(daggerCall("fn", "stdout")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{

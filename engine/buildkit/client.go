@@ -40,7 +40,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
 )
 
@@ -63,11 +62,10 @@ type Opts struct {
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
 	// not any nested clients (may change in future).
-	MainClientCaller   bksession.Caller
-	MainClientCallerID string
-	DNSConfig          *oci.DNSConfig
-	Frontends          map[string]bkfrontend.Frontend
-	BuildkitLogSink    io.Writer
+	MainClientCaller bksession.Caller
+	DNSConfig        *oci.DNSConfig
+	Frontends        map[string]bkfrontend.Frontend
+	BuildkitLogSink  io.Writer
 	sharedClientState
 }
 
@@ -577,13 +575,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		cancel()
-		return nil, nil, fmt.Errorf("failed to get requester session ID: %w", err)
-	}
-
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("failed to get requester session: %w", err)
@@ -722,8 +714,7 @@ func withOutgoingContext(ctx context.Context) context.Context {
 // the "real" ftp proxy setting in here too and have the shim handle
 // leaving only that set in the actual env var.
 type ContainerExecUncachedMetadata struct {
-	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
-	ServerID        string   `json:"serverID,omitempty"`
+	ServerID string `json:"serverID,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {

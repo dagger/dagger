@@ -45,7 +45,7 @@ func (c *Client) LocalImport(
 	}
 
 	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.ClientID),
+		llb.SessionID(clientMetadata.BuildkitSessionID()),
 		llb.SharedKeyHint(strings.Join([]string{clientMetadata.ClientHostname, srcPath}, " ")),
 	}
 
@@ -108,13 +108,9 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 	}
 	defer cancel()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %w", err)
-	}
 	ctx = opts.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -213,7 +209,7 @@ func (c *Client) LocalDirExport(
 		Merge: merge,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
+	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.BuildkitSessionID())
 	if err != nil {
 		return fmt.Errorf("failed to export: %w", err)
 	}
@@ -288,11 +284,6 @@ func (c *Client) LocalFileExport(
 		return fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %w", err)
-	}
-
 	ctx = engine.LocalExportOpts{
 		Path:               destPath,
 		IsFileStream:       true,
@@ -301,7 +292,7 @@ func (c *Client) LocalFileExport(
 		FileMode:           stat.Mode().Perm(),
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -357,11 +348,6 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		lg.Trace("finished exporting bytes")
 	}()
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %w", err)
-	}
-
 	ctx = engine.LocalExportOpts{
 		Path:             destPath,
 		IsFileStream:     true,
@@ -369,7 +355,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		FileMode:         destMode,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	clientCaller, err := c.GetSessionCaller(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}

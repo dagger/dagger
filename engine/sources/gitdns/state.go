@@ -2,7 +2,6 @@ package gitdns
 
 import (
 	"path"
-	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
@@ -11,11 +10,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-const AttrNetConfig = "gitdns.netconfig"
-
 // Git is a helper mimicking the llb.Git function, but with the ability to
 // set additional attributes.
-func Git(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
+func Git(url, ref string, namespace string, opts ...llb.GitOption) llb.State {
 	remote, err := gitutil.ParseURL(url)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
 		url = "https://" + url
@@ -78,7 +75,7 @@ func Git(url, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
 		}
 	}
 
-	attrs[AttrGitClientIDs] = strings.Join(clientIDs, ",")
+	attrs[AttrDNSNamespace] = namespace
 
 	source := llb.NewSource("git://"+id, attrs, gi.Constraints)
 	return llb.NewState(source.Output())

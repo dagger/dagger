@@ -78,8 +78,8 @@ func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, pla
 		GitIdentifier: *(srcid.(*srcgit.GitIdentifier)),
 	}
 
-	if v, ok := attrs[AttrGitClientIDs]; ok {
-		id.ClientIDs = strings.Split(v, ",")
+	if v, ok := attrs[AttrDNSNamespace]; ok {
+		id.Namespace = v
 	}
 
 	return id, nil
@@ -322,10 +322,9 @@ func (gs *gitSourceHandler) mountKnownHosts() (string, func() error, error) {
 
 func (gs *gitSourceHandler) dnsConfig() *oci.DNSConfig {
 	clientDomains := []string{}
-	for _, clientID := range gs.src.ClientIDs {
-		clientDomains = append(clientDomains, network.ClientDomain(clientID))
+	if gs.src.Namespace != "" {
+		clientDomains = append(clientDomains, network.ClientDomain(gs.src.Namespace))
 	}
-
 	dns := *gs.dns
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
 	return &dns

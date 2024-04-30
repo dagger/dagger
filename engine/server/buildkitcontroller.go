@@ -154,7 +154,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", opts.ClientID).
 		WithField("client_hostname", opts.ClientHostname).
-		WithField("client_call_digest", opts.ModuleCallerDigest).
 		WithField("server_id", opts.ServerID))
 
 	{
@@ -206,6 +205,15 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
+		// overwrite the session ID to be our client ID + server ID
+		const sessionIDHeader = "x-docker-expose-session-uuid"
+		if _, ok := hijackmd[sessionIDHeader]; !ok {
+			// should never happen unless upstream changes the value of the header key,
+			// in which case we want to know
+			panic(fmt.Errorf("missing header %s", sessionIDHeader))
+		}
+		hijackmd[sessionIDHeader] = []string{opts.BuildkitSessionID()}
+
 		bklog.G(ctx).Trace("session manager handling conn")
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
 		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
@@ -259,6 +267,12 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	if err != nil {
 		return fmt.Errorf("failed to register client: %w", err)
 	}
+	defer func() {
+		err := srv.UnregisterClient(opts.ClientID)
+		if err != nil {
+			slog.Error("failed to unregister client", "err", err)
+		}
+	}()
 
 	eg.Go(func() error {
 		bklog.G(ctx).Trace("waiting for server")

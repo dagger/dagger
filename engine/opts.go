@@ -9,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"unicode"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/telemetry"
@@ -33,11 +33,12 @@ const (
 )
 
 type ClientMetadata struct {
-	// ClientID is unique to every session created by every client
+	// ClientID is unique to each client. The main client's ID is the empty string,
+	// any module and/or nested exec client's ID is a unique digest.
 	ClientID string `json:"client_id"`
 
 	// ClientSecretToken is a secret token that is unique to every client. It's
-	// initially provided to the server in the controller.Solve request. Every
+	// initially provided to the server in the controller.Session request. Every
 	// other request w/ that client ID must also include the same token.
 	ClientSecretToken string `json:"client_secret_token"`
 
@@ -61,16 +62,6 @@ type ClientMetadata struct {
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels telemetry.Labels `json:"labels"`
 
-	// ParentClientIDs is a list of session ids that are parents of the current
-	// session. The first element is the direct parent, the second element is the
-	// parent of the parent, and so on.
-	ParentClientIDs []string `json:"parent_client_ids"`
-
-	// If this client is for a module function, this digest will be set in the
-	// grpc context metadata for any api requests back to the engine. It's used by the API
-	// server to determine which schema to serve and other module context metadata.
-	ModuleCallerDigest digest.Digest `json:"module_caller_digest"`
-
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
 
@@ -84,11 +75,6 @@ type ClientMetadata struct {
 	DoNotTrack bool
 }
 
-// ClientIDs returns the ClientID followed by ParentClientIDs.
-func (m ClientMetadata) ClientIDs() []string {
-	return append([]string{m.ClientID}, m.ParentClientIDs...)
-}
-
 func (m ClientMetadata) ToGRPCMD() metadata.MD {
 	return encodeMeta(clientMetadataMetaKey, m)
 }
@@ -98,6 +84,15 @@ func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
 		md[k] = append(md[k], v...)
 	}
 	return md
+}
+
+// The ID to use for this client's buildkit session. It's a combination of both
+// the client and the server IDs to account for the fact that the client ID is
+// a content digest for functions/nested-execs, meaning it can reoccur across
+// different servers; that doesn't work because buildkit's SessionManager is
+// global to the whole process.
+func (m ClientMetadata) BuildkitSessionID() string {
+	return strings.Join([]string{m.ClientID, m.ServerID}, "-")
 }
 
 func ContextWithClientMetadata(ctx context.Context, clientMetadata *ClientMetadata) context.Context {

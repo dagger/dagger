@@ -31,7 +31,6 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/util/grpcerrors"
-	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -53,15 +52,14 @@ import (
 )
 
 type Params struct {
-	// The id of the server to connect to, or if blank a new one
-	// should be started.
-	ServerID string
+	// The id to connect to the API server with. If blank, will be set to a
+	// new random value.
+	ID string
 
-	// Parent client IDs of this Dagger client.
-	//
-	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
-	// passed from the parent.
-	ParentClientIDs []string
+	// The id of the server to connect to, or if blank a new one should be started.
+	// Needed separately from the client ID as that ID is a digest which could
+	// be reused across multiple servers.
+	ServerID string
 
 	SecretToken string
 
@@ -72,14 +70,8 @@ type Params struct {
 
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
-
-	// If this client is for a module function, this digest will be set in the
-	// grpc context metadata for any api requests back to the engine. It's used by the API
-	// server to determine which schema to serve and other module context metadata.
-	ModuleCallerDigest digest.Digest
-
-	EngineTrace sdktrace.SpanExporter
-	EngineLogs  sdklog.LogExporter
+	EngineTrace        sdktrace.SpanExporter
+	EngineLogs         sdklog.LogExporter
 }
 
 type Client struct {
@@ -119,11 +111,15 @@ type Client struct {
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
 	c := &Client{Params: params}
-	if c.SecretToken == "" {
-		c.SecretToken = uuid.New().String()
+	if c.ID == "" {
+		c.ID = identity.NewID()
 	}
+	configuredServerID := c.ServerID
 	if c.ServerID == "" {
 		c.ServerID = identity.NewID()
+	}
+	if c.SecretToken == "" {
+		c.SecretToken = uuid.New().String()
 	}
 
 	// keep the root ctx around so we can detect whether we've been interrupted,
@@ -181,7 +177,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		telemetry.Encapsulate(),
 	}
 
-	if c.Params.ModuleCallerDigest != "" {
+	if configuredServerID != "" {
+		// infer that this is not a main client caller, server ID is never set for those currently
 		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
 	}
 
@@ -320,13 +317,10 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	}()
 
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
-		ClientID:           c.ID(),
-		ClientSecretToken:  c.SecretToken,
-		ServerID:           c.ServerID,
-		ClientHostname:     c.hostname,
-		Labels:             c.labels,
-		ParentClientIDs:    c.ParentClientIDs,
-		ModuleCallerDigest: c.ModuleCallerDigest,
+		ClientID:          c.ID,
+		ClientSecretToken: c.SecretToken,
+		ClientHostname:    c.hostname,
+		Labels:            c.labels,
 	})
 
 	// filesync
@@ -352,15 +346,13 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:            true,
-				ClientID:                  c.ID(),
-				ClientSecretToken:         c.SecretToken,
+				ClientID:                  c.ID,
 				ServerID:                  c.ServerID,
-				ParentClientIDs:           c.ParentClientIDs,
+				ClientSecretToken:         c.SecretToken,
 				ClientHostname:            hostname,
 				UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 				UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
 				Labels:                    c.labels,
-				ModuleCallerDigest:        c.ModuleCallerDigest,
 				CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 				DoNotTrack:                analytics.DoNotTrack(),
 			}.AppendToMD(meta))
@@ -609,10 +601,6 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 	return ctx, cancel, nil
 }
 
-func (c *Client) ID() string {
-	return c.bkSession.ID()
-}
-
 func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, err error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
@@ -629,13 +617,11 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
 	} else {
 		conn, err = grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-			ClientID:           c.ID(),
-			ClientSecretToken:  c.SecretToken,
-			ServerID:           c.ServerID,
-			ClientHostname:     c.hostname,
-			ParentClientIDs:    c.ParentClientIDs,
-			Labels:             c.labels,
-			ModuleCallerDigest: c.ModuleCallerDigest,
+			ClientID:          c.ID,
+			ServerID:          c.ServerID,
+			ClientSecretToken: c.SecretToken,
+			ClientHostname:    c.hostname,
+			Labels:            c.labels,
 		}.ToGRPCMD())
 	}
 	if err != nil {
