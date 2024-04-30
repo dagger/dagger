@@ -42,25 +42,14 @@ jobs:
       - name: Install dagger
         run: |
           curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
-      - name: Waiting for Dagger Engine to be ready...
-        run: |
-          if [ "${{ inputs.dev-engine }}" == "true" ]
-          then
-            ./hack/dev
-
-            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
-            echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
-            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
-
-            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
-          fi
-          ./hack/make engine:connect
-        timeout-minutes: ${{ inputs.timeout }}
       - name: ${{ inputs.mage-targets }}
-        run: |
-          ./hack/make ${{ inputs.mage-targets }}
         timeout-minutes: ${{ inputs.timeout }}
+        run: |
+          if [ "${{ inputs.dev-engine }}" == "true" ]; then
+            dagger call --source=. dev --target=. with-exec --args "sh,-c,./hack/make ${{ inputs.mage-targets }}"
+          else
+            ./hack/make ${{ inputs.mage-targets }}
+          fi
 
   # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
   dagger-runner:
@@ -78,29 +67,14 @@ jobs:
       - name: Install dagger
         run: |
           curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
-      - name: Starting Dagger Engine
-        run: |
-          if [ "${{ inputs.dev-engine }}" == "true" ]
-          then
-            ./hack/dev
-
-            export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
-            chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
-            echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
-
-            export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
-          fi
-
-          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
+      - name: ${{ inputs.mage-targets }}
+        timeout-minutes: ${{ inputs.timeout }}
         env:
           _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
-      - name: Waiting for Dagger Engine to be ready...
-        run: |
-          ./hack/make engine:connect
-        env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: ${{ inputs.mage-targets }}
         run: |
-          ./hack/make ${{ inputs.mage-targets }}
-        env:
-          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+          if [ "${{ inputs.dev-engine }}" == "true" ]; then
+            dagger call --source=. dev --target=. with-exec --args "sh,-c,./hack/make ${{ inputs.mage-targets }}"
+          else
+            ./hack/make ${{ inputs.mage-targets }}
+          fi

@@ -120,6 +120,7 @@ func (ci *Dagger) Dev(
 	}
 
 	return util.GoBase(ci.Source).
+		WithExec([]string{"apk", "add", "bash"}).
 		WithMountedDirectory("/mnt", target).
 		WithMountedFile("/usr/bin/dagger", client).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").
