@@ -133,7 +133,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state-"+identity.NewID())).
 		WithExec(nil, ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).

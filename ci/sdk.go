@@ -5,29 +5,30 @@ import (
 
 	"github.com/dagger/dagger/ci/build"
 	"github.com/dagger/dagger/ci/consts"
+	"github.com/moby/buildkit/identity"
 )
 
 // A dev environment for the official Dagger SDKs
 type SDK struct {
 	// Develop the Dagger Go SDK
-	Go         *GoSDK
+	Go *GoSDK
 	// Develop the Dagger Python SDK
-	Python     *PythonSDK
+	Python *PythonSDK
 	// Develop the Dagger Typescript SDK
 	Typescript *TypescriptSDK
 
 	// Develop the Dagger Elixir SDK (experimental)
 	Elixir *ElixirSDK
 	// Develop the Dagger Rust SDK (experimental)
-	Rust   *RustSDK
+	Rust *RustSDK
 	// Develop the Dagger Java SDK (experimental)
-	Java   *JavaSDK
+	Java *JavaSDK
 	// Develop the Dagger PHP SDK (experimental)
-	PHP    *PHPSDK
+	PHP *PHPSDK
 }
 
 func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
-	engineSvc, err := ci.Engine().Service(ctx, name)
+	engineSvc, err := ci.Engine().Service(ctx, name+"-"+identity.NewID())
 	if err != nil {
 		return nil, err
 	}

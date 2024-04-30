@@ -8,7 +8,6 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/build"
@@ -98,7 +97,6 @@ func (e *Engine) Service(
 	} else {
 		cacheVolumeName = "dagger-dev-engine-state"
 	}
-	cacheVolumeName += identity.NewID()
 
 	e = e.
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
