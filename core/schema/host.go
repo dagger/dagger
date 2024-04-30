@@ -160,6 +160,7 @@ func (s *hostSchema) Install() {
 				`If ports are given and native is true, the ports are additive.`),
 
 		dagql.Func("service", s.service).
+			Impure("Value depends on the caller as it points to their host.").
 			Doc(`Creates a service that forwards traffic to a specified address via the host.`).
 			ArgDoc("ports",
 				`Ports to expose via the service, forwarding through the host network.`,
@@ -167,6 +168,10 @@ func (s *hostSchema) Install() {
 				the backend port.`,
 				`An empty set of ports is not valid; an error will be returned.`).
 			ArgDoc("host", `Upstream host to forward traffic to.`),
+
+		// hidden from external clients via the __ prefix
+		dagql.Func("__internalService", s.internalService).
+			Doc(`(Internal-only) "service" but scoped to the exact right buildkit session ID.`),
 
 		dagql.Func("setSecretFile", s.setSecretFile).
 			Impure("`setSecretFile` reads its value from the local machine.").
@@ -279,10 +284,58 @@ type hostServiceArgs struct {
 	Ports []dagql.InputObject[core.PortForward]
 }
 
-func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostServiceArgs) (*core.Service, error) {
+func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostServiceArgs) (inst dagql.Instance[*core.Service], err error) {
 	if len(args.Ports) == 0 {
-		return nil, errors.New("no ports specified")
+		return inst, errors.New("no ports specified")
 	}
 
-	return parent.Query.NewHostService(args.Host, collectInputsSlice(args.Ports)), nil
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
+	portsArg := make(dagql.ArrayInput[dagql.InputObject[core.PortForward]], len(args.Ports))
+	copy(portsArg, args.Ports)
+
+	err = s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "__internalService",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "host",
+					Value: dagql.NewString(args.Host),
+				},
+				{
+					Name:  "ports",
+					Value: portsArg,
+				},
+				{
+					Name:  "sessionId",
+					Value: dagql.NewString(clientMetadata.BuildkitSessionID()),
+				},
+			},
+		},
+	)
+	return inst, err
+}
+
+type hostInternalServiceArgs struct {
+	Host      string `default:"localhost"`
+	Ports     []dagql.InputObject[core.PortForward]
+	SessionID string
+}
+
+func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, args hostInternalServiceArgs) (*core.Service, error) {
+	if args.SessionID == "" {
+		return nil, errors.New("no session ID specified")
+	}
+
+	return parent.Query.NewHostService(
+		args.Host,
+		collectInputsSlice(args.Ports),
+		args.SessionID,
+	), nil
 }

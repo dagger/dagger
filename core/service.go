@@ -44,6 +44,8 @@ type Service struct {
 	HostUpstream string `json:"reverse_tunnel_upstream_addr,omitempty"`
 	// HostPorts configures the port forwarding rules for the host.
 	HostPorts []PortForward `json:"host_ports,omitempty"`
+	// HostSessionID is the session ID of the host (could differ from main client in the case of nested execs).
+	HostSessionID string `json:"host_session_id,omitempty"`
 }
 
 func (*Service) Type() *ast.Type {
@@ -604,6 +606,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		upstreamHost:       svc.HostUpstream,
 		tunnelServiceHost:  fullHost,
 		tunnelServicePorts: svc.HostPorts,
+		sessionID:          svc.HostSessionID,
 	}
 
 	checkPorts := []Port{}

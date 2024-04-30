@@ -290,11 +290,12 @@ func (q *Query) NewTunnelService(upstream dagql.Instance[*Service], ports []Port
 	}
 }
 
-func (q *Query) NewHostService(upstream string, ports []PortForward) *Service {
+func (q *Query) NewHostService(upstream string, ports []PortForward, sessionID string) *Service {
 	return &Service{
-		Query:        q,
-		HostUpstream: upstream,
-		HostPorts:    ports,
+		Query:         q,
+		HostUpstream:  upstream,
+		HostPorts:     ports,
+		HostSessionID: sessionID,
 	}
 }
 

@@ -17,6 +17,9 @@ type Socket struct {
 	// IP
 	HostProtocol string `json:"host_protocol,omitempty"`
 	HostAddr     string `json:"host_addr,omitempty"`
+
+	// The session ID of the host's client
+	SessionID string `json:"session_id,omitempty"`
 }
 
 func (*Socket) Type() *ast.Type {
@@ -36,10 +39,11 @@ func NewHostUnixSocket(absPath string) *Socket {
 	}
 }
 
-func NewHostIPSocket(proto string, addr string) *Socket {
+func NewHostIPSocket(proto string, addr string, sessionID string) *Socket {
 	return &Socket{
 		HostAddr:     addr,
 		HostProtocol: proto,
+		SessionID:    sessionID,
 	}
 }
 
@@ -52,6 +56,7 @@ func (socket *Socket) SSHID() string {
 	default:
 		u.Scheme = socket.HostProtocol
 		u.Host = socket.HostAddr
+		u.Fragment = socket.SessionID
 	}
 	return u.String()
 }
