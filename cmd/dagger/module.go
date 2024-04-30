@@ -744,27 +744,27 @@ fragment TypeDefRefParts on TypeDef {
 	kind
 	optional
 	asObject {
-			name
+		name
 	}
 	asInterface {
-			name
+		name
 	}
 	asInput {
-			name
+		name
 	}
 	asList {
-			elementTypeDef {
-					kind
-					asObject {
-							name
-					}
-					asInterface {
-							name
-					}
-					asInput {
-							name
-					}
+		elementTypeDef {
+			kind
+			asObject {
+				name
 			}
+			asInterface {
+				name
+			}
+			asInput {
+				name
+			}
+		}
 	}
 }
 
