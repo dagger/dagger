@@ -21,7 +21,6 @@ module.exports = {
       "items": [
         "quickstart/cli",
         "quickstart/hello",
-        "quickstart/arguments",
         "quickstart/directories",
         "quickstart/containers",
         "quickstart/daggerize",

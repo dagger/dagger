@@ -33,8 +33,95 @@ As you can see, Dagger loaded a module directly from its GitHub repository, and 
 
 If you [inspect the source code of the module](https://github.com/shykes/daggerverse/blob/main/hello/main.go), you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string.
 
-Note that the function supports arguments - we'll get to that later.
-
 :::info
 When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Hello()` is invoked as `dagger call hello`.
+:::
+
+### List available function arguments
+
+Dagger Functions, just like regular functions, can accept arguments. Appending the `--help` flag to a `dagger call` command will display a context-sensitive list of supported arguments and sub-commands.
+
+Inspect the arguments of the `hello` function you called earlier:
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --help
+```
+
+You should see output that looks like this:
+
+```shell
+Say hello to the world!
+
+Usage:
+  dagger call hello [flags]
+
+Flags:
+       --figlet-container Container   Optional container for running the figlet tool
+       --giant                        Encode the message in giant multi-character letters
+       --greeting string              An optional greeting (default is "hello")
+       --name string                  An optional name (default is "world")
+       --shout                        Make the message uppercase, and add more exclamation
+                                      points
+```
+
+### Call a function with arguments
+
+Let's pass two string arguments to the `hello` function, from the list above:
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjour --name=daggernaut
+```
+
+You should see the following output:
+
+```shell
+bonjour, daggernaut!
+```
+
+### Use complex types as arguments
+
+In addition to basic types (string, boolean, integer, array...), Dagger also defines powerful core types which functions can use as arguments: `Directory`, `File`, `Container`, `Service`, `Secret` and others.
+
+You'll see this in action as you continue through the quickstart, but here's a quick example that demonstrates passing a `Directory` type as argument to a Dagger Function:
+
+```shell
+dagger -m github.com/vikram-dagger/daggerverse/fileutils call tree --dir='https://github.com/dagger/dagger#main:cmd/dagger'
+```
+
+Here, the `Tree()` function accepts a `Directory` as argument and returns a tree representation of that directory. The directory could be a local directory, or a remote Git reference. In this example, the directory is the `cmd/dagger` sub-directory of Dagger's open-source GitHub repository.
+
+You should see the following output, which should be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
+
+```shell
+.
+├── call.go
+├── cloud.go
+├── config.go
+├── debug.go
+├── engine.go
+├── exec_nonunix.go
+├── exec_unix.go
+├── flags.go
+├── functions.go
+├── gen.go
+├── licenses.go
+├── listen.go
+├── log.go
+├── main.go
+├── module.go
+├── module_test.go
+├── query.go
+├── run.go
+├── session.go
+├── shell.go
+├── shell_nounix.go
+├── shell_unix.go
+├── version.go
+└── watch.go
+
+0 directories, 24 files
+```
+
+:::tip
+All of Dagger's core types, such as `Directory`, `File`, `Container`, `Service`, `Secret`, can be used as arguments by Dagger Functions. These core types are not merely strings referencing local or remote resources; they are actual representations of the corresponding resource states, managed by the Dagger Engine, and passed to and between Dagger Functions like other variables. This feature makes it easy to assemble complex pipelines where container state flows from function to function, in just a few lines of code.
 :::

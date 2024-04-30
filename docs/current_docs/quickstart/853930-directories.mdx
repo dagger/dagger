@@ -6,7 +6,6 @@ title: "Build a binary with a function"
 
 # Quickstart
 
-
 ## Build a binary with a function
 
 Not only can functions use Dagger's core types in their arguments; they can use them in their return value as well.
@@ -21,7 +20,7 @@ Try calling this Go builder Dagger Function, which builds the Dagger CLI:
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger --os=$(uname -s | awk '{print tolower($0)}')
 ```
 
-This function takes a `source` argument of type `Directory`. Similar to how the CLI can pass a `Container` from a remote OCI address, it can also pass a `Directory` from a local path or remote Git address. Here, you're passing the address of Dagger's open-source repository.
+This function takes a `project` argument of type `Directory`. Here, you're passing the address of Dagger's open-source repository. It also takes an `args` argument, which is a list of strings representing the arguments to be passed to the `go build` command.
 
 :::note
 By default, the Go builder Dagger Function builds a binary based on information derived from the runtime container. Since the runtime container uses Linux, this usually means that the compiled binary will be a `linux/amd64` binary. This can be overridden by passing additional `--os` and `--arch` arguments to the Go builder Dagger Function. The previous example uses `uname` to dynamically derive the host operating system type, and passes that to the Dagger Function via the `--os` argument.
@@ -84,7 +83,7 @@ dagger (registry.dagger.io/engine) linux/amd64
 ```
 
 :::tip
-As you've seen in the previous examples, Dagger modules can contain one or more functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
+As you've seen in the previous examples, Dagger modules can contain one or more Dagger Functions, each with different arguments and return values. You can list all the functions available in a module with the `dagger functions` command, or append `--help` to any `dagger call` command to see a context-sensitive list of supported arguments and sub-commands. Try it with the Go builder module:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 functions
