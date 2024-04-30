@@ -49,9 +49,10 @@ Install the Java module from the Daggerverse:
 dagger install github.com/jcsirot/daggerverse/java@c591e9e0b99def2fc8a67bb090fca5cd06cf6a1d
 ```
 
-Update the generated `dagger/src/main.py` file with the following code:
+Update the generated `dagger/src/main/__init__.py` file with the following code:
 
-FIXME
+```python file=./snippets/java/python/main.py
+```
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -70,7 +71,8 @@ dagger install github.com/jcsirot/daggerverse/java@c591e9e0b99def2fc8a67bb090fca
 
 Update the generated `dagger/src/index.ts` file with the following code:
 
-FIXME
+```typescript file=./snippets/java/typescript/index.ts
+```
 
 </TabItem>
 </Tabs>
