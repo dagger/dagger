@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
@@ -154,8 +155,10 @@ func (q *Query) RegisterCaller(ctx context.Context, call *FunctionCall) (string,
 	// also trim it to 25 chars as it ends up becoming part of service URLs
 	clientID := clientIDDigest.Encoded()[:25]
 
-	// break glass for debugging which client is which operation
-	// bklog.G(ctx).Debugf("CLIENT ID %s = %s", clientID, currentID.Display())
+	slog.ExtraDebug("registering nested caller",
+		"client_id", clientID,
+		"op", currentID.Display(),
+	)
 
 	if call.Module == nil {
 		callCtx.Deps = q.DefaultDeps

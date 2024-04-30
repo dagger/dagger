@@ -1007,7 +1007,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		clientID, err := container.Query.RegisterCaller(ctx, opts.NestedExecFunctionCall)
+		callerOpts := opts.NestedExecFunctionCall
+		if callerOpts == nil {
+			// default to caching the nested exec
+			callerOpts = &FunctionCall{
+				Cache: true,
+			}
+		}
+		clientID, err := container.Query.RegisterCaller(ctx, callerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}

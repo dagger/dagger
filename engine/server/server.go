@@ -382,10 +382,6 @@ func (s *DaggerServer) RegisterClient(clientID, clientHostname, secretToken stri
 		return nil
 	}
 	s.clientIDToSecretToken[clientID] = secretToken
-	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
-	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
-	// Deleting it would make it easier to create race conditions around using the client's session
-	// before it is fully closed.
 
 	return nil
 }
@@ -400,6 +396,13 @@ func (s *DaggerServer) VerifyClient(clientID, secretToken string) error {
 	if existingToken != secretToken {
 		return fmt.Errorf("client ID %q registered with different secret token", clientID)
 	}
+	return nil
+}
+
+func (s *DaggerServer) UnregisterClient(clientID string) error {
+	s.clientIDMu.Lock()
+	defer s.clientIDMu.Unlock()
+	delete(s.clientIDToSecretToken, clientID)
 	return nil
 }
 
