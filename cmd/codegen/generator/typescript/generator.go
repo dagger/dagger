@@ -3,6 +3,7 @@ package typescriptgenerator
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"sort"
 
 	"github.com/psanford/memfs"
@@ -51,7 +52,14 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 
 	mfs := memfs.New()
 
-	if err := mfs.WriteFile(ClientGenFile, b.Bytes(), 0600); err != nil {
+	target := ClientGenFile
+	if g.Config.ModuleName != "" {
+		target = filepath.Join(g.Config.ModulePath, "sdk/api", ClientGenFile)
+	}
+	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return nil, err
+	}
+	if err := mfs.WriteFile(target, b.Bytes(), 0600); err != nil {
 		return nil, err
 	}
 

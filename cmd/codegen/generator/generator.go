@@ -24,17 +24,18 @@ const (
 )
 
 type Config struct {
-	// Language supported by this codegen infra.
+	// Lang is the language supported by this codegen infra.
 	Lang SDKLang
 
-	// Destination directory for generated code.
+	// OutputDir is the path to place generated code.
 	OutputDir string
 
-	// Name of the module to generate code for
-	ModuleName        string
-	ModuleContextPath string
+	// ModuleName is the module name to generate code for.
+	ModuleName string
+	// ModulePath is the subpath where a module can be found.
+	ModulePath string
 
-	// Optional pre-computed introspection json string
+	// IntrospectionJSON is an optional pre-computed introspection json string
 	IntrospectionJSON string
 }
 
@@ -53,10 +54,10 @@ type GeneratedState struct {
 	// Go code.
 	PostCommands []*exec.Cmd
 
-	// NeedSync indicates that the code needs to be generated again. This can
-	// happen if the codegen spat out templates that depend on generated types.
-	// In that case the codegen needs to be run again with both the templates and
-	// the initially generated types available.
+	// NeedRegenerate indicates that the code needs to be generated again. This
+	// can happen if the codegen spat out templates that depend on generated
+	// types. In that case the codegen needs to be run again with both the
+	// templates and the initially generated types available.
 	NeedRegenerate bool
 }
 

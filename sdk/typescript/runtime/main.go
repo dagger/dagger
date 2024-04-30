@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"path"
+	"path/filepath"
 	"slices"
 
 	"github.com/iancoleman/strcase"
@@ -50,12 +50,12 @@ type TypeScriptSdk struct {
 const (
 	ModSourceDirPath         = "/src"
 	EntrypointExecutableFile = "__dagger.entrypoint.ts"
-	EntrypointExecutablePath = "src/" + EntrypointExecutableFile
-	sdkSrc                   = "/sdk"
-	genDir                   = "sdk"
-	genPath                  = "/sdk/api"
-	schemaPath               = "/schema.json"
-	codegenBinPath           = "/codegen"
+
+	SrcDir = "src"
+	GenDir = "sdk"
+
+	schemaPath     = "/schema.json"
+	codegenBinPath = "/codegen"
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
@@ -75,8 +75,8 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, fmt.Errorf("failed to create module runtime: %w", err)
 	}
 
-	entrypointPath := path.Join(ModSourceDirPath, subPath, EntrypointExecutablePath)
-	tsConfigPath := path.Join(ModSourceDirPath, subPath, "tsconfig.json")
+	entrypointPath := filepath.Join(ModSourceDirPath, subPath, SrcDir, EntrypointExecutableFile)
+	tsConfigPath := filepath.Join(ModSourceDirPath, subPath, "tsconfig.json")
 
 	ctr = ctr.WithMountedFile(entrypointPath, ctr.Directory("/opt/module/bin").File(EntrypointExecutableFile))
 
@@ -107,13 +107,14 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 	if err != nil {
 		return nil, err
 	}
+	dir := dag.Directory().WithDirectory("", ctr.Directory(ModSourceDirPath))
 
-	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
+	return dag.GeneratedCode(dir).
 		WithVCSGeneratedPaths([]string{
-			genDir + "/**",
+			GenDir + "/**",
 		}).
 		WithVCSIgnoredPaths([]string{
-			genDir,
+			GenDir,
 			"node_modules/**",
 		}), nil
 }
@@ -137,21 +138,15 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
-	ctr, err := t.Base(detectedRuntime)
+	base, err := t.Base(detectedRuntime)
 	if err != nil {
 		return nil, err
 	}
 
-	ctr = ctr.
-		// Add sdk directory without runtime nor codegen binary
-		WithMountedDirectory(sdkSrc, t.SDKSourceDir).
+	gen := base.
 		// Add codegen binary into a special path
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
-		// Add template directory
-		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
-		// Mount users' module
-		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
+		// Add introspection file
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
 			Contents: introspectionJson,
 		}).
@@ -159,23 +154,29 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		WithExec([]string{
 			codegenBinPath,
 			"--lang", "typescript",
-			"--module-context", ModSourceDirPath,
-			"--output", genPath,
+			"--output", ModSourceDirPath,
 			"--module-name", name,
+			"--module-path", filepath.Join(ModSourceDirPath, subPath),
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
-		})
+		}).
+		Directory(filepath.Join(ModSourceDirPath, subPath, GenDir))
 
-	base := ctr.WithDirectory(genDir, ctr.Directory(sdkSrc), ContainerWithDirectoryOpts{
-		Exclude: []string{
-			"node_modules",
-			"dist",
-			"codegen",
-			"**/test",
-			"runtime",
-		},
-	})
+	base = base.
+		// Add codegen binary into a special path
+		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
+		// Add template directory
+		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
+		// Mount users' module
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(filepath.Join(ModSourceDirPath, subPath)).
+		// Add sdk source code
+		WithDirectory(GenDir, t.SDKSourceDir, ContainerWithDirectoryOpts{
+			Exclude: []string{"codegen", "runtime"},
+		}).
+		// Add generated code
+		WithDirectory(GenDir, gen)
 
 	switch detectedRuntime {
 	case Bun:
