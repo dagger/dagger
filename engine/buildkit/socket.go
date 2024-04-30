@@ -2,11 +2,15 @@ package buildkit
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 
 	"github.com/moby/buildkit/session/sshforward"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type socketProxy struct {
@@ -29,10 +33,29 @@ func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) err
 
 	ctx = trace.ContextWithSpanContext(ctx, p.c.spanCtx) // ensure server's span context is propagated
 
-	incomingMD, _ := metadata.FromIncomingContext(ctx)
-	ctx = metadata.NewOutgoingContext(ctx, incomingMD)
+	opts, _ := metadata.FromIncomingContext(ctx)
+	ctx = metadata.NewOutgoingContext(ctx, opts)
 
-	forwardAgentClient, err := sshforward.NewSSHClient(p.c.MainClientCaller.Conn()).ForwardAgent(ctx)
+	var connURL *url.URL
+	if v, ok := opts[sshforward.KeySSHID]; ok && len(v) > 0 && v[0] != "" {
+		var err error
+		connURL, err = url.Parse(v[0])
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid id: %s", err)
+		}
+	}
+
+	caller := p.c.MainClientCaller
+	if connURL != nil && connURL.Fragment != "" {
+		sessionID := connURL.Fragment
+		var err error
+		caller, err = p.c.SessionManager.Get(ctx, sessionID, true)
+		if err != nil {
+			return fmt.Errorf("failed to get session: %w", err)
+		}
+	}
+
+	forwardAgentClient, err := sshforward.NewSSHClient(caller.Conn()).ForwardAgent(ctx)
 	if err != nil {
 		return err
 	}

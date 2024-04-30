@@ -20,6 +20,7 @@ type c2hTunnel struct {
 	upstreamHost       string
 	tunnelServiceHost  string
 	tunnelServicePorts []PortForward
+	sessionID          string
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
@@ -56,6 +57,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 		upstream := NewHostIPSocket(
 			port.Protocol.Network(),
 			fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
+			d.sessionID,
 		)
 
 		sockPath := fmt.Sprintf("/upstream.%d.sock", frontend)

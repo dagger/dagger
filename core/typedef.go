@@ -849,6 +849,17 @@ type FunctionCall struct {
 	ParentName string                  `field:"true" doc:"The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."`
 	Parent     JSON                    `field:"true" doc:"The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."`
 	InputArgs  []*FunctionCallArgValue `field:"true" doc:"The argument values the function is being invoked with."`
+
+	// Below are not in public API
+
+	// The module that the function is being called from
+	Module *Module
+
+	// Whether the function call should be cached across different servers
+	Cache bool
+
+	// Whether to serve the schema for the function's own module to it or not
+	SkipSelfSchema bool
 }
 
 func (*FunctionCall) Type() *ast.Type {

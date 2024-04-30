@@ -4,10 +4,10 @@ import (
 	bkhttp "github.com/moby/buildkit/source/http"
 )
 
-const AttrHTTPClientIDs = "dagger.http.clientids"
+const AttrDNSNamespace = "dagger.dns.namespace"
 
 type HTTPIdentifier struct {
 	bkhttp.HTTPIdentifier
 
-	ClientIDs []string
+	Namespace string
 }
