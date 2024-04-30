@@ -48,6 +48,7 @@ export class Tracer {
         return await fn(span)
       } catch (e) {
         if (e instanceof Error) {
+          span.recordException(e)
           span.setStatus({
             code: opentelemetry.SpanStatusCode.ERROR,
             message: e.message,

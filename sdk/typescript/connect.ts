@@ -28,10 +28,10 @@ export async function connection(
   fct: () => Promise<void>,
   cfg: ConnectOpts = {},
 ) {
-  telemetry.initiliaze()
-
   try {
-    // Wrap connection into the otlp context
+    telemetry.initialize()
+
+    // Wrap connection into the opentelemetry context for propagation
     await opentelemetry.context.with(telemetry.getContext(), async () => {
       try {
         await defaultContext.connection(cfg)

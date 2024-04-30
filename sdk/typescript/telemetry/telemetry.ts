@@ -7,7 +7,7 @@ const DAGGER_TRACER_NAME = "dagger.io/sdk.typescript"
 
 const configurator = new DaggerOtelConfigurator()
 
-export function initiliaze() {
+export function initialize() {
   configurator.initialize()
 }
 
@@ -25,8 +25,7 @@ export async function close() {
  * You can add a custom name to the tracer based on your application.
  */
 export function getTracer(name = DAGGER_TRACER_NAME): Tracer {
-  initiliaze()
-
+  initialize()
   return new Tracer(name)
 }
 

@@ -81,6 +81,7 @@ export async function entrypoint() {
           } else {
             console.error(e)
           }
+          process.exit(1)
         }
       }
 
