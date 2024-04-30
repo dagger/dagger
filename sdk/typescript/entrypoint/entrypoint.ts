@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as path from "path"
 import { fileURLToPath } from "url"
 
@@ -9,6 +10,8 @@ import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
+import { getTracer } from "../telemetry/index.js"
+import { UI_MASK, UI_PASSTHROUGH } from "../telemetry/attributes.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -34,9 +37,13 @@ export async function entrypoint() {
       let result: any
 
       if (parentName === "") {
-        // It's a registration, we register the module and assign the module id
-        // to the result
-        result = await register(files, scanResult)
+        result = await getTracer().startActiveSpan(
+          "typescript module registration",
+          async () => {
+            return await register(files, scanResult)
+          },
+          { [UI_MASK]: true },
+        )
       } else {
         // Invocation
         const fnName = await fnCall.name()
@@ -53,15 +60,26 @@ export async function entrypoint() {
         await load(files)
 
         try {
-          result = await invoke(scanResult, {
-            parentName,
-            fnName,
-            parentArgs,
-            fnArgs: args,
-          })
+          result = await getTracer().startActiveSpan(
+            "typescript module execution",
+            async () => {
+              return await invoke(scanResult, {
+                parentName,
+                fnName,
+                parentArgs,
+                fnArgs: args,
+              })
+            },
+            {
+              [UI_MASK]: true,
+              [UI_PASSTHROUGH]: true,
+            },
+          )
         } catch (e) {
           if (e instanceof Error) {
-            console.error(`${e.name}: ${e.message}`)
+            console.error(`Error: ${e.message}`)
+          } else {
+            console.error(e)
           }
           process.exit(1)
         }

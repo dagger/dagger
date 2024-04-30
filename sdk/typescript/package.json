@@ -9,14 +9,21 @@
     "dist/"
   ],
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./telemetry": "./dist/telemetry/index.js"
   },
   "engines": {
     "node": ">=18"
   },
   "main": "dist/index.js",
   "dependencies": {
+    "@grpc/grpc-js": "^1.10.6",
     "@lifeomic/axios-fetch": "^3.0.1",
+    "@opentelemetry/api": "^1.8.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.51.0",
+    "@opentelemetry/sdk-metrics": "^1.23.0",
+    "@opentelemetry/sdk-node": "^0.51.0",
+    "@opentelemetry/semantic-conventions": "^1.23.0",
     "adm-zip": "^0.5.10",
     "env-paths": "^3.0.0",
     "execa": "^8.0.1",

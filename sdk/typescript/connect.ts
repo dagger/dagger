@@ -1,7 +1,9 @@
+import * as opentelemetry from "@opentelemetry/api"
 import { Client } from "./api/client.gen.js"
 import { ConnectOpts } from "./connectOpts.js"
 import { Context, defaultContext } from "./context/context.js"
 import { CLI_VERSION } from "./provisioning/index.js"
+import * as telemetry from "./telemetry/telemetry.js"
 
 export type CallbackFct = (client: Client) => Promise<void>
 
@@ -26,9 +28,21 @@ export async function connection(
   fct: () => Promise<void>,
   cfg: ConnectOpts = {},
 ) {
-  await defaultContext.connection(cfg)
+  try {
+    telemetry.initialize()
 
-  await fct().finally(() => close())
+    // Wrap connection into the opentelemetry context for propagation
+    await opentelemetry.context.with(telemetry.getContext(), async () => {
+      try {
+        await defaultContext.connection(cfg)
+        await fct()
+      } finally {
+        close()
+      }
+    })
+  } finally {
+    await telemetry.close()
+  }
 }
 
 /**

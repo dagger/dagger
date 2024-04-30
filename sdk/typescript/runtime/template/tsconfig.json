@@ -4,7 +4,8 @@
     "moduleResolution": "Node",
     "experimentalDecorators": true,
     "paths": {
-      "@dagger.io/dagger": ["./sdk"]
+      "@dagger.io/dagger": ["./sdk"],
+      "@dagger.io/dagger/telemetry": ["./sdk/telemetry"]
     }
   }
 }
