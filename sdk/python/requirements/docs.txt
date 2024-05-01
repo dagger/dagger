@@ -28,7 +28,7 @@ requests==2.31.0
     # via sphinx
 snowballstemmer==2.2.0
     # via sphinx
-sphinx==7.2.6
+sphinx==7.3.7
     # via
     #   sphinx-rtd-theme
     #   sphinxcontrib-jquery
