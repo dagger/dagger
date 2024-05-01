@@ -23,7 +23,7 @@
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.51.0",
     "@opentelemetry/sdk-metrics": "^1.23.0",
     "@opentelemetry/sdk-node": "^0.51.0",
-    "@opentelemetry/semantic-conventions": "^1.23.0",
+    "@opentelemetry/semantic-conventions": "^1.24.0",
     "adm-zip": "^0.5.10",
     "env-paths": "^3.0.0",
     "execa": "^8.0.1",
