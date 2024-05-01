@@ -44,7 +44,7 @@ const (
 	FocusPrefix    = "[focus] "
 	InternalPrefix = "[internal] "
 
-	DaggerServerIDJobKey = "dagger.serverID"
+	DaggerWorkerJobKey = "dagger.worker"
 
 	// from buildkit, cannot change
 	entitlementsJobKey = "llb.entitlements"
@@ -52,16 +52,22 @@ const (
 
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
-	ServerID              string
-	Worker                bkworker.Worker
-	Executor              *RuncExecutor
-	SessionManager        *bksession.Manager
-	LLBSolver             *llbsolver.Solver
-	GenericSolver         *bksolver.Solver
-	SecretStore           bksecrets.SecretStore
-	AuthProvider          *auth.RegistryAuthProvider
+	ServerID string
+
+	BaseWorker     *Worker
+	SessionManager *bksession.Manager
+	GenericSolver  *bksolver.Solver
+	CacheManager   bksolver.CacheManager
+
 	PrivilegedExecEnabled bool
-	UpstreamCacheImports  []bkgw.CacheOptionsEntry
+	Entitlements          []string
+
+	SecretStore  bksecrets.SecretStore
+	AuthProvider *auth.RegistryAuthProvider
+
+	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
+	UpstreamCacheImports   []bkgw.CacheOptionsEntry
+
 	// MainClientCaller is the caller who initialized the server associated with this
 	// client. It is special in that when it shuts down, the client will be closed and
 	// that registry auth and sockets are currently only ever sourced from this caller,
@@ -90,7 +96,9 @@ type Client struct {
 
 	session   *bksession.Session
 	job       *bksolver.Job
+	llbSolver *llbsolver.Solver
 	llbBridge bkfrontend.FrontendLLBBridge
+	worker    *Worker
 
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
@@ -113,6 +121,24 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		cancel:     cancel,
 	}
 
+	client.worker = opts.BaseWorker.WithServerID(opts.ServerID)
+	wc, err := client.worker.AsWorkerController()
+	if err != nil {
+		return nil, err
+	}
+
+	client.llbSolver, err = llbsolver.New(llbsolver.Opt{
+		WorkerController: wc,
+		Frontends:        opts.Frontends,
+		CacheManager:     opts.CacheManager,
+		SessionManager:   opts.SessionManager,
+		CacheResolvers:   opts.UpstreamCacheImporters,
+		Entitlements:     opts.Entitlements,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create solver: %w", err)
+	}
+
 	// initialize ref caches if needed
 	client.refsMu.Lock()
 	if client.refs == nil {
@@ -132,9 +158,9 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	client.job = job
 	client.job.SessionID = client.ID()
-	// add the ServerID to the job so the op resolver (currently configured
-	// in buildkitcontroller.go) can access it and give it to the executor
-	client.job.SetValue(DaggerServerIDJobKey, client.ServerID)
+	// add the worker to the job so the op resolver (currently configured
+	// in buildkitcontroller.go) can access and use it for resolving ops
+	client.job.SetValue(DaggerWorkerJobKey, client.worker)
 
 	entitlementSet := entitlements.Set{}
 	if opts.PrivilegedExecEnabled {
@@ -145,7 +171,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	// NOTE: we don't go through the LLBSolver's Executor interface here since
 	// we need to use our custom one directly later. But our executor has the
 	// entitlement validation logic in it, so no harm done.
-	br := client.LLBSolver.Bridge(client.job)
+	br := client.llbSolver.Bridge(client.job)
 	client.llbBridge = br
 
 	client.dialer = &net.Dialer{}
@@ -246,6 +272,13 @@ func (c *Client) Close() error {
 	c.containers = nil
 	c.containersMu.Unlock()
 
+	if c.llbSolver != nil {
+		if err := c.llbSolver.Close(); err != nil {
+			bklog.G(context.Background()).WithError(err).Error("failed to close solver")
+		}
+		c.llbSolver = nil
+	}
+
 	return nil
 }
 
@@ -305,7 +338,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		llbRes, err = f.Solve(
 			ctx,
 			gw,
-			c.Executor.WithServerID(c.ServerID),
+			c.worker, // also implements Executor
 			req.FrontendOpt,
 			req.FrontendInputs,
 			c.ID(),
@@ -436,8 +469,8 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
 		context.Background(),
-		c.Worker.CacheManager(),
-		c.Executor.WithServerID(c.ServerID),
+		c.worker.CacheManager(),
+		c.worker, // also implements Executor
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,

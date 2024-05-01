@@ -19,16 +19,12 @@ import (
 	"github.com/moby/buildkit/session/grpchijack"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
 	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver"
-	"github.com/moby/buildkit/solver/llbsolver/ops"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
-	bkworker "github.com/moby/buildkit/worker"
-	"github.com/moby/buildkit/worker/base"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
 	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -46,10 +42,8 @@ import (
 type BuildkitController struct {
 	BuildkitControllerOpts
 
-	llbSolver             *llbsolver.Solver
 	genericSolver         *solver.Solver
 	cacheManager          solver.CacheManager
-	worker                bkworker.Worker
 	privilegedExecEnabled bool
 
 	// server id -> server
@@ -62,9 +56,7 @@ type BuildkitController struct {
 }
 
 type BuildkitControllerOpts struct {
-	WorkerController       *bkworker.Controller
-	WorkerOpt              *base.WorkerOpt
-	Executor               *buildkit.RuncExecutor
+	Worker                 *buildkit.Worker
 	SessionManager         *session.Manager
 	CacheManager           solver.CacheManager
 	ContentStore           *containerdsnapshot.Store
@@ -80,55 +72,21 @@ type BuildkitControllerOpts struct {
 }
 
 func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, error) {
-	w, err := opts.WorkerController.GetDefault()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default worker: %w", err)
-	}
-
-	llbSolver, err := llbsolver.New(llbsolver.Opt{
-		WorkerController: opts.WorkerController,
-		Frontends:        opts.Frontends,
-		CacheManager:     opts.CacheManager,
-		SessionManager:   opts.SessionManager,
-		CacheResolvers:   opts.UpstreamCacheImporters,
-		Entitlements:     opts.Entitlements,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create solver: %w", err)
-	}
-
 	genericSolver := solver.NewSolver(solver.SolverOpt{
 		ResolveOpFunc: func(vtx solver.Vertex, builder solver.Builder) (solver.Op, error) {
-			// if this is an ExecOp, pass in an executor configured with the server ID as found
-			// in the job keys
-			if baseOp, ok := vtx.Sys().(*pb.Op); ok {
-				if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {
-					var serverID string
-					if err := builder.EachValue(context.Background(), buildkit.DaggerServerIDJobKey,
-						func(v interface{}) error {
-							if serverID == "" {
-								serverID, _ = v.(string)
-							}
-							return nil
-						},
-					); err != nil {
-						return nil, fmt.Errorf("failed to get server ID from job keys: %w", err)
+			var w *buildkit.Worker
+			if err := builder.EachValue(context.Background(), buildkit.DaggerWorkerJobKey,
+				func(v interface{}) error {
+					if w == nil {
+						w, _ = v.(*buildkit.Worker)
 					}
-					if serverID == "" {
-						return nil, fmt.Errorf("server ID not found in job keys")
-					}
-
-					return ops.NewExecOp(
-						vtx,
-						execOp,
-						baseOp.Platform,
-						w.CacheManager(),
-						opts.WorkerOpt.ParallelismSem,
-						opts.SessionManager,
-						opts.Executor.WithServerID(serverID),
-						w,
-					)
-				}
+					return nil
+				},
+			); err != nil {
+				return nil, fmt.Errorf("failed to get worker from job keys: %w", err)
+			}
+			if w == nil {
+				return nil, fmt.Errorf("worker not found in job keys")
 			}
 
 			// passing nil bridge since it's only needed for BuildOp, which is never used and
@@ -140,10 +98,8 @@ func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, er
 
 	e := &BuildkitController{
 		BuildkitControllerOpts: opts,
-		llbSolver:              llbSolver,
 		genericSolver:          genericSolver,
 		cacheManager:           opts.CacheManager,
-		worker:                 w,
 		servers:                make(map[string]*DaggerServer),
 		perServerMu:            locker.New(),
 	}
@@ -334,7 +290,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 func (e *BuildkitController) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
 	resp := &controlapi.DiskUsageResponse{}
-	du, err := e.worker.DiskUsage(ctx, bkclient.DiskUsageInfo{
+	du, err := e.Worker.DiskUsage(ctx, bkclient.DiskUsageInfo{
 		Filter: r.Filter,
 	})
 	if err != nil {
@@ -385,7 +341,7 @@ func (e *BuildkitController) Prune(req *controlapi.PruneRequest, stream controla
 
 	eg.Go(func() error {
 		defer close(ch)
-		return e.worker.Prune(ctx, ch, bkclient.PruneInfo{
+		return e.Worker.Prune(ctx, ch, bkclient.PruneInfo{
 			Filter:       req.Filter,
 			All:          req.All,
 			KeepDuration: time.Duration(req.KeepDuration),
@@ -436,9 +392,9 @@ func (e *BuildkitController) Info(ctx context.Context, r *controlapi.InfoRequest
 func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
 	resp := &controlapi.ListWorkersResponse{
 		Record: []*apitypes.WorkerRecord{{
-			ID:        e.worker.ID(),
-			Labels:    e.worker.Labels(),
-			Platforms: pb.PlatformsFromSpec(e.worker.Platforms(true)),
+			ID:        e.Worker.ID(),
+			Labels:    e.Worker.Labels(),
+			Platforms: pb.PlatformsFromSpec(e.Worker.Platforms(true)),
 		}},
 	}
 	return resp, nil
@@ -461,7 +417,7 @@ func (e *BuildkitController) Register(server *grpc.Server) {
 }
 
 func (e *BuildkitController) Close() error {
-	err := e.WorkerController.Close()
+	err := e.Worker.Close()
 
 	// note this *could* cause a panic in Session if it was still running, so
 	// the server should be shutdown first
@@ -493,8 +449,8 @@ func (e *BuildkitController) gc() {
 
 	eg.Go(func() error {
 		defer close(ch)
-		if policy := e.worker.GCPolicy(); len(policy) > 0 {
-			return e.worker.Prune(ctx, ch, policy...)
+		if policy := e.Worker.GCPolicy(); len(policy) > 0 {
+			return e.Worker.Prune(ctx, ch, policy...)
 		}
 		return nil
 	})

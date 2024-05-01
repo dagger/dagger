@@ -52,7 +52,6 @@ import (
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
 	"github.com/moby/buildkit/worker"
-	"github.com/moby/buildkit/worker/base"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	sloglogrus "github.com/samber/slog-logrus/v2"
@@ -65,7 +64,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
@@ -695,21 +693,22 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		}
 	}
 
-	wc, wOpt, err := newWorkerController(c, workerInitializerOpt{
+	w, err := newWorker(ctx, c, workerInitializerOpt{
 		config:         cfg,
 		sessionManager: sessionManager,
 		traceSocket:    traceSocket,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create worker: %w", err)
 	}
-	w, err := wc.GetDefault()
+
+	p := w.Platforms(false)
+	logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
+	archutil.WarnIfUnsupported(p)
+
+	wc, err := w.AsWorkerController()
 	if err != nil {
-		return nil, nil, err
-	}
-	exe, ok := w.Executor().(*buildkit.RuncExecutor)
-	if !ok {
-		return nil, nil, errors.New("default worker must use runc executor")
+		return nil, nil, fmt.Errorf("failed to create worker controller: %w", err)
 	}
 
 	frontends := map[string]frontend.Frontend{}
@@ -778,9 +777,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 
 	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
-		WorkerController:       wc,
-		WorkerOpt:              wOpt,
-		Executor:               exe,
+		Worker:                 w,
 		SessionManager:         sessionManager,
 		CacheManager:           cacheManager,
 		ContentStore:           w.ContentStore(),
@@ -803,29 +800,6 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 
 func resolverFunc(cfg *config.Config) docker.RegistryHosts {
 	return resolver.NewRegistryConfig(cfg.Registries)
-}
-
-func newWorkerController(c *cli.Context, wiOpt workerInitializerOpt) (*worker.Controller, *base.WorkerOpt, error) {
-	wc := &worker.Controller{}
-
-	w, opt, err := ociWorkerInitializer(c, wiOpt)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	p := w.Platforms(false)
-	logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
-	archutil.WarnIfUnsupported(p)
-	if err = wc.Add(w); err != nil {
-		return nil, nil, err
-	}
-
-	defaultWorker, err := wc.GetDefault()
-	if err != nil {
-		return nil, nil, err
-	}
-	logrus.WithField("id", defaultWorker.ID()).Info("worker")
-	return wc, opt, nil
 }
 
 func attrMap(sl []string) (map[string]string, error) {

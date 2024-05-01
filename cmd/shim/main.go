@@ -531,7 +531,7 @@ func setupBundle() (returnExitCode int) {
 	}
 	spec.Process.Env = keepEnv
 
-	if serverID == "" {
+	if isDaggerExec && serverID == "" {
 		fmt.Fprintln(os.Stderr, "missing server ID")
 		return errorExitCode
 	}

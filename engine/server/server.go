@@ -138,26 +138,32 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 	root, err := core.NewRoot(ctx, core.QueryOpts{
 		BuildkitOpts: &buildkit.Opts{
-			ServerID:              s.serverID,
-			Worker:                e.worker,
-			Executor:              e.Executor,
-			SessionManager:        e.SessionManager,
-			LLBSolver:             e.llbSolver,
-			GenericSolver:         e.genericSolver,
-			SecretStore:           secretStore,
-			AuthProvider:          authProvider,
+			ServerID: s.serverID,
+
+			BaseWorker:     e.Worker,
+			SessionManager: e.SessionManager,
+			GenericSolver:  e.genericSolver,
+			CacheManager:   e.cacheManager,
+
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
-			UpstreamCacheImports:  cacheImporterCfgs,
-			MainClientCaller:      sessionCaller,
-			DNSConfig:             e.DNSConfig,
-			Frontends:             e.Frontends,
-			BuildkitLogSink:       e.BuildkitLogSink,
+			Entitlements:          e.Entitlements,
+
+			SecretStore:  secretStore,
+			AuthProvider: authProvider,
+
+			UpstreamCacheImporters: e.UpstreamCacheImporters,
+			UpstreamCacheImports:   cacheImporterCfgs,
+
+			MainClientCaller: sessionCaller,
+			DNSConfig:        e.DNSConfig,
+			Frontends:        e.Frontends,
+			BuildkitLogSink:  e.BuildkitLogSink,
 		},
 		Services:           s.services,
-		Platform:           core.Platform(e.worker.Platforms(true)[0]),
+		Platform:           core.Platform(e.Worker.Platforms(true)[0]),
 		Secrets:            secretStore,
-		OCIStore:           e.worker.ContentStore(),
-		LeaseManager:       e.worker.LeaseManager(),
+		OCIStore:           e.Worker.ContentStore(),
+		LeaseManager:       e.Worker.LeaseManager(),
 		Auth:               authProvider,
 		ClientCallContext:  s.clientCallContext,
 		ClientCallMu:       s.clientCallMu,
