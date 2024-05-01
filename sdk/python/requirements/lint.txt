@@ -3,7 +3,7 @@
 black==23.12.1
 click==8.1.7
     # via black
-mypy==1.9.0
+mypy==1.10.0
 mypy-extensions==1.0.0
     # via
     #   black
