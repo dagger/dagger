@@ -2,5 +2,16 @@
   "name": "dagger",
   "sdk": "go",
   "source": "ci",
-  "engineVersion": "v0.11.1"
+  "engineVersion": "v0.11.2",
+  "views": [
+    {
+      "name": "default",
+      "patterns": [
+        "!bin",
+        "!**/node_modules",
+        "!**/.venv",
+        "!**/__pycache__"
+      ]
+    }
+  ]
 }
