@@ -21,4 +21,4 @@ spec:
   - name: repo-url
     value: YOUR_REPOSITORY_URL_HERE
   - name: dagger-cloud-token
-    value: YOUR_DAGGER_CLOUD_TOKEN_HERE
+    value: YOUR_DAGGER_CLOUD_TOKEN_SECRET_NAME_HERE
