@@ -112,6 +112,24 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
+	t.Run("with syntax pragma", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`# syntax = docker/dockerfile:1 
+FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+
+		env, err := c.Container().Build(src).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
 	t.Run("custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
