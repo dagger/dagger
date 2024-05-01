@@ -2,11 +2,56 @@ defmodule Dagger do
   @moduledoc """
   The [Dagger](https://dagger.io/) SDK for Elixir.
 
-  See `getting_start.livemd` for starter point.
+  ## Prerequisite
+
+  The SDK depends on `docker` and `dagger` commands, please make sure those
+  commands are presents on your `PATH`.
+
+  ## Getting Started
+
+  Let's try this script below
+
+      Mix.install([:dagger])
+
+      # 1
+      Application.ensure_all_started(:inets)
+
+      # 2
+      {:ok, client} = Dagger.connect()
+
+      # 3
+      {:ok, output} =
+        client
+        |> Dagger.Client.container()
+        |> Dagger.Container.from("hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
+        |> Dagger.Container.with_exec(["elixir", "--version"])
+        |> Dagger.Container.stdout()
+
+      IO.puts(output)
+
+      # 4
+      Dagger.close(client)
+
+  Here's what script do:
+
+  1. Start `:inets` application in order to use `:httpc` as a HTTP client.
+  2. Connecting to the Dagger Engine with `Dagger.connect/1`.
+  3. Create a new container from `hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim`
+     and calling a command `elixir` with flag `--version`, get the standard
+     output from latest command and printing it to standard output.
+  4. Close the connection.
   """
 
   @doc """
   Connecting to Dagger.
+
+  When calling this function, it try to connect in ordered:
+
+  1. Use session from `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` shell
+     environment variables.
+  2. If (1) doesn't specified, it will lookup a binary defined in `_EXPERIMENTAL_DAGGER_CLI_BIN`
+     and start a session.
+  3. Download the latest binary from Dagger and start a session.
 
   ## Options
 
@@ -42,7 +87,7 @@ defmodule Dagger do
   end
 
   @doc """
-  Disconnecting Dagger.
+  Disconnecting the client from Dagger Engine session.
   """
   def close(%Dagger.Client{client: client}) do
     Dagger.Core.Client.close(client)
