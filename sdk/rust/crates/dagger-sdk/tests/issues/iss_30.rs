@@ -1,4 +1,4 @@
-use dagger_sdk::{QueryContainerOpts, QueryContainerOptsBuilder};
+use dagger_sdk::QueryContainerOptsBuilder;
 
 static PLATFORMS: [&str; 2] = ["linux/arm64", "linux/x86_64"];
 
@@ -8,10 +8,11 @@ async fn test_issue_30_alt() -> eyre::Result<()> {
 
     for platform in PLATFORMS {
         let ref_ = client
-            .container_opts(QueryContainerOpts {
-                id: None,
-                platform: Some(platform.to_string().into()),
-            })
+            .container_opts(
+                QueryContainerOptsBuilder::default()
+                    .platform(platform)
+                    .build()?,
+            )
             .from("alpine")
             .with_exec(vec!["echo", "'hello'"])
             .sync()
