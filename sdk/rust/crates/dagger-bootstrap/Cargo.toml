@@ -11,8 +11,8 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-dagger-codegen = { workspace = true}
-dagger-sdk = { workspace = true}
+dagger-codegen = { workspace = true }
+dagger-sdk = { workspace = true }
 
 eyre = { workspace = true }
 color-eyre = { workspace = true }
