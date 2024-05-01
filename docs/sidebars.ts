@@ -23,15 +23,6 @@ module.exports = {
         "quickstart/basics",
         "quickstart/cli",
         "quickstart/setup",
-        "quickstart/install",
-        "quickstart/test",
-        "quickstart/build",
-        "quickstart/publish",
-        "quickstart/develop",
-        "quickstart/create",
-        "quickstart/cache",
-        "quickstart/daggerverse",
-        "quickstart/conclusion",
       ]
     },
     {
