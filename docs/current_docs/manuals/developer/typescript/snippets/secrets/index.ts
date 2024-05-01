@@ -9,10 +9,11 @@ class MyModule {
       .container()
       .from("alpine:3.17")
       .withExec(["apk", "add", "curl"])
+      .withSecretVariable("GITHUB_TOKEN", token)
       .withExec([
         "sh",
         "-c",
-        `curl "${endpoint}" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer ${plaintext}"`,
+        `curl "${endpoint}" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_TOKEN"`,
       ])
       .stdout()
   }
