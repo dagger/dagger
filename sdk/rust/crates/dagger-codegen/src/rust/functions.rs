@@ -3,7 +3,7 @@ use convert_case::{Case, Casing};
 use dagger_sdk::core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
-use genco::tokens::quoted;
+use genco::tokens::{quoted, static_literal};
 use itertools::Itertools;
 
 use crate::utility::OptionExt;
@@ -336,14 +336,20 @@ fn format_function_args(
         if type_field_has_optional(field) {
             let field_name = field_options_struct_name(field);
             argument_description.push(quote! {
-                $(field_name.pipe(|_| write_comment_line(&format!("* `opt` - optional argument, see inner type for documentation, use <func>_opts to use"))))
+                $(field_name.pipe(|_| write_comment_line("* `opt` - optional argument, see inner type for documentation, use <func>_opts to use")))
             });
 
-            let description = quote! {
-                $(if argument_description.len() > 0 => $(format!("///")))
-                $(if argument_description.len() > 0 => $(format!("/// # Arguments")))
-                $(if argument_description.len() > 0 => $(format!("///")))
-                $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+            let description = if !argument_description.is_empty() {
+                Some(quote! {
+                    $(static_literal("///"))$['\r']
+                    $(static_literal("/// # Arguments"))$['\r']
+                    $(static_literal("///"))$['\r']
+                    $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+
+
+                })
+            } else {
+                None
             };
 
             Some((
@@ -351,17 +357,24 @@ fn format_function_args(
                     $(required_args)
                     opts: $(field_name)$(lifecycle)
                 },
-                description,
+                description.unwrap_or_default(),
                 true,
             ))
         } else {
-            let description = quote! {
-                $(if argument_description.len() > 0 => $(format!("///")))
-                $(if argument_description.len() > 0 => $(format!("/// # Arguments")))
-                $(if argument_description.len() > 0 => $(format!("///")))
-                $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+            let description = if !argument_description.is_empty() {
+                Some(quote! {
+                    $(static_literal("///"))$['\r']
+                    $(static_literal("/// # Arguments"))$['\r']
+                    $(static_literal("///"))$['\r']
+                    $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+
+
+                })
+            } else {
+                None
             };
-            Some((required_args, description, false))
+
+            Some((required_args, description.unwrap_or_default(), false))
         }
     } else {
         None
