@@ -1,5 +1,3 @@
-mod issues;
-
 use dagger_sdk::connect;
 use pretty_assertions::assert_eq;
 

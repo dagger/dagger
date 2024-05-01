@@ -1,5 +1,6 @@
 use crate::core::graphql_client::DynGraphQLClient;
 use crate::errors::DaggerError;
+use crate::id::IntoID;
 use crate::querybuilder::Selection;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,24 @@ impl From<&str> for CacheVolumeId {
 impl From<String> for CacheVolumeId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<CacheVolumeId> for CacheVolume {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<CacheVolumeId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<CacheVolumeId> for CacheVolumeId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<CacheVolumeId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<CacheVolumeId, DaggerError>(self) })
     }
 }
 impl CacheVolumeId {
@@ -35,6 +54,24 @@ impl From<String> for ContainerId {
         Self(value)
     }
 }
+impl IntoID<ContainerId> for Container {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ContainerId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ContainerId> for ContainerId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ContainerId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ContainerId, DaggerError>(self) })
+    }
+}
 impl ContainerId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -50,6 +87,24 @@ impl From<&str> for CurrentModuleId {
 impl From<String> for CurrentModuleId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<CurrentModuleId> for CurrentModule {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<CurrentModuleId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<CurrentModuleId> for CurrentModuleId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<CurrentModuleId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<CurrentModuleId, DaggerError>(self) })
     }
 }
 impl CurrentModuleId {
@@ -69,6 +124,24 @@ impl From<String> for DirectoryId {
         Self(value)
     }
 }
+impl IntoID<DirectoryId> for Directory {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<DirectoryId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<DirectoryId> for DirectoryId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<DirectoryId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<DirectoryId, DaggerError>(self) })
+    }
+}
 impl DirectoryId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -84,6 +157,24 @@ impl From<&str> for EnvVariableId {
 impl From<String> for EnvVariableId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<EnvVariableId> for EnvVariable {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnvVariableId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EnvVariableId> for EnvVariableId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnvVariableId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EnvVariableId, DaggerError>(self) })
     }
 }
 impl EnvVariableId {
@@ -103,6 +194,24 @@ impl From<String> for FieldTypeDefId {
         Self(value)
     }
 }
+impl IntoID<FieldTypeDefId> for FieldTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FieldTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<FieldTypeDefId> for FieldTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FieldTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<FieldTypeDefId, DaggerError>(self) })
+    }
+}
 impl FieldTypeDefId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -118,6 +227,22 @@ impl From<&str> for FileId {
 impl From<String> for FileId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<FileId> for File {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<FileId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<FileId> for FileId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<FileId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<FileId, DaggerError>(self) })
     }
 }
 impl FileId {
@@ -137,6 +262,24 @@ impl From<String> for FunctionArgId {
         Self(value)
     }
 }
+impl IntoID<FunctionArgId> for FunctionArg {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FunctionArgId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<FunctionArgId> for FunctionArgId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FunctionArgId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<FunctionArgId, DaggerError>(self) })
+    }
+}
 impl FunctionArgId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -152,6 +295,24 @@ impl From<&str> for FunctionCallArgValueId {
 impl From<String> for FunctionCallArgValueId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<FunctionCallArgValueId> for FunctionCallArgValue {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FunctionCallArgValueId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<FunctionCallArgValueId> for FunctionCallArgValueId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FunctionCallArgValueId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<FunctionCallArgValueId, DaggerError>(self) })
     }
 }
 impl FunctionCallArgValueId {
@@ -171,6 +332,24 @@ impl From<String> for FunctionCallId {
         Self(value)
     }
 }
+impl IntoID<FunctionCallId> for FunctionCall {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FunctionCallId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<FunctionCallId> for FunctionCallId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<FunctionCallId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<FunctionCallId, DaggerError>(self) })
+    }
+}
 impl FunctionCallId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -186,6 +365,22 @@ impl From<&str> for FunctionId {
 impl From<String> for FunctionId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<FunctionId> for Function {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<FunctionId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<FunctionId> for FunctionId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<FunctionId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<FunctionId, DaggerError>(self) })
     }
 }
 impl FunctionId {
@@ -205,6 +400,24 @@ impl From<String> for GeneratedCodeId {
         Self(value)
     }
 }
+impl IntoID<GeneratedCodeId> for GeneratedCode {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GeneratedCodeId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GeneratedCodeId> for GeneratedCodeId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GeneratedCodeId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<GeneratedCodeId, DaggerError>(self) })
+    }
+}
 impl GeneratedCodeId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -220,6 +433,24 @@ impl From<&str> for GitModuleSourceId {
 impl From<String> for GitModuleSourceId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<GitModuleSourceId> for GitModuleSource {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GitModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GitModuleSourceId> for GitModuleSourceId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GitModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<GitModuleSourceId, DaggerError>(self) })
     }
 }
 impl GitModuleSourceId {
@@ -239,6 +470,22 @@ impl From<String> for GitRefId {
         Self(value)
     }
 }
+impl IntoID<GitRefId> for GitRef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<GitRefId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GitRefId> for GitRefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<GitRefId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<GitRefId, DaggerError>(self) })
+    }
+}
 impl GitRefId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -254,6 +501,24 @@ impl From<&str> for GitRepositoryId {
 impl From<String> for GitRepositoryId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<GitRepositoryId> for GitRepository {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GitRepositoryId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GitRepositoryId> for GitRepositoryId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GitRepositoryId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<GitRepositoryId, DaggerError>(self) })
     }
 }
 impl GitRepositoryId {
@@ -273,6 +538,22 @@ impl From<String> for HostId {
         Self(value)
     }
 }
+impl IntoID<HostId> for Host {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<HostId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<HostId> for HostId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<HostId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<HostId, DaggerError>(self) })
+    }
+}
 impl HostId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -290,6 +571,24 @@ impl From<String> for InputTypeDefId {
         Self(value)
     }
 }
+impl IntoID<InputTypeDefId> for InputTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<InputTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<InputTypeDefId> for InputTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<InputTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<InputTypeDefId, DaggerError>(self) })
+    }
+}
 impl InputTypeDefId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -305,6 +604,24 @@ impl From<&str> for InterfaceTypeDefId {
 impl From<String> for InterfaceTypeDefId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<InterfaceTypeDefId> for InterfaceTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<InterfaceTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<InterfaceTypeDefId> for InterfaceTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<InterfaceTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<InterfaceTypeDefId, DaggerError>(self) })
     }
 }
 impl InterfaceTypeDefId {
@@ -341,6 +658,22 @@ impl From<String> for LabelId {
         Self(value)
     }
 }
+impl IntoID<LabelId> for Label {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LabelId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<LabelId> for LabelId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<LabelId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<LabelId, DaggerError>(self) })
+    }
+}
 impl LabelId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -356,6 +689,24 @@ impl From<&str> for ListTypeDefId {
 impl From<String> for ListTypeDefId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<ListTypeDefId> for ListTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ListTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ListTypeDefId> for ListTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ListTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ListTypeDefId, DaggerError>(self) })
     }
 }
 impl ListTypeDefId {
@@ -375,6 +726,24 @@ impl From<String> for LocalModuleSourceId {
         Self(value)
     }
 }
+impl IntoID<LocalModuleSourceId> for LocalModuleSource {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<LocalModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<LocalModuleSourceId> for LocalModuleSourceId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<LocalModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<LocalModuleSourceId, DaggerError>(self) })
+    }
+}
 impl LocalModuleSourceId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -390,6 +759,24 @@ impl From<&str> for ModuleDependencyId {
 impl From<String> for ModuleDependencyId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<ModuleDependencyId> for ModuleDependency {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleDependencyId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ModuleDependencyId> for ModuleDependencyId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleDependencyId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ModuleDependencyId, DaggerError>(self) })
     }
 }
 impl ModuleDependencyId {
@@ -409,6 +796,22 @@ impl From<String> for ModuleId {
         Self(value)
     }
 }
+impl IntoID<ModuleId> for Module {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ModuleId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ModuleId> for ModuleId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ModuleId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<ModuleId, DaggerError>(self) })
+    }
+}
 impl ModuleId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -424,6 +827,24 @@ impl From<&str> for ModuleSourceId {
 impl From<String> for ModuleSourceId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<ModuleSourceId> for ModuleSource {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ModuleSourceId> for ModuleSourceId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ModuleSourceId, DaggerError>(self) })
     }
 }
 impl ModuleSourceId {
@@ -443,6 +864,24 @@ impl From<String> for ModuleSourceViewId {
         Self(value)
     }
 }
+impl IntoID<ModuleSourceViewId> for ModuleSourceView {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleSourceViewId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ModuleSourceViewId> for ModuleSourceViewId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ModuleSourceViewId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ModuleSourceViewId, DaggerError>(self) })
+    }
+}
 impl ModuleSourceViewId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -458,6 +897,24 @@ impl From<&str> for ObjectTypeDefId {
 impl From<String> for ObjectTypeDefId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<ObjectTypeDefId> for ObjectTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ObjectTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ObjectTypeDefId> for ObjectTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ObjectTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ObjectTypeDefId, DaggerError>(self) })
     }
 }
 impl ObjectTypeDefId {
@@ -494,6 +951,22 @@ impl From<String> for PortId {
         Self(value)
     }
 }
+impl IntoID<PortId> for Port {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<PortId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<PortId> for PortId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<PortId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<PortId, DaggerError>(self) })
+    }
+}
 impl PortId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -509,6 +982,22 @@ impl From<&str> for SecretId {
 impl From<String> for SecretId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<SecretId> for Secret {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<SecretId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SecretId> for SecretId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<SecretId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<SecretId, DaggerError>(self) })
     }
 }
 impl SecretId {
@@ -528,6 +1017,22 @@ impl From<String> for ServiceId {
         Self(value)
     }
 }
+impl IntoID<ServiceId> for Service {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ServiceId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ServiceId> for ServiceId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ServiceId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<ServiceId, DaggerError>(self) })
+    }
+}
 impl ServiceId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -543,6 +1048,22 @@ impl From<&str> for SocketId {
 impl From<String> for SocketId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<SocketId> for Socket {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<SocketId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SocketId> for SocketId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<SocketId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<SocketId, DaggerError>(self) })
     }
 }
 impl SocketId {
@@ -562,6 +1083,22 @@ impl From<String> for TerminalId {
         Self(value)
     }
 }
+impl IntoID<TerminalId> for Terminal {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<TerminalId> for TerminalId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<TerminalId, DaggerError>(self) })
+    }
+}
 impl TerminalId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
@@ -577,6 +1114,22 @@ impl From<&str> for TypeDefId {
 impl From<String> for TypeDefId {
     fn from(value: String) -> Self {
         Self(value)
+    }
+}
+impl IntoID<TypeDefId> for TypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TypeDefId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<TypeDefId> for TypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TypeDefId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<TypeDefId, DaggerError>(self) })
     }
 }
 impl TypeDefId {
@@ -947,13 +1500,13 @@ impl Container {
     ///
     /// * `context` - Directory context used by the Dockerfile.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn build(&self, context: Directory) -> Container {
+    pub fn build(&self, context: impl IntoID<DirectoryId>) -> Container {
         let mut query = self.selection.select("build");
         query = query.arg_lazy(
             "context",
             Box::new(move || {
                 let context = context.clone();
-                Box::pin(async move { context.id().await.unwrap().quote() })
+                Box::pin(async move { context.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -968,13 +1521,17 @@ impl Container {
     ///
     /// * `context` - Directory context used by the Dockerfile.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn build_opts<'a>(&self, context: Directory, opts: ContainerBuildOpts<'a>) -> Container {
+    pub fn build_opts<'a>(
+        &self,
+        context: impl IntoID<DirectoryId>,
+        opts: ContainerBuildOpts<'a>,
+    ) -> Container {
         let mut query = self.selection.select("build");
         query = query.arg_lazy(
             "context",
             Box::new(move || {
                 let context = context.clone();
-                Box::pin(async move { context.id().await.unwrap().quote() })
+                Box::pin(async move { context.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(dockerfile) = opts.dockerfile {
@@ -1172,13 +1729,13 @@ impl Container {
     ///
     /// * `source` - File to read the container from.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn import(&self, source: File) -> Container {
+    pub fn import(&self, source: impl IntoID<FileId>) -> Container {
         let mut query = self.selection.select("import");
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -1193,13 +1750,17 @@ impl Container {
     ///
     /// * `source` - File to read the container from.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn import_opts<'a>(&self, source: File, opts: ContainerImportOpts<'a>) -> Container {
+    pub fn import_opts<'a>(
+        &self,
+        source: impl IntoID<FileId>,
+        opts: ContainerImportOpts<'a>,
+    ) -> Container {
         let mut query = self.selection.select("import");
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(tag) = opts.tag {
@@ -1466,14 +2027,18 @@ impl Container {
     /// * `path` - Location of the written directory (e.g., "/tmp/directory").
     /// * `directory` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_directory(&self, path: impl Into<String>, directory: Directory) -> Container {
+    pub fn with_directory(
+        &self,
+        path: impl Into<String>,
+        directory: impl IntoID<DirectoryId>,
+    ) -> Container {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "directory",
             Box::new(move || {
                 let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -1492,7 +2057,7 @@ impl Container {
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        directory: Directory,
+        directory: impl IntoID<DirectoryId>,
         opts: ContainerWithDirectoryOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
@@ -1501,7 +2066,7 @@ impl Container {
             "directory",
             Box::new(move || {
                 let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(exclude) = opts.exclude {
@@ -1729,14 +2294,14 @@ impl Container {
     /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_file(&self, path: impl Into<String>, source: File) -> Container {
+    pub fn with_file(&self, path: impl Into<String>, source: impl IntoID<FileId>) -> Container {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -1755,7 +2320,7 @@ impl Container {
     pub fn with_file_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: File,
+        source: impl IntoID<FileId>,
         opts: ContainerWithFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withFile");
@@ -1764,7 +2329,7 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(permissions) = opts.permissions {
@@ -1856,14 +2421,18 @@ impl Container {
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_cache(&self, path: impl Into<String>, cache: CacheVolume) -> Container {
+    pub fn with_mounted_cache(
+        &self,
+        path: impl Into<String>,
+        cache: impl IntoID<CacheVolumeId>,
+    ) -> Container {
         let mut query = self.selection.select("withMountedCache");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "cache",
             Box::new(move || {
                 let cache = cache.clone();
-                Box::pin(async move { cache.id().await.unwrap().quote() })
+                Box::pin(async move { cache.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -1882,7 +2451,7 @@ impl Container {
     pub fn with_mounted_cache_opts<'a>(
         &self,
         path: impl Into<String>,
-        cache: CacheVolume,
+        cache: impl IntoID<CacheVolumeId>,
         opts: ContainerWithMountedCacheOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedCache");
@@ -1891,7 +2460,7 @@ impl Container {
             "cache",
             Box::new(move || {
                 let cache = cache.clone();
-                Box::pin(async move { cache.id().await.unwrap().quote() })
+                Box::pin(async move { cache.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(source) = opts.source {
@@ -1916,14 +2485,18 @@ impl Container {
     /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
     /// * `source` - Identifier of the mounted directory.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_directory(&self, path: impl Into<String>, source: Directory) -> Container {
+    pub fn with_mounted_directory(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<DirectoryId>,
+    ) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -1942,7 +2515,7 @@ impl Container {
     pub fn with_mounted_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: Directory,
+        source: impl IntoID<DirectoryId>,
         opts: ContainerWithMountedDirectoryOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
@@ -1951,7 +2524,7 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -1970,14 +2543,18 @@ impl Container {
     /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the mounted file.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_file(&self, path: impl Into<String>, source: File) -> Container {
+    pub fn with_mounted_file(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<FileId>,
+    ) -> Container {
         let mut query = self.selection.select("withMountedFile");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -1996,7 +2573,7 @@ impl Container {
     pub fn with_mounted_file_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: File,
+        source: impl IntoID<FileId>,
         opts: ContainerWithMountedFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedFile");
@@ -2005,7 +2582,7 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -2024,14 +2601,18 @@ impl Container {
     /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
     /// * `source` - Identifier of the secret to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_secret(&self, path: impl Into<String>, source: Secret) -> Container {
+    pub fn with_mounted_secret(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<SecretId>,
+    ) -> Container {
         let mut query = self.selection.select("withMountedSecret");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -2050,7 +2631,7 @@ impl Container {
     pub fn with_mounted_secret_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: Secret,
+        source: impl IntoID<SecretId>,
         opts: ContainerWithMountedSecretOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedSecret");
@@ -2059,7 +2640,7 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -2144,7 +2725,7 @@ impl Container {
         &self,
         address: impl Into<String>,
         username: impl Into<String>,
-        secret: Secret,
+        secret: impl IntoID<SecretId>,
     ) -> Container {
         let mut query = self.selection.select("withRegistryAuth");
         query = query.arg("address", address.into());
@@ -2153,7 +2734,7 @@ impl Container {
             "secret",
             Box::new(move || {
                 let secret = secret.clone();
-                Box::pin(async move { secret.id().await.unwrap().quote() })
+                Box::pin(async move { secret.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -2167,13 +2748,13 @@ impl Container {
     /// # Arguments
     ///
     /// * `directory` - Directory to mount.
-    pub fn with_rootfs(&self, directory: Directory) -> Container {
+    pub fn with_rootfs(&self, directory: impl IntoID<DirectoryId>) -> Container {
         let mut query = self.selection.select("withRootfs");
         query = query.arg_lazy(
             "directory",
             Box::new(move || {
                 let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -2188,14 +2769,18 @@ impl Container {
     ///
     /// * `name` - The name of the secret variable (e.g., "API_SECRET").
     /// * `secret` - The identifier of the secret value.
-    pub fn with_secret_variable(&self, name: impl Into<String>, secret: Secret) -> Container {
+    pub fn with_secret_variable(
+        &self,
+        name: impl Into<String>,
+        secret: impl IntoID<SecretId>,
+    ) -> Container {
         let mut query = self.selection.select("withSecretVariable");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "secret",
             Box::new(move || {
                 let secret = secret.clone();
-                Box::pin(async move { secret.id().await.unwrap().quote() })
+                Box::pin(async move { secret.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -2213,14 +2798,18 @@ impl Container {
     ///
     /// * `alias` - A name that can be used to reach the service from the container
     /// * `service` - Identifier of the service container
-    pub fn with_service_binding(&self, alias: impl Into<String>, service: Service) -> Container {
+    pub fn with_service_binding(
+        &self,
+        alias: impl Into<String>,
+        service: impl IntoID<ServiceId>,
+    ) -> Container {
         let mut query = self.selection.select("withServiceBinding");
         query = query.arg("alias", alias.into());
         query = query.arg_lazy(
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.id().await.unwrap().quote() })
+                Box::pin(async move { service.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -2236,14 +2825,18 @@ impl Container {
     /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
     /// * `source` - Identifier of the socket to forward.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_unix_socket(&self, path: impl Into<String>, source: Socket) -> Container {
+    pub fn with_unix_socket(
+        &self,
+        path: impl Into<String>,
+        source: impl IntoID<SocketId>,
+    ) -> Container {
         let mut query = self.selection.select("withUnixSocket");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -2262,7 +2855,7 @@ impl Container {
     pub fn with_unix_socket_opts<'a>(
         &self,
         path: impl Into<String>,
-        source: Socket,
+        source: impl IntoID<SocketId>,
         opts: ContainerWithUnixSocketOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withUnixSocket");
@@ -2271,7 +2864,7 @@ impl Container {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(owner) = opts.owner {
@@ -2706,13 +3299,13 @@ impl Directory {
     /// # Arguments
     ///
     /// * `other` - Identifier of the directory to compare.
-    pub fn diff(&self, other: Directory) -> Directory {
+    pub fn diff(&self, other: impl IntoID<DirectoryId>) -> Directory {
         let mut query = self.selection.select("diff");
         query = query.arg_lazy(
             "other",
             Box::new(move || {
                 let other = other.clone();
-                Box::pin(async move { other.id().await.unwrap().quote() })
+                Box::pin(async move { other.into_id().await.unwrap().quote() })
             }),
         );
         Directory {
@@ -2910,14 +3503,18 @@ impl Directory {
     /// * `path` - Location of the written directory (e.g., "/src/").
     /// * `directory` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_directory(&self, path: impl Into<String>, directory: Directory) -> Directory {
+    pub fn with_directory(
+        &self,
+        path: impl Into<String>,
+        directory: impl IntoID<DirectoryId>,
+    ) -> Directory {
         let mut query = self.selection.select("withDirectory");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "directory",
             Box::new(move || {
                 let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
             }),
         );
         Directory {
@@ -2936,7 +3533,7 @@ impl Directory {
     pub fn with_directory_opts<'a>(
         &self,
         path: impl Into<String>,
-        directory: Directory,
+        directory: impl IntoID<DirectoryId>,
         opts: DirectoryWithDirectoryOpts<'a>,
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
@@ -2945,7 +3542,7 @@ impl Directory {
             "directory",
             Box::new(move || {
                 let directory = directory.clone();
-                Box::pin(async move { directory.id().await.unwrap().quote() })
+                Box::pin(async move { directory.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(exclude) = opts.exclude {
@@ -2967,14 +3564,14 @@ impl Directory {
     /// * `path` - Location of the copied file (e.g., "/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_file(&self, path: impl Into<String>, source: File) -> Directory {
+    pub fn with_file(&self, path: impl Into<String>, source: impl IntoID<FileId>) -> Directory {
         let mut query = self.selection.select("withFile");
         query = query.arg("path", path.into());
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Directory {
@@ -2993,7 +3590,7 @@ impl Directory {
     pub fn with_file_opts(
         &self,
         path: impl Into<String>,
-        source: File,
+        source: impl IntoID<FileId>,
         opts: DirectoryWithFileOpts,
     ) -> Directory {
         let mut query = self.selection.select("withFile");
@@ -3002,7 +3599,7 @@ impl Directory {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(permissions) = opts.permissions {
@@ -3375,14 +3972,14 @@ impl Function {
     /// * `name` - The name of the argument
     /// * `type_def` - The type of the argument
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_arg(&self, name: impl Into<String>, type_def: TypeDef) -> Function {
+    pub fn with_arg(&self, name: impl Into<String>, type_def: impl IntoID<TypeDefId>) -> Function {
         let mut query = self.selection.select("withArg");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.id().await.unwrap().quote() })
+                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
             }),
         );
         Function {
@@ -3401,7 +3998,7 @@ impl Function {
     pub fn with_arg_opts<'a>(
         &self,
         name: impl Into<String>,
-        type_def: TypeDef,
+        type_def: impl IntoID<TypeDefId>,
         opts: FunctionWithArgOpts<'a>,
     ) -> Function {
         let mut query = self.selection.select("withArg");
@@ -3410,7 +4007,7 @@ impl Function {
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.id().await.unwrap().quote() })
+                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(description) = opts.description {
@@ -3793,13 +4390,13 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `header` - Secret used to populate the Authorization HTTP header
-    pub fn with_auth_header(&self, header: Secret) -> GitRepository {
+    pub fn with_auth_header(&self, header: impl IntoID<SecretId>) -> GitRepository {
         let mut query = self.selection.select("withAuthHeader");
         query = query.arg_lazy(
             "header",
             Box::new(move || {
                 let header = header.clone();
-                Box::pin(async move { header.id().await.unwrap().quote() })
+                Box::pin(async move { header.into_id().await.unwrap().quote() })
             }),
         );
         GitRepository {
@@ -3813,13 +4410,13 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `token` - Secret used to populate the password during basic HTTP Authorization
-    pub fn with_auth_token(&self, token: Secret) -> GitRepository {
+    pub fn with_auth_token(&self, token: impl IntoID<SecretId>) -> GitRepository {
         let mut query = self.selection.select("withAuthToken");
         query = query.arg_lazy(
             "token",
             Box::new(move || {
                 let token = token.clone();
-                Box::pin(async move { token.id().await.unwrap().quote() })
+                Box::pin(async move { token.into_id().await.unwrap().quote() })
             }),
         );
         GitRepository {
@@ -3987,13 +4584,13 @@ impl Host {
     ///
     /// * `service` - Service to send traffic from the tunnel.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn tunnel(&self, service: Service) -> Service {
+    pub fn tunnel(&self, service: impl IntoID<ServiceId>) -> Service {
         let mut query = self.selection.select("tunnel");
         query = query.arg_lazy(
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.id().await.unwrap().quote() })
+                Box::pin(async move { service.into_id().await.unwrap().quote() })
             }),
         );
         Service {
@@ -4008,13 +4605,13 @@ impl Host {
     ///
     /// * `service` - Service to send traffic from the tunnel.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn tunnel_opts(&self, service: Service, opts: HostTunnelOpts) -> Service {
+    pub fn tunnel_opts(&self, service: impl IntoID<ServiceId>, opts: HostTunnelOpts) -> Service {
         let mut query = self.selection.select("tunnel");
         query = query.arg_lazy(
             "service",
             Box::new(move || {
                 let service = service.clone();
-                Box::pin(async move { service.id().await.unwrap().quote() })
+                Box::pin(async move { service.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(ports) = opts.ports {
@@ -4309,13 +4906,13 @@ impl Module {
         }
     }
     /// This module plus the given Interface type and associated functions
-    pub fn with_interface(&self, iface: TypeDef) -> Module {
+    pub fn with_interface(&self, iface: impl IntoID<TypeDefId>) -> Module {
         let mut query = self.selection.select("withInterface");
         query = query.arg_lazy(
             "iface",
             Box::new(move || {
                 let iface = iface.clone();
-                Box::pin(async move { iface.id().await.unwrap().quote() })
+                Box::pin(async move { iface.into_id().await.unwrap().quote() })
             }),
         );
         Module {
@@ -4325,13 +4922,13 @@ impl Module {
         }
     }
     /// This module plus the given Object type and associated functions.
-    pub fn with_object(&self, object: TypeDef) -> Module {
+    pub fn with_object(&self, object: impl IntoID<TypeDefId>) -> Module {
         let mut query = self.selection.select("withObject");
         query = query.arg_lazy(
             "object",
             Box::new(move || {
                 let object = object.clone();
-                Box::pin(async move { object.id().await.unwrap().quote() })
+                Box::pin(async move { object.into_id().await.unwrap().quote() })
             }),
         );
         Module {
@@ -4345,13 +4942,13 @@ impl Module {
     /// # Arguments
     ///
     /// * `source` - The module source to initialize from.
-    pub fn with_source(&self, source: ModuleSource) -> Module {
+    pub fn with_source(&self, source: impl IntoID<ModuleSourceId>) -> Module {
         let mut query = self.selection.select("withSource");
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         Module {
@@ -4500,13 +5097,13 @@ impl ModuleSource {
     /// # Arguments
     ///
     /// * `dep` - The dependency module source to resolve.
-    pub fn resolve_dependency(&self, dep: ModuleSource) -> ModuleSource {
+    pub fn resolve_dependency(&self, dep: impl IntoID<ModuleSourceId>) -> ModuleSource {
         let mut query = self.selection.select("resolveDependency");
         query = query.arg_lazy(
             "dep",
             Box::new(move || {
                 let dep = dep.clone();
-                Box::pin(async move { dep.id().await.unwrap().quote() })
+                Box::pin(async move { dep.into_id().await.unwrap().quote() })
             }),
         );
         ModuleSource {
@@ -4599,13 +5196,13 @@ impl ModuleSource {
     /// # Arguments
     ///
     /// * `dir` - The directory to set as the context directory.
-    pub fn with_context_directory(&self, dir: Directory) -> ModuleSource {
+    pub fn with_context_directory(&self, dir: impl IntoID<DirectoryId>) -> ModuleSource {
         let mut query = self.selection.select("withContextDirectory");
         query = query.arg_lazy(
             "dir",
             Box::new(move || {
                 let dir = dir.clone();
-                Box::pin(async move { dir.id().await.unwrap().quote() })
+                Box::pin(async move { dir.into_id().await.unwrap().quote() })
             }),
         );
         ModuleSource {
@@ -5040,13 +5637,13 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    pub fn file(&self, id: File) -> File {
+    pub fn file(&self, id: impl IntoID<FileId>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         File {
@@ -5061,14 +5658,18 @@ impl Query {
     ///
     /// * `name` - Name of the function, in its original format from the implementation language.
     /// * `return_type` - Return type of the function.
-    pub fn function(&self, name: impl Into<String>, return_type: TypeDef) -> Function {
+    pub fn function(
+        &self,
+        name: impl Into<String>,
+        return_type: impl IntoID<TypeDefId>,
+    ) -> Function {
         let mut query = self.selection.select("function");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "returnType",
             Box::new(move || {
                 let return_type = return_type.clone();
-                Box::pin(async move { return_type.id().await.unwrap().quote() })
+                Box::pin(async move { return_type.into_id().await.unwrap().quote() })
             }),
         );
         Function {
@@ -5078,13 +5679,13 @@ impl Query {
         }
     }
     /// Create a code generation result, given a directory containing the generated code.
-    pub fn generated_code(&self, code: Directory) -> GeneratedCode {
+    pub fn generated_code(&self, code: impl IntoID<DirectoryId>) -> GeneratedCode {
         let mut query = self.selection.select("generatedCode");
         query = query.arg_lazy(
             "code",
             Box::new(move || {
                 let code = code.clone();
-                Box::pin(async move { code.id().await.unwrap().quote() })
+                Box::pin(async move { code.into_id().await.unwrap().quote() })
             }),
         );
         GeneratedCode {
@@ -5186,13 +5787,13 @@ impl Query {
         }
     }
     /// Load a CacheVolume from its ID.
-    pub fn load_cache_volume_from_id(&self, id: CacheVolume) -> CacheVolume {
+    pub fn load_cache_volume_from_id(&self, id: impl IntoID<CacheVolumeId>) -> CacheVolume {
         let mut query = self.selection.select("loadCacheVolumeFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         CacheVolume {
@@ -5202,13 +5803,13 @@ impl Query {
         }
     }
     /// Load a Container from its ID.
-    pub fn load_container_from_id(&self, id: Container) -> Container {
+    pub fn load_container_from_id(&self, id: impl IntoID<ContainerId>) -> Container {
         let mut query = self.selection.select("loadContainerFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Container {
@@ -5218,13 +5819,13 @@ impl Query {
         }
     }
     /// Load a CurrentModule from its ID.
-    pub fn load_current_module_from_id(&self, id: CurrentModule) -> CurrentModule {
+    pub fn load_current_module_from_id(&self, id: impl IntoID<CurrentModuleId>) -> CurrentModule {
         let mut query = self.selection.select("loadCurrentModuleFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         CurrentModule {
@@ -5234,13 +5835,13 @@ impl Query {
         }
     }
     /// Load a Directory from its ID.
-    pub fn load_directory_from_id(&self, id: Directory) -> Directory {
+    pub fn load_directory_from_id(&self, id: impl IntoID<DirectoryId>) -> Directory {
         let mut query = self.selection.select("loadDirectoryFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Directory {
@@ -5250,13 +5851,13 @@ impl Query {
         }
     }
     /// Load a EnvVariable from its ID.
-    pub fn load_env_variable_from_id(&self, id: EnvVariable) -> EnvVariable {
+    pub fn load_env_variable_from_id(&self, id: impl IntoID<EnvVariableId>) -> EnvVariable {
         let mut query = self.selection.select("loadEnvVariableFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         EnvVariable {
@@ -5266,13 +5867,13 @@ impl Query {
         }
     }
     /// Load a FieldTypeDef from its ID.
-    pub fn load_field_type_def_from_id(&self, id: FieldTypeDef) -> FieldTypeDef {
+    pub fn load_field_type_def_from_id(&self, id: impl IntoID<FieldTypeDefId>) -> FieldTypeDef {
         let mut query = self.selection.select("loadFieldTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         FieldTypeDef {
@@ -5282,13 +5883,13 @@ impl Query {
         }
     }
     /// Load a File from its ID.
-    pub fn load_file_from_id(&self, id: File) -> File {
+    pub fn load_file_from_id(&self, id: impl IntoID<FileId>) -> File {
         let mut query = self.selection.select("loadFileFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         File {
@@ -5298,13 +5899,13 @@ impl Query {
         }
     }
     /// Load a FunctionArg from its ID.
-    pub fn load_function_arg_from_id(&self, id: FunctionArg) -> FunctionArg {
+    pub fn load_function_arg_from_id(&self, id: impl IntoID<FunctionArgId>) -> FunctionArg {
         let mut query = self.selection.select("loadFunctionArgFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         FunctionArg {
@@ -5316,14 +5917,14 @@ impl Query {
     /// Load a FunctionCallArgValue from its ID.
     pub fn load_function_call_arg_value_from_id(
         &self,
-        id: FunctionCallArgValue,
+        id: impl IntoID<FunctionCallArgValueId>,
     ) -> FunctionCallArgValue {
         let mut query = self.selection.select("loadFunctionCallArgValueFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         FunctionCallArgValue {
@@ -5333,13 +5934,13 @@ impl Query {
         }
     }
     /// Load a FunctionCall from its ID.
-    pub fn load_function_call_from_id(&self, id: FunctionCall) -> FunctionCall {
+    pub fn load_function_call_from_id(&self, id: impl IntoID<FunctionCallId>) -> FunctionCall {
         let mut query = self.selection.select("loadFunctionCallFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         FunctionCall {
@@ -5349,13 +5950,13 @@ impl Query {
         }
     }
     /// Load a Function from its ID.
-    pub fn load_function_from_id(&self, id: Function) -> Function {
+    pub fn load_function_from_id(&self, id: impl IntoID<FunctionId>) -> Function {
         let mut query = self.selection.select("loadFunctionFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Function {
@@ -5365,13 +5966,13 @@ impl Query {
         }
     }
     /// Load a GeneratedCode from its ID.
-    pub fn load_generated_code_from_id(&self, id: GeneratedCode) -> GeneratedCode {
+    pub fn load_generated_code_from_id(&self, id: impl IntoID<GeneratedCodeId>) -> GeneratedCode {
         let mut query = self.selection.select("loadGeneratedCodeFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         GeneratedCode {
@@ -5381,13 +5982,16 @@ impl Query {
         }
     }
     /// Load a GitModuleSource from its ID.
-    pub fn load_git_module_source_from_id(&self, id: GitModuleSource) -> GitModuleSource {
+    pub fn load_git_module_source_from_id(
+        &self,
+        id: impl IntoID<GitModuleSourceId>,
+    ) -> GitModuleSource {
         let mut query = self.selection.select("loadGitModuleSourceFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         GitModuleSource {
@@ -5397,13 +6001,13 @@ impl Query {
         }
     }
     /// Load a GitRef from its ID.
-    pub fn load_git_ref_from_id(&self, id: GitRef) -> GitRef {
+    pub fn load_git_ref_from_id(&self, id: impl IntoID<GitRefId>) -> GitRef {
         let mut query = self.selection.select("loadGitRefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         GitRef {
@@ -5413,13 +6017,13 @@ impl Query {
         }
     }
     /// Load a GitRepository from its ID.
-    pub fn load_git_repository_from_id(&self, id: GitRepository) -> GitRepository {
+    pub fn load_git_repository_from_id(&self, id: impl IntoID<GitRepositoryId>) -> GitRepository {
         let mut query = self.selection.select("loadGitRepositoryFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         GitRepository {
@@ -5429,13 +6033,13 @@ impl Query {
         }
     }
     /// Load a Host from its ID.
-    pub fn load_host_from_id(&self, id: Host) -> Host {
+    pub fn load_host_from_id(&self, id: impl IntoID<HostId>) -> Host {
         let mut query = self.selection.select("loadHostFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Host {
@@ -5445,13 +6049,13 @@ impl Query {
         }
     }
     /// Load a InputTypeDef from its ID.
-    pub fn load_input_type_def_from_id(&self, id: InputTypeDef) -> InputTypeDef {
+    pub fn load_input_type_def_from_id(&self, id: impl IntoID<InputTypeDefId>) -> InputTypeDef {
         let mut query = self.selection.select("loadInputTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         InputTypeDef {
@@ -5461,13 +6065,16 @@ impl Query {
         }
     }
     /// Load a InterfaceTypeDef from its ID.
-    pub fn load_interface_type_def_from_id(&self, id: InterfaceTypeDef) -> InterfaceTypeDef {
+    pub fn load_interface_type_def_from_id(
+        &self,
+        id: impl IntoID<InterfaceTypeDefId>,
+    ) -> InterfaceTypeDef {
         let mut query = self.selection.select("loadInterfaceTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         InterfaceTypeDef {
@@ -5477,13 +6084,13 @@ impl Query {
         }
     }
     /// Load a Label from its ID.
-    pub fn load_label_from_id(&self, id: Label) -> Label {
+    pub fn load_label_from_id(&self, id: impl IntoID<LabelId>) -> Label {
         let mut query = self.selection.select("loadLabelFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Label {
@@ -5493,13 +6100,13 @@ impl Query {
         }
     }
     /// Load a ListTypeDef from its ID.
-    pub fn load_list_type_def_from_id(&self, id: ListTypeDef) -> ListTypeDef {
+    pub fn load_list_type_def_from_id(&self, id: impl IntoID<ListTypeDefId>) -> ListTypeDef {
         let mut query = self.selection.select("loadListTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         ListTypeDef {
@@ -5509,13 +6116,16 @@ impl Query {
         }
     }
     /// Load a LocalModuleSource from its ID.
-    pub fn load_local_module_source_from_id(&self, id: LocalModuleSource) -> LocalModuleSource {
+    pub fn load_local_module_source_from_id(
+        &self,
+        id: impl IntoID<LocalModuleSourceId>,
+    ) -> LocalModuleSource {
         let mut query = self.selection.select("loadLocalModuleSourceFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         LocalModuleSource {
@@ -5525,13 +6135,16 @@ impl Query {
         }
     }
     /// Load a ModuleDependency from its ID.
-    pub fn load_module_dependency_from_id(&self, id: ModuleDependency) -> ModuleDependency {
+    pub fn load_module_dependency_from_id(
+        &self,
+        id: impl IntoID<ModuleDependencyId>,
+    ) -> ModuleDependency {
         let mut query = self.selection.select("loadModuleDependencyFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         ModuleDependency {
@@ -5541,13 +6154,13 @@ impl Query {
         }
     }
     /// Load a Module from its ID.
-    pub fn load_module_from_id(&self, id: Module) -> Module {
+    pub fn load_module_from_id(&self, id: impl IntoID<ModuleId>) -> Module {
         let mut query = self.selection.select("loadModuleFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Module {
@@ -5557,13 +6170,13 @@ impl Query {
         }
     }
     /// Load a ModuleSource from its ID.
-    pub fn load_module_source_from_id(&self, id: ModuleSource) -> ModuleSource {
+    pub fn load_module_source_from_id(&self, id: impl IntoID<ModuleSourceId>) -> ModuleSource {
         let mut query = self.selection.select("loadModuleSourceFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         ModuleSource {
@@ -5573,13 +6186,16 @@ impl Query {
         }
     }
     /// Load a ModuleSourceView from its ID.
-    pub fn load_module_source_view_from_id(&self, id: ModuleSourceView) -> ModuleSourceView {
+    pub fn load_module_source_view_from_id(
+        &self,
+        id: impl IntoID<ModuleSourceViewId>,
+    ) -> ModuleSourceView {
         let mut query = self.selection.select("loadModuleSourceViewFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         ModuleSourceView {
@@ -5589,13 +6205,13 @@ impl Query {
         }
     }
     /// Load a ObjectTypeDef from its ID.
-    pub fn load_object_type_def_from_id(&self, id: ObjectTypeDef) -> ObjectTypeDef {
+    pub fn load_object_type_def_from_id(&self, id: impl IntoID<ObjectTypeDefId>) -> ObjectTypeDef {
         let mut query = self.selection.select("loadObjectTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         ObjectTypeDef {
@@ -5605,13 +6221,13 @@ impl Query {
         }
     }
     /// Load a Port from its ID.
-    pub fn load_port_from_id(&self, id: Port) -> Port {
+    pub fn load_port_from_id(&self, id: impl IntoID<PortId>) -> Port {
         let mut query = self.selection.select("loadPortFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Port {
@@ -5621,13 +6237,13 @@ impl Query {
         }
     }
     /// Load a Secret from its ID.
-    pub fn load_secret_from_id(&self, id: Secret) -> Secret {
+    pub fn load_secret_from_id(&self, id: impl IntoID<SecretId>) -> Secret {
         let mut query = self.selection.select("loadSecretFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Secret {
@@ -5637,13 +6253,13 @@ impl Query {
         }
     }
     /// Load a Service from its ID.
-    pub fn load_service_from_id(&self, id: Service) -> Service {
+    pub fn load_service_from_id(&self, id: impl IntoID<ServiceId>) -> Service {
         let mut query = self.selection.select("loadServiceFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Service {
@@ -5653,13 +6269,13 @@ impl Query {
         }
     }
     /// Load a Socket from its ID.
-    pub fn load_socket_from_id(&self, id: Socket) -> Socket {
+    pub fn load_socket_from_id(&self, id: impl IntoID<SocketId>) -> Socket {
         let mut query = self.selection.select("loadSocketFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Socket {
@@ -5669,13 +6285,13 @@ impl Query {
         }
     }
     /// Load a Terminal from its ID.
-    pub fn load_terminal_from_id(&self, id: Terminal) -> Terminal {
+    pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
         let mut query = self.selection.select("loadTerminalFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Terminal {
@@ -5685,13 +6301,13 @@ impl Query {
         }
     }
     /// Load a TypeDef from its ID.
-    pub fn load_type_def_from_id(&self, id: TypeDef) -> TypeDef {
+    pub fn load_type_def_from_id(&self, id: impl IntoID<TypeDefId>) -> TypeDef {
         let mut query = self.selection.select("loadTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         TypeDef {
@@ -5715,13 +6331,13 @@ impl Query {
     ///
     /// * `source` - The source of the dependency
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_dependency(&self, source: ModuleSource) -> ModuleDependency {
+    pub fn module_dependency(&self, source: impl IntoID<ModuleSourceId>) -> ModuleDependency {
         let mut query = self.selection.select("moduleDependency");
         query = query.arg_lazy(
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         ModuleDependency {
@@ -5738,7 +6354,7 @@ impl Query {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn module_dependency_opts<'a>(
         &self,
-        source: ModuleSource,
+        source: impl IntoID<ModuleSourceId>,
         opts: QueryModuleDependencyOpts<'a>,
     ) -> ModuleDependency {
         let mut query = self.selection.select("moduleDependency");
@@ -5746,7 +6362,7 @@ impl Query {
             "source",
             Box::new(move || {
                 let source = source.clone();
-                Box::pin(async move { source.id().await.unwrap().quote() })
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(name) = opts.name {
@@ -5880,13 +6496,13 @@ impl Query {
         }
     }
     /// Loads a socket by its ID.
-    pub fn socket(&self, id: Socket) -> Socket {
+    pub fn socket(&self, id: impl IntoID<SocketId>) -> Socket {
         let mut query = self.selection.select("socket");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         Socket {
@@ -6173,13 +6789,13 @@ impl TypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
-    pub fn with_constructor(&self, function: Function) -> TypeDef {
+    pub fn with_constructor(&self, function: impl IntoID<FunctionId>) -> TypeDef {
         let mut query = self.selection.select("withConstructor");
         query = query.arg_lazy(
             "function",
             Box::new(move || {
                 let function = function.clone();
-                Box::pin(async move { function.id().await.unwrap().quote() })
+                Box::pin(async move { function.into_id().await.unwrap().quote() })
             }),
         );
         TypeDef {
@@ -6195,14 +6811,14 @@ impl TypeDef {
     /// * `name` - The name of the field in the object
     /// * `type_def` - The type of the field
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_field(&self, name: impl Into<String>, type_def: TypeDef) -> TypeDef {
+    pub fn with_field(&self, name: impl Into<String>, type_def: impl IntoID<TypeDefId>) -> TypeDef {
         let mut query = self.selection.select("withField");
         query = query.arg("name", name.into());
         query = query.arg_lazy(
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.id().await.unwrap().quote() })
+                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
             }),
         );
         TypeDef {
@@ -6221,7 +6837,7 @@ impl TypeDef {
     pub fn with_field_opts<'a>(
         &self,
         name: impl Into<String>,
-        type_def: TypeDef,
+        type_def: impl IntoID<TypeDefId>,
         opts: TypeDefWithFieldOpts<'a>,
     ) -> TypeDef {
         let mut query = self.selection.select("withField");
@@ -6230,7 +6846,7 @@ impl TypeDef {
             "typeDef",
             Box::new(move || {
                 let type_def = type_def.clone();
-                Box::pin(async move { type_def.id().await.unwrap().quote() })
+                Box::pin(async move { type_def.into_id().await.unwrap().quote() })
             }),
         );
         if let Some(description) = opts.description {
@@ -6243,13 +6859,13 @@ impl TypeDef {
         }
     }
     /// Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
-    pub fn with_function(&self, function: Function) -> TypeDef {
+    pub fn with_function(&self, function: impl IntoID<FunctionId>) -> TypeDef {
         let mut query = self.selection.select("withFunction");
         query = query.arg_lazy(
             "function",
             Box::new(move || {
                 let function = function.clone();
-                Box::pin(async move { function.id().await.unwrap().quote() })
+                Box::pin(async move { function.into_id().await.unwrap().quote() })
             }),
         );
         TypeDef {
@@ -6304,13 +6920,13 @@ impl TypeDef {
         }
     }
     /// Returns a TypeDef of kind List with the provided type for its elements.
-    pub fn with_list_of(&self, element_type: TypeDef) -> TypeDef {
+    pub fn with_list_of(&self, element_type: impl IntoID<TypeDefId>) -> TypeDef {
         let mut query = self.selection.select("withListOf");
         query = query.arg_lazy(
             "elementType",
             Box::new(move || {
                 let element_type = element_type.clone();
-                Box::pin(async move { element_type.id().await.unwrap().quote() })
+                Box::pin(async move { element_type.into_id().await.unwrap().quote() })
             }),
         );
         TypeDef {
