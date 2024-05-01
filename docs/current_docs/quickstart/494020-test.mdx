@@ -1,0 +1,43 @@
+---
+slug: /quickstart/494020/test
+hide_table_of_contents: true
+title: "Initialize a new module"
+---
+
+# Quickstart
+
+## Daggerize the application's tests
+
+You're now ready to dive into Dagger and call your first Dagger Function! Use the following command:
+
+```shell
+dagger -m golang call test --source=.
+```
+
+Here's what you should see:
+
+```
+OK
+```
+
+Well done! You just called your first Dagger Function!
+
+Let's dig a little deeper to understand what just happened:
+
+
+
+In this example, Dagger loaded the Golang module, and executed the Dagger Function named `test` from that module. If you [inspect the source code of the module](#), you'll see a `Test()` function, written in Go, which internally runs `go test`.
+
+:::tip
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Hello()` is invoked as `dagger call hello`.
+:::
+
+Dagger Functions, just like regular functions, can accept arguments. Appending the `--help` flag to a `dagger call` command will display a context-sensitive list of supported arguments and sub-commands.
+
+Inspect the arguments of the `test` function you called earlier:
+
+```shell
+dagger -m golang call test --help
+```
+
+FIXME: Add more info
