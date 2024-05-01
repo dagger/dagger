@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -65,7 +64,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/dagger/dagger/cmd/engine/cacerts"
+	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -96,25 +95,9 @@ type workerInitializerOpt struct {
 	traceSocket    string
 }
 
-type workerInitializer struct {
-	fn func(c *cli.Context, common workerInitializerOpt) ([]worker.Worker, error)
-	// less priority number, more preferred
-	priority int
-}
-
 var (
-	appFlags           []cli.Flag
-	workerInitializers []workerInitializer
+	appFlags []cli.Flag
 )
-
-func registerWorkerInitializer(wi workerInitializer, flags ...cli.Flag) {
-	workerInitializers = append(workerInitializers, wi)
-	sort.Slice(workerInitializers,
-		func(i, j int) bool {
-			return workerInitializers[i].priority < workerInitializers[j].priority
-		})
-	appFlags = append(appFlags, flags...)
-}
 
 func main() { //nolint:gocyclo
 	cli.VersionPrinter = func(c *cli.Context) {
@@ -710,17 +693,22 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		}
 	}
 
-	wc, err := newWorkerController(c, workerInitializerOpt{
+	w, err := newWorker(ctx, c, workerInitializerOpt{
 		config:         cfg,
 		sessionManager: sessionManager,
 		traceSocket:    traceSocket,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create worker: %w", err)
 	}
-	w, err := wc.GetDefault()
+
+	p := w.Platforms(false)
+	logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
+	archutil.WarnIfUnsupported(p)
+
+	wc, err := w.AsWorkerController()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create worker controller: %w", err)
 	}
 
 	frontends := map[string]frontend.Frontend{}
@@ -789,7 +777,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 
 	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
-		WorkerController:       wc,
+		Worker:                 w,
 		SessionManager:         sessionManager,
 		CacheManager:           cacheManager,
 		ContentStore:           w.ContentStore(),
@@ -812,36 +800,6 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 
 func resolverFunc(cfg *config.Config) docker.RegistryHosts {
 	return resolver.NewRegistryConfig(cfg.Registries)
-}
-
-func newWorkerController(c *cli.Context, wiOpt workerInitializerOpt) (*worker.Controller, error) {
-	wc := &worker.Controller{}
-	nWorkers := 0
-	for _, wi := range workerInitializers {
-		ws, err := wi.fn(c, wiOpt)
-		if err != nil {
-			return nil, err
-		}
-		for _, w := range ws {
-			p := w.Platforms(false)
-			logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
-			archutil.WarnIfUnsupported(p)
-			if err = wc.Add(w); err != nil {
-				return nil, err
-			}
-			nWorkers++
-		}
-	}
-	if nWorkers == 0 {
-		return nil, errors.New("no worker found, rebuild the buildkit daemon?")
-	}
-	defaultWorker, err := wc.GetDefault()
-	if err != nil {
-		return nil, err
-	}
-	logrus.Infof("found %d workers, default=%q", nWorkers, defaultWorker.ID())
-	logrus.Warn("currently, only the default worker can be used.")
-	return wc, nil
 }
 
 func attrMap(sl []string) (map[string]string, error) {

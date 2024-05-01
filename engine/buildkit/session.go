@@ -49,7 +49,7 @@ func (c *Client) newSession() (*bksession.Session, error) {
 	sess.Allow(&client.AnyDirTarget{})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
-		"oci:" + OCIStoreName:               c.Worker.ContentStore(),
+		"oci:" + OCIStoreName:               c.worker.ContentStore(),
 		"oci:" + BuiltinContentOCIStoreName: builtinStore,
 	}))
 
