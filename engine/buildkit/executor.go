@@ -1,4 +1,9 @@
-package main
+package buildkit
+
+/*
+The original implementation of this is derived from:
+https://github.com/moby/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/executor/runcexecutor/executor.go
+*/
 
 import (
 	"bytes"
@@ -16,253 +21,56 @@ import (
 	"time"
 
 	"github.com/containerd/console"
-	"github.com/containerd/containerd/content/local"
-	"github.com/containerd/containerd/diff/apply"
-	"github.com/containerd/containerd/diff/walking"
-	ctdmetadata "github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/mount"
 	containerdoci "github.com/containerd/containerd/oci"
-	"github.com/containerd/containerd/platforms"
-	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/cmd/engine/cacerts"
+	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/docker/docker/pkg/idtools"
-	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	resourcestypes "github.com/moby/buildkit/executor/resources/types"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
 	randid "github.com/moby/buildkit/identity"
-	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/network"
-	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/stack"
-	"github.com/moby/buildkit/util/winlayers"
-	"github.com/moby/buildkit/worker/base"
-	wlabel "github.com/moby/buildkit/worker/label"
-	workerrunc "github.com/moby/buildkit/worker/runc"
 	"github.com/moby/sys/signal"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 )
 
-func NewWorkerOpt(
-	root string,
-	snFactory workerrunc.SnapshotterFactory,
-	processMode oci.ProcessMode,
-	labels map[string]string,
-	idmap *idtools.IdentityMapping,
-	nopt netproviders.Opt,
-	dns *oci.DNSConfig,
-	apparmorProfile string,
-	selinux bool,
-	parallelismSem *semaphore.Weighted,
-	traceSocket,
-	defaultCgroupParent string,
-) (base.WorkerOpt, error) {
-	var opt base.WorkerOpt
-	name := "runc-" + snFactory.Name
-	root = filepath.Join(root, name)
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return opt, err
-	}
-
-	np, npResolvedMode, err := netproviders.Providers(nopt)
-	if err != nil {
-		return opt, err
-	}
-
-	exe, err := New(Opt{
-		Root:                filepath.Join(root, "executor"),
-		Cmd:                 "/usr/local/bin/dagger-shim",
-		ProcessMode:         processMode,
-		IdentityMapping:     idmap,
-		DNS:                 dns,
-		ApparmorProfile:     apparmorProfile,
-		SELinux:             selinux,
-		TracingSocket:       traceSocket,
-		DefaultCgroupParent: defaultCgroupParent,
-	}, np)
-	if err != nil {
-		return opt, err
-	}
-	s, err := snFactory.New(filepath.Join(root, "snapshots"))
-	if err != nil {
-		return opt, err
-	}
-
-	localstore, err := local.NewStore(filepath.Join(root, "content"))
-	if err != nil {
-		return opt, err
-	}
-
-	db, err := bolt.Open(filepath.Join(root, "containerdmeta.db"), 0644, nil)
-	if err != nil {
-		return opt, err
-	}
-
-	mdb := ctdmetadata.NewDB(db, localstore, map[string]ctdsnapshot.Snapshotter{
-		snFactory.Name: s,
-	})
-	if err := mdb.Init(context.TODO()); err != nil {
-		return opt, err
-	}
-
-	c := containerdsnapshot.NewContentStore(mdb.ContentStore(), "buildkit")
-
-	id, err := base.ID(root)
-	if err != nil {
-		return opt, err
-	}
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown"
-	}
-	xlabels := map[string]string{
-		wlabel.Executor:       "oci",
-		wlabel.Snapshotter:    snFactory.Name,
-		wlabel.Hostname:       hostname,
-		wlabel.Network:        npResolvedMode,
-		wlabel.OCIProcessMode: processMode.String(),
-		wlabel.SELinuxEnabled: strconv.FormatBool(selinux),
-	}
-	if apparmorProfile != "" {
-		xlabels[wlabel.ApparmorProfile] = apparmorProfile
-	}
-
-	for k, v := range labels {
-		xlabels[k] = v
-	}
-	lm := leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(mdb), "buildkit")
-	snap := containerdsnapshot.NewSnapshotter(snFactory.Name, mdb.Snapshotter(snFactory.Name), "buildkit", idmap)
-	md, err := metadata.NewStore(filepath.Join(root, "metadata_v2.db"))
-	if err != nil {
-		return opt, err
-	}
-
-	opt = base.WorkerOpt{
-		ID:               id,
-		Labels:           xlabels,
-		MetadataStore:    md,
-		NetworkProviders: np,
-		Executor:         exe,
-		Snapshotter:      snap,
-		ContentStore:     c,
-		Applier:          winlayers.NewFileSystemApplierWithWindows(c, apply.NewFileSystemApplier(c)),
-		Differ:           winlayers.NewWalkingDiffWithWindows(c, walking.NewWalkingDiff(c)),
-		ImageStore:       nil, // explicitly
-		Platforms:        []ocispecs.Platform{platforms.Normalize(platforms.DefaultSpec())},
-		IdentityMapping:  idmap,
-		LeaseManager:     lm,
-		GarbageCollect:   mdb.GarbageCollect,
-		ParallelismSem:   parallelismSem,
-		MountPoolRoot:    filepath.Join(root, "cachemounts"),
-	}
-	return opt, nil
-}
-
-type Opt struct {
-	// root directory
-	Root string
-	Cmd  string
-	// DefaultCgroupParent is the cgroup-parent name for executor
-	DefaultCgroupParent string
-	// ProcessMode
-	ProcessMode     oci.ProcessMode
-	IdentityMapping *idtools.IdentityMapping
-	// runc run --no-pivot (unrecommended)
-	NoPivot         bool
-	DNS             *oci.DNSConfig
-	OOMScoreAdj     *int
-	ApparmorProfile string
-	SELinux         bool
-	TracingSocket   string
-}
-
-type runcExecutor struct {
-	runc             *runc.Runc
-	root             string
-	cgroupParent     string
-	networkProviders map[pb.NetMode]network.Provider
-	processMode      oci.ProcessMode
-	idmap            *idtools.IdentityMapping
-	noPivot          bool
-	dns              *oci.DNSConfig
-	oomScoreAdj      *int
-	running          map[string]chan error
-	mu               sync.Mutex
-	apparmorProfile  string
-	selinux          bool
-	tracingSocket    string
-}
-
-func New(opt Opt, networkProviders map[pb.NetMode]network.Provider) (executor.Executor, error) {
-	root := opt.Root
-
-	if err := os.MkdirAll(root, 0o711); err != nil {
-		return nil, fmt.Errorf("failed to create %s: %w", root, err)
-	}
-
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return nil, err
-	}
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
+func (w *Worker) Run(
+	ctx context.Context,
+	id string,
+	root executor.Mount,
+	mounts []executor.Mount,
+	process executor.ProcessInfo,
+	started chan<- struct{},
+) (_ resourcestypes.Recorder, rerr error) {
+	if err := w.validateEntitlements(process.Meta); err != nil {
 		return nil, err
 	}
 
-	// clean up old hosts/resolv.conf file. ignore errors
-	os.RemoveAll(filepath.Join(root, "hosts"))
-	os.RemoveAll(filepath.Join(root, "resolv.conf"))
-
-	runtime := &runc.Runc{
-		Command:   opt.Cmd,
-		Log:       filepath.Join(root, "runc-log.json"),
-		LogFormat: runc.JSON,
-		Setpgid:   true,
+	if w.serverID == "" {
+		return nil, errors.New("serverID is not set in executor")
 	}
 
-	updateRuncFieldsForHostOS(runtime)
+	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
 
-	w := &runcExecutor{
-		runc:             runtime,
-		root:             root,
-		cgroupParent:     opt.DefaultCgroupParent,
-		networkProviders: networkProviders,
-		processMode:      opt.ProcessMode,
-		idmap:            opt.IdentityMapping,
-		noPivot:          opt.NoPivot,
-		dns:              opt.DNS,
-		oomScoreAdj:      opt.OOMScoreAdj,
-		running:          make(map[string]chan error),
-		apparmorProfile:  opt.ApparmorProfile,
-		selinux:          opt.SELinux,
-		tracingSocket:    opt.TracingSocket,
-	}
-	return w, nil
-}
-
-func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, mounts []executor.Mount, process executor.ProcessInfo, started chan<- struct{}) (_ resourcestypes.Recorder, rerr error) {
-	meta := process.Meta
-	if meta.NetMode == pb.NetMode_HOST {
+	if process.Meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
 	}
 
-	provider, ok := w.networkProviders[meta.NetMode]
+	provider, ok := w.networkProviders[process.Meta.NetMode]
 	if !ok {
-		return nil, fmt.Errorf("unknown network mode %s", meta.NetMode)
+		return nil, fmt.Errorf("unknown network mode %s", process.Meta.NetMode)
 	}
-	namespace, err := provider.New(ctx, meta.Hostname)
+	namespace, err := provider.New(ctx, process.Meta.Hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +114,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	}
 	defer mount.Unmount(rootFSPath, 0)
 
-	defer executor.MountStubsCleaner(ctx, rootFSPath, mounts, meta.RemoveMountStubsRecursive)()
+	defer executor.MountStubsCleaner(ctx, rootFSPath, mounts, process.Meta.RemoveMountStubsRecursive)()
 
 	setupCACerts := true
 	return nil, w.run(
@@ -322,7 +130,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	)
 }
 
-func (w *runcExecutor) run(
+func (w *Worker) run(
 	ctx context.Context,
 	id string,
 	root executor.Mount,
@@ -351,7 +159,7 @@ func (w *runcExecutor) run(
 		}
 	}()
 
-	bundle := filepath.Join(w.root, id)
+	bundle := filepath.Join(w.executorRoot, id)
 	if err := os.Mkdir(bundle, 0o711); err != nil {
 		return err
 	}
@@ -362,12 +170,12 @@ func (w *runcExecutor) run(
 		return err
 	}
 
-	resolvConf, err := oci.GetResolvConf(ctx, w.root, w.idmap, w.dns, process.Meta.NetMode)
+	resolvConf, err := oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, process.Meta.NetMode)
 	if err != nil {
 		return err
 	}
 
-	hostsFile, clean, err := oci.GetHostsFile(ctx, w.root, process.Meta.ExtraHosts, w.idmap, process.Meta.Hostname)
+	hostsFile, clean, err := oci.GetHostsFile(ctx, w.executorRoot, process.Meta.ExtraHosts, w.idmap, process.Meta.Hostname)
 	if err != nil {
 		return err
 	}
@@ -436,7 +244,6 @@ func (w *runcExecutor) run(
 	}
 
 	spec.Process.Terminal = process.Meta.Tty
-	spec.Process.OOMScoreAdj = w.oomScoreAdj
 
 	if err := json.NewEncoder(f).Encode(spec); err != nil {
 		return err
@@ -510,7 +317,6 @@ func (w *runcExecutor) run(
 	}
 	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
 		_, err := w.runc.Run(ctx, id, bundle, &runc.CreateOpts{
-			NoPivot:   w.noPivot,
 			Started:   started,
 			IO:        io,
 			ExtraArgs: []string{"--keep"},
@@ -526,7 +332,17 @@ func (w *runcExecutor) run(
 	return w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
 }
 
-func (w *runcExecutor) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
+func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
+	if err := w.validateEntitlements(process.Meta); err != nil {
+		return err
+	}
+
+	if w.serverID == "" {
+		return errors.New("serverID is not set in executor")
+	}
+
+	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+
 	// first verify the container is running, if we get an error assume the container
 	// is in the process of being created and check again every 100ms or until
 	// context is canceled.
@@ -593,7 +409,7 @@ func (w *runcExecutor) Exec(ctx context.Context, id string, process executor.Pro
 	return exitError(ctx, err)
 }
 
-func (w *runcExecutor) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
+func (w *Worker) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
 	killer, err := newExecProcKiller(w.runc, id)
 	if err != nil {
 		return fmt.Errorf("failed to initialize process killer: %w", err)
@@ -606,6 +422,13 @@ func (w *runcExecutor) exec(ctx context.Context, id, bundle string, specsProcess
 			IO:      io,
 			PidFile: pidfile,
 		})
+	})
+}
+
+func (w *Worker) validateEntitlements(meta executor.Meta) error {
+	return w.entitlements.Check(entitlements.Values{
+		NetworkHost:      meta.NetMode == pb.NetMode_HOST,
+		SecurityInsecure: meta.SecurityMode == pb.SecurityMode_INSECURE,
 	})
 }
 
@@ -891,11 +714,6 @@ func (p *procHandle) WaitForStart(ctx context.Context, startedCh <-chan int, sta
 	return nil
 }
 
-func updateRuncFieldsForHostOS(runtime *runc.Runc) {
-	// PdeathSignal only supported on unix platforms
-	runtime.PdeathSignal = syscall.SIGKILL // this can still leak the process
-}
-
 // handleSignals will wait until the procHandle is ready then will
 // send each signal received on the channel to the runc process (not directly
 // to the in-container process)
@@ -930,7 +748,7 @@ func handleSignals(ctx context.Context, runcProcess *procHandle, signals <-chan 
 
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error
 
-func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
+func (w *Worker) callWithIO(ctx context.Context, id, bundle string, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
 	runcProcess, ctx := runcProcessHandle(ctx, killer)
 	defer runcProcess.Release()
 

@@ -152,7 +152,7 @@ func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*o
 	// https://github.com/moby/buildkit/blob/c3c65787b5e2c2c9fcab1d0b9bd1884a37384c90/cache/manager.go#L231
 	leaseID := cacheRef.ID()
 
-	lm := r.c.Worker.LeaseManager()
+	lm := r.c.worker.LeaseManager()
 	for blobDigest := range blobs {
 		err := lm.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 			ID:   blobDigest.String(),

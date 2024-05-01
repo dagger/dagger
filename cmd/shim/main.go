@@ -33,7 +33,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
@@ -486,21 +485,59 @@ func setupBundle() (returnExitCode int) {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	execMetadata := new(buildkit.ContainerExecUncachedMetadata)
-	for i, env := range spec.Process.Env {
-		found, err := execMetadata.FromEnv(env)
-		if err != nil {
-			panic(fmt.Errorf("error parsing env: %w", err))
+	var gpuParams string
+	var otelEndpoint string
+	var otelProto string
+	var serverID string
+	var aliasEnvs []string
+	keepEnv := []string{}
+	for _, env := range spec.Process.Env {
+		switch {
+		case strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID="):
+			// keep the env var; we use it at runtime
+			keepEnv = append(keepEnv, env)
+
+			// mount buildkit sock since it's nesting
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: "/.runner.sock",
+				Type:        "bind",
+				Options:     []string{"rbind"},
+				Source:      "/run/buildkit/buildkitd.sock",
+			})
+		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
+			keepEnv = append(keepEnv, env)
+			serverID = strings.TrimPrefix(env, "_DAGGER_SERVER_ID=")
+		case strings.HasPrefix(env, "_DAGGER_ENGINE_VERSION="):
+			// don't need this at runtime, it is just for invalidating cache, which
+			// has already happened by now
+		case strings.HasPrefix(env, aliasPrefix):
+			// NB: don't keep this env var, it's only for the bundling step
+			// keepEnv = append(keepEnv, env)
+			aliasEnvs = append(aliasEnvs, env)
+
+		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
+			_, gpuParams, _ = strings.Cut(env, "=")
+
+			// filter out Buildkit's OTLP env vars, we have our own
+		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="):
+			_, otelEndpoint, _ = strings.Cut(env, "=")
+
+		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="):
+			_, otelProto, _ = strings.Cut(env, "=")
+
+		default:
+			keepEnv = append(keepEnv, env)
 		}
-		if found {
-			// remove the ftp_proxy env var from being set in the container
-			spec.Process.Env = append(spec.Process.Env[:i], spec.Process.Env[i+1:]...)
-			break
-		}
+	}
+	spec.Process.Env = keepEnv
+
+	if isDaggerExec && serverID == "" {
+		fmt.Fprintln(os.Stderr, "missing server ID")
+		return errorExitCode
 	}
 
 	var searchDomains []string
-	if ns := execMetadata.ServerID; ns != "" {
+	if ns := serverID; ns != "" {
 		searchDomains = append(searchDomains, network.ClientDomain(ns))
 	}
 
@@ -518,72 +555,29 @@ func setupBundle() (returnExitCode int) {
 
 			newResolv, err := os.Create(newResolvPath)
 			if err != nil {
-				panic(err)
+				fmt.Fprintln(os.Stderr, "create resolv.conf:", err)
+				return errorExitCode
 			}
 
 			if err := replaceSearch(newResolv, mnt.Source, searchDomains); err != nil {
-				panic(err)
+				fmt.Fprintln(os.Stderr, "replace search:", err)
+				return errorExitCode
 			}
 
 			if err := newResolv.Close(); err != nil {
-				panic(err)
+				fmt.Fprintln(os.Stderr, "close resolv.conf:", err)
+				return errorExitCode
 			}
 
 			spec.Mounts[i].Source = newResolvPath
 		}
 	}
-
-	var gpuParams string
-	var otelEndpoint string
-	var otelProto string
-	keepEnv := []string{}
-	for _, env := range spec.Process.Env {
-		switch {
-		case strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID="):
-			// keep the env var; we use it at runtime
-			keepEnv = append(keepEnv, env)
-
-			// provide the server id to connect back to
-			if execMetadata.ServerID == "" {
-				fmt.Fprintln(os.Stderr, "missing server id")
-				return errorExitCode + 23
-			}
-			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
-
-			// mount buildkit sock since it's nesting
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.runner.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      "/run/buildkit/buildkitd.sock",
-			})
-		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
-		case strings.HasPrefix(env, "_DAGGER_ENGINE_VERSION="):
-			// don't need this at runtime, it is just for invalidating cache, which
-			// has already happened by now
-		case strings.HasPrefix(env, aliasPrefix):
-			// NB: don't keep this env var, it's only for the bundling step
-			// keepEnv = append(keepEnv, env)
-
-			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
-				fmt.Fprintln(os.Stderr, "host alias:", err)
-				return errorExitCode + 24
-			}
-		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
-			_, gpuParams, _ = strings.Cut(env, "=")
-
-			// filter out Buildkit's OTLP env vars, we have our own
-		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="):
-			_, otelEndpoint, _ = strings.Cut(env, "=")
-
-		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="):
-			_, otelProto, _ = strings.Cut(env, "=")
-
-		default:
-			keepEnv = append(keepEnv, env)
+	for _, aliasEnv := range aliasEnvs {
+		if err := appendHostAlias(hostsFilePath, aliasEnv, searchDomains); err != nil {
+			fmt.Fprintln(os.Stderr, "host alias:", err)
+			return errorExitCode
 		}
 	}
-	spec.Process.Env = keepEnv
 
 	if otelEndpoint != "" {
 		if strings.HasPrefix(otelEndpoint, "/") {
@@ -714,6 +708,9 @@ func internalEnv(name string) (string, bool) {
 }
 
 func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
+	// remove this from being set in user process no matter what
+	serverID, _ := internalEnv("_DAGGER_SERVER_ID")
+
 	clientID, ok := internalEnv("_DAGGER_NESTED_CLIENT_ID")
 	if !ok {
 		// no nesting; run as normal
@@ -721,6 +718,10 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 
 	// setup a session and associated env vars for the container
+
+	if serverID == "" {
+		return fmt.Errorf("missing server ID")
+	}
 
 	sessionToken, engineErr := uuid.NewRandom()
 	if engineErr != nil {
@@ -732,11 +733,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("error listening on session socket: %w", engineErr)
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
-
-	serverID, ok := internalEnv("_DAGGER_SERVER_ID")
-	if !ok {
-		return errors.New("missing nested client server ID")
-	}
 
 	clientParams := client.Params{
 		ID:          clientID,

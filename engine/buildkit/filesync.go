@@ -189,7 +189,7 @@ func (c *Client) LocalDirExport(
 		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
-	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
+	exporter, err := c.worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
 	if err != nil {
 		return err
 	}

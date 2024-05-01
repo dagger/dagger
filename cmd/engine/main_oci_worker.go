@@ -1,6 +1,3 @@
-//go:build linux && !no_oci_worker
-// +build linux,!no_oci_worker
-
 package main
 
 import (
@@ -34,14 +31,11 @@ import (
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
-	srcgit "github.com/moby/buildkit/source/git"
-	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/network/cniprovider"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/resolver"
-	"github.com/moby/buildkit/worker"
-	"github.com/moby/buildkit/worker/base"
 	"github.com/moby/buildkit/worker/runc"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -51,9 +45,7 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/dagger/dagger/engine/sources/blob"
-	"github.com/dagger/dagger/engine/sources/gitdns"
-	"github.com/dagger/dagger/engine/sources/httpdns"
+	"github.com/dagger/dagger/engine/buildkit"
 )
 
 func init() {
@@ -172,14 +164,7 @@ func init() {
 		Hidden: len(defaultConf.Workers.OCI.GCPolicy) != 0,
 	})
 
-	registerWorkerInitializer(
-		workerInitializer{
-			fn:       ociWorkerInitializer,
-			priority: 0,
-		},
-		flags...,
-	)
-	// TODO: allow multiple oci runtimes
+	appFlags = append(appFlags, flags...)
 }
 
 func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
@@ -277,7 +262,7 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 	return nil
 }
 
-func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker.Worker, error) {
+func newWorker(ctx context.Context, c *cli.Context, common workerInitializerOpt) (*buildkit.Worker, error) {
 	if err := applyOCIFlags(c, common.config); err != nil {
 		return nil, err
 	}
@@ -285,7 +270,7 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	cfg := common.config.Workers.OCI
 
 	if (cfg.Enabled == nil && !validOCIBinary()) || (cfg.Enabled != nil && !*cfg.Enabled) {
-		return nil, nil
+		return nil, fmt.Errorf("oci worker is not enabled")
 	}
 
 	// TODO: this should never change the existing state dir
@@ -334,80 +319,37 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 		cfg.Labels["maxParallelism"] = strconv.Itoa(cfg.MaxParallelism)
 	}
 
-	opt, err := NewWorkerOpt(
-		common.config.Root,
-		snFactory,
-		processMode,
-		cfg.Labels,
-		idmapping,
-		nc,
-		dns,
-		cfg.ApparmorProfile,
-		cfg.SELinux,
-		parallelismSem,
-		common.traceSocket,
-		cfg.DefaultCgroupParent,
-	)
-	if err != nil {
-		return nil, err
-	}
-	opt.GCPolicy = getGCPolicy(cfg.GCConfig, common.config.Root)
-	opt.BuildkitVersion = getBuildkitVersion()
-	opt.RegistryHosts = hosts
+	gcPolicy := getGCPolicy(cfg.GCConfig, common.config.Root)
+	buildkitVersion := getBuildkitVersion()
 
+	var platforms []ocispecs.Platform
 	if platformsStr := cfg.Platforms; len(platformsStr) != 0 {
-		platforms, err := parsePlatforms(platformsStr)
+		var err error
+		platforms, err = parsePlatforms(platformsStr)
 		if err != nil {
-			return nil, errors.Wrap(err, "invalid platforms")
+			return nil, fmt.Errorf("invalid platforms: %w", err)
 		}
-		opt.Platforms = platforms
 	}
-	w, err := base.NewWorker(context.TODO(), opt)
-	if err != nil {
-		return nil, err
-	}
-	if err := registerDaggerCustomSources(w, dns); err != nil {
-		return nil, fmt.Errorf("register Dagger sources: %w", err)
-	}
-	return []worker.Worker{w}, nil
-}
 
-// registerDaggerCustomSources adds Dagger's custom sources to the worker.
-func registerDaggerCustomSources(worker *base.Worker, dns *oci.DNSConfig) error {
-	hs, err := httpdns.NewSource(httpdns.Opt{
-		Opt: srchttp.Opt{
-			CacheAccessor: worker.CacheMgr,
-		},
-		BaseDNSConfig: dns,
+	return buildkit.NewWorker(ctx, &buildkit.NewWorkerOpts{
+		Root:                 common.config.Root,
+		SnapshotterFactory:   snFactory,
+		ProcessMode:          processMode,
+		Labels:               cfg.Labels,
+		IDMapping:            idmapping,
+		NetworkProvidersOpts: nc,
+		DNSConfig:            dns,
+		ApparmorProfile:      cfg.ApparmorProfile,
+		SELinux:              cfg.SELinux,
+		ParallelismSem:       parallelismSem,
+		TraceSocket:          common.traceSocket,
+		DefaultCgroupParent:  cfg.DefaultCgroupParent,
+		Entitlements:         common.config.Entitlements,
+		GCPolicy:             gcPolicy,
+		BuildkitVersion:      buildkitVersion,
+		RegistryHosts:        hosts,
+		Platforms:            platforms,
 	})
-	if err != nil {
-		return err
-	}
-
-	worker.SourceManager.Register(hs)
-
-	gs, err := gitdns.NewSource(gitdns.Opt{
-		Opt: srcgit.Opt{
-			CacheAccessor: worker.CacheMgr,
-		},
-		BaseDNSConfig: dns,
-	})
-	if err != nil {
-		return err
-	}
-
-	worker.SourceManager.Register(gs)
-
-	bs, err := blob.NewSource(blob.Opt{
-		CacheAccessor: worker.CacheMgr,
-	})
-	if err != nil {
-		return err
-	}
-
-	worker.SourceManager.Register(bs)
-
-	return nil
 }
 
 func snapshotterFactory(commonRoot string, cfg config.OCIConfig, sm *session.Manager, hosts docker.RegistryHosts) (runc.SnapshotterFactory, error) {

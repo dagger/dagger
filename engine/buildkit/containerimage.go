@@ -41,7 +41,7 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 
-	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	exporter, err := c.worker.Exporter(bkclient.ExporterImage, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (c *Client) ExportContainerImage(
 		exporterName = bkclient.ExporterOCI
 	}
 
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := c.worker.Exporter(exporterName, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (c *Client) ContainerImageToTarball(
 		exporterName = bkclient.ExporterOCI
 	}
 
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := c.worker.Exporter(exporterName, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}
