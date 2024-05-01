@@ -3,7 +3,7 @@ use convert_case::{Case, Casing};
 use dagger_sdk::core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
-use genco::tokens::quoted;
+use genco::tokens::{quoted, static_literal};
 use itertools::Itertools;
 
 use crate::utility::OptionExt;
@@ -166,7 +166,7 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                                 $(quoted(name)),
                                 Box::new(move || {
                                     let $(&n) = $(&n).clone();
-                                    Box::pin(async move { $(&n).id().await.unwrap().quote() })
+                                    Box::pin(async move { $(&n).into_id().await.unwrap().quote() })
                                 }),
                             );
                         })
@@ -293,8 +293,8 @@ fn format_function_args(
     let mut argument_description = Vec::new();
     if let Some(args) = field.args.as_ref() {
         let args = args
-            .into_iter()
-            .map(|a| {
+            .iter()
+            .filter_map(|a| {
                 a.as_ref().and_then(|s| {
                     if type_ref_is_optional(&s.input_value.type_) {
                         return None;
@@ -302,11 +302,9 @@ fn format_function_args(
 
                     let t = funcs.format_input_type(&s.input_value.type_);
 
-                    let t = t.trim_end_matches("Id");
                     let n = format_struct_name(&s.input_value.name);
-
                     if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
-                        if d != "" {
+                        if !d.is_empty() {
                             Some(write_comment_line(&format!("* `{n}` - {}", d)))
                         } else {
                             None
@@ -317,12 +315,18 @@ fn format_function_args(
                         });
                     }
 
-                    Some(quote! {
-                        $(n): $(t),
-                    })
+                    if t.ends_with("Id") {
+                        let into_id = rust::import("crate::id", "IntoID");
+                        Some(quote! {
+                            $(n): impl $(into_id)<$(t)>,
+                        })
+                    } else {
+                        Some(quote! {
+                            $(n): $(t),
+                        })
+                    }
                 })
             })
-            .flatten()
             .collect::<Vec<_>>();
         let required_args = quote! {
             &self,
@@ -332,14 +336,20 @@ fn format_function_args(
         if type_field_has_optional(field) {
             let field_name = field_options_struct_name(field);
             argument_description.push(quote! {
-                $(field_name.pipe(|_| write_comment_line(&format!("* `opt` - optional argument, see inner type for documentation, use <func>_opts to use"))))
+                $(field_name.pipe(|_| write_comment_line("* `opt` - optional argument, see inner type for documentation, use <func>_opts to use")))
             });
 
-            let description = quote! {
-                $(if argument_description.len() > 0 => $(format!("///\n")))
-                $(if argument_description.len() > 0 => $(format!("/// # Arguments\n")))
-                $(if argument_description.len() > 0 => $(format!("///\n")))
-                $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+            let description = if !argument_description.is_empty() {
+                Some(quote! {
+                    $(static_literal("///"))$['\r']
+                    $(static_literal("/// # Arguments"))$['\r']
+                    $(static_literal("///"))$['\r']
+                    $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+
+
+                })
+            } else {
+                None
             };
 
             Some((
@@ -347,17 +357,24 @@ fn format_function_args(
                     $(required_args)
                     opts: $(field_name)$(lifecycle)
                 },
-                description,
+                description.unwrap_or_default(),
                 true,
             ))
         } else {
-            let description = quote! {
-                $(if argument_description.len() > 0 => $(format!("///\n")))
-                $(if argument_description.len() > 0 => $(format!("/// # Arguments\n")))
-                $(if argument_description.len() > 0 => $(format!("///\n")))
-                $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+            let description = if !argument_description.is_empty() {
+                Some(quote! {
+                    $(static_literal("///"))$['\r']
+                    $(static_literal("/// # Arguments"))$['\r']
+                    $(static_literal("///"))$['\r']
+                    $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+
+
+                })
+            } else {
+                None
             };
-            Some((required_args, description, false))
+
+            Some((required_args, description.unwrap_or_default(), false))
         }
     } else {
         None
@@ -378,12 +395,18 @@ fn format_required_function_args(
                     }
 
                     let t = funcs.format_input_type(&s.input_value.type_);
-                    let t = t.trim_end_matches("Id");
                     let n = format_struct_name(&s.input_value.name);
 
-                    Some(quote! {
-                        $(n): $(t),
-                    })
+                    if t.ends_with("Id") {
+                        let into_id = rust::import("crate::id", "IntoID");
+                        Some(quote! {
+                            $(n): impl $(into_id)<$(t)>,
+                        })
+                    } else {
+                        Some(quote! {
+                            $(n): $(t),
+                        })
+                    }
                 })
             })
             .flatten()

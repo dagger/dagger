@@ -19,3 +19,15 @@ pub use client::*;
 
 #[cfg(feature = "gen")]
 pub use gen::*;
+
+pub mod id {
+    use std::pin::Pin;
+
+    use crate::errors::DaggerError;
+
+    pub trait IntoID<T>: Sized + Clone + Sync + Send + 'static {
+        fn into_id(
+            self,
+        ) -> Pin<Box<dyn core::future::Future<Output = Result<T, DaggerError>> + Send>>;
+    }
+}
