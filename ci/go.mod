@@ -2,17 +2,11 @@ module github.com/dagger/dagger/ci
 
 go 1.21.7
 
-replace github.com/dagger/dagger => ../
-
-require (
-	dagger.io/dagger v0.11.1
-	github.com/dagger/dagger v0.11.1
-)
-
 require (
 	github.com/99designs/gqlgen v0.17.44
 	github.com/Khan/genqlient v0.7.0
 	github.com/containerd/containerd v1.7.15-0.20240329193453-0dcf21c1528a
+	github.com/dagger/dagger v0.11.1
 	github.com/magefile/mage v1.15.0
 	github.com/moby/buildkit v0.13.0-rc3.0.20240403135707-dc23e43dc15c
 	github.com/opencontainers/image-spec v1.1.0
@@ -29,7 +23,6 @@ require (
 
 require (
 	github.com/Microsoft/hcsshim v0.11.4 // indirect
-	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
@@ -37,7 +30,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.19.0 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
@@ -53,3 +45,5 @@ require (
 	google.golang.org/grpc v1.62.1
 	google.golang.org/protobuf v1.33.0 // indirect
 )
+
+replace github.com/dagger/dagger => ../

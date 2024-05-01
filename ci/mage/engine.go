@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
 	"golang.org/x/mod/semver"
@@ -27,11 +26,7 @@ var (
 
 // Connect tests a connection to a Dagger Engine
 func (t Engine) Connect(ctx context.Context) error {
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	return c.Close()
+	return util.DaggerCall(ctx, "--help")
 }
 
 // Lint lints the engine
@@ -145,7 +140,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 	tarPath := "./bin/engine.tar"
 	args = append(args, "container", "export", "--path="+tarPath)
-	args = append(args, "--forced-compression="+string(dagger.Gzip)) // use gzip to avoid incompatibility w/ older docker versions
+	args = append(args, "--forced-compression=Gzip") // use gzip to avoid incompatibility w/ older docker versions
 	err := util.DaggerCall(ctx, args...)
 	if err != nil {
 		return err
