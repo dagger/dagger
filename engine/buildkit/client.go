@@ -2,12 +2,10 @@ package buildkit
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,7 +16,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
-	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -44,13 +41,17 @@ import (
 )
 
 const (
+	DaggerServerIDJobKey = "dagger.serverID"
+
 	// from buildkit, cannot change
 	entitlementsJobKey = "llb.entitlements"
 )
 
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
+	ServerID              string
 	Worker                bkworker.Worker
+	Executor              *RuncExecutor
 	SessionManager        *bksession.Manager
 	LLBSolver             *llbsolver.Solver
 	GenericSolver         *bksolver.Solver
@@ -72,10 +73,8 @@ type Opts struct {
 // these maps are shared across all clients for a given DaggerServer and are
 // mutated by each client
 type sharedClientState struct {
-	execMetadataMu sync.Mutex
-	execMetadata   map[digest.Digest]ContainerExecUncachedMetadata
-	refsMu         sync.Mutex
-	refs           map[*ref]struct{}
+	refsMu sync.Mutex
+	refs   map[*ref]struct{}
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -89,7 +88,6 @@ type Client struct {
 	session   *bksession.Session
 	job       *bksolver.Job
 	llbBridge bkfrontend.FrontendLLBBridge
-	llbExec   executor.Executor
 
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
@@ -112,17 +110,12 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		cancel:     cancel,
 	}
 
-	// initialize ref+metadata caches if needed
+	// initialize ref caches if needed
 	client.refsMu.Lock()
 	if client.refs == nil {
 		client.refs = make(map[*ref]struct{})
 	}
 	client.refsMu.Unlock()
-	client.execMetadataMu.Lock()
-	if client.execMetadata == nil {
-		client.execMetadata = make(map[digest.Digest]ContainerExecUncachedMetadata)
-	}
-	client.execMetadataMu.Unlock()
 
 	session, err := client.newSession()
 	if err != nil {
@@ -136,6 +129,9 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	client.job = job
 	client.job.SessionID = client.ID()
+	// add the ServerID to the job so the op resolver (currently configured
+	// in buildkitcontroller.go) can access it and give it to the executor
+	client.job.SetValue(DaggerServerIDJobKey, client.ServerID)
 
 	entitlementSet := entitlements.Set{}
 	if opts.PrivilegedExecEnabled {
@@ -143,14 +139,12 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
-	// TODO: upstream Bridge should return an executor
-	br := client.LLBSolver.Bridge(client.job).(interface {
-		bkfrontend.FrontendLLBBridge
-		executor.Executor
-	})
+	// NOTE: we don't go through the LLBSolver's Executor interface here since
+	// we need to use our custom one directly later. But our executor has the
+	// entitlement validation logic in it, so no harm done.
+	br := client.LLBSolver.Bridge(client.job)
 	gw := &opTrackingGateway{llbBridge: br}
 	client.llbBridge = gw
-	client.llbExec = br
 
 	client.dialer = &net.Dialer{}
 
@@ -306,7 +300,15 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		gw := newFilterGateway(c.llbBridge, req)
 		gw.secretTranslator = ctx.Value("secret-translator").(func(string) (string, error))
 
-		llbRes, err = f.Solve(ctx, gw, c.llbExec, req.FrontendOpt, req.FrontendInputs, c.ID(), c.SessionManager)
+		llbRes, err = f.Solve(
+			ctx,
+			gw,
+			c.Executor.WithServerID(c.ServerID),
+			req.FrontendOpt,
+			req.FrontendInputs,
+			c.ID(),
+			c.SessionManager,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -433,7 +435,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	ctr, err := bkcontainer.NewContainer(
 		context.Background(),
 		c.Worker.CacheManager(),
-		c.llbExec,
+		c.Executor.WithServerID(c.ServerID),
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
@@ -698,43 +700,6 @@ func withOutgoingContext(ctx context.Context) context.Context {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 	return ctx
-}
-
-// Metadata passed to an exec that doesn't count towards the cache key.
-// This should be used with great caution; only for metadata that is
-// safe to be de-duplicated across execs.
-//
-// Currently, this uses the FTPProxy LLB option to pass without becoming
-// part of the cache key. This is a hack that, while ugly to look at,
-// is simple and robust. Alternatives would be to use secrets or sockets,
-// but they are more complicated, or to create a custom buildkit
-// worker/executor, which is MUCH more complicated.
-//
-// If a need to add ftp proxy support arises, then we can just also embed
-// the "real" ftp proxy setting in here too and have the shim handle
-// leaving only that set in the actual env var.
-type ContainerExecUncachedMetadata struct {
-	ServerID string `json:"serverID,omitempty"`
-}
-
-func (md ContainerExecUncachedMetadata) ToPBFtpProxyVal() (string, error) {
-	b, err := json.Marshal(md)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
-	_, val, ok := strings.Cut(envKV, "ftp_proxy=")
-	if !ok {
-		return false, nil
-	}
-	err := json.Unmarshal([]byte(val), md)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // filteringGateway is a helper gateway that filters+converts various

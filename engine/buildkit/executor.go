@@ -1,4 +1,4 @@
-package main
+package buildkit
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/cmd/engine/cacerts"
+	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/executor"
@@ -37,6 +37,7 @@ import (
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/network"
 	"github.com/moby/buildkit/util/network/netproviders"
@@ -68,6 +69,7 @@ func NewWorkerOpt(
 	parallelismSem *semaphore.Weighted,
 	traceSocket,
 	defaultCgroupParent string,
+	entitlements []string,
 ) (base.WorkerOpt, error) {
 	var opt base.WorkerOpt
 	name := "runc-" + snFactory.Name
@@ -81,7 +83,7 @@ func NewWorkerOpt(
 		return opt, err
 	}
 
-	exe, err := New(Opt{
+	exe, err := newExecutor(executorOpts{
 		Root:                filepath.Join(root, "executor"),
 		Cmd:                 "/usr/local/bin/dagger-shim",
 		ProcessMode:         processMode,
@@ -91,6 +93,7 @@ func NewWorkerOpt(
 		SELinux:             selinux,
 		TracingSocket:       traceSocket,
 		DefaultCgroupParent: defaultCgroupParent,
+		Entitlements:        entitlements,
 	}, np)
 	if err != nil {
 		return opt, err
@@ -170,7 +173,7 @@ func NewWorkerOpt(
 	return opt, nil
 }
 
-type Opt struct {
+type executorOpts struct {
 	// root directory
 	Root string
 	Cmd  string
@@ -186,9 +189,15 @@ type Opt struct {
 	ApparmorProfile string
 	SELinux         bool
 	TracingSocket   string
+	Entitlements    []string
 }
 
-type runcExecutor struct {
+type RuncExecutor struct {
+	*executorSharedState
+	serverID string
+}
+
+type executorSharedState struct {
 	runc             *runc.Runc
 	root             string
 	cgroupParent     string
@@ -203,10 +212,20 @@ type runcExecutor struct {
 	apparmorProfile  string
 	selinux          bool
 	tracingSocket    string
+	entitlements     entitlements.Set
 }
 
-func New(opt Opt, networkProviders map[pb.NetMode]network.Provider) (executor.Executor, error) {
+func newExecutor(opt executorOpts, networkProviders map[pb.NetMode]network.Provider) (*RuncExecutor, error) {
 	root := opt.Root
+
+	ents := entitlements.Set{}
+	for _, entStr := range opt.Entitlements {
+		ent, err := entitlements.Parse(entStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
+		}
+		ents[ent] = struct{}{}
+	}
 
 	if err := os.MkdirAll(root, 0o711); err != nil {
 		return nil, fmt.Errorf("failed to create %s: %w", root, err)
@@ -234,35 +253,65 @@ func New(opt Opt, networkProviders map[pb.NetMode]network.Provider) (executor.Ex
 
 	updateRuncFieldsForHostOS(runtime)
 
-	w := &runcExecutor{
-		runc:             runtime,
-		root:             root,
-		cgroupParent:     opt.DefaultCgroupParent,
-		networkProviders: networkProviders,
-		processMode:      opt.ProcessMode,
-		idmap:            opt.IdentityMapping,
-		noPivot:          opt.NoPivot,
-		dns:              opt.DNS,
-		oomScoreAdj:      opt.OOMScoreAdj,
-		running:          make(map[string]chan error),
-		apparmorProfile:  opt.ApparmorProfile,
-		selinux:          opt.SELinux,
-		tracingSocket:    opt.TracingSocket,
+	w := &RuncExecutor{
+		executorSharedState: &executorSharedState{
+			runc:             runtime,
+			root:             root,
+			cgroupParent:     opt.DefaultCgroupParent,
+			networkProviders: networkProviders,
+			processMode:      opt.ProcessMode,
+			idmap:            opt.IdentityMapping,
+			noPivot:          opt.NoPivot,
+			dns:              opt.DNS,
+			oomScoreAdj:      opt.OOMScoreAdj,
+			running:          make(map[string]chan error),
+			apparmorProfile:  opt.ApparmorProfile,
+			selinux:          opt.SELinux,
+			tracingSocket:    opt.TracingSocket,
+			entitlements:     ents,
+		},
 	}
 	return w, nil
 }
 
-func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, mounts []executor.Mount, process executor.ProcessInfo, started chan<- struct{}) (_ resourcestypes.Recorder, rerr error) {
-	meta := process.Meta
-	if meta.NetMode == pb.NetMode_HOST {
+func (w *RuncExecutor) WithServerID(serverID string) *RuncExecutor {
+	return &RuncExecutor{executorSharedState: w.executorSharedState, serverID: serverID}
+}
+
+func (w *RuncExecutor) validateEntitlements(meta executor.Meta) error {
+	return w.entitlements.Check(entitlements.Values{
+		NetworkHost:      meta.NetMode == pb.NetMode_HOST,
+		SecurityInsecure: meta.SecurityMode == pb.SecurityMode_INSECURE,
+	})
+}
+
+func (w *RuncExecutor) Run(
+	ctx context.Context,
+	id string,
+	root executor.Mount,
+	mounts []executor.Mount,
+	process executor.ProcessInfo,
+	started chan<- struct{},
+) (_ resourcestypes.Recorder, rerr error) {
+	if err := w.validateEntitlements(process.Meta); err != nil {
+		return nil, err
+	}
+
+	if w.serverID == "" {
+		return nil, errors.New("serverID is not set in executor")
+	}
+
+	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+
+	if process.Meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
 	}
 
-	provider, ok := w.networkProviders[meta.NetMode]
+	provider, ok := w.networkProviders[process.Meta.NetMode]
 	if !ok {
-		return nil, fmt.Errorf("unknown network mode %s", meta.NetMode)
+		return nil, fmt.Errorf("unknown network mode %s", process.Meta.NetMode)
 	}
-	namespace, err := provider.New(ctx, meta.Hostname)
+	namespace, err := provider.New(ctx, process.Meta.Hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +355,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	}
 	defer mount.Unmount(rootFSPath, 0)
 
-	defer executor.MountStubsCleaner(ctx, rootFSPath, mounts, meta.RemoveMountStubsRecursive)()
+	defer executor.MountStubsCleaner(ctx, rootFSPath, mounts, process.Meta.RemoveMountStubsRecursive)()
 
 	setupCACerts := true
 	return nil, w.run(
@@ -322,7 +371,7 @@ func (w *runcExecutor) Run(ctx context.Context, id string, root executor.Mount, 
 	)
 }
 
-func (w *runcExecutor) run(
+func (w *RuncExecutor) run(
 	ctx context.Context,
 	id string,
 	root executor.Mount,
@@ -526,7 +575,17 @@ func (w *runcExecutor) run(
 	return w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
 }
 
-func (w *runcExecutor) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
+func (w *RuncExecutor) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
+	if err := w.validateEntitlements(process.Meta); err != nil {
+		return err
+	}
+
+	if w.serverID == "" {
+		return errors.New("serverID is not set in executor")
+	}
+
+	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+
 	// first verify the container is running, if we get an error assume the container
 	// is in the process of being created and check again every 100ms or until
 	// context is canceled.
@@ -593,7 +652,7 @@ func (w *runcExecutor) Exec(ctx context.Context, id string, process executor.Pro
 	return exitError(ctx, err)
 }
 
-func (w *runcExecutor) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
+func (w *RuncExecutor) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
 	killer, err := newExecProcKiller(w.runc, id)
 	if err != nil {
 		return fmt.Errorf("failed to initialize process killer: %w", err)
@@ -930,7 +989,7 @@ func handleSignals(ctx context.Context, runcProcess *procHandle, signals <-chan 
 
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error
 
-func (w *runcExecutor) callWithIO(ctx context.Context, id, bundle string, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
+func (w *RuncExecutor) callWithIO(ctx context.Context, id, bundle string, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
 	runcProcess, ctx := runcProcessHandle(ctx, killer)
 	defer runcProcess.Release()
 

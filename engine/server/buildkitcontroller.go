@@ -20,6 +20,7 @@ import (
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
+	"github.com/moby/buildkit/solver/llbsolver/ops"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
@@ -27,6 +28,7 @@ import (
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
 	bkworker "github.com/moby/buildkit/worker"
+	"github.com/moby/buildkit/worker/base"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
 	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
@@ -36,6 +38,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 )
@@ -60,6 +63,8 @@ type BuildkitController struct {
 
 type BuildkitControllerOpts struct {
 	WorkerController       *bkworker.Controller
+	WorkerOpt              *base.WorkerOpt
+	Executor               *buildkit.RuncExecutor
 	SessionManager         *session.Manager
 	CacheManager           solver.CacheManager
 	ContentStore           *containerdsnapshot.Store
@@ -94,7 +99,41 @@ func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, er
 
 	genericSolver := solver.NewSolver(solver.SolverOpt{
 		ResolveOpFunc: func(vtx solver.Vertex, builder solver.Builder) (solver.Op, error) {
-			return w.ResolveOp(vtx, llbSolver.Bridge(builder), opts.SessionManager)
+			// if this is an ExecOp, pass in an executor configured with the server ID as found
+			// in the job keys
+			if baseOp, ok := vtx.Sys().(*pb.Op); ok {
+				if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {
+					var serverID string
+					if err := builder.EachValue(context.Background(), buildkit.DaggerServerIDJobKey,
+						func(v interface{}) error {
+							if serverID == "" {
+								serverID, _ = v.(string)
+							}
+							return nil
+						},
+					); err != nil {
+						return nil, fmt.Errorf("failed to get server ID from job keys: %w", err)
+					}
+					if serverID == "" {
+						return nil, fmt.Errorf("server ID not found in job keys")
+					}
+
+					return ops.NewExecOp(
+						vtx,
+						execOp,
+						baseOp.Platform,
+						w.CacheManager(),
+						opts.WorkerOpt.ParallelismSem,
+						opts.SessionManager,
+						opts.Executor.WithServerID(serverID),
+						w,
+					)
+				}
+			}
+
+			// passing nil bridge since it's only needed for BuildOp, which is never used and
+			// never should be used (it's a legacy API)
+			return w.ResolveOp(vtx, nil, opts.SessionManager)
 		},
 		DefaultCache: opts.CacheManager,
 	})

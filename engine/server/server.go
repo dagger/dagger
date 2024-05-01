@@ -138,7 +138,9 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 	root, err := core.NewRoot(ctx, core.QueryOpts{
 		BuildkitOpts: &buildkit.Opts{
+			ServerID:              s.serverID,
 			Worker:                e.worker,
+			Executor:              e.Executor,
 			SessionManager:        e.SessionManager,
 			LLBSolver:             e.llbSolver,
 			GenericSolver:         e.genericSolver,

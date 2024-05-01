@@ -1,6 +1,3 @@
-//go:build linux && !no_oci_worker
-// +build linux,!no_oci_worker
-
 package main
 
 import (
@@ -51,6 +48,7 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -172,14 +170,7 @@ func init() {
 		Hidden: len(defaultConf.Workers.OCI.GCPolicy) != 0,
 	})
 
-	registerWorkerInitializer(
-		workerInitializer{
-			fn:       ociWorkerInitializer,
-			priority: 0,
-		},
-		flags...,
-	)
-	// TODO: allow multiple oci runtimes
+	appFlags = append(appFlags, flags...)
 }
 
 func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
@@ -277,27 +268,27 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 	return nil
 }
 
-func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker.Worker, error) {
+func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) (worker.Worker, *base.WorkerOpt, error) {
 	if err := applyOCIFlags(c, common.config); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cfg := common.config.Workers.OCI
 
 	if (cfg.Enabled == nil && !validOCIBinary()) || (cfg.Enabled != nil && !*cfg.Enabled) {
-		return nil, nil
+		return nil, nil, fmt.Errorf("oci worker is not enabled")
 	}
 
 	// TODO: this should never change the existing state dir
 	idmapping, err := parseIdentityMapping(cfg.UserRemapUnsupported)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	hosts := resolverFunc(common.config)
 	snFactory, err := snapshotterFactory(common.config.Root, cfg, common.sessionManager, hosts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if cfg.Rootless {
@@ -311,7 +302,7 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	if cfg.NoProcessSandbox {
 		logrus.Warn("NoProcessSandbox is enabled. Note that NoProcessSandbox allows build containers to kill (and potentially ptrace) an arbitrary process in the BuildKit host namespace. NoProcessSandbox should be enabled only when the BuildKit is running in a container as an unprivileged user.")
 		if !cfg.Rootless {
-			return nil, errors.New("can't enable NoProcessSandbox without Rootless")
+			return nil, nil, errors.New("can't enable NoProcessSandbox without Rootless")
 		}
 		processMode = oci.NoProcessSandbox
 	}
@@ -334,7 +325,7 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 		cfg.Labels["maxParallelism"] = strconv.Itoa(cfg.MaxParallelism)
 	}
 
-	opt, err := NewWorkerOpt(
+	opt, err := buildkit.NewWorkerOpt(
 		common.config.Root,
 		snFactory,
 		processMode,
@@ -347,9 +338,10 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 		parallelismSem,
 		common.traceSocket,
 		cfg.DefaultCgroupParent,
+		common.config.Entitlements,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	opt.GCPolicy = getGCPolicy(cfg.GCConfig, common.config.Root)
 	opt.BuildkitVersion = getBuildkitVersion()
@@ -358,18 +350,18 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	if platformsStr := cfg.Platforms; len(platformsStr) != 0 {
 		platforms, err := parsePlatforms(platformsStr)
 		if err != nil {
-			return nil, errors.Wrap(err, "invalid platforms")
+			return nil, nil, errors.Wrap(err, "invalid platforms")
 		}
 		opt.Platforms = platforms
 	}
 	w, err := base.NewWorker(context.TODO(), opt)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := registerDaggerCustomSources(w, dns); err != nil {
-		return nil, fmt.Errorf("register Dagger sources: %w", err)
+		return nil, nil, fmt.Errorf("register Dagger sources: %w", err)
 	}
-	return []worker.Worker{w}, nil
+	return w, &opt, nil
 }
 
 // registerDaggerCustomSources adds Dagger's custom sources to the worker.

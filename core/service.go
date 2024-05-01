@@ -325,18 +325,6 @@ func (svc *Service) startContainer(
 		checked <- health.Check(ctx)
 	}()
 
-	if execOp.Meta.ProxyEnv == nil {
-		execOp.Meta.ProxyEnv = &pb.ProxyEnv{}
-	}
-
-	execMeta := buildkit.ContainerExecUncachedMetadata{
-		ServerID: clientMetadata.ServerID,
-	}
-	execOp.Meta.ProxyEnv.FtpProxy, err = execMeta.ToPBFtpProxyVal()
-	if err != nil {
-		return nil, err
-	}
-
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, proxyEnvList(execOp.Meta.ProxyEnv)...)
 	env = append(env, telemetry.PropagationEnv(ctx)...)

@@ -1183,20 +1183,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	execMeta := buildkit.ContainerExecUncachedMetadata{
-		ServerID: clientMetadata.ServerID,
-	}
-	proxyVal, err := execMeta.ToPBFtpProxyVal()
-	if err != nil {
-		return nil, fmt.Errorf("ftp proxy val: %w", err)
-	}
-	runOpts = append(runOpts, llb.WithProxy(llb.ProxyEnv{
-		FTPProxy: proxyVal,
-	}))
 	fsSt, err := container.FSState()
 	if err != nil {
 		return nil, fmt.Errorf("fs state: %w", err)

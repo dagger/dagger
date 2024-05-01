@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -53,6 +52,7 @@ import (
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
 	"github.com/moby/buildkit/worker"
+	"github.com/moby/buildkit/worker/base"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	sloglogrus "github.com/samber/slog-logrus/v2"
@@ -65,7 +65,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/dagger/dagger/cmd/engine/cacerts"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -96,25 +97,9 @@ type workerInitializerOpt struct {
 	traceSocket    string
 }
 
-type workerInitializer struct {
-	fn func(c *cli.Context, common workerInitializerOpt) ([]worker.Worker, error)
-	// less priority number, more preferred
-	priority int
-}
-
 var (
-	appFlags           []cli.Flag
-	workerInitializers []workerInitializer
+	appFlags []cli.Flag
 )
-
-func registerWorkerInitializer(wi workerInitializer, flags ...cli.Flag) {
-	workerInitializers = append(workerInitializers, wi)
-	sort.Slice(workerInitializers,
-		func(i, j int) bool {
-			return workerInitializers[i].priority < workerInitializers[j].priority
-		})
-	appFlags = append(appFlags, flags...)
-}
 
 func main() { //nolint:gocyclo
 	cli.VersionPrinter = func(c *cli.Context) {
@@ -710,7 +695,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		}
 	}
 
-	wc, err := newWorkerController(c, workerInitializerOpt{
+	wc, wOpt, err := newWorkerController(c, workerInitializerOpt{
 		config:         cfg,
 		sessionManager: sessionManager,
 		traceSocket:    traceSocket,
@@ -721,6 +706,10 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 	w, err := wc.GetDefault()
 	if err != nil {
 		return nil, nil, err
+	}
+	exe, ok := w.Executor().(*buildkit.RuncExecutor)
+	if !ok {
+		return nil, nil, errors.New("default worker must use runc executor")
 	}
 
 	frontends := map[string]frontend.Frontend{}
@@ -790,6 +779,8 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
 		WorkerController:       wc,
+		WorkerOpt:              wOpt,
+		Executor:               exe,
 		SessionManager:         sessionManager,
 		CacheManager:           cacheManager,
 		ContentStore:           w.ContentStore(),
@@ -814,34 +805,27 @@ func resolverFunc(cfg *config.Config) docker.RegistryHosts {
 	return resolver.NewRegistryConfig(cfg.Registries)
 }
 
-func newWorkerController(c *cli.Context, wiOpt workerInitializerOpt) (*worker.Controller, error) {
+func newWorkerController(c *cli.Context, wiOpt workerInitializerOpt) (*worker.Controller, *base.WorkerOpt, error) {
 	wc := &worker.Controller{}
-	nWorkers := 0
-	for _, wi := range workerInitializers {
-		ws, err := wi.fn(c, wiOpt)
-		if err != nil {
-			return nil, err
-		}
-		for _, w := range ws {
-			p := w.Platforms(false)
-			logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
-			archutil.WarnIfUnsupported(p)
-			if err = wc.Add(w); err != nil {
-				return nil, err
-			}
-			nWorkers++
-		}
+
+	w, opt, err := ociWorkerInitializer(c, wiOpt)
+	if err != nil {
+		return nil, nil, err
 	}
-	if nWorkers == 0 {
-		return nil, errors.New("no worker found, rebuild the buildkit daemon?")
+
+	p := w.Platforms(false)
+	logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
+	archutil.WarnIfUnsupported(p)
+	if err = wc.Add(w); err != nil {
+		return nil, nil, err
 	}
+
 	defaultWorker, err := wc.GetDefault()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	logrus.Infof("found %d workers, default=%q", nWorkers, defaultWorker.ID())
-	logrus.Warn("currently, only the default worker can be used.")
-	return wc, nil
+	logrus.WithField("id", defaultWorker.ID()).Info("worker")
+	return wc, opt, nil
 }
 
 func attrMap(sl []string) (map[string]string, error) {
