@@ -8,20 +8,20 @@ title: "Set up the example application"
 
 ## Set up the example application
 
-The best way to understand how Dagger works is by creating a Dagger-based CI pipeline for an application - a process called "Daggerizing".
+The best way to understand how Dagger works is by creating a Dagger-based CI pipeline for an application - a process we call "Daggerizing".
 
-The steps to Daggerizing the CI pipeline for an existing application are:
+Daggerizing the CI pipeline for an existing application involves the following steps:
 
 1. Initialize a new Dagger module for your application with `dagger init`.
 2. Find and install other useful Dagger modules as dependencies with `dagger install`, or create your own module(s) with `dagger develop` and a Dagger SDK.
-3. Build a CI pipeline by chaining together one or more Dagger Functions from your Dagger module(s) with `dagger call`.
-4. Test your CI pipeline locally and, once you're satisfied, transfer those `dagger call` commands to your CI configuration.
+3. Build a CI pipeline by chaining together one or more Dagger Functions from your Dagger module(s) with `dagger call` and test it locally.
+4. Once you're satisfied, transfer those `dagger call` commands to your CI configuration.
 
 :::tip
 A common question from our Discord is "how much of my pipeline should I Daggerize?". Our advice is to Daggerize as much as you can get away with, within the constraints of your project. In the extreme version of this, you can collapse your entire CI pipeline into a single Dagger Function, which receives a raw source code change event and takes over from there; essentially, your entire CI workflow expressed in code. But typically, you would begin by only Daggerizing simple individual tasks - one Dagger Function per task - and manually configure your CI to call each Dagger Function. This allows for very incremental adoption of Dagger in an existing stack that is hard to change.
 :::
 
-This tutorial will walk you through these steps by Daggerizing a simple Go example application.
+This tutorial will walk you through the first three steps by Daggerizing a simple Go example application, and point you to additional resources for the fourth step.
 
 Clone the application's source code repository into your local development environment and set it as the current working directory:
 

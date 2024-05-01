@@ -1,12 +1,12 @@
 ---
 slug: /quickstart/494020/test
 hide_table_of_contents: true
-title: "Initialize a new module"
+title: "Daggerize the application tests"
 ---
 
 # Quickstart
 
-## Daggerize the application's tests
+## Daggerize the application tests
 
 You're now ready to dive into Dagger and call your first Dagger Function! Use the following command:
 
@@ -14,7 +14,7 @@ You're now ready to dive into Dagger and call your first Dagger Function! Use th
 dagger -m golang call test --source=.
 ```
 
-Here's what you should see:
+You should see various operations taking place, ending with a test run and the following output:
 
 ```
 OK
@@ -22,22 +22,29 @@ OK
 
 Well done! You just called your first Dagger Function!
 
-Let's dig a little deeper to understand what just happened:
+Let's break down the command you just ran to understand what just happened:
 
+- `dagger -m golang call test`: This tells Dagger to load the Golang module, and execute the Dagger Function named `test` from that module.
+- `--source=.`: Dagger Functions, just like regular functions, can accept arguments. These might be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. In this case, the `source` argument is passed to the Dagger Function with the current working directory as value; this tells the Dagger Function where to find the application's source code.
 
+Inspect the [module's source code](https://github.com/kpenfound/dagger-modules/blob/44564d6443a919a2c3f1dd7ad02fc22b5fb9db8c/golang/main.go#L107) to understand what happens when it's invoked via `dagger call`:
 
-In this example, Dagger loaded the Golang module, and executed the Dagger Function named `test` from that module. If you [inspect the source code of the module](#), you'll see a `Test()` function, written in Go, which internally runs `go test`.
+- The module uses the Dagger Go SDK and is written using standard Go conventions.
+- It contains a number of functions, one of which is named `Test()`.
+- The `Test()` function expects a `source` argument of type `Directory`, which is a special Dagger type. The `Directory` type can refer to either a local directory or a remote Git repository.
 
 :::tip
-When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Hello()` is invoked as `dagger call hello`.
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Test()` is invoked as `dagger call test`.
 :::
 
-Dagger Functions, just like regular functions, can accept arguments. Appending the `--help` flag to a `dagger call` command will display a context-sensitive list of supported arguments and sub-commands.
+Dig a little deeper to see what the `Test()` function does:
 
-Inspect the arguments of the `test` function you called earlier:
+- It uses the `Container().From()` method to initialize a new container from a base image. In this example, the base image is `golang:1.21`. This method returns a `Container` type representing an OCI-compatible container image.
+- It uses the `Container.WithDirectory()` method to mount the source code directory passed to the Dagger Function via the `source` argument in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
+- It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `go test`, which runs the application's test suite. The `WithExec()` method returns a revised `Container` with the results of command execution.
+- It retrieves the output stream of the last executed with the `Container.Stdout()` method and prints the result to the console.
 
-```shell
-dagger -m golang call test --help
-```
 
+
+Dagger Functions, just like regular functions, can accept arguments.
 FIXME: Add more info

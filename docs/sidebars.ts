@@ -24,6 +24,9 @@ module.exports = {
         "quickstart/cli",
         "quickstart/setup",
         "quickstart/init",
+        "quickstart/explore",
+        "quickstart/test",
+        "quickstart/build",
       ]
     },
     {

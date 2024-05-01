@@ -8,7 +8,7 @@ title: "Initialize a Dagger module"
 
 ## Initialize a Dagger module
 
-Begin Daggerizing the project by initializing a new Dagger module at the project's root directory. Use the following command:
+Begin Daggerizing the application by initializing a new Dagger module at the project's root directory. Use the following command:
 
 ```shell
 dagger init
@@ -23,7 +23,7 @@ You should see a new file at the root of your repository, named `dagger.json`. V
 By default, the module name is derived from the name of the directory in which it is initialized. To use a different name, add the `--name` argument to the `dagger init` call, such as `dagger init --name=my-module`.
 :::
 
-Now that you have a Dagger module, you can install other modules into it, as dependencies. This allows you to reuse functionality developed by others, without needing to write any code yourself. In this case, since the goal is to build a CI pipeline for a Go application, it makes sense to install the Golang module from the Daggerverse.
+Now that you have a Dagger module, you can install other modules into it, as dependencies. This allows you to reuse functionality developed by others, without needing to write any code yourself. In this case, since the goal is to build a CI pipeline for a Go application, it makes sense to install the Golang module from the Daggerverse. This module contains a number of ready-made Dagger Functions for building, linting, testing and packaging Go applications.
 
 Use the following command to install the module:
 
