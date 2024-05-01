@@ -15,7 +15,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/bubbletea v0.25.0
-	github.com/charmbracelet/lipgloss v0.9.1
+	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/containerd/console v1.0.4
 	github.com/containerd/containerd v1.7.15-0.20240329193453-0dcf21c1528a
 	github.com/containerd/continuity v0.4.3
