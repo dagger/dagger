@@ -23,6 +23,7 @@ module.exports = {
         "quickstart/basics",
         "quickstart/cli",
         "quickstart/setup",
+        "quickstart/init",
       ]
     },
     {
