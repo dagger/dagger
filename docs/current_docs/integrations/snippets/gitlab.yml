@@ -17,7 +17,7 @@
   extends: [.docker]
   before_script:
     - apk add curl
-    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
 build:
   extends: [.dagger]
   script:
