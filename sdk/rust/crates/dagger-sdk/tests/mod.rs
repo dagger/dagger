@@ -50,7 +50,7 @@ async fn test_git() {
     let readme = readme_file.contents().await.unwrap();
     assert_eq!(true, readme.find("Dagger").is_some());
 
-    let other_readme = c.file(readme_file).contents().await.unwrap();
+    let other_readme = c.load_file_from_id(readme_file).contents().await.unwrap();
 
     assert_eq!(readme, other_readme);
 }
@@ -73,10 +73,7 @@ async fn test_container() {
 
     let id = alpine.id().await.unwrap();
     let contents = client
-        .container_opts(dagger_sdk::QueryContainerOpts {
-            id: Some(id),
-            platform: None,
-        })
+        .load_container_from_id(id)
         .file("/etc/alpine-release")
         .contents()
         .await
