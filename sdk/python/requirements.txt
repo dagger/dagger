@@ -109,7 +109,7 @@ pathspec==0.12.1
     # via black
 platformdirs==4.2.0
     # via black
-pluggy==1.4.0
+pluggy==1.5.0
     # via pytest
 protobuf==4.25.3
     # via
