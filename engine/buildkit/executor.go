@@ -1,5 +1,10 @@
 package buildkit
 
+/*
+The original implementation of this is derived from:
+https://github.com/moby/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/executor/runcexecutor/executor.go
+*/
+
 import (
 	"bytes"
 	"context"
