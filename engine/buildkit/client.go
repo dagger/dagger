@@ -41,6 +41,9 @@ import (
 )
 
 const (
+	FocusPrefix    = "[focus] "
+	InternalPrefix = "[internal] "
+
 	DaggerServerIDJobKey = "dagger.serverID"
 
 	// from buildkit, cannot change
@@ -143,8 +146,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	// we need to use our custom one directly later. But our executor has the
 	// entitlement validation logic in it, so no harm done.
 	br := client.LLBSolver.Bridge(client.job)
-	gw := &opTrackingGateway{llbBridge: br}
-	client.llbBridge = gw
+	client.llbBridge = br
 
 	client.dialer = &net.Dialer{}
 
