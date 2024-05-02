@@ -107,21 +107,8 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901,PLR0912
     if typ.hint in builtins:
         return td.with_kind(builtins[typ.hint])
 
-    # TODO: Fix when we have support for TypeDefKind.ENUM_KIND in core.
-    if issubclass(typ.hint, Enum):
-        msg = (
-            "Enum types are not supported yet. Define argument as a string"
-            " and convert to the desired enum type in the function body."
-        )
-        raise NotImplementedError(msg)
-
-    # TODO: Fix when we have support for TypeDefKind.SCALAR_KIND in core.
-    if issubclass(typ.hint, Scalar):
-        msg = (
-            "Scalar types are not supported yet. Define argument as a string"
-            " and convert to the desired scalar type in the function body."
-        )
-        raise NotImplementedError(msg)
+    if issubclass(cls := typ.hint, Scalar | Enum):
+        return td.with_scalar(cls.__name__, description=get_doc(cls))
 
     # NB: str is a Collection, but we've handled it above.
     if typ.is_subhint(TypeHint(Collection)):

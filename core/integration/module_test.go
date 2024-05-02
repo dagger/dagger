@@ -2900,11 +2900,23 @@ func TestModuleScalarType(t *testing.T) {
 			sdk: "go",
 			source: `package main
 
-type Foo struct{}
+type Test struct{}
 
-func (m *Foo) SayHello(platform Platform) string {
+func (m *Test) SayHello(platform Platform) string {
 	return "hello " + string(platform)
 }`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def say_hello(self, platform: dagger.Platform) -> str:
+        return f"hello {platform}"
+`,
 		},
 	} {
 		tc := tc
@@ -2912,18 +2924,13 @@ func (m *Foo) SayHello(platform Platform) string {
 		t.Run(tc.sdk, func(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
+			modGen := modInit(t, c, tc.sdk, tc.source)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
-
-			out, err := modGen.With(daggerQuery(`{foo{sayHello(platform: "linux/amd64")}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{test{sayHello(platform: "linux/amd64")}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "hello linux/amd64", gjson.Get(out, "foo.sayHello").String())
+			require.Equal(t, "hello linux/amd64", gjson.Get(out, "test.sayHello").String())
 
-			_, err = modGen.With(daggerQuery(`{foo{sayHello(platform: "invalid")}}`)).Stdout(ctx)
+			_, err = modGen.With(daggerQuery(`{test{sayHello(platform: "invalid")}}`)).Stdout(ctx)
 			require.ErrorContains(t, err, "unknown operating system or architecture")
 		})
 	}
