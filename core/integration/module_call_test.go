@@ -536,7 +536,7 @@ func (m *Test) ToPlatform(platform string) Platform {
 		out, err = modGen.With(daggerCall("to-platform", "--platform", "linux/amd64")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "linux/amd64", out)
-		_, err = modGen.With(daggerCall("from-platform", "--platform", "invalid")).Stdout(ctx)
+		_, err = modGen.With(daggerCall("to-platform", "--platform", "invalid")).Stdout(ctx)
 		require.ErrorContains(t, err, "unknown operating system or architecture")
 	})
 
