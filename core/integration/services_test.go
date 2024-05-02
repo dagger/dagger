@@ -273,11 +273,11 @@ func TestContainerPortLifecycle(t *testing.T) {
 				Protocol    dagger.NetworkProtocol
 				Description *string
 			}
-		}
+		} `json:"loadContainerFromID"`
 	}{}
 
 	getPorts := `query Test($id: ContainerID!) {
-		container(id: $id) {
+		loadContainerFromID(id: $id) {
 			exposedPorts {
 				port
 				protocol
