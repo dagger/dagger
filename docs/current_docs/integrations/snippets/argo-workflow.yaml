@@ -5,14 +5,28 @@ metadata:
 spec:
   entrypoint: dagger-workflow
   volumes:
-    - name: dagger-conn
-      hostPath:
-        path: /var/run/dagger
-    - name: gomod-cache
-      persistentVolumeClaim:
-        claimName: gomod-cache
+    - name: dagger-socket
+      emptyDir: {}
+    - name: dagger-storage
+      emptyDir: {}
   templates:
     - name: dagger-workflow
+      sidecars:
+        - name: dagger-engine
+          image: registry.dagger.io/engine:vX.Y.Z
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - ALL
+          readinessProbe:
+            exec:
+              command: ["buildctl", "debug", "workers"]
+          volumeMounts:
+            - mountPath: /var/run/buildkit
+              name: dagger-socket
+            - mountPath: /var/lib/dagger
+              name: dagger-storage
       inputs:
         artifacts:
           - name: project-source
@@ -32,7 +46,7 @@ spec:
         command: ["sh", "-c"]
         # assumes a Go project
         # modify to use different function(s) as needed
-        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=."]
+        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call test --source=."]
         workingDir: /work
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
@@ -45,7 +59,5 @@ spec:
               name: dagger-cloud
               key: token
         volumeMounts:
-          - name: dagger-conn
-            mountPath: /var/run/dagger
-          - name: gomod-cache
-            mountPath: /go/pkg/mod
+          - mountPath: /var/run/dagger
+            name: dagger-socket

@@ -17,7 +17,8 @@ spec:
       emptyDir: {}
   sidecars:
     - name: dagger-engine
-      image: registry.dagger.io/engine:v0.10.2
+      # modify to use the desired Dagger version
+      image: registry.dagger.io/engine:vX.Y.Z 
       args:
         - "--oci-max-parallelism"
         - "num-cpu"
@@ -34,9 +35,6 @@ spec:
           name: dagger-socket
         - mountPath: /var/lib/dagger
           name: dagger-storage
-      env:
-        - name: DAGGER_CLOUD_TOKEN
-          value: $(params.dagger-cloud-token)
   steps:
   # assumes a Go project
   # modify to use different function(s) as needed
@@ -46,7 +44,7 @@ spec:
     script: |
       #!/usr/bin/env sh
       apk add curl
-      curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
       dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
     volumeMounts:
       - mountPath: /var/run/dagger
@@ -55,4 +53,7 @@ spec:
       - name: _EXPERIMENTAL_DAGGER_RUNNER_HOST
         value: unix:///var/run/dagger/buildkitd.sock
       - name: DAGGER_CLOUD_TOKEN
-        value: $(params.dagger-cloud-token)
+        valueFrom:
+          secretKeyRef:
+            name: $(params.dagger-cloud-token)
+            key: "token"
