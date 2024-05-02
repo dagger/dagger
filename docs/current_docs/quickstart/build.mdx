@@ -4,15 +4,37 @@ hide_table_of_contents: true
 title: "Daggerize the application build"
 ---
 
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
 # Quickstart
 
-## Daggerize the application build
+## Daggerize the application's build process
 
-If your application passes all its tests, the typical next step is to build it. Use the following command to do this using the Golang module:
+If your application passes all its tests, the typical next step is to build it. The Golang module has a `build` Dagger Function which, as the name suggests, can build a Go application. Use the following command to see it in action:
+
+<Tabs groupId="os">
+<TabItem value="Linux">
 
 ```shell
-dagger -m golang call build --source=. --args=. --os=linux --arch=amd64
+dagger -m golang call \
+  build --source=. --args=. --os=linux --arch=amd64
 ```
+
+</TabItem>
+<TabItem value="macOS">
+
+```shell
+dagger -m golang call \
+  build --source=. --args=. --os=darwin --arch=amd64
+```
+
+</TabItem>
+<TabItem value="Windows">
+
+FIXME
+
+</TabItem>
 
 :::tip
 By default, the `build` Dagger Function from the Golang module builds a Go binary based on information derived from the runtime container. Since the runtime container uses Linux, this means that the compiled binary will be a `linux/amd64` binary, which will not work on Windows or macOS operating systems. This can be resolved by passing explicit `--os` and `--arch` arguments to the Dagger Function.
@@ -24,15 +46,74 @@ You should see various operations taking place, ending with this output:
 Directory evaluated. Use "dagger call build --help" to see available sub-commands.
 ```
 
-This means that the build succeeded, and a directory was returned. This is a just-in-time directory - a transient artifact produced as the result of a Dagger Function. Since Dagger Functions execute within containers spawned by the Dagger Engine, the returned directory also exists in a container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container's filesystem to the host filesystem before you can use it.
+This means that the build succeeded, and a directory was returned as a `Directory` type.
 
+Before going further, let's again break down the command you just ran:
 
---TODO
-Just-in-time artifacts such as containers, directories and files have an `Export()` function, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the --path argument.
+- `dagger -m golang call build`: This tells Dagger to load the Golang module, and execute the Dagger Function named `build` from that module.
+- `--source=.`: This argument sets the location for the application's source code.
+- `--args=.`: This argument sets additional build arguments to pass to the compiler.
+- `--os=[value]`: This argument sets the target operating system to compile for.
+- `--arch=[value]`: This argument sets the target architecture to compile for.
 
-Here is an example of exporting the directory returned by a Go builder Dagger Function to the ./my-build directory on the host:
+Inspect the [module's source code](https://github.com/kpenfound/dagger-modules/blob/main/golang/main.go#L47) and look inside the `Build()` function to understand what happens when it's invoked via `dagger call`:
 
-# chaining
+- As before, it uses the `Container().From()` method to initialize a new container from a `golang:1.21` base image, then the `Container.WithDirectory()` method to mount the source code directory in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
+- It uses the `Container.WithEnvVariable()` method to set the `GOOS` and `GOARCH` environment variables in the container to the values provided by the `os` and `arch` arguments. These environment variables are used by the compiler to create a binary optimized for the target operating system and architecture.
+- It uses the `Container.WithExec()` method to define the `go build` command to be executed in the container. This command compiles the application and writes the resulting binary to an `/out/` directory in the container.
+- It uses the `Container.Directory()` method to return the directory to the function caller as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
 
-dagger -m golang call build --source=. --args=. export --path=./build
+At this point, the Dagger Function has produced a directory with the compiled binary. However, since Dagger Functions execute within containers spawned by the Dagger Engine, the returned directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
+
+Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When calling a Dagger Function that returns one of these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger.
+
+As an example, when a Dagger Function returns a directory (like in the previous example), the caller typically continues the chain by calling a function exposed by the `Directory` type to perform further processing on it: export it to the local filesystem, modify it, mount it into a container, etc.
+
+All just-in-time artifacts, such as containers, directories and files, have an `export` function, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the `--path` argument.
+
+With this knowledge of just-in-time artifacts and function chaining, the next step should be clear:  transfer the directory returned by the Dagger Function from the container to the host, by chaining an `export` function call to it. Use the following command:
+
+<Tabs groupId="os">
+<TabItem value="Linux">
+
+```shell
+dagger -m golang call \
+  build --source=. --args=. --os=linux --arch=amd64 \
+  export --path=./build
+```
+</TabItem>
+<TabItem value="macOS">
+
+```shell
+dagger -m golang call \
+  build --source=. --args=. --os=darwin --arch=amd64 \
+  export --path=./build
+```
+
+</TabItem>
+<TabItem value="Windows">
+
+FIXME
+
+</TabItem>
+</Tabs>
+
+This command exports the directory returned by the `build` Dagger Function to a custom path (`./build`) on the host. Inspect this directory and you should see the application binary, compiled for your host and platform:
+
+```
+ls ./build
+
+file ./build/greetings-api
+```
+
+Validate the compiled binary by running it:
+
+```
+./build/greetings-api
+```
+
+You should see output similar to the following, which confirms that you've just remotely built a development version of the Dagger CLI:
+
+```
+dagger (registry.dagger.io/engine) linux/amd64
 ```
