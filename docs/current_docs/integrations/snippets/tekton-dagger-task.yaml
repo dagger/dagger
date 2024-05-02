@@ -17,7 +17,8 @@ spec:
       emptyDir: {}
   sidecars:
     - name: dagger-engine
-      image: registry.dagger.io/engine:vX.Y.Z # modify with the desired dagger engine version
+      # modify to use the desired Dagger version
+      image: registry.dagger.io/engine:vX.Y.Z 
       args:
         - "--oci-max-parallelism"
         - "num-cpu"
