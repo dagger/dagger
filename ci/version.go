@@ -2,40 +2,42 @@ package main
 
 import (
 	"context"
+	"crypto/sha1" //nolint:gosec
+	"encoding/hex"
 	"fmt"
-	"strings"
+	"regexp"
 
-	"github.com/dagger/dagger/ci/consts"
 	"github.com/dagger/dagger/ci/internal/dagger"
+	"golang.org/x/mod/semver"
 )
 
 type VersionInfo struct {
-	Tag      string
-	Commit   string
-	TreeHash string
+	Tag    string
+	Commit string
+	Dev    string
 }
 
-func newVersionFromGit(ctx context.Context, dir *dagger.Directory) (*VersionInfo, error) {
-	base := dag.Container().
-		From(consts.AlpineImage).
-		WithExec([]string{"apk", "add", "git"}).
-		WithMountedDirectory("/app/.git", dir).
-		WithWorkdir("/app")
+var commitRegexp = regexp.MustCompile("^[0-9a-f]{40}$")
 
-	info := &VersionInfo{}
+func newVersion(ctx context.Context, dir *dagger.Directory, version string) (*VersionInfo, error) {
+	switch {
+	case version == "":
+		id, err := dir.ID(ctx)
+		if err != nil {
+			return nil, err
+		}
 
-	// use git write-tree to get a content hash of the current state of the repo
-	var err error
-	info.TreeHash, err = base.
-		WithExec([]string{"git", "add", "."}).
-		WithExec([]string{"git", "write-tree"}).
-		Stdout(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get tree hash: %w", err)
+		h := sha1.New() //nolint:gosec
+		h.Write([]byte(id))
+		dgst := hex.EncodeToString(h.Sum(nil))
+		return &VersionInfo{Dev: dgst}, nil
+	case semver.IsValid(version):
+		return &VersionInfo{Tag: version}, nil
+	case commitRegexp.MatchString(version):
+		return &VersionInfo{Commit: version}, nil
+	default:
+		return nil, fmt.Errorf("could not parse version info %q", version)
 	}
-	info.TreeHash = strings.TrimSpace(info.TreeHash)
-
-	return info, nil
 }
 
 func (info *VersionInfo) String() string {
@@ -45,5 +47,8 @@ func (info *VersionInfo) String() string {
 	if info.Commit != "" {
 		return info.Commit
 	}
-	return info.TreeHash
+	if info.Dev != "" {
+		return "dev-" + info.Dev
+	}
+	return "dev-unknown"
 }

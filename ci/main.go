@@ -7,7 +7,6 @@ import (
 
 	"github.com/dagger/dagger/ci/internal/dagger"
 	"github.com/dagger/dagger/ci/util"
-	"golang.org/x/mod/semver"
 )
 
 // A dev environment for the Dagger Engine
@@ -29,18 +28,9 @@ func New(
 	// +optional
 	hostDockerConfig *Secret,
 ) (*Dagger, error) {
-	var versionInfo *VersionInfo
-	switch {
-	case version == "":
-		var err error
-		versionInfo, err = newVersionFromGit(ctx, source.Directory(".git"))
-		if err != nil {
-			return nil, err
-		}
-	case semver.IsValid(version):
-		versionInfo = &VersionInfo{Tag: version}
-	default:
-		versionInfo = &VersionInfo{Commit: version}
+	versionInfo, err := newVersion(ctx, source, version)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Dagger{

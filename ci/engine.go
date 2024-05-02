@@ -124,11 +124,11 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
+	src := e.Dagger.Source.AsModule().GeneratedContextDirectory()
+
 	eg, ctx := errgroup.WithContext(ctx)
 
-	pkgs := []string{""}
-	// pkgs := []string{"", "ci"}
-
+	pkgs := []string{"", "ci"}
 	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
 	if all {
 		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
@@ -136,7 +136,7 @@ func (e *Engine) Lint(
 	for _, pkg := range pkgs {
 		golangci := dag.Container().
 			From(consts.GolangLintImage).
-			WithMountedDirectory("/app", util.GoDirectory(e.Dagger.Source)).
+			WithMountedDirectory("/app", util.GoDirectory(src)).
 			WithWorkdir(path.Join("/app", pkg)).
 			WithExec(cmd)
 		eg.Go(func() error {
@@ -145,8 +145,8 @@ func (e *Engine) Lint(
 		})
 
 		eg.Go(func() error {
-			return util.DiffDirectoryF(ctx, util.GoDirectory(e.Dagger.Source), func(ctx context.Context) (*dagger.Directory, error) {
-				return util.GoBase(e.Dagger.Source).
+			return util.DiffDirectoryF(ctx, util.GoDirectory(src), func(ctx context.Context) (*dagger.Directory, error) {
+				return util.GoBase(src).
 					WithExec([]string{"go", "mod", "tidy"}).
 					Directory("."), nil
 			}, "go.mod", "go.sum")
