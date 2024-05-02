@@ -27,6 +27,7 @@ module.exports = {
         "quickstart/explore",
         "quickstart/test",
         "quickstart/build",
+        "quickstart/publish",
       ]
     },
     {
