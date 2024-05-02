@@ -2930,7 +2930,7 @@ class Test:
 			require.NoError(t, err)
 			require.Equal(t, "hello linux/amd64", gjson.Get(out, "test.sayHello").String())
 
-			_, err = modGen.With(daggerQuery(`{test{sayHello(platform: "invalid")}}`)).Stdout(ctx)
+			_, err = modGen.With(daggerQuery(`{test{sayHello(platform: "invalid")}}`)).Sync(ctx)
 			require.ErrorContains(t, err, "unknown operating system or architecture")
 		})
 	}
