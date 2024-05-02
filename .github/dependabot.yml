@@ -18,7 +18,7 @@ updates:
           - "*"
 
   - package-ecosystem: "gomod"
-    directory: "/ci
+    directory: "/ci"
     schedule:
       interval: "weekly"
       day: "monday"
