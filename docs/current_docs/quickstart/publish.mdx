@@ -63,8 +63,14 @@ dagger -m golang call \
   publish --address ttl.sh/myapp-$RANDOM
 ```
 
-You should the container image being built and published, with the final result being a container image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
+To prevent name collisions, the container image name is suffixed with a random number. You should the container image being built and published, with the final result being an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
 ```
 ttl.sh/myapp-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
+```
+
+Download and test it using the command below (update the container image name as per the output of the previous command):
+
+```
+FIXME
 ```

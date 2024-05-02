@@ -35,6 +35,7 @@ dagger -m golang call \
 FIXME
 
 </TabItem>
+</Tabs>
 
 :::tip
 By default, the `build` Dagger Function from the Golang module builds a Go binary based on information derived from the runtime container. Since the runtime container uses Linux, this means that the compiled binary will be a `linux/amd64` binary, which will not work on Windows or macOS operating systems. This can be resolved by passing explicit `--os` and `--arch` arguments to the Dagger Function.
