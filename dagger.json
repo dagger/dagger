@@ -8,6 +8,7 @@
       "name": "default",
       "patterns": [
         "!bin",
+        "!.git",
         "!**/node_modules",
         "!**/.venv",
         "!**/__pycache__"
