@@ -95,7 +95,6 @@ domain-needed
 expand-hosts
 pid-file={{.PidFile}}
 except-interface=lo
-no-hosts
 interface={{.NetworkInterface}}
 addn-hosts={{.AddnHostsFile}}
 resolv-file={{.UpstreamResolvFile}}
