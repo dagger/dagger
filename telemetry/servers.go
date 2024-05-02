@@ -195,9 +195,59 @@ func attrValue(v *otlpcommonv1.AnyValue) attribute.Value {
 		return attribute.Int64Value(v.GetIntValue())
 	case *otlpcommonv1.AnyValue_BoolValue:
 		return attribute.BoolValue(v.GetBoolValue())
+	case *otlpcommonv1.AnyValue_ArrayValue:
+		vals := make([]attribute.Value, 0, len(x.ArrayValue.GetValues()))
+		types := map[attribute.Type]int{}
+		for _, v := range x.ArrayValue.GetValues() {
+			val := attrValue(v)
+			types[val.Type()]++
+			vals = append(vals, val)
+		}
+		switch len(types) {
+		case 0:
+			slog.Error("otlpcommonv1.AnyValue -> attribute.Value: empty array; assuming string slice")
+			return attribute.StringSliceValue(nil)
+		case 1:
+			for t := range types {
+				switch t {
+				case attribute.STRING:
+					strs := make([]string, 0, len(vals))
+					for _, v := range vals {
+						strs = append(strs, v.AsString())
+					}
+					return attribute.StringSliceValue(strs)
+				case attribute.INT64:
+					ints := make([]int64, 0, len(vals))
+					for _, v := range vals {
+						ints = append(ints, v.AsInt64())
+					}
+					return attribute.Int64SliceValue(ints)
+				case attribute.FLOAT64:
+					floats := make([]float64, 0, len(vals))
+					for _, v := range vals {
+						floats = append(floats, v.AsFloat64())
+					}
+					return attribute.Float64SliceValue(floats)
+				case attribute.BOOL:
+					bools := make([]bool, 0, len(vals))
+					for _, v := range vals {
+						bools = append(bools, v.AsBool())
+					}
+					return attribute.BoolSliceValue(bools)
+				default:
+					slog.Error("otlpcommonv1.AnyValue -> attribute.Value: unhandled array value type conversion", "type", fmt.Sprintf("%T", x))
+					return attribute.StringValue(fmt.Sprintf("UNHANDLED ARRAY ELEM TYPE: %+v (%s)", vals, t))
+				}
+			}
+			panic("unreachable")
+		default:
+			slog.Error("otlpcommonv1.AnyValue -> attribute.Value: mixed types in array attribute", "types", fmt.Sprintf("%v", types))
+			return attribute.StringValue(fmt.Sprintf("%v", vals))
+		}
+	case *otlpcommonv1.AnyValue_BytesValue:
+		return attribute.StringValue(string(x.BytesValue))
 	default:
-		// TODO slices, bleh
-		slog.Error("unhandled otlpcommonv1.AnyValue -> attribute.Value conversion", "type", fmt.Sprintf("%T", x))
+		slog.Error("otlpcommonv1.AnyValue -> attribute.Value: unhandled type conversion", "type", fmt.Sprintf("%T", x))
 		return attribute.StringValue(fmt.Sprintf("UNHANDLED ATTR TYPE: %v (%T)", x, x))
 	}
 }
