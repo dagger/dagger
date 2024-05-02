@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -60,7 +61,7 @@ func (w *Worker) Run(
 		return nil, errors.New("serverID is not set in executor")
 	}
 
-	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+	w.addExtraEnvs(&process)
 
 	if process.Meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
@@ -128,6 +129,55 @@ func (w *Worker) Run(
 		started,
 		setupCACerts,
 	)
+}
+
+func (w *Worker) addExtraEnvs(proc *executor.ProcessInfo) {
+	proc.Meta.Env = append(proc.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+
+	origEnvMap := make(map[string]string)
+	for _, env := range proc.Meta.Env {
+		k, v, ok := strings.Cut(env, "=")
+		if !ok {
+			continue
+		}
+		origEnvMap[k] = v
+	}
+
+	for _, upperProxyEnvName := range []string{
+		"HTTP_PROXY",
+		"HTTPS_PROXY",
+		"FTP_PROXY",
+		"NO_PROXY",
+		"ALL_PROXY",
+	} {
+		upperProxyVal, upperSet := origEnvMap[upperProxyEnvName]
+
+		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
+		lowerProxyVal, lowerSet := origEnvMap[lowerProxyEnvName]
+
+		switch {
+		case upperSet && lowerSet:
+			continue
+		case upperSet:
+			proc.Meta.Env = append(proc.Meta.Env, lowerProxyEnvName+"="+upperProxyVal)
+		case lowerSet:
+			proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+lowerProxyVal)
+		default:
+			val, ok := os.LookupEnv(upperProxyEnvName)
+			if ok {
+				proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+val, lowerProxyEnvName+"="+val)
+			}
+		}
+	}
+
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
+	// TODO: add support for custom proxy env vars like GOPROXY
 }
 
 func (w *Worker) run(
