@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +25,7 @@ type proxyTest struct {
 }
 
 type proxyTestFixtures struct {
-	caCertsDir *dagger.Directory
+	caCert *dagger.File
 }
 
 func customProxyTests(
@@ -41,14 +40,11 @@ func customProxyTests(
 	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
 
 	if os.Getenv(executeTestEnvName) == "" {
-		caCertsCacheVolume := c.CacheVolume("ca-certs-" + identity.NewID())
+		const squidAlias = "squid"
+		genCerts := generateCerts(c, squidAlias, squidAlias)
 
-		base := c.Container().From(alpineImage)
-		squid := base.
-			WithExec([]string{"apk", "add", "squid", "openssl", "ca-certificates"}).
-			WithNewFile("/usr/local/bin/printpass", dagger.ContainerWithNewFileOpts{Contents: `#!/bin/sh
-echo -n hunter4
-`, Permissions: 0755}).
+		squid := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "squid", "ca-certificates"}).
 			WithNewFile("/etc/squid/squid.conf", dagger.ContainerWithNewFileOpts{Contents: `
 acl localnet src 0.0.0.1-0.255.255.255  # RFC 1122 "this" network (LAN)
 acl localnet src 10.0.0.0/8             # RFC 1918 local private network (LAN)
@@ -90,9 +86,6 @@ https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls
 
 sslpassword_program /usr/local/bin/printpass
 
-# Uncomment and adjust the following to add a disk cache directory.
-#cache_dir ufs /var/cache/squid 100 16 256
-
 # Leave coredumps in the first cache dir
 coredump_dir /var/cache/squid
 
@@ -107,81 +100,23 @@ refresh_pattern .               0       20%     4320
 			}).
 			WithExposedPort(3128).
 			WithExposedPort(3129).
-			// This is a bit annoying: we need to generate certs with the real hostname, but it's a content
-			// hash of the container itself, so we can't know it ahead of time. We can't use aliases since
-			// they are not actual hostnames and the final client container won't know about them in this case.
-			// Pure "*" wildcards in certs didn't work either. So we have to generate everything in the container,
-			// when we actually know the hostname.
-			// TODO: I'm sure there's some better way of dealing with this... My lack of TLS-fu is limiting.
-			WithMountedDirectory("/etc/ssl/origcerts", base.Directory("/etc/ssl/certs")).
-			WithMountedCache("/etc/ssl/certs", caCertsCacheVolume).
-			WithExec([]string{"sh", "-c", `
-set -ex
-
-HOSTNAME=$(hostname)'.*'
-ENDPOINT=$(echo $HOSTNAME | cut -d. -f1)
-
-cp -r /etc/ssl/origcerts/* /etc/ssl/certs/
-
-openssl dhparam -out /etc/squid/dhparam.pem 2048
-
-openssl genrsa -des3 -out /etc/squid/ca.key -passout pass:hunter4 2048
-
-openssl req -new -key /etc/squid/ca.key -out /etc/squid/ca.csr -passin pass:hunter4 -subj "/C=US/ST=CA/L=San Francisco/O=Example/CN=${ENDPOINT}"
-
-cat > /etc/squid/ca.ext <<EOF
-basicConstraints=critical,CA:TRUE,pathlen:0
-keyUsage=critical,keyCertSign,cRLSign
-subjectKeyIdentifier=hash
-authorityKeyIdentifier=keyid:always,issuer:always
-subjectAltName=@alt_names
-
-[alt_names]
-DNS.1 = ${ENDPOINT}
-EOF
-
-openssl x509 -req -in /etc/squid/ca.csr -signkey /etc/squid/ca.key -out /etc/ssl/certs/squidCA.pem -days 99999 -sha256 -extfile /etc/squid/ca.ext -passin pass:hunter4
-
-update-ca-certificates
-
-openssl genrsa -out /etc/squid/serverkey.pem 2048
-
-openssl req -new -key /etc/squid/serverkey.pem -out /etc/squid/server.csr -passin pass:hunter4 -subj "/C=US/ST=CA/L=San Francisco/O=Example/CN=${ENDPOINT}"
-
-cat > /etc/squid/server.ext <<EOF
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = ${ENDPOINT}
-EOF
-
-openssl x509 -req -in /etc/squid/server.csr -CA /etc/ssl/certs/squidCA.pem -CAkey /etc/squid/ca.key -CAcreateserial -out /etc/squid/server.pem -days 99999 -sha256 -extfile /etc/squid/server.ext -passin pass:hunter4
-
-exec squid --foreground
-`}).
+			WithMountedFile("/usr/local/bin/printpass", genCerts.printPasswordScript).
+			WithMountedFile("/etc/ssl/certs/myCA.pem", genCerts.caRootCert).
+			WithExec([]string{"update-ca-certificates"}).
+			WithMountedFile("/etc/squid/server.pem", genCerts.serverCert).
+			WithMountedFile("/etc/squid/serverkey.pem", genCerts.serverKey).
+			WithMountedFile("/etc/squid/dhparam.pem", genCerts.dhParam).
+			WithExec([]string{"squid", "--foreground"}).
 			AsService()
-
-		squidHTTPEndpoint, err := squid.Endpoint(ctx, dagger.ServiceEndpointOpts{
-			Port:   3128,
-			Scheme: "http",
-		})
-		require.NoError(t, err)
-
-		squidHTTPSEndpoint, err := squid.Endpoint(ctx, dagger.ServiceEndpointOpts{
-			Port:   3129,
-			Scheme: "https",
-		})
-		require.NoError(t, err)
 
 		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
-				WithServiceBinding("squid", squid).
-				WithMountedCache("/etc/ssl/certs", caCertsCacheVolume).
-				WithEnvVariable("HTTPS_PROXY", squidHTTPSEndpoint).
-				WithEnvVariable("HTTP_PROXY", squidHTTPEndpoint)
+				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
+				WithMountedFile("/etc/ssl/certs/myCA.pem", genCerts.caRootCert).
+				WithExec([]string{"update-ca-certificates"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+				WithEnvVariable("HTTPS_PROXY", fmt.Sprintf("https://%s:3129", squidAlias)).
+				WithEnvVariable("HTTP_PROXY", fmt.Sprintf("http://%s:3128", squidAlias)).
+				WithServiceBinding(squidAlias, squid)
 		})
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -192,8 +127,8 @@ exec squid --foreground
 			With(goCache(c)).
 			WithMountedDirectory("/src", thisRepo).
 			WithWorkdir("/src").
+			WithMountedFile("/ca.pem", genCerts.caRootCert).
 			WithServiceBinding("engine", devEngine.AsService()).
-			WithMountedCache("/etc/ssl/certs", caCertsCacheVolume).
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
@@ -216,7 +151,7 @@ exec squid --foreground
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			test.run(t, c, proxyTestFixtures{
-				caCertsDir: c.Host().Directory("/etc/ssl/certs"),
+				caCert: c.Host().File("/ca.pem"),
 			})
 		})
 	}
@@ -240,8 +175,8 @@ func TestContainerSystemProxies(t *testing.T) {
 
 		proxyTest{"https", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
 			out, err := c.Container().From(alpineImage).
-				WithExec([]string{"apk", "add", "curl"}).
-				WithMountedDirectory("/etc/ssl/certs", f.caCertsDir).
+				WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
+				WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
 				WithExec([]string{"update-ca-certificates"}).
 				WithExec([]string{"curl", "-v", "https://www.example.com"}).
 				Stderr(ctx)
