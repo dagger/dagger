@@ -1,0 +1,6 @@
+kind: Changed
+body: 'cli: Added a visual cue for required flags in `--help`'
+time: 2024-05-03T16:01:32.316206Z
+custom:
+  Author: grouville
+  PR: "7262"
