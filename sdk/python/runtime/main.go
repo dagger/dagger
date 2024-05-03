@@ -234,7 +234,8 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 				WithMountedFile(sdkToml, m.SDKSourceDir.File(toml)).
 				WithMountedFile(toml, d.GetFile(toml)).
 				WithExec([]string{
-					"uv", "pip", "compile", "--generate-hashes",
+					"uv", "pip", "compile", "-q",
+					"--generate-hashes",
 					"-o", LockFilePath,
 					sdkToml,
 					toml,
@@ -295,7 +296,8 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 	if m.Discovery.HasFile(LockFilePath) {
 		if m.UseUv() && !m.Discovery.IsInit {
 			ctr = ctr.WithExec([]string{
-				"uv", "pip", "compile", "--generate-hashes",
+				"uv", "pip", "compile", "-q",
+				"--generate-hashes",
 				"-o", LockFilePath,
 				sdkToml,
 				toml,
