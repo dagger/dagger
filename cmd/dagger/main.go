@@ -355,14 +355,12 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 
 	// separate optional flags from required flags
 	originalFlags.VisitAll(func(flag *pflag.Flag) {
-		clone := *flag
-
 		// Append [required] and show required flags first
 		if flag.Annotations["cobra_annotation_bash_completion_one_required_flag"] != nil {
-			clone.Usage += " [required]"
-			mergedFlags.AddFlag(&clone)
+			flag.Usage += " [required]"
+			mergedFlags.AddFlag(flag)
 		} else {
-			optionalFlags.AddFlag(&clone)
+			optionalFlags.AddFlag(flag)
 		}
 	})
 
