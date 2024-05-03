@@ -15,9 +15,9 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/bubbletea v0.25.0
-	github.com/charmbracelet/lipgloss v0.9.1
+	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/containerd/console v1.0.4
-	github.com/containerd/containerd v1.7.15-0.20240329193453-0dcf21c1528a
+	github.com/containerd/containerd v1.7.15
 	github.com/containerd/continuity v0.4.3
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.8
 	github.com/containerd/go-runc v1.1.0
@@ -27,9 +27,9 @@ require (
 	github.com/creack/pty v1.1.18
 	github.com/dave/jennifer v1.7.0
 	github.com/denisbrodbeck/machineid v1.0.1
-	github.com/docker/cli v26.0.0-rc1+incompatible
+	github.com/docker/cli v26.1.0+incompatible
 	github.com/docker/distribution v2.8.2+incompatible
-	github.com/docker/docker v26.0.0-rc1+incompatible
+	github.com/docker/docker v26.1.0+incompatible
 	github.com/dschmidt/go-layerfs v0.1.0
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/gofrs/flock v0.8.1
@@ -47,7 +47,7 @@ require (
 	github.com/mackerelio/go-osstat v0.2.4
 	github.com/mattn/go-isatty v0.0.20
 	github.com/mitchellh/go-spdx v0.1.0
-	github.com/moby/buildkit v0.13.0-rc3.0.20240403135707-dc23e43dc15c // https://github.com/moby/buildkit/commit/dc23e43dc15c14dcf1871f8cc97a6e96c8f94a2e
+	github.com/moby/buildkit v0.13.0-rc3.0.20240501212635-51d85d712fad // https://github.com/moby/buildkit/commit/51d85d712fad213cd10ac362b18c0a5aab909923
 	github.com/moby/locker v1.0.1
 	github.com/moby/patternmatcher v0.6.0
 	github.com/moby/sys/mount v0.3.3
@@ -73,7 +73,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.17.0
-	github.com/tonistiigi/fsutil v0.0.0-20240418180507-497d33b008ef
+	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.14
 	github.com/vektah/gqlparser/v2 v2.5.11
 	github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452
@@ -102,7 +102,7 @@ require (
 	golang.org/x/text v0.14.0
 	golang.org/x/tools v0.20.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240325203815-454cdb8f5daa
-	google.golang.org/grpc v1.62.1
+	google.golang.org/grpc v1.63.2
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
@@ -251,7 +251,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/genproto v0.0.0-20240123012728-ef4313101c80 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240123012728-ef4313101c80 // indirect
+	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )
