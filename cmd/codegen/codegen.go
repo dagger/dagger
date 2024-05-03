@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -49,6 +50,9 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 
 		for _, cmd := range generated.PostCommands {
 			cmd.Dir = cfg.OutputDir
+			if cfg.ModuleName != "" {
+				cmd.Dir = filepath.Join(cfg.OutputDir, cfg.ModuleContextPath)
+			}
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			fmt.Fprintln(logsW, "running post-command:", strings.Join(cmd.Args, " "))

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -17,8 +19,8 @@ var (
 	lang                  string
 	introspectionJSONPath string
 
-	moduleContextPath string
-	moduleName        string
+	modulePath string
+	moduleName string
 
 	outputSchema string
 )
@@ -43,7 +45,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 
-	rootCmd.Flags().StringVar(&moduleContextPath, "module-context", "", "path to context directory of the module")
+	rootCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
@@ -66,10 +68,17 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	if moduleName != "" {
 		cfg.ModuleName = moduleName
 
-		if moduleContextPath == "" {
-			return fmt.Errorf("--module-name requires --module-context")
+		if modulePath == "" {
+			return fmt.Errorf("--module-name requires --module-context-path")
 		}
-		cfg.ModuleContextPath = moduleContextPath
+		modulePath, err = relativeTo(outputDir, modulePath)
+		if err != nil {
+			return err
+		}
+		if part, _, _ := strings.Cut(modulePath, string(filepath.Separator)); part == ".." {
+			return fmt.Errorf("module path must be child of output directory")
+		}
+		cfg.ModuleContextPath = modulePath
 	}
 
 	if introspectionJSONPath != "" {
@@ -116,4 +125,16 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+func relativeTo(basepath string, tarpath string) (string, error) {
+	basepath, err := filepath.Abs(basepath)
+	if err != nil {
+		return "", err
+	}
+	tarpath, err = filepath.Abs(tarpath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Rel(basepath, tarpath)
 }
