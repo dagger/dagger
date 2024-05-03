@@ -23,7 +23,17 @@ dagger -m golang functions
 You should see the following output:
 
 ```
-FIXME
+Name              Description
+base              Sets up the Container with a golang image and cache volumes
+build             Build the Go project
+build-container   Build a Go project returning a Container containing the build
+build-remote      Build a remote git repo
+container         The go build container
+golangci-lint     Lint the Go project
+project           The go project directory
+test              Test the Go project
+with-container    Bring your own container
+with-project      Specify the Project to use in the module
 ```
 
 From the output, you can see that this Golang module includes Dagger Functions to lint (`lint`), test (`test`), build (`build`), and package (`buildContainer') a Go application.
@@ -33,7 +43,32 @@ Dagger Functions, just like regular functions, can accept arguments. These might
 You can use the Dagger CLI to dynamically inspect a Dagger Function's arguments and display a context-sensitive list of its supported arguments and sub-commands. Use the following command to list the available arguments for the `test` Dagger Function:
 
 ```shell
-dagger call test --help
+dagger -m golang call test --help
 ```
 
-This information will be useful once you start using the Dagger module, coming up next!
+You should see the following output:
+
+```
+Test the Go project
+
+Usage:
+  dagger call test [flags]
+
+Flags:
+      --args go test       Arguments to go test
+                           +default "./..."
+      --source Directory   The Go source code to test
+
+Global Flags:
+  -d, --debug             show debug logs and full verbosity
+      --json              Present result as JSON
+  -m, --mod string        Path to dagger.json config file for the module or a directory containing that
+                          file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g.
+                          "github.com/dagger/dagger/path/to/some/subdir")
+  -o, --output string     Path in the host to save the result to
+      --progress string   progress output format (auto, plain, tty) (default "auto")
+  -s, --silent            disable terminal UI and progress output
+  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+```
+
+Note the `args` and `source` flags. You'll use them in the next section!

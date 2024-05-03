@@ -28,6 +28,8 @@ module.exports = {
         "quickstart/test",
         "quickstart/build",
         "quickstart/publish",
+        "quickstart/develop-extend",
+        "quickstart/develop-new",
       ]
     },
     {
