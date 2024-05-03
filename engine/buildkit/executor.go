@@ -323,7 +323,7 @@ func (w *Worker) run(
 		})
 		return err
 	}
-	err = exitError(ctx, w.callWithIO(ctx, id, bundle, process, startedCallback, killer, runcCall))
+	err = exitError(ctx, w.callWithIO(ctx, process, startedCallback, killer, runcCall))
 	if err != nil {
 		w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
 		return err
@@ -405,18 +405,18 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		spec.Process.Env = process.Meta.Env
 	}
 
-	err = w.exec(ctx, id, state.Bundle, spec.Process, process, nil)
+	err = w.exec(ctx, id, spec.Process, process, nil)
 	return exitError(ctx, err)
 }
 
-func (w *Worker) exec(ctx context.Context, id, bundle string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
+func (w *Worker) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
 	killer, err := newExecProcKiller(w.runc, id)
 	if err != nil {
 		return fmt.Errorf("failed to initialize process killer: %w", err)
 	}
 	defer killer.Cleanup()
 
-	return w.callWithIO(ctx, id, bundle, process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+	return w.callWithIO(ctx, process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
 		return w.runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
 			Started: started,
 			IO:      io,
@@ -748,7 +748,7 @@ func handleSignals(ctx context.Context, runcProcess *procHandle, signals <-chan 
 
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error
 
-func (w *Worker) callWithIO(ctx context.Context, id, bundle string, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
+func (w *Worker) callWithIO(ctx context.Context, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
 	runcProcess, ctx := runcProcessHandle(ctx, killer)
 	defer runcProcess.Release()
 

@@ -410,7 +410,7 @@ func (bsp *batchSpanProcessor) enqueue(sd trace.ReadOnlySpan) {
 	if bsp.o.BlockOnQueueFull {
 		bsp.enqueueBlockOnQueueFull(ctx, sd)
 	} else {
-		bsp.enqueueDrop(ctx, sd)
+		bsp.enqueueDrop(sd)
 	}
 }
 
@@ -427,7 +427,7 @@ func (bsp *batchSpanProcessor) enqueueBlockOnQueueFull(ctx context.Context, sd t
 	}
 }
 
-func (bsp *batchSpanProcessor) enqueueDrop(ctx context.Context, sd trace.ReadOnlySpan) bool {
+func (bsp *batchSpanProcessor) enqueueDrop(sd trace.ReadOnlySpan) bool {
 	if !sd.SpanContext().IsSampled() {
 		return false
 	}

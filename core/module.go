@@ -127,7 +127,6 @@ func (mod *Module) Initialize(ctx context.Context, oldSelf dagql.Instance[*Modul
 		ctx,
 		mod.Query,
 		oldSelf.Self,
-		oldSelf.ID(),
 		nil,
 		mod.Runtime,
 		NewFunction("", &TypeDef{

@@ -594,7 +594,7 @@ func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagg
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
-func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet, dag *dagger.Client) (any, error) {
+func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 	name := r.FlagName()
 	usage := r.Description
 

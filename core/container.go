@@ -724,7 +724,7 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 }
 
 func (container *Container) Directory(ctx context.Context, dirPath string) (*Directory, error) {
-	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
+	dir, _, err := locatePath(container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -747,7 +747,7 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 }
 
 func (container *Container) File(ctx context.Context, filePath string) (*File, error) {
-	file, _, err := locatePath(ctx, container, filePath, NewFile)
+	file, _, err := locatePath(container, filePath, NewFile)
 	if err != nil {
 		return nil, err
 	}
@@ -767,7 +767,6 @@ func (container *Container) File(ctx context.Context, filePath string) (*File, e
 }
 
 func locatePath[T *File | *Directory](
-	ctx context.Context,
 	container *Container,
 	containerPath string,
 	init func(*Query, *pb.Definition, string, Platform, ServiceBindings) T,
@@ -929,7 +928,7 @@ func (container *Container) chown(
 }
 
 func (container *Container) writeToPath(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
-	dir, mount, err := locatePath(ctx, container, subdir, NewDirectory)
+	dir, mount, err := locatePath(container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
 	}

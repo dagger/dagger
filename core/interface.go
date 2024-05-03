@@ -252,7 +252,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				if err != nil {
 					return nil, fmt.Errorf("failed to get object return type for %s.%s: %w", ifaceName, fieldDef.Name, err)
 				}
-				return wrapIface(ctx, dag, ifaceReturnType, objReturnType, res)
+				return wrapIface(ifaceReturnType, objReturnType, res)
 			},
 		})
 	}
@@ -287,7 +287,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 	return nil
 }
 
-func wrapIface(ctx context.Context, dag *dagql.Server, ifaceType *InterfaceType, underlyingType ModType, res dagql.Typed) (dagql.Typed, error) {
+func wrapIface(ifaceType *InterfaceType, underlyingType ModType, res dagql.Typed) (dagql.Typed, error) {
 	switch underlyingType := underlyingType.(type) {
 	case *InterfaceType, *ModuleObjectType:
 		switch res := res.(type) {
@@ -323,7 +323,7 @@ func wrapIface(ctx context.Context, dag *dagql.Server, ifaceType *InterfaceType,
 			if ret.Elem == nil { // set the return type
 				ret.Elem = item
 			}
-			val, err := wrapIface(ctx, dag, ifaceType, underlyingType.Underlying, item)
+			val, err := wrapIface(ifaceType, underlyingType.Underlying, item)
 			if err != nil {
 				return nil, fmt.Errorf("failed to wrap item %d: %w", i, err)
 			}
