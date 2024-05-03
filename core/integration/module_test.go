@@ -3015,6 +3015,24 @@ class Test:
         return MockEnum(proto)
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
+
+@object()
+class Test {
+  @func()
+  fromProto(Proto: NetworkProtocol): string {
+    return Proto as string;
+  }
+
+  @func()
+  toProto(Proto: string): NetworkProtocol {
+    return Proto as NetworkProtocol;
+  }
+}
+`,
+		},
 	} {
 		tc := tc
 
