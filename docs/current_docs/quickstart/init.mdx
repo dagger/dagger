@@ -3,53 +3,80 @@ slug: /quickstart/init
 hide_table_of_contents: true
 title: "Initialize a Dagger module"
 ---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 # Quickstart
 
 ## Initialize a Dagger module
 
-Begin Daggerizing the application by initializing a new Dagger module at the project's root directory. Use the following command:
+Dagger SDKs are available for Go, Python and TypeScript. Bootstrap a new Dagger module in your preferred programming language by running `dagger init` in the application's root directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
 
 ```shell
-dagger init
+dagger init --sdk=go
 ```
 
-You should see a new file at the root of your repository, named `dagger.json`. View its contents. You should see the following:
+This will generate a `dagger.json` module metadata file, an initial `dagger/main.go` source code template, as well as a `dagger/dagger.gen.go` file and `dagger/internal/` directory.
+
+Examine the `dagger.json` file, which contains auto-generated metadata for your new module:
 
 ```json
 {
   "name": "hello-dagger",
+  "sdk": "go",
+  "source": "dagger",
   "engineVersion": "v0.11.1"
 }
 ```
 
-:::tip
+</TabItem>
+<TabItem value="Python">
+
+```shell
+dagger init --sdk=python
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
+
+Examine the `dagger.json` file, which contains auto-generated metadata for your new module:
+
+```json
+{
+  "name": "hello-dagger",
+  "sdk": "python",
+  "source": "dagger",
+  "engineVersion": "v0.11.1"
+}
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```shell
+dagger init --sdk=typescript
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
+
+Examine the `dagger.json` file, which contains auto-generated metadata for your new module:
+
+```json
+{
+  "name": "hello-dagger",
+  "sdk": "typescript",
+  "source": "dagger",
+  "engineVersion": "v0.11.1"
+}
+```
+
+</TabItem>
+</Tabs>
+
+Next, examine the source code template. This auto-generated template serves as a reference to basic module structure. It includes two pre-created functions, which you can modify, delete, or add to. They demonstrate usage of arguments and return types using simple `echo` and `grep` commands.
+
+:::tip MODULE NAMING
 By default, the module name is derived from the name of the directory in which it is initialized. To use a different name, add the `--name` argument to the `dagger init` call, such as `dagger init --name=my-module`.
-:::
-
-Now that you have a Dagger module, you can install other modules into it, as dependencies. This allows you to reuse functionality developed by others, without needing to write any code yourself. In this case, since the goal is to build a CI pipeline for a Go application, it makes sense to install the Golang module from the Daggerverse. This module contains a number of ready-made Dagger Functions for building, linting, testing and packaging Go applications.
-
-Use the following command to install the module:
-
-```shell
-dagger install github.com/kpenfound/dagger-modules/golang@v0.1.10
-```
-
-Once the command completes, look at the `dagger.json` file again. You should see the newly-added dependency in it, similar to that shown below:
-
-```json
-{
-  "name": "hello-dagger",
-  "dependencies": [
-    {
-      "name": "golang",
-      "source": "github.com/kpenfound/dagger-modules/golang@44564d6443a919a2c3f1dd7ad02fc22b5fb9db8c"
-    }
-  ],
-  "engineVersion": "v0.11.1"
-}
-```
-
-:::tip
-The exact Git commit for the module version is recorded in `dagger.json`. Dagger enforces version pinning, which guarantees that the module version you install is the one you'll be using.
 :::

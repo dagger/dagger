@@ -3,45 +3,124 @@ slug: /quickstart/test
 hide_table_of_contents: true
 title: "Daggerize the application's tests"
 ---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 # Quickstart
 
 ## Daggerize the application's tests
 
-You're now ready to dive into Dagger and call your first Dagger Function! Use the following command:
+You're now ready to dive into Dagger and write your first Dagger Function!
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update the generated `dagger/main.go` file with the following code:
+
+```go
+package main
+
+import (
+	"context"
+)
+
+type HelloDagger struct{}
+
+// Returns the result of running unit tests
+func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Run([]string{"test:unit", "run"}).
+		Stdout(ctx)
+}
+```
+
+There's a lot of code here, and it's explained in detail further along. For the moment, the only thing to recognize is that this `Test()` Dagger Function is written in Go and expects a `source` argument of type `Directory`, which is a special Dagger type. This `source` argument tells the Dagger Function where to find the application's source code. The `Directory` type can refer to either a local directory or a remote Git repository.
+
+</TabItem>
+
+<TabItem value="Python">
+FIXME
+</TabItem>
+
+<TabItem value="TypeScript">
+FIXME
+</TabItem>
+</Tabs>
+
+Call the Dagger Function:
 
 ```shell
-dagger -m golang call test \
+dagger call test \
   --source=.
 ```
 
 You should see various operations taking place, ending with a test run and the following output:
 
 ```
-PASS
-ok      github.com/kpenfound/greetings-api      0.005s
+> myapp@0.0.0 test:unit
+> vitest run
+
+ RUN  v1.5.3 /src
+
+ ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 28ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:30:25
+   Duration  9.93s (transform 436ms, setup 1ms, collect 436ms, tests 28ms, environment 8.46s, prepare 724ms)
 ```
 
-Well done! You just called your first Dagger Function!
+Well done! You just wrote and called your first Dagger Function!
+
+:::tip
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `Test()` is invoked as `dagger call test`.
+:::
 
 Let's break down the command you just ran to understand what just happened:
 
-- `dagger -m golang call test`: This tells Dagger to load the Golang module, and execute the Dagger Function named `test` from that module.
-- `--source=.`: Dagger Functions, just like regular functions, can accept arguments. These might be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. Here, the `source` argument tells the Dagger Function where to find the application's source code: in the current working directory.
+- `dagger call test`: The `dagger call` command is the standard way to invoke a Dagger Function. Tihs command tells Dagger to execute the Dagger Function named `test` from the current module.
+- `--source=.`: This is an argument, passed to the Dagger Function as a command-line flag. Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. This `source` argument tells the Dagger Function the location of the application's source code: in the current working directory.
 
-Inspect the [module's source code](https://github.com/kpenfound/dagger-modules/blob/44564d6443a919a2c3f1dd7ad02fc22b5fb9db8c/golang/main.go#L107) to understand what happens when it's invoked via `dagger call`:
+Next, let's backtrace to the source code of the Dagger Function you just wrote to understand what happens when it's invoked via `dagger call`:
 
-- The module uses the Dagger Go SDK and is written using standard Go conventions.
-- It contains a number of functions, one of which is named `Test()`.
-- The `Test()` function expects a `source` argument of type `Directory`, which is a special Dagger type. The `Directory` type can refer to either a local directory or a remote Git repository.
+<Tabs groupId="language">
+<TabItem value="Go">
 
-:::tip
-When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why the function named `Test()` is invoked as `dagger call test`.
+- It calls the Node module's constructor function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+  - `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
+- It calls the `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
+- It calls the `Node.WithSource()` function, which returns a revised `Node` object with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `Node.WithSource()` function also creates a cache volume for application dependencies.
+- It calls the `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object with the application's dependencies.
+- It calls the `Node.Commands().Run()` function, which returns a revised `Node` object configured to execute the `npm run test:unit run` command in the container image.
+- It uses the core `Container.Stdout()` SDK method to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+
+</TabItem>
+
+<TabItem value="Python">
+FIXME
+</TabItem>
+
+<TabItem value="TypeScript">
+FIXME
+</TabItem>
+
+</Tabs>
+
+Backtrace a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts) to see what's happening there:
+
+- The first thing to notice is that the Node module is written in TypeScript. However, its functions are being called from your primary Dagger module, which is written in Go. Dagger takes care of the translation via its language-agnostic GraphQL layer.
+- The [Node module's constructor](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L22) uses the core `container.from()` method to initialize a new container from a `node` base image, using the version number passed to it. This method returns a `Container` type representing an OCI-compatible container image.
+- The [Node module's `withNpm()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L73) uses the `container.withEntrypoint()` method to set the container entrypoint to the `npm` CLI and initalizes a cache volume for the `npm` cache using the `container().withMountedCache()` method.
+- The [Node module's `withSource()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L34) uses the `container.withDirectory()`, `container.withWorkdir()` and `container.withMountedCache()` to mount the source code directory (passed to it as argument) in the container, set the working directory in the container to that mount point, and create a cache volume for dependencies.
+- The [Node module's `install()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L109) uses the `container.withExec()` method to define the command to download dependencies in the container (`npm install`).
+- The [Node module's `commands().run()`](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/commands.ts#L13) function accepts an array of command-line arguments and readies them for execution in the container, also using the `container.withExec()` method.
+
+:::tip LANGUAGE-AGNOSTIC TOOLING
+Dagger Functions can call other functions, across languages. So, even though the Node module in this quickstart tutorial is written in TypeScript, you can transparently call its functions from another Dagger module written in Go, Python or any other supported language. This means that you no longer need to care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
+
+Dagger is able to do this because it uses GraphQL as its low-level language-agnostic API query language.  Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
 :::
-
-Dig a little deeper to see what the `Test()` function does:
-
-- It uses the `Container().From()` method to initialize a new container from a base image. In this example, the base image is `golang:1.21`. This method returns a `Container` type representing an OCI-compatible container image.
-- It uses the `Container.WithDirectory()` method to mount the source code directory passed to the Dagger Function via the `source` argument in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
-- It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `go test`, which runs the application's test suite. The `WithExec()` method returns a revised `Container` with the results of command execution.
-- It retrieves the output stream of the last executed with the `Container.Stdout()` method and prints the result to the console.

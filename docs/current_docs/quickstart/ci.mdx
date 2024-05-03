@@ -1,0 +1,68 @@
+---
+slug: /quickstart/ci
+hide_table_of_contents: true
+title: "Tie it all together"
+---
+
+# Quickstart
+
+## Tie it all together
+
+So far, you've been calling individual Dagger Functions using the Dagger CLI. But what if you want to combine multiple Dagger Function calls?
+
+One option is to stitch together calls using the CLI and a shell script or a Makefile. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
+
+A better approach is to program a "master" Dagger Function, which can then orchestrate other Dagger Functions to achieve the required results. Using a programming language to stitch together Dagger Functions produces more maintainable code, more consistent results, and closer adherence to coding standards and best practices.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update the generated `dagger/main.go` file and create a new Dagger Function which internally uses the three Dagger Functions created in previous sections:
+
+```go
+FIXME
+```
+
+This Dagger Function expects to receive the source code directory and image registry credentials as arguments. It performs the following operations:
+
+- It calls the `Test()` Dagger Function to run the application's tests.
+- It calls the `Package()` Dagger Function to build a container image of the application.
+- It calls the `Container.Publish()` function to publish the container image to the specified registry return the image identifier.
+
+<TabItem value="Python">
+FIXME
+</TabItem>
+
+<TabItem value="TypeScript">
+FIXME
+</TabItem>
+
+Call the Dagger Function to run the pipeline and publish the containerized application image to the [ttl.sh container registry](https://ttl.sh):
+
+```shell
+dagger call ci \
+  --source=. \
+  --registry-address=ttl.sh \
+  --registry-username="" \
+  --registry-password=""
+```
+
+Since the registry details are Dagger Function arguments, you can just as easily publish to a different container registry. Here is an example of calling the same Dagger Function to run the pipeline and publish the application image to Docker Hub. Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with Docker Hub credentials.
+
+```shell
+export REGISTRY_PASSWORD=DOCKER-HUB-PASSWORD
+dagger call publish \
+  --source=. \
+  --registry-address=docker.io \
+  --registry-username=DOCKER-HUB-USERNAME \
+  --registry-password=env:REGISTRY_PASSWORD
+```
+
+You should see the application being tested and, if the tests are successful, you should also see the container image being built and published. The final result will be an image reference on the [ttl.sh container registry](https://ttl.sh), as before.
+
+
+FIXME: Scratch text, remove later
+Why do this? By expressing your pipeline as code, you benefit from:
+- Easier maintenance, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
+- Higher reliability, because performing pipeline operations in containers removes environment-related variance which can destabilize shell scripts in unexpected ways.
+- An improved development experience, because using a programming language opens up access to that language's entire ecosystem, enabling the use of better tooling and adherence to coding standards and best practices.

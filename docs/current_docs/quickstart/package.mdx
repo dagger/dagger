@@ -1,0 +1,180 @@
+---
+slug: /quickstart/package
+hide_table_of_contents: true
+title: "Daggerize the application's packaging"
+---
+
+# Quickstart
+
+## Daggerize the application's packaging
+
+At this point, you've written Dagger Functions to test, build and deliver the application to your local host. But why not also package the application and publish a containerized image to a registry?
+
+Unfortunately, the Node module doesn't include any ready-to-use functionality to containerize the application, so you'll have to program this operation from scratch.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update the generated `dagger/main.go` file and create a new Dagger Function to copy the built application into an NGINX web server container image.
+
+```go
+package main
+
+import (
+	"context"
+)
+
+type HelloDagger struct{}
+
+// Returns a container with the production build
+func (m *HelloDagger) Package(source *Directory) *Container {
+	return dag.Container().From("nginx:1.25-alpine").
+		WithDirectory("/usr/share/nginx/html", m.Build(source)).
+		WithExposedPort(80)
+}
+
+// Returns a directory with the production build
+func (m *HelloDagger) Build(source *Directory) *Directory {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Build().
+		Directory("./dist")
+}
+
+// Returns the result of running unit tests
+func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Run([]string{"test:unit", "run"}).
+		Stdout(ctx)
+}
+```
+
+The `Package()` Dagger Function performs the following operations:
+
+- It calls the core `Container.From()` SDK method to initialize a new container from a base image - here, the `nginx:1.25-alpine` image. The `From()` method returns a new `Container` object with the result.
+- It uses the `Container.WithDirectory()` SDK method to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
+- It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+
+<TabItem value="Python">
+FIXME
+</TabItem>
+
+<TabItem value="TypeScript">
+FIXME
+</TabItem>
+
+Call the Dagger Function:
+
+```shell
+dagger call package \
+  --source=.
+```
+
+You should see the application being built and the build output added to a container image. Once complete, you should see the following output:
+
+```
+Container evaluated. Use "dagger call package --help" to see available sub-commands.
+```
+
+This means that the build succeeded, and a `Container` type representing the built container image was returned. And, like `Directory`, `Container` is a Dagger core type which comes with useful functions of its own.
+
+One of the most interesting `Container` functions is `terminal`, which can be used to open an interactive terminal session with the container. To see this in action, revise the previous command and chain an additional function call to `terminal` on the returned `Container`:
+
+:::tip
+The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
+:::
+
+```shell
+dagger call \
+  package --source=. \
+  terminal
+```
+
+This revised command builds the container image and then drops you into an interactive terminal, allowing you to directly execute commands in the running container. For example, you can inspect the contents of the container filesystem:
+
+```shell
+tree /usr/share/nginx
+```
+
+You should see output similar to the following:
+
+```
+/usr/share/nginx
+└── html
+    ├── 50x.html
+    ├── assets
+    │   ├── AboutView-C6Dx7pxG.css
+    │   ├── AboutView-DvhYBoTV.js
+    │   ├── index-C4Dqy5pm.js
+    │   └── index-D6pr4OYR.css
+    ├── favicon.ico
+    └── index.html
+
+2 directories, 7 files
+```
+
+You can also execute a command in the container. For example, you can send an HTTP request for the application's index page to the running NGINX Web server with `curl`:
+
+```shell
+curl localhost:80
+```
+
+You should receive an HTML page as response:
+
+```
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vite App</title>
+    <script type="module" crossorigin src="/assets/index-C4Dqy5pm.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D6pr4OYR.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
+```
+
+Exit the interactive terminal once done:
+
+```shell
+exit
+```
+
+:::caution
+While most terminal programs such as `htop` or `vim` work with `dagger call ... terminal`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
+:::
+
+The `Container` type also has a `publish` function, which publishes the container to a registry. To see this in action, go back to the original command and chain an additional function call to `publish` on the returned `Container`, as shown below:
+
+```shell
+dagger call \
+  package --source=. \
+  publish --address ttl.sh/hello-dagger-$RANDOM
+```
+
+To prevent name collisions, the container image name is suffixed with a random number. You should the container image being built and published, with the final result being an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
+
+```
+ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
+```
+
+Test the published container image using the command below (update the image name as per the output of the previous Dagger Function call):
+
+```shell
+docker run -d --rm --publish 8080:80 ttl.sh/hello-dagger-47384
+```
+
+Browse to port 8080 of the Docker host and confirm that you see the application index page, served by NGINX:
+
+FIXME: add image

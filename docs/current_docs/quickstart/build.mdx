@@ -1,7 +1,7 @@
 ---
 slug: /quickstart/build
 hide_table_of_contents: true
-title: "Daggerize the application's build process"
+title: "Daggerize the application's build"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -9,38 +9,69 @@ import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Daggerize the application's build process
+## Daggerize the application's build
 
-If your application passes all its tests, the typical next step is to build it. The Golang module has a `build` Dagger Function which, as the name suggests, can build a Go application. Use the following command to see it in action:
+If your application passes all its tests, the typical next step is to build it. Let's add a new Dagger Function to the module to create a production build of the example application.
 
-<Tabs groupId="os">
-<TabItem value="Linux">
+<Tabs groupId="language">
+<TabItem value="Go">
 
-```shell
-dagger -m golang call \
-  build --source=. --args=. --os=linux --arch=amd64
+Update the generated `dagger/main.go` file with the following code:
+
+```go
+package main
+
+import (
+	"context"
+)
+
+type HelloDagger struct{}
+
+// Returns a directory with the production build
+func (m *HelloDagger) Build(source *Directory) *Directory {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Build().
+		Directory("./dist")
+}
+
+// Returns the result of running unit tests
+func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Run([]string{"test:unit", "run"}).
+		Stdout(ctx)
+}
 ```
 
-</TabItem>
-<TabItem value="macOS">
+This Dagger Function does many of the same things as the previous one, but with these modifications:
 
-```shell
-# FIXME: recheck for Mac
-dagger -m golang call \
-  build --source=. --args=. --os=darwin --arch=amd64
-```
+- Instead of calling the `Node.Commands().Run()` function, it calls the `Node.Commands().Build()` function. This function returns a revised `Node` container object after setting the `npm run build` command to run in the container image.
+  - The `npm run build` command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It uses the `Container.Directory()` method to return the directory to the function caller as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
 
 </TabItem>
-<TabItem value="Windows">
+<TabItem value="Python">
+FIXME
+</TabItem>
 
-FIXME: Add Windows command
-
+<TabItem value="TypeScript">
+FIXME
 </TabItem>
 </Tabs>
 
-:::tip
-By default, the `build` Dagger Function from the Golang module builds a Go binary based on information derived from the runtime container. Since the runtime container uses Linux, this means that the compiled binary will be a `linux/amd64` binary, which will not work on Windows or macOS operating systems. This can be resolved by passing explicit `--os` and `--arch` arguments to the Dagger Function.
-:::
+Call the Dagger Function:
+
+```shell
+dagger call build \
+  --source=.
+```
 
 You should see various operations taking place, ending with this output:
 
@@ -50,22 +81,7 @@ Directory evaluated. Use "dagger call build --help" to see available sub-command
 
 This means that the build succeeded, and a directory was returned as a `Directory` type.
 
-Before going further, let's again break down the command you just ran:
-
-- `dagger -m golang call build`: This tells Dagger to load the Golang module, and execute the Dagger Function named `build` from that module.
-- `--source=.`: This argument sets the location for the application's source code.
-- `--args=.`: This argument sets additional build arguments to pass to the compiler.
-- `--os=[value]`: This argument sets the target operating system to compile for.
-- `--arch=[value]`: This argument sets the target architecture to compile for.
-
-Inspect the [module's source code](https://github.com/kpenfound/dagger-modules/blob/main/golang/main.go#L47) and look inside the `Build()` function to understand what happens when it's invoked via `dagger call`:
-
-- As before, it uses the `Container().From()` method to initialize a new container from a `golang:1.21` base image, then the `Container.WithDirectory()` method to mount the source code directory in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
-- It uses the `Container.WithEnvVariable()` method to set the `GOOS` and `GOARCH` environment variables in the container to the values provided by the `os` and `arch` arguments. These environment variables are used by the compiler to create a binary optimized for the target operating system and architecture.
-- It uses the `Container.WithExec()` method to define the `go build` command to be executed in the container. This command compiles the application and writes the resulting binary to an `/out/` directory in the container.
-- It uses the `Container.Directory()` method to return the directory to the function caller as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
-
-At this point, the Dagger Function has produced a directory with the compiled binary. However, since Dagger Functions execute within containers spawned by the Dagger Engine, the returned directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
+At this point, the Dagger Function has produced a directory with a production build of the application. However, since Dagger Functions execute within containers spawned by the Dagger Engine, the returned directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
 
 Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When calling a Dagger Function that returns one of these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger.
 
@@ -75,42 +91,20 @@ All just-in-time artifacts, such as containers, directories and files, have an `
 
 With this knowledge of just-in-time artifacts and function chaining, the next step should be clear:  transfer the directory returned by the Dagger Function from the container to the host, by chaining an `export` function call to it. Use the following command:
 
-<Tabs groupId="os">
-<TabItem value="Linux">
-
 ```shell
-dagger -m golang call \
-  build --source=. --args=. --os=linux --arch=amd64 \
+dagger call \
+  build --source=. \
   export --path=./build
 ```
-</TabItem>
-<TabItem value="macOS">
-
-```shell
-dagger -m golang call \
-  build --source=. --args=. --os=darwin --arch=amd64 \
-  export --path=./build
-```
-
-</TabItem>
-<TabItem value="Windows">
-
-FIXME: Add Windows
-
-</TabItem>
 </Tabs>
 
-This command exports the directory returned by the `build` Dagger Function to a custom path (`./build`) on the host. Inspect this directory and you should see the application binary, compiled for your host and platform:
+This command exports the directory returned by the `build` Dagger Function to a custom path (`./build`) on the host. Inspect this directory and you should see the production build of the application:
 
 ```
-$ ls -al ./build/
-total 6672
-drwx------ 2 admin admin    4096 May  3 08:27 .
-drwxr-xr-x 8 admin admin    4096 May  3 08:27 ..
--rwxr-xr-x 1 admin admin 6821549 May  3 08:26 greetings-api
-
-$ file ./build/greetings-api
-./build/greetings-api: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, Go BuildID=TGWO3StIGdJHiNPik1kJ/y5lCC0lCfgdq0ktDatoA/qu2s6Q78B3af5lhBKfWi/MqZ2drbhbH9kHGm9EhOy, with debug_info, not stripped
+$ ls ./build/
+assets  favicon.ico  index.html
 ```
 
-FIXME: Maybe skip this and go straight to container build based on discussion with shykes
+:::tip FUNCTION CHAINING
+FIXME
+:::
