@@ -105,5 +105,5 @@ assets  favicon.ico  index.html
 ```
 
 :::tip FUNCTION SANDBOXING
-
+Dagger Functions execute within containers spawned by the Dagger Engine and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching. [Learn more](../manuals/user/host/539261-host.mdx).
 :::
