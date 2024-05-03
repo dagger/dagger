@@ -28,7 +28,7 @@ module.exports = {
         "quickstart/functions",
         "quickstart/test",
         "quickstart/build",
-        "quickstart/publish",
+        "quickstart/package",
         "quickstart/ci",
         "quickstart/conclusion"
       ]
