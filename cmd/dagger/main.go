@@ -356,7 +356,8 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 	// separate optional flags from required flags
 	originalFlags.VisitAll(func(flag *pflag.Flag) {
 		// Append [required] and show required flags first
-		if flag.Annotations["cobra_annotation_bash_completion_one_required_flag"] != nil {
+		requiredAnnotation, found := flag.Annotations[cobra.BashCompOneRequiredFlag]
+		if found && requiredAnnotation[0] == "true" {
 			flag.Usage += " [required]"
 			mergedFlags.AddFlag(flag)
 		} else {
