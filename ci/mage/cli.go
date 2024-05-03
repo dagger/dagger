@@ -15,6 +15,9 @@ type Cli mg.Namespace
 func (cl Cli) Publish(ctx context.Context, version string) error {
 	args := []string{"--version=" + version, "cli", "publish"}
 
+	// explicitly pass the git directory - goreleaser needs it
+	args = append(args, "--git-dir=./.git")
+
 	if v, ok := os.LookupEnv("GH_ORG_NAME"); ok {
 		args = append(args, "--github-org-name="+v)
 	}

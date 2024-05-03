@@ -41,6 +41,8 @@ const (
 func (cli *CLI) Publish(
 	ctx context.Context,
 
+	gitDir *Directory,
+
 	githubOrgName string,
 	githubToken *Secret,
 
@@ -71,6 +73,7 @@ func (cli *CLI) Publish(
 	_, err = ctr.
 		WithWorkdir("/app").
 		WithMountedDirectory("/app", cli.Dagger.Source).
+		WithDirectory("/app/.git", gitDir).
 		WithEnvVariable("GH_ORG_NAME", githubOrgName).
 		WithSecretVariable("GITHUB_TOKEN", githubToken).
 		WithSecretVariable("GORELEASER_KEY", goreleaserKey).
