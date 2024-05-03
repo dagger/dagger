@@ -88,7 +88,7 @@ func init() {
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
-	cobra.AddTemplateFunc("separateAndModifyFlags", separateAndModifyFlags)
+	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -346,8 +346,8 @@ func toUpperBold(s string) string {
 	return termenv.String(upperCase).Bold().String()
 }
 
-// separateAndModifyFlags separates optional flags from required flags
-func separateAndModifyFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
+// sortRequiredFlags separates optional flags from required flags.
+func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 	mergedFlags := pflag.NewFlagSet("merged", pflag.ContinueOnError)
 	mergedFlags.SortFlags = false
 
@@ -440,7 +440,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 {{- if .HasAvailableLocalFlags}}
 
 {{ "Options" | toUpperBold }}
-{{ flagUsagesWrapped (separateAndModifyFlags .LocalFlags) | trimTrailingWhitespaces}}
+{{ flagUsagesWrapped (sortRequiredFlags .LocalFlags) | trimTrailingWhitespaces}}
 
 {{- end}}
 
