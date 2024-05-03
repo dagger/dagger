@@ -513,7 +513,7 @@ func (sdk *goSDK) baseWithCodegen(
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
 					"--output", dagql.String(goSDKUserModContextDirPath),
-					"--module-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+					"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 					"--module-name", dagql.String(modName),
 					"--introspection-json-path", goSDKIntrospectionJSONPath,
 				},

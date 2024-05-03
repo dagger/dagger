@@ -32,8 +32,8 @@ type Config struct {
 
 	// ModuleName is the module name to generate code for.
 	ModuleName string
-	// ModulePath is the subpath where a module can be found.
-	ModulePath string
+	// ModuleContextPath is the subpath where a module can be found.
+	ModuleContextPath string
 
 	// IntrospectionJSON is an optional pre-computed introspection json string
 	IntrospectionJSON string

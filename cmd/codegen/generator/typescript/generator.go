@@ -54,7 +54,7 @@ func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.
 
 	target := ClientGenFile
 	if g.Config.ModuleName != "" {
-		target = filepath.Join(g.Config.ModulePath, "sdk/api", ClientGenFile)
+		target = filepath.Join(g.Config.ModuleContextPath, "sdk/api", ClientGenFile)
 	}
 	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
 		return nil, err

@@ -55,7 +55,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	outDir := "."
 	if g.Config.ModuleName != "" {
-		outDir = g.Config.ModulePath
+		outDir = g.Config.ModuleContextPath
 	}
 
 	mfs := memfs.New()
@@ -165,8 +165,8 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	var mod *modfile.File
 
 	// check for a go.mod already for the dagger module
-	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModulePath, "go.mod")); err == nil {
-		modPath = g.Config.ModulePath
+	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleContextPath, "go.mod")); err == nil {
+		modPath = g.Config.ModuleContextPath
 
 		mod, err = modfile.ParseLax("go.mod", content, nil)
 		if err != nil {
@@ -189,7 +189,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	}
 	// could not find a go.mod, so we can init a basic one
 	if mod == nil {
-		modPath = g.Config.ModulePath
+		modPath = g.Config.ModuleContextPath
 		mod = new(modfile.File)
 
 		modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
@@ -255,7 +255,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		return nil, false, err
 	}
 
-	packageImport, err := filepath.Rel(modPath, g.Config.ModulePath)
+	packageImport, err := filepath.Rel(modPath, g.Config.ModuleContextPath)
 	if err != nil {
 		return nil, false, err
 	}

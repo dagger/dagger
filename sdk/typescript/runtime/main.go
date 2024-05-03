@@ -156,7 +156,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 			"--lang", "typescript",
 			"--output", ModSourceDirPath,
 			"--module-name", name,
-			"--module-path", filepath.Join(ModSourceDirPath, subPath),
+			"--module-context-path", filepath.Join(ModSourceDirPath, subPath),
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,

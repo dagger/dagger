@@ -45,7 +45,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
 
-	rootCmd.Flags().StringVar(&modulePath, "module-path", "", "path to context directory of the module")
+	rootCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
 	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
@@ -69,16 +69,16 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		cfg.ModuleName = moduleName
 
 		if modulePath == "" {
-			return fmt.Errorf("--module-name requires --module-path")
+			return fmt.Errorf("--module-name requires --module-context-path")
 		}
 		modulePath, err = relativeTo(outputDir, modulePath)
 		if err != nil {
 			return err
 		}
-		if strings.HasPrefix(modulePath, "..") || strings.HasPrefix(modulePath, "../") {
+		if part, _, _ := strings.Cut(modulePath, string(filepath.Separator)); part == ".." {
 			return fmt.Errorf("module path must be child of output directory")
 		}
-		cfg.ModulePath = modulePath
+		cfg.ModuleContextPath = modulePath
 	}
 
 	if introspectionJSONPath != "" {
