@@ -646,6 +646,10 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/administrator/cloud/organizations"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/administrator/cloud/caching"
             }
           ]
         }

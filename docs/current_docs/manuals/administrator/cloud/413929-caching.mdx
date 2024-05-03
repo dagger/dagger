@@ -1,0 +1,30 @@
+---
+slug: /manuals/administrator/413929/caching
+---
+
+# Caching
+
+
+Dagger has two distinct caching mechanisms:
+
+1. The layers cache: This caches build instructions and the results of `withExec()` API calls. It is implemented by Buildkit.
+2. The volumes cache: This caches the contents of a Dagger volume and is persisted across Dagger Engine sessions. It is maintained locally and, where applicable, [replicated to Dagger Cloud](../../user/572923/cloud-get-started/#step-4-use-cache-volumes-with-the-experimental-dagger-cloud-cache). It is implemented by Dagger (distinct from Buildkit).
+
+## Implementation
+
+Both cache mechanisms are namespaced by Dagger Cloud Organization name.
+- The cache key for the layers cache is `bucket / organization-name / content-address`.
+- The cache key for the volumes cache is `bucket / organization-name / volume-name`, where the volume name is set by the user using the Dagger API.
+- Manifests of the layers cache are sent to Dagger Cloud to support merging layers between runs (not supported by Buildkit).
+
+The cache is shared across pipelines and runs, within the same Dagger Cloud organization. This implies that users in the same organization share the same cache.
+
+:::important
+No cache data is shared across organizations.
+:::
+
+## Security
+
+Both caching mechanisms use an object store (S3 or S3-compatible).
+
+Data is encrypted in transit (the transport layer is HTTPS/TLS) and at rest (read more about data encryption in [CloudFlare R2](https://developers.cloudflare.com/r2/reference/data-security/), [AWS S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-bucket-intro.html) and [Google Cloud Storage](https://cloud.google.com/docs/security/encryption/default-encryption)).
