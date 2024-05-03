@@ -159,7 +159,7 @@ known-first-party = ["dagger"]
 [tool.ruff.per-file-ignores]
 "./docs/*" = ["D1"]
 "./runtime/*" = ["D1"]
-"./codegen/*" = ["D1"]
+"./codegen/*" = ["D1", "PLE0307"]
 "./src/dagger/client/gen.py" = [
     # Not much control over field names and docs coming from the API.
     # Note: We could detect built-in shadowing like the reserved

@@ -13,4 +13,4 @@ python:
   install:
     - method: pip
       path: sdk/python
-    - requirements: sdk/python/requirements/docs.txt
+    - requirements: sdk/python/requirements.txt
