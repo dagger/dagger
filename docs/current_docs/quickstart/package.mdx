@@ -61,7 +61,7 @@ The `Package()` Dagger Function performs the following operations:
 - It calls the core `Container.From()` SDK method to initialize a new container from a base image - here, the `nginx:1.25-alpine` image. The `From()` method returns a new `Container` object with the result.
 - It uses the `Container.WithDirectory()` SDK method to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
 - It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
-
+</TabItem>
 <TabItem value="Python">
 FIXME
 </TabItem>
@@ -69,6 +69,7 @@ FIXME
 <TabItem value="TypeScript">
 FIXME
 </TabItem>
+</Tabs>
 
 Call the Dagger Function:
 
