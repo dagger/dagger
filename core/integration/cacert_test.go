@@ -358,10 +358,11 @@ func customCACertTests(
 	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
 
 	if os.Getenv(executeTestEnvName) == "" {
-		genCerts := generateCerts(c, "ca", "server")
+		certGen := newGeneratedCerts(c, "ca")
+		serverCert, serverKey := certGen.newServerCerts("server")
 
 		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", genCerts.caRootCert)
+			return ctr.WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert)
 		})
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -372,10 +373,10 @@ func customCACertTests(
 			With(goCache(c)).
 			WithMountedDirectory("/src", thisRepo).
 			WithWorkdir("/src").
-			WithMountedFile("/ca.crt", genCerts.caRootCert).
-			WithMountedFile("/server.crt", genCerts.serverCert).
-			WithMountedFile("/server.key", genCerts.serverKey).
-			WithMountedFile("/dhparam.pem", genCerts.dhParam).
+			WithMountedFile("/ca.crt", certGen.caRootCert).
+			WithMountedFile("/server.crt", serverCert).
+			WithMountedFile("/server.key", serverKey).
+			WithMountedFile("/dhparam.pem", certGen.dhParam).
 			WithServiceBinding("engine", devEngine.AsService()).
 			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
@@ -398,49 +399,15 @@ func customCACertTests(
 	serverKey := c.Host().File("/server.key")
 	dhParam := c.Host().File("/dhparam.pem")
 
-	// TODO: pin image
-	serverCtr := c.Container().From("nginx:latest").
-		WithMountedFile("/etc/ssl/certs/server.crt", serverCert).
-		WithMountedFile("/etc/ssl/certs/dhparam.pem", dhParam).
-		WithMountedFile("/etc/ssl/private/server.key", serverKey).
-		WithNewFile("/etc/nginx/snippets/self-signed.conf", dagger.ContainerWithNewFileOpts{
-			Contents: `ssl_certificate /etc/ssl/certs/server.crt;
-ssl_certificate_key /etc/ssl/private/server.key;
-`}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
-		Contents: fmt.Sprintf(`ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-ssl_prefer_server_ciphers on;
-ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
-ssl_ecdh_curve secp384r1;
-ssl_session_cache shared:SSL:10m;
-ssl_session_tickets off;
-ssl_stapling_verify on;
-resolver 10.%d.0.1 valid=300s;
-resolver_timeout 5s;
-add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
-add_header X-Frame-Options DENY;
-add_header X-Content-Type-Options nosniff;
-ssl_dhparam /etc/ssl/certs/dhparam.pem;
-`, netID)}).WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{
-		Contents: `server {
-	listen 80 default_server;
-	listen [::]:80 default_server;
-	server_name server;
-	return 302 https://$server_name$request_uri;
-}
-
-server {
-	listen 443 ssl http2 default_server;
-	listen [::]:443 ssl http2 default_server;
-	include snippets/self-signed.conf;
-	include snippets/ssl-params.conf;
-	server_name server;
-	location / {
-		return 200 "hello";
-	}
-}
-`}).WithExec([]string{"nginx", "-t"}).
-		WithExposedPort(443).
-		WithExec([]string{"nginx"})
+	serverCtr := nginxWithCerts(c, nginxWithCertsOpts{
+		serverCert:          serverCert,
+		serverKey:           serverKey,
+		dhParam:             dhParam,
+		netID:               netID,
+		dnsName:             "server",
+		msg:                 "hello",
+		redirectHTTPToHTTPS: true,
+	})
 
 	caCertContents, err := caCert.Contents(ctx)
 	require.NoError(t, err)
@@ -458,10 +425,11 @@ server {
 }
 
 type generatedCerts struct {
+	c   *dagger.Client
+	ctr *dagger.Container
+
 	caRootCert *dagger.File
 	caRootKey  *dagger.File
-	serverCert *dagger.File
-	serverKey  *dagger.File
 	dhParam    *dagger.File
 
 	password string
@@ -470,9 +438,9 @@ type generatedCerts struct {
 	printPasswordScript *dagger.File
 }
 
-func generateCerts(c *dagger.Client, caHostname, serverHostname string) *generatedCerts {
+func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 	const password = "hunter4"
-	genCtr := c.Container().From(alpineImage).
+	ctr := c.Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "openssl"}).
 		WithExec([]string{"openssl", "dhparam",
 			"-out", "/dhparam.pem",
@@ -511,7 +479,24 @@ DNS.1 = %s
 			"-sha256",
 			"-extfile", "/ca.ext",
 			"-passin", "pass:" + password,
-		}).
+		})
+
+	return &generatedCerts{
+		c:          c,
+		ctr:        ctr,
+		caRootCert: ctr.File("/ca.pem"),
+		caRootKey:  ctr.File("/ca.key"),
+		dhParam:    ctr.File("/dhparam.pem"),
+		password:   password,
+		printPasswordScript: c.Directory().WithNewFile("printpass", fmt.Sprintf(`#!/bin/sh
+echo -n %s
+`, password), dagger.DirectoryWithNewFileOpts{Permissions: 0755}).File("printpass"),
+	}
+}
+
+// returns Files for cert and key
+func (g *generatedCerts) newServerCerts(serverHostname string) (*dagger.File, *dagger.File) {
+	ctr := g.ctr.
 		WithExec([]string{"openssl", "genrsa",
 			"-out", "/server.key",
 			"2048",
@@ -520,7 +505,7 @@ DNS.1 = %s
 			"-new",
 			"-key", "/server.key",
 			"-out", "/server.csr",
-			"-passin", "pass:" + password,
+			"-passin", "pass:" + g.password,
 			"-subj", "/C=US/ST=CA/L=San Francisco/O=Example/CN=" + serverHostname,
 		}).
 		WithNewFile("/server.ext", dagger.ContainerWithNewFileOpts{
@@ -543,18 +528,83 @@ DNS.1 = %s
 			"-days", "99999",
 			"-sha256",
 			"-extfile", "/server.ext",
-			"-passin", "pass:" + password,
+			"-passin", "pass:" + g.password,
 		})
 
-	return &generatedCerts{
-		caRootCert: genCtr.File("/ca.pem"),
-		caRootKey:  genCtr.File("/ca.key"),
-		serverCert: genCtr.File("/server.pem"),
-		serverKey:  genCtr.File("/server.key"),
-		dhParam:    genCtr.File("/dhparam.pem"),
-		password:   password,
-		printPasswordScript: c.Directory().WithNewFile("printpass", fmt.Sprintf(`#!/bin/sh
-echo -n %s
-`, password), dagger.DirectoryWithNewFileOpts{Permissions: 0755}).File("printpass"),
+	return ctr.File("/server.pem"), ctr.File("/server.key")
+}
+
+type nginxWithCertsOpts struct {
+	serverCert          *dagger.File
+	serverKey           *dagger.File
+	dhParam             *dagger.File
+	netID               uint8
+	dnsName             string
+	msg                 string
+	redirectHTTPToHTTPS bool
+}
+
+func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *dagger.Container {
+	// TODO: pin image
+	ctr := c.Container().From("nginx:latest").
+		WithMountedFile("/etc/ssl/certs/server.crt", opts.serverCert).
+		WithMountedFile("/etc/ssl/certs/dhparam.pem", opts.dhParam).
+		WithMountedFile("/etc/ssl/private/server.key", opts.serverKey).
+		WithNewFile("/etc/nginx/snippets/self-signed.conf", dagger.ContainerWithNewFileOpts{
+			Contents: `ssl_certificate /etc/ssl/certs/server.crt;
+ssl_certificate_key /etc/ssl/private/server.key;
+`}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
+		Contents: fmt.Sprintf(`ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+ssl_prefer_server_ciphers on;
+ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
+ssl_ecdh_curve secp384r1;
+ssl_session_cache shared:SSL:10m;
+ssl_session_tickets off;
+ssl_stapling_verify on;
+resolver 10.%d.0.1 valid=300s;
+resolver_timeout 5s;
+add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
+add_header X-Frame-Options DENY;
+add_header X-Content-Type-Options nosniff;
+ssl_dhparam /etc/ssl/certs/dhparam.pem;
+`, opts.netID)})
+
+	conf := fmt.Sprintf(`server {
+	listen 443 ssl http2 default_server;
+	listen [::]:443 ssl http2 default_server;
+	include snippets/self-signed.conf;
+	include snippets/ssl-params.conf;
+	server_name %s;
+	location / {
+		return 200 "%s";
 	}
+}
+`, opts.dnsName, opts.msg)
+
+	if opts.redirectHTTPToHTTPS {
+		conf += fmt.Sprintf(`server {
+	listen 80 default_server;
+	listen [::]:80 default_server;
+	server_name %s;
+	return 302 https://$server_name$request_uri;
+}
+`, opts.dnsName)
+	} else {
+		conf += fmt.Sprintf(`server {
+	listen 80 default_server;
+	listen [::]:80 default_server;
+	server_name %s;
+	location / {
+		return 200 "%s";
+	}
+}
+`, opts.dnsName, opts.msg)
+	}
+
+	return ctr.
+		WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{Contents: conf}).
+		WithExec([]string{"nginx", "-t"}).
+		WithExposedPort(80).
+		WithExposedPort(443).
+		WithExec([]string{"nginx"})
 }
