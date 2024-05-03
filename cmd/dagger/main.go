@@ -367,9 +367,7 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 	})
 
 	// Add optional flags back, after all required flags
-	optionalFlags.VisitAll(func(flag *pflag.Flag) {
-		mergedFlags.AddFlag(flag)
-	})
+	mergedFlags.AddFlagSet(optionalFlags)
 
 	return mergedFlags
 }
