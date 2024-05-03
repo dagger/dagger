@@ -1,0 +1,35 @@
+{
+  "name": "Scalar",
+  "objects": {
+    "Scalar": {
+      "name": "Scalar",
+      "description": "",
+      "methods": {
+        "helloWorld": {
+          "name": "helloWorld",
+          "description": "",
+          "arguments": {
+            "name": {
+              "name": "name",
+              "description": "",
+              "type": {
+                "kind": "SCALAR_KIND",
+                "name": "Platform",
+                "typeDef": {
+                  "kind": "STRING_KIND"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

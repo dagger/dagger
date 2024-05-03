@@ -2925,6 +2925,24 @@ class Test:
         return dagger.Platform(platform)
 `,
 		},
+		{
+			sdk: "typescript",
+			source: `import { object, func, Platform } from "@dagger.io/dagger"
+
+@object()
+class Test {
+	@func()
+	fromPlatform(platform: Platform): string {
+		return platform as string
+	}
+
+	@func()
+	toPlatform(platform: string): Platform {
+		return platform as Platform
+	}
+}		
+`,
+		},
 	} {
 		tc := tc
 

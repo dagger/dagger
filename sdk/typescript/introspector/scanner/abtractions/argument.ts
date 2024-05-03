@@ -3,8 +3,7 @@ import ts from "typescript"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { FunctionArgTypeDef, TypeDef } from "../typeDefs.js"
-import { serializeType } from "../serialize.js"
-import { typeNameToTypedef } from "../utils.js"
+import { typeToTypedef } from "../utils.js"
 
 export type Arguments = { [name: string]: Argument }
 
@@ -79,9 +78,7 @@ export class Argument {
       this.symbol.valueDeclaration,
     )
 
-    const typeName = serializeType(this.checker, type)
-
-    return typeNameToTypedef(typeName)
+    return typeToTypedef(this.checker, type)
   }
 
   get defaultValue(): string | undefined {

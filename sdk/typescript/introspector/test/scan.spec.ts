@@ -70,6 +70,10 @@ describe("scan static TypeScript", function () {
       name: "Should correctly scan multiple objects as fields",
       directory: "multipleObjectsAsFields",
     },
+    {
+      name: "Should correctly scan scalar arguments",
+      directory: "scalar",
+    },
   ]
 
   for (const test of testCases) {
