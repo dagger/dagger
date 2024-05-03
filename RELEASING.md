@@ -8,6 +8,7 @@ This describes how to release Dagger:
 - [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
 - [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
+- [☸️ Helm chart ⏱ `2mins`](#%EF%B8%8F-helm-chart--2mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
@@ -24,9 +25,8 @@ This is a high-level diagram of how all the pieces fit together:
 flowchart TB
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
-    playground["🛝 Playground"]
     ci["⚙️ CI"]
-    repo -.-> docs & playground & ci
+    repo -.-> docs & ci
 
     subgraph Dagger
         engine("🚙 Engine")
@@ -39,7 +39,7 @@ flowchart TB
     brew-tap["🐙 github.com/dagger/homebrew-tap"]
     github-action["🐙 github.com/dagger/dagger-for-github"]
     nix["❄️ github.com/dagger/nix"]
-    cli --> S3 --> brew-tap & github-action & nix
+    cli --> S3 ------> brew-tap & github-action & nix
 
     registry["📦 registry.dagger.io/engine"]
     ghcr["🐙 ghcr.io/dagger/engine"]
@@ -49,12 +49,15 @@ flowchart TB
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
     go-pkg["🐹 dagger.io/dagger"]
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
+    playground["🛝 Playground"]
     daggerverse["🌌 Daggerverse"]
     cloud["☁️ Dagger Cloud"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
     go-pkg -.-> daggerverse & cloud
-    registry -.- S3 -.- go & python & typescript & elixir
+    registry -.- S3 -.- go & python & typescript & elixir & php & helm
+
+    registry -.....- playground
 
     python["🐍 Python SDK"]
     pypi["🐍 pypi.org/project/dagger-io"]
@@ -73,6 +76,9 @@ flowchart TB
     php-repo["🐙 github.com/dagger/dagger-php-sdk"]
     php-pkg["🐘 packagist.org/packages/dagger/dagger"]
     repo ======> php --> php-repo --> php-pkg
+
+    helm["☸️ Helm chart"]
+    repo ======> helm
 ```
 
 ## Let the team know
@@ -224,6 +230,7 @@ changie merge
 cd ../..
 ```
 
+- [ ] For the Helm chart, bump `version` & `appVersion` in `helm/dagger/Chart.yaml`
 - [ ] Commit and push the changes with the message `Add SDK release notes`
 - [ ] `30mins` Open this draft PR in
       [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
@@ -419,6 +426,21 @@ gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
 - [ ] Check that release notes look good in `Preview`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
+
+## ☸️ Helm chart ⏱ `2mins`
+
+- [ ] Tag & publish:
+
+```console
+export HELM_CHART_VERSION="$(awk '/^version: / { print $2 }' helm/dagger/Chart.yaml)"
+git tag "helm/chart/v${HELM_CHART_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" "helm/chart/v${HELM_CHART_VERSION:?must be set}"
+```
+
+This will trigger the [`publish-helm-chart`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-helm-chart.yml)
+which publishes to [🐙
+registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
 ## 📒 Documentation ⏱ `5mins`
 

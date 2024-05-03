@@ -30,4 +30,4 @@ jobs:
     uses: ./.github/workflows/_new_release_notification.yml
     secrets: inherit
     with:
-      message: "🎡 Helm Chart: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+      message: "☸️ Helm Chart: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
