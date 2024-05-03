@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,20 +14,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TODO: try testing with passwords too
-// TODO: try testing with passwords too
-// TODO: try testing with passwords too
-// TODO: try testing with passwords too
-// TODO: try testing with passwords too
-// TODO: try testing with passwords too
-
 type proxyTest struct {
 	name string
 	run  func(*testing.T, *dagger.Client, proxyTestFixtures)
 }
 
 type proxyTestFixtures struct {
-	caCert *dagger.File
+	caCert        *dagger.File
+	httpProxyURL  url.URL
+	httpsProxyURL url.URL
 }
 
 func customProxyTests(
@@ -33,19 +30,17 @@ func customProxyTests(
 	t *testing.T,
 	c *dagger.Client,
 	netID uint8,
+	useAuth bool,
 	tests ...proxyTest,
 ) {
 	t.Helper()
 
 	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
 
-	if os.Getenv(executeTestEnvName) == "" {
-		const squidAlias = "squid"
-		genCerts := generateCerts(c, squidAlias, squidAlias)
+	const squidAlias = "squid"
+	genCerts := generateCerts(c, squidAlias, squidAlias)
 
-		squid := c.Container().From(alpineImage).
-			WithExec([]string{"apk", "add", "squid", "ca-certificates"}).
-			WithNewFile("/etc/squid/squid.conf", dagger.ContainerWithNewFileOpts{Contents: `
+	squidConf := `
 acl localnet src 0.0.0.1-0.255.255.255  # RFC 1122 "this" network (LAN)
 acl localnet src 10.0.0.0/8             # RFC 1918 local private network (LAN)
 acl localnet src 100.64.0.0/10          # RFC 6598 shared address space (CGN)
@@ -59,35 +54,12 @@ acl SSL_ports port 443
 acl Safe_ports port 80          # http
 acl Safe_ports port 443         # https
 
-#
-# Recommended minimum Access Permission configuration:
-#
-# Deny requests to certain unsafe ports
-http_access deny !Safe_ports
-
-# Deny CONNECT to other than secure SSL ports
-http_access deny CONNECT !SSL_ports
-
-# Only allow cachemgr access from localhost
-http_access allow localhost manager
-http_access deny manager
-
-http_access allow localhost
-http_access allow localnet
-
-# And finally deny all other access to this proxy
-http_access deny all
-
-# Squid normally listens to port 3128
-http_port 3128
-
-ssl_bump bump all
-https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls-key=/etc/squid/serverkey.pem tls-dh=/etc/squid/dhparam.pem
-
 sslpassword_program /usr/local/bin/printpass
+auth_param basic program /usr/lib/squid/basic_getpwnam_auth
+auth_param basic children 1
 
-# Leave coredumps in the first cache dir
 coredump_dir /var/cache/squid
+# access_log stdio:/var/log/squidaccess/access.log
 
 #
 # Add any of your own refresh_pattern entries above these.
@@ -96,27 +68,71 @@ refresh_pattern ^ftp:           1440    20%     10080
 refresh_pattern ^gopher:        1440    0%      1440
 refresh_pattern -i (/cgi-bin/|\?) 0     0%      0
 refresh_pattern .               0       20%     4320
-`,
-			}).
-			WithExposedPort(3128).
-			WithExposedPort(3129).
-			WithMountedFile("/usr/local/bin/printpass", genCerts.printPasswordScript).
-			WithMountedFile("/etc/ssl/certs/myCA.pem", genCerts.caRootCert).
-			WithExec([]string{"update-ca-certificates"}).
-			WithMountedFile("/etc/squid/server.pem", genCerts.serverCert).
-			WithMountedFile("/etc/squid/serverkey.pem", genCerts.serverKey).
-			WithMountedFile("/etc/squid/dhparam.pem", genCerts.dhParam).
-			WithExec([]string{"squid", "--foreground"}).
-			AsService()
 
+http_port 3128
+ssl_bump bump all
+https_port 3129 generate-host-certificates=on tls-cert=/etc/squid/server.pem tls-key=/etc/squid/serverkey.pem tls-dh=/etc/squid/dhparam.pem
+
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access allow localhost manager
+http_access deny manager
+http_access allow localhost
+`
+
+	squid := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "squid", "ca-certificates"}).
+		WithMountedFile("/usr/local/bin/printpass", genCerts.printPasswordScript).
+		WithMountedFile("/etc/ssl/certs/myCA.pem", genCerts.caRootCert).
+		WithExec([]string{"update-ca-certificates"}).
+		WithMountedFile("/etc/squid/server.pem", genCerts.serverCert).
+		WithMountedFile("/etc/squid/serverkey.pem", genCerts.serverKey).
+		WithMountedFile("/etc/squid/dhparam.pem", genCerts.dhParam).
+		WithExec([]string{"chmod", "u+s", "/usr/lib/squid/basic_getpwnam_auth"}).
+		WithExposedPort(3128).
+		WithExposedPort(3129)
+
+	squidHTTPURL := url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(squidAlias, "3128"),
+	}
+	squidHTTPSURL := url.URL{
+		Scheme: "https",
+		Host:   net.JoinHostPort(squidAlias, "3129"),
+	}
+
+	if useAuth {
+		const username = "cooluser"
+		const password = "hunter2"
+		squid = squid.WithExec([]string{"adduser", username}, dagger.ContainerWithExecOpts{
+			Stdin: password + "\n" + password + "\n",
+		})
+
+		userPass := url.UserPassword(username, password)
+		squidHTTPURL.User = userPass
+		squidHTTPSURL.User = userPass
+
+		squidConf += "acl auth proxy_auth REQUIRED\n"
+		squidConf += "http_access allow localnet auth\n"
+	} else {
+		squidConf += "http_access allow localnet\n"
+	}
+
+	squidConf += "http_access deny all\n"
+
+	squid = squid.
+		WithNewFile("/etc/squid/squid.conf", dagger.ContainerWithNewFileOpts{Contents: squidConf}).
+		WithExec([]string{"squid", "--foreground"})
+
+	if os.Getenv(executeTestEnvName) == "" {
 		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
 				WithMountedFile("/etc/ssl/certs/myCA.pem", genCerts.caRootCert).
 				WithExec([]string{"update-ca-certificates"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
-				WithEnvVariable("HTTPS_PROXY", fmt.Sprintf("https://%s:3129", squidAlias)).
-				WithEnvVariable("HTTP_PROXY", fmt.Sprintf("http://%s:3128", squidAlias)).
-				WithServiceBinding(squidAlias, squid)
+				WithEnvVariable("HTTPS_PROXY", squidHTTPSURL.String()).
+				WithEnvVariable("HTTP_PROXY", squidHTTPURL.String()).
+				WithServiceBinding(squidAlias, squid.AsService())
 		})
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -151,7 +167,9 @@ refresh_pattern .               0       20%     4320
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			test.run(t, c, proxyTestFixtures{
-				caCert: c.Host().File("/ca.pem"),
+				caCert:        c.Host().File("/ca.pem"),
+				httpProxyURL:  squidHTTPURL,
+				httpsProxyURL: squidHTTPSURL,
 			})
 		})
 	}
@@ -162,27 +180,82 @@ func TestContainerSystemProxies(t *testing.T) {
 
 	c, ctx := connect(t)
 
-	customProxyTests(ctx, t, c, 101,
-		proxyTest{"http", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
-			out, err := c.Container().From(alpineImage).
-				WithExec([]string{"apk", "add", "curl"}).
-				WithExec([]string{"curl", "-v", "http://www.example.com"}).
-				Stderr(ctx)
-			require.NoError(t, err)
-			require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
-			require.Regexp(t, `.*< Via: .* \(squid/5.9\).*`, out)
-		}},
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		customProxyTests(ctx, t, c, 101, false,
+			proxyTest{"http", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+				out, err := c.Container().From(alpineImage).
+					WithExec([]string{"apk", "add", "curl"}).
+					WithExec([]string{"curl", "-v", "http://www.example.com"}).
+					Stderr(ctx)
+				require.NoError(t, err)
+				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
+				require.Regexp(t, `.*< Via: .* \(squid/5.9\).*`, out)
+			}},
 
-		proxyTest{"https", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
-			out, err := c.Container().From(alpineImage).
-				WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
-				WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
-				WithExec([]string{"update-ca-certificates"}).
-				WithExec([]string{"curl", "-v", "https://www.example.com"}).
-				Stderr(ctx)
-			require.NoError(t, err)
-			require.Regexp(t, `.*< HTTP/1\.1 200 Connection established.*`, out)
-			require.Regexp(t, `.*Establish HTTP proxy tunnel to www.example.com:443.*`, out)
-		}},
-	)
+			proxyTest{"https", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+				out, err := c.Container().From(alpineImage).
+					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
+					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
+					WithExec([]string{"update-ca-certificates"}).
+					WithExec([]string{"curl", "-v", "https://www.example.com"}).
+					Stderr(ctx)
+				require.NoError(t, err)
+				require.Regexp(t, `.*< HTTP/1\.1 200 Connection established.*`, out)
+				require.Regexp(t, `.*Establish HTTP proxy tunnel to www.example.com:443.*`, out)
+			}},
+		)
+	})
+
+	t.Run("auth", func(t *testing.T) {
+		t.Parallel()
+		customProxyTests(ctx, t, c, 102, true,
+			proxyTest{"http", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+				base := c.Container().From(alpineImage).
+					WithExec([]string{"apk", "add", "curl"})
+
+				out, err := base.
+					WithExec([]string{"curl", "-v", "http://www.example.com"}).
+					Stderr(ctx)
+				require.NoError(t, err)
+				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
+				require.Regexp(t, `.*< Via: .* \(squid/5.9\).*`, out)
+
+				// verify we fail if we override the proxy with a bad password
+				u := f.httpProxyURL
+				u.User = url.UserPassword("cooluser", "badpassword")
+				out, err = base.
+					WithEnvVariable("HTTP_PROXY", u.String()).
+					WithExec([]string{"curl", "-v", "http://www.example.com"}).
+					Stderr(ctx)
+				// curl won't exit 0 if it gets a 407 on plain HTTP, so don't expect an error
+				require.NoError(t, err)
+				require.Contains(t, out, "< HTTP/1.1 407 Proxy Authentication Required")
+			}},
+
+			proxyTest{"https", func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+				base := c.Container().From(alpineImage).
+					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
+					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
+					WithExec([]string{"update-ca-certificates"})
+
+				out, err := base.
+					WithExec([]string{"curl", "-v", "https://www.example.com"}).
+					Stderr(ctx)
+				require.NoError(t, err)
+				require.Regexp(t, `.*< HTTP/1\.1 200 Connection established.*`, out)
+				require.Regexp(t, `.*Establish HTTP proxy tunnel to www.example.com:443.*`, out)
+
+				// verify we fail if we override the proxy with a bad password
+				u := f.httpsProxyURL
+				u.User = url.UserPassword("cooluser", "badpassword")
+				_, err = base.
+					WithEnvVariable("HTTPS_PROXY", u.String()).
+					WithExec([]string{"curl", "-v", "https://www.example.com"}).
+					Stderr(ctx)
+				// curl WILL exit 0 if it gets a 407 when using TLS, so DO expect an error
+				require.ErrorContains(t, err, "< HTTP/1.1 407 Proxy Authentication Required")
+			}},
+		)
+	})
 }
