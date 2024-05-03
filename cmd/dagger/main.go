@@ -88,6 +88,7 @@ func init() {
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
+	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -345,6 +346,31 @@ func toUpperBold(s string) string {
 	return termenv.String(upperCase).Bold().String()
 }
 
+// sortRequiredFlags separates optional flags from required flags.
+func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
+	mergedFlags := pflag.NewFlagSet("merged", pflag.ContinueOnError)
+	mergedFlags.SortFlags = false
+
+	optionalFlags := pflag.NewFlagSet("optional", pflag.ContinueOnError)
+
+	// separate optional flags from required flags
+	originalFlags.VisitAll(func(flag *pflag.Flag) {
+		// Append [required] and show required flags first
+		requiredAnnotation, found := flag.Annotations[cobra.BashCompOneRequiredFlag]
+		if found && requiredAnnotation[0] == "true" {
+			flag.Usage += " [required]"
+			mergedFlags.AddFlag(flag)
+		} else {
+			optionalFlags.AddFlag(flag)
+		}
+	})
+
+	// Add optional flags back, after all required flags
+	mergedFlags.AddFlagSet(optionalFlags)
+
+	return mergedFlags
+}
+
 const usageTemplate = `{{ "Usage" | toUpperBold }}
 
 {{- if .Runnable}}
@@ -411,7 +437,7 @@ const usageTemplate = `{{ "Usage" | toUpperBold }}
 {{- if .HasAvailableLocalFlags}}
 
 {{ "Options" | toUpperBold }}
-{{ flagUsagesWrapped .LocalFlags | trimTrailingWhitespaces}}
+{{ flagUsagesWrapped (sortRequiredFlags .LocalFlags) | trimTrailingWhitespaces}}
 
 {{- end}}
 
