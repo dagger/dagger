@@ -974,14 +974,32 @@ impl PortId {
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ScalarTypeDefId(pub String);
-impl Into<ScalarTypeDefId> for &str {
-    fn into(self) -> ScalarTypeDefId {
-        ScalarTypeDefId(self.to_string())
+impl From<&str> for ScalarTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
     }
 }
-impl Into<ScalarTypeDefId> for String {
-    fn into(self) -> ScalarTypeDefId {
-        ScalarTypeDefId(self.clone())
+impl From<String> for ScalarTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<ScalarTypeDefId> for ScalarTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ScalarTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ScalarTypeDefId> for ScalarTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<ScalarTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<ScalarTypeDefId, DaggerError>(self) })
     }
 }
 impl ScalarTypeDefId {
@@ -6254,13 +6272,13 @@ impl Query {
         }
     }
     /// Load a ScalarTypeDef from its ID.
-    pub fn load_scalar_type_def_from_id(&self, id: ScalarTypeDef) -> ScalarTypeDef {
+    pub fn load_scalar_type_def_from_id(&self, id: impl IntoID<ScalarTypeDefId>) -> ScalarTypeDef {
         let mut query = self.selection.select("loadScalarTypeDefFromID");
         query = query.arg_lazy(
             "id",
             Box::new(move || {
                 let id = id.clone();
-                Box::pin(async move { id.id().await.unwrap().quote() })
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
             }),
         );
         ScalarTypeDef {
