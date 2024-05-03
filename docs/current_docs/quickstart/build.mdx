@@ -1,7 +1,7 @@
 ---
 slug: /quickstart/build
 hide_table_of_contents: true
-title: "Daggerize the application build"
+title: "Daggerize the application's build process"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -25,6 +25,7 @@ dagger -m golang call \
 <TabItem value="macOS">
 
 ```shell
+# FIXME: recheck for Mac
 dagger -m golang call \
   build --source=. --args=. --os=darwin --arch=amd64
 ```
@@ -32,7 +33,7 @@ dagger -m golang call \
 </TabItem>
 <TabItem value="Windows">
 
-FIXME
+FIXME: Add Windows command
 
 </TabItem>
 </Tabs>
@@ -94,7 +95,7 @@ dagger -m golang call \
 </TabItem>
 <TabItem value="Windows">
 
-FIXME
+FIXME: Add Windows
 
 </TabItem>
 </Tabs>
@@ -102,19 +103,14 @@ FIXME
 This command exports the directory returned by the `build` Dagger Function to a custom path (`./build`) on the host. Inspect this directory and you should see the application binary, compiled for your host and platform:
 
 ```
-ls ./build
+$ ls -al ./build/
+total 6672
+drwx------ 2 admin admin    4096 May  3 08:27 .
+drwxr-xr-x 8 admin admin    4096 May  3 08:27 ..
+-rwxr-xr-x 1 admin admin 6821549 May  3 08:26 greetings-api
 
-file ./build/greetings-api
+$ file ./build/greetings-api
+./build/greetings-api: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, Go BuildID=TGWO3StIGdJHiNPik1kJ/y5lCC0lCfgdq0ktDatoA/qu2s6Q78B3af5lhBKfWi/MqZ2drbhbH9kHGm9EhOy, with debug_info, not stripped
 ```
 
-Validate the compiled binary by running it:
-
-```
-./build/greetings-api
-```
-
-You should see output similar to the following:
-
-```
-FIXME
-```
+FIXME: Maybe skip this and go straight to container build based on discussion with shykes

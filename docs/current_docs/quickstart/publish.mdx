@@ -40,15 +40,15 @@ dagger -m golang call \
 This revised command builds the container image and then drops you into an interactive terminal, allowing you to directly execute commands in the running container. For example, you can list the contents of the container filesystem to verify that it includes the newly-compiled binary, or check the file type of the binary:
 
 ```shell
-ls -al
+$ ls -al
 
-file greetings-api
+$ file greetings-api
 ```
 
 You should see output similar to the following:
 
 ```
-FIXME
+FIXME: dagger call build-container errors out, waiting for fix to show output
 ```
 
 :::caution
@@ -72,5 +72,5 @@ ttl.sh/myapp-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509
 Test the published container image using the command below (update the image name as per the output of the previous Dagger Function call):
 
 ```
-FIXME
+FIXME: dagger call build-container errors out, waiting for fix to show output
 ```

@@ -18,7 +18,8 @@ dagger -m golang call test \
 You should see various operations taking place, ending with a test run and the following output:
 
 ```
-OK
+PASS
+ok      github.com/kpenfound/greetings-api      0.005s
 ```
 
 Well done! You just called your first Dagger Function!
@@ -44,8 +45,3 @@ Dig a little deeper to see what the `Test()` function does:
 - It uses the `Container.WithDirectory()` method to mount the source code directory passed to the Dagger Function via the `source` argument in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
 - It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `go test`, which runs the application's test suite. The `WithExec()` method returns a revised `Container` with the results of command execution.
 - It retrieves the output stream of the last executed with the `Container.Stdout()` method and prints the result to the console.
-
-
-
-Dagger Functions, just like regular functions, can accept arguments.
-FIXME: Add more info
