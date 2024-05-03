@@ -21,7 +21,7 @@ httpcore==1.0.5
     # via httpx
 httpx==0.27.0
     # via pytest-httpx
-idna==3.6
+idna==3.7
     # via
     #   anyio
     #   httpx
@@ -34,7 +34,7 @@ multidict==6.0.5
     #   yarl
 packaging==24.0
     # via pytest
-pluggy==1.4.0
+pluggy==1.5.0
     # via pytest
 pytest==7.4.4
     # via

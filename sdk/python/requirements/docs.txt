@@ -8,11 +8,11 @@ certifi==2024.2.2
     # via requests
 charset-normalizer==3.3.2
     # via requests
-docutils==0.20.1
+docutils==0.21.2
     # via
     #   sphinx
     #   sphinx-rtd-theme
-idna==3.6
+idna==3.7
     # via requests
 imagesize==1.4.1
     # via sphinx
@@ -28,7 +28,7 @@ requests==2.31.0
     # via sphinx
 snowballstemmer==2.2.0
     # via sphinx
-sphinx==7.2.6
+sphinx==7.3.7
     # via
     #   sphinx-rtd-theme
     #   sphinxcontrib-jquery

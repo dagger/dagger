@@ -23,7 +23,7 @@ googleapis-common-protos==1.63.0
 gql==3.5.0
 graphql-core==3.2.3
     # via gql
-grpcio==1.62.1
+grpcio==1.63.0
     # via opentelemetry-exporter-otlp-proto-grpc
 h11==0.14.0
     # via httpcore
@@ -36,7 +36,7 @@ idna==3.7
     #   anyio
     #   httpx
     #   yarl
-importlib-metadata==7.0.0
+importlib-metadata==7.1.0
     # via opentelemetry-api
 markdown-it-py==3.0.0
     # via rich
@@ -60,7 +60,7 @@ opentelemetry-sdk==1.24.0
 opentelemetry-semantic-conventions==0.45b0
     # via opentelemetry-sdk
 platformdirs==4.2.0
-protobuf==4.25.3
+protobuf==5.26.1
     # via
     #   googleapis-common-protos
     #   opentelemetry-proto
