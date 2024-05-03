@@ -19,6 +19,8 @@ const (
 
 	AlpineVersion = "3.18"
 	AlpineImage   = "alpine:" + AlpineVersion
+	WolfiImage    = "cgr.dev/chainguard/wolfi-base"
+	WolfiVersion  = "latest" // Wolfi is a rolling distro; no release to pin to
 
 	GolangLintImage = "golangci/golangci-lint:" + GolangLintVersion + "-alpine"
 

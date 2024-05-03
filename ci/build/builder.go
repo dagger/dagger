@@ -100,6 +100,12 @@ func (build *Builder) WithAlpineBase() *Builder {
 	return &b
 }
 
+func (build *Builder) WithWolfiBase() *Builder {
+	b := *build
+	b.base = "wolfi"
+	return &b
+}
+
 func (build *Builder) WithGPUSupport() *Builder {
 	b := *build
 	b.gpuSupport = true
@@ -161,6 +167,26 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"gpg", "curl",
 			}).
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
+	case "wolfi":
+		base = dag.
+			Container(dagger.ContainerOpts{Platform: build.platform}).
+			From(consts.WolfiImage).
+			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
+			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
+			// gives us.
+			// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
+			// modules that fix this problem and always result in the latest apk packages for the given alpine
+			// version being used (with optimal caching).
+			WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
+			WithExec([]string{"apk", "upgrade"}).
+			WithExec([]string{
+				"apk", "add", "--no-cache",
+				// for Buildkit
+				"git", "openssh", "pigz", "xz",
+				// for CNI
+				"iptables", "ip6tables", "dnsmasq",
+			}).
+			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
 	default:
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
 	}
@@ -177,15 +203,24 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
 	if build.gpuSupport {
-		if build.base != "ubuntu" {
-			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu", build.base)
+		switch build.platformSpec.Architecture {
+		case "amd64":
+		default:
+			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
 		}
-		if build.platformSpec.Architecture != "amd64" {
-			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "ubuntu", build.platformSpec.Architecture)
+
+		switch build.base {
+		case "ubuntu":
+			ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
+			ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
+			ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+		case "wolfi":
+			ctr = ctr.With(util.ShellCmd(`apk add chainguard-keys`))
+			ctr = ctr.With(util.ShellCmd(`echo "https://packages.cgr.dev/extras" >> /etc/apk/repositories`))
+			ctr = ctr.With(util.ShellCmd(`apk update && apk add nvidia-driver nvidia-tools`))
+		default:
+			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
 		}
-		ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
-		ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
-		ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -295,6 +330,9 @@ func (build *Builder) cniPlugins() *dagger.Directory {
 		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
+	case "wolfi":
+		ctr = ctr.From(fmt.Sprintf("%s:%s", consts.WolfiImage, consts.WolfiVersion)).
+			WithExec([]string{"apk", "add", "build-base", "go", "git"})
 	}
 
 	ctr = ctr.WithMountedCache("/root/go/pkg/mod", dag.CacheVolume("go-mod")).

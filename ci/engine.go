@@ -25,7 +25,8 @@ type Engine struct {
 
 	Trace bool // +private
 
-	GPUSupport bool // +private
+	GPUSupport bool   // +private
+	ImageBase  string // +private
 }
 
 func (e *Engine) WithConfig(key, value string) *Engine {
@@ -38,13 +39,23 @@ func (e *Engine) WithArg(key, value string) *Engine {
 	return e
 }
 
-func (e *Engine) WithGPUSupport() *Engine {
-	e.GPUSupport = true
+func (e *Engine) WithTrace() *Engine {
+	e.Trace = true
 	return e
 }
 
-func (e *Engine) WithTrace() *Engine {
-	e.Trace = true
+func (e *Engine) WithBase(
+	// +optional
+	image *string,
+	// +optional
+	gpuSupport *bool,
+) *Engine {
+	if image != nil {
+		e.ImageBase = *image
+	}
+	if gpuSupport != nil {
+		e.GPUSupport = *gpuSupport
+	}
 	return e
 }
 
@@ -72,8 +83,22 @@ func (e *Engine) Container(
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
+
+	if e.ImageBase != "" {
+		switch e.ImageBase {
+		case "wolfi":
+			builder = builder.WithWolfiBase()
+		case "alpine":
+			builder = builder.WithAlpineBase()
+		case "ubuntu":
+			builder = builder.WithUbuntuBase()
+		default:
+			return nil, fmt.Errorf("unknown base image type %s", e.ImageBase)
+		}
+	}
+
 	if e.GPUSupport {
-		builder = builder.WithUbuntuBase().WithGPUSupport()
+		builder = builder.WithGPUSupport()
 	}
 
 	ctr, err := builder.Engine(ctx)
