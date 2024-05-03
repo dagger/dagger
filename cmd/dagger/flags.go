@@ -364,7 +364,7 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		if err != nil {
 			return nil, fmt.Errorf("failed to read secret file %q: %w", v.sourceVal, err)
 		}
-		plaintext = strings.TrimSpace(string(filePlaintext))
+		plaintext = string(filePlaintext)
 
 	case commandSecretSource:
 		// #nosec G204
@@ -372,7 +372,7 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		if err != nil {
 			return nil, fmt.Errorf("failed to run secret command %q: %w", v.sourceVal, err)
 		}
-		plaintext = strings.TrimSpace(string(stdoutBytes))
+		plaintext = string(stdoutBytes)
 
 	default:
 		return nil, fmt.Errorf("unsupported secret arg source: %q", v.secretSource)
