@@ -129,9 +129,3 @@ updates:
         applies-to: version-updates
         patterns:
           - "*"
-
-  # ignore all npm dependencies in sdk/rust
-  - package-ecosystem: "npm"
-    directory: "/sdk/rust"
-    ignore:
-      - dependency-name: "*"

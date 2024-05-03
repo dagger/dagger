@@ -63,18 +63,17 @@ func (d Docs) Lint(ctx context.Context) error {
 // Regenerate the API schema and CLI reference docs
 func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 	eg, ctx := errgroup.WithContext(ctx)
+	_ = ctx
 
 	var sdl *dagger.Directory
 	eg.Go(func() error {
-		var err error
-		sdl, err = d.GenerateSdl(ctx)
-		return err
+		sdl = d.GenerateSdl()
+		return nil
 	})
 	var cli *dagger.Directory
 	eg.Go(func() error {
-		var err error
-		cli, err = d.GenerateCli(ctx)
-		return err
+		cli = d.GenerateCli()
+		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
@@ -85,7 +84,7 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 }
 
 // Regenerate the API schema
-func (d Docs) GenerateSdl(ctx context.Context) (*Directory, error) {
+func (d Docs) GenerateSdl() *Directory {
 	introspectionJSON :=
 		util.GoBase(d.Dagger.Source).
 			WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
@@ -100,14 +99,14 @@ func (d Docs) GenerateSdl(ctx context.Context) (*Directory, error) {
 		WithExec([]string{"graphql-json-to-sdl", "/src/schema.json", "/src/schema.graphql"}).
 		File("/src/schema.graphql")
 
-	return dag.Directory().WithFile(generatedSchemaPath, generated), nil
+	return dag.Directory().WithFile(generatedSchemaPath, generated)
 }
 
 // Regenerate the CLI reference docs
-func (d Docs) GenerateCli(ctx context.Context) (*Directory, error) {
+func (d Docs) GenerateCli() *Directory {
 	// Should we keep `--include-experimental`?
 	generated := util.GoBase(d.Dagger.Source).
 		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
 		File("cli.mdx")
-	return dag.Directory().WithFile(generatedCliZenPath, generated), nil
+	return dag.Directory().WithFile(generatedCliZenPath, generated)
 }

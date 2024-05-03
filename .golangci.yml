@@ -46,6 +46,10 @@ issues:
         # this is sometimes done for clarity
         - unparam
 
+  exclude-dirs:
+    # these files are already linted in sdk/go
+    - internal/telemetry
+    - internal/querybuilder
 
 linters-settings:
   revive:
