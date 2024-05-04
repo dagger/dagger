@@ -3,15 +3,21 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/goproxy/goproxy"
+	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
-	"github.com/stretchr/testify/require"
 )
 
 type proxyTest struct {
@@ -291,7 +297,7 @@ func TestContainerSystemProxies(t *testing.T) {
 					WithEnvVariable("HTTP_PROXY", u.String()).
 					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
 					Stderr(ctx)
-				// curl won't exit 0 if it gets a 407 on plain HTTP, so don't expect an error
+				// curl will exit 0 if it gets a 407 on plain HTTP, so don't expect an error
 				require.NoError(t, err)
 				require.Contains(t, out, "< HTTP/1.1 407 Proxy Authentication Required")
 			}},
@@ -316,9 +322,130 @@ func TestContainerSystemProxies(t *testing.T) {
 					WithEnvVariable("HTTPS_PROXY", u.String()).
 					WithExec([]string{"curl", "-v", f.httpsServerURL.String()}).
 					Stderr(ctx)
-				// curl WILL exit 0 if it gets a 407 when using TLS, so DO expect an error
+				// curl WON'T exit 0 if it gets a 407 when using TLS, so DO expect an error
 				require.ErrorContains(t, err, "< HTTP/1.1 407 Proxy Authentication Required")
 			}},
 		)
 	})
+}
+
+func TestContainerSystemGoProxy(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	// just a subset of modules we expect to be downloaded since trying to go one to one would
+	// be too fragile whenever the SDK changes
+	expectedGoModDownloads := []string{
+		"github.com/99designs/gqlgen",
+		"github.com/Khan/genqlient",
+		"go.opentelemetry.io/otel/exporters/otlp/otlptrace",
+		"golang.org/x/sync",
+	}
+
+	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
+	if os.Getenv(executeTestEnvName) == "" {
+		const netID = 103
+		const goProxyAlias = "goproxy"
+		const goProxyPort = 8080
+		goProxySetting := fmt.Sprintf("http://%s:%d", goProxyAlias, goProxyPort)
+
+		fetcher := &goProxyFetcher{dlPaths: make(map[string]struct{})}
+		proxy := &goproxy.Goproxy{Fetcher: fetcher}
+
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			l.Close()
+		})
+		port := l.Addr().(*net.TCPAddr).Port
+
+		goProxyCtx, cancelGoProxy := context.WithCancel(ctx)
+		t.Cleanup(cancelGoProxy)
+		srv := http.Server{
+			Handler:           proxy,
+			ReadHeaderTimeout: 30 * time.Second,
+			BaseContext: func(net.Listener) context.Context {
+				return goProxyCtx
+			},
+		}
+		t.Cleanup(func() {
+			srv.Shutdown(context.Background())
+		})
+
+		goProxyDone := make(chan error, 1)
+		go func() {
+			goProxyDone <- srv.Serve(l)
+		}()
+
+		goProxySvc := c.Host().Service([]dagger.PortForward{{
+			Backend:  port,
+			Frontend: goProxyPort,
+		}})
+
+		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithServiceBinding(goProxyAlias, goProxySvc).
+				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
+		})
+
+		thisRepoPath, err := filepath.Abs("../..")
+		require.NoError(t, err)
+		thisRepo := c.Host().Directory(thisRepoPath)
+
+		_, err = c.Container().From(golangImage).
+			With(goCache(c)).
+			WithMountedDirectory("/src", thisRepo).
+			WithWorkdir("/src").
+			WithServiceBinding("engine", devEngine.AsService()).
+			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
+			WithEnvVariable(executeTestEnvName, "ya").
+			WithExec([]string{"go", "test",
+				"-v",
+				"-timeout", "20m",
+				"-count", "1",
+				"-run", fmt.Sprintf("^%s$", t.Name()),
+				"./core/integration",
+			}).Sync(ctx)
+		require.NoError(t, err)
+
+		select {
+		case err := <-goProxyDone:
+			require.NoError(t, err)
+		default:
+		}
+
+		fetcher.mu.Lock()
+		defer fetcher.mu.Unlock()
+		require.NotEmpty(t, fetcher.dlPaths)
+		for _, expectedPath := range expectedGoModDownloads {
+			require.Contains(t, fetcher.dlPaths, expectedPath)
+		}
+
+		return
+	}
+
+	// we're in the container depending on the custom engine, run the actual tests
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+	out, err := ctr.
+		With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+}
+
+type goProxyFetcher struct {
+	goproxy.GoFetcher
+	mu      sync.Mutex
+	dlPaths map[string]struct{}
+}
+
+func (f *goProxyFetcher) Download(ctx context.Context, path, version string) (info, mod, zip io.ReadSeekCloser, err error) {
+	f.mu.Lock()
+	f.dlPaths[path] = struct{}{}
+	f.mu.Unlock()
+	return f.GoFetcher.Download(ctx, path, version)
 }

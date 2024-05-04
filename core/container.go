@@ -93,6 +93,10 @@ type Container struct {
 
 	// The args to invoke when using the terminal api on this container.
 	DefaultTerminalCmd DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
+
+	// (Internal-only for now) Environment variables from the engine container, prefixed
+	// with a special value, that will be inherited by this container if set.
+	SystemEnvNames []string `json:"system_envs,omitempty"`
 }
 
 func (*Container) Type() *ast.Type {
@@ -157,6 +161,7 @@ func (container *Container) Clone() *Container {
 	cp.Sockets = cloneSlice(cp.Sockets)
 	cp.Ports = cloneSlice(cp.Ports)
 	cp.Services = cloneSlice(cp.Services)
+	cp.SystemEnvNames = cloneSlice(cp.SystemEnvNames)
 	return &cp
 }
 
@@ -1189,14 +1194,25 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	execSt := fsSt.Run(runOpts...)
 
-	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform.Spec()))
+	execMD := buildkit.ExecutionMetadata{
+		SystemEnvNames: container.SystemEnvNames,
+	}
+	execMDOpt, err := execMD.AsConstraintsOpt()
+	if err != nil {
+		return nil, fmt.Errorf("execution metadata: %w", err)
+	}
+	marshalOpts := []llb.ConstraintsOpt{
+		llb.Platform(platform.Spec()),
+		execMDOpt,
+	}
+	execDef, err := execSt.Root().Marshal(ctx, marshalOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
 	container.FS = execDef.ToPB()
 
-	metaDef, err := execSt.GetMount(buildkit.MetaMountDestPath).Marshal(ctx, llb.Platform(platform.Spec()))
+	metaDef, err := execSt.GetMount(buildkit.MetaMountDestPath).Marshal(ctx, marshalOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("get meta mount: %w", err)
 	}
@@ -1211,7 +1227,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		mountSt := execSt.GetMount(mnt.Target)
 
 		// propagate any changes to regular mounts to subsequent containers
-		execMountDef, err := mountSt.Marshal(ctx, llb.Platform(platform.Spec()))
+		execMountDef, err := mountSt.Marshal(ctx, marshalOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("propagate %s: %w", mnt.Target, err)
 		}
