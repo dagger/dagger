@@ -16,7 +16,7 @@ jobs:
         name: Call Dagger Function
         uses: dagger/dagger-for-github@v5
         with:
-          version: "0.11.1"
+          version: "0.11.2"
           verb: call
           args: |
             deploy \
