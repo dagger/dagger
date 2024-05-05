@@ -78,7 +78,7 @@ func init() {
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:   "init [options] [PATH]",
+	Use:   "init [options] [path]",
 	Short: "Initialize a new Dagger module",
 	Long: `Initialize a new Dagger module in a local directory.
 By default, create a new dagger.json configuration in the current working directory. If the positional argument PATH is provided, create the module in that directory instead.
@@ -173,7 +173,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 }
 
 var moduleInstallCmd = &cobra.Command{
-	Use:     "install [options] MODULE",
+	Use:     "install [options] <module>",
 	Aliases: []string{"use"},
 	Short:   "Add a new dependency to a Dagger module",
 	Long:    "Add a Dagger module as a dependency of a local module.",

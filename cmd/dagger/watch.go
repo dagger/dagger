@@ -12,6 +12,7 @@ import (
 var watchCmd = &cobra.Command{
 	Use:    "watch",
 	Hidden: true,
+	Args:   cobra.NoArgs,
 	Annotations: map[string]string{
 		"experimental": "true",
 	},

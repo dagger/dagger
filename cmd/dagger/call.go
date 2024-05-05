@@ -16,7 +16,7 @@ var outputPath string
 var jsonOutput bool
 
 var callCmd = &FuncCommand{
-	Name:  "call [options] [FUNCTION]...",
+	Name:  "call [options] <command>",
 	Short: "Call a module function",
 	Long: strings.ReplaceAll(`Call a module function and print the result.
 

@@ -20,7 +20,7 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:     "run [options] COMMAND",
+	Use:     "run [options] <command>...",
 	Aliases: []string{"r"},
 	Short:   "Run a command in a Dagger session",
 	Long: strings.ReplaceAll(
