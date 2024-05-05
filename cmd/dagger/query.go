@@ -22,7 +22,7 @@ var (
 )
 
 var queryCmd = &cobra.Command{
-	Use:     "query [options] <operation>",
+	Use:     "query [options] [operation]",
 	Aliases: []string{"q"},
 	Short:   "Send API queries to a dagger engine",
 	Long: `Send API queries to a dagger engine.
