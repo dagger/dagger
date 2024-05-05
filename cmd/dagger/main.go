@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -89,6 +90,7 @@ func init() {
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
+	cobra.AddTemplateFunc("groupFlags", groupFlags)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -371,6 +373,47 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 	return mergedFlags
 }
 
+type FlagGroup struct {
+	Title string
+	Flags *pflag.FlagSet
+}
+
+func groupFlags(flags *pflag.FlagSet) string {
+	grouped := make(map[string]*pflag.FlagSet)
+	defaultGroup := "Options"
+
+	flags.VisitAll(func(flag *pflag.Flag) {
+		group := defaultGroup
+		value, found := flag.Annotations["help:group"]
+		if found {
+			group = strings.Join(value, " ")
+		}
+		if _, ok := grouped[group]; !ok {
+			grouped[group] = pflag.NewFlagSet(group, pflag.ContinueOnError)
+		}
+		grouped[group].AddFlag(flag)
+	})
+
+	groups := make([]FlagGroup, 0, len(grouped))
+	for k, v := range grouped {
+		groups = append(groups, FlagGroup{k, v})
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		return groups[i].Title < groups[j].Title
+	})
+
+	var builder strings.Builder
+	for _, group := range groups {
+		builder.WriteString(toUpperBold(group.Title))
+		builder.WriteString("\n")
+		builder.WriteString(flagUsagesWrapped(sortRequiredFlags(group.Flags)))
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
+}
+
 const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
   {{.UseLine}}{{ end }}
 
@@ -430,15 +473,14 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- if .HasAvailableLocalFlags}}
 
-{{ "Options" | toUpperBold }}
-{{ flagUsagesWrapped (sortRequiredFlags .LocalFlags) | trimTrailingWhitespaces}}
+{{ groupFlags .LocalFlags | trimTrailingWhitespaces }}
 
 {{- end}}
 
 {{- if .HasAvailableInheritedFlags}}
 
 {{ "Inherited Options" | toUpperBold }}
-{{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces}}
+{{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces }}
 
 {{- end}}
 
