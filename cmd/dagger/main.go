@@ -91,6 +91,7 @@ func init() {
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
+	cobra.AddTemplateFunc("indent", indent.String)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
 	// hide the help flag as it's ubiquitous and thus noisy
@@ -434,7 +435,7 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 {{- if .HasExample}}
 
 {{ "Examples" | toUpperBold }}
-{{ .Example }}
+{{ indent .Example 2 }}
 
 {{- end}}
 
