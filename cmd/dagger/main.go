@@ -371,14 +371,8 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 	return mergedFlags
 }
 
-const usageTemplate = `{{ "Usage" | toUpperBold }}
-
-{{- if .Runnable}}
-  {{.UseLine}}
-{{- end}}
-{{- if .HasAvailableSubCommands}}
-  {{ .CommandPath}}{{ if .HasAvailableFlags}} [options]{{end}} [command]
-{{- end}}
+const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
+  {{.UseLine}}{{ end }}
 
 {{- if gt (len .Aliases) 0}}
 
