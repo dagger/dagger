@@ -358,7 +358,7 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 		// Append [required] and show required flags first
 		requiredAnnotation, found := flag.Annotations[cobra.BashCompOneRequiredFlag]
 		if found && requiredAnnotation[0] == "true" {
-			flag.Usage += " [required]"
+			flag.Usage = strings.TrimSpace(flag.Usage + " [required]")
 			mergedFlags.AddFlag(flag)
 		} else {
 			optionalFlags.AddFlag(flag)
@@ -371,14 +371,8 @@ func sortRequiredFlags(originalFlags *pflag.FlagSet) *pflag.FlagSet {
 	return mergedFlags
 }
 
-const usageTemplate = `{{ "Usage" | toUpperBold }}
-
-{{- if .Runnable}}
-  {{.UseLine}}
-{{- end}}
-{{- if .HasAvailableSubCommands}}
-  {{ .CommandPath}}{{ if .HasAvailableFlags}} [options]{{end}} [command]
-{{- end}}
+const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
+  {{.UseLine}}{{ end }}
 
 {{- if gt (len .Aliases) 0}}
 

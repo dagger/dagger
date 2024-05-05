@@ -82,7 +82,7 @@ dagger config -m github.com/dagger/hello-dagger
 }
 
 var configViewsCmd = configSubcmd{
-	Use:   "views [options] [name]",
+	Use:   "views [options]",
 	Short: "Get or set the views of a Dagger module",
 	Long:  "Get or set the views of a Dagger module. By default, print the views of the specified module.",
 	PersistentFlags: func(fs *pflag.FlagSet) {
@@ -120,7 +120,7 @@ dagger config views -n my-view
 					return fmt.Errorf("failed to get view patterns: %w", err)
 				}
 				viewMap[name] = patterns
-				viewStrs = append(viewStrs, fmt.Sprintf("%s\n%s\n",
+				viewStrs = append(viewStrs, fmt.Sprintf("%s\n<%s>\n",
 					termenv.String(fmt.Sprintf("%q", name)).Bold().Underline(),
 					strings.Join(patterns, "\n"),
 				))

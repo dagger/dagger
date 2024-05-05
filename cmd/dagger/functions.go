@@ -43,7 +43,7 @@ var funcCmds = FuncCommands{
 }
 
 var funcListCmd = &FuncCommand{
-	Name:  "functions [options] [FUNCTION]...",
+	Name:  "functions [options] [function]...",
 	Short: `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 
