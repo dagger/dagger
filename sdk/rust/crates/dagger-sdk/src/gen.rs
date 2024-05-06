@@ -3082,6 +3082,20 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this container minus the given environment variable containing the secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable (e.g., "HOST").
+    pub fn without_secret_variable(&self, name: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutSecretVariable");
+        query = query.arg("name", name.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this container with a previously added Unix socket removed.
     ///
     /// # Arguments

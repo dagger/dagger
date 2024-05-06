@@ -884,6 +884,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container minus the given environment variable containing the secret.
+     */
+    public function withoutSecretVariable(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutSecretVariable');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container with a previously added Unix socket removed.
      */
     public function withoutUnixSocket(string $path): Container

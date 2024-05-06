@@ -771,6 +771,14 @@ type Container {
     address: String!
   ): Container!
 
+  """
+  Retrieves this container minus the given environment variable containing the secret.
+  """
+  withoutSecretVariable(
+    """The name of the environment variable (e.g., "HOST")."""
+    name: String!
+  ): Container!
+
   """Retrieves this container with a previously added Unix socket removed."""
   withoutUnixSocket(
     """Location of the socket to remove (e.g., "/tmp/socket")."""

@@ -1016,6 +1016,18 @@ defmodule Dagger.Container do
     }
   end
 
+  @doc "Retrieves this container minus the given environment variable containing the secret."
+  @spec without_secret_variable(t(), String.t()) :: Dagger.Container.t()
+  def without_secret_variable(%__MODULE__{} = container, name) do
+    selection =
+      container.selection |> select("withoutSecretVariable") |> put_arg("name", name)
+
+    %Dagger.Container{
+      selection: selection,
+      client: container.client
+    }
+  end
+
   @doc "Retrieves this container with a previously added Unix socket removed."
   @spec without_unix_socket(t(), String.t()) :: Dagger.Container.t()
   def without_unix_socket(%__MODULE__{} = container, path) do

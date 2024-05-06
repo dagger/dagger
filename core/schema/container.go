@@ -131,6 +131,10 @@ func (s *containerSchema) Install() {
 			Doc(`Retrieves this container minus the given environment variable.`).
 			ArgDoc("name", `The name of the environment variable (e.g., "HOST").`),
 
+		dagql.Func("withoutSecretVariable", s.withoutSecretVariable).
+			Doc(`Retrieves this container minus the given environment variable containing the secret.`).
+			ArgDoc("name", `The name of the environment variable (e.g., "HOST").`),
+
 		dagql.Func("withLabel", s.withLabel).
 			Doc(`Retrieves this container plus the given label.`).
 			ArgDoc("name", `The name of the label (e.g., "org.opencontainers.artifact.created").`).
@@ -1052,6 +1056,14 @@ func (s *containerSchema) withSecretVariable(ctx context.Context, parent *core.C
 		return nil, err
 	}
 	return parent.WithSecretVariable(ctx, args.Name, secret.Self)
+}
+
+type containerWithoutSecretVariableArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutSecretVariable(ctx context.Context, parent *core.Container, args containerWithoutSecretVariableArgs) (*core.Container, error) {
+	return parent.WithoutSecretVariable(ctx, args.Name)
 }
 
 type containerWithMountedSecretArgs struct {

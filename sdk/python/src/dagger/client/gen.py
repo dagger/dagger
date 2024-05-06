@@ -1860,6 +1860,21 @@ class Container(Type):
         _ctx = self._select("withoutRegistryAuth", _args)
         return Container(_ctx)
 
+    def without_secret_variable(self, name: str) -> Self:
+        """Retrieves this container minus the given environment variable
+        containing the secret.
+
+        Parameters
+        ----------
+        name:
+            The name of the environment variable (e.g., "HOST").
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutSecretVariable", _args)
+        return Container(_ctx)
+
     def without_unix_socket(self, path: str) -> Self:
         """Retrieves this container with a previously added Unix socket removed.
 
