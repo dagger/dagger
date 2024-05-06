@@ -1,8 +1,8 @@
 import ts from "typescript"
 
 import { TypeDefKind } from "../../api/client.gen.js"
-import { TypeDef } from "./typeDefs.js"
 import { serializeType } from "./serialize.js"
+import { TypeDef } from "./typeDefs.js"
 
 /**
  * Return true if the given class declaration has the decorator @obj() on
