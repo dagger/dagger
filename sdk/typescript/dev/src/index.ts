@@ -32,7 +32,7 @@ class TypescriptSdkDev {
         "package.json",
         "yarn.lock",
         ".mocharc.json",
-        ".eslintrc.cjs",
+        "eslint.config.js",
         ".prettierrc.cjs",
       ],
       exclude: ["node_modules", "dist", "dev"],

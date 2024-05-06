@@ -1,7 +1,5 @@
 {
-  "include": [
-    "./**/*"
-  ],
+  "include": ["./**/*"],
   "exclude": [
     "./**/*.spec.ts",
     "./dist/**/*",

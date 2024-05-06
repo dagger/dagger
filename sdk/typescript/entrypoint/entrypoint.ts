@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as path from "path"
 import { fileURLToPath } from "url"
 
@@ -7,11 +6,11 @@ import { connection } from "../connect.js"
 import { Args } from "../introspector/registry/registry"
 import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
+import { UI_MASK, UI_PASSTHROUGH } from "../telemetry/attributes.js"
+import { getTracer } from "../telemetry/index.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
-import { getTracer } from "../telemetry/index.js"
-import { UI_MASK, UI_PASSTHROUGH } from "../telemetry/attributes.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

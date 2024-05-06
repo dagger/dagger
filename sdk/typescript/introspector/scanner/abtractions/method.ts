@@ -3,8 +3,8 @@ import ts from "typescript"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
 import { Argument, Arguments } from "./argument.js"
 import { typeToTypedef } from "../utils.js"
-import { TypeDefKind } from "../../../api/client.gen.js"
 import { FunctionArgTypeDef, FunctionTypedef, TypeDef } from "../typeDefs.js"
+import { TypeDefKind } from "../../../api/client.gen.js"
 
 const METHOD_DECORATOR = "func"
 

@@ -1,4 +1,5 @@
 import * as opentelemetry from "@opentelemetry/api"
+
 import { Client } from "./api/client.gen.js"
 import { ConnectOpts } from "./connectOpts.js"
 import { Context, defaultContext } from "./context/context.js"

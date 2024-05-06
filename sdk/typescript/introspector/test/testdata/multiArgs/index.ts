@@ -1,4 +1,4 @@
-import { func, object } from '../../../decorators/decorators.js'
+import { func, object } from "../../../decorators/decorators.js"
 
 @object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
