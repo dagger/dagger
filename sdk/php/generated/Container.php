@@ -693,16 +693,14 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withNewFile(
         string $path,
-        ?string $contents = '',
+        string $contents,
         ?int $permissions = 420,
         ?string $owner = '',
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
         $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $contents) {
         $innerQueryBuilder->setArgument('contents', $contents);
-        }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }

@@ -27,16 +27,13 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/main.go", `package main
 			type Test struct {}
 
 			func (m *Test) Fn() string { return "wowzas" }
 			`,
-			}).
-			WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{"name": "test", "sdk": "go", "include": ["foo"], "exclude": ["blah"], "dependencies": ["foo"]}`,
-			})
+			).
+			WithNewFile("/work/dagger.json", `{"name": "test", "sdk": "go", "include": ["foo"], "exclude": ["blah"], "dependencies": ["foo"]}`)
 
 		// verify develop updates config to new format
 		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
@@ -75,8 +72,7 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
 
@@ -86,7 +82,7 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				return dag.CurrentModule().Source()
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
 
@@ -229,8 +225,7 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
 
@@ -256,12 +251,11 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				Str string
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./dep")).
-			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/main.go", `package main
 
 			import "context"
 
@@ -292,7 +286,7 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				Str string
 			}
 			`,
-			})
+			)
 
 		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -317,8 +311,7 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
 
@@ -328,12 +321,11 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return "hi from dep"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./dep")).
-			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/main.go", `package main
 
 			import "context"
 
@@ -343,7 +335,7 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return dag.Foo().Fn(ctx)
 			}
 			`,
-			})
+			)
 
 		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -356,8 +348,7 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep1").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep1/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep1/main.go", `package main
 
 			import "context"
 
@@ -367,11 +358,10 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return "hi from dep1"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work/dep2").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep2/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep2/main.go", `package main
 
 			import "context"
 
@@ -381,13 +371,12 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return "hi from dep2"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./dep1")).
 			With(daggerExec("install", "--name", "bar", "./dep2")).
-			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/main.go", `package main
 
 			import "context"
 
@@ -405,7 +394,7 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return dep1 + " " + dep2, nil
 			}
 			`,
-			})
+			)
 
 		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -420,8 +409,7 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=coolmod", "--sdk=go", "coolmod")).
-			WithNewFile("/work/coolmod/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/coolmod/main.go", `package main
 
 			import "context"
 
@@ -431,7 +419,7 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				return dag.CurrentModule().Name(ctx)
 			}
 			`,
-			}).
+			).
 			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -502,14 +490,13 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--name=a", "--sdk=go", ".")).
 			WithWorkdir("/work/subdir").
 			With(daggerExec("init", "--name=b", "--sdk=go", "--source=.", ".")).
-			WithNewFile("./main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("./main.go", `package main
 
 			type B struct {}
 
 			func (m *B) Fn() string { return "yo" }
 			`,
-			}).
+			).
 			With(daggerCall("fn"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
@@ -523,11 +510,10 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithWorkdir("/").
 			With(daggerExec("init", "--source="+absPath, "--name=test", "--sdk=go", absPath)).
-			WithNewFile(absPath+"/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile(absPath+"/main.go", `package main
 				type Test struct {}
 				func (m *Test) Fn() string { return "hello from absolute path" }`,
-			}).
+			).
 			With(daggerCallAt(absPath, "fn"))
 
 		out, err := ctr.Stdout(ctx)
@@ -557,8 +543,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
 
@@ -568,7 +553,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				return "hi from dep"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("install", "./dep"))
@@ -588,8 +573,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				ctr := base.
 					WithWorkdir(wd).
 					With(daggerExec("develop", "--sdk", "go", "--source", sourceDir)).
-					WithNewFile("/work/cool/subdir/main.go", dagger.ContainerWithNewFileOpts{
-						Contents: `package main
+					WithNewFile("/work/cool/subdir/main.go", `package main
 
 					import "context"
 
@@ -603,7 +587,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 						return "hi from work " + depStr, nil
 					}
 					`,
-					})
+					)
 
 				// should be able to invoke it directly now
 				out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
@@ -627,8 +611,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
 
@@ -638,14 +621,13 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				return "hi from dep"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
-			WithNewFile("/work/some/subdir/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/some/subdir/main.go", `package main
 
 			import "context"
 
@@ -659,7 +641,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				return "hi from work " + depStr, nil
 			}
 			`,
-			})
+			)
 
 		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -686,8 +668,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 		ctr := goGitBase(t, c).
 			WithWorkdir(absPath+"/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile(absPath+"/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile(absPath+"/dep/main.go", `package main
 
         import "context"
 
@@ -697,14 +678,13 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
             return "hi from dep"
         }
         `,
-			}).
+			).
 			WithWorkdir(absPath).
 			With(daggerExec("init")).
 			With(daggerExec("install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
-			WithNewFile(absPath+"/some/subdir/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile(absPath+"/some/subdir/main.go", `package main
 
         import "context"
 
@@ -718,7 +698,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
             return "hi from work " + depStr, nil
         }
         `,
-			})
+			)
 
 		out, err := ctr.With(daggerCallAt(absPath, "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -734,8 +714,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/subdir/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/subdir/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/subdir/dep/main.go", `package main
 
 			import "context"
 
@@ -743,12 +722,11 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
 			With(daggerExec("install", "-m=test", "./subdir/dep")).
-			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/test/main.go", `package main
 
 			import "context"
 
@@ -756,7 +734,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
 			`,
-			})
+			)
 
 		// try invoking it from a few different paths, just for more corner case coverage
 
@@ -825,8 +803,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("init", "--source=/work/test2", "--name=test2", "--sdk=go", "/work/test2")).
 				With(daggerExec("install", "-m=/work/test2", "/work/subdir/dep")).
-				WithNewFile("/work/test2/main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/work/test2/main.go", `package main
 
             import "context"
 
@@ -834,7 +811,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
             func (m *Test2) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi from test2") }
             `,
-				})
+				)
 
 			out, err := ctr.With(daggerCallAt("/work/test2", "fn")).Stdout(ctx)
 			require.NoError(t, err)
@@ -849,8 +826,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=subdir/dep", "--name=dep", "--sdk=go", "subdir/dep")).
-			WithNewFile("/work/subdir/dep/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/subdir/dep/main.go", `package main
 
 			import "context"
 
@@ -858,10 +834,9 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
 			`,
-			}).
+			).
 			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
-			WithNewFile("/work/test/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/test/main.go", `package main
 
 			import "context"
 
@@ -869,7 +844,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
 			`,
-			})
+			)
 
 		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
 			// sanity test normal case
@@ -1026,8 +1001,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work").
 				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 				With(daggerExec("install", testGitModuleRef("top-level"))).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("main.go", `package main
 
 import "context"
 
@@ -1037,7 +1011,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 	return dag.TopLevel().Fn(ctx)
 }
 `,
-				}).
+				).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1231,9 +1205,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 
 			if tc.customSDKSource != "" {
 				// TODO: hardcoding that underlying sdk is go right now, could be generalized
-				ctr = ctr.WithNewFile("dagger/main.go", dagger.ContainerWithNewFileOpts{
-					Contents: tc.mainSource,
-				})
+				ctr = ctr.WithNewFile("dagger/main.go", tc.mainSource)
 			} else {
 				ctr = ctr.With(sdkSource(tc.sdk, tc.mainSource))
 			}
@@ -1296,8 +1268,7 @@ func (ModuleSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testc
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/coolsdk").
 		With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 type CoolSdk struct {}
 
@@ -1321,12 +1292,11 @@ func (m *CoolSdk) RequiredPaths() []string {
 	}
 }
 `,
-		}).
+		).
 		WithWorkdir("/work").
-		WithNewFile("random-file").
+		WithNewFile("random-file", "").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 import "os"
 
@@ -1344,7 +1314,7 @@ func (m *Test) Fn() ([]string, error) {
 	return names, nil
 }
 `,
-		})
+		)
 
 	out, err := ctr.
 		With(daggerCall("fn")).
@@ -1471,8 +1441,7 @@ func (ModuleSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			require.Equal(t, "hi", strings.TrimSpace(out))
 
 			ctr = ctr.With(daggerExec("develop", "--sdk=go", "--source=.")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("main.go", `package main
 
 import "context"
 
@@ -1482,7 +1451,7 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 	return dag.Foo().ContainerEcho("hi").Stdout(ctx)
 }
 `,
-				})
+				)
 
 			out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
 			require.NoError(t, err)
@@ -1501,8 +1470,7 @@ func (ModuleSuite) TestViews(ctx context.Context, t *testctx.T) {
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 type Test struct {}
 
@@ -1510,16 +1478,17 @@ func (m *Test) Fn(dir *Directory) *Directory {
 	return dir
 }
 `,
-		}).WithDirectory("stuff", c.Directory().
-		WithNewFile("nice-file", "nice").
-		WithNewFile("mean-file", "mean").
-		WithNewFile("foo.txt", "foo").
-		WithDirectory("subdir", c.Directory().
-			WithNewFile("other-nice-file", "nice").
-			WithNewFile("other-mean-file", "mean").
-			WithNewFile("bar.txt", "bar"),
-		),
-	)
+		).
+		WithDirectory("stuff", c.Directory().
+			WithNewFile("nice-file", "nice").
+			WithNewFile("mean-file", "mean").
+			WithNewFile("foo.txt", "foo").
+			WithDirectory("subdir", c.Directory().
+				WithNewFile("other-nice-file", "nice").
+				WithNewFile("other-mean-file", "mean").
+				WithNewFile("bar.txt", "bar"),
+			),
+		)
 
 	// setup nice-view
 	ctr = ctr.With(daggerExec("config", "views", "set", "-n", "nice-view", "nice-file", "subdir/other-nice-file"))
