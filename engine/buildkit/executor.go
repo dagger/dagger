@@ -280,7 +280,10 @@ func (w *Worker) run(
 				started,
 				installCACerts,
 			)
-			return err
+			if err != nil {
+				return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
+			}
+			return nil
 		})
 		if err == nil {
 			err = caInstaller.Install(ctx)
