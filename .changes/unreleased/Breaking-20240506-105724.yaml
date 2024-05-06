@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'api: align `Container.withNewFile` signature with `Directory.withNewFile`'
+time: 2024-05-06T10:57:24.171557Z
+custom:
+  Author: helderco
+  PR: "7293"
