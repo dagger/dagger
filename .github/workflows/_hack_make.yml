@@ -21,7 +21,7 @@ on:
         default: 60  
       size:
         type: string
-        default: "dagger-v0-11-1-4c-nvme"
+        default: "dagger-v0-11-2-4c-nvme"
         required: false
       dagger-version:
         type: string
@@ -86,6 +86,9 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
+  # The job will succesfully trigger, but the async job is expected to fail.
+  # We confirmed that this requires at least 16CPUs & 32GB of RAM: https://github.com/dagger/dagger/pull/7223#issuecomment-2091059448
+  # The current machine only has 12CPUs, so it is likely to fail. The value is in capturing measurements & seeing them improve over time.
   dagger-runner-gerhard-production:
     if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' && inputs.mage-targets == 'engine:testrace' }}
     runs-on: ubuntu-latest
@@ -100,10 +103,11 @@ jobs:
           workflow: ./.github/workflows/_async_hack_make.yml
           inputs: '{ "mage-targets": "${{ inputs.mage-targets }}", "concurrency-group": "${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp", "runner": "dagger-v011-on-k8s-gerhard-production" }'
 
-  # Use legacy Dagger runners when running in the dagger/dagger repo (including PRs) & needing Docker
-  dagger-runner-legacy:
+  # Use GitHub Large Runners when running in the dagger/dagger repo (including PRs) & needing Docker
+  # TODO: https://github.com/dagger/dagger/pull/7223
+  github-large-runner:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
-    runs-on: ${{ inputs.size }}
+    runs-on: ubuntu-22.04-16c-64g-600gb
     concurrency:
       group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}
       cancel-in-progress: true
