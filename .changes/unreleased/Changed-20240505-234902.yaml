@@ -1,0 +1,6 @@
+kind: Changed
+body: 'cli: use "functions" and "arguments" in `dagger call --help`'
+time: 2024-05-05T23:49:02.189991Z
+custom:
+  Author: helderco
+  PR: "7286"

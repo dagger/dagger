@@ -34,7 +34,7 @@ const (
 
 var funcGroup = &cobra.Group{
 	ID:    "functions",
-	Title: "Function Commands",
+	Title: "Functions",
 }
 
 var funcCmds = FuncCommands{
@@ -443,12 +443,16 @@ func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fn
 			subCmd := fc.makeSubCmd(dag, fn)
 			cmd.AddCommand(subCmd)
 		}
+
+		if cmd.HasAvailableSubCommands() {
+			cmd.Use += " <function>"
+		}
 	}
 }
 
 func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
-		Use:                   cliName(fn.Name) + " [options]",
+		Use:                   cliName(fn.Name),
 		Short:                 strings.SplitN(fn.Description, "\n", 2)[0],
 		Long:                  fn.Description,
 		GroupID:               funcGroup.ID,
@@ -557,6 +561,15 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 		if arg.IsRequired() {
 			cmd.MarkFlagRequired(arg.FlagName())
 		}
+		cmd.Flags().SetAnnotation(
+			arg.FlagName(),
+			"help:group",
+			[]string{"Arguments"},
+		)
+	}
+
+	if len(fn.Args) > 0 {
+		cmd.Use += " [arguments]"
 	}
 
 	if fc.BeforeParse != nil {
