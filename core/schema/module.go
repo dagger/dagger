@@ -254,6 +254,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withKind", s.typeDefWithKind).
 			Doc(`Sets the kind of the type.`),
 
+		dagql.Func("withScalar", s.typeDefWithScalar).
+			Doc(`Returns a TypeDef of kind Scalar with the provided name.`),
+
 		dagql.Func("withListOf", s.typeDefWithListOf).
 			Doc(`Returns a TypeDef of kind List with the provided type for its elements.`),
 
@@ -284,6 +287,7 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.InputTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -307,6 +311,16 @@ func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, a
 	Kind core.TypeDefKind
 }) (*core.TypeDef, error) {
 	return def.WithKind(args.Kind), nil
+}
+
+func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Description string `default:""`
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("scalar type def must have a name")
+	}
+	return def.WithScalar(args.Name, args.Description), nil
 }
 
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {

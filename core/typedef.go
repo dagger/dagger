@@ -284,6 +284,7 @@ type TypeDef struct {
 	AsObject    dagql.Nullable[*ObjectTypeDef]    `field:"true" doc:"If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."`
 	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
 	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
+	AsScalar    dagql.Nullable[*ScalarTypeDef]    `field:"true" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
 }
 
 func (typeDef TypeDef) Clone() *TypeDef {
@@ -299,6 +300,9 @@ func (typeDef TypeDef) Clone() *TypeDef {
 	}
 	if typeDef.AsInput.Valid {
 		cp.AsInput.Value = typeDef.AsInput.Value.Clone()
+	}
+	if typeDef.AsScalar.Valid {
+		cp.AsScalar.Value = typeDef.AsScalar.Value.Clone()
 	}
 	return &cp
 }
@@ -323,6 +327,8 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = dagql.Int(0)
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
+	case TypeDefKindScalar:
+		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayOutput{Elem: typeDef.AsList.Value.ElementTypeDef.ToTyped()}
 	case TypeDefKindObject:
@@ -351,6 +357,8 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 		typed = dagql.Int(0)
 	case TypeDefKindBoolean:
 		typed = dagql.Boolean(false)
+	case TypeDefKindScalar:
+		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayInput{
 			Elem: typeDef.AsList.Value.ElementTypeDef.ToInput(),
@@ -386,6 +394,12 @@ func (typeDef *TypeDef) Underlying() *TypeDef {
 func (typeDef *TypeDef) WithKind(kind TypeDefKind) *TypeDef {
 	typeDef = typeDef.Clone()
 	typeDef.Kind = kind
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithScalar(name string, desc string) *TypeDef {
+	typeDef = typeDef.WithKind(TypeDefKindScalar)
+	typeDef.AsScalar = dagql.NonNull(NewScalarTypeDef(name, desc))
 	return typeDef
 }
 
@@ -470,6 +484,8 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
 		return typeDef.Kind == otherDef.Kind
+	case TypeDefKindScalar:
+		return typeDef.AsScalar.Value.Name == otherDef.AsScalar.Value.Name
 	case TypeDefKindList:
 		if otherDef.Kind != TypeDefKindList {
 			return false
@@ -720,6 +736,39 @@ func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
 	return true
 }
 
+type ScalarTypeDef struct {
+	Name        string `field:"true" doc:"The name of the scalar."`
+	Description string `field:"true" doc:"A doc string for the scalar, if any."`
+
+	OriginalName string
+
+	// SourceModuleName is currently only set when returning the TypeDef from the Scalars field on Module
+	SourceModuleName string `field:"true" doc:"If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+}
+
+func NewScalarTypeDef(name, description string) *ScalarTypeDef {
+	return &ScalarTypeDef{
+		Name:         strcase.ToCamel(name),
+		OriginalName: name,
+		Description:  description,
+	}
+}
+
+func (*ScalarTypeDef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ScalarTypeDef",
+		NonNull:   true,
+	}
+}
+
+func (typeDef *ScalarTypeDef) TypeDescription() string {
+	return "A definition of a custom scalar defined in a Module."
+}
+
+func (typeDef ScalarTypeDef) Clone() *ScalarTypeDef {
+	return &typeDef
+}
+
 type ListTypeDef struct {
 	ElementTypeDef *TypeDef `field:"true" doc:"The type of the elements in the list."`
 }
@@ -802,6 +851,8 @@ var (
 		"An integer value.")
 	TypeDefKindBoolean = TypeDefKinds.Register("BOOLEAN_KIND",
 		"A boolean value.")
+	TypeDefKindScalar = TypeDefKinds.Register("SCALAR_KIND",
+		"A scalar value of any basic kind.")
 	TypeDefKindList = TypeDefKinds.Register("LIST_KIND",
 		"A list of values all having the same type.",
 		"Always paired with a ListTypeDef.")

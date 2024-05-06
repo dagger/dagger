@@ -302,6 +302,12 @@ func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	return client.LoadPortFromID(id)
 }
 
+// Load a ScalarTypeDef from its ID.
+func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
+	client := initClient()
+	return client.LoadScalarTypeDefFromID(id)
+}
+
 // Load a Secret from its ID.
 func LoadSecretFromID(id dagger.SecretID) *dagger.Secret {
 	client := initClient()

@@ -2,8 +2,7 @@ import ts from "typescript"
 
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
 import { Argument, Arguments } from "./argument.js"
-import { serializeType } from "../serialize.js"
-import { typeNameToTypedef } from "../utils.js"
+import { typeToTypedef } from "../utils.js"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { FunctionArgTypeDef, FunctionTypedef, TypeDef } from "../typeDefs.js"
 
@@ -112,9 +111,7 @@ export class Method {
    * Return the type of the return value in a Dagger TypeDef format.
    */
   get returnType(): TypeDef<TypeDefKind> {
-    return typeNameToTypedef(
-      serializeType(this.checker, this.signature.getReturnType()),
-    )
+    return typeToTypedef(this.checker, this.signature.getReturnType())
   }
 
   get typeDef(): FunctionTypedef {

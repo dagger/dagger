@@ -69,6 +69,10 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		}
 		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
 		if named != nil {
+			if ps.isDaggerGenerated(named.Obj()) {
+				// only pre-generated scalars allowed here
+				parsedType.scalarType = named
+			}
 			parsedType.alias = named.Obj().Name()
 		}
 		return parsedType, nil
@@ -120,6 +124,8 @@ type parsedPrimitiveType struct {
 	goType *types.Basic
 	isPtr  bool
 
+	scalarType *types.Named
+
 	// if this is something like `type Foo string`, then alias will be "Foo"
 	alias string
 }
@@ -138,9 +144,12 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	default:
 		return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 	}
-	def := Qual("dag", "TypeDef").Call().Dot("WithKind").Call(
-		kind,
-	)
+	var def *Statement
+	if spec.scalarType != nil {
+		def = Qual("dag", "TypeDef").Call().Dot("WithScalar").Call(Lit(spec.scalarType.Obj().Name()))
+	} else {
+		def = Qual("dag", "TypeDef").Call().Dot("WithKind").Call(kind)
+	}
 	if spec.isPtr {
 		def = def.Dot("WithOptional").Call(Lit(true))
 	}
@@ -152,6 +161,9 @@ func (spec *parsedPrimitiveType) GoType() types.Type {
 }
 
 func (spec *parsedPrimitiveType) GoSubTypes() []types.Type {
+	if spec.scalarType != nil {
+		return []types.Type{spec.scalarType}
+	}
 	return nil
 }
 

@@ -943,6 +943,11 @@ export type ClientSecretOpts = {
 }
 
 /**
+ * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
+ */
+export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
+
+/**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
 export type SecretID = string & { __SecretID: never }
@@ -1010,6 +1015,10 @@ export type TypeDefWithObjectOpts = {
   description?: string
 }
 
+export type TypeDefWithScalarOpts = {
+  description?: string
+}
+
 /**
  * The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
  */
@@ -1054,6 +1063,11 @@ export enum TypeDefKind {
    * Always paired with an ObjectTypeDef.
    */
   ObjectKind = "OBJECT_KIND",
+
+  /**
+   * A scalar value of any basic kind.
+   */
+  ScalarKind = "SCALAR_KIND",
 
   /**
    * A string value.
@@ -7631,6 +7645,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a ScalarTypeDef from its ID.
+   */
+  loadScalarTypeDefFromID = (id: ScalarTypeDefID): ScalarTypeDef => {
+    return new ScalarTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadScalarTypeDefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a Secret from its ID.
    */
   loadSecretFromID = (id: SecretID): Secret => {
@@ -7878,6 +7908,118 @@ export class Client extends BaseClient {
    */
   with = (arg: (param: Client) => Client) => {
     return arg(this)
+  }
+}
+
+/**
+ * A definition of a custom scalar defined in a Module.
+ */
+export class ScalarTypeDef extends BaseClient {
+  private readonly _id?: ScalarTypeDefID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ScalarTypeDefID,
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
+
+  /**
+   * A unique identifier for this ScalarTypeDef.
+   */
+  id = async (): Promise<ScalarTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ScalarTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the scalar, if any.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the scalar.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 }
 
@@ -8385,6 +8527,21 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+   */
+  asScalar = (): ScalarTypeDef => {
+    return new ScalarTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asScalar",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * The kind of type this is (e.g. primitive, list, object).
    */
   kind = async (): Promise<TypeDefKind> => {
@@ -8565,6 +8722,22 @@ export class TypeDef extends BaseClient {
         {
           operation: "withOptional",
           args: { optional },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind Scalar with the provided name.
+   */
+  withScalar = (name: string, opts?: TypeDefWithScalarOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withScalar",
+          args: { name, ...opts },
         },
       ],
       ctx: this._ctx,

@@ -22,6 +22,9 @@ enum TypeDefKind: string
     /** A boolean value. */
     case BOOLEAN_KIND = 'BOOLEAN_KIND';
 
+    /** A scalar value of any basic kind. */
+    case SCALAR_KIND = 'SCALAR_KIND';
+
     /**
      * A list of values all having the same type.
      *

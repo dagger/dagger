@@ -1,8 +1,7 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { serializeType } from "../serialize.js"
-import { typeNameToTypedef } from "../utils.js"
+import { typeToTypedef } from "../utils.js"
 import { FieldTypeDef, TypeDef } from "../typeDefs.js"
 import { TypeDefKind } from "../../../api/client.gen.js"
 
@@ -99,9 +98,7 @@ export class Property {
       this.symbol.valueDeclaration,
     )
 
-    const typeName = serializeType(this.checker, type)
-
-    return typeNameToTypedef(typeName)
+    return typeToTypedef(this.checker, type)
   }
 
   get isExposed(): boolean {

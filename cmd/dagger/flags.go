@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 
@@ -44,6 +45,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &moduleSourceValue{}
 	case Module:
 		return &moduleValue{}
+	case Platform:
+		return &platformValue{}
 	}
 	return nil
 }
@@ -69,6 +72,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*moduleSourceValue]{}
 	case Module:
 		return &sliceValue[*moduleValue]{}
+	case Platform:
+		return &sliceValue[*platformValue]{}
 	}
 	return nil
 }
@@ -592,6 +597,36 @@ func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagg
 	return modConf.Source, nil
 }
 
+type platformValue struct {
+	platform string
+}
+
+func (v *platformValue) Type() string {
+	return Platform
+}
+
+func (v *platformValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("platform cannot be empty")
+	}
+	if s == "current" {
+		s = platforms.DefaultString()
+	}
+	v.platform = s
+	return nil
+}
+
+func (v *platformValue) String() string {
+	return v.platform
+}
+
+func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+	if v.platform == "" {
+		return nil, fmt.Errorf("platform cannot be empty")
+	}
+	return v.platform, nil
+}
+
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
 func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
@@ -614,6 +649,17 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 	case dagger.BooleanKind:
 		val, _ := getDefaultValue[bool](r)
 		return flags.Bool(name, val, usage), nil
+
+	case dagger.ScalarKind:
+		scalarName := r.TypeDef.AsScalar.Name
+
+		if val := GetCustomFlagValue(scalarName); val != nil {
+			flags.Var(val, name, usage)
+			return val, nil
+		}
+
+		val, _ := getDefaultValue[string](r)
+		return flags.String(name, val, usage), nil
 
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
@@ -652,6 +698,17 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 		case dagger.BooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
 			return flags.BoolSlice(name, val, usage), nil
+
+		case dagger.ScalarKind:
+			scalarName := r.TypeDef.AsScalar.Name
+
+			if val := GetCustomFlagValueSlice(scalarName); val != nil {
+				flags.Var(val, name, usage)
+				return val, nil
+			}
+
+			val, _ := getDefaultValue[[]string](r)
+			return flags.StringSlice(name, val, usage), nil
 
 		case dagger.ObjectKind:
 			objName := elementType.AsObject.Name

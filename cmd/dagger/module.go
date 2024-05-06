@@ -744,27 +744,30 @@ fragment TypeDefRefParts on TypeDef {
 	kind
 	optional
 	asObject {
-			name
+		name
 	}
 	asInterface {
-			name
+		name
 	}
 	asInput {
-			name
+		name
 	}
 	asList {
-			elementTypeDef {
-					kind
-					asObject {
-							name
-					}
-					asInterface {
-							name
-					}
-					asInput {
-							name
-					}
+		elementTypeDef {
+			kind
+			asObject {
+				name
 			}
+			asInterface {
+				name
+			}
+			asInput {
+				name
+			}
+		}
+	}
+	asScalar {
+		name
 	}
 }
 
@@ -808,6 +811,9 @@ query TypeDefs {
 			fields {
 				...FieldParts
 			}
+		}
+		asScalar {
+			name
 		}
 		asInterface {
 			name
@@ -987,6 +993,7 @@ type modTypeDef struct {
 	AsInterface *modInterface
 	AsInput     *modInput
 	AsList      *modList
+	AsScalar    *modScalar
 }
 
 type functionProvider interface {
@@ -1087,6 +1094,10 @@ func (o *modInterface) GetFunction(name string) (*modFunction, error) {
 		}
 	}
 	return nil, fmt.Errorf("no function '%s' in interface type '%s'", name, o.Name)
+}
+
+type modScalar struct {
+	Name string
 }
 
 type modInput struct {
