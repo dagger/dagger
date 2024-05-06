@@ -2886,6 +2886,178 @@ class Foo {
 	}
 }
 
+func TestModuleScalarType(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+type Test struct{}
+
+func (m *Test) FromPlatform(platform Platform) string {
+	return string(platform)
+}
+
+func (m *Test) ToPlatform(platform string) Platform {
+	return Platform(platform)
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def from_platform(self, platform: dagger.Platform) -> str:
+        return str(platform)
+
+    @function
+    def to_platform(self, platform: str) -> dagger.Platform:
+        return dagger.Platform(platform)
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { object, func, Platform } from "@dagger.io/dagger"
+
+@object()
+class Test {
+	@func()
+	fromPlatform(platform: Platform): string {
+		return platform as string
+	}
+
+	@func()
+	toPlatform(platform: string): Platform {
+		return platform as Platform
+	}
+}		
+`,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+			c, ctx := connect(t)
+			modGen := modInit(t, c, tc.sdk, tc.source)
+
+			out, err := modGen.With(daggerQuery(`{test{fromPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatform").String())
+
+			_, err = modGen.With(daggerQuery(`{test{fromPlatform(platform: "invalid")}}`)).Stdout(ctx)
+			require.ErrorContains(t, err, "unknown operating system or architecture")
+
+			out, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatform").String())
+
+			_, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "invalid")}}`)).Sync(ctx)
+			require.ErrorContains(t, err, "unknown operating system or architecture")
+		})
+	}
+}
+
+func TestModuleEnumType(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+type Test struct{}
+
+func (m *Test) FromProto(proto NetworkProtocol) string {
+	return string(proto)
+}
+
+func (m *Test) ToProto(proto string) NetworkProtocol {
+	return NetworkProtocol(proto)
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def from_proto(self, proto: dagger.NetworkProtocol) -> str:
+        return str(proto)
+
+    @function
+    def to_proto(self, proto: str) -> dagger.NetworkProtocol:
+        # Doing "dagger.NetworkProtocol(proto)" will fail in Python, so mock
+        # it to force sending the invalid value back to the server.
+        from dagger.client.base import Enum
+
+        class MockEnum(Enum):
+            TCP = "TCP"
+            INVALID = "INVALID"
+
+        return MockEnum(proto)
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
+
+@object()
+class Test {
+  @func()
+  fromProto(Proto: NetworkProtocol): string {
+    return Proto as string;
+  }
+
+  @func()
+  toProto(Proto: string): NetworkProtocol {
+    return Proto as NetworkProtocol;
+  }
+}
+`,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+			c, ctx := connect(t)
+			modGen := modInit(t, c, tc.sdk, tc.source)
+
+			out, err := modGen.With(daggerQuery(`{test{fromProto(proto: "TCP")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
+
+			_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+
+			out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
+
+			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+		})
+	}
+}
+
 func TestModuleConflictingSameNameDeps(t *testing.T) {
 	// A -> B -> Dint
 	// A -> C -> Dstr

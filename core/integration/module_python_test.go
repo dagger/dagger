@@ -1420,48 +1420,6 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 	})
 }
 
-func TestModulePythonScalarKind(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	_, err := pythonModInit(t, c, `
-        import dagger
-        from dagger import dag, function, object_type
-
-        @object_type
-        class Test:
-            @function
-            def foo(self, platform: dagger.Platform) -> dagger.Container:
-                return dag.container(platform=platform)
-        `).
-		With(daggerCall("foo", "--platform", "linux/arm64")).
-		Sync(ctx)
-
-	require.ErrorContains(t, err, "not supported yet")
-}
-
-func TestModulePythonEnumKind(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-
-	_, err := pythonModInit(t, c, `
-        import dagger
-        from dagger import dag, function, object_type
-
-        @object_type
-        class Test:
-            @function
-            def foo(self, protocol: dagger.NetworkProtocol) -> dagger.Container:
-                return dag.container().with_exposed_port(8000, protocol=protocol)
-        `).
-		With(daggerCall("foo", "--protocol", "UDP")).
-		Sync(ctx)
-
-	require.ErrorContains(t, err, "not supported yet")
-}
-
 func pythonSource(contents string) dagger.WithContainerFunc {
 	return pythonSourceAt("", contents)
 }

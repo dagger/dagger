@@ -151,6 +151,20 @@ export async function loadValue(
       // TODO(supports subfields serialization)
       return value
     }
+    case TypeDefKind.ScalarKind: {
+      const scalarType = (type as TypeDef<TypeDefKind.ScalarKind>).name
+
+      // Workaround to call get any scalar that has an id
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      if (dag[`load${scalarType}FromID`]) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        return dag[`load${scalarType}FromID`](value)
+      }
+
+      return value
+    }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:

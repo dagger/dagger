@@ -570,6 +570,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a ScalarTypeDef from its ID."
+  @spec load_scalar_type_def_from_id(t(), Dagger.ScalarTypeDefID.t()) :: Dagger.ScalarTypeDef.t()
+  def load_scalar_type_def_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadScalarTypeDefFromID") |> put_arg("id", id)
+
+    %Dagger.ScalarTypeDef{
+      selection: selection,
+      client: client.client
+    }
+  end
+
   @doc "Load a Secret from its ID."
   @spec load_secret_from_id(t(), Dagger.SecretID.t()) :: Dagger.Secret.t()
   def load_secret_from_id(%__MODULE__{} = client, id) do

@@ -30,6 +30,7 @@ const (
 	CacheVolume  string = "CacheVolume"
 	ModuleSource string = "ModuleSource"
 	Module       string = "Module"
+	Platform     string = "Platform"
 )
 
 var funcGroup = &cobra.Group{

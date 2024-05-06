@@ -18,6 +18,9 @@ type ModuleObjectType struct {
 }
 
 func (t *ModuleObjectType) SourceMod() Mod {
+	if t.mod == nil {
+		return nil
+	}
 	return t.mod
 }
 

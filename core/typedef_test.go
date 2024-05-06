@@ -19,6 +19,12 @@ var Samples = map[TypeDefKind]*TypeDef{
 	TypeDefKindBoolean: {
 		Kind: TypeDefKindBoolean,
 	},
+	TypeDefKindScalar: {
+		Kind: TypeDefKindScalar,
+		AsScalar: dagql.NonNull(&ScalarTypeDef{
+			Name: "FooScalar",
+		}),
+	},
 	TypeDefKindList: {
 		Kind: TypeDefKindList,
 		AsList: dagql.NonNull(&ListTypeDef{

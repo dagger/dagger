@@ -6,6 +6,7 @@ defmodule Dagger.TypeDefKind do
           :STRING_KIND
           | :INTEGER_KIND
           | :BOOLEAN_KIND
+          | :SCALAR_KIND
           | :LIST_KIND
           | :OBJECT_KIND
           | :INTERFACE_KIND
@@ -23,6 +24,10 @@ defmodule Dagger.TypeDefKind do
   @doc "A boolean value."
   @spec boolean_kind() :: :BOOLEAN_KIND
   def boolean_kind(), do: :BOOLEAN_KIND
+
+  @doc "A scalar value of any basic kind."
+  @spec scalar_kind() :: :SCALAR_KIND
+  def scalar_kind(), do: :SCALAR_KIND
 
   @doc """
   A list of values all having the same type.

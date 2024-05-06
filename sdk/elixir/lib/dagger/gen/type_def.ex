@@ -58,6 +58,18 @@ defmodule Dagger.TypeDef do
     }
   end
 
+  @doc "If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."
+  @spec as_scalar(t()) :: Dagger.ScalarTypeDef.t() | nil
+  def as_scalar(%__MODULE__{} = type_def) do
+    selection =
+      type_def.selection |> select("asScalar")
+
+    %Dagger.ScalarTypeDef{
+      selection: selection,
+      client: type_def.client
+    }
+  end
+
   @doc "A unique identifier for this TypeDef."
   @spec id(t()) :: {:ok, Dagger.TypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = type_def) do
@@ -193,6 +205,21 @@ defmodule Dagger.TypeDef do
   def with_optional(%__MODULE__{} = type_def, optional) do
     selection =
       type_def.selection |> select("withOptional") |> put_arg("optional", optional)
+
+    %Dagger.TypeDef{
+      selection: selection,
+      client: type_def.client
+    }
+  end
+
+  @doc "Returns a TypeDef of kind Scalar with the provided name."
+  @spec with_scalar(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  def with_scalar(%__MODULE__{} = type_def, name, optional_args \\ []) do
+    selection =
+      type_def.selection
+      |> select("withScalar")
+      |> put_arg("name", name)
+      |> maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
       selection: selection,

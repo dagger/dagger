@@ -2,6 +2,7 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../api/client.gen.js"
 import { TypeDef } from "./typeDefs.js"
+import { serializeType } from "./serialize.js"
 
 /**
  * Return true if the given class declaration has the decorator @obj() on
@@ -61,15 +62,23 @@ export function isFunction(method: ts.MethodDeclaration): boolean {
 }
 
 /**
- * Convert a typename into a Dagger Typedef using dynamic typing.
+ * Convert a type into a Dagger Typedef using dynamic typing.
  */
-export function typeNameToTypedef(typeName: string): TypeDef<TypeDefKind> {
+export function typeToTypedef(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  typeName: string = serializeType(checker, type),
+): TypeDef<TypeDefKind> {
   // If it's a list, remove the '[]' and recall the function to get
   // the type of list
   if (typeName.endsWith("[]")) {
     return {
       kind: TypeDefKind.ListKind,
-      typeDef: typeNameToTypedef(typeName.slice(0, typeName.length - 2)),
+      typeDef: typeToTypedef(
+        checker,
+        type,
+        typeName.slice(0, typeName.length - 2),
+      ),
     }
   }
 
@@ -83,6 +92,16 @@ export function typeNameToTypedef(typeName: string): TypeDef<TypeDefKind> {
     case "void":
       return { kind: TypeDefKind.VoidKind }
     default:
+      // If it's an union, then it's a scalar type
+      if (type.isUnionOrIntersection()) {
+        return {
+          kind: TypeDefKind.ScalarKind,
+          name: typeName,
+          typeDef: typeToTypedef(checker, type.types[0]),
+        }
+      }
+
+      // Otherwise, it's an object
       return {
         kind: TypeDefKind.ObjectKind,
         name: typeName,

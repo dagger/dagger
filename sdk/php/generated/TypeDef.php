@@ -50,6 +50,15 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null.
+     */
+    public function asScalar(): ScalarTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asScalar');
+        return new \Dagger\ScalarTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this TypeDef.
      */
     public function id(): TypeDefId
@@ -165,6 +174,19 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withOptional');
         $innerQueryBuilder->setArgument('optional', $optional);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind Scalar with the provided name.
+     */
+    public function withScalar(string $name, ?string $description = ''): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withScalar');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

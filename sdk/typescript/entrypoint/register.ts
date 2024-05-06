@@ -13,6 +13,7 @@ import {
   FunctionTypedef,
   ListTypeDef,
   ObjectTypeDef,
+  ScalarTypeDef,
   TypeDef as ScannerTypeDef,
 } from "../introspector/scanner/typeDefs.js"
 
@@ -130,6 +131,8 @@ function addArg(args: {
  */
 function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
   switch (type.kind) {
+    case TypeDefKind.ScalarKind:
+      return dag.typeDef().withScalar((type as ScalarTypeDef).name)
     case TypeDefKind.ObjectKind:
       return dag.typeDef().withObject((type as ObjectTypeDef).name)
     case TypeDefKind.ListKind:
