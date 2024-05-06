@@ -86,23 +86,6 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
-  # The job will succesfully trigger, but the async job is expected to fail.
-  # We confirmed that this requires at least 16CPUs & 32GB of RAM: https://github.com/dagger/dagger/pull/7223#issuecomment-2091059448
-  # The current machine only has 12CPUs, so it is likely to fail. The value is in capturing measurements & seeing them improve over time.
-  dagger-runner-gerhard-production:
-    if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' && inputs.mage-targets == 'engine:testrace' }}
-    runs-on: ubuntu-latest
-    concurrency:
-      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp
-      cancel-in-progress: true
-    steps:
-      # https://github.com/benc-uk/workflow-dispatch/tree/v1
-      - name: Trigger ${{ inputs.mage-targets }} on dagger-v011-on-k8s-gerhard-production
-        uses: benc-uk/workflow-dispatch@v1
-        with:
-          workflow: "async/hack/make"
-          inputs: '{ "mage-targets": "${{ inputs.mage-targets }}", "concurrency-group": "${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp", "runner": "dagger-v011-on-k8s-gerhard-production" }'
-
   dagger-runner-v2-dind:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: dagger-v0-11-2-dind
