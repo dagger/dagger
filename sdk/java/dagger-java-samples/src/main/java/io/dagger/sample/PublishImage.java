@@ -30,9 +30,8 @@ public class PublishImage {
               .from("nginx:1.23-alpine")
               .withNewFile(
                   "/usr/share/nginx/html/index.html",
-                  new WithNewFileArguments()
-                      .withContents("Hello from Dagger!")
-                      .withPermissions(0400));
+                  "Hello from Dagger!",
+                  new WithNewFileArguments().withPermissions(0400));
 
       // use secret for registry authentication
       String addr =

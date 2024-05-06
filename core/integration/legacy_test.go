@@ -12,7 +12,6 @@ import (
 	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/testctx"
 )
 
@@ -36,11 +35,8 @@ func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=bare", "--source=.", "--sdk=go")).
-		WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`,
-		}).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
 
 import "context"
 
@@ -58,7 +54,7 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 	return dag.Container().WithNewFile("./path").File("./path").Export(ctx, "./path")
 }
 `,
-		})
+		)
 
 	out, err := modGen.
 		With(daggerQuery(`{bare{testContainer, testDirectory, testFile}}`)).

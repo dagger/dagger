@@ -1191,7 +1191,7 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Containe
 
 type containerWithNewFileArgs struct {
 	Path        string
-	Contents    string `default:""`
+	Contents    string
 	Permissions int    `default:"0644"`
 	Owner       string `default:""`
 }

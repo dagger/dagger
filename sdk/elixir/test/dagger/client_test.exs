@@ -297,8 +297,9 @@ defmodule Dagger.ClientTest do
              client
              |> Client.container()
              |> Container.from("nginx:1.25-alpine3.18")
-             |> Container.with_new_file("/a.txt",
-               contents: """
+             |> Container.with_new_file(
+               "/a.txt",
+               """
                  \\  /       Partly cloudy
                _ /\"\".-.     +29(31) °C
                  \\_(   ).   ↑ 13 km/h
