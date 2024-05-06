@@ -21,8 +21,8 @@ const (
 var elixirVersions = []string{"1.16.2", "1.15.7", "1.14.5"}
 
 const (
-	otpVersion    = "26.2.3"
-	debianVersion = "20240130"
+	otpVersion    = "26.2.4"
+	debianVersion = "20240423"
 )
 
 type ElixirSDK struct {
