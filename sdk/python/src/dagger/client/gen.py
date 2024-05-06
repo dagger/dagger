@@ -1549,7 +1549,8 @@ class Container(Type):
 
     def with_mounted_temp(self, path: str) -> Self:
         """Retrieves this container plus a temporary directory mounted at the
-        given path.
+        given path. Any writes will be ephemeral to a single withExec call;
+        they will not be persisted to subsequent withExecs.
 
         Parameters
         ----------

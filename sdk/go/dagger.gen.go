@@ -1400,7 +1400,7 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 	}
 }
 
-// Retrieves this container plus a temporary directory mounted at the given path.
+// Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
 func (r *Container) WithMountedTemp(path string) *Container {
 	q := r.query.Select("withMountedTemp")
 	q = q.Arg("path", path)

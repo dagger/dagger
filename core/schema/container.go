@@ -191,7 +191,7 @@ func (s *containerSchema) Install() {
 				`If the group is omitted, it defaults to the same as the user.`),
 
 		dagql.Func("withMountedTemp", s.withMountedTemp).
-			Doc(`Retrieves this container plus a temporary directory mounted at the given path.`).
+			Doc(`Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.`).
 			ArgDoc("path", `Location of the temporary directory (e.g., "/tmp/temp_dir").`),
 
 		dagql.Func("withMountedCache", s.withMountedCache).
