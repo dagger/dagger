@@ -47,6 +47,17 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
             {{- end }}
    }
 
+      {{- /* Add custom method to main Client */ -}}
+      {{- if .Name | QueryToClient | FormatName | eq "Client" }}
+
+  /**
+   * Get the Raw GraphQL client.
+   */
+  public async getGQLClient() {
+    return this._ctx.connection()
+  }
+      {{- end }}
+
 			{{- /* Write methods. */ -}}
 			{{- "" }}{{ range $field := .Fields }}
 				{{- if Solve . }}

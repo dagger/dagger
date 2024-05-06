@@ -14,6 +14,29 @@ import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("TypeScript default client", function () {
+  it("Should allow using the GQL client", async function () {
+    this.timeout(60000)
+
+    await connection(async () => {
+      const client = await dag.getGQLClient()
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await client.request<any>(`
+ query {
+   container {
+     from(address: "alpine") {
+       withExec(args: ["echo", "hello", "world"]) {
+           stdout
+         }
+     }
+   }
+ }      
+      `)
+
+      assert.equal(result.container.from.withExec.stdout, "hello world\n")
+    })
+  })
+
   it("Should use the default client and close connection on call to close", async function () {
     this.timeout(60000)
 
