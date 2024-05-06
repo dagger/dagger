@@ -2948,6 +2948,20 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this container with the directory at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to remove (e.g., ".github/").
+    pub fn without_directory(&self, path: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutDirectory");
+        query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this container with an unset command entrypoint.
     ///
     /// # Arguments
@@ -3022,6 +3036,20 @@ impl Container {
         if let Some(protocol) = opts.protocol {
             query = query.arg("protocol", protocol);
         }
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the file at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to remove (e.g., "/file.txt").
+    pub fn without_file(&self, path: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutFile");
+        query = query.arg("path", path.into());
         Container {
             proc: self.proc.clone(),
             selection: query,

@@ -1559,6 +1559,16 @@ func (r *Container) WithoutDefaultArgs() *Container {
 	}
 }
 
+// Retrieves this container with the directory at the given path removed.
+func (r *Container) WithoutDirectory(path string) *Container {
+	q := r.query.Select("withoutDirectory")
+	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithoutEntrypointOpts contains options for Container.WithoutEntrypoint
 type ContainerWithoutEntrypointOpts struct {
 	// Don't remove the default arguments when unsetting the entrypoint.
@@ -1606,6 +1616,16 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 		}
 	}
 	q = q.Arg("port", port)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container with the file at the given path removed.
+func (r *Container) WithoutFile(path string) *Container {
+	q := r.query.Select("withoutFile")
+	q = q.Arg("path", path)
 
 	return &Container{
 		query: q,

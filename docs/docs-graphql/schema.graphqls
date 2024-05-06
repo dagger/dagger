@@ -715,6 +715,12 @@ type Container {
   """
   withoutDefaultArgs: Container!
 
+  """Retrieves this container with the directory at the given path removed."""
+  withoutDirectory(
+    """Location of the directory to remove (e.g., ".github/")."""
+    path: String!
+  ): Container!
+
   """Retrieves this container with an unset command entrypoint."""
   withoutEntrypoint(
     """Don't remove the default arguments when unsetting the entrypoint."""
@@ -734,6 +740,12 @@ type Container {
 
     """Port protocol to unexpose"""
     protocol: NetworkProtocol = TCP
+  ): Container!
+
+  """Retrieves this container with the file at the given path removed."""
+  withoutFile(
+    """Location of the file to remove (e.g., "/file.txt")."""
+    path: String!
   ): Container!
 
   """
