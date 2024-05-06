@@ -63,7 +63,7 @@ jobs:
         timeout-minutes: ${{ inputs.timeout }}
 
   # Use new Dagger runners when running in the dagger/dagger repo (including PRs)
-  dagger-runner:
+  dagger-runner-v2:
     if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: ${{ inputs.size }}
     concurrency:
@@ -103,11 +103,12 @@ jobs:
           workflow: ./.github/workflows/_async_hack_make.yml
           inputs: '{ "mage-targets": "${{ inputs.mage-targets }}", "concurrency-group": "${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp", "runner": "dagger-v011-on-k8s-gerhard-production" }'
 
-  # Use GitHub Large Runners when running in the dagger/dagger repo (including PRs) & needing Docker
-  # TODO: https://github.com/dagger/dagger/pull/7223
-  github-large-runner:
+  # Use Legacy Dagger Runners until either:
+  # 1. Dagger in Dagger: https://github.com/dagger/dagger/pull/7223
+  # 2. Docker on v2 runners gets set up
+  dagger-runner-v1:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
-    runs-on: ubuntu-22.04-16c-64g-600gb
+    runs-on: dagger-runner-docker-fix
     concurrency:
       group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}
       cancel-in-progress: true
