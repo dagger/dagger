@@ -768,7 +768,7 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Retrieves this container plus a temporary directory mounted at the given path."
+  @doc "Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs."
   @spec with_mounted_temp(t(), String.t()) :: Dagger.Container.t()
   def with_mounted_temp(%__MODULE__{} = container, path) do
     selection =

@@ -2266,7 +2266,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus a temporary directory mounted at the given path.
+   * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
    * @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
    */
   withMountedTemp = (path: string): Container => {

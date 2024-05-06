@@ -681,7 +681,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieves this container plus a temporary directory mounted at the given path.
+     * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
      */
     public function withMountedTemp(string $path): Container
     {
