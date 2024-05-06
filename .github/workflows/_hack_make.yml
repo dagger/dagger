@@ -86,41 +86,22 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
-  # Use Legacy Dagger Runners until either:
-  # 1. Dagger in Dagger: https://github.com/dagger/dagger/pull/7223
-  # 2. Docker on v2 runners gets set up
-  dagger-runner-v1:
-    if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
-    runs-on: dagger-runner-docker-fix
+  # The job will succesfully trigger, but the async job is expected to fail.
+  # We confirmed that this requires at least 16CPUs & 32GB of RAM: https://github.com/dagger/dagger/pull/7223#issuecomment-2091059448
+  # The current machine only has 12CPUs, so it is likely to fail. The value is in capturing measurements & seeing them improve over time.
+  dagger-runner-gerhard-production:
+    if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' && inputs.mage-targets == 'engine:testrace' }}
+    runs-on: ubuntu-latest
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}
+      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # https://github.com/benc-uk/workflow-dispatch/tree/v1
+      - name: Trigger ${{ inputs.mage-targets }} on dagger-v011-on-k8s-gerhard-production
+        uses: benc-uk/workflow-dispatch@v1
         with:
-          go-version: "1.21"
-          cache-dependency-path: "internal/mage/go.sum"
-      - name: Install Dagger CLI
-        run: |
-          curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
-      - name: Build Dagger Dev Engine...
-        run: |
-          ./hack/dev
-          docker ps -a
-          docker image ls
-        env:
-          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: Waiting for Dagger Dev Engine to be ready...
-        run: |
-          ./hack/with-dev ./hack/make engine:connect
-        env:
-          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: ${{ inputs.mage-targets }}
-        run: |
-          ./hack/with-dev ./hack/make ${{ inputs.mage-targets }}
-        env:
-          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+          workflow: "async/hack/make"
+          inputs: '{ "mage-targets": "${{ inputs.mage-targets }}", "concurrency-group": "${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp", "runner": "dagger-v011-on-k8s-gerhard-production" }'
 
   dagger-runner-v2-dind:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
