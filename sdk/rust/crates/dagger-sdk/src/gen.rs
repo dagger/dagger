@@ -1488,9 +1488,6 @@ pub struct ContainerWithMountedSecretOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
-    /// Content of the file to write (e.g., "Hello world!").
-    #[builder(setter(into, strip_option), default)]
-    pub contents: Option<&'a str>,
     /// A user:group to set for the file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -2746,10 +2743,12 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
+    /// * `contents` - Content of the file to write (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_new_file(&self, path: impl Into<String>) -> Container {
+    pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Container {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
+        query = query.arg("contents", contents.into());
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2761,17 +2760,17 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
+    /// * `contents` - Content of the file to write (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file_opts<'a>(
         &self,
         path: impl Into<String>,
+        contents: impl Into<String>,
         opts: ContainerWithNewFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
-        if let Some(contents) = opts.contents {
-            query = query.arg("contents", contents);
-        }
+        query = query.arg("contents", contents.into());
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }

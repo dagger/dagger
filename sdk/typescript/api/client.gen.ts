@@ -413,11 +413,6 @@ export type ContainerWithMountedSecretOpts = {
 
 export type ContainerWithNewFileOpts = {
   /**
-   * Content of the file to write (e.g., "Hello world!").
-   */
-  contents?: string
-
-  /**
    * Permission given to the written file (e.g., 0600).
    */
   permissions?: number
@@ -2335,7 +2330,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container plus a new file written at the given path.
    * @param path Location of the written file (e.g., "/tmp/file.txt").
-   * @param opts.contents Content of the file to write (e.g., "Hello world!").
+   * @param contents Content of the file to write (e.g., "Hello world!").
    * @param opts.permissions Permission given to the written file (e.g., 0600).
    * @param opts.owner A user:group to set for the file.
    *
@@ -2343,13 +2338,17 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withNewFile = (path: string, opts?: ContainerWithNewFileOpts): Container => {
+  withNewFile = (
+    path: string,
+    contents: string,
+    opts?: ContainerWithNewFileOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withNewFile",
-          args: { path, ...opts },
+          args: { path, contents, ...opts },
         },
       ],
       ctx: this._ctx,
