@@ -2467,6 +2467,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with the directory at the given path removed.
+   * @param path Location of the directory to remove (e.g., ".github/").
+   */
+  withoutDirectory = (path: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutDirectory",
+          args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves this container with an unset command entrypoint.
    * @param opts.keepDefaultArgs Don't remove the default arguments when unsetting the entrypoint.
    */
@@ -2519,6 +2536,23 @@ export class Container extends BaseClient {
         {
           operation: "withoutExposedPort",
           args: { port, ...opts, __metadata: metadata },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container with the file at the given path removed.
+   * @param path Location of the file to remove (e.g., "/file.txt").
+   */
+  withoutFile = (path: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutFile",
+          args: { path },
         },
       ],
       ctx: this._ctx,

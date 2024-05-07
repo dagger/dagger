@@ -922,6 +922,18 @@ defmodule Dagger.Container do
     }
   end
 
+  @doc "Retrieves this container with the directory at the given path removed."
+  @spec without_directory(t(), String.t()) :: Dagger.Container.t()
+  def without_directory(%__MODULE__{} = container, path) do
+    selection =
+      container.selection |> select("withoutDirectory") |> put_arg("path", path)
+
+    %Dagger.Container{
+      selection: selection,
+      client: container.client
+    }
+  end
+
   @doc "Retrieves this container with an unset command entrypoint."
   @spec without_entrypoint(t(), [{:keep_default_args, boolean() | nil}]) :: Dagger.Container.t()
   def without_entrypoint(%__MODULE__{} = container, optional_args \\ []) do
@@ -957,6 +969,18 @@ defmodule Dagger.Container do
       |> select("withoutExposedPort")
       |> put_arg("port", port)
       |> maybe_put_arg("protocol", optional_args[:protocol])
+
+    %Dagger.Container{
+      selection: selection,
+      client: container.client
+    }
+  end
+
+  @doc "Retrieves this container with the file at the given path removed."
+  @spec without_file(t(), String.t()) :: Dagger.Container.t()
+  def without_file(%__MODULE__{} = container, path) do
+    selection =
+      container.selection |> select("withoutFile") |> put_arg("path", path)
 
     %Dagger.Container{
       selection: selection,

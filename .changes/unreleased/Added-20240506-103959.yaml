@@ -1,0 +1,6 @@
+kind: Added
+body: 'api: add `Container.withoutDirectory` and `Container.withoutFile`'
+time: 2024-05-06T10:39:59.743613Z
+custom:
+  Author: helderco
+  PR: "7292"

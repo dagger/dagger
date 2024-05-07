@@ -246,6 +246,10 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`),
 
+		dagql.Func("withoutFile", s.withoutFile).
+			Doc(`Retrieves this container with the file at the given path removed.`).
+			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`),
+
 		dagql.Func("withFiles", s.withFiles).
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
 			ArgDoc("path", `Location where copied files should be placed (e.g., "/src").`).
@@ -276,6 +280,10 @@ func (s *containerSchema) Install() {
 				`A user:group to set for the directory and its contents.`,
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`),
+
+		dagql.Func("withoutDirectory", s.withoutDirectory).
+			Doc(`Retrieves this container with the directory at the given path removed.`).
+			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`),
 
 		dagql.Func("withExec", s.withExec).
 			Doc(`Retrieves this container after executing the specified command inside it.`).
@@ -1111,6 +1119,22 @@ func (s *containerSchema) withFiles(ctx context.Context, parent *core.Container,
 	}
 
 	return parent.WithFiles(ctx, args.Path, files, args.Permissions, args.Owner)
+}
+
+type containerWithoutDirectoryArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withoutDirectory(ctx context.Context, parent *core.Container, args containerWithoutDirectoryArgs) (*core.Container, error) {
+	return parent.WithoutPath(ctx, args.Path)
+}
+
+type containerWithoutFileArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Container, args containerWithoutFileArgs) (*core.Container, error) {
+	return parent.WithoutPath(ctx, args.Path)
 }
 
 type containerWithNewFileArgs struct {
