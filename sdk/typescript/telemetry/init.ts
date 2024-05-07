@@ -1,5 +1,5 @@
-import { NodeSDK } from "@opentelemetry/sdk-node"
 import { getEnvWithoutDefaults } from "@opentelemetry/core"
+import { NodeSDK } from "@opentelemetry/sdk-node"
 
 const SERVICE_NAME = "dagger-typescript-sdk"
 

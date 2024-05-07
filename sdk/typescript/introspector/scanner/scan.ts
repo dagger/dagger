@@ -1,8 +1,8 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
-import { ClassTypeDef, FunctionTypedef } from "./typeDefs.js"
 import { DaggerModule } from "./abtractions/module.js"
+import { ClassTypeDef, FunctionTypedef } from "./typeDefs.js"
 
 export type ScanResult = {
   module: {

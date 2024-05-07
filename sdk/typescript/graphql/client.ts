@@ -1,5 +1,5 @@
-import { GraphQLClient } from "graphql-request"
 import * as opentelemetry from "@opentelemetry/api"
+import { GraphQLClient } from "graphql-request"
 
 export function createGQLClient(port: number, token: string): GraphQLClient {
   const client = new GraphQLClient(`http://127.0.0.1:${port}/query`, {

@@ -1,7 +1,6 @@
 import { dag, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class Example {
   @func()
   async buildAndPublish(
