@@ -26,8 +26,6 @@ data:
       [runners.kubernetes.pod_security_context]
         run_as_non_root = false
         run_as_user = 0
-        run_as_group = 1001
-        fs_group = 1001
         [[runners.kubernetes.volumes.host_path]]
           name = "dagger"
           mount_path = "/var/run/dagger"
