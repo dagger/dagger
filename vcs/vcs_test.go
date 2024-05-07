@@ -34,12 +34,80 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Repo: "https://github.com/golang/groupcache",
 			},
 		},
-		// Unicode letters in directories (issue 18660).
+		// Unicode letters are allowed in import paths.
+		// issue https://github.com/golang/go/issues/18660
 		{
 			"github.com/user/unicode/испытание",
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/user/unicode",
+			},
+		},
+		// IBM DevOps Services tests
+		{
+			"hub.jazz.net/git/user1/pkgname",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://hub.jazz.net/git/user1/pkgname",
+			},
+		},
+		{
+			"hub.jazz.net/git/user1/pkgname/submodule/submodule/submodule",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://hub.jazz.net/git/user1/pkgname",
+			},
+		},
+		// Trailing .git is less preferred but included for
+		// compatibility purposes while the same source needs to
+		// be compilable on both old and new go
+		{
+			"git.openstack.org/openstack/swift.git",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://git.openstack.org/openstack/swift.git",
+			},
+		},
+		{
+			"git.openstack.org/openstack/swift/go/hummingbird",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://git.openstack.org/openstack/swift",
+			},
+		},
+		{
+			"git.apache.org/package-name.git",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://git.apache.org/package-name.git",
+			},
+		},
+		{
+			"git.apache.org/package-name_2.x.git/path/to/lib",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://git.apache.org/package-name_2.x.git",
+			},
+		},
+		{
+			"git.sr.ht/~jacqueline/tangara-fw/subdir",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://git.sr.ht/~jacqueline/tangara-fw",
+			},
+		},
+		{
+			"bitbucket.org/workspace/pkgname",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname",
+			},
+		},
+		{
+			"bitbucket.org/workspace/pkgname/subdir",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname",
 			},
 		},
 	}
@@ -51,6 +119,16 @@ func TestRepoRootForImportPath(t *testing.T) {
 			continue
 		}
 		want := test.want
+		if want == nil {
+			if got != nil {
+				t.Errorf("RepoRootForImportPath(%q) = %v, want nil", test.path, got)
+			}
+			continue
+		}
+		if got.VCS == nil || want.VCS == nil {
+			t.Errorf("RepoRootForImportPath(%q): got.VCS or want.VCS is nil", test.path)
+			continue
+		}
 		if got.VCS.Name != want.VCS.Name || got.Repo != want.Repo {
 			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
 		}
