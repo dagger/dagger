@@ -1,0 +1,172 @@
+---
+slug: /manuals/developer/cookbook
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Cookbook
+
+## Filesystem
+
+### Add a local directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/write-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/write-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/write-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+```
+dagger call write-directory \
+    --d=./myapp/
+
+dagger call write-directory \
+    --d=github.com/dagger/dagger#main \
+
+dagger call write-directory \
+    --d=https://github.com/dagger/dagger#main \
+  directory \
+    --path=/src \
+  entries
+```
+
+### Add a local directory or remote repository to a container and modify its contents
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path, adds a file to it, and then returns the modified container.
+
+:::note
+When using a local directory, modifications made to the directory's contents after it is written to a container filesystem do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the host, you must explicitly export the directory back to the host filesystem.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/modify-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/modify-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/modify-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+```
+dagger call modify-directory \
+    --d=./myapp/
+
+dagger call modify-directory \
+    --d=github.com/dagger/dagger#main \
+
+dagger call modify-directory \
+    --d=https://github.com/dagger/dagger#main \
+  directory \
+    --path=/src \
+  entries
+```
+
+## Secrets
+
+### Use secrets
+
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./go/snippets/secrets/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./python/snippets/secrets/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./typescript/snippets/secrets/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+```shell
+dagger call github-api \
+    --endpoint=https://api.github.com/repos/dagger/dagger/issues \
+    --token=env:GITHUB_API_TOKEN
+
+dagger call github-api \
+    --endpoint=https://api.github.com/repos/dagger/dagger/issues
+    --token=file:./github.txt
+
+dagger call github-api \
+    --endpoint=https://api.github.com/repos/dagger/dagger/issues
+    --token=cmd:"gh auth token"
+```
+
+## Services
+
+### Bind and use services
+
+The following Dagger Function returns an HTTP service. This service is used by another Dagger Function, which creates a service binding using the alias `www` and then accesses the HTTP service using this alias.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./go/snippets/services/bind-services/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./python/snippets/services/bind-services/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./typescript/snippets/services/bind-services/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+```shell
+dagger call get
+```
