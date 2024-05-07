@@ -1,0 +1,6 @@
+kind: Fixed
+body: Respect existing go.mod during module initialization
+time: 2024-05-07T15:34:12.947283891+01:00
+custom:
+  Author: jedevc
+  PR: "7194"
