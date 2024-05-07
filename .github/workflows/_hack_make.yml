@@ -86,14 +86,11 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
-  # Use Legacy Dagger Runners until either:
-  # 1. Dagger in Dagger: https://github.com/dagger/dagger/pull/7223
-  # 2. Docker on v2 runners gets set up
-  dagger-runner-v1:
+  dagger-runner-v2-dind:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
-    runs-on: dagger-runner-docker-fix
+    runs-on: dagger-v0-11-2-dind
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}
+      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-v2
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -101,9 +98,6 @@ jobs:
         with:
           go-version: "1.21"
           cache-dependency-path: "internal/mage/go.sum"
-      - name: Install Dagger CLI
-        run: |
-          curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
       - name: Build Dagger Dev Engine...
         run: |
           ./hack/dev
