@@ -38,13 +38,13 @@ Example usage:
 
 ```
 dagger call write-directory \
-    --dir=./myapp/
+    --d=./myapp/
 
 dagger call write-directory \
-    --dir=github.com/dagger/dagger#main \
+    --d=github.com/dagger/dagger#main \
 
 dagger call write-directory \
-    --dir=https://github.com/dagger/dagger#main \
+    --d=https://github.com/dagger/dagger#main \
   directory \
     --path=/src \
   entries
@@ -83,13 +83,13 @@ Example usage:
 
 ```
 dagger call modify-directory \
-    --dir=./myapp/
+    --d=./myapp/
 
 dagger call modify-directory \
-    --dir=github.com/dagger/dagger#main \
+    --d=github.com/dagger/dagger#main \
 
 dagger call modify-directory \
-    --dir=https://github.com/dagger/dagger#main \
+    --d=https://github.com/dagger/dagger#main \
   directory \
     --path=/src \
   entries
