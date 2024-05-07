@@ -149,7 +149,7 @@ func (ts *terminalSession) Run() error {
 }
 
 func (ts *terminalSession) sendSize(wsconn *websocket.Conn) error {
-	f, ok := ts.stdin.(*os.File)
+	f, ok := ts.stdout.(*os.File)
 	if !ok || !isatty.IsTerminal(f.Fd()) {
 		slog.Debug("stdin is not a terminal; cannot get terminal size")
 		return nil
