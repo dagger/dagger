@@ -37,7 +37,7 @@ func (m *PythonSdk) WithBaseImage(image string) *PythonSdk {
 	return m
 }
 
-// Check wheter to use uv or not
+// Check whether to use uv or not
 func (m *PythonSdk) UseUv() bool {
 	return m.Discovery.UserConfig().UseUv
 }
