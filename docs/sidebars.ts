@@ -554,6 +554,11 @@ module.exports = {
             }
           ]
         },
+//        {
+//          "type": "doc",
+//          "label": "Cookbook",
+//          "id": "manuals/developer/cookbook"
+//        },
         {
           "type": "doc",
           "label": "Publish Modules",
