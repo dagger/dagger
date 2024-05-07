@@ -115,7 +115,7 @@ CMD goenv
 	t.Run("with syntax pragma", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`# syntax = docker/dockerfile:1 
+				`# syntax = docker/dockerfile:1
 FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
@@ -2968,13 +2968,25 @@ func TestContainerImport(t *testing.T) {
 	})
 }
 
-func TestContainerFromIDPlatform(t *testing.T) {
+func TestContainerFromImagePlatform(t *testing.T) {
 	c, ctx := connect(t)
 
 	var desiredPlatform dagger.Platform = "linux/arm64"
 
+	ctr := c.Container().From(alpineArm)
+	ctrPlatform, err := ctr.Platform(ctx)
+	require.NoError(t, err)
+	require.Equal(t, desiredPlatform, ctrPlatform)
+}
+
+func TestContainerFromIDPlatform(t *testing.T) {
+	c, ctx := connect(t)
+
+	var targetPlatform dagger.Platform = "linux/arm64/v8"
+	var desiredPlatform dagger.Platform = "linux/arm64"
+
 	id, err := c.Container(dagger.ContainerOpts{
-		Platform: desiredPlatform,
+		Platform: targetPlatform,
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 

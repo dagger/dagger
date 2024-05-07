@@ -325,6 +325,7 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = digested.String()
+	container.Platform = Platform(platforms.Normalize(imgSpec.Platform))
 
 	return container, nil
 }
