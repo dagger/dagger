@@ -322,6 +322,10 @@ module.exports = {
           "id": "manuals/developer/overview/dependencies"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/secrets"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -340,10 +344,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/secrets"
             },
             {
               "type": "doc",
@@ -415,10 +415,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/secrets"
             },
             {
               "type": "doc",
@@ -494,10 +490,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/secrets"
             },
             {
               "type": "doc",

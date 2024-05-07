@@ -40,6 +40,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific secrets pages to multi-language secrets page
+  from = "/manuals/developer/:language/:docid/secrets"
+  to = "/manuals/developer/secrets"
+  status = 301
+
+[[redirects]]
   # redirect user guide index to user manual index
   from = "/user-guide"
   to = "/manuals/user"
