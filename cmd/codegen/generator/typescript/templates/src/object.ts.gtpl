@@ -53,8 +53,8 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient {
   /**
    * Get the Raw GraphQL client.
    */
-  public async getGQLClient() {
-    return this._ctx.connection()
+  public getGQLClient() {
+    return this._ctx.getGQLClient()
   }
       {{- end }}
 

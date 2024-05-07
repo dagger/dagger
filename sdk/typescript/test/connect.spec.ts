@@ -18,10 +18,8 @@ describe("TypeScript default client", function () {
     this.timeout(60000)
 
     await connection(async () => {
-      const client = await dag.getGQLClient()
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await client.request<any>(`
+      const result = await dag.getGQLClient().request<any>(`
  query {
    container {
      from(address: "alpine") {
