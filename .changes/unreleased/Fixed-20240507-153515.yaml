@@ -1,0 +1,6 @@
+kind: Fixed
+body: Avoid panic when masked parent is missing
+time: 2024-05-07T15:35:15.997287417+01:00
+custom:
+  Author: vito
+  PR: "7227"
