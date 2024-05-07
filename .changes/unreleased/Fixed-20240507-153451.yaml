@@ -1,0 +1,6 @@
+kind: Fixed
+body: Set `Container.platform` correctly when using `Container.from`
+time: 2024-05-07T15:34:51.917507298+01:00
+custom:
+  Author: marcosnils
+  PR: "7298"
