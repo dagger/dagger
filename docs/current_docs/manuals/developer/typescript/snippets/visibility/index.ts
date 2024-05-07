@@ -1,6 +1,5 @@
-import * as crypto from "crypto"
-
 import { object, func, field } from "@dagger.io/dagger"
+import * as crypto from "crypto"
 
 @object()
 class person {

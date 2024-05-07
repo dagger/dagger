@@ -1,9 +1,9 @@
 import ts from "typescript"
 
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { typeToTypedef } from "../utils.js"
-import { FieldTypeDef, TypeDef } from "../typeDefs.js"
 import { TypeDefKind } from "../../../api/client.gen.js"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
+import { FieldTypeDef, TypeDef } from "../typeDefs.js"
+import { typeToTypedef } from "../utils.js"
 
 const PROPERTY_DECORATOR = "field"
 

@@ -1,11 +1,11 @@
 import ts from "typescript"
 
-import { Constructor } from "./constructor.js"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { Method, Methods } from "./method.js"
-import { Properties, Property } from "./property.js"
 import { ClassTypeDef, FieldTypeDef, FunctionTypedef } from "../typeDefs.js"
 import { isFunction } from "../utils.js"
+import { Constructor } from "./constructor.js"
+import { Method, Methods } from "./method.js"
+import { Properties, Property } from "./property.js"
 
 export type DaggerObjects = { [name: string]: DaggerObject }
 

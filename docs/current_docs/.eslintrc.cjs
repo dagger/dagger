@@ -1,5 +1,5 @@
 module.exports = {
   extends: [
-    require.resolve("../../sdk/typescript/.eslintrc.cjs"),
+    require.resolve("../../sdk/typescript/eslint.config.cjs"),
   ],
 }

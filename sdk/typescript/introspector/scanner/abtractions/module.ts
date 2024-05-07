@@ -1,7 +1,7 @@
 import ts from "typescript"
 
-import { DaggerObject, DaggerObjects } from "./object.js"
 import { isObject, toPascalCase } from "../utils.js"
+import { DaggerObject, DaggerObjects } from "./object.js"
 
 export class DaggerModule {
   private checker: ts.TypeChecker
