@@ -61,6 +61,7 @@ here). For simplicity, this Worker struct also implements that Executor interfac
 type Worker struct {
 	*sharedWorkerState
 	serverID string
+	vtx      solver.Vertex
 }
 
 type sharedWorkerState struct {
@@ -298,7 +299,19 @@ func (w *Worker) registerDaggerCustomSources() error {
 }
 
 func (w *Worker) WithServerID(serverID string) *Worker {
-	return &Worker{sharedWorkerState: w.sharedWorkerState, serverID: serverID}
+	return &Worker{
+		sharedWorkerState: w.sharedWorkerState,
+		serverID:          serverID,
+		vtx:               w.vtx,
+	}
+}
+
+func (w *Worker) WithVertex(vtx solver.Vertex) *Worker {
+	return &Worker{
+		sharedWorkerState: w.sharedWorkerState,
+		serverID:          w.serverID,
+		vtx:               vtx,
+	}
 }
 
 /*
@@ -322,6 +335,8 @@ func (w *Worker) Executor() executor.Executor {
 }
 
 func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error) {
+	w = w.WithVertex(vtx)
+
 	// if this is an ExecOp, pass in ourself as executor
 	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
 		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {

@@ -559,47 +559,60 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 	}
 
 	var ctr dagql.Instance[*core.Container]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &ctr, dagql.Selector{
-		Field: "builtinContainer",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "digest",
-				Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName)),
+	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &ctr,
+		dagql.Selector{
+			Field: "builtinContainer",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "digest",
+					Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName)),
+				},
 			},
 		},
-	}, dagql.Selector{
-		Field: "withMountedCache",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.String("/go/pkg/mod"),
-			},
-			{
-				Name:  "cache",
-				Value: dagql.NewID[*core.CacheVolume](modCache.ID()),
-			},
-			{
-				Name:  "sharing",
-				Value: core.CacheSharingModeShared,
-			},
-		},
-	}, dagql.Selector{
-		Field: "withMountedCache",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.String("/root/.cache/go-build"),
-			},
-			{
-				Name:  "cache",
-				Value: dagql.NewID[*core.CacheVolume](buildCache.ID()),
-			},
-			{
-				Name:  "sharing",
-				Value: core.CacheSharingModeShared,
+		dagql.Selector{
+			Field: "withMountedCache",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/go/pkg/mod"),
+				},
+				{
+					Name:  "cache",
+					Value: dagql.NewID[*core.CacheVolume](modCache.ID()),
+				},
+				{
+					Name:  "sharing",
+					Value: core.CacheSharingModeShared,
+				},
 			},
 		},
-	}); err != nil {
+		dagql.Selector{
+			Field: "withMountedCache",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/root/.cache/go-build"),
+				},
+				{
+					Name:  "cache",
+					Value: dagql.NewID[*core.CacheVolume](buildCache.ID()),
+				},
+				{
+					Name:  "sharing",
+					Value: core.CacheSharingModeShared,
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "__withSystemEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.String("GOPROXY"),
+				},
+			},
+		},
+	); err != nil {
 		return inst, fmt.Errorf("failed to get container from go module sdk tarball: %w", err)
 	}
 	return ctr, nil

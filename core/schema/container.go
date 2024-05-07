@@ -122,6 +122,13 @@ func (s *containerSchema) Install() {
 					`environment variables defined in the container (e.g.,
 				"/opt/bin:$PATH").`),
 
+		// NOTE: this is internal-only for now (hidden from codegen via the __ prefix) as we
+		// currently only want to use it for allowing the Go SDK to inherit custom GOPROXY
+		// settings from the engine container. It may be made public in the future with more
+		// refined design.
+		dagql.Func("__withSystemEnvVariable", s.withSystemEnvVariable).
+			Doc(`(Internal-only) Inherit this environment variable from the engine container if set there with a special prefix.`),
+
 		dagql.Func("withSecretVariable", s.withSecretVariable).
 			Doc(`Retrieves this container plus an env variable containing the given secret.`).
 			ArgDoc("name", `The name of the secret variable (e.g., "API_SECRET").`).
@@ -757,6 +764,16 @@ func (s *containerSchema) withEnvVariable(ctx context.Context, parent *core.Cont
 
 		return cfg
 	})
+}
+
+type containerWithSystemEnvArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent *core.Container, args containerWithSystemEnvArgs) (*core.Container, error) {
+	ctr := parent.Clone()
+	ctr.SystemEnvNames = append(ctr.SystemEnvNames, args.Name)
+	return ctr, nil
 }
 
 type containerWithoutVariableArgs struct {
