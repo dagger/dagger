@@ -111,9 +111,13 @@ func (t ElixirSDK) Publish(
 			return err
 		}
 		newMixExs := strings.Replace(mixExs, `@version "0.0.0"`, `@version "`+version+`"`, 1)
-		ctr = ctr.WithNewFile(mixFile, dagger.ContainerWithNewFileOpts{
-			Contents: newMixExs,
-		})
+		// FIXME: Container.withNewFile is changing signature in
+		// https://github.com/dagger/dagger/pull/7293. Until that's released
+		// we're avoiding using it here for compatibility with dev and stable.
+		// ctr = ctr.WithNewFile(mixFile, newMixExs)
+		ctr = ctr.WithFile(newMixExs, dag.Directory().
+			WithNewFile(mixFile, newMixExs).
+			File(mixFile))
 	}
 
 	if dryRun {
