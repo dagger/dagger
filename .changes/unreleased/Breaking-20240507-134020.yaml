@@ -1,0 +1,6 @@
+kind: Breaking
+body: Remove space stripping from secret arguments
+time: 2024-05-07T13:40:20.158396621-03:00
+custom:
+  Author: marcosnils
+  PR: "7271"
