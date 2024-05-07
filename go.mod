@@ -44,6 +44,7 @@ require (
 	github.com/google/go-containerregistry v0.19.0
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/uuid v1.6.0
+	github.com/goproxy/goproxy v0.16.9
 	github.com/gorilla/websocket v1.5.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jackpal/gateway v1.0.7
@@ -114,8 +115,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
 )
-
-require github.com/goproxy/goproxy v0.16.9
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
