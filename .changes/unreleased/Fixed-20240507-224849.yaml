@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix terminal broken on Windows
+time: 2024-05-07T22:48:49.058847426+07:00
+custom:
+  Author: wingyplus
+  PR: "7305"
