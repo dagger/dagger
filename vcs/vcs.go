@@ -70,10 +70,7 @@ type TagCmd struct {
 
 // vcsList lists the known version control systems
 var vcsList = []*Cmd{
-	vcsHg,
 	vcsGit,
-	vcsSvn,
-	vcsBzr,
 }
 
 // ByCmd returns the version control system for the given
@@ -85,32 +82,6 @@ func ByCmd(cmd string) *Cmd {
 		}
 	}
 	return nil
-}
-
-// vcsHg describes how to use Mercurial.
-var vcsHg = &Cmd{
-	Name: "Mercurial",
-	Cmd:  "hg",
-
-	CreateCmd:   "clone -U {repo} {dir}",
-	DownloadCmd: "pull",
-
-	// We allow both tag and branch names as 'tags'
-	// for selecting a version.  This lets people have
-	// a go.release.r60 branch and a go1 branch
-	// and make changes in both, without constantly
-	// editing .hgtags.
-	TagCmd: []TagCmd{
-		{"tags", `^(\S+)`},
-		{"branches", `^(\S+)`},
-	},
-	TagSyncCmd:     "update -r {tag}",
-	TagSyncDefault: "update default",
-
-	LogCmd: "log --encoding=utf-8 --limit={limit} --template={template}",
-
-	Scheme:  []string{"https", "http", "ssh"},
-	PingCmd: "identify {scheme}://{repo}",
 }
 
 // vcsGit describes how to use Git.
@@ -134,42 +105,6 @@ var vcsGit = &Cmd{
 
 	Scheme:  []string{"git", "https", "http", "git+ssh"},
 	PingCmd: "ls-remote {scheme}://{repo}",
-}
-
-// vcsBzr describes how to use Bazaar.
-var vcsBzr = &Cmd{
-	Name: "Bazaar",
-	Cmd:  "bzr",
-
-	CreateCmd: "branch {repo} {dir}",
-
-	// Without --overwrite bzr will not pull tags that changed.
-	// Replace by --overwrite-tags after http://pad.lv/681792 goes in.
-	DownloadCmd: "pull --overwrite",
-
-	TagCmd:         []TagCmd{{"tags", `^(\S+)`}},
-	TagSyncCmd:     "update -r {tag}",
-	TagSyncDefault: "update -r revno:-1",
-
-	Scheme:  []string{"https", "http", "bzr", "bzr+ssh"},
-	PingCmd: "info {scheme}://{repo}",
-}
-
-// vcsSvn describes how to use Subversion.
-var vcsSvn = &Cmd{
-	Name: "Subversion",
-	Cmd:  "svn",
-
-	CreateCmd:   "checkout {repo} {dir}",
-	DownloadCmd: "update",
-
-	// There is no tag command in subversion.
-	// The branch information is all in the path names.
-
-	LogCmd: "log --xml --limit={limit}",
-
-	Scheme:  []string{"https", "http", "svn", "svn+ssh"},
-	PingCmd: "info {scheme}://{repo}",
 }
 
 func (v *Cmd) String() string {
