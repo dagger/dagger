@@ -9,7 +9,7 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Write a local or remote directory to a container
+### Add a local directory or remote repository to a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path and returns the modified container.
 
@@ -50,12 +50,12 @@ dagger call write-directory \
   entries
 ```
 
-### Write a local or remote directory to a container and modify it
+### Add a local directory or remote repository to a container and modify its contents
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path, adds a file to it, and then returns the modified container.
 
 :::note
-Modifications made to a directory after it is written to a container filesystem do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the host, you must explicitly export the directory back to the host filesystem.
+When using a local directory, modifications made to the directory's contents after it is written to a container filesystem do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the host, you must explicitly export the directory back to the host filesystem.
 :::
 
 <Tabs groupId="language">
