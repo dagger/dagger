@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -27,11 +28,13 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	resourcestypes "github.com/moby/buildkit/executor/resources/types"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
 	randid "github.com/moby/buildkit/identity"
+	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
@@ -60,7 +63,7 @@ func (w *Worker) Run(
 		return nil, errors.New("serverID is not set in executor")
 	}
 
-	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+	w.addExtraEnvs(&process)
 
 	if process.Meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
@@ -128,6 +131,105 @@ func (w *Worker) Run(
 		started,
 		setupCACerts,
 	)
+}
+
+func (w *Worker) addExtraEnvs(proc *executor.ProcessInfo) error {
+	proc.Meta.Env = append(proc.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
+
+	execMD, err := executionMetadataFromVtx(w.vtx)
+	if err != nil {
+		return err
+	}
+
+	origEnvMap := make(map[string]string)
+	for _, env := range proc.Meta.Env {
+		k, v, ok := strings.Cut(env, "=")
+		if !ok {
+			continue
+		}
+		origEnvMap[k] = v
+	}
+
+	for _, upperProxyEnvName := range []string{
+		"HTTP_PROXY",
+		"HTTPS_PROXY",
+		"FTP_PROXY",
+		"NO_PROXY",
+		"ALL_PROXY",
+	} {
+		upperProxyVal, upperSet := origEnvMap[upperProxyEnvName]
+
+		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
+		lowerProxyVal, lowerSet := origEnvMap[lowerProxyEnvName]
+
+		// try to set both upper and lower case proxy env vars, some programs
+		// only respect one or the other
+		switch {
+		case upperSet && lowerSet:
+			// both were already set explicitly by the user, don't overwrite
+			continue
+		case upperSet:
+			// upper case was set, set lower case to the same value
+			proc.Meta.Env = append(proc.Meta.Env, lowerProxyEnvName+"="+upperProxyVal)
+		case lowerSet:
+			// lower case was set, set upper case to the same value
+			proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+lowerProxyVal)
+		default:
+			// neither was set by the user, check if the engine itself has the upper case
+			// set and pass that through to the container in both cases if so
+			val, ok := os.LookupEnv(upperProxyEnvName)
+			if ok {
+				proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+val, lowerProxyEnvName+"="+val)
+			}
+		}
+	}
+
+	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
+	for _, systemEnvName := range execMD.SystemEnvNames {
+		if _, ok := origEnvMap[systemEnvName]; ok {
+			// don't overwrite explicit user-provided values
+			continue
+		}
+		systemVal, ok := os.LookupEnv(systemEnvPrefix + systemEnvName)
+		if ok {
+			proc.Meta.Env = append(proc.Meta.Env, systemEnvName+"="+systemVal)
+		}
+	}
+
+	return nil
+}
+
+type ExecutionMetadata struct {
+	SystemEnvNames []string
+}
+
+const executionMetadataKey = "dagger.executionMetadata"
+
+func executionMetadataFromVtx(vtx solver.Vertex) (ExecutionMetadata, error) {
+	md := ExecutionMetadata{}
+
+	if vtx == nil {
+		return md, nil
+	}
+
+	bs, ok := vtx.Options().Description[executionMetadataKey]
+	if !ok {
+		return md, nil
+	}
+	if err := json.Unmarshal([]byte(bs), &md); err != nil {
+		return md, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
+	}
+	return md, nil
+}
+
+func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
+	bs, err := json.Marshal(md)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal execution metadata: %w", err)
+	}
+	return llb.WithDescription(map[string]string{
+		executionMetadataKey: string(bs),
+	}), nil
 }
 
 func (w *Worker) run(

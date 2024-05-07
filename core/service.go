@@ -326,7 +326,6 @@ func (svc *Service) startContainer(
 	}()
 
 	env := append([]string{}, execOp.Meta.Env...)
-	env = append(env, proxyEnvList(execOp.Meta.ProxyEnv)...)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
 	if interactive {
 		env = append(env, ShimEnableTTYEnvVar+"=1")
@@ -458,29 +457,6 @@ func (svc *Service) startContainer(
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
-}
-
-func proxyEnvList(p *pb.ProxyEnv) []string {
-	if p == nil {
-		return nil
-	}
-	out := []string{}
-	if v := p.HttpProxy; v != "" {
-		out = append(out, "HTTP_PROXY="+v, "http_proxy="+v)
-	}
-	if v := p.HttpsProxy; v != "" {
-		out = append(out, "HTTPS_PROXY="+v, "https_proxy="+v)
-	}
-	if v := p.FtpProxy; v != "" {
-		out = append(out, "FTP_PROXY="+v, "ftp_proxy="+v)
-	}
-	if v := p.NoProxy; v != "" {
-		out = append(out, "NO_PROXY="+v, "no_proxy="+v)
-	}
-	if v := p.AllProxy; v != "" {
-		out = append(out, "ALL_PROXY="+v, "all_proxy="+v)
-	}
-	return out
 }
 
 func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
