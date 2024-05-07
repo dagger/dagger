@@ -15,6 +15,7 @@ export default [
       "dev/**",
       "runtime/template/src/**",
       "*.cjs",
+      ".changie.yaml"
     ],
   },
 ]
