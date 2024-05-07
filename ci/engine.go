@@ -149,11 +149,15 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
-	src := e.Dagger.Source.AsModule().GeneratedContextDirectory()
+	return lintGoModule(ctx, all, daggerDevelop(util.GoDirectory(e.Dagger.Source), ""), []string{
+		"",
+		"ci",
+	})
+}
 
+func lintGoModule(ctx context.Context, all bool, src *Directory, pkgs []string) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	pkgs := []string{"", "ci"}
 	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
 	if all {
 		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
@@ -161,7 +165,7 @@ func (e *Engine) Lint(
 	for _, pkg := range pkgs {
 		golangci := dag.Container().
 			From(consts.GolangLintImage).
-			WithMountedDirectory("/app", util.GoDirectory(src)).
+			WithMountedDirectory("/app", src).
 			WithWorkdir(path.Join("/app", pkg)).
 			WithExec(cmd)
 		eg.Go(func() error {
@@ -170,8 +174,9 @@ func (e *Engine) Lint(
 		})
 
 		eg.Go(func() error {
-			return util.DiffDirectoryF(ctx, util.GoDirectory(src), func(ctx context.Context) (*dagger.Directory, error) {
+			return util.DiffDirectoryF(ctx, src.Directory(pkg), func(ctx context.Context) (*dagger.Directory, error) {
 				return util.GoBase(src).
+					WithWorkdir(path.Join("/app", pkg)).
 					WithExec([]string{"go", "mod", "tidy"}).
 					Directory("."), nil
 			}, "go.mod", "go.sum")
@@ -179,6 +184,10 @@ func (e *Engine) Lint(
 	}
 
 	return eg.Wait()
+}
+
+func daggerDevelop(dir *Directory, path string) *Directory {
+	return dir.WithDirectory(path, dir.Directory(path).AsModule().GeneratedContextDirectory())
 }
 
 // Publish all engine images to a registry
