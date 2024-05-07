@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
@@ -209,6 +210,9 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	// build the CLI and export locally so it can be used to connect to the Engine
 	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
+	if runtime.GOOS == "windows" {
+		binDest += ".exe"
+	}
 	_ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
 
 	err = util.DaggerCall(ctx, "cli", "file", "--platform="+platforms.DefaultString(), "export", "--path="+binDest)
