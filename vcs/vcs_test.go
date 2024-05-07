@@ -6,7 +6,6 @@ package vcs
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -137,7 +136,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 
 // Test that FromDir correctly inspects a given directory and returns the right VCS and root.
 func TestFromDir(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "vcstest")
+	tempDir, err := os.MkdirTemp("", "vcstest")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,19 +5,7 @@
 // Package vcs exposes functions for resolving import paths
 // and using version control systems, which can be used to
 // implement behavior similar to the standard "go get" command.
-//
-// Deprecated: Use the go list command with -json flag instead,
-// which implements up-to-date import path resolution behavior,
-// module support, and includes the latest security fixes.
-//
-// This package was a copy of internal code in package cmd/go/internal/get
-// before module support, modified to make the identifiers exported.
-// It was provided here for developers who wanted to write tools with similar semantics.
-// It needed to be manually kept in sync with upstream when changes were
-// made to cmd/go/internal/get, as tracked in go.dev/issue/11490.
-// By now, it has diverged significantly from upstream cmd/go/internal/get
-// behavior and will not receive any further updates.
-package vcs // import "golang.org/x/tools/go/vcs"
+package vcs
 
 import (
 	"bytes"
