@@ -43,6 +43,16 @@ export class Context {
     return this._client
   }
 
+  public getGQLClient(): GraphQLClient {
+    if (!this._client) {
+      throw new Error(
+        "graphQL connection not established yet, please use it inside a connect or connection function.",
+      )
+    }
+
+    return this._client
+  }
+
   /**
    * Close the connection and the engine if this one was started by the node
    * SDK.

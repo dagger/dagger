@@ -6950,6 +6950,13 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Get the Raw GraphQL client.
+   */
+  public getGQLClient() {
+    return this._ctx.getGQLClient()
+  }
+
+  /**
    * Retrieves a content-addressed blob.
    * @param digest Digest of the blob
    * @param size Size of the blob
