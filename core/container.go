@@ -731,6 +731,22 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return container, nil
 }
 
+func (container *Container) WithoutSecretVariable(ctx context.Context, name string) (*Container, error) {
+	container = container.Clone()
+
+	for i, secret := range container.Secrets {
+		if secret.EnvName == name {
+			container.Secrets = append(container.Secrets[:i], container.Secrets[i+1:]...)
+			break
+		}
+	}
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
 func (container *Container) Directory(ctx context.Context, dirPath string) (*Directory, error) {
 	dir, _, err := locatePath(container, dirPath, NewDirectory)
 	if err != nil {

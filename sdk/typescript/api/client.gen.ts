@@ -2630,6 +2630,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container minus the given environment variable containing the secret.
+   * @param name The name of the environment variable (e.g., "HOST").
+   */
+  withoutSecretVariable = (name: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutSecretVariable",
+          args: { name },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves this container with a previously added Unix socket removed.
    * @param path Location of the socket to remove (e.g., "/tmp/socket").
    */

@@ -135,6 +135,24 @@ func TestSecretSet(t *testing.T) {
 	require.Equal(t, secretName, name)
 }
 
+func TestSecretUnsetVariable(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	s := c.SetSecret("aws_key", "very-secret-text")
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithSecretVariable("AWS_KEY", s).
+		WithoutSecretVariable("AWS_KEY").
+		WithExec([]string{"printenv"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.NotContains(t, out, "AWS_KEY")
+}
+
 func TestSecretWhitespaceScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)

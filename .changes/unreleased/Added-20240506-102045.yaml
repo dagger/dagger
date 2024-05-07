@@ -1,0 +1,6 @@
+kind: Added
+body: 'api: added `Container.withoutSecretVariable`'
+time: 2024-05-06T10:20:45.193331Z
+custom:
+  Author: helderco
+  PR: "7291"
