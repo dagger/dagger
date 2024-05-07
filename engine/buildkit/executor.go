@@ -162,14 +162,21 @@ func (w *Worker) addExtraEnvs(proc *executor.ProcessInfo) error {
 		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
 		lowerProxyVal, lowerSet := origEnvMap[lowerProxyEnvName]
 
+		// try to set both upper and lower case proxy env vars, some programs
+		// only respect one or the other
 		switch {
 		case upperSet && lowerSet:
+			// both were already set explicitly by the user, don't overwrite
 			continue
 		case upperSet:
+			// upper case was set, set lower case to the same value
 			proc.Meta.Env = append(proc.Meta.Env, lowerProxyEnvName+"="+upperProxyVal)
 		case lowerSet:
+			// lower case was set, set upper case to the same value
 			proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+lowerProxyVal)
 		default:
+			// neither was set by the user, check if the engine itself has the upper case
+			// set and pass that through to the container in both cases if so
 			val, ok := os.LookupEnv(upperProxyEnvName)
 			if ok {
 				proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+val, lowerProxyEnvName+"="+val)
