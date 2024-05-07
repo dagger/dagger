@@ -115,7 +115,7 @@ CMD goenv
 	t.Run("with syntax pragma", func(t *testing.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
-				`# syntax = docker/dockerfile:1 
+				`# syntax = docker/dockerfile:1
 FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
@@ -1803,6 +1803,67 @@ func TestContainerWithFile(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
+}
+
+func TestContainerWithoutPath(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/workdir").
+		WithNewFile("moo").
+		WithNewFile("foo").
+		WithNewFile("bar/man").
+		WithNewFile("bat/man").
+		WithNewFile("/ual")
+
+	t.Run("no error if not exists", func(t *testing.T) {
+		out, err := ctr.
+			WithoutFile("not-exists").
+			WithExec([]string{"ls", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar\nbat\nfoo\nmoo\n", out)
+	})
+
+	t.Run("files, with pattern", func(t *testing.T) {
+		out, err := ctr.
+			WithoutFile("*oo").
+			WithExec([]string{"ls", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar\nbat\n", out)
+	})
+
+	t.Run("directory", func(t *testing.T) {
+		out, err := ctr.
+			WithoutDirectory("bar").
+			WithExec([]string{"ls", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bat\nfoo\nmoo\n", out)
+	})
+
+	t.Run("current dir", func(t *testing.T) {
+		out, err := ctr.
+			WithoutDirectory("").
+			WithExec([]string{"find", "/workdir"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/workdir\n", out)
+	})
+
+	t.Run("absolute", func(t *testing.T) {
+		out, err := ctr.
+			WithoutFile("/ual").
+			WithExec([]string{"ls", "-1", "/"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "workdir")
+		require.NotContains(t, out, "ual")
+	})
 }
 
 func TestContainerWithFiles(t *testing.T) {

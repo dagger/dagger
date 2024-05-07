@@ -1749,6 +1749,20 @@ class Container(Type):
         _ctx = self._select("withoutDefaultArgs", _args)
         return Container(_ctx)
 
+    def without_directory(self, path: str) -> Self:
+        """Retrieves this container with the directory at the given path removed.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to remove (e.g., ".github/").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutDirectory", _args)
+        return Container(_ctx)
+
     def without_entrypoint(
         self,
         *,
@@ -1801,6 +1815,20 @@ class Container(Type):
             Arg("protocol", protocol, NetworkProtocol.TCP),
         ]
         _ctx = self._select("withoutExposedPort", _args)
+        return Container(_ctx)
+
+    def without_file(self, path: str) -> Self:
+        """Retrieves this container with the file at the given path removed.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to remove (e.g., "/file.txt").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutFile", _args)
         return Container(_ctx)
 
     def without_focus(self) -> Self:

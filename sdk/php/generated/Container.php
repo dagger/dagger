@@ -808,6 +808,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container with the directory at the given path removed.
+     */
+    public function withoutDirectory(string $path): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container with an unset command entrypoint.
      */
     public function withoutEntrypoint(?bool $keepDefaultArgs = false): Container
@@ -839,6 +849,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $protocol) {
         $innerQueryBuilder->setArgument('protocol', $protocol);
         }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container with the file at the given path removed.
+     */
+    public function withoutFile(string $path): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
+        $innerQueryBuilder->setArgument('path', $path);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
