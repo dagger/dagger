@@ -7,7 +7,8 @@ class MyModule {
    */
   @func()
   modifyDirectory(d: Directory): Container {
-    return dag.container()
+    return dag
+      .container()
       .from("alpine:latest")
       .withDirectory("/src", d)
       .withExec(["/bin/sh", "-c", "`echo foo > /src/foo`"])
