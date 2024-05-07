@@ -100,7 +100,7 @@ jobs:
       - name: Trigger ${{ inputs.mage-targets }} on dagger-v011-on-k8s-gerhard-production
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: ./.github/workflows/_async_hack_make.yml
+          workflow: async/hack/make
           inputs: '{ "mage-targets": "${{ inputs.mage-targets }}", "concurrency-group": "${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-gp", "runner": "dagger-v011-on-k8s-gerhard-production" }'
 
   # Use Legacy Dagger Runners until either:

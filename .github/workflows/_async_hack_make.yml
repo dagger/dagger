@@ -31,7 +31,7 @@ on:
         required: false
 
 jobs:
-  depot-runner:
+  run:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on: ${{ inputs.runner }}
     name: ${{ inputs.mage-targets }} on ${{ inputs.runner }} dev-engine:${{ inputs.dev-engine }} dagger-cloud-cache:${{ inputs.dagger-cloud-cache }}
