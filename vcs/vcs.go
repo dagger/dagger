@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	exec "golang.org/x/sys/execabs"
 	"log"
 	"net/url"
 	"os"
@@ -32,6 +31,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 // Verbose enables verbose operation logging.
@@ -667,7 +668,33 @@ var vcsPaths = []*vcsPath{
 		prefix: "bitbucket.org/",
 		re:     `^(?P<root>bitbucket\.org/(?P<bitname>[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*$`,
 		repo:   "https://{root}",
-		check:  bitbucketVCS,
+		vcs:    "git",
+		check:  noVCSSuffix,
+	},
+
+	// IBM DevOps Services (JazzHub)
+	{
+		prefix: "hub.jazz.net/git",
+		re:     `^(?P<root>hub\.jazz\.net/git/[a-z0-9]+/[A-Za-z0-9_.\-]+)(/[A-Za-z0-9_.\-]+)*$`,
+		vcs:    "git",
+		repo:   "https://{root}",
+		check:  noVCSSuffix,
+	},
+
+	// Git at Apache
+	{
+		prefix: "git.apache.org",
+		re:     `^(?P<root>git\.apache\.org/[a-z0-9_.\-]+\.git)(/[A-Za-z0-9_.\-]+)*$`,
+		vcs:    "git",
+		repo:   "https://{root}",
+	},
+
+	// Git at OpenStack
+	{
+		prefix: "git.openstack.org",
+		re:     `^(?P<root>git\.openstack\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(\.git)?(/[A-Za-z0-9_.\-]+)*$`,
+		vcs:    "git",
+		repo:   "https://{root}",
 	},
 
 	// Launchpad
