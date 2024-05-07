@@ -4,6 +4,13 @@ go 1.21
 
 replace dagger.io/dagger => ./sdk/go
 
+// Needed pending merge of these upstream PRs:
+// - https://github.com/moby/buildkit/pull/4887
+//   - purposely only picking the first commit for now since it's what we know we need to fix the problem we've been hitting
+// - https://github.com/moby/buildkit/pull/4902
+// Link to commit: https://github.com/dagger/buildkit/commit/3c1a806b01b1b4fefc637289146533f636029138
+replace github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20240506175627-3c1a806b01b1
+
 require (
 	dagger.io/dagger v0.11.2
 	github.com/99designs/gqlgen v0.17.44
