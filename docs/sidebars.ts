@@ -306,30 +306,20 @@ module.exports = {
       },
       "items": [
         {
-          "type": "category",
-          "label": "Overview",
-          "link": {
-            "type": "doc",
-            "id": "manuals/developer/overview/index"
-          },
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/developer/overview/modules-vs-functions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/overview/architecture"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/overview/execution-environment"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/overview/dependencies"
-            }
-          ]
+          "type": "doc",
+          "id": "manuals/developer/overview/modules-vs-functions"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/overview/architecture"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/overview/execution-environment"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/overview/dependencies"
         },
         {
           "type": "category",
