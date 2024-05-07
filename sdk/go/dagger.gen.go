@@ -1673,6 +1673,16 @@ func (r *Container) WithoutRegistryAuth(address string) *Container {
 	}
 }
 
+// Retrieves this container minus the given environment variable containing the secret.
+func (r *Container) WithoutSecretVariable(name string) *Container {
+	q := r.query.Select("withoutSecretVariable")
+	q = q.Arg("name", name)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Retrieves this container with a previously added Unix socket removed.
 func (r *Container) WithoutUnixSocket(path string) *Container {
 	q := r.query.Select("withoutUnixSocket")
