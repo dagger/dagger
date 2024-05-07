@@ -295,8 +295,8 @@ ${binexe} has built-in shell completion. This is how you can install it for:
 
     2. Add dagger completion to your personal bash completions dir
 
-      mkdir -p $XDG_DATA_HOME/bash-completion/completions
-      ${binexe} completion bash > $XDG_DATA_HOME/bash-completion/completions/dagger
+      mkdir -p ${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions
+      ${binexe} completion bash > ${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/dagger
 
   ZSH:
 
