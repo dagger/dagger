@@ -9,7 +9,6 @@ package vcs
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -665,36 +664,6 @@ func noVCSSuffix(match map[string]string) error {
 		}
 	}
 	return nil
-}
-
-// bitbucketVCS determines the version control system for a
-// Bitbucket repository, by using the Bitbucket API.
-func bitbucketVCS(match map[string]string) error {
-	if err := noVCSSuffix(match); err != nil {
-		return err
-	}
-
-	var resp struct {
-		SCM string `json:"scm"`
-	}
-	url := expand(match, "https://api.bitbucket.org/2.0/repositories/{bitname}?fields=scm")
-	data, err := httpGET(url)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return fmt.Errorf("decoding %s: %v", url, err)
-	}
-
-	if ByCmd(resp.SCM) != nil {
-		match["vcs"] = resp.SCM
-		if resp.SCM == "git" {
-			match["repo"] += ".git"
-		}
-		return nil
-	}
-
-	return fmt.Errorf("unable to detect version control system for bitbucket.org/ path")
 }
 
 // launchpadVCS solves the ambiguity for "lp.net/project/foo". In this case,
