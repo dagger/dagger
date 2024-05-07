@@ -16,6 +16,7 @@ import (
 // TODO: use dev module (this is just the mage port)
 
 const (
+	typescriptRuntimeSubdir    = "sdk/typescript/runtime"
 	typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
 
 	nodeVersionMaintenance = "18"
@@ -63,6 +64,10 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 
 	eg.Go(func() error {
 		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, typescriptGeneratedAPIPath)
+	})
+
+	eg.Go(func() error {
+		return lintGoModule(ctx, false, daggerDevelop(t.Dagger.Source, typescriptRuntimeSubdir), []string{typescriptRuntimeSubdir})
 	})
 
 	return eg.Wait()

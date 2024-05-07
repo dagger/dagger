@@ -59,15 +59,15 @@ const (
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
-func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
-	ctr, err := t.CodegenBase(ctx, modSource, introspectionJson)
+func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
 
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %v", err)
+		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
 	detectedRuntime, err := t.DetectRuntime(ctx, modSource, subPath)
@@ -96,14 +96,14 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 			// not useful to display to the user.
 			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", tsConfigPath, entrypointPath}), nil
 	default:
-		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
+		return nil, fmt.Errorf("unknown runtime: %s", detectedRuntime)
 	}
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*GeneratedCode, error) {
+func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
 	// Get base container
-	ctr, err := t.CodegenBase(ctx, modSource, introspectionJson)
+	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -121,16 +121,16 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJson string) (*Container, error) {
+func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
 	// Load module name for the template class
 	name, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %v", err)
+		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %v", err)
+		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
 	detectedRuntime, err := t.DetectRuntime(ctx, modSource, subPath)
@@ -148,7 +148,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
 		// Add introspection file
 		WithNewFile(schemaPath, ContainerWithNewFileOpts{
-			Contents: introspectionJson,
+			Contents: introspectionJSON,
 		}).
 		// Execute the code generator using the given introspection file
 		WithExec([]string{
@@ -196,7 +196,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 				"if [ -f package.json ]; then  npm install --package-lock-only ./sdk  --dev  && tsx /opt/module/bin/__tsconfig.updator.ts; else cp -r /opt/module/template/*.json .; fi",
 			})
 	default:
-		return nil, fmt.Errorf("unknown runtime: %v", detectedRuntime)
+		return nil, fmt.Errorf("unknown runtime: %s", detectedRuntime)
 	}
 
 	return base.
@@ -223,7 +223,7 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
 			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
 	default:
-		return nil, fmt.Errorf("unknown runtime: %v", runtime)
+		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
 }
 
@@ -245,7 +245,7 @@ func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSour
 			case Bun, Node:
 				return runtime, nil
 			default:
-				return "", fmt.Errorf("detected unknown runtime: %v", runtime)
+				return "", fmt.Errorf("detected unknown runtime: %s", runtime)
 			}
 		}
 	}

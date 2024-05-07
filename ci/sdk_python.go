@@ -15,6 +15,7 @@ import (
 
 const (
 	pythonSubdir           = "sdk/python"
+	pythonRuntimeSubdir    = "sdk/python/runtime"
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
 	pythonDefaultVersion   = "3.11"
 )
@@ -54,6 +55,10 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 
 	eg.Go(func() error {
 		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, pythonGeneratedAPIPath)
+	})
+
+	eg.Go(func() error {
+		return lintGoModule(ctx, false, daggerDevelop(t.Dagger.Source, pythonRuntimeSubdir), []string{pythonRuntimeSubdir})
 	})
 
 	return eg.Wait()
