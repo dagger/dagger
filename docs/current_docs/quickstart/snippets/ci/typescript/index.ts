@@ -13,7 +13,7 @@ class HelloDagger {
     const build = this.build(source)
     // create and publish a container with the build output
     return await this.package(build).publish(
-      "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000)
+      "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000),
     )
   }
 
