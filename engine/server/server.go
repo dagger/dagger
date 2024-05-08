@@ -180,7 +180,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	// stash away the cache so we can share it between other servers
 	root.Cache = dag.Cache
 
-	dag.Around(telemetry.AroundFunc)
+	dag.Around(root.AroundFunc)
 
 	coreMod := &schema.CoreMod{Dag: dag}
 	root.DefaultDeps = core.NewModDeps(root, []core.Mod{coreMod})

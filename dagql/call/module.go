@@ -26,6 +26,14 @@ func (m *Module) ID() *ID {
 	return m.id
 }
 
+func (m *Module) Name() string {
+	return m.pb.Name
+}
+
+func (m *Module) Ref() string {
+	return m.pb.Ref
+}
+
 func (m *Module) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	if m == nil {
 		return

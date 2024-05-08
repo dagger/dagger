@@ -12,6 +12,30 @@ const (
 	// This value acts as a node ID in the conceptual DAG.
 	DagDigestAttr = "dagger.io/dag.digest"
 
+	// The digest of this call without considering any calls passed to
+	// it as arguments.
+	//
+	// This value is used to measure performance of function calls over
+	// time across different input values (i.e. source code).
+	DagDigestStableAttr = "dagger.io/dag.digest.stable"
+
+	// The name of the module that provided the function that this span
+	// is calling.
+	DagModuleNameAttr = "dagger.io/dag.module.name"
+
+	// The ref of the module that provided the function that this span
+	// is calling.
+	DagModuleRefAttr = "dagger.io/dag.module.ref"
+
+	// The digest of the module that provided the function that this span
+	// is calling.
+	DagModuleDigestAttr = "dagger.io/dag.module.digest"
+
+	// Indicates what type of caller resulted in this span's execution.
+	//
+	// One of: module, internal, direct.
+	DagCallerType = "dagger.io/dag.caller.type"
+
 	// The list of DAG digests that the span depends on.
 	//
 	// This is not currently used by the UI, but it could be used to drive higher
