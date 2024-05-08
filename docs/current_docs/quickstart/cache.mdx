@@ -35,10 +35,24 @@ The `Test()` and `Build()` Dagger Functions now use a cache volume for the appli
 - They use the `Container().WithMountedCache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
 </TabItem>
 <TabItem value="Python">
-FIXME
+
+```python file=./snippets/cache/python/__init__.py
+```
+
+The `test()` and `build()` Dagger Functions now use a cache volume for the application dependencies.
+
+- They use the `dag.cache_volume()` method to initialize a new cache volume.
+- They use the `container().with_mounted_cache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
+
 </TabItem>
 <TabItem value="TypeScript">
-FIXME
+```typescript file=./snippets/cache/typescript/index.ts
+```
+
+The `test()` and `build()` Dagger Functions now use a cache volume for the application dependencies.
+
+- They use the `dag.cacheVolume()` method to initialize a new cache volume.
+- They use the `container().withMountedCache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
 </TabItem>
 </Tabs>
 
@@ -49,8 +63,8 @@ The revised pipeline will produce the same result as before. On the first `dagge
 Call the Dagger Function a few times and time each run to confirm that subsequent executions are faster:
 
 ```shell
-dagger call ci \
-  --source=.
+dagger call \
+  ci --source=.
 ```
 
 :::tip CACHING

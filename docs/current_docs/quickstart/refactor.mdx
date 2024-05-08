@@ -15,7 +15,7 @@ With your knowledge of the Dagger Functions available in the Node module, let's 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Update the generated `dagger/main.go` file with the following code:
+Update the `dagger/main.go` file with the following code:
 
 ```go file=./snippets/refactor/go/main.go
 ```
@@ -23,18 +23,44 @@ Update the generated `dagger/main.go` file with the following code:
 This code listing revises the `Test()` and `Build()` Dagger Functions from earlier, replacing calls to the core Dagger API with calls to Dagger Functions from the Node module.
 
 - It calls the Node module's constructor function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
-- It calls the `Node.WithNpm()` function, which returns a revised container after adding the `npm` package manager and a cache volume for `npm`.
-- It calls the `Node.WithSource()` function, which returns a revised container with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `Node.WithSource()` function also creates a cache volume for application dependencies.
-- It calls the `Node.Install()` function, which runs `npm install` in the container and returns a revised container with the application's dependencies installed.
-- It calls the `Node.Commands().Run()` function with an array of arguments, which returns a revised container configured to execute the `npm run test:unit run` or the `npm run build` command in the container image.
+- It calls the `Node().WithNpm()` function, which returns a revised container after adding the `npm` package manager and a cache volume for `npm`.
+- It calls the `Node().WithSource()` function, which returns a revised container with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `Node().WithSource()` function also creates a cache volume for application dependencies.
+- It calls the `Node().Install()` function, which runs `npm install` in the container and returns a revised container with the application's dependencies installed.
+- It calls the `Node().Commands().Run()` function with an array of arguments, which returns a revised container configured to execute the `npm run test:unit run` or the `npm run build` command in the container image.
 - It uses the `Container().Stdout()` method to return the test results or the `Container().Directory()` method to return the build output directory.
 </TabItem>
-
 <TabItem value="Python">
-FIXME
+
+Update the `dagger/src/main/__init__.py` file with the following code:
+
+```python file=./snippets/refactor/python/__init__.py
+```
+
+This code listing revises the `test()` and `build()` Dagger Functions from earlier, replacing calls to the core Dagger API with calls to Dagger Functions from the Node module.
+
+- It calls the Node module's constructor function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `node` object.
+- It calls the `node().with_npm()` function, which returns a revised container after adding the `npm` package manager and a cache volume for `npm`.
+- It calls the `node().with_source()` function, which returns a revised container with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `node().with_source()` function also creates a cache volume for application dependencies.
+- It calls the `node().install()` function, which runs `npm install` in the container and returns a revised container with the application's dependencies installed.
+- It calls the `node().commands().run()` function with an array of arguments, which returns a revised container configured to execute the `npm run test:unit run` or the `npm run build` command in the container image.
+- It uses the `container().stdout()` method to return the test results or the `container().directory()` method to return the build output directory.
+
 </TabItem>
 <TabItem value="TypeScript">
-FIXME
+Update the `dagger/src/index.ts` file with the following code:
+
+```typescript file=./snippets/refactor/typescript/index.ts
+```
+
+This code listing revises the `test()` and `build()` Dagger Functions from earlier, replacing calls to the core Dagger API with calls to Dagger Functions from the Node module.
+
+- It calls the Node module's constructor function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `node` object.
+- It calls the `node().withNpm()` function, which returns a revised container after adding the `npm` package manager and a cache volume for `npm`.
+- It calls the `node().withSource()` function, which returns a revised container with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `node().withSource()` function also creates a cache volume for application dependencies.
+- It calls the `node().install()` function, which runs `npm install` in the container and returns a revised container with the application's dependencies installed.
+- It calls the `node().commands().run()` function with an array of arguments, which returns a revised container configured to execute the `npm run test:unit run` or the `npm run build` command in the container image.
+- It uses the `container().stdout()` method to return the test results or the `container().directory()` method to return the build output directory.
+
 </TabItem>
 </Tabs>
 

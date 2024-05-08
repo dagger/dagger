@@ -16,7 +16,7 @@ If your application passes all its tests, the typical next step is to build it. 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Update the generated `dagger/main.go` file with the following code:
+Update the `dagger/main.go` file with the following code:
 
 ```go file=./snippets/build/go/main.go
 ```
@@ -29,10 +29,32 @@ This Dagger Function does many of the same things as the previous one, but with 
 
 </TabItem>
 <TabItem value="Python">
-FIXME
+
+Update the `dagger/src/main/__init__.py` file with the following code:
+
+```python file=./snippets/build/python/__init__.py
+```
+
+This Dagger Function does many of the same things as the previous one, but with these modifications:
+
+- It modifies the command passed to the `container().with_exec()` method, changing it to `npm run build`.
+  - The `npm run build` command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It uses the `container().directory()` method to return the directory as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
+
 </TabItem>
 <TabItem value="TypeScript">
-FIXME
+
+Update the `dagger/src/index.ts` file with the following code:
+
+```typescript file=./snippets/build/typescript/index.ts
+```
+
+This Dagger Function does many of the same things as the previous one, but with these modifications:
+
+- It modifies the command passed to the `container().withExec()` method, changing it to `npm run build`.
+  - The `npm run build` command builds the application and places the build in a `dist/` directory in the container filesystem.
+- It uses the `container().directory()` method to return the directory as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
+
 </TabItem>
 </Tabs>
 
@@ -90,14 +112,15 @@ func (m *HelloDagger) BuildWithExport(source *Directory) *Directory {
 		Directory("./dist").
 		Export("./build")
 }
-
 ```
 </TabItem>
 <TabItem value="Python">
 
+FIXME
+
 </TabItem>
 <TabItem value="TypeScript">
-
+FIXME
 </TabItem>
 <TabItem value="Dagger CLI">
 ```shell

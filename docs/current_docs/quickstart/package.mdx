@@ -16,7 +16,7 @@ At this point, you've written Dagger Functions to test, build and deliver the ap
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Update the generated `dagger/main.go` file and create a new Dagger Function to copy the build output directory into an NGINX web server container image.
+Update the `dagger/main.go` file and create a new Dagger Function to copy the build output directory into an NGINX web server container image.
 
 ```go file=./snippets/package/go/main.go
 ```
@@ -29,10 +29,32 @@ This Dagger Function performs the following operations:
 
 </TabItem>
 <TabItem value="Python">
-FIXME
+
+Update the `dagger/src/main/__init__.py` file and create a new Dagger Function to copy the build output directory into an NGINX web server container image.
+
+```python file=./snippets/package/python/__init__.py
+```
+
+This Dagger Function performs the following operations:
+
+- It uses the `dag` client's `container().from_()` method to initialize a new container from a base image - in this case, the `nginx:1.25-alpine` image. The `from_()` method returns a new `Container` object representing the container image.
+- It uses the `container().with_directory()` method to write the build output directory to the `/usr/share/nginx/html` path in the container and return a revised `Container`. The location of the build output directory is obtained from the `build` argument passed to the Dagger Function.
+- It uses the `container().with_exposed_port()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+
 </TabItem>
 <TabItem value="TypeScript">
-FIXME
+
+Update the `dagger/src/index.ts` file and create a new Dagger Function to copy the build output directory into an NGINX web server container image.
+
+```typescript file=./snippets/package/typescript/index.ts
+```
+
+This Dagger Function performs the following operations:
+
+- It uses the `dag` client's `container().from()` method to initialize a new container from a base image - in this case, the `nginx:1.25-alpine` image. The `from()` method returns a new `Container` object representing the container image.
+- It uses the `container().withDirectory()` method to write the build output directory to the `/usr/share/nginx/html` path in the container and return a revised `Container`. The location of the build output directory is obtained from the `build` argument passed to the Dagger Function.
+- It uses the `container().withExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+
 </TabItem>
 </Tabs>
 
@@ -142,7 +164,7 @@ Test the published container image using the command below (update the image nam
 docker run -d --rm --publish 8080:80 ttl.sh/hello-dagger-47384
 ```
 
-Browse to port 8080 of the Dagger host and confirm that you see the application index page, served by NGINX:
+Browse to port 8080 of the Dagger host and confirm that you see the application index page, served by NGINX.
 
 FIXME: add image
 
