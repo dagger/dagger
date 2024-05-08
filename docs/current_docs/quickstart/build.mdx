@@ -100,27 +100,61 @@ Function chaining works the same way, whether you're writing Dagger Function cod
 <Tabs groupId="language">
 <TabItem value="Go">
 ```go
-
 // Exports a directory with the production build to the host
-func (m *HelloDagger) BuildWithExport(source *Directory) *Directory {
-	return dag.Container().
+func (m *HelloDagger) BuildWithExport(ctx context.Context, source *Directory) (bool, error) {
+	_, err := dag.Container().
 		From("node:21-slim").
 		WithDirectory("/src", source.WithoutDirectory("dagger")).
 		WithWorkdir("/src").
 		WithExec([]string{"npm", "install"}).
 		WithExec([]string{"npm", "run", "build"}).
 		Directory("./dist").
-		Export("./build")
+		Export(ctx, "./build")
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 ```
 </TabItem>
 <TabItem value="Python">
 
-FIXME
-
+```python
+@function
+async def build_with_export(self, source: dagger.Directory) -> bool:
+    """Exports a directory with the production build to the host"""
+    return (
+        dag.container()
+        .from_("node:21-slim")
+        .with_directory("/src", source.without_directory("dagger"))
+        .with_workdir("/src")
+        .with_exec(["npm", "install"])
+        .with_exec(["npm", "run", "build"])
+        .directory("./dist")
+        .export("./build")
+    )
+```
 </TabItem>
 <TabItem value="TypeScript">
-FIXME
+
+```typescript
+/**
+  * Exports a directory with the production build to the host
+  */
+@func()
+async buildWithExport(source: Directory): Promise<boolean> {
+  return await dag
+    .container()
+    .from('node:21-slim')
+    .withDirectory('/src', source.withoutDirectory('dagger'))
+    .withWorkdir('/src')
+    .withExec(['npm', 'install'])
+    .withExec(['npm', 'run', 'build'])
+    .directory('./dist')
+    .export('./build')
+}
+```
+
 </TabItem>
 <TabItem value="Dagger CLI">
 ```shell
