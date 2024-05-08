@@ -868,7 +868,7 @@ func TestModuleDaggerCallCoreChaining(t *testing.T) {
 				Contents: `package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18.5")}
+	return &Test{Ctr: dag.Container().From("alpine:3.19.1")}
 }
 
 type Test struct {
@@ -880,7 +880,7 @@ type Test struct {
 		t.Run("file", func(t *testing.T) {
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "3.18.5\n", out)
+			require.Equal(t, "3.19.1\n", out)
 		})
 
 		t.Run("export", func(t *testing.T) {

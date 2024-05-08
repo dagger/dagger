@@ -154,7 +154,7 @@ func TestDaggerRun(t *testing.T) {
 
 	runCommand := `
 	export NO_COLOR=1
-	jq -n '{query:"{container{from(address: \"alpine:3.18.2\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+	jq -n '{query:"{container{from(address: \"alpine:3.19.1\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
 	dagger run sh -c 'curl -s \
 		-u $DAGGER_SESSION_TOKEN: \
 		-H "content-type:application/json" \
@@ -167,8 +167,8 @@ func TestDaggerRun(t *testing.T) {
 
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stdout, "3.18.2")
-	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "3.18.2\n"}}}}}`, stdout)
+	require.Contains(t, stdout, "3.19.1")
+	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "3.19.1\n"}}}}}`, stdout)
 
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)

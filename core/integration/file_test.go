@@ -194,7 +194,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
-		require.Equal(t, "3.18.2\n", string(contents))
+		require.Equal(t, "3.19.1\n", string(contents))
 
 		entries, err := ls(targetDir)
 		require.NoError(t, err)
@@ -208,7 +208,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
-		require.Equal(t, "3.18.2\n", string(contents))
+		require.Equal(t, "3.19.1\n", string(contents))
 
 		entries, err := ls(wd)
 		require.NoError(t, err)

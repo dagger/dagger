@@ -4087,7 +4087,7 @@ import (
 )
 
 func New(ctx context.Context) (Test, error) {
-	v, err := dag.Container().From("alpine:3.18.4").File("/etc/alpine-release").Contents(ctx)
+	v, err := dag.Container().From("alpine:3.19.1").File("/etc/alpine-release").Contents(ctx)
 	if err != nil {
 		return Test{}, err
 	}
@@ -4113,7 +4113,7 @@ class Test:
     async def create(cls) -> "Test":
         return cls(alpine_version=await (
             dag.container()
-            .from_("alpine:3.18.4")
+            .from_("alpine:3.19.1")
             .file("/etc/alpine-release")
             .contents()
         ))
@@ -4133,7 +4133,7 @@ class Test {
   // This is only for testing purpose but it shouldn't be done in real usage.
   constructor() {
     return (async () => {
-      this.alpineVersion = await dag.container().from("alpine:3.18.4").file("/etc/alpine-release").contents()
+      this.alpineVersion = await dag.container().from("alpine:3.19.1").file("/etc/alpine-release").contents()
 
       return this; // Return the newly-created instance
     })();
@@ -4156,7 +4156,7 @@ class Test {
 
 				out, err := ctr.With(daggerCall("alpine-version")).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, strings.TrimSpace(out), "3.18.4")
+				require.Equal(t, strings.TrimSpace(out), "3.19.1")
 			})
 		}
 	})
@@ -5295,12 +5295,12 @@ func TestModuleDaggerListen(t *testing.T) {
 			var out []byte
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
-				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.19.1"){file(path:"/etc/alpine-release"){contents}}}}`)
 				callCmd.Env = append(callCmd.Env, os.Environ()...)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.CombinedOutput()
 				if err == nil {
-					require.Contains(t, string(out), "3.18.6")
+					require.Contains(t, string(out), "3.19.1")
 					return
 				}
 				time.Sleep(1 * time.Second)
@@ -5333,12 +5333,12 @@ func TestModuleDaggerListen(t *testing.T) {
 			var err error
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
-				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.19.1"){file(path:"/etc/alpine-release"){contents}}}}`)
 				callCmd.Env = append(callCmd.Env, os.Environ()...)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.CombinedOutput()
 				if err == nil {
-					require.Contains(t, string(out), "3.18.6")
+					require.Contains(t, string(out), "3.19.1")
 					return
 				}
 				time.Sleep(1 * time.Second)
@@ -5833,7 +5833,7 @@ func TestModuleStartServices(t *testing.T) {
 			AsService()
 
 		ctr := dag.Container().
-			From("alpine:3.18.6").
+			From("alpine:3.19.1").
 			WithServiceBinding("svc", svc).
 			WithExec([]string{"wget", "-O", "-", "http://svc:23457"})
 
