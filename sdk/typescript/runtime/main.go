@@ -107,9 +107,7 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 	if err != nil {
 		return nil, err
 	}
-	dir := dag.Directory().WithDirectory("", ctr.Directory(ModSourceDirPath))
-
-	return dag.GeneratedCode(dir).
+	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",
 		}).
