@@ -334,7 +334,7 @@ Here's what happens on the last line:
 </Tabs>
 
 :::note
-Dagger cancels each service run after a 10 second grace period to avoid frequent restarts, unless the explicit `Start` and `Stop' APIs are used.
+Dagger cancels each service run after a 10 second grace period to avoid frequent restarts, unless the explicit `Start` and `Stop` APIs are used.
 :::
 
 Services are based on containers, but they run a little differently. Whereas regular containers in Dagger are de-duplicated across the entire Dagger Engine, service containers are only de-duplicated within a Dagger client session. This means that if you run separate Dagger sessions that use the exact same services, they will each get their own "instance" of the service. This process is carefully tuned to preserve caching at each client call-site, while prohibiting "cross-talk" from one Dagger session's client to another Dagger session's service.
