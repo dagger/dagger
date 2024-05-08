@@ -2,7 +2,7 @@
   "name": "dagger",
   "sdk": "go",
   "source": "ci",
-  "engineVersion": "v0.11.2",
+  "engineVersion": "v0.11.3",
   "views": [
     {
       "name": "default",
