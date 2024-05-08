@@ -507,12 +507,24 @@ forced), to avoid mistakenly depending on uncommitted files.
 	},
 }
 
+// extract the root from a git origin URL
 func originToPath(origin string) (string, error) {
-	url, err := gitutil.ParseURL(origin)
+	parsedURL, err := gitutil.ParseURL(origin)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse git remote origin URL: %w", err)
+		// If no procotol was specified, try with "https://"
+		if err == gitutil.ErrUnknownProtocol {
+			parsedURL, err = gitutil.ParseURL("https://" + origin)
+		}
+
+		if err != nil {
+			return "", fmt.Errorf("failed to parse git remote origin URL: %w", err)
+		}
 	}
-	return strings.TrimSuffix(path.Join(url.Host, url.Path), ".git"), nil
+
+	// Remove ".git" from the path
+	cleanedPath := strings.Replace(parsedURL.Path, ".git", "", 1)
+
+	return path.Join(parsedURL.Host, cleanedPath), nil
 }
 
 type configuredModule struct {

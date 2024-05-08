@@ -9,38 +9,44 @@ import (
 )
 
 func TestOriginToPath(t *testing.T) {
-	for _, tc := range []struct {
+	// Define test cases for each parameter
+	schemes := []string{"ssh://git", "git@", "https://", ""}
+	rootURLs := []string{"github.com/shykes/daggerverse", "github.com/shykes/daggerverse.git"}
+	paths := []string{"/foo/bar", ""}
+	versions := []string{"@v0.9.1", ""}
+
+	// Combine test cases
+	var testCases []struct {
 		origin string
 		want   string
-	}{
-		{
-			origin: "ssh://git@github.com/shykes/daggerverse",
-			want:   "github.com/shykes/daggerverse",
-		},
-		{
-			origin: "ssh://git@github.com/shykes/daggerverse.git",
-			want:   "github.com/shykes/daggerverse",
-		},
-		{
-			origin: "git@github.com:sipsma/daggerverse",
-			want:   "github.com/sipsma/daggerverse",
-		},
-		{
-			origin: "git@github.com:sipsma/daggerverse.git",
-			want:   "github.com/sipsma/daggerverse",
-		},
-		{
-			origin: "https://github.com/sipsma/daggerverse",
-			want:   "github.com/sipsma/daggerverse",
-		},
-		{
-			origin: "https://github.com/sipsma/daggerverse.git",
-			want:   "github.com/sipsma/daggerverse",
-		},
-	} {
-		p, err := originToPath(tc.origin)
-		require.NoError(t, err)
-		require.Equal(t, tc.want, p)
+	}
+	for _, scheme := range schemes {
+		for _, rootURL := range rootURLs {
+			for _, path := range paths {
+				for _, version := range versions {
+					origin := scheme + rootURL + path + version
+					want := "github.com/shykes/daggerverse" + path + version
+					testCases = append(testCases, struct {
+						origin string
+						want   string
+					}{
+						origin: origin,
+						want:   want,
+					})
+				}
+			}
+		}
+	}
+
+	for _, tc := range testCases {
+		got, err := originToPath(tc.origin)
+		if err != nil {
+			t.Errorf("originToPath(%q) returned an error: %v", tc.origin, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("originToPath(%q) = %q; want %q", tc.origin, got, tc.want)
+		}
 	}
 }
 
