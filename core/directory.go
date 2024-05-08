@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
@@ -647,14 +646,17 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
 	dir = dir.Clone()
 
-	if dir.Dir != other.Dir {
-		// TODO(vito): work around with llb.Copy shenanigans?
-		return nil, fmt.Errorf("TODO: cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
+	thisDirPath := dir.Dir
+	if thisDirPath == "" {
+		thisDirPath = "/"
 	}
-
-	if !reflect.DeepEqual(dir.Platform, other.Platform) {
+	otherDirPath := other.Dir
+	if otherDirPath == "" {
+		otherDirPath = "/"
+	}
+	if thisDirPath != otherDirPath {
 		// TODO(vito): work around with llb.Copy shenanigans?
-		return nil, fmt.Errorf("TODO: cannot diff across platforms: %+v != %+v", dir.Platform, other.Platform)
+		return nil, fmt.Errorf("cannot diff with different relative paths: %q != %q", dir.Dir, other.Dir)
 	}
 
 	lowerSt, err := dir.State()
