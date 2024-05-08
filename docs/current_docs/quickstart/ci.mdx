@@ -16,7 +16,7 @@ There are various reasons you might want to do this. A common example is that wh
 
 One option to do this is to stitch together `dagger call` commands using the CLI and a shell script or a Makefile. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
 
-A better approach is to create a "master" Dagger Function, which can then orchestrate other Dagger Functions as required. Using a programming language to stitch together Dagger Functions in this way has multiple benefits:
+A better approach is to create a higher-level Dagger Function, which can then orchestrate other Dagger Functions as required. Using a programming language to stitch together Dagger Functions in this way has multiple benefits:
 - It improves maintainability, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
 - It removes environment-related variance which can destabilize shell scripts in unexpected ways and makes the pipeline more reliable.
 - It promotes closer adherence to coding standards and best practices.
