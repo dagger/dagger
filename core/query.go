@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/content"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/leaseutil"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
@@ -129,6 +128,7 @@ func (q *Query) ServeModule(ctx context.Context, mod *Module) error {
 	return nil
 }
 
+// Setup a module or nested-exec client. Returns the client ID to use.
 func (q *Query) RegisterCaller(ctx context.Context, call *FunctionCall) (string, error) {
 	if call == nil {
 		call = &FunctionCall{}
@@ -137,27 +137,10 @@ func (q *Query) RegisterCaller(ctx context.Context, call *FunctionCall) (string,
 		FnCall: call,
 	}
 
-	currentID := dagql.CurrentID(ctx)
-	clientIDInputs := []string{currentID.Digest().String()}
-	if !call.Cache {
-		// use the ServerID so that we bust cache once-per-session
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return "", err
-		}
-		clientIDInputs = append(clientIDInputs, clientMetadata.ServerID)
-	}
-	clientIDDigest := digest.FromString(strings.Join(clientIDInputs, " "))
-
-	// only use encoded part of digest because this ID ends up becoming a buildkit Session ID
-	// and buildkit has some ancient internal logic that splits on a colon to support some
-	// dev mode logic: https://github.com/moby/buildkit/pull/290
-	// also trim it to 25 chars as it ends up becoming part of service URLs
-	clientID := clientIDDigest.Encoded()[:25]
-
+	clientID := identity.NewID()
 	slog.ExtraDebug("registering nested caller",
 		"client_id", clientID,
-		"op", currentID.Display(),
+		"op", dagql.CurrentID(ctx).Display(),
 	)
 
 	if call.Module == nil {

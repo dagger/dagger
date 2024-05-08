@@ -134,11 +134,15 @@ func (w *Worker) Run(
 }
 
 func (w *Worker) addExtraEnvs(proc *executor.ProcessInfo) error {
-	proc.Meta.Env = append(proc.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
-
 	execMD, err := executionMetadataFromVtx(w.vtx)
 	if err != nil {
 		return err
+	}
+
+	proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_SERVER_ID="+w.serverID)
+
+	if execMD.ClientID != "" {
+		proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_NESTED_CLIENT_ID="+execMD.ClientID)
 	}
 
 	origEnvMap := make(map[string]string)
@@ -201,6 +205,7 @@ func (w *Worker) addExtraEnvs(proc *executor.ProcessInfo) error {
 
 type ExecutionMetadata struct {
 	SystemEnvNames []string
+	ClientID       string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
