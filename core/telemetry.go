@@ -88,10 +88,6 @@ func (q *Query) AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) 
 	ctx, span := dagql.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
 	ctx, _, _ = telemetry.WithStdioToOtel(ctx, dagql.InstrumentationLibrary)
 
-	// Save the query span so we can extend it later with module function
-	// call metadata (e.g. caller type).
-	// ctx = telemetry.WithQuerySpan(ctx, span)
-
 	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error { return err })
 
@@ -131,6 +127,13 @@ func (q *Query) AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) 
 		// operations and their eventual execution. The listed digests will be
 		// correlated to spans coming from Buildkit which set the matching digest
 		// as the 'vertex' span attribute.
+		//
+		// NB: because this path directly asserts against the type of res without
+		// unwrapping first, it will only run for the _actual_ origin of the
+		// object, i.e. Container.withExec instead of the calling MyModule.unit. We
+		// could change that, but it's not clear whether we should, vs. leaving
+		// these relationships tied to the "source of truth" and hopping from
+		// MyModule.unit -> DagOutputAttr -> LLBDigestsAttr.
 		if hasPBs, ok := res.(HasPBDefinitions); ok {
 			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 				slog.Warn("failed to get LLB definitions", "err", err)
