@@ -294,20 +294,33 @@ Consider this example:
 ```go file=./snippets/services/service-lifecycle-1/go/main.go
 ```
 
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redisSrv`.
+1. Dagger starts the `redisSrv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redisSrv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
 </TabItem>
 <TabItem value="Python">
 
 ```python file=./snippets/services/service-lifecycle-1/python/main.py
 ```
 
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redis_srv`.
+1. Dagger starts the `redis_srv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redis_srv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
 </TabItem>
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/services/service-lifecycle-1/typescript/index.ts
 ```
-
-</TabItem>
-</Tabs>
 
 Here's what happens on the last line:
 
@@ -316,6 +329,9 @@ Here's what happens on the last line:
 1. Dagger starts the `redisSrv` container, which recurses into this same process.
 1. Dagger waits for health checks to pass against `redisSrv`.
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
+</TabItem>
+</Tabs>
 
 :::note
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts, unless the explicit `Start` and `Stop' APIs are used.
