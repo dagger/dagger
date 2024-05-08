@@ -1,0 +1,77 @@
+---
+slug: /quickstart/cache
+hide_table_of_contents: true
+title: "Optimize the pipeline with caching"
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Optimize the pipeline with caching
+
+One of Dagger's most powerful features is its ability to cache data across Dagger Function runs. This is typically most useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs.
+
+Dagger lets you define one or more such directories as cache volumes and persist their contents across runs. This enables you to reuse the contents of the cache volume(s) every time the pipeline runs, and thereby speed up pipeline operations.
+
+:::caution
+Cache volumes are not meant to be shared outside of Dagger; they are for persisting specific parts of the internal state of your pipeline, for optimal use of your tool's native caching features.
+:::
+
+You may have noticed that the Dagger Functions used to test and build the application execute the `npm install` command to download the application's dependencies every time they are invoked. Since these dependencies are usually locked to specific versions in the application's manifest, they don't change frequently and so, re-downloading them on every pipeline run is inefficient and time-consuming.
+
+These Dagger Functions are, therefore, good candidates for a cache volume. Let's update them accordingly.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/cache/go/main.go
+```
+
+The `Test()` and `Build()` Dagger Functions now use a cache volume for the application dependencies.
+
+- They use the `dag.CacheVolume()` method to initialize a new cache volume.
+- They use the `Container().WithMountedCache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/cache/python/__init__.py
+```
+
+The `test()` and `build()` Dagger Functions now use a cache volume for the application dependencies.
+
+- They use the `dag.cache_volume()` method to initialize a new cache volume.
+- They use the `container().with_mounted_cache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
+
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/cache/typescript/index.ts
+```
+
+The `test()` and `build()` Dagger Functions now use a cache volume for the application dependencies.
+
+- They use the `dag.cacheVolume()` method to initialize a new cache volume.
+- They use the `container().withMountedCache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
+</TabItem>
+</Tabs>
+
+With this change, every time the `npm install` command runs in the container, it finds the application dependencies already stored in the cached volume at the `node_modules/` mount point and does not need to re-download them. This speeds up the pipeline significantly. Since the `node_modules/` directory is defined as a cache volume, its contents will persist even after the pipeline terminates and can be reused on the next pipeline run.
+
+The revised pipeline will produce the same result as before. On the first `dagger call` command, the application dependencies will be downloaded as usual. However, since the dependencies are cached, subsequent `dagger call` commands will skip the download operation and be significantly faster (assuming that there are no other changes to the application code).
+
+Call the Dagger Function a few times and time each run to confirm that subsequent executions are faster:
+
+```shell
+dagger call \
+  ci --source=.
+```
+
+:::tip CACHING
+Dagger has two distinct caching mechanisms:
+
+- The layers cache: This caches build instructions. It is implemented by Buildkit.
+- The volumes cache: This caches the contents of a Dagger volume and is persisted across Dagger Engine sessions. It is maintained locally and, where applicable, replicated to Dagger Cloud. It is implemented by Dagger (distinct from Buildkit).
+
+Changes in the volumes cache or secrets do not invalidate the layers cache.
+:::

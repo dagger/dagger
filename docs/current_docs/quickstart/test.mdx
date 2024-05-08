@@ -1,0 +1,161 @@
+---
+slug: /quickstart/test
+hide_table_of_contents: true
+title: "Daggerize the application's tests"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Daggerize the application's tests
+
+You're now ready to dive into Dagger and write your first Dagger Function!
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Replace the generated `dagger/main.go` file with the following code:
+
+```go file=./snippets/test/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+Replace the generated `dagger/src/main/__init__.py` file with the following code:
+
+```python file=./snippets/test/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+Replace the generated `dagger/src/index.ts` file with the following code:
+
+```typescript file=./snippets/test/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+There's a lot of code here, and it's explained in detail further along. For the moment, the only thing to recognize is that this Dagger Function expects a `source` argument of type `Directory`, which is a special Dagger type. This `source` argument tells the Dagger Function where to find the application's source code. The `Directory` type can refer to either a local directory or a remote Git repository.
+
+Once you've added a Dagger Function to the module, you can inspect it (`dagger functions`) or call it (`dagger call`) with the Dagger CLI.
+
+Inspect the module with the Dagger CLI:
+
+```shell
+dagger functions
+```
+
+You should see the following output:
+
+```
+Name   Description
+test   Returns the result of running unit tests
+```
+
+Dig deeper into any Dagger Function with the Dagger CLI to see its supported arguments and sub-commands, simply by appending `--help`:
+
+```shell
+dagger call test --help
+```
+
+You should see the following output (truncated for brevity), which lists the supported arguments:
+
+```
+Returns the result of running unit tests
+
+Usage:
+  dagger call test [flags]
+
+Flags:
+      --source Directory
+
+Global Flags:
+...
+```
+
+You're now ready to call the Dagger Function with the Dagger CLI:
+
+```shell
+dagger call \
+  test --source=.
+```
+
+You should see various operations taking place, ending with a test run and the following output:
+
+```
+> myapp@0.0.0 test:unit
+> vitest run
+
+ RUN  v1.5.3 /src
+
+ ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 28ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  12:30:25
+   Duration  9.93s (transform 436ms, setup 1ms, collect 436ms, tests 28ms, environment 8.46s, prepare 724ms)
+```
+
+Well done! You just wrote and called your first Dagger Function!
+
+Let's break down the command you just ran to understand what just happened.
+
+- `dagger call test`: As explained previously, the `dagger call` command is the standard way to invoke a Dagger Function. This command tells Dagger to execute the Dagger Function named `test` from the current module.
+- `--source=.`: This is an argument, passed to the Dagger Function as a command line flag. Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. This `source` argument tells the Dagger Function the location of the application's source code: in the current working directory.
+
+:::tip FUNCTION NAMES
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `Test()` is invoked as `dagger call test`.
+:::
+
+Next, let's backtrack to the source code of the Dagger Function you just wrote to understand what happens when it's invoked via `dagger call`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+The `Test()` Dagger Function does the following:
+
+- It begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image - in this case, the `node:21-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object representing the container image.
+- It uses the `Container().WithDirectory()` method to mount the source code directory at the `/src` mount point in the container. The location of the source code directory is obtained from the `source` argument passed to the Dagger Function.
+  - The `source` argument is of type `Directory`, which is a special Dagger type. This type comes with its own methods, one of which is `Directory().WithoutDirectory()`. This method is used to exclude specific directories from the mount - in this case, Dagger's own working directory.
+- It uses the `Container().WithWorkdir()` method to set the working directory to the `/src` mount point.
+- It uses the `Container().WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
+- It uses the `Container().Stdout()` method to return the output of the last executed command - in this case, the test results.
+
+</TabItem>
+<TabItem value="Python">
+
+The `test()` Dagger Function does the following:
+
+- It begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+- It uses the `dag` client's `container().from_()` method to initialize a new container from a base image - in this case, the `node:21-slim` image. This base image is the Node.js version to use for testing. The `from_()` method returns a new `Container` object representing the container image.
+- It uses the `container().with_directory()` method to mount the source code directory at the `/src` mount point in the container. The location of the source code directory is obtained from the `source` argument passed to the Dagger Function.
+  - The `source` argument is of type `Directory`, which is a special Dagger type. This type comes with its own methods, one of which is `Directory().without_directory()`. This method is used to exclude specific directories from the mount - in this case, Dagger's own working directory.
+- It uses the `container().with_workdir()` method to set the working directory to the `/src` mount point.
+- It uses the `container().with_exec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
+- It uses the `container().stdout()` method to return the output of the last executed command - in this case, the test results.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+The `test()` Dagger Function does the following:
+
+- It begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+- It uses the `dag` client's `container().from()` method to initialize a new container from a base image - in this case, the `node:21-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object representing the container image.
+- It uses the `container().withDirectory()` method to mount the source code directory at the `/src` mount point in the container. The location of the source code directory is obtained from the `source` argument passed to the Dagger Function.
+  - The `source` argument is of type `Directory`, which is a special Dagger type. This type comes with its own methods, one of which is `Directory().withoutDirectory()`. This method is used to exclude specific directories from the mount - in this case, Dagger's own working directory.
+- It uses the `container().withWorkdir()` method to set the working directory to the `/src` mount point.
+- It uses the `container().withExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
+- It uses the `container().stdout()` method to return the output of the last executed command - in this case, the test results.
+
+</TabItem>
+</Tabs>
+
+Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When using these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger. You can see this in the above code listing, where various methods are chained together in sequence, with each one revising and enhancing the same `Container` object.
+
+:::tip SANDBOXING
+The Dagger Function on this page receives the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is by design: Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
+:::
