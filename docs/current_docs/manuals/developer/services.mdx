@@ -35,8 +35,28 @@ A Dagger Function can create and return a service, which can then be used from a
 
 Here is an example of a Dagger Function that returns an HTTP service. This service is used by another Dagger Function, which creates a service binding using the alias `www` and then accesses the HTTP service using this alias.
 
-```go file=./snippets/services/bind-services/main.go
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/bind-services/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/bind-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/bind-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -94,8 +114,26 @@ This implies that a service is already listening on a port on the host, out-of-b
 
 Here is an example of how a container running in a Dagger Function can access and query a MariaDB database service (bound using the alias `db`) running on the host.
 
-```go file=./snippets/services/expose-host-services-to-dagger/main.go
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/expose-host-services-to-dagger/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/expose-host-services-to-dagger/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
 
 Before calling this Dagger Function, use the following command to start a MariaDB database service on the host:
 
@@ -122,8 +160,27 @@ localhost       root
 
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts. To avoid relying on the grace period, use a cache volume to persist a service's data, as in the following example:
 
-```go file=./snippets/services/persist-service-state/main.go
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/persist-service-state/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/persist-service-state/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/persist-service-state/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
 
 This function uses Redis's SAVE command to ensure data is synced. By default, Redis flushes data to disk periodically.
 
@@ -147,8 +204,27 @@ For example, this may be needed if the application in the service has certain be
 
 The following example explicitly starts the Redis service and stops it at the end, ensuring the 10 second grace period doesn't get in the way, without the need for a persistent cache volume:
 
-```go file=./snippets/services/start-stop-services/main.go
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/start-stop-services/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/start-stop-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/start-stop-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
 
 ## Example: MariaDB database service for application tests
 
@@ -156,8 +232,26 @@ The following example demonstrates how services can be used in Dagger Functions,
 
 The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://phpunit.de/).
 
-```go file=./snippets/services/test-against-db-service/main.go
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/test-against-db-service/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/test-against-db-service/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/test-against-db-service/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -192,8 +286,26 @@ If you're not interested in what's happening in the background, you can skip thi
 
 Consider this example:
 
-```go file=./snippets/services/service-lifecycle-1/main.go
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/service-lifecycle-1/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/service-lifecycle-1/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/service-lifecycle-1/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
 
 Here's what happens on the last line:
 
@@ -217,12 +329,48 @@ If you need multiple instances of a service, just attach something unique to eac
 
 Here's a more detailed client-server example of running commands against a Redis service:
 
-```go file=./snippets/services/service-lifecycle-2/main.go
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/service-lifecycle-2/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/service-lifecycle-2/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/service-lifecycle-2/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
 
 This example relies on the 10-second grace period, which you should try to avoid. Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
 
 It would be better to chain both commands together, which ensures that the service stays running for both, as in the revision below:
 
-```go file=./snippets/services/service-lifecycle-3/main.go
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/service-lifecycle-3/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/service-lifecycle-3/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/service-lifecycle-3/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>

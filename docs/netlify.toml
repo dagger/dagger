@@ -46,6 +46,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific services pages to multi-language services page
+  from = "/manuals/developer/:language/:docid/services"
+  to = "/manuals/developer/services"
+  status = 301
+
+[[redirects]]
   # redirect user guide index to user manual index
   from = "/user-guide"
   to = "/manuals/user"

@@ -321,6 +321,10 @@ module.exports = {
           "id": "manuals/developer/secrets"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/services"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -339,10 +343,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/services"
             },
             {
               "type": "doc",
@@ -410,10 +410,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/services"
             },
             {
               "type": "doc",
@@ -485,10 +481,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/services"
             },
             {
               "type": "doc",
