@@ -6,11 +6,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"main/internal/dagger"
+	"log/slog"
 	"os"
+
+	"main/internal/dagger"
+	"main/internal/telemetry"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var dag = dagger.Connect()
+
+func Tracer() trace.Tracer {
+	return otel.Tracer("dagger.io/sdk.go")
+}
+
+// used for local MarshalJSON implementations
+var marshalCtx = context.Background()
+
+// called by main()
+func setMarshalContext(ctx context.Context) {
+	marshalCtx = ctx
+	dagger.SetMarshalContext(ctx)
+}
 
 type DaggerObject = dagger.DaggerObject
 
@@ -88,6 +110,9 @@ type ModuleID = dagger.ModuleID
 // The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
 type ModuleSourceID = dagger.ModuleSourceID
 
+// The `ModuleSourceViewID` scalar type represents an identifier for an object of type ModuleSourceView.
+type ModuleSourceViewID = dagger.ModuleSourceViewID
+
 // The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
 type ObjectTypeDefID = dagger.ObjectTypeDefID
 
@@ -98,6 +123,9 @@ type Platform = dagger.Platform
 
 // The `PortID` scalar type represents an identifier for an object of type Port.
 type PortID = dagger.PortID
+
+// The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
+type ScalarTypeDefID = dagger.ScalarTypeDefID
 
 // The `SecretID` scalar type represents an identifier for an object of type Secret.
 type SecretID = dagger.SecretID
@@ -225,6 +253,9 @@ type DirectoryDockerBuildOpts = dagger.DirectoryDockerBuildOpts
 // DirectoryEntriesOpts contains options for Directory.Entries
 type DirectoryEntriesOpts = dagger.DirectoryEntriesOpts
 
+// DirectoryExportOpts contains options for Directory.Export
+type DirectoryExportOpts = dagger.DirectoryExportOpts
+
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts = dagger.DirectoryPipelineOpts
 
@@ -297,6 +328,8 @@ type GitRefTreeOpts = dagger.GitRefTreeOpts
 // A git repository.
 type GitRepository = dagger.GitRepository
 
+type WithGitRepositoryFunc = dagger.WithGitRepositoryFunc
+
 // A graphql input type, which is essentially just a group of named args.
 // This is currently only used to represent pre-existing usage of graphql input types
 // in the core API. It is not used by user modules and shouldn't ever be as user
@@ -327,6 +360,12 @@ type ModuleDependency = dagger.ModuleDependency
 type ModuleSource = dagger.ModuleSource
 
 type WithModuleSourceFunc = dagger.WithModuleSourceFunc
+
+// ModuleSourceResolveDirectoryFromCallerOpts contains options for ModuleSource.ResolveDirectoryFromCaller
+type ModuleSourceResolveDirectoryFromCallerOpts = dagger.ModuleSourceResolveDirectoryFromCallerOpts
+
+// A named set of path filters that can be applied to directory arguments provided to functions.
+type ModuleSourceView = dagger.ModuleSourceView
 
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef = dagger.ObjectTypeDef
@@ -363,6 +402,9 @@ type PipelineOpts = dagger.PipelineOpts
 // SecretOpts contains options for Client.Secret
 type SecretOpts = dagger.SecretOpts
 
+// A definition of a custom scalar defined in a Module.
+type ScalarTypeDef = dagger.ScalarTypeDef
+
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret = dagger.Secret
 
@@ -397,6 +439,9 @@ type TypeDefWithInterfaceOpts = dagger.TypeDefWithInterfaceOpts
 
 // TypeDefWithObjectOpts contains options for TypeDef.WithObject
 type TypeDefWithObjectOpts = dagger.TypeDefWithObjectOpts
+
+// TypeDefWithScalarOpts contains options for TypeDef.WithScalar
+type TypeDefWithScalarOpts = dagger.TypeDefWithScalarOpts
 
 // Sharing mode of the cache volume.
 type CacheSharingMode = dagger.CacheSharingMode
@@ -480,6 +525,9 @@ const (
 	// Always paired with an ObjectTypeDef.
 	ObjectKind TypeDefKind = dagger.ObjectKind
 
+	// A scalar value of any basic kind.
+	ScalarKind TypeDefKind = dagger.ScalarKind
+
 	// A string value.
 	StringKind TypeDefKind = dagger.StringKind
 
@@ -521,72 +569,99 @@ func (r *MyModule) UnmarshalJSON(bs []byte) error {
 func main() {
 	ctx := context.Background()
 
+	// Direct slog to the new stderr. This is only for dev time debugging, and
+	// runtime errors/warnings.
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelWarn,
+	})))
+
+	if err := dispatch(ctx); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(2)
+	}
+}
+
+func dispatch(ctx context.Context) error {
+	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("dagger-go-sdk"),
+		// TODO version?
+	))
+	defer telemetry.Close()
+
+	ctx, span := Tracer().Start(ctx, "Go runtime",
+		trace.WithAttributes(
+			// In effect, the following two attributes hide the exec /runtime span.
+			//
+			// Replace the parent span,
+			attribute.Bool("dagger.io/ui.mask", true),
+			// and only show our children.
+			attribute.Bool("dagger.io/ui.passthrough", true),
+		))
+	defer span.End()
+
+	// A lot of the "work" actually happens when we're marshalling the return
+	// value, which entails getting object IDs, which happens in MarshalJSON,
+	// which has no ctx argument, so we use this lovely global variable.
+	setMarshalContext(ctx)
+
 	fnCall := dag.CurrentFunctionCall()
 	parentName, err := fnCall.ParentName(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get parent name: %w", err)
 	}
 	fnName, err := fnCall.Name(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get fn name: %w", err)
 	}
 	parentJson, err := fnCall.Parent(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get fn parent: %w", err)
 	}
 	fnArgs, err := fnCall.InputArgs(ctx)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("get fn args: %w", err)
 	}
 
 	inputArgs := map[string][]byte{}
 	for _, fnArg := range fnArgs {
 		argName, err := fnArg.Name(ctx)
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(2)
+			return fmt.Errorf("get fn arg name: %w", err)
 		}
 		argValue, err := fnArg.Value(ctx)
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(2)
+			return fmt.Errorf("get fn arg value: %w", err)
 		}
 		inputArgs[argName] = []byte(argValue)
 	}
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("invoke: %w", err)
 	}
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("marshal: %w", err)
 	}
 	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
 	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(2)
+		return fmt.Errorf("store return value: %w", err)
 	}
+	return nil
 }
 
 func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName string, inputArgs map[string][]byte) (_ any, err error) {
 	switch parentName {
 	case "MyModule":
 		switch fnName {
-		case "TestFoo":
+		case "RedisService":
 			var parent MyModule
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			(*MyModule).TestFoo(&parent, ctx)
-			return nil, nil
+			return (*MyModule).RedisService(&parent, ctx)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
@@ -595,8 +670,9 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			WithObject(
 				dag.TypeDef().WithObject("MyModule").
 					WithFunction(
-						dag.Function("TestFoo",
-							dag.TypeDef().WithKind(VoidKind).WithOptional(true)))), nil
+						dag.Function("RedisService",
+							dag.TypeDef().WithKind(StringKind)).
+							WithDescription("explicitly starts and stops Redis service"))), nil
 	default:
 		return nil, fmt.Errorf("unknown object %s", parentName)
 	}
