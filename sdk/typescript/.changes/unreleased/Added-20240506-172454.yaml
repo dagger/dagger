@@ -1,6 +1,0 @@
-kind: Added
-body: Expose GraphQL client with getGQLClient in TypescriptSDK
-time: 2024-05-06T17:24:54.589851+02:00
-custom:
-  Author: TomChv
-  PR: "7294"
