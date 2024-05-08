@@ -1,6 +1,0 @@
-kind: Added
-body: Added support for custom scalars and enums in function arguments
-time: 2024-05-06T12:41:37.849472Z
-custom:
-  Author: jedevc
-  PR: "7158"
