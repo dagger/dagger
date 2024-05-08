@@ -88,7 +88,7 @@ jobs:
 
   dagger-runner-v2-dind:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
-    runs-on: dagger-v0-11-2-dind
+    runs-on: dagger-v0-11-2-dind-dedicated
     concurrency:
       group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-v2
       cancel-in-progress: true
