@@ -18,36 +18,7 @@ If your application passes all its tests, the typical next step is to build it. 
 
 Update the generated `dagger/main.go` file with the following code:
 
-```go
-package main
-
-import (
-	"context"
-)
-
-type HelloDagger struct{}
-
-// Returns a directory with the production build
-func (m *HelloDagger) Build(source *Directory) *Directory {
-	return dag.Container().
-		From("node:21-slim").
-		WithDirectory("/src", source.WithoutDirectory("dagger")).
-		WithWorkdir("/src").
-		WithExec([]string{"npm", "install"}).
-		WithExec([]string{"npm", "run", "build"}).
-		Directory("./dist")
-}
-
-// Returns the result of running unit tests
-func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
-	return dag.Container().
-		From("node:21-slim").
-		WithDirectory("/src", source.WithoutDirectory("dagger")).
-		WithWorkdir("/src").
-		WithExec([]string{"npm", "install"}).
-		WithExec([]string{"npm", "run", "test:unit", "run"}).
-		Stdout(ctx)
-}
+```go file=./snippets/build/go/main.go
 ```
 
 This Dagger Function does many of the same things as the previous one, but with these modifications:
@@ -60,7 +31,6 @@ This Dagger Function does many of the same things as the previous one, but with 
 <TabItem value="Python">
 FIXME
 </TabItem>
-
 <TabItem value="TypeScript">
 FIXME
 </TabItem>

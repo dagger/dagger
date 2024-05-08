@@ -28,7 +28,7 @@ module.exports = {
         "quickstart/build",
         "quickstart/package",
         "quickstart/ci",
-        "quickstart/caching",
+        "quickstart/cache",
         "quickstart/install",
         "quickstart/refactor",
         "quickstart/conclusion"

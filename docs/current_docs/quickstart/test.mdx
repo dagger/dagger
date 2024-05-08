@@ -17,32 +17,13 @@ You're now ready to dive into Dagger and write your first Dagger Function!
 
 Update the generated `dagger/main.go` file with the following code:
 
-```go
-package main
-
-import (
-	"context"
-)
-
-type HelloDagger struct{}
-
-// Returns the result of running unit tests
-func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
-	return dag.Container().
-		From("node:21-slim").
-		WithDirectory("/src", source.WithoutDirectory("dagger")).
-		WithWorkdir("/src").
-		WithExec([]string{"npm", "install"}).
-		WithExec([]string{"npm", "run", "test:unit", "run"}).
-		Stdout(ctx)
-}
+```go file=./snippets/test/go/main.go
 ```
-</TabItem>
 
+</TabItem>
 <TabItem value="Python">
 FIXME
 </TabItem>
-
 <TabItem value="TypeScript">
 FIXME
 </TabItem>
@@ -50,7 +31,31 @@ FIXME
 
 There's a lot of code here, and it's explained in detail further along. For the moment, the only thing to recognize is that this Dagger Function expects a `source` argument of type `Directory`, which is a special Dagger type. This `source` argument tells the Dagger Function where to find the application's source code. The `Directory` type can refer to either a local directory or a remote Git repository.
 
-Call the Dagger Function with the Dagger CLI:
+Once you've added a Dagger Function to the module, you can inspect it (`dagger functions`) or call it (`dagger call`) with the Dagger CLI.
+
+Inspect the module with the Dagger CLI:
+
+```shell
+dagger functions
+```
+
+You should see the following output:
+
+```
+```
+
+Dig deeper into any Dagger Function with the Dagger CLI to see its supported arguments and sub-commands, simply by appending `--help`:
+
+```shell
+dagger call test --help
+```
+
+You should see the following output:
+
+```
+```
+
+You're now ready to call the Dagger Function with the Dagger CLI:
 
 ```shell
 dagger call test \
@@ -77,7 +82,7 @@ Well done! You just wrote and called your first Dagger Function!
 
 Let's break down the command you just ran to understand what just happened.
 
-- `dagger call test`: The `dagger call` command is the standard way to invoke a Dagger Function. Tihs command tells Dagger to execute the Dagger Function named `test` from the current module.
+- `dagger call test`: As explained previously, the `dagger call` command is the standard way to invoke a Dagger Function. This command tells Dagger to execute the Dagger Function named `test` from the current module.
 - `--source=.`: This is an argument, passed to the Dagger Function as a command-line flag. Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. This `source` argument tells the Dagger Function the location of the application's source code: in the current working directory.
 
 :::tip FUNCTION NAMES
@@ -99,15 +104,12 @@ Next, let's backtrack to the source code of the Dagger Function you just wrote t
 
 Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When using these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger. You can see this in action in the above code listing, where the `From()`, `WithDirectory()`, `WithWorkdir()` and `WithExec()` methods are chained together in sequence, with each one revising and enhancing the same `Container` object.
 </TabItem>
-
 <TabItem value="Python">
 FIXME
 </TabItem>
-
 <TabItem value="TypeScript">
 FIXME
 </TabItem>
-
 </Tabs>
 
 :::tip FUNCTION SANDBOXING

@@ -18,43 +18,7 @@ At this point, you've written Dagger Functions to test, build and deliver the ap
 
 Update the generated `dagger/main.go` file and create a new Dagger Function to copy the build output directory into an NGINX web server container image.
 
-```go
-package main
-
-import (
-	"context"
-)
-
-type HelloDagger struct{}
-
-// Returns a container with the production build
-func (m *HelloDagger) Package(build *Directory) *Container {
-	return dag.Container().From("nginx:1.25-alpine").
-		WithDirectory("/usr/share/nginx/html", build).
-		WithExposedPort(80)
-}
-
-// Returns a directory with the production build
-func (m *HelloDagger) Build(source *Directory) *Directory {
-	return dag.Container().
-		From("node:21-slim").
-		WithDirectory("/src", source.WithoutDirectory("dagger")).
-		WithWorkdir("/src").
-		WithExec([]string{"npm", "install"}).
-		WithExec([]string{"npm", "run", "build"}).
-		Directory("./dist")
-}
-
-// Returns the result of running unit tests
-func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
-	return dag.Container().
-		From("node:21-slim").
-		WithDirectory("/src", source.WithoutDirectory("dagger")).
-		WithWorkdir("/src").
-		WithExec([]string{"npm", "install"}).
-		WithExec([]string{"npm", "run", "test:unit", "run"}).
-		Stdout(ctx)
-}
+```go file=./snippets/package/go/main.go
 ```
 
 This Dagger Function performs the following operations:
@@ -67,7 +31,6 @@ This Dagger Function performs the following operations:
 <TabItem value="Python">
 FIXME
 </TabItem>
-
 <TabItem value="TypeScript">
 FIXME
 </TabItem>
@@ -183,5 +146,5 @@ Browse to port 8080 of the Docker host and confirm that you see the application 
 FIXME: add image
 
 :::tip LANGUAGE-AGNOSTIC TOOLING
-It's important to realize that even though you're testing, building and packaging a Node.js application in this quickstart tutorial, you didn't need Node.js, `npm` or any other dependencies installed on the Dagger host. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
+It's important to realize that even though you're testing, building and packaging a Node.js application in this quickstart, you didn't need Node.js, `npm` or any other dependencies installed on the Dagger host. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
 :::
