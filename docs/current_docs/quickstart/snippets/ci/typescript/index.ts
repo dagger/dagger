@@ -10,9 +10,11 @@ class HelloDagger {
     // run tests
     this.test(source)
     // obtain the build output directory
-    let build = this.build(source)
+    const build = this.build(source)
     // create and publish a container with the build output
-    return await this.package(build).publish("ttl.sh/myapp-" + Math.floor(Math.random() * 10000000))
+    return await this.package(build).publish(
+      "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000)
+    )
   }
 
   /**
