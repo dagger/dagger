@@ -25,7 +25,7 @@ func (q *Query) AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) 
 
 	var base string
 	if id.Base() == nil {
-		base = "Query"
+		base = q.Type().Name()
 	} else {
 		base = id.Base().Type().ToAST().Name()
 	}
