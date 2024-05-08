@@ -322,6 +322,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/services"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/dependencies"
         },
         {
@@ -343,10 +347,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/services"
             },
             {
               "type": "doc",
@@ -410,10 +410,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/services"
             },
             {
               "type": "doc",
@@ -481,10 +477,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/services"
             },
             {
               "type": "doc",
