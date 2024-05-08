@@ -1,10 +1,11 @@
 ---
-slug: /manuals/developer/go/172964/dependencies
+slug: /manuals/developer/dependencies
 displayed_sidebar: "current"
 toc_max_heading_level: 2
 title: "Dependencies"
 ---
-
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Dependencies
 
@@ -21,8 +22,34 @@ dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281a
 
 This module can be accessed from your own module's code, as shown below:
 
+<Tabs groupId="language">
+<TabItem value="Go">
+
 ```go
 func (m *MyModule) HelloWorld(ctx context.Context) (string, error) {
   return dag.HelloWorld().Message(ctx)
 }
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python
+@function
+async def hello_world(self) -> str:
+  return await dag.hello_world().message()
+```
+
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript
+@func()
+async helloWorld(): Promise<string> {
+  return await dag.helloWorld().message()
+}
+```
+
+</TabItem>
+</Tabs>

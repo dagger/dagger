@@ -46,6 +46,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific dependencies pages to multi-language dependencies page
+  from = "/manuals/developer/:language/:docid/dependencies"
+  to = "/manuals/developer/dependencies"
+  status = 301
+
+[[redirects]]
   # redirect user guide index to user manual index
   from = "/user-guide"
   to = "/manuals/user"
