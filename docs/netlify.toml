@@ -69,6 +69,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual overview pages
+  from = "/manuals/developer/overview/:docid/*"
+  to = "/manuals/developer/:splat"
+  status = 301
+
+[[redirects]]
   # redirect user guide index to user manual index
   from = "/user-guide"
   to = "/manuals/user"
