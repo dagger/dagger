@@ -14,7 +14,7 @@ This describes how to release Dagger:
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
 - [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
-- [🐙 dagger-for-github ⏱ `2mins`](#-dagger-for-github--2mins#)
+- [🐙 dagger-for-github ⏱ `10mins`](#-dagger-for-github--10mins#)
 - [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins#)
 - [❄️ nix ⏱ `2mins`](#-nix--2mins#)
 - [⚙️ CI ⏱ `2mins`](#-ci--2mins)
@@ -521,10 +521,35 @@ update once there's a new release of the Dagger Engine.
   the last release, they must be manually updated on Amazon S3 (CloudFront
   should also be manually invalidated). cc @gerhard
 
-## 🐙 dagger-for-github ⏱ `2mins`
+## 🐙 dagger-for-github ⏱ `10mins`
 
-- [ ] Mention in the release thread on Discord that Dagger for GitHub can be
-  updated to the just-released version. cc @jpadams @gerhard
+- [ ] Submit PR with the version bump, e.g.
+  https://github.com/dagger/dagger-for-github/pull/123
+- [ ] Ask @gerhard or @jpadams to review it 
+
+> [!TIP]
+> We should automate the above mentioned steps same as we do with the PR which
+> bumps the Engine version, e.g. https://github.com/dagger/dagger/pull/7318
+
+- [ ] Force update the major version, currently `v5`
+
+```console
+git tag --sign --force v5
+# Update the date in the comment to e.g. 2024-05-08
+git push origin v5 --force
+```
+
+- [ ] Once this PR is merged, tag the new version
+
+```console
+# Find the latest released patch https://github.com/dagger/dagger-for-github/releases 
+git tag --sign <NEXT_PATCH_VERSION>
+# Use the date as the comment, e.g. 2024-05-08
+git push origin <NEXT_PATCH_VERSION> --force
+```
+
+- [ ] Create a new release from the patch tag (auto-fill release notes via the
+  GitHub UI)
 
 ## 🍺 dagger Homebrew ⏱ `2mins`
 
