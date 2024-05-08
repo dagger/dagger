@@ -1,6 +1,0 @@
-kind: Changed
-body: 'cli: conventionalized usage syntax in `--help`'
-time: 2024-05-05T23:29:46.072408Z
-custom:
-  Author: grouville
-  PR: "7143"
