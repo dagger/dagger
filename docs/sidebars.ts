@@ -325,6 +325,10 @@ module.exports = {
           "id": "manuals/developer/services"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/dependencies"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -343,10 +347,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/dependencies"
             },
             {
               "type": "doc",
@@ -410,10 +410,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/dependencies"
             },
             {
               "type": "doc",
@@ -481,10 +477,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/dependencies"
             },
             {
               "type": "doc",
