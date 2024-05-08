@@ -1152,12 +1152,35 @@ func TestModuleCallGitMod(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
-	out, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+	t.Run("go", func(t *testing.T) {
+		t.Parallel()
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+	})
+
+	t.Run("typescript", func(t *testing.T) {
+		t.Parallel()
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(daggerCallAt(testGitModuleRef("ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yoyo", strings.TrimSpace(out))
+	})
+
+	t.Run("python", func(t *testing.T) {
+		t.Parallel()
+		out, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(daggerCallAt(testGitModuleRef("py"), "container-echo", "--string-arg", "yoyo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yoyo", strings.TrimSpace(out))
+	})
 }
 
 func TestModuleCallFindup(t *testing.T) {

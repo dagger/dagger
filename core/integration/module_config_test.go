@@ -1168,7 +1168,7 @@ func (m *Test) Fn() ([]string, error) {
 
 const (
 	gitTestRepoURL    = "github.com/dagger/dagger-test-modules"
-	gitTestRepoCommit = "d7299e935a195f3e1a29bc39537ed270f4f378d5"
+	gitTestRepoCommit = "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94"
 )
 
 func testGitModuleRef(subpath string) string {
