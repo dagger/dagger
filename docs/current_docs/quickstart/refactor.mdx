@@ -77,7 +77,7 @@ Using Dagger Functions from the Node module instead of the core Dagger API offer
 - The Node module provides tested and ready-to-use functions to select a specific Node version, install a package manager, mount the source code in the correct location in the container, and so on.
 - The Node module automatically creates and uses cache volumes for application dependencies.
 
-:::tip LANGUAGE-AGNOSTIC TOOLING
+:::tip UNLOCKING CROSS-LANGUAGE COLLABORATION
 Dagger Functions can call other functions, across languages. So, even though the Node module in this quickstart is written in TypeScript, you can transparently call its functions from another Dagger module written in Go, Python or any other supported language. This means that you no longer need to care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
 
 Dagger is able to do this because it uses GraphQL as its low-level language-agnostic API query language.  Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
