@@ -17,19 +17,13 @@ Daggerizing the CI pipeline for an existing application involves the following s
 3. Compose your pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
 4. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
 
-This quickstart walks you through these steps by Daggerizing an example application. It will discusses two approaches:
-
-1. Using the core Dagger API: To begin, you will build a CI pipeline for the example application using only the Dagger API. This is an important first step to learn how Dagger works and to understand key concepts and techniques. It is also critical knowledge for when no Daggerverse module exists for your requirements and you need to start from scratch.
-1. Using a Daggerverse module: At a later stage, you will refactor the same CI pipeline using a module from the Daggerverse. This alternative approach introduces you to the Daggerverse, a key component of the Dagger ecosystem. It also demonstrates the speed and efficiency benefits of reusing existing Dagger modules when constructing your CI pipeline.
+This quickstart walks you through these steps by Daggerizing an example application.
 
 The example application is a skeleton Vue framework application written in TypeScript and modified with a "Hello from Dagger!" welcome page. Inspect its [source code repository](https://github.com/dagger/hello-dagger), then clone it into your local development environment and set it as the current working directory:
 
 ```shell
-# FIXME: this will eventually be the hello-dagger repository
-git clone https://github.com/kpenfound/greetings-api.git hello-dagger
+git clone https://github.com/dagger/hello-dagger
 cd hello-dagger
-# FIXME: should be removed in the final example app
-rm dagger.json
 ```
 
 :::tip DAGGERIZING

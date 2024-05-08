@@ -1,6 +1,6 @@
 ---
 slug: /quickstart/basics
-hide_table_of_contents: true
+hide_table_of_contents: false
 title: "Understand the basics of Dagger"
 ---
 
@@ -15,16 +15,13 @@ Before diving into the code, here is some important information you should know 
 Dagger is an open source CI/CD engine that runs your pipelines in containers. It lets you replace your software project's artisanal scripts with a modern API and cross-language scripting engine.
 
 - Encapsulate all your project's tasks and workflows into simple Dagger Functions, written in your programming language of choice.
-- Dagger packages your Dagger Functions into a custom GraphQL API.
 - Run your Dagger Functions from the command line, your language interpreter, or a custom HTTP client.
 - Package your Dagger Functions into a module, to reuse in your next project or share with the community.
 - Search for existing modules, and import them into yours. All Dagger modules can reuse each other's Dagger Functions - regardless of which language they are written in.
 
-Dagger Cloud complements the Dagger Engine with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
-
 ### What problem does Dagger solve?
 
-Application delivery pipelines are a source of pain. The majority of pipelines use messy, hard-to-debug YAML, which is not portable across CI providers, and inconsistent shell scripts, which may not work consistently across environments and platforms. Developers have to "push and pray: instead of being able to test and build code locally and seeing near-instant feedback from their delivery pipelines, they have to wait (and hope) for a green signal from pipelines running on remote servers.
+Application delivery pipelines are a source of pain. The majority of pipelines use messy, hard-to-debug YAML, which is not portable across CI providers, and inconsistent shell scripts, which may not work consistently across environments and platforms. Developers have to "push and pray" - instead of being able to test and build code locally and seeing near-instant feedback from their delivery pipelines, they have to wait (and hope) for a green signal from pipelines running on remote servers.
 
 ### How does Dagger solve this problem?
 

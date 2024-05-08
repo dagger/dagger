@@ -15,7 +15,7 @@ You're now ready to dive into Dagger and write your first Dagger Function!
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Update the generated `dagger/main.go` file with the following code:
+Replace the generated `dagger/main.go` file with the following code:
 
 ```go file=./snippets/test/go/main.go
 ```
@@ -42,6 +42,8 @@ dagger functions
 You should see the following output:
 
 ```
+Name   Description
+test   Returns the result of running unit tests
 ```
 
 Dig deeper into any Dagger Function with the Dagger CLI to see its supported arguments and sub-commands, simply by appending `--help`:
@@ -50,16 +52,26 @@ Dig deeper into any Dagger Function with the Dagger CLI to see its supported arg
 dagger call test --help
 ```
 
-You should see the following output:
+You should see the following output (truncated for brevity), which lists the supported arguments:
 
 ```
+Returns the result of running unit tests
+
+Usage:
+  dagger call test [flags]
+
+Flags:
+      --source Directory
+
+Global Flags:
+...
 ```
 
 You're now ready to call the Dagger Function with the Dagger CLI:
 
 ```shell
-dagger call test \
-  --source=.
+dagger call \
+  test --source=.
 ```
 
 You should see various operations taking place, ending with a test run and the following output:
@@ -83,7 +95,7 @@ Well done! You just wrote and called your first Dagger Function!
 Let's break down the command you just ran to understand what just happened.
 
 - `dagger call test`: As explained previously, the `dagger call` command is the standard way to invoke a Dagger Function. This command tells Dagger to execute the Dagger Function named `test` from the current module.
-- `--source=.`: This is an argument, passed to the Dagger Function as a command-line flag. Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. This `source` argument tells the Dagger Function the location of the application's source code: in the current working directory.
+- `--source=.`: This is an argument, passed to the Dagger Function as a command line flag. Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. This `source` argument tells the Dagger Function the location of the application's source code: in the current working directory.
 
 :::tip FUNCTION NAMES
 When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `Test()` is invoked as `dagger call test`.
@@ -93,16 +105,18 @@ Next, let's backtrack to the source code of the Dagger Function you just wrote t
 
 <Tabs groupId="language">
 <TabItem value="Go">
+The `Test()` Dagger Function does the following:
 
-- It all begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
+- It begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
 - It uses the `dag` client's `Container().From()` method to initialize a new container from a base image - in this case, the `node:21-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object representing the container image.
 - It uses the `Container().WithDirectory()` method to mount the source code directory at the `/src` mount point in the container. The location of the source code directory is obtained from the `source` argument passed to the Dagger Function.
   - The `source` argument is of type `Directory`, which is a special Dagger type. This type comes with its own methods, one of which is `Directory().WithoutDirectory()`. This method is used to exclude specific directories from the mount - in this case, Dagger's own working directory.
 - It uses the `Container().WithWorkdir()` method to set the working directory to the `/src` mount point.
 - It uses the `Container().WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
-- It uses the `Container().Stdout()` method to return the output of the last executed command - the test results.
+- It uses the `Container().Stdout()` method to return the output of the last executed command - in this case, the test results.
 
-Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When using these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger. You can see this in action in the above code listing, where the `From()`, `WithDirectory()`, `WithWorkdir()` and `WithExec()` methods are chained together in sequence, with each one revising and enhancing the same `Container` object.
+Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When using these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger. You can see this in the above code listing, where the `From()`, `WithDirectory()`, `WithWorkdir()` and `WithExec()` methods are chained together in sequence, with each one revising and enhancing the same `Container` object.
+
 </TabItem>
 <TabItem value="Python">
 FIXME
@@ -112,6 +126,6 @@ FIXME
 </TabItem>
 </Tabs>
 
-:::tip FUNCTION SANDBOXING
+:::tip SANDBOXING
 The Dagger Function on this page receives the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is by design: Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
 :::

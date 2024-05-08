@@ -32,7 +32,7 @@ Update the generated `dagger/main.go` file and create a new Dagger Function whic
 
 This Dagger Function expects a `Directory` as argument. It performs the following operations:
 
-- It calls the `Test()` Dagger Function to run the application's test anD return` the results.
+- It calls the `Test()` Dagger Function to run the application's tests and return the results.
 - It calls the `Build()` Dagger Function to build the application and return the build output directory.
 - It calls the `Package()` Dagger Function to build and return a container image of the application.
 - It calls the `Container().Publish()` method to publish the container image to the registry and return the image identifier.
@@ -49,8 +49,8 @@ FIXME
 Call the Dagger Function to run the pipeline and publish the containerized application to the [ttl.sh container registry](https://ttl.sh):
 
 ```shell
-dagger call ci \
-  --source=.
+dagger call \
+  ci --source=.
 ```
 
 You should see the application being tested, built, packaged and published. The final result will be an image reference on the [ttl.sh container registry](https://ttl.sh), as in the previous step.

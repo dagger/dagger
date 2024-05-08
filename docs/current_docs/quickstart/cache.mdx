@@ -31,7 +31,7 @@ These Dagger Functions are, therefore, good candidates for a cache volume. Let's
 
 The `Test()` and `Build()` Dagger Functions now use a cache volume for the application dependencies.
 
-- They use the `Container().CacheVolume()` method to initialize a new cache volume.
+- They use the `dag.CacheVolume()` method to initialize a new cache volume.
 - They use the `Container().WithMountedCache(`) method to mount this cache volume at the `node_modules/` mount point in the container.
 </TabItem>
 <TabItem value="Python">

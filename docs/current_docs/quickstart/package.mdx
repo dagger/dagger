@@ -39,8 +39,8 @@ FIXME
 Call the Dagger Function, passing it the location of the build output directory exported in the previous step:
 
 ```shell
-dagger call package \
-  --build=./build
+dagger call \
+  package --build=./build
 ```
 
 You should see the application being built and the build output added to a container image. Once complete, you should see the following output:
@@ -55,7 +55,7 @@ One of the most interesting `Container` functions is `terminal`, which can be us
 
 ```shell
 dagger call \
-  package --source=. \
+  package --build=./build \
   terminal
 ```
 
@@ -86,9 +86,10 @@ You should see a file listing similar to the following, which should match the c
 The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
 :::
 
-You can also execute a command in the container. For example, you can send an HTTP request for the application's index page to the running NGINX Web server with `curl`:
+You can also execute a command in the container. For example, you can start the NGINX service and send an HTTP request for the application's index page with `curl`:
 
 ```shell
+nginx
 curl localhost:80
 ```
 
@@ -102,7 +103,7 @@ You should receive an HTML page as response:
     <link rel="icon" href="/favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vite App</title>
-    <script type="module" crossorigin src="/assets/index-C4Dqy5pm.js"></script>
+    <script type="module" crossorigin src="/assets/index-CfPjtpcd.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-D6pr4OYR.css">
   </head>
   <body>
@@ -125,7 +126,7 @@ The `Container` type also has a `publish` function, which publishes the containe
 
 ```shell
 dagger call \
-  package --source=. \
+  package --build=./build \
   publish --address ttl.sh/hello-dagger-$RANDOM
 ```
 
@@ -141,7 +142,7 @@ Test the published container image using the command below (update the image nam
 docker run -d --rm --publish 8080:80 ttl.sh/hello-dagger-47384
 ```
 
-Browse to port 8080 of the Docker host and confirm that you see the application index page, served by NGINX:
+Browse to port 8080 of the Dagger host and confirm that you see the application index page, served by NGINX:
 
 FIXME: add image
 

@@ -1,6 +1,6 @@
 ---
 slug: /quickstart
-hide_table_of_contents: true
+hide_table_of_contents: false
 title: "Introduction"
 ---
 
@@ -10,23 +10,31 @@ Welcome to Dagger, a programmable tool that lets you replace your software proje
 
 Dagger can help you create a consistent, reliable development and testing environment on your local host and ensure that everything your CI can do, your local environment can do too.
 
-## What you will learn
+## Topics
 
-This quickstart tutorial introduces you to:
+This quickstart introduces you to:
 
 - The Dagger API, which lets you use core primitives to stitch together powerful pipelines out of containers, artifacts, network services, and secrets – all in type-safe Go, Python or TypeScript.
-- Dagger Functions, which let you encapsulate code into a software component which can be loaded into any Dagger Engine, and called by other Dagger Functions.
-- The Dagger CLI, which lets you create, inspect and invoke Dagger Functions from the command-line.
+- Dagger Functions, which let you encapsulate code into software components which can be loaded into any Dagger Engine, and called by other Dagger Functions.
+- The Dagger CLI, which lets you create, inspect and invoke Dagger Functions from the command line.
 - The Daggerverse, which lets you search and consume publicly available Dagger Functions.
 
-Some of the things you will learn are in this quickstart are:
+## Goal
 
-FIXME
+After going through this quickstart, you will have the tools and skills to create a CI pipeline to test, build and release your code from the command line, and start replacing your custom CI scripts with reusable Dagger Functions from the Daggerverse or that you create yourself.
 
-After going through this quickstart, you will have the tools and skills to create a CI pipeline to test, build and publish your code from the command line, and start replacing your custom CI scripts with reusable Dagger Functions from the Daggerverse or that you create yourself.
+## Approach
+
+This quickstart is structured as a hands-on workshop, in which you will create a CI pipeline for an example application, then run and test it locally. It discusses two approaches:
+
+1. Using the core Dagger API: To begin, you will build a CI pipeline for the example application using only the Dagger API. This is an important first step to learn how Dagger works and to understand key concepts and techniques. It is also critical knowledge for when no Daggerverse module exists for your requirements and you need to start from scratch.
+
+1. Using a Daggerverse module: At a later stage, you will refactor the same CI pipeline using a module from the Daggerverse. This alternative approach introduces you to the Daggerverse, a key component of the Dagger ecosystem. It also demonstrates the speed and efficiency benefits of reusing existing Dagger modules when constructing your CI pipeline.
 
 ## Requirements
 
-To use this tutorial, you only need Git and the Dagger CLI installed on your machine. You should also be familiar with programming in Go, Python or TypeScript.
+This quickstart will take you approximately 30 minutes to complete.
+
+To use this quickstart, you only need Git and the Dagger CLI installed on your machine. You should also be familiar with programming in Go, Python or TypeScript.
 
 Note that Dagger requires a container runtime. This can be [Docker](https://docs.docker.com/engine/install/), but you can also use Podman, nerdctl, or other Docker-like systems.

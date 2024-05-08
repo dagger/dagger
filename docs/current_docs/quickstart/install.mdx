@@ -73,7 +73,7 @@ Take a closer look at the `commands` Dagger Function in the Node module:
 dagger -m node call commands --help
 ```
 
-You should see the following output:
+You should see the following output (truncated for brevity):
 
 ```
 Execute commands in the container.
@@ -89,20 +89,8 @@ Function Commands:
   test
 
 Global Flags:
-  -d, --debug             show debug logs and full verbosity
-      --json              Present result as JSON
-  -m, --mod string        Path to dagger.json config file for the module or a directory containing that
-                          file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g.
-                          "github.com/dagger/dagger/path/to/some/subdir")
-  -o, --output string     Path in the host to save the result to
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
-
-Use "dagger call commands [command] --help" for more information about a command.
+...
 ```
-
-Notice that this module exposes `test` and `build` commands. These seem to perform the same functions as the Dagger Functions you developed from scratch in the previous sections of this quickstart.
 
 :::tip THE DAGGERVERSE
 Dagger's superpower is its community. All around the world, Daggernauts are encoding their expertise into Dagger Functions, and sharing them for anyone to reuse. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them. Using the Daggerverse, you can easily discover great modules being developed by the community, learn how they work, and start using them. Since modules are just source code, it's easy to contribute to them, too!
