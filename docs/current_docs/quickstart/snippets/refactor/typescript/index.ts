@@ -1,4 +1,4 @@
-import { dag, Container, Directory, object, func } from '@dagger.io/dagger'
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -12,7 +12,7 @@ class HelloDagger {
     // obtain the build output directory
     let build = this.build(source)
     // create and publish a container with the build output
-    return await this.package(build).publish('ttl.sh/myapp-' + Math.floor(Math.random() * 10000000))
+    return await this.package(build).publish("ttl.sh/myapp-" + Math.floor(Math.random() * 10000000))
   }
 
   /**
@@ -22,8 +22,8 @@ class HelloDagger {
   package(build: Directory): Container {
     return dag
       .container()
-      .from('nginx:1.25-alpine')
-      .withDirectory('/usr/share/nginx/html', build)
+      .from("nginx:1.25-alpine")
+      .withDirectory("/usr/share/nginx/html", build)
       .withExposedPort(80)
   }
 
@@ -33,13 +33,13 @@ class HelloDagger {
   @func()
   build(source: Directory): Directory {
     return dag
-      .node({ version: '21' })
+      .node({ version: "21" })
       .withNpm()
       .withSource(source)
       .install([])
       .commands()
-      .run(['build'])
-      .directory('./dist')
+      .run(["build"])
+      .directory("./dist")
   }
 
   /**
@@ -48,12 +48,12 @@ class HelloDagger {
   @func()
   async test(source: Directory): Promise<string> {
     return dag
-      .node({ version: '21' })
+      .node({ version: "21" })
       .withNpm()
       .withSource(source)
       .install([])
       .commands()
-      .run(['test:unit', 'run'])
+      .run(["test:unit", "run"])
       .stdout()
   }
 }

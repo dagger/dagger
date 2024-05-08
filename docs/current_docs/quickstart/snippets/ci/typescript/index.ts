@@ -1,4 +1,4 @@
-import { dag, Container, Directory, object, func } from '@dagger.io/dagger'
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -12,7 +12,7 @@ class HelloDagger {
     // obtain the build output directory
     let build = this.build(source)
     // create and publish a container with the build output
-    return await this.package(build).publish('ttl.sh/myapp-' + Math.floor(Math.random() * 10000000))
+    return await this.package(build).publish("ttl.sh/myapp-" + Math.floor(Math.random() * 10000000))
   }
 
   /**
@@ -22,8 +22,8 @@ class HelloDagger {
   package(build: Directory): Container {
     return dag
       .container()
-      .from('nginx:1.25-alpine')
-      .withDirectory('/usr/share/nginx/html', build)
+      .from("nginx:1.25-alpine")
+      .withDirectory("/usr/share/nginx/html", build)
       .withExposedPort(80)
   }
 
@@ -34,12 +34,12 @@ class HelloDagger {
   build(source: Directory): Directory {
     return dag
       .container()
-      .from('node:21-slim')
-      .withDirectory('/src', source.withoutDirectory('dagger'))
-      .withWorkdir('/src')
-      .withExec(['npm', 'install'])
-      .withExec(['npm', 'run', 'build'])
-      .directory('./dist')
+      .from("node:21-slim")
+      .withDirectory("/src", source.withoutDirectory("dagger"))
+      .withWorkdir("/src")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "build"])
+      .directory("./dist")
   }
 
   /**
@@ -49,11 +49,11 @@ class HelloDagger {
   async test(source: Directory): Promise<string> {
     return dag
       .container()
-      .from('node:21-slim')
-      .withDirectory('/src', source.withoutDirectory('dagger'))
-      .withWorkdir('/src')
-      .withExec(['npm', 'install'])
-      .withExec(['npm', 'run', 'test:unit', 'run'])
+      .from("node:21-slim")
+      .withDirectory("/src", source.withoutDirectory("dagger"))
+      .withWorkdir("/src")
+      .withExec(["npm", "install"])
+      .withExec(["npm", "run", "test:unit", "run"])
       .stdout()
   }
 }
