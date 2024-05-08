@@ -700,7 +700,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 			return flags.BoolSlice(name, val, usage), nil
 
 		case dagger.ScalarKind:
-			scalarName := r.TypeDef.AsScalar.Name
+			scalarName := elementType.AsScalar.Name
 
 			if val := GetCustomFlagValueSlice(scalarName); val != nil {
 				flags.Var(val, name, usage)

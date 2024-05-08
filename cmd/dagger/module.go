@@ -752,6 +752,9 @@ fragment TypeDefRefParts on TypeDef {
 	asInput {
 		name
 	}
+	asScalar {
+		name
+	}
 	asList {
 		elementTypeDef {
 			kind
@@ -764,10 +767,10 @@ fragment TypeDefRefParts on TypeDef {
 			asInput {
 				name
 			}
+			asScalar {
+				name
+			}
 		}
-	}
-	asScalar {
-		name
 	}
 }
 
