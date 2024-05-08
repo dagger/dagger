@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
 )
 
@@ -78,7 +79,9 @@ func TestContainerFrom(t *testing.T) {
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.File.Contents, "3.18.2\n")
+
+	releaseStr := res.Container.From.File.Contents
+	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
 func TestContainerBuild(t *testing.T) {
@@ -334,7 +337,7 @@ func TestContainerWithRootFS(t *testing.T) {
 	releaseStr, err := alpine315ReplacedFS.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 
-	require.Equal(t, "3.18.2\n", releaseStr)
+	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
 //go:embed testdata/hello.go
@@ -2601,7 +2604,8 @@ func TestContainerFSDirectory(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "3.18.2\n", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
+	releaseStr := execRes.Container.From.WithMountedDirectory.WithExec.Stdout
+	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
 func TestContainerRelativePaths(t *testing.T) {
@@ -2808,7 +2812,7 @@ func TestContainerPublish(t *testing.T) {
 	pulledCtr := c.Container().From(pushedRef)
 	contents, err := pulledCtr.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "3.18.2\n")
+	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(contents))
 
 	output, err := pulledCtr.WithExec(nil).Stdout(ctx)
 	require.NoError(t, err)
@@ -3342,7 +3346,7 @@ func TestContainerImageRef(t *testing.T) {
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
-		require.Contains(t, res.Container.From.ImageRef, "docker.io/library/alpine:3.18.2@sha256:")
+		require.Regexp(t, res.Container.From.ImageRef, "docker.io/library/"+alpineImage+"@sha256:")
 	})
 
 	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {

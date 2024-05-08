@@ -320,7 +320,7 @@ func (build *Builder) runcBin() *dagger.File {
 	// We build runc from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	buildCtr := dag.Container().
-		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersionRuncHack, consts.AlpineVersion)).
+		From(consts.GolangVersionRuncHackImage).
 		With(build.goPlatformEnv).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
@@ -373,8 +373,8 @@ func (build *Builder) cniPlugins() []*dagger.File {
 	ctr := dag.Container()
 	switch build.base {
 	case "alpine", "":
-		ctr = ctr.From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
-			WithExec([]string{"apk", "add", "build-base", "go", "git"})
+		ctr = ctr.From(consts.GolangImage).
+			WithExec([]string{"apk", "add", "build-base", "git"})
 	case "ubuntu":
 		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
 		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).

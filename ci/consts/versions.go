@@ -9,19 +9,21 @@ const (
 )
 
 const (
-	GolangVersion = "1.22.3"
+	GolangVersion = distconsts.GolangVersion
+	GolangImage   = distconsts.GolangImage
 	// GolangVersionRuncHack needs to be 1.21, since 1.22 is not yet
 	// supported, and can cause crashes: opencontainers/runc#4233
-	GolangVersionRuncHack = "1.21.7"
+	GolangVersionRuncHackVersion = "1.21.7"
+	GolangVersionRuncHackImage   = "golang:" + GolangVersionRuncHackVersion + "-alpine"
+
+	AlpineVersion = distconsts.AlpineVersion
+	AlpineImage   = distconsts.AlpineImage
+
+	WolfiImage   = "cgr.dev/chainguard/wolfi-base"
+	WolfiVersion = "latest" // Wolfi is a rolling distro; no release to pin to
 
 	GolangLintVersion = "v1.57"
-
-	AlpineVersion = "3.18"
-	AlpineImage   = "alpine:" + AlpineVersion
-	WolfiImage    = "cgr.dev/chainguard/wolfi-base"
-	WolfiVersion  = "latest" // Wolfi is a rolling distro; no release to pin to
-
-	GolangLintImage = "golangci/golangci-lint:" + GolangLintVersion + "-alpine"
+	GolangLintImage   = "golangci/golangci-lint:" + GolangLintVersion + "-alpine"
 
 	UbuntuVersion   = "22.04"
 	RuncVersion     = "v1.1.12"

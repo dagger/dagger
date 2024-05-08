@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 func TestModuleGoInit(t *testing.T) {
@@ -4184,7 +4185,7 @@ import (
 )
 
 func New(ctx context.Context) (Test, error) {
-	v, err := dag.Container().From("alpine:3.18.4").File("/etc/alpine-release").Contents(ctx)
+	v, err := dag.Container().From("%s").File("/etc/alpine-release").Contents(ctx)
 	if err != nil {
 		return Test{}, err
 	}
@@ -4210,7 +4211,7 @@ class Test:
     async def create(cls) -> "Test":
         return cls(alpine_version=await (
             dag.container()
-            .from_("alpine:3.18.4")
+            .from_("%s")
             .file("/etc/alpine-release")
             .contents()
         ))
@@ -4230,7 +4231,7 @@ class Test {
   // This is only for testing purpose but it shouldn't be done in real usage.
   constructor() {
     return (async () => {
-      this.alpineVersion = await dag.container().from("alpine:3.18.4").file("/etc/alpine-release").contents()
+      this.alpineVersion = await dag.container().from("%s").file("/etc/alpine-release").contents()
 
       return this; // Return the newly-created instance
     })();
@@ -4249,11 +4250,11 @@ class Test {
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/test").
 					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
-					With(sdkSource(tc.sdk, tc.source))
+					With(sdkSource(tc.sdk, fmt.Sprintf(tc.source, alpineImage)))
 
 				out, err := ctr.With(daggerCall("alpine-version")).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, strings.TrimSpace(out), "3.18.4")
+				require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(out))
 			})
 		}
 	})
@@ -5392,12 +5393,12 @@ func TestModuleDaggerListen(t *testing.T) {
 			var out []byte
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
-				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Env = append(callCmd.Env, os.Environ()...)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.CombinedOutput()
 				if err == nil {
-					require.Contains(t, string(out), "3.18.6")
+					require.Contains(t, string(out), distconsts.AlpineVersion)
 					return
 				}
 				time.Sleep(1 * time.Second)
@@ -5430,12 +5431,12 @@ func TestModuleDaggerListen(t *testing.T) {
 			var err error
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
-				callCmd.Stdin = strings.NewReader(`query{container{from(address:"alpine:3.18.6"){file(path:"/etc/alpine-release"){contents}}}}`)
+				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Env = append(callCmd.Env, os.Environ()...)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.CombinedOutput()
 				if err == nil {
-					require.Contains(t, string(out), "3.18.6")
+					require.Contains(t, string(out), distconsts.AlpineVersion)
 					return
 				}
 				time.Sleep(1 * time.Second)
@@ -5809,7 +5810,7 @@ func (_ *Secreter) Make(uniq string) *Secret {
 			With(daggerExec("init", "--name=toplevel", "--sdk=go", "--source=.")).
 			With(daggerExec("install", "./secreter")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: fmt.Sprintf(`package main
 
 import (
 	"context"
@@ -5836,7 +5837,7 @@ func (_ *Toplevel) AttemptExternal(ctx context.Context) error {
 
 func diffSecret(ctx context.Context, first, second *Secret) error {
 	firstOut, err := dag.Container().
-		From("alpine").
+		From("%[1]s").
 		WithSecretVariable("VAR", first).
 		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
 		Stdout(ctx)
@@ -5845,7 +5846,7 @@ func diffSecret(ctx context.Context, first, second *Secret) error {
 	}
 
 	secondOut, err := dag.Container().
-		From("alpine").
+		From("%[1]s").
 		WithSecretVariable("VAR", second).
 		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
 		Stdout(ctx)
@@ -5854,11 +5855,11 @@ func diffSecret(ctx context.Context, first, second *Secret) error {
 	}
 
 	if firstOut != secondOut {
-		return fmt.Errorf("%q != %q", firstOut, secondOut)
+		return fmt.Errorf("%%q != %%q", firstOut, secondOut)
 	}
 	return nil
 }
-`,
+`, alpineImage),
 			})
 
 		t.Run("internal secrets cache", func(t *testing.T) {
@@ -5913,7 +5914,7 @@ func TestModuleStartServices(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: fmt.Sprintf(`package main
 	import (
 		"context"
 		"fmt"
@@ -5935,7 +5936,7 @@ func TestModuleStartServices(t *testing.T) {
 			AsService()
 
 		ctr := dag.Container().
-			From("alpine:3.18.6").
+			From("%s").
 			WithServiceBinding("svc", svc).
 			WithExec([]string{"wget", "-O", "-", "http://svc:23457"})
 
@@ -5944,7 +5945,7 @@ func TestModuleStartServices(t *testing.T) {
 			return nil, err
 		}
 		if out != "hey there" {
-			return nil, fmt.Errorf("unexpected output: %q", out)
+			return nil, fmt.Errorf("unexpected output: %%q", out)
 		}
 		return &Sub{Ctr: ctr}, nil
 	}
@@ -5958,7 +5959,7 @@ func TestModuleStartServices(t *testing.T) {
 			WithExec([]string{"wget", "-O", "-", "http://svc:23457"}).
 			Stdout(ctx)
 	}
-	`,
+	`, alpineImage),
 			}).
 			With(daggerCall("fn-a", "fn-b")).
 			Stdout(ctx)
@@ -5976,7 +5977,7 @@ func TestModuleStartServices(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: fmt.Sprintf(`package main
 import (
 	"context"
 )
@@ -5999,12 +6000,12 @@ func (m *Test) Fn(ctx context.Context) *Container {
 	file := ctrA.Directory("/tmp").File("/out.txt")
 
 	ctrB := dag.Container().
-		From("alpine").
+		From("%s").
 		WithFile("/out.txt", file)
 
 	return ctrB.WithExec([]string{"cat", "/out.txt"})
 }
-	`,
+	`, alpineImage),
 			}).
 			With(daggerCall("fn", "stdout")).
 			Sync(ctx)

@@ -16,3 +16,11 @@ const (
 	PythonSDKManifestDigestEnvName     = "DAGGER_PYTHON_SDK_MANIFEST_DIGEST"
 	TypescriptSDKManifestDigestEnvName = "DAGGER_TYPESCRIPT_SDK_MANIFEST_DIGEST"
 )
+
+const (
+	AlpineVersion = "3.20.0"
+	AlpineImage   = "alpine:" + AlpineVersion
+
+	GolangVersion = "1.22.3"
+	GolangImage   = "golang:" + GolangVersion + "-alpine"
+)

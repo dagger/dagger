@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -71,7 +72,7 @@ func TestModuleDaggerCallArgTypes(t *testing.T) {
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+					Contents: fmt.Sprintf(`package main
 import (
 	"context"
 )
@@ -79,12 +80,12 @@ import (
 type Test struct {}
 
 func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
-	return dag.Container().From("alpine:3.18").WithExec([]string{"apk", "add", "curl"}).
+	return dag.Container().From("%s").WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("daserver", svc).
 		WithExec([]string{"curl", "http://daserver:8000"}).
 		Stdout(ctx)
 }
-`,
+`, alpineImage),
 				})
 
 			logGen(ctx, t, modGen.Directory("."))
@@ -753,16 +754,16 @@ func (m *Minimal) Fn() []*Foo {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: fmt.Sprintf(`package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18").WithExec([]string{"echo", "hello", "world"})}
+	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
 }
 
 type Test struct {
 	Ctr *Container
 }
-`,
+`, alpineImage),
 			})
 
 		logGen(ctx, t, modGen.Directory("."))
@@ -901,16 +902,16 @@ type Test struct {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: fmt.Sprintf(`package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18").WithExec([]string{"echo", "hello", "world"})}
+	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
 }
 
 type Test struct {
 	Ctr *Container
 }
-`,
+`, alpineImage),
 			})
 
 		// adding sync disables the default behavior of **not** printing the ID
@@ -932,23 +933,23 @@ func TestModuleDaggerCallCoreChaining(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+				Contents: fmt.Sprintf(`package main
 
 func New() *Test {
-	return &Test{Ctr: dag.Container().From("alpine:3.18.5")}
+	return &Test{Ctr: dag.Container().From("%s")}
 }
 
 type Test struct {
 	Ctr *Container
 }
-`,
+`, alpineImage),
 			})
 
 		t.Run("file", func(t *testing.T) {
 			t.Parallel()
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "3.18.5\n", out)
+			require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(out))
 		})
 
 		t.Run("export", func(t *testing.T) {

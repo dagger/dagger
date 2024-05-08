@@ -16,6 +16,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
 )
 
@@ -230,7 +231,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
-		require.Equal(t, "3.18.2\n", string(contents))
+		require.True(t, strings.HasPrefix(string(contents), distconsts.AlpineVersion), string(contents))
 
 		entries, err := ls(targetDir)
 		require.NoError(t, err)
@@ -244,7 +245,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
-		require.Equal(t, "3.18.2\n", string(contents))
+		require.True(t, strings.HasPrefix(string(contents), distconsts.AlpineVersion), string(contents))
 
 		entries, err := ls(wd)
 		require.NoError(t, err)

@@ -1,8 +1,10 @@
 package core
 
+import "github.com/dagger/dagger/engine/distconsts"
+
 const (
-	alpineImage = "alpine:3.18.2"
-	golangImage = "golang:1.22.3-alpine"
+	alpineImage = distconsts.AlpineImage
+	golangImage = distconsts.GolangImage
 	debianImage = "debian:bookworm"
 	rhelImage   = "registry.access.redhat.com/ubi9/ubi"
 	alpineArm   = "arm64v8/alpine"

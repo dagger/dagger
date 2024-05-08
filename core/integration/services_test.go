@@ -1692,7 +1692,7 @@ func TestServiceSearchDomainAlwaysSet(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
-	resolvContents, err := c.Container().From("alpine").
+	resolvContents, err := c.Container().From(alpineImage).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -1732,7 +1732,7 @@ func TestServiceSearchDomainAlwaysSet(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
-	resolvContents2, err := c2.Container().From("alpine").
+	resolvContents2, err := c2.Container().From(alpineImage).
 		WithExec([]string{"cat", "/etc/resolv.conf"}).
 		Stdout(ctx)
 	require.NoError(t, err)
