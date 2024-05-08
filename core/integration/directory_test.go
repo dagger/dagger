@@ -593,43 +593,56 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 func TestDirectoryDiff(t *testing.T) {
 	t.Parallel()
 
-	aID := newDirWithFile(t, "a-file", "a-content")
-	bID := newDirWithFile(t, "b-file", "b-content")
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		aID := newDirWithFile(t, "a-file", "a-content")
+		bID := newDirWithFile(t, "b-file", "b-content")
 
-	var res struct {
-		Directory struct {
-			Diff struct {
-				Entries []string
+		var res struct {
+			Directory struct {
+				Diff struct {
+					Entries []string
+				}
 			}
 		}
-	}
 
-	diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
+		diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
 			directory(id: $id) {
 				diff(other: $other) {
 					entries
 				}
 			}
 		}`
-	err := testutil.Query(diff, &res, &testutil.QueryOptions{
-		Variables: map[string]any{
-			"id":    aID,
-			"other": bID,
-		},
+		err := testutil.Query(diff, &res, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"id":    aID,
+				"other": bID,
+			},
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"b-file"}, res.Directory.Diff.Entries)
+
+		err = testutil.Query(diff, &res, &testutil.QueryOptions{
+			Variables: map[string]any{
+				"id":    bID,
+				"other": aID,
+			},
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"a-file"}, res.Directory.Diff.Entries)
 	})
-	require.NoError(t, err)
 
-	require.Equal(t, []string{"b-file"}, res.Directory.Diff.Entries)
-
-	err = testutil.Query(diff, &res, &testutil.QueryOptions{
-		Variables: map[string]any{
-			"id":    bID,
-			"other": aID,
-		},
+	// this is a regression test for: https://github.com/dagger/dagger/pull/7328
+	t.Run("equivalent subdirs", func(t *testing.T) {
+		c, ctx := connect(t)
+		a := c.Git("github.com/dagger/dagger").Ref("main").Tree()
+		b := c.Directory().WithDirectory("", a)
+		ents, err := a.Diff(b).Entries(ctx)
+		require.NoError(t, err)
+		require.Len(t, ents, 0)
 	})
-	require.NoError(t, err)
-
-	require.Equal(t, []string{"a-file"}, res.Directory.Diff.Entries)
 
 	/*
 		This triggers a nil panic in Buildkit!
