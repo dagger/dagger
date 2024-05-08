@@ -28,18 +28,15 @@ type HelloDagger struct{}
 
 // Returns the result of running unit tests
 func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
-	return dag.Node(NodeOpts{Version: "21"}).
-		WithNpm().
-		WithSource(source).
-		Install(nil).
-		Commands().
-		Run([]string{"test:unit", "run"}).
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 ```
-
-There's a lot of code here, and it's explained in detail further along. For the moment, the only thing to recognize is that this `Test()` Dagger Function is written in Go and expects a `source` argument of type `Directory`, which is a special Dagger type. This `source` argument tells the Dagger Function where to find the application's source code. The `Directory` type can refer to either a local directory or a remote Git repository.
-
 </TabItem>
 
 <TabItem value="Python">
@@ -51,7 +48,9 @@ FIXME
 </TabItem>
 </Tabs>
 
-Call the Dagger Function:
+There's a lot of code here, and it's explained in detail further along. For the moment, the only thing to recognize is that this Dagger Function expects a `source` argument of type `Directory`, which is a special Dagger type. This `source` argument tells the Dagger Function where to find the application's source code. The `Directory` type can refer to either a local directory or a remote Git repository.
+
+Call the Dagger Function with the Dagger CLI:
 
 ```shell
 dagger call test \
@@ -76,28 +75,29 @@ You should see various operations taking place, ending with a test run and the f
 
 Well done! You just wrote and called your first Dagger Function!
 
-:::tip FUNCTION NAMES
-When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `Test()` is invoked as `dagger call test`.
-:::
-
-Let's break down the command you just ran to understand what just happened:
+Let's break down the command you just ran to understand what just happened.
 
 - `dagger call test`: The `dagger call` command is the standard way to invoke a Dagger Function. Tihs command tells Dagger to execute the Dagger Function named `test` from the current module.
 - `--source=.`: This is an argument, passed to the Dagger Function as a command-line flag. Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. This `source` argument tells the Dagger Function the location of the application's source code: in the current working directory.
 
-Next, let's backtrace to the source code of the Dagger Function you just wrote to understand what happens when it's invoked via `dagger call`:
+:::tip FUNCTION NAMES
+When using `dagger call`, all names (functions, arguments, fields, etc) are converted into a shell-friendly "kebab-case" style. This is why a Dagger Function named `Test()` is invoked as `dagger call test`.
+:::
+
+Next, let's backtrack to the source code of the Dagger Function you just wrote to understand what happens when it's invoked via `dagger call`.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-- It calls the Node module's constructor function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
-  - `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
-- It calls the `Node.WithNpm()` function, which returns a revised `Node` object after adding the `npm` package manager and a cache volume for `npm`.
-- It calls the `Node.WithSource()` function, which returns a revised `Node` object with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `Node.WithSource()` function also creates a cache volume for application dependencies.
-- It calls the `Node.Install()` function, which runs `npm install` in the container and returns a revised `Node` object with the application's dependencies.
-- It calls the `Node.Commands().Run()` function, which returns a revised `Node` object configured to execute the `npm run test:unit run` command in the container image.
-- It uses the core `Container.Stdout()` SDK method to return the output of the last executed command. If tests pass, the output shows the list of passed tests. If not, a non-nil error is returned, which propagates to the Dagger CLI and lets it know that one or more tests failed.
+- It all begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared (like `node`).
+- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image - in this case, the `node:21-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object representing the container image.
+- It uses the `Container().WithDirectory()` method to mount the source code directory at the `/src` mount point in the container. The location of the source code directory is obtained from the `source` argument passed to the Dagger Function.
+  - The `source` argument is of type `Directory`, which is a special Dagger type. This type comes with its own methods, one of which is `Directory().WithoutDirectory()`. This method is used to exclude specific directories from the mount - in this case, Dagger's own working directory.
+- It uses the `Container().WithWorkdir()` method to set the working directory to the `/src` mount point.
+- It uses the `Container().WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm run test:unit run`.
+- It uses the `Container().Stdout()` method to return the output of the last executed command - the test results.
 
+Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When using these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger. You can see this in action in the above code listing, where the `From()`, `WithDirectory()`, `WithWorkdir()` and `WithExec()` methods are chained together in sequence, with each one revising and enhancing the same `Container` object.
 </TabItem>
 
 <TabItem value="Python">
@@ -110,17 +110,6 @@ FIXME
 
 </Tabs>
 
-Backtrace a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts) to see what's happening there:
-
-- The first thing to notice is that the Node module is written in TypeScript. However, its functions are being called from your primary Dagger module, which is written in Go. Dagger takes care of the translation via its language-agnostic GraphQL layer.
-- The [Node module's constructor](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L22) uses the core `container.from()` method to initialize a new container from a `node` base image, using the version number passed to it. This method returns a `Container` type representing an OCI-compatible container image.
-- The [Node module's `withNpm()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L73) uses the `container.withEntrypoint()` method to set the container entrypoint to the `npm` CLI and initalizes a cache volume for the `npm` cache using the `container().withMountedCache()` method.
-- The [Node module's `withSource()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L34) uses the `container.withDirectory()`, `container.withWorkdir()` and `container.withMountedCache()` to mount the source code directory (passed to it as argument) in the container, set the working directory in the container to that mount point, and create a cache volume for dependencies.
-- The [Node module's `install()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L109) uses the `container.withExec()` method to define the command to download dependencies in the container (`npm install`).
-- The [Node module's `commands().run()`](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/commands.ts#L13) function accepts an array of command-line arguments and readies them for execution in the container, also using the `container.withExec()` method.
-
-:::tip LANGUAGE-AGNOSTIC TOOLING
-Dagger Functions can call other functions, across languages. So, even though the Node module in this quickstart tutorial is written in TypeScript, you can transparently call its functions from another Dagger module written in Go, Python or any other supported language. This means that you no longer need to care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
-
-Dagger is able to do this because it uses GraphQL as its low-level language-agnostic API query language.  Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
+:::tip FUNCTION SANDBOXING
+The Dagger Function on this page receives the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is by design: Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
 :::

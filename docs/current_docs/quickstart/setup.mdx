@@ -13,19 +13,17 @@ The best way to understand how Dagger works is by creating a composable CI pipel
 Daggerizing the CI pipeline for an existing application involves the following steps:
 
 1. Choose a Dagger SDK and bootstrap a new Dagger module for your pipeline with `dagger init`.
-2. Find useful third-party Dagger modules from the Daggerverse and install them as dependencies with `dagger install`.
-3. Compose your pipeline by combining core Dagger API calls with Dagger Functions from third-party Daggerverse modules to produce the desired results.
-4. Use `dagger call` to invoke and test your pipeline locally.
+2. Search for useful third-party Dagger modules from the Daggerverse and install them as dependencies with `dagger install`.
+3. Compose your pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
+4. Use `dagger call` to run and test your pipeline locally.
 5. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
 
-Why do this? By expressing your pipeline as code, you benefit from:
-- Easier maintenance, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
-- Higher reliability, because performing pipeline operations in containers removes environment-related variance which can destabilize shell scripts in unexpected ways.
-- An improved development experience, because using a programming language opens up access to that language's entire ecosystem, enabling the use of better tooling and adherence to coding standards and best practices.
+This quickstart tutorial walks you through these steps by Daggerizing an example application. It will discusses two approaches:
 
-This tutorial will walk you through these steps by Daggerizing an example application.
+1. Using the core Dagger API: To begin, you will build a CI pipeline for the example application using only the Dagger API. This is an important first step to learn how Dagger works and to understand key concepts and techniques. It is also critical knowledge for when no Daggerverse module exists for your requirements and you need to start from scratch.
+1. Using a Daggerverse module: At a later stage, you will refactor the same CI pipeline using a module from the Daggerverse. This alternative approach introduces you to the Daggerverse, a key component of the Dagger ecosystem. It also demonstrates the speed and efficiency benefits of reusing existing Dagger modules when constructing your CI pipeline.
 
-Clone the application's source code repository into your local development environment and set it as the current working directory:
+The example application is a skeleton Vue framework application written in TypeScript and modified with a "Hello from Dagger!" welcome page. Inspect its [source code repository](https://github.com/dagger/hello-dagger), then clone it into your local development environment and set it as the current working directory:
 
 ```shell
 # FIXME: this will eventually be the hello-dagger repository

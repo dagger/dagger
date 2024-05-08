@@ -1,0 +1,121 @@
+---
+slug: /quickstart/refactor
+hide_table_of_contents: true
+title: "Refactor the pipeline"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Refactor the pipeline
+
+With your knowledge of the Dagger Functions available in the Node module, let's refactor the pipeline to use this module.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update the generated `dagger/main.go` file with the following code:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"math/rand"
+)
+
+type HelloDagger struct{}
+
+// Tests, builds, packages and publishes the application
+func (m *HelloDagger) Ci(ctx context.Context, source *Directory) (string, error) {
+
+	// run tests
+	_, err := m.Test(ctx, source)
+	if err != nil {
+		return "", err
+	}
+
+	// obtain the build output directory
+	build := m.Build(source)
+
+	// create and publish a container with the build output
+	address, err := m.Package(build).
+		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
+	if err != nil {
+		return "", err
+	}
+
+	return address, nil
+}
+
+// Returns a container with the production build
+func (m *HelloDagger) Package(build *Directory) *Container {
+	return dag.Container().From("nginx:1.25-alpine").
+		WithDirectory("/usr/share/nginx/html", build).
+		WithExposedPort(80)
+}
+
+// Returns the result of running unit tests
+func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Run([]string{"test:unit", "run"}).
+		Stdout(ctx)
+}
+
+// Returns a directory with the production build
+func (m *HelloDagger) Build(source *Directory) *Directory {
+	return dag.Node(NodeOpts{Version: "21"}).
+		WithNpm().
+		WithSource(source).
+		Install(nil).
+		Commands().
+		Run([]string{"build"}).
+		Directory("./dist")
+}
+```
+
+This code listing revises the `Test()` and `Build()` Dagger Functions from earlier, replacing calls to the core Dagger API with calls to Dagger Functions from the Node module.
+
+- It calls the Node module's constructor function via the `dag` client. This function returns a `node` container image with the given Node.js version. This container image is represented as a `Node` object.
+- It calls the `Node.WithNpm()` function, which returns a revised `node` container after adding the `npm` package manager and a cache volume for `npm`.
+- It calls the `Node.WithSource()` function, which returns a revised `node` container with the directory passed to the Dagger Function via the `source` argument mounted in the container filesystem. The `Node.WithSource()` function also creates a cache volume for application dependencies.
+- It calls the `Node.Install()` function, which runs `npm install` in the container and returns a revised `node` container with the application's dependencies installed.
+- For the application's tests:
+  - It calls the `Node.Commands().Run()` function with an array of arguments, which returns a revised `node` container configured to execute the `npm run test:unit run` command in the container image.
+  - It uses the `Container().Stdout()` method to return the output of the last executed command - the test results.
+- For the application build:
+  - It calls the `Node.Commands().Build()` function, which returns a revised `node` container configured to execute the `npm run build` command in the container image.
+  - It uses the `Container().Directory()` method to return the build output directory.
+</TabItem>
+
+<TabItem value="Python">
+FIXME
+</TabItem>
+
+<TabItem value="TypeScript">
+FIXME
+</TabItem>
+
+</Tabs>
+
+Let's backtrace a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts) to see what's happening there.
+
+- The first thing to notice is that the Node module is written in TypeScript. However, its functions are being called from your primary Dagger module, which could be written in Go, Python or TypeScript. Dagger takes care of the translation via its language-agnostic GraphQL layer.
+- The [Node module's constructor](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L22) uses the `container().from()` method of the Dagger API to initialize a new container from a `node` base image, using the version number passed to it. This method returns a `Container` type representing an OCI-compatible container image.
+- The [Node module's `withNpm()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L73) uses the `container().withEntrypoint()` method of the Dagger API to set the container entrypoint to the `npm` CLI and initalizes a cache volume for the `npm` cache using the `container().withMountedCache()` method.
+- The [Node module's `withSource()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L34) uses the `container().withDirectory()`, `container().withWorkdir()` and `container().withMountedCache()` methods of the Dagger API to mount the source code directory in the container, set the working directory to that mount point, and create a cache volume for dependencies.
+- The [Node module's `install()` function](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts#L109) uses the `container().withExec()` method to define the command to download dependencies in the container (`npm install`).
+- The [Node module's `commands().run()`](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/commands.ts#L13) function accepts an array of command-line arguments and readies them for execution in the container, also using the `container().withExec()` method.
+
+:::tip LANGUAGE-AGNOSTIC TOOLING
+Dagger Functions can call other functions, across languages. So, even though the Node module in this quickstart tutorial is written in TypeScript, you can transparently call its functions from another Dagger module written in Go, Python or any other supported language. This means that you no longer need to care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
+
+Dagger is able to do this because it uses GraphQL as its low-level language-agnostic API query language.  Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
+:::

@@ -29,32 +29,32 @@ type HelloDagger struct{}
 
 // Returns a directory with the production build
 func (m *HelloDagger) Build(source *Directory) *Directory {
-	return dag.Node(NodeOpts{Version: "21"}).
-		WithNpm().
-		WithSource(source).
-		Install(nil).
-		Commands().
-		Build().
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"}).
 		Directory("./dist")
 }
 
 // Returns the result of running unit tests
 func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
-	return dag.Node(NodeOpts{Version: "21"}).
-		WithNpm().
-		WithSource(source).
-		Install(nil).
-		Commands().
-		Run([]string{"test:unit", "run"}).
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 ```
 
 This Dagger Function does many of the same things as the previous one, but with these modifications:
 
-- Instead of calling the `Node.Commands().Run()` function, it calls the `Node.Commands().Build()` function. This function returns a revised `Node` container object after setting the `npm run build` command to run in the container image.
+- It modifies the command passed to the `Container().WithExec()` method to run in the container, changing it to `npm run build`.
   - The `npm run build` command builds the application and places the build in a `dist/` directory in the container filesystem.
-- It uses the `Container.Directory()` method to return the directory to the function caller as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
+- It uses the `Container().Directory()` method to return the directory as Dagger's special `Directory` type. This is called a "just-in-time" directory - a transient artifact produced as the result of a Dagger Function.
 
 </TabItem>
 <TabItem value="Python">
@@ -81,15 +81,9 @@ Directory evaluated. Use "dagger call build --help" to see available sub-command
 
 This means that the build succeeded, and a directory was returned as a `Directory` type.
 
-At this point, the Dagger Function has produced a directory with a production build of the application. However, since Dagger Functions execute within containers spawned by the Dagger Engine, the returned directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
+At this point, the Dagger Function has produced a directory with a production build of the application. However, since Dagger Functions execute within containers spawned by the Dagger Engine, the build directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
 
-Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When calling a Dagger Function that returns one of these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger.
-
-As an example, when a Dagger Function returns a directory (like in the previous example), the caller typically continues the chain by calling a function exposed by the `Directory` type to perform further processing on it: export it to the local filesystem, modify it, mount it into a container, etc.
-
-All just-in-time artifacts, such as containers, directories and files, have an `export` function, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the `--path` argument.
-
-With this knowledge of just-in-time artifacts and function chaining, the next step should be clear:  transfer the directory returned by the Dagger Function from the container to the host, by chaining an `export` function call to it. Use the following command:
+Just-in-time filesystem artifacts like `Directory` and `File` include a method to export them to the host filesystem. To see this in action, transfer the directory returned by the Dagger Function from the container to the host, by revising the previous `dagger call` command and chaining an `export` function call to it:
 
 ```shell
 dagger call \
@@ -97,13 +91,48 @@ dagger call \
   export --path=./build
 ```
 
-This command exports the directory returned by the `build` Dagger Function to a custom path (`./build`) on the host. Inspect this directory and you should see the production build of the application:
+This command exports the directory returned by the `build` Dagger Function to a custom path (`./build`) on the host. The destination path on the host is passed to the function using the `--path` argument Inspect this directory and you should see the production build of the application:
 
 ```
-$ ls ./build/
+$ ls -R ./build/
+./build/:
 assets  favicon.ico  index.html
+
+./build/assets:
+AboutView-C6Dx7pxG.css  AboutView-CEwcYZ3g.js  index-CfPjtpcd.js  index-D6pr4OYR.css
 ```
 
-:::tip FUNCTION SANDBOXING
-Dagger Functions execute within containers spawned by the Dagger Engine and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching. [Learn more](../manuals/user/host/539261-host.mdx).
+:::tip FUNCTION CHAINING
+Function chaining works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using the Dagger CLI. The following are equivalent:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go
+// Exports a directory with the production build to the host
+func (m *HelloDagger) BuildWithExport(source *Directory) *Directory {
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"}).
+		Directory("./dist").
+    Export("./build")
+}
+```
+</TabItem>
+<TabItem value="Python">
+
+</TabItem>
+<TabItem value="TypeScript">
+
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call \
+  build --source=. \
+  export --path=./build
+```
+</TabItem>
+</Tabs>
 :::

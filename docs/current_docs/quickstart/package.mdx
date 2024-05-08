@@ -13,12 +13,10 @@ import TabItem from "@theme/TabItem";
 
 At this point, you've written Dagger Functions to test, build and deliver the application to your local host. But why not also package the application and publish a containerized image to a registry?
 
-Unfortunately, the Node module doesn't include any ready-to-use functionality to containerize the application, so you'll have to program this operation from scratch.
-
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Update the generated `dagger/main.go` file and create a new Dagger Function to copy the built application into an NGINX web server container image.
+Update the generated `dagger/main.go` file and create a new Dagger Function to copy the build output directory into an NGINX web server container image.
 
 ```go
 package main
@@ -30,40 +28,41 @@ import (
 type HelloDagger struct{}
 
 // Returns a container with the production build
-func (m *HelloDagger) Package(source *Directory) *Container {
+func (m *HelloDagger) Package(build *Directory) *Container {
 	return dag.Container().From("nginx:1.25-alpine").
-		WithDirectory("/usr/share/nginx/html", m.Build(source)).
+		WithDirectory("/usr/share/nginx/html", build).
 		WithExposedPort(80)
 }
 
 // Returns a directory with the production build
 func (m *HelloDagger) Build(source *Directory) *Directory {
-	return dag.Node(NodeOpts{Version: "21"}).
-		WithNpm().
-		WithSource(source).
-		Install(nil).
-		Commands().
-		Build().
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"}).
 		Directory("./dist")
 }
 
 // Returns the result of running unit tests
 func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
-	return dag.Node(NodeOpts{Version: "21"}).
-		WithNpm().
-		WithSource(source).
-		Install(nil).
-		Commands().
-		Run([]string{"test:unit", "run"}).
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test:unit", "run"}).
 		Stdout(ctx)
 }
 ```
 
-The `Package()` Dagger Function performs the following operations:
+This Dagger Function performs the following operations:
 
-- It calls the core `Container.From()` SDK method to initialize a new container from a base image - here, the `nginx:1.25-alpine` image. The `From()` method returns a new `Container` object with the result.
-- It uses the `Container.WithDirectory()` SDK method to write the `Directory` returned by the `Build()` function to the `/usr/share/nginx/html` path in the container and return a revised `Container`.
-- It uses the `Container.WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image - in this case, the `nginx:1.25-alpine` image. The `From()` method returns a new `Container` object representing the container image.
+- It uses the `Container().WithDirectory()` method to write the build output directory to the `/usr/share/nginx/html` path in the container and return a revised `Container`. The location of the build output directory is obtained from the `build` argument passed to the Dagger Function.
+- It uses the `Container().WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image) and return a revised `Container`.
+
 </TabItem>
 <TabItem value="Python">
 FIXME
@@ -74,11 +73,11 @@ FIXME
 </TabItem>
 </Tabs>
 
-Call the Dagger Function:
+Call the Dagger Function, passing it the location of the build output directory exported in the previous step:
 
 ```shell
 dagger call package \
-  --source=.
+  --build=./build
 ```
 
 You should see the application being built and the build output added to a container image. Once complete, you should see the following output:
@@ -90,10 +89,6 @@ Container evaluated. Use "dagger call package --help" to see available sub-comma
 This means that the build succeeded, and a `Container` type representing the built container image was returned. And, like `Directory`, `Container` is a Dagger core type which comes with useful functions of its own.
 
 One of the most interesting `Container` functions is `terminal`, which can be used to open an interactive terminal session with the container. To see this in action, revise the previous command and chain an additional function call to `terminal` on the returned `Container`:
-
-:::tip INTERACTIVE CONTAINER DEBUGGING
-The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
-:::
 
 ```shell
 dagger call \
@@ -107,7 +102,7 @@ This revised command builds the container image and then drops you into an inter
 tree /usr/share/nginx
 ```
 
-You should see output similar to the following:
+You should see a file listing similar to the following, which should match the contents of the build directory exported in the previous step:
 
 ```
 /usr/share/nginx
@@ -115,14 +110,18 @@ You should see output similar to the following:
     ├── 50x.html
     ├── assets
     │   ├── AboutView-C6Dx7pxG.css
-    │   ├── AboutView-DvhYBoTV.js
-    │   ├── index-C4Dqy5pm.js
+    │   ├── AboutView-CEwcYZ3g.js
+    │   ├── index-CfPjtpcd.js
     │   └── index-D6pr4OYR.css
     ├── favicon.ico
     └── index.html
 
 2 directories, 7 files
 ```
+
+:::tip INTERACTIVE CONTAINER DEBUGGING
+The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
+:::
 
 You can also execute a command in the container. For example, you can send an HTTP request for the application's index page to the running NGINX Web server with `curl`:
 
@@ -159,7 +158,7 @@ exit
 While most terminal programs such as `htop` or `vim` work with `dagger call ... terminal`, you may experience visual bugs with some programs due to terminal emulator incompatibilities.
 :::
 
-The `Container` type also has a `publish` function, which publishes the container to a registry. To see this in action, go back to the original command and chain an additional function call to `publish` on the returned `Container`, as shown below:
+The `Container` type also has a `publish` function, which publishes the container to a registry. To see this in action, go back to the original command and chain an additional function call on the returned `Container`, as shown below:
 
 ```shell
 dagger call \
@@ -167,7 +166,7 @@ dagger call \
   publish --address ttl.sh/hello-dagger-$RANDOM
 ```
 
-To prevent name collisions, the container image name is suffixed with a random number. You should the container image being built and published, with the final result being an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
+To prevent name collisions, this command suffixes the container image name with a random number. You should the container image being built and published, with the final result being an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
 ```
 ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
@@ -183,6 +182,6 @@ Browse to port 8080 of the Docker host and confirm that you see the application 
 
 FIXME: add image
 
-:::tip CONTAINER-FIRST PIPELINES
+:::tip LANGUAGE-AGNOSTIC TOOLING
 It's important to realize that even though you're testing, building and packaging a Node.js application in this quickstart tutorial, you didn't need Node.js, `npm` or any other dependencies installed on the Dagger host. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
 :::

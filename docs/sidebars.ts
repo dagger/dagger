@@ -24,12 +24,13 @@ module.exports = {
         "quickstart/cli",
         "quickstart/setup",
         "quickstart/init",
-        "quickstart/install",
-        "quickstart/functions",
         "quickstart/test",
         "quickstart/build",
         "quickstart/package",
         "quickstart/ci",
+        "quickstart/caching",
+        "quickstart/install",
+        "quickstart/refactor",
         "quickstart/conclusion"
       ]
     },

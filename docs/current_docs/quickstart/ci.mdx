@@ -1,20 +1,26 @@
 ---
 slug: /quickstart/ci
 hide_table_of_contents: true
-title: "Tie it all together"
+title: "Complete the pipeline"
 ---
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Tie it all together
+## Complete the pipeline
 
 So far, you've been calling individual Dagger Functions using the Dagger CLI. But what if you want to combine multiple Dagger Function calls?
 
-One option is to stitch together calls using the CLI and a shell script or a Makefile. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
+There are various reasons you might want to do this. A common example is that when developing locally, it's quicker and easier to trigger your test-build-package pipeline using a single command (`dagger call ci ...`) instead of multiple commands (`dagger call test ... && dagger call build ... && dagger call package ...`).
 
-A better approach is to program a "master" Dagger Function, which can then orchestrate other Dagger Functions to achieve the required results. Using a programming language to stitch together Dagger Functions produces more maintainable code, more consistent results, and closer adherence to coding standards and best practices.
+One option to do this is to stitch together `dagger call` commands using the CLI and a shell script or a Makefile. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
+
+A better approach is to create a "master" Dagger Function, which can then orchestrate other Dagger Functions as required. Using a programming language to stitch together Dagger Functions in this way has multiple benefits:
+- It improves maintainability, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
+- It removes environment-related variance which can destabilize shell scripts in unexpected ways and makes the pipeline more relaible.
+- It promotes closer adherence to coding standards and best practices.
+- It improves the development experience, because it opens up access to the programming language's existing ecosystem and tooling.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -22,14 +28,75 @@ A better approach is to program a "master" Dagger Function, which can then orche
 Update the generated `dagger/main.go` file and create a new Dagger Function which internally uses the three Dagger Functions created in previous sections:
 
 ```go
-FIXME
+package main
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"math/rand"
+)
+
+type HelloDagger struct{}
+
+// Tests, builds, packages and publishes the application
+func (m *HelloDagger) Ci(ctx context.Context, source *Directory) (string, error) {
+
+	// run tests
+	_, err := m.Test(ctx, source)
+	if err != nil {
+		return "", err
+	}
+
+	// obtain the build output directory
+	build := m.Build(source)
+
+	// create and publish a container with the build output
+	address, err := m.Package(build).
+		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
+	if err != nil {
+		return "", err
+	}
+
+	return address, nil
+}
+
+// Returns a container with the production build
+func (m *HelloDagger) Package(build *Directory) *Container {
+	return dag.Container().From("nginx:1.25-alpine").
+		WithDirectory("/usr/share/nginx/html", build).
+		WithExposedPort(80)
+}
+
+// Returns a directory with the production build
+func (m *HelloDagger) Build(source *Directory) *Directory {
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "build"}).
+		Directory("./dist")
+}
+
+// Returns the result of running unit tests
+func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
+	return dag.Container().
+		From("node:21-slim").
+		WithDirectory("/src", source.WithoutDirectory("dagger")).
+		WithWorkdir("/src").
+		WithExec([]string{"npm", "install"}).
+		WithExec([]string{"npm", "run", "test:unit", "run"}).
+		Stdout(ctx)
+}
 ```
 
-This Dagger Function expects to receive the source code directory and image registry credentials as arguments. It performs the following operations:
+This Dagger Function expects a `Directory` as argument. It performs the following operations:
 
-- It calls the `Test()` Dagger Function to run the application's tests.
-- It calls the `Package()` Dagger Function to build a container image of the application.
-- It calls the `Container.Publish()` function to publish the container image to the specified registry return the image identifier.
+- It calls the `Test()` Dagger Function to run the application's test anD return` the results.
+- It calls the `Build()` Dagger Function to build the application and return the build output directory.
+- It calls the `Package()` Dagger Function to build and return a container image of the application.
+- It calls the `Container().Publish()` method to publish the container image to the registry and return the image identifier.
 </TabItem>
 
 <TabItem value="Python">
@@ -41,32 +108,11 @@ FIXME
 </TabItem>
 </Tabs>
 
-Call the Dagger Function to run the pipeline and publish the containerized application image to the [ttl.sh container registry](https://ttl.sh):
+Call the Dagger Function to run the pipeline and publish the containerized application to the [ttl.sh container registry](https://ttl.sh):
 
 ```shell
 dagger call ci \
-  --source=. \
-  --registry-address=ttl.sh \
-  --registry-username="" \
-  --registry-password=""
+  --source=.
 ```
 
-Since the registry details are Dagger Function arguments, you can just as easily publish to a different container registry. Here is an example of calling the same Dagger Function to run the pipeline and publish the application image to Docker Hub. Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with Docker Hub credentials.
-
-```shell
-export REGISTRY_PASSWORD=DOCKER-HUB-PASSWORD
-dagger call publish \
-  --source=. \
-  --registry-address=docker.io \
-  --registry-username=DOCKER-HUB-USERNAME \
-  --registry-password=env:REGISTRY_PASSWORD
-```
-
-You should see the application being tested and, if the tests are successful, you should also see the container image being built and published. The final result will be an image reference on the [ttl.sh container registry](https://ttl.sh), as before.
-
-
-FIXME: Scratch text, remove later
-Why do this? By expressing your pipeline as code, you benefit from:
-- Easier maintenance, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
-- Higher reliability, because performing pipeline operations in containers removes environment-related variance which can destabilize shell scripts in unexpected ways.
-- An improved development experience, because using a programming language opens up access to that language's entire ecosystem, enabling the use of better tooling and adherence to coding standards and best practices.
+You should see the application being tested, built, packaged and published. The final result will be an image reference on the [ttl.sh container registry](https://ttl.sh), as in the previous step.
