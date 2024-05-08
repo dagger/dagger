@@ -1,0 +1,106 @@
+---
+slug: /quickstart/install
+hide_table_of_contents: true
+title: "Install and explore a Daggerverse module"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Install and explore a Daggerverse module
+
+At this point, you have successfully built a CI pipeline for an application using the Dagger API. This is important knowledge to have, so that you understand the basics of using Dagger and can begin creating CI pipelines for your own applications.
+
+That said, Dagger also lets you use Dagger Functions developed by others. This can save you significant time and effort, because it allows you to reuse functionality developed by others without needing to write any code yourself. You can search for useful Dagger Functions in the [Daggerverse](https://daggerverse.dev), Dagger's free and publicly-available index of Dagger modules.
+
+To understand how this works in practice, let's refactor the CI pipeline you just built by using a third-party Dagger module. A good candidate here is the [Node module](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node) from the Daggerverse. This module contains tested, ready-to-use Dagger Functions for building, linting and testing Node.js applications.
+
+To install the Node module as a dependency, copy and run the `dagger install` command shown on its [Daggerverse page](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node):
+
+```shell
+dagger install github.com/dagger/dagger/sdk/typescript/dev/node@9e59bae142f64975b7c9ad851e6bd4901d43513a
+```
+
+Once the command completes, look at the `dagger.json` file again. You should see the newly-added dependency in it, similar to that shown below:
+
+```json
+{
+  "name": "hello-dagger",
+  ...
+  "dependencies": [
+    {
+      "name": "node",
+      "source": "github.com/dagger/dagger/sdk/typescript/dev/node@9e59bae142f64975b7c9ad851e6bd4901d43513a"
+    }
+  ]
+}
+```
+
+The exact Git commit for the module version is recorded in `dagger.json`. Dagger enforces version pinning, which guarantees that the module version you install is the one you'll be using.
+
+Once you've installed the Node module, start exploring it to see what you can do with it. There are various ways to do this:
+
+- Read the [module's auto-generated documentation](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node@9e59bae142f64975b7c9ad851e6bd4901d43513a) in the Daggerverse.
+- Inspect the [module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts).
+- Use the Dagger CLI to inspect the module.
+
+Let's use the `dagger functions` command to inspect the Dagger Functions available in the Node module:
+
+```shell
+dagger -m node functions
+```
+
+You should see the following output:
+
+```
+Name          Description
+commands      Execute commands in the container.
+container     -
+install       Downloads dependencies in the container.
+version       -
+with-npm      Add npm as package manager in the container.
+with-pnpm     Add pnpm as package manager in the container.
+with-source   Add source to the module container.
+with-yarn     Add yarn as package manager in the container.
+```
+
+From the output, you can see that this module includes Dagger Functions to add source code to a container (`with-source`), install dependencies (`install`) and execute commands (`commands`) for a Node.js application.
+
+Take a closer look at the `commands` Dagger Function in the Node module:
+
+```shell
+dagger -m node call commands --help
+```
+
+You should see the following output (truncated for brevity):
+
+```
+Execute commands in the container.
+
+Usage:
+  dagger call commands [flags]
+  dagger call commands [flags] [command]
+
+Function Commands:
+  build
+  lint
+  run
+  test
+
+Global Flags:
+...
+```
+
+:::tip THE DAGGERVERSE
+Dagger's superpower is its community. All around the world, Daggernauts are encoding their expertise into Dagger Functions, and sharing them for anyone to reuse. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them. Using the Daggerverse, you can easily discover great modules being developed by the community, learn how they work, and start using them. Since modules are just source code, it's easy to contribute to them, too!
+
+Using the Daggerverse is optional, and does not change how you use Dagger. If you find a module you like, simply copy its URL, and use it the usual way. Here are a few modules to explore:
+
+- [Scan a container image for vulnerabilities](https://daggerverse.dev/mod/github.com/jpadams/daggerverse/trivy)
+- [Stitch videos together](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/videostitch)
+- [Build a Go project](https://daggerverse.dev/mod/github.com/kpenfound/dagger-modules/golang)
+- [Generate GIFs of interactive terminal sessions](https://daggerverse.dev/mod/github.com/shykes/daggerverse/termcast)
+- [Integrate with Terraform](https://daggerverse.dev/mod/github.com/Excoriate/daggerverse/terraform)
+- [Play a game of yamlinvaders](https://daggerverse.dev/mod/github.com/sipsma/daggerverse/yamlinvaders)
+:::

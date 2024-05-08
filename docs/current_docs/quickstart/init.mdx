@@ -1,0 +1,82 @@
+---
+slug: /quickstart/init
+hide_table_of_contents: true
+title: "Initialize a Dagger module"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Initialize a Dagger module
+
+Dagger SDKs are available for Go, Python and TypeScript. Bootstrap a new Dagger module in your preferred programming language by running `dagger init` in the application's root directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```shell
+dagger init --sdk=go
+```
+
+This will generate a `dagger.json` module metadata file, an initial `dagger/main.go` source code template, as well as a `dagger/dagger.gen.go` file and `dagger/internal/` directory.
+
+Examine the `dagger.json` file, which contains auto-generated metadata for your new module:
+
+```json
+{
+  "name": "hello-dagger",
+  "sdk": "go",
+  "source": "dagger",
+  "engineVersion": "v0.11.1"
+}
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```shell
+dagger init --sdk=python
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
+
+Examine the `dagger.json` file, which contains auto-generated metadata for your new module:
+
+```json
+{
+  "name": "hello-dagger",
+  "sdk": "python",
+  "source": "dagger",
+  "engineVersion": "v0.11.1"
+}
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```shell
+dagger init --sdk=typescript
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
+
+Examine the `dagger.json` file, which contains auto-generated metadata for your new module:
+
+```json
+{
+  "name": "hello-dagger",
+  "sdk": "typescript",
+  "source": "dagger",
+  "engineVersion": "v0.11.1"
+}
+```
+
+</TabItem>
+</Tabs>
+
+Next, examine the source code template. This auto-generated template serves as a reference to basic module structure. It includes two pre-created functions, which you can modify, delete, or add to. They demonstrate usage of arguments and return types using simple `echo` and `grep` commands.
+
+:::tip MODULE NAMES
+By default, the module name is derived from the name of the directory in which it is initialized. To use a different name, add the `--name` argument to the `dagger init` call, such as `dagger init --name=my-module`.
+:::

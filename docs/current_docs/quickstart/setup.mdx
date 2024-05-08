@@ -1,0 +1,31 @@
+---
+slug: /quickstart/setup
+hide_table_of_contents: true
+title: "Set up the example application"
+---
+
+# Quickstart
+
+## Set up the example application
+
+The best way to understand how Dagger works is by creating a composable CI pipeline in code for an application - a process we call "Daggerizing".
+
+Daggerizing the CI pipeline for an existing application involves the following steps:
+
+1. Choose a Dagger SDK and bootstrap a new Dagger module for your pipeline with `dagger init`.
+2. Search for useful third-party Dagger modules from the Daggerverse and install them as dependencies with `dagger install`.
+3. Compose your pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
+4. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
+
+This quickstart walks you through these steps by Daggerizing an example application.
+
+The example application is a skeleton Vue framework application written in TypeScript and modified with a "Hello from Dagger!" welcome page. Inspect its [source code repository](https://github.com/dagger/hello-dagger), then clone it into your local development environment and set it as the current working directory:
+
+```shell
+git clone https://github.com/dagger/hello-dagger
+cd hello-dagger
+```
+
+:::tip DAGGERIZING
+A common question from our Discord is "how much of my pipeline should I Daggerize?". Our advice is to Daggerize as much as you can get away with, within the constraints of your project. In the extreme version of this, you can collapse your entire CI pipeline into a single Dagger Function, which receives a raw source code change event and takes over from there; essentially, your entire CI workflow expressed in code. But typically, you would begin by only Daggerizing simple individual tasks - one Dagger Function per task - and manually configure your CI to call each Dagger Function. This allows for very incremental adoption of Dagger in an existing stack that is hard to change.
+:::

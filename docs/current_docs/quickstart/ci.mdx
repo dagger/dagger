@@ -1,0 +1,79 @@
+---
+slug: /quickstart/ci
+hide_table_of_contents: true
+title: "Complete the pipeline"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Complete the pipeline
+
+So far, you've been calling individual Dagger Functions using the Dagger CLI. But what if you want to combine multiple Dagger Function calls?
+
+There are various reasons you might want to do this. A common example is that when developing locally, it's quicker and easier to trigger your test-build-package pipeline using a single command (`dagger call ci ...`) instead of multiple commands (`dagger call test ... && dagger call build ... && dagger call package ...`).
+
+One option to do this is to stitch together `dagger call` commands using the CLI and a shell script or a Makefile. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
+
+A better approach is to create a "master" Dagger Function, which can then orchestrate other Dagger Functions as required. Using a programming language to stitch together Dagger Functions in this way has multiple benefits:
+- It improves maintainability, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
+- It removes environment-related variance which can destabilize shell scripts in unexpected ways and makes the pipeline more relaible.
+- It promotes closer adherence to coding standards and best practices.
+- It improves the development experience, because it opens up access to the programming language's existing ecosystem and tooling.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update the `dagger/main.go` file and create a new Dagger Function which internally uses the three Dagger Functions created in previous sections:
+
+```go file=./snippets/ci/go/main.go
+```
+
+This Dagger Function expects a `Directory` as argument. It performs the following operations:
+
+- It calls the `Test()` Dagger Function to run the application's tests and return the results.
+- It calls the `Build()` Dagger Function to build the application and return the build output directory.
+- It calls the `Package()` Dagger Function to build and return a container image of the application.
+- It calls the `Container().Publish()` method to publish the container image to the registry and return the image identifier.
+</TabItem>
+<TabItem value="Python">
+
+Update the `dagger/src/main/__init__.py` file and create a new Dagger Function which internally uses the three Dagger Functions created in previous sections:
+
+```python file=./snippets/ci/python/__init__.py
+```
+
+This Dagger Function expects a `Directory` as argument. It performs the following operations:
+
+- It calls the `test()` Dagger Function to run the application's tests and return the results.
+- It calls the `build()` Dagger Function to build the application and return the build output directory.
+- It calls the `package()` Dagger Function to build and return a container image of the application.
+- It calls the `container().publish()` method to publish the container image to the registry and return the image identifier.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+Update the `dagger/src/index.ts` file and create a new Dagger Function which internally uses the three Dagger Functions created in previous sections:
+
+```typescript file=./snippets/ci/typescript/index.ts
+```
+
+This Dagger Function expects a `Directory` as argument. It performs the following operations:
+
+- It calls the `test()` Dagger Function to run the application's tests and return the results.
+- It calls the `build()` Dagger Function to build the application and return the build output directory.
+- It calls the `package()` Dagger Function to build and return a container image of the application.
+- It calls the `container().publish()` method to publish the container image to the registry and return the image identifier.
+
+</TabItem>
+</Tabs>
+
+Call the Dagger Function to run the pipeline and publish the containerized application to the [ttl.sh container registry](https://ttl.sh):
+
+```shell
+dagger call \
+  ci --source=.
+```
+
+You should see the application being tested, built, packaged and published. The final result will be an image reference on the [ttl.sh container registry](https://ttl.sh), as in the previous step.
