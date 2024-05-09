@@ -388,13 +388,13 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 		if err := fc.addArgsForFunction(c, a, obj.Constructor); err != nil {
 			return nil, nil, err
 		}
-		fc.selectFunc(obj.Name, obj.Constructor, c, dag)
+		fc.selectFunc(ctx, obj.Name, obj.Constructor, c, dag)
 	} else {
 		fc.Select(obj.Name)
 	}
 
 	// Add main object's functions as subcommands
-	fc.addSubCommands(c, dag, obj)
+	fc.addSubCommands(ctx, c, dag, obj)
 
 	if fc.showHelp {
 		return c, nil, nil
@@ -437,11 +437,11 @@ func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, err
 	return fc.traverse(cmd)
 }
 
-func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fnProvider functionProvider) {
+func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, fnProvider functionProvider) {
 	if fnProvider != nil {
 		cmd.AddGroup(funcGroup)
 		for _, fn := range fnProvider.GetFunctions() {
-			subCmd := fc.makeSubCmd(dag, fn)
+			subCmd := fc.makeSubCmd(ctx, dag, fn)
 			cmd.AddCommand(subCmd)
 		}
 
@@ -451,7 +451,7 @@ func (fc *FuncCommand) addSubCommands(cmd *cobra.Command, dag *dagger.Client, fn
 	}
 }
 
-func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Command {
+func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:                   cliName(fn.Name),
 		Short:                 strings.SplitN(fn.Description, "\n", 2)[0],
@@ -467,7 +467,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			if fnProvider == nil && fn.ReturnType.AsList != nil {
 				fnProvider = fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 			}
-			fc.addSubCommands(cmd, dag, fnProvider)
+			fc.addSubCommands(ctx, cmd, dag, fnProvider)
 
 			// Show help for first command that has the --help flag.
 			help, _ := cmd.Flags().GetBool("help")
@@ -476,7 +476,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 			}
 
 			// Need to make the query selection before chaining off.
-			return fc.selectFunc(fn.Name, fn, cmd, dag)
+			return fc.selectFunc(ctx, fn.Name, fn, cmd, dag)
 		},
 
 		// This is going to be executed in the "execution" vertex, when
@@ -512,7 +512,6 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 				}
 			}
 
-			ctx := cmd.Context()
 			query, _ := fc.q.Build(ctx)
 
 			slog.Debug("executing query", "query", query)
@@ -521,7 +520,7 @@ func (fc *FuncCommand) makeSubCmd(dag *dagger.Client, fn *modFunction) *cobra.Co
 
 			q := fc.q.Bind(&response).Client(dag.GraphQLClient())
 
-			if err := q.Execute(ctx); err != nil {
+			if err := q.Execute(cmd.Context()); err != nil {
 				return fmt.Errorf("response from query: %w", err)
 			}
 
@@ -600,7 +599,7 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 
 // selectFunc adds the function selection to the query.
 // Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(selectName string, fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
+func (fc *FuncCommand) selectFunc(ctx context.Context, selectName string, fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
 	fc.Select(selectName)
 
 	for _, arg := range fn.Args {
@@ -620,7 +619,7 @@ func (fc *FuncCommand) selectFunc(selectName string, fn *modFunction, cmd *cobra
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj, err := v.Get(cmd.Context(), dag, fc.modSource)
+			obj, err := v.Get(ctx, dag, fc.modSource)
 			if err != nil {
 				return fmt.Errorf("failed to get value for argument %q: %w", arg.Name, err)
 			}
