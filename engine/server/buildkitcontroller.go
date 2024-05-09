@@ -262,12 +262,6 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	if err != nil {
 		return fmt.Errorf("failed to register client: %w", err)
 	}
-	defer func() {
-		err := srv.UnregisterClient(opts.ClientID)
-		if err != nil {
-			slog.Error("failed to unregister client", "err", err)
-		}
-	}()
 
 	eg.Go(func() error {
 		bklog.G(ctx).Trace("waiting for server")

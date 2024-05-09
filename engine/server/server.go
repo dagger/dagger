@@ -407,13 +407,6 @@ func (s *DaggerServer) VerifyClient(clientID, secretToken string) error {
 	return nil
 }
 
-func (s *DaggerServer) UnregisterClient(clientID string) error {
-	s.clientIDMu.Lock()
-	defer s.clientIDMu.Unlock()
-	delete(s.clientIDToSecretToken, clientID)
-	return nil
-}
-
 func (s *DaggerServer) ClientCallContext(clientID string) (*core.ClientCallContext, bool) {
 	s.clientCallMu.RLock()
 	defer s.clientCallMu.RUnlock()

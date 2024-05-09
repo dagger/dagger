@@ -5910,6 +5910,52 @@ func (m *Test) Fn(ctx context.Context) *Container {
 	})
 }
 
+// regression test for https://github.com/dagger/dagger/issues/7334
+func TestModuleCallSameModuleInParallel(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep").
+		With(daggerExec("init", "--name=dep", "--sdk=go")).
+		With(sdkSource("go", `package main
+
+type Dep struct {}
+
+func (m *Dep) DepFn(s *Secret) error {
+	return nil
+}
+`)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(sdkSource("go", `package main
+
+import (
+	"context"
+	"golang.org/x/sync/errgroup"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context) error {
+	var eg errgroup.Group
+	for i := 0; i < 10; i++ {
+		eg.Go(func() error {
+			_, err := dag.Dep().DepFn(ctx, dag.SetSecret("foo", "bar"))
+			return err
+		})
+	}
+	return eg.Wait()
+}
+`)).
+		With(daggerExec("install", "./dep")).
+		With(daggerCall("fn"))
+
+	_, err := ctr.Sync(ctx)
+	require.NoError(t, err)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{

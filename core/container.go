@@ -1035,6 +1035,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	// this allows executed containers to communicate back to this API
+	var clientID string
 	if opts.ExperimentalPrivilegedNesting {
 		callerOpts := opts.NestedExecFunctionCall
 		if callerOpts == nil {
@@ -1043,15 +1044,25 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				Cache: true,
 			}
 		}
-		clientID, err := container.Query.RegisterCaller(ctx, callerOpts)
+		clientID, err = container.Query.RegisterCaller(ctx, callerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}
-		runOpts = append(runOpts,
-			llb.AddEnv("_DAGGER_NESTED_CLIENT_ID", clientID),
-			// include the engine version so that these execs get invalidated if the engine/API change
-			llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version),
-		)
+
+		// include the engine version so that these execs get invalidated if the engine/API change
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version))
+
+		// include a digest of the current call so that we scope of the cache of the ExecOp to this call
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_CALL_DIGEST", string(dagql.CurrentID(ctx).Digest())))
+
+		if !callerOpts.Cache {
+			// include the ServerID here so that we bust cache once-per-session
+			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+			if err != nil {
+				return nil, err
+			}
+			runOpts = append(runOpts, llb.AddEnv("_DAGGER_SERVER_ID", clientMetadata.ServerID))
+		}
 	}
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
@@ -1221,6 +1232,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	execMD := buildkit.ExecutionMetadata{
 		SystemEnvNames: container.SystemEnvNames,
+		ClientID:       clientID,
 	}
 	execMDOpt, err := execMD.AsConstraintsOpt()
 	if err != nil {
