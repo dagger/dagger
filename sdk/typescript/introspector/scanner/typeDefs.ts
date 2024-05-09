@@ -20,7 +20,6 @@ export type ObjectTypeDef = BaseTypeDef & {
  */
 export type ScalarTypeDef = BaseTypeDef & {
   kind: TypeDefKind.ScalarKind
-  typeDef: TypeDef<TypeDefKind>
   name: string
 }
 

@@ -5,19 +5,16 @@
       "name": "Scalar",
       "description": "",
       "methods": {
-        "helloWorld": {
-          "name": "helloWorld",
+        "fromPlatform": {
+          "name": "fromPlatform",
           "description": "",
           "arguments": {
-            "name": {
-              "name": "name",
+            "platform": {
+              "name": "platform",
               "description": "",
               "type": {
                 "kind": "SCALAR_KIND",
-                "name": "Platform",
-                "typeDef": {
-                  "kind": "STRING_KIND"
-                }
+                "name": "Platform"
               },
               "isVariadic": false,
               "isNullable": false,
@@ -26,6 +23,32 @@
           },
           "returnType": {
             "kind": "STRING_KIND"
+          }
+        },
+        "fromPlatforms": {
+          "name": "fromPlatforms",
+          "description": "",
+          "arguments": {
+            "platforms": {
+              "name": "platforms",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "SCALAR_KIND",
+                  "name": "Platform"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "STRING_KIND"
+            }
           }
         }
       },

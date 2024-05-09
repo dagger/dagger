@@ -1,7 +1,6 @@
 import ts from "typescript"
 
 import { TypeDefKind } from "../../api/client.gen.js"
-import { serializeType } from "./serialize.js"
 import { TypeDef } from "./typeDefs.js"
 
 /**
@@ -67,22 +66,35 @@ export function isFunction(method: ts.MethodDeclaration): boolean {
 export function typeToTypedef(
   checker: ts.TypeChecker,
   type: ts.Type,
-  typeName: string = serializeType(checker, type),
 ): TypeDef<TypeDefKind> {
-  // If it's a list, remove the '[]' and recall the function to get
-  // the type of list
-  if (typeName.endsWith("[]")) {
-    return {
-      kind: TypeDefKind.ListKind,
-      typeDef: typeToTypedef(
-        checker,
-        type,
-        typeName.slice(0, typeName.length - 2),
-      ),
+  if (type.symbol?.name === "Promise") {
+    const typeArgs = checker.getTypeArguments(type as ts.TypeReference)
+    if (typeArgs.length > 0) {
+      return typeToTypedef(checker, typeArgs[0])
     }
   }
 
-  switch (typeName) {
+  if (type.symbol?.name === "Array") {
+    const typeArgs = checker.getTypeArguments(type as ts.TypeReference)
+    if (typeArgs.length === 0) {
+      throw new Error("Generic array not supported")
+    }
+    return {
+      kind: TypeDefKind.ListKind,
+      typeDef: typeToTypedef(checker, typeArgs[0]),
+    }
+  }
+
+  if (type.symbol?.name && type.isClassOrInterface()) {
+    return {
+      kind: TypeDefKind.ObjectKind,
+      name: type.symbol.name,
+    }
+  }
+
+  const strType = checker.typeToString(type)
+
+  switch (strType) {
     case "string":
       return { kind: TypeDefKind.StringKind }
     case "number":
@@ -92,19 +104,14 @@ export function typeToTypedef(
     case "void":
       return { kind: TypeDefKind.VoidKind }
     default:
-      // If it's an union, then it's a scalar type
+      // If it's a union, then it's a scalar type
       if (type.isUnionOrIntersection()) {
         return {
           kind: TypeDefKind.ScalarKind,
-          name: typeName,
-          typeDef: typeToTypedef(checker, type.types[0]),
+          name: strType,
         }
       }
 
-      // Otherwise, it's an object
-      return {
-        kind: TypeDefKind.ObjectKind,
-        name: typeName,
-      }
+      throw new Error(`Unsupported type ${strType}`)
   }
 }
