@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2008,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2009,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -150,7 +150,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.3.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.11.4.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -158,9 +158,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.3.md`
+      `.changes/v0.11.4.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.3-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.4-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -289,8 +289,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.3 sh
-# mv ~/.local/bin/dagger{,-0.11.3}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.4 sh
+# mv ~/.local/bin/dagger{,-0.11.4}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 dagger run ./hack/make engine:test
 ```
