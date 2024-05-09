@@ -1,0 +1,6 @@
+kind: Fixed
+body: Avoid unneccessary module cache invalidation from internal plumbing values
+time: 2024-05-09T11:47:45.1739708+01:00
+custom:
+  Author: sipsma
+  PR: "7336"
