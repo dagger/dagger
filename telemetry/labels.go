@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -126,7 +125,7 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 	if ref, ok := os.LookupEnv("GITHUB_REF"); ok {
 		if strings.HasPrefix(ref, "refs/pull/") {
 			ref = strings.Replace(ref, "/merge", "/head", 1)
-			refCommit, err := fetchRef(repo, "origin", ref)
+			refCommit, err := fetchRef(repo, workdir, "origin", ref)
 			if err != nil {
 				slog.Warn("failed to fetch branch", "err", err)
 			} else {
@@ -388,27 +387,39 @@ func (labels Labels) WithAnonymousGitLabels(workdir string) Labels {
 	return labels
 }
 
-func fetchRef(repo *git.Repository, remote string, target string) (*object.Commit, error) {
+func fetchRef(repo *git.Repository, workdir string, remote string, target string) (*object.Commit, error) {
+	target = strings.TrimPrefix(target, "refs/")
+	src := fmt.Sprintf("refs/%s", target)
+	dest := fmt.Sprintf("refs/dagger/%s", target)
+
 	// Fetch from the origin remote
-	stdout := bytes.Buffer{}
-	stderr := bytes.Buffer{}
-	cmd := exec.Command("git", "fetch", "--porcelain", "--depth", "1", remote, target)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	//nolint:gosec
+	cmd := exec.Command("git", "fetch", "--depth", "1", remote, fmt.Sprintf("+%s:%s", src, dest))
+	cmd.Dir = workdir
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("error fetching branch from origin: %w\n%s", err, stderr.String())
+		return nil, fmt.Errorf("error fetching branch from origin: %w\n%s", err, string(out))
 	}
 
-	// format of git-fetch --porcelain (see man 1 git-fetch):
-	//   <flag> <old-object-id> <new-object-id> <local-reference>
-	parts := strings.Fields(stdout.String())
-	targetHash := parts[2]
+	// Get the reference of the fetched branch
+	ref, err := repo.Reference(plumbing.ReferenceName(dest), true)
+	if err != nil {
+		return nil, fmt.Errorf("error getting reference %q: %w", dest, err)
+	}
 
 	// Get the commit object of the fetched branch
-	branchCommit, err := repo.CommitObject(plumbing.NewHash(targetHash))
+	branchCommit, err := repo.CommitObject(ref.Hash())
 	if err != nil {
-		return nil, fmt.Errorf("error getting commit: %w", err)
+		return nil, fmt.Errorf("error getting commit %q: %w", ref.Hash(), err)
+	}
+
+	// Cleanup the temp ref
+	cmd = exec.Command("git", "update-ref", "-d", dest, ref.Hash().String())
+	cmd.Dir = workdir
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		err = fmt.Errorf("error deleting ref %q: %w\n%s", dest, err, out)
+		slog.Warn("failed to cleanup temp ref", "err", err)
 	}
 
 	return branchCommit, nil
