@@ -197,22 +197,16 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg ocispecs.ImageConfig) ocispecs.ImageConfig {
-		// Used by the shim to associate logs to the function call instead of the
-		// exec /runtime process, which we hide.
-		tc := propagation.TraceContext{}
-		carrier := propagation.MapCarrier{}
-		tc.Inject(ctx, carrier)
-		for _, f := range tc.Fields() {
-			name := "DAGGER_FUNCTION_" + strcase.ToScreamingSnake(f)
-			if val, ok := carrier[f]; ok {
-				cfg.Env = append(cfg.Env, name+"="+val)
-			}
+	// Used by the shim to associate logs to the function call instead of the
+	// exec /runtime process, which we hide.
+	tc := propagation.TraceContext{}
+	carrier := propagation.MapCarrier{}
+	tc.Inject(ctx, carrier)
+	for _, f := range tc.Fields() {
+		name := "DAGGER_FUNCTION_" + strcase.ToScreamingSnake(f)
+		if val, ok := carrier[f]; ok {
+			callMeta.OTELEnvs = append(callMeta.OTELEnvs, name+"="+val)
 		}
-		return cfg
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
 	// Setup the Exec for the Function call and evaluate it

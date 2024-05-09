@@ -157,10 +157,10 @@ func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
 	}
 
 	proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_SERVER_ID="+w.serverID)
-
 	if execMD.ClientID != "" {
 		proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_NESTED_CLIENT_ID="+execMD.ClientID)
 	}
+	proc.Meta.Env = append(proc.Meta.Env, execMD.OTELEnvs...)
 
 	origEnvMap := make(map[string]string)
 	for _, env := range proc.Meta.Env {
@@ -223,6 +223,7 @@ func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
 type ExecutionMetadata struct {
 	SystemEnvNames []string
 	ClientID       string
+	OTELEnvs       []string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

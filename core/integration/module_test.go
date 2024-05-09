@@ -5911,6 +5911,7 @@ func (m *Test) Fn(ctx context.Context) *Container {
 }
 
 // regression test for https://github.com/dagger/dagger/issues/7334
+// and https://github.com/dagger/dagger/pull/7336
 func TestModuleCallSameModuleInParallel(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
@@ -5921,10 +5922,14 @@ func TestModuleCallSameModuleInParallel(t *testing.T) {
 		With(daggerExec("init", "--name=dep", "--sdk=go")).
 		With(sdkSource("go", `package main
 
+import (
+	"github.com/moby/buildkit/identity"
+)
+
 type Dep struct {}
 
-func (m *Dep) DepFn(s *Secret) error {
-	return nil
+func (m *Dep) DepFn(s *Secret) string {
+	return identity.NewID()
 }
 `)).
 		WithWorkdir("/work").
@@ -5938,22 +5943,37 @@ import (
 
 type Test struct {}
 
-func (m *Test) Fn(ctx context.Context) error {
+func (m *Test) Fn(ctx context.Context) ([]string, error) {
 	var eg errgroup.Group
+	results := make([]string, 10)
 	for i := 0; i < 10; i++ {
+		i := i
 		eg.Go(func() error {
-			_, err := dag.Dep().DepFn(ctx, dag.SetSecret("foo", "bar"))
-			return err
+			res, err := dag.Dep().DepFn(ctx, dag.SetSecret("foo", "bar"))
+			if err != nil {
+				return err
+			}
+			results[i] = res
+			return nil
 		})
 	}
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 `)).
 		With(daggerExec("install", "./dep")).
 		With(daggerCall("fn"))
 
-	_, err := ctr.Sync(ctx)
+	out, err := ctr.Stdout(ctx)
 	require.NoError(t, err)
+	results := strings.Split(strings.TrimSpace(out), "\n")
+	require.Len(t, results, 10)
+	expectedRes := results[0]
+	for _, res := range results {
+		require.Equal(t, expectedRes, res)
+	}
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
