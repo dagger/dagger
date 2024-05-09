@@ -63,7 +63,7 @@ func (w *Worker) Run(
 		return nil, errors.New("serverID is not set in executor")
 	}
 
-	w.addExtraEnvs(&process)
+	w.updateEnvs(&process)
 
 	if process.Meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
@@ -133,7 +133,24 @@ func (w *Worker) Run(
 	)
 }
 
-func (w *Worker) addExtraEnvs(proc *executor.ProcessInfo) error {
+func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
+	// remove some envs that are used to scope cache but not needed at runtime
+	skipEnvs := map[string]struct{}{
+		"_DAGGER_CALL_DIGEST": {},
+	}
+	filteredEnvs := make([]string, 0, len(proc.Meta.Env))
+	for _, env := range proc.Meta.Env {
+		k, _, ok := strings.Cut(env, "=")
+		if !ok {
+			continue
+		}
+		if _, ok := skipEnvs[k]; ok {
+			continue
+		}
+		filteredEnvs = append(filteredEnvs, env)
+	}
+	proc.Meta.Env = filteredEnvs
+
 	execMD, err := executionMetadataFromVtx(w.vtx)
 	if err != nil {
 		return err
@@ -447,9 +464,7 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		return err
 	}
 
-	if w.serverID == "" {
-		return errors.New("serverID is not set in executor")
-	}
+	w.updateEnvs(&process)
 
 	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
 

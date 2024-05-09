@@ -1052,6 +1052,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version))
 
+		// include a digest of the current call so that we scope of the cache of the ExecOp to this call
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_CALL_DIGEST", string(dagql.CurrentID(ctx).Digest())))
+
 		if !callerOpts.Cache {
 			// include the ServerID here so that we bust cache once-per-session
 			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
