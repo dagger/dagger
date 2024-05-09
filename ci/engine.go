@@ -196,7 +196,9 @@ func (e *Engine) Publish(
 
 	image string,
 	// +optional
-	platform []Platform,
+	// HACK: re-enable when dagger/dagger#7320 is fixed
+	// platform []Platform,
+	platform []string,
 
 	// +optional
 	registry *string,
@@ -206,7 +208,8 @@ func (e *Engine) Publish(
 	registryPassword *Secret,
 ) (string, error) {
 	if len(platform) == 0 {
-		platform = []Platform{Platform(platforms.DefaultString())}
+		// platform = []Platform{Platform(platforms.DefaultString())}
+		platform = []string{platforms.DefaultString()}
 	}
 
 	ref := fmt.Sprintf("%s:%s", image, e.Dagger.Version)
@@ -216,7 +219,8 @@ func (e *Engine) Publish(
 
 	engines := make([]*Container, 0, len(platform))
 	for _, platform := range platform {
-		ctr, err := e.Container(ctx, platform)
+		// ctr, err := e.Container(ctx, platform)
+		ctr, err := e.Container(ctx, Platform(platform))
 		if err != nil {
 			return "", err
 		}
@@ -244,17 +248,21 @@ func (e *Engine) TestPublish(
 	ctx context.Context,
 
 	// +optional
-	platform []Platform,
+	// HACK: re-enable when dagger/dagger#7320 is fixed
+	// platform []Platform,
+	platform []string,
 ) error {
 	if len(platform) == 0 {
-		platform = []Platform{Platform(platforms.DefaultString())}
+		// platform = []Platform{Platform(platforms.DefaultString())}
+		platform = []string{platforms.DefaultString()}
 	}
 
 	var eg errgroup.Group
 	for _, platform := range platform {
 		platform := platform
 		eg.Go(func() error {
-			ctr, err := e.Container(ctx, platform)
+			// ctr, err := e.Container(ctx, platform)
+			ctr, err := e.Container(ctx, Platform(platform))
 			if err != nil {
 				return err
 			}

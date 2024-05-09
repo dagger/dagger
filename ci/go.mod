@@ -2,11 +2,12 @@ module github.com/dagger/dagger/ci
 
 go 1.21.7
 
+require github.com/dagger/dagger v0.11.3
+
 require (
 	github.com/99designs/gqlgen v0.17.44
 	github.com/Khan/genqlient v0.7.0
 	github.com/containerd/containerd v1.7.15
-	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/magefile/mage v1.15.0
 	github.com/moby/buildkit v0.13.0-rc3.0.20240501212635-51d85d712fad
 	github.com/opencontainers/image-spec v1.1.0

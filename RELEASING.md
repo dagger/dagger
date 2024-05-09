@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-April%2025,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2008,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -14,7 +14,7 @@ This describes how to release Dagger:
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
 - [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
-- [🐙 dagger-for-github ⏱ `2mins`](#-dagger-for-github--2mins#)
+- [🐙 dagger-for-github ⏱ `10mins`](#-dagger-for-github--10mins#)
 - [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins#)
 - [❄️ nix ⏱ `2mins`](#-nix--2mins#)
 - [⚙️ CI ⏱ `2mins`](#-ci--2mins)
@@ -150,7 +150,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.2.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.11.3.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -158,9 +158,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.2.md`
+      `.changes/v0.11.3.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.2-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.3-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -274,7 +274,7 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
 go mod tidy
 cd ci
-go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set} -require github.com/dagger/dagger@${GO_SDK_VERSION:?must be set}
+go mod edit -require github.com/dagger/dagger@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
 
@@ -283,14 +283,14 @@ cd ..
 
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 
-# Update .github/workflows/_hack_make.yml dagger-version default to $ENGINE_VERSION
+# Update .github/workflows dagger versions $ENGINE_VERSION
 # Update docs/current_docs files to point to new dagger version
 
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.2 sh
-# mv ~/.local/bin/dagger{,-0.11.2}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.3 sh
+# mv ~/.local/bin/dagger{,-0.11.3}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 dagger run ./hack/make engine:test
 ```
@@ -521,10 +521,35 @@ update once there's a new release of the Dagger Engine.
   the last release, they must be manually updated on Amazon S3 (CloudFront
   should also be manually invalidated). cc @gerhard
 
-## 🐙 dagger-for-github ⏱ `2mins`
+## 🐙 dagger-for-github ⏱ `10mins`
 
-- [ ] Mention in the release thread on Discord that Dagger for GitHub can be
-  updated to the just-released version. cc @jpadams @gerhard
+- [ ] Submit PR with the version bump, e.g.
+  https://github.com/dagger/dagger-for-github/pull/123
+- [ ] Ask @gerhard or @jpadams to review it 
+
+> [!TIP]
+> We should automate the above mentioned steps same as we do with the PR which
+> bumps the Engine version, e.g. https://github.com/dagger/dagger/pull/7318
+
+- [ ] Force update the major version, currently `v5`
+
+```console
+git tag --sign --force v5
+# Update the date in the comment to e.g. 2024-05-08
+git push origin v5 --force
+```
+
+- [ ] Once this PR is merged, tag the new version
+
+```console
+# Find the latest released patch https://github.com/dagger/dagger-for-github/releases 
+git tag --sign <NEXT_PATCH_VERSION>
+# Use the date as the comment, e.g. 2024-05-08
+git push origin <NEXT_PATCH_VERSION> --force
+```
+
+- [ ] Create a new release from the patch tag (auto-fill release notes via the
+  GitHub UI)
 
 ## 🍺 dagger Homebrew ⏱ `2mins`
 
