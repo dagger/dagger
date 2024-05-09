@@ -93,6 +93,61 @@ func TestLoadGitLabels(t *testing.T) {
 	}
 }
 
+func TestLoadGitRefEnvLabels(t *testing.T) {
+	normalRepo := setupRepo(t)
+	run(t, "git", "-C", normalRepo, "commit", "--allow-empty", "-m", "second")
+	run(t, "git", "-C", normalRepo, "commit", "--allow-empty", "-m", "third")
+	repoHead1 := run(t, "git", "-C", normalRepo, "rev-parse", "HEAD~")
+	repoHead2 := run(t, "git", "-C", normalRepo, "rev-parse", "HEAD~~")
+	run(t, "git", "-C", normalRepo, "update-ref", "refs/pull/1/head", repoHead2)
+	run(t, "git", "-C", normalRepo, "update-ref", "refs/pull/1/merge", repoHead1)
+
+	cloneRepo := cloneRepo(t, normalRepo)
+
+	type Example struct {
+		Name   string
+		Repo   string
+		Env    []string
+		Labels telemetry.Labels
+	}
+
+	for _, example := range []Example{
+		{
+			Name: "normal branch state",
+			Repo: cloneRepo,
+			Env: []string{
+				// GITHUB_REF overrides the git ref to point to this PR
+				"GITHUB_REF=refs/pull/1/head",
+			},
+			Labels: telemetry.Labels{
+				"dagger.io/git.ref": repoHead2,
+			},
+		},
+		{
+			Name: "normal branch state",
+			Repo: cloneRepo,
+			Env: []string{
+				// same as above, but still use the /head
+				"GITHUB_REF=refs/pull/1/merge",
+			},
+			Labels: telemetry.Labels{
+				"dagger.io/git.ref": repoHead2,
+			},
+		},
+	} {
+		example := example
+		t.Run(example.Name, func(t *testing.T) {
+			for _, e := range example.Env {
+				k, v, _ := strings.Cut(e, "=")
+				t.Setenv(k, v)
+			}
+
+			labels := telemetry.Labels{}.WithGitLabels(example.Repo)
+			require.Subset(t, labels, example.Labels)
+		})
+	}
+}
+
 func TestLoadGitHubLabels(t *testing.T) {
 	type Example struct {
 		Name   string
@@ -170,7 +225,7 @@ func TestLoadGitHubLabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			labels := telemetry.Labels{}.WithGitHubLabels()
@@ -263,7 +318,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			// Run the function and collect the result
@@ -317,7 +372,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			// Run the function and collect the result
@@ -351,5 +406,11 @@ func setupRepo(t *testing.T) string {
 	run(t, "git", "-C", repo, "remote", "add", "origin", "https://example.com")
 	run(t, "git", "-C", repo, "checkout", "-b", "main")
 	run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "init")
+	return repo
+}
+
+func cloneRepo(t *testing.T, src string) string {
+	repo := t.TempDir()
+	run(t, "git", "clone", "file://"+src, repo)
 	return repo
 }
