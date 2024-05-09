@@ -40,19 +40,19 @@
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific secrets pages to multi-language secrets page
+  # redirect developer manual language-specific secrets pages to multi-language page
   from = "/manuals/developer/:language/:docid/secrets"
   to = "/manuals/developer/secrets"
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific services pages to multi-language services page
+  # redirect developer manual language-specific services pages to multi-language page
   from = "/manuals/developer/:language/:docid/services"
   to = "/manuals/developer/services"
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific dependencies pages to multi-language dependencies page
+  # redirect developer manual language-specific dependencies pages to multi-language page
   from = "/manuals/developer/:language/:docid/dependencies"
   to = "/manuals/developer/dependencies"
 
@@ -66,6 +66,12 @@
   # redirect developer manual language-specific error handling page to multi-language page
   from = "/manuals/developer/:language/:docid/error-handling"
   to = "/manuals/developer/error-handling"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific custom types pages to multi-language page
+  from = "/manuals/developer/:language/:docid/services"
+  to = "/manuals/developer/services"
   status = 301
 
 [[redirects]]
