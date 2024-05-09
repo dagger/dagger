@@ -2907,6 +2907,22 @@ func (m *Test) FromPlatform(platform Platform) string {
 func (m *Test) ToPlatform(platform string) Platform {
 	return Platform(platform)
 }
+
+func (m *Test) FromPlatforms(platform []Platform) []string {
+	result := []string{}
+	for _, p := range platform {
+		result = append(result, string(p))
+	}
+	return result
+}
+
+func (m *Test) ToPlatforms(platform []string) []Platform {
+	result := []Platform{}
+	for _, p := range platform {
+		result = append(result, Platform(p))
+	}
+	return result
+}
 `,
 		},
 		{
@@ -2923,6 +2939,14 @@ class Test:
     @function
     def to_platform(self, platform: str) -> dagger.Platform:
         return dagger.Platform(platform)
+
+    @function
+    def from_platforms(self, platform: list[dagger.Platform]) -> list[str]:
+        return [str(p) for p in platform]
+
+    @function
+    def to_platforms(self, platform: list[str]) -> list[dagger.Platform]:
+        return [dagger.Platform(p) for p in platform]
 `,
 		},
 		{
@@ -2940,6 +2964,16 @@ class Test {
 	toPlatform(platform: string): Platform {
 		return platform as Platform
 	}
+
+	@func()
+	fromPlatforms(platform: Platform[]): string[] {
+		return platform.map(p => p as string)
+	}
+
+	@func()
+	toPlatforms(platform: string[]): Platform[] {
+		return platform.map(p => p as Platform)
+	}
 }		
 `,
 		},
@@ -2954,15 +2988,27 @@ class Test {
 			out, err := modGen.With(daggerQuery(`{test{fromPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatform").String())
-
 			_, err = modGen.With(daggerQuery(`{test{fromPlatform(platform: "invalid")}}`)).Stdout(ctx)
 			require.ErrorContains(t, err, "unknown operating system or architecture")
 
 			out, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatform").String())
-
 			_, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "invalid")}}`)).Sync(ctx)
+			require.ErrorContains(t, err, "unknown operating system or architecture")
+
+			out, err = modGen.With(daggerQuery(`{test{fromPlatforms(platform: ["linux/amd64"])}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(gjson.Get(out, "test.fromPlatforms").Array()))
+			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatforms.0").String())
+			_, err = modGen.With(daggerQuery(`{test{fromPlatforms(platform: ["invalid"])}}`)).Stdout(ctx)
+			require.ErrorContains(t, err, "unknown operating system or architecture")
+
+			out, err = modGen.With(daggerQuery(`{test{toPlatforms(platform: ["linux/amd64"])}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(gjson.Get(out, "test.toPlatforms.0").Array()))
+			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatforms.0").String())
+			_, err = modGen.With(daggerQuery(`{test{toPlatforms(platform: ["invalid"])}}`)).Sync(ctx)
 			require.ErrorContains(t, err, "unknown operating system or architecture")
 		})
 	}
