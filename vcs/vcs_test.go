@@ -102,6 +102,40 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Repo: "https://bitbucket.org/workspace/pkgname",
 			},
 		},
+		// GitLab public repo
+		{
+			"gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git",
+			},
+		},
+		{
+			"gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git",
+			},
+		},
+		// GitLab private repo
+		// behavior of private GitLab repos is different from public ones
+		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L114-126
+		// it relies on gitcredentials to authenticate
+		// TODO: rely on a dagger gitlab repo with a read-only PAT to test this
+		// {
+		// 	"gitlab.com/testguigui1/awesomesubgroup/mywork/depth1/depth2", // private subgroup
+		// 	&RepoRoot{
+		// 		VCS:  vcsGit,
+		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup.git", // false positive returned by GitLab for privacy purpose
+		// 	},
+		// },
+		// {
+		// 	"gitlab.com/testguigui1/awesomesubgroup/mywork.git/depth1/depth2", // private subgroup
+		// 	&RepoRoot{
+		// 		VCS:  vcsGit,
+		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup/mywork",
+		// 	},
+		// },
 		{
 			"bitbucket.org/workspace/pkgname/subdir",
 			&RepoRoot{
