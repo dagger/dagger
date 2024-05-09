@@ -5,12 +5,12 @@ from dagger import dag, function, object_type
 @object_type
 class HelloDagger:
     @function
-    def package(self, build: dagger.Directory) -> dagger.Container:
+    def package(self, source: dagger.Directory) -> dagger.Container:
         """Returns a container with the production build"""
         return (
             dag.container()
             .from_("nginx:1.25-alpine")
-            .with_directory("/usr/share/nginx/html", build)
+            .with_directory("/usr/share/nginx/html", self.build(source))
             .with_exposed_port(80)
         )
 

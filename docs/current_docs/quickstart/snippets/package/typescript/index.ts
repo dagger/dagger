@@ -6,11 +6,11 @@ class HelloDagger {
    * Returns a container with the production build
    */
   @func()
-  package(build: Directory): Container {
+  package(source: Directory): Container {
     return dag
       .container()
       .from("nginx:1.25-alpine")
-      .withDirectory("/usr/share/nginx/html", build)
+      .withDirectory("/usr/share/nginx/html", this.build(source))
       .withExposedPort(80)
   }
 

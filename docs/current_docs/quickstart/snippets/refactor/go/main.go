@@ -16,10 +16,8 @@ func (m *HelloDagger) Ci(ctx context.Context, source *Directory) (string, error)
 	if err != nil {
 		return "", err
 	}
-	// obtain the build output directory
-	build := m.Build(source)
 	// create and publish a container with the build output
-	address, err := m.Package(build).
+	address, err := m.Package(source).
 		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 	if err != nil {
 		return "", err
@@ -28,9 +26,9 @@ func (m *HelloDagger) Ci(ctx context.Context, source *Directory) (string, error)
 }
 
 // Returns a container with the production build
-func (m *HelloDagger) Package(build *Directory) *Container {
+func (m *HelloDagger) Package(source *Directory) *Container {
 	return dag.Container().From("nginx:1.25-alpine").
-		WithDirectory("/usr/share/nginx/html", build).
+		WithDirectory("/usr/share/nginx/html", m.Build(source)).
 		WithExposedPort(80)
 }
 
