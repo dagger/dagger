@@ -1,6 +1,0 @@
-kind: Fixed
-body: Avoid hang caused by client id conflicts
-time: 2024-05-09T11:46:53.847848236+01:00
-custom:
-  Author: sipsma
-  PR: "7335"
