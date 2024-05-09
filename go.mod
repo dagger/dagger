@@ -10,7 +10,7 @@ replace dagger.io/dagger => ./sdk/go
 replace github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20240507174055-63352b0fb96b
 
 require (
-	dagger.io/dagger v0.11.3
+	dagger.io/dagger v0.11.4
 	github.com/99designs/gqlgen v0.17.44
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
