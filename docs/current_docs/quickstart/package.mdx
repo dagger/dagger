@@ -65,7 +65,7 @@ Call the Dagger Function, passing it the location of the build output directory 
 
 ```shell
 dagger call \
-  package --build=./build
+  package --source=.
 ```
 
 You should see the application being built and the build output added to a container image. Once complete, you should see the following output:
@@ -80,7 +80,7 @@ One of the most interesting `Container` functions is `terminal`, which can be us
 
 ```shell
 dagger call \
-  package --build=./build \
+  package --source=. \
   terminal
 ```
 
@@ -151,7 +151,7 @@ The `Container` type also has a `publish` function, which publishes the containe
 
 ```shell
 dagger call \
-  package --build=./build \
+  package --source=. \
   publish --address ttl.sh/hello-dagger-$RANDOM
 ```
 
