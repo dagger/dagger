@@ -585,6 +585,15 @@ var vcsPaths = []*vcsPath{
 		check:  noVCSSuffix,
 	},
 
+	// Codeberg
+	{
+		prefix: "codeberg.org/",
+		re:     `^(?P<root>codeberg\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*$`,
+		vcs:    "git",
+		repo:   "https://{root}",
+		check:  noVCSSuffix,
+	},
+
 	// Bitbucket
 	{
 		prefix: "bitbucket.org/",
