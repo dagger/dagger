@@ -1036,6 +1036,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	var clientID string
+	var otelEnvs []string
 	if opts.ExperimentalPrivilegedNesting {
 		callerOpts := opts.NestedExecFunctionCall
 		if callerOpts == nil {
@@ -1048,6 +1049,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}
+		otelEnvs = callerOpts.OTELEnvs
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version))
@@ -1233,6 +1235,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD := buildkit.ExecutionMetadata{
 		SystemEnvNames: container.SystemEnvNames,
 		ClientID:       clientID,
+		OTELEnvs:       otelEnvs,
 	}
 	execMDOpt, err := execMD.AsConstraintsOpt()
 	if err != nil {
