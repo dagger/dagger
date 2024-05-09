@@ -1,21 +1,43 @@
 ---
-slug: /manuals/developer/go/213028/error-handling
+slug: /manuals/developer/error-handling
 displayed_sidebar: "current"
 toc_max_heading_level: 2
 title: "Error Handling"
 ---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 
 # Error Handling
 
+Dagger modules handle errors in the same way as the language they are written in. This allows you to support any kind of error handling that your application requires. You can also use error handling to verify user input.
+
+Here is an example Dagger Function that performs division and throws an error if the denominator is zero:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/error-handling/go/main.go
+```
 
 Error handling in Go modules follows typical Go error patterns with explicit `error` return values and `if err != nil` checks. You can also use error handling to verify user input.
 
-Here is an example module with a function `divide()`, that throws an error if the denominator is zero:
+</TabItem>
+<TabItem value="Python">
 
-```go file=./snippets/error-handling/main.go
+```python file=./snippets/error-handling/python/main.py
 ```
-Here is an example call for this module:
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/error-handling/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
 
 ```shell
 dagger call divide --a=4 --b=2
@@ -23,11 +45,11 @@ dagger call divide --a=4 --b=2
 
 The result will be:
 
-```shell
+```
 2
 ```
 
-Here is another example call for this module, this time dividing by zero:
+Here is another example call for this Dagger Function, this time dividing by zero:
 
 ```shell
 dagger call divide --a=4 --b=0
@@ -35,6 +57,6 @@ dagger call divide --a=4 --b=0
 
 The result will be:
 
-```shell
+```
 cannot divide by zero
 ```
