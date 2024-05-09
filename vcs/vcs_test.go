@@ -109,6 +109,13 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Repo: "https://bitbucket.org/workspace/pkgname",
 			},
 		},
+		{
+			"codeberg.org/workspace/pkgname/subdir",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://codeberg.org/workspace/pkgname",
+			},
+		},
 	}
 
 	for _, test := range tests {
