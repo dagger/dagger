@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -85,6 +84,24 @@ func (q *Query) AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) 
 	}
 	attrs = append(attrs, attribute.String(telemetry.DagCallerType, callerType))
 
+	// Keep track of which effects were already installed prior to the call so we
+	// only see new ones.
+	seenEffects := make(map[digest.Digest]bool)
+	if w, ok := self.(dagql.Wrapper); ok {
+		if hasPBs, ok := w.Unwrap().(HasPBDefinitions); ok {
+			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
+				slog.Warn("failed to get LLB definitions", "err", err)
+			} else {
+				for _, def := range defs {
+					for _, op := range def.Def {
+						seenEffects[digest.FromBytes(op)] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Finally, start the span.
 	ctx, span := dagql.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
 	ctx, _, _ = telemetry.WithStdioToOtel(ctx, dagql.InstrumentationLibrary)
 
@@ -121,7 +138,7 @@ func (q *Query) AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) 
 			}
 		}
 
-		// Record any LLB op digests that the value depends on.
+		// Record any new LLB op digests that the value depends on.
 		//
 		// This allows the UI to track the 'cause and effect' between lazy
 		// operations and their eventual execution. The listed digests will be
@@ -138,27 +155,19 @@ func (q *Query) AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) 
 			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 				slog.Warn("failed to get LLB definitions", "err", err)
 			} else {
-				seen := make(map[digest.Digest]bool)
 				var ops []string
 				for _, def := range defs {
 					for _, op := range def.Def {
 						dig := digest.FromBytes(op)
-						if seen[dig] {
+						if seenEffects[dig] {
 							continue
 						}
-						seen[dig] = true
+						seenEffects[dig] = true
 						ops = append(ops, dig.String())
 					}
 				}
-				log.Println("!!! SETTING LLB DIGESTS", spanName, telemetry.LLBDigestsAttr, ops)
 				span.SetAttributes(attribute.StringSlice(telemetry.LLBDigestsAttr, ops))
 			}
-		} else if spanName == "Bass.unit" {
-			log.Println("!!! BASS UNIT DOES NOT HAVE PB DEFS??", fmt.Sprintf("%T", res))
-		}
-
-		if spanName == "Bass.unit" {
-			log.Println("!!! BASS UNIT PB DEFS?", fmt.Sprintf("%T", res))
 		}
 	}
 }
