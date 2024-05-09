@@ -170,7 +170,7 @@ func TestLoadGitHubLabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			for _, e := range example.Env {
 				k, v, _ := strings.Cut(e, "=")
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			labels := telemetry.Labels{}.WithGitHubLabels()
@@ -263,7 +263,7 @@ func TestLoadGitLabLabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			// Run the function and collect the result
@@ -317,7 +317,7 @@ func TestLoadCircleCILabels(t *testing.T) {
 		t.Run(example.Name, func(t *testing.T) {
 			// Set environment variables
 			for k, v := range example.Env {
-				os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
 
 			// Run the function and collect the result
