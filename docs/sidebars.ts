@@ -329,6 +329,10 @@ module.exports = {
           "id": "manuals/developer/dependencies"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/chaining"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -347,10 +351,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/chaining"
             },
             {
               "type": "doc",
@@ -410,10 +410,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/chaining"
             },
             {
               "type": "doc",
@@ -477,10 +473,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/chaining"
             },
             {
               "type": "doc",

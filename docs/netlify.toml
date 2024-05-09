@@ -55,6 +55,11 @@
   # redirect developer manual language-specific dependencies pages to multi-language dependencies page
   from = "/manuals/developer/:language/:docid/dependencies"
   to = "/manuals/developer/dependencies"
+
+[[redirects]]
+  # redirect developer manual language-specific chaining pages to multi-language chaining page
+  from = "/manuals/developer/:language/:docid/chaining"
+  to = "/manuals/developer/chaining"
   status = 301
 
 [[redirects]]
