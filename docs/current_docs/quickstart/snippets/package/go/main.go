@@ -7,9 +7,9 @@ import (
 type HelloDagger struct{}
 
 // Returns a container with the production build
-func (m *HelloDagger) Package(build *Directory) *Container {
+func (m *HelloDagger) Package(source *Directory) *Container {
 	return dag.Container().From("nginx:1.25-alpine").
-		WithDirectory("/usr/share/nginx/html", build).
+		WithDirectory("/usr/share/nginx/html", m.Build(source)).
 		WithExposedPort(80)
 }
 

@@ -11,20 +11,18 @@ class HelloDagger:
         """Tests, builds, packages and publishes the application"""
         # run tests
         self.test(source)
-        # obtain the build output directory
-        build = self.build(source)
         # create and publish a container with the build output
-        return await self.package(build).publish(
+        return await self.package(source).publish(
             f"ttl.sh/myapp-{random.randrange(10 ** 8)}"
         )
 
     @function
-    def package(self, build: dagger.Directory) -> dagger.Container:
+    def package(self, source: dagger.Directory) -> dagger.Container:
         """Returns a container with the production build"""
         return (
             dag.container()
             .from_("nginx:1.25-alpine")
-            .with_directory("/usr/share/nginx/html", build)
+            .with_directory("/usr/share/nginx/html", self.build(source))
             .with_exposed_port(80)
         )
 

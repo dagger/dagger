@@ -9,10 +9,8 @@ class HelloDagger {
   async ci(source: Directory): Promise<string> {
     // run tests
     this.test(source)
-    // obtain the build output directory
-    const build = this.build(source)
     // create and publish a container with the build output
-    return await this.package(build).publish(
+    return await this.package(source).publish(
       "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000),
     )
   }
@@ -21,11 +19,11 @@ class HelloDagger {
    * Returns a container with the production build
    */
   @func()
-  package(build: Directory): Container {
+  package(source: Directory): Container {
     return dag
       .container()
       .from("nginx:1.25-alpine")
-      .withDirectory("/usr/share/nginx/html", build)
+      .withDirectory("/usr/share/nginx/html", this.build(source))
       .withExposedPort(80)
   }
 
