@@ -53,6 +53,17 @@ func (d Docs) Lint(ctx context.Context) error {
 		return util.DiffDirectoryF(ctx, d.Dagger.Source, d.Generate, generatedSchemaPath, generatedCliZenPath)
 	})
 
+	eg.Go(func() error {
+		return util.DiffDirectoryF(ctx, d.Dagger.Source, func(ctx context.Context) (*dagger.Directory, error) {
+			return dag.Container().
+				From("ghcr.io/miniscruff/changie").
+				WithMountedDirectory("/src", d.Dagger.Source).
+				WithWorkdir("/src").
+				WithExec([]string{"merge"}).
+				Directory("/src"), nil
+		}, "CHANGELOG.md")
+	})
+
 	// Go is already linted by engine:lint
 	// Python is already linted by sdk:python:lint
 	// TypeScript is already linted at sdk:typescript:lint
