@@ -150,6 +150,13 @@ func TestRepoRootForImportPath(t *testing.T) {
 		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup/mywork",
 		// 	},
 		// },
+		{ // vanity URL, TODO: improve test by changing dagger's redirection
+			"dagger.io/dagger",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://github.com/dagger/dagger-go-sdk",
+			},
+		},
 		{
 			"bitbucket.org/workspace/pkgname/subdir",
 			&RepoRoot{
