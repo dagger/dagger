@@ -25,7 +25,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 
 			ctr, err = ctr.
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"curl", "https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -62,7 +61,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 
 			ctr, err = ctr.
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithUser("nobody").
 				WithExec([]string{"/usr/bin/curl", "https://server"}).
 				Sync(ctx)
@@ -81,7 +79,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 
 		caCertsTest{"alpine install ca-certificates and curl at once", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(alpineImage).
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"sh", "-c", "apk add curl && curl https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -139,7 +136,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 					`}).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"go", "run", "main.go"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -162,7 +158,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 
 			ctr, err = ctr.
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"curl", "https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -200,7 +195,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 
 			ctr, err = ctr.
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithUser("nobody").
 				WithExec([]string{"/usr/bin/curl", "https://server"}).
 				Sync(ctx)
@@ -220,7 +214,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 		caCertsTest{"debian install ca-certificates and curl at once", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"sh", "-c", "apt install -y curl && curl https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -268,7 +261,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 						`}).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"go", "run", "main.go"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -287,7 +279,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NoError(t, err)
 
 			ctr, err = ctr.
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"curl", "https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -318,7 +309,6 @@ func TestContainerSystemCACerts(t *testing.T) {
 
 			ctr, err = ctr.
 				WithUser("nobody").
-				WithServiceBinding("server", f.serverCtr.AsService()).
 				WithExec([]string{"curl", "https://server"}).
 				Sync(ctx)
 			require.NoError(t, err)
@@ -333,6 +323,103 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
+
+		caCertsTest{"go module", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go")).
+				With(sdkSource("go", `package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+type Test struct {}
+
+func (m *Test) GetHttp(ctx context.Context) (string, error) {
+	resp, err := http.Get("https://server")
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	bs, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(bs), nil
+}
+`)).
+				With(daggerCall("get-http")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello", strings.TrimSpace(out))
+		}},
+
+		caCertsTest{"python module", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=python")).
+				With(sdkSource("python", `
+import urllib.request
+from dagger import function
+
+@function
+def get_http() -> str:
+		return urllib.request.urlopen("https://server").read().decode("utf-8")
+`)).
+				With(daggerCall("get-http")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello", strings.TrimSpace(out))
+		}},
+
+		caCertsTest{"typescript module", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=typescript")).
+				With(sdkSource("typescript", `
+import { object, func } from "@dagger.io/dagger";
+import * as https from "https";
+
+@object()
+class Test {
+	@func()
+    async getHttp(): Promise<string> {
+        const url = "https://server";
+				// thanks chatGPT for this, sorry to anyone else if this is awful
+        return new Promise((resolve, reject) => {
+            https.get(url, (res) => {
+                let data = '';
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                res.on('end', () => {
+                    if (res.statusCode === 200) {
+                        resolve(data);
+                    } else {
+                        reject("Request failed with status code " + res.statusCode);
+                    }
+                });
+            }).on('error', (err) => {
+                reject("Error: " + err.message);
+            });
+        });
+    }
+}
+`)).
+				With(daggerCall("get-http")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hello", strings.TrimSpace(out))
+		}},
 	)
 }
 
@@ -342,7 +429,6 @@ type caCertsTest struct {
 }
 
 type caCertsTestFixtures struct {
-	serverCtr      *dagger.Container
 	caCertContents string
 }
 
@@ -357,12 +443,24 @@ func customCACertTests(
 
 	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
 
+	certGen := newGeneratedCerts(c, "ca")
+	serverCert, serverKey := certGen.newServerCerts("server")
+
 	if os.Getenv(executeTestEnvName) == "" {
-		certGen := newGeneratedCerts(c, "ca")
-		serverCert, serverKey := certGen.newServerCerts("server")
+		serverCtr := nginxWithCerts(c, nginxWithCertsOpts{
+			serverCert:          serverCert,
+			serverKey:           serverKey,
+			dhParam:             certGen.dhParam,
+			netID:               netID,
+			dnsName:             "server",
+			msg:                 "hello",
+			redirectHTTPToHTTPS: true,
+		})
 
 		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert)
+			return ctr.
+				WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
+				WithServiceBinding("server", serverCtr.AsService())
 		})
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -393,23 +491,7 @@ func customCACertTests(
 		return
 	}
 
-	// we're in the container depending on the custom engine, run the actual tests
-	caCert := c.Host().File("/ca.crt")
-	serverCert := c.Host().File("/server.crt")
-	serverKey := c.Host().File("/server.key")
-	dhParam := c.Host().File("/dhparam.pem")
-
-	serverCtr := nginxWithCerts(c, nginxWithCertsOpts{
-		serverCert:          serverCert,
-		serverKey:           serverKey,
-		dhParam:             dhParam,
-		netID:               netID,
-		dnsName:             "server",
-		msg:                 "hello",
-		redirectHTTPToHTTPS: true,
-	})
-
-	caCertContents, err := caCert.Contents(ctx)
+	caCertContents, err := certGen.caRootCert.Contents(ctx)
 	require.NoError(t, err)
 
 	for _, test := range tests {
@@ -417,7 +499,6 @@ func customCACertTests(
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			test.run(t, c, caCertsTestFixtures{
-				serverCtr:      serverCtr,
 				caCertContents: caCertContents,
 			})
 		})
@@ -442,10 +523,12 @@ func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 	const password = "hunter4"
 	ctr := c.Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "openssl"}).
-		WithExec([]string{"openssl", "dhparam",
+		WithExec([]string{"sh", "-c", strings.Join([]string{"openssl", "dhparam",
 			"-out", "/dhparam.pem",
 			"2048",
-		}).
+			// supress extremely noisy+useless output
+			"&> /dev/null",
+		}, " ")}).
 		WithExec([]string{"openssl", "genrsa",
 			"-des3",
 			"-out", "/ca.key",
