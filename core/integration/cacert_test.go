@@ -526,7 +526,7 @@ func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 		WithExec([]string{"sh", "-c", strings.Join([]string{"openssl", "dhparam",
 			"-out", "/dhparam.pem",
 			"2048",
-			// supress extremely noisy+useless output
+			// suppress extremely noisy+useless output
 			"&> /dev/null",
 		}, " ")}).
 		WithExec([]string{"openssl", "genrsa",
