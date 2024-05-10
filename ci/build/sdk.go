@@ -124,7 +124,8 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 
 func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	base := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
-		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion))
+		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
+		WithExec([]string{"apk", "add", "git"})
 
 	sdkCtrTarball := base.
 		WithEnvVariable("GOTOOLCHAIN", "auto").
