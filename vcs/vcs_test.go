@@ -27,10 +27,17 @@ func TestRepoRootForImportPath(t *testing.T) {
 		want *RepoRoot
 	}{
 		{
-			"github.com/golang/groupcache",
+			"github.com/golang/groupcache/foo",
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/golang/groupcache",
+			},
+		},
+		{
+			"github.com/golang/groupcache.git/foo",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://github.com/golang/groupcache.git",
 			},
 		},
 		// Unicode letters are allowed in import paths.
@@ -89,12 +96,19 @@ func TestRepoRootForImportPath(t *testing.T) {
 			},
 		},
 		{
-			"git.sr.ht/~jacqueline/tangara-fw/subdir",
+			"git.sr.ht/~jacqueline/tangara-fw/lib",
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.sr.ht/~jacqueline/tangara-fw",
 			},
 		},
+		// { FAILS as returns 404 without tags
+		// 	"git.sr.ht/~jacqueline/tangara-fw/lib.git",
+		// 	&RepoRoot{
+		// 		VCS:  vcsGit,
+		// 		Repo: "https://git.sr.ht/~jacqueline/tangara-fw.git",
+		// 	},
+		// },
 		{
 			"bitbucket.org/workspace/pkgname",
 			&RepoRoot{
@@ -153,7 +167,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := RepoRootForImportPath(test.path, false)
+		got, err := RepoRootForImportPath(test.path, true)
 		if err != nil {
 			t.Errorf("RepoRootForImportPath(%q): %v", test.path, err)
 			continue
