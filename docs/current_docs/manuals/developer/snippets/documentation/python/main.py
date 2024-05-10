@@ -3,8 +3,6 @@
 from typing import Annotated
 from dagger import Doc, function, object_type
 
-"""Further documentation for the module here."""
-
 
 @object_type
 class MyModule:
