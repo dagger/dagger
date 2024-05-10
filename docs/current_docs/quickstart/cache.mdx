@@ -68,10 +68,8 @@ dagger call \
 ```
 
 :::tip CACHING
-Dagger has two distinct caching mechanisms:
+Dagger accelerates pipelines significantly, often cutting run times by over 50%. It does this with:
 
-- The layers cache: This caches build instructions. It is implemented by Buildkit.
-- The volumes cache: This caches the contents of a Dagger volume and is persisted across Dagger Engine sessions. It is maintained locally and, where applicable, replicated to Dagger Cloud. It is implemented by Dagger (distinct from Buildkit).
-
-Changes in the volumes cache or secrets do not invalidate the layers cache.
+- Aggressive caching: Dagger has two distinct caching mechanisms, a layers cache for build instructions and a volumes cache for filesystem artifacts like data caches or package manager caches. Every operation is cached by default.
+- Parallelization: Dagger automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
 :::
