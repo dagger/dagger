@@ -59,10 +59,6 @@ func (w *Worker) Run(
 		return nil, err
 	}
 
-	if w.serverID == "" {
-		return nil, errors.New("serverID is not set in executor")
-	}
-
 	w.updateEnvs(&process)
 
 	if process.Meta.NetMode == pb.NetMode_HOST {
@@ -133,34 +129,31 @@ func (w *Worker) Run(
 	)
 }
 
+const (
+	DaggerServerIDEnv      = "_DAGGER_SERVER_ID"
+	DaggerCallDigestEnv    = "_DAGGER_CALL_DIGEST"
+	DaggerEngineVersionEnv = "_DAGGER_ENGINE_VERSION"
+)
+
+// some envs that are used to scope cache but not needed at runtime
+var removeEnvs = map[string]struct{}{
+	DaggerCallDigestEnv:    {},
+	DaggerEngineVersionEnv: {},
+}
+
 func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
-	// remove some envs that are used to scope cache but not needed at runtime
-	skipEnvs := map[string]struct{}{
-		"_DAGGER_CALL_DIGEST": {},
-	}
 	filteredEnvs := make([]string, 0, len(proc.Meta.Env))
 	for _, env := range proc.Meta.Env {
 		k, _, ok := strings.Cut(env, "=")
 		if !ok {
 			continue
 		}
-		if _, ok := skipEnvs[k]; ok {
+		if _, ok := removeEnvs[k]; ok {
 			continue
 		}
 		filteredEnvs = append(filteredEnvs, env)
 	}
 	proc.Meta.Env = filteredEnvs
-
-	execMD, err := executionMetadataFromVtx(w.vtx)
-	if err != nil {
-		return err
-	}
-
-	proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_SERVER_ID="+w.serverID)
-	if execMD.ClientID != "" {
-		proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_NESTED_CLIENT_ID="+execMD.ClientID)
-	}
-	proc.Meta.Env = append(proc.Meta.Env, execMD.OTELEnvs...)
 
 	origEnvMap := make(map[string]string)
 	for _, env := range proc.Meta.Env {
@@ -205,8 +198,18 @@ func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
 		}
 	}
 
+	if w.execMD == nil {
+		return nil
+	}
+
+	proc.Meta.Env = append(proc.Meta.Env, DaggerServerIDEnv+"="+w.execMD.ServerID)
+	proc.Meta.Env = append(proc.Meta.Env, w.execMD.OTELEnvs...)
+	if w.execMD.ClientID != "" {
+		proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_NESTED_CLIENT_ID="+w.execMD.ClientID)
+	}
+
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
-	for _, systemEnvName := range execMD.SystemEnvNames {
+	for _, systemEnvName := range w.execMD.SystemEnvNames {
 		if _, ok := origEnvMap[systemEnvName]; ok {
 			// don't overwrite explicit user-provided values
 			continue
@@ -223,26 +226,27 @@ func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
 type ExecutionMetadata struct {
 	SystemEnvNames []string
 	ClientID       string
+	ServerID       string
 	OTELEnvs       []string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
 
-func executionMetadataFromVtx(vtx solver.Vertex) (ExecutionMetadata, error) {
+func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, error) {
 	md := ExecutionMetadata{}
 
 	if vtx == nil {
-		return md, nil
+		return nil, false, nil
 	}
 
 	bs, ok := vtx.Options().Description[executionMetadataKey]
 	if !ok {
-		return md, nil
+		return nil, false, nil
 	}
 	if err := json.Unmarshal([]byte(bs), &md); err != nil {
-		return md, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
+		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
 	}
-	return md, nil
+	return &md, true, nil
 }
 
 func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
@@ -477,8 +481,6 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 	}
 
 	w.updateEnvs(&process)
-
-	process.Meta.Env = append(process.Meta.Env, fmt.Sprintf("_DAGGER_SERVER_ID=%s", w.serverID))
 
 	// first verify the container is running, if we get an error assume the container
 	// is in the process of being created and check again every 100ms or until

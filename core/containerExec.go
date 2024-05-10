@@ -42,9 +42,17 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	execMD := buildkit.ExecutionMetadata{
+		ServerID:       clientMetadata.ServerID,
+		SystemEnvNames: container.SystemEnvNames,
+	}
+
 	// this allows executed containers to communicate back to this API
-	var clientID string
-	var otelEnvs []string
 	if opts.ExperimentalPrivilegedNesting {
 		callerOpts := opts.NestedExecFunctionCall
 		if callerOpts == nil {
@@ -53,17 +61,17 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				Cache: true,
 			}
 		}
-		clientID, err = container.Query.RegisterCaller(ctx, callerOpts)
+		execMD.ClientID, err = container.Query.RegisterCaller(ctx, callerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}
-		otelEnvs = callerOpts.OTELEnvs
+		execMD.OTELEnvs = callerOpts.OTELEnvs
 
 		// include the engine version so that these execs get invalidated if the engine/API change
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENGINE_VERSION", engine.Version))
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
 
 		// include a digest of the current call so that we scope of the cache of the ExecOp to this call
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_CALL_DIGEST", string(dagql.CurrentID(ctx).Digest())))
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerCallDigestEnv, string(dagql.CurrentID(ctx).Digest())))
 
 		if !callerOpts.Cache {
 			// include the ServerID here so that we bust cache once-per-session
@@ -71,7 +79,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			if err != nil {
 				return nil, err
 			}
-			runOpts = append(runOpts, llb.AddEnv("_DAGGER_SERVER_ID", clientMetadata.ServerID))
+			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerServerIDEnv, clientMetadata.ServerID))
 		}
 	}
 
@@ -240,11 +248,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	execSt := fsSt.Run(runOpts...)
 
-	execMD := buildkit.ExecutionMetadata{
-		SystemEnvNames: container.SystemEnvNames,
-		ClientID:       clientID,
-		OTELEnvs:       otelEnvs,
-	}
 	execMDOpt, err := execMD.AsConstraintsOpt()
 	if err != nil {
 		return nil, fmt.Errorf("execution metadata: %w", err)

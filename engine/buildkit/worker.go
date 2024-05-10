@@ -60,8 +60,7 @@ here). For simplicity, this Worker struct also implements that Executor interfac
 */
 type Worker struct {
 	*sharedWorkerState
-	serverID string
-	vtx      solver.Vertex
+	execMD *ExecutionMetadata
 }
 
 type sharedWorkerState struct {
@@ -298,22 +297,6 @@ func (w *Worker) registerDaggerCustomSources() error {
 	return nil
 }
 
-func (w *Worker) WithServerID(serverID string) *Worker {
-	return &Worker{
-		sharedWorkerState: w.sharedWorkerState,
-		serverID:          serverID,
-		vtx:               w.vtx,
-	}
-}
-
-func (w *Worker) WithVertex(vtx solver.Vertex) *Worker {
-	return &Worker{
-		sharedWorkerState: w.sharedWorkerState,
-		serverID:          w.serverID,
-		vtx:               vtx,
-	}
-}
-
 /*
 Buildkit's worker.Controller is a bit odd; it exists to manage multiple workers because that was
 a planned feature years ago, but it never got implemented. So it exists to manage a single worker,
@@ -335,11 +318,16 @@ func (w *Worker) Executor() executor.Executor {
 }
 
 func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error) {
-	w = w.WithVertex(vtx)
-
 	// if this is an ExecOp, pass in ourself as executor
 	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
 		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {
+			execMD, ok, err := executionMetadataFromVtx(vtx)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				w = &Worker{sharedWorkerState: w.sharedWorkerState, execMD: execMD}
+			}
 			return ops.NewExecOp(
 				vtx,
 				execOp,
