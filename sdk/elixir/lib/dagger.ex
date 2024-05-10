@@ -87,6 +87,21 @@ defmodule Dagger do
   end
 
   @doc """
+  Connect to Dagger Engine and close connection automatically after `fun` executed.
+
+  See `connect/1` for available options.
+  """
+  def with_connection(fun, opts \\ []) when is_function(fun, 1) and is_list(opts) do
+    with {:ok, client} <- Dagger.connect(opts) do
+      try do
+        fun.(client)
+      after
+        close(client)
+      end
+    end
+  end
+
+  @doc """
   Disconnecting the client from Dagger Engine session.
   """
   def close(%Dagger.Client{client: client}) do

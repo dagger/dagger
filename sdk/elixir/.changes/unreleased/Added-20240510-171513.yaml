@@ -1,0 +1,6 @@
+kind: Added
+body: Add `Dagger.with_connection/2`
+time: 2024-05-10T17:15:13.736305227+07:00
+custom:
+  Author: wingyplus
+  PR: "7348"
