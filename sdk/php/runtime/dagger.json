@@ -1,0 +1,5 @@
+{
+  "name": "php-sdk",
+  "sdk": "go",
+  "engineVersion": "v0.11.4"
+}
