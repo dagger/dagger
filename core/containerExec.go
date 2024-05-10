@@ -50,6 +50,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD := buildkit.ExecutionMetadata{
 		ServerID:       clientMetadata.ServerID,
 		SystemEnvNames: container.SystemEnvNames,
+		EnabledGPUs:    container.EnabledGPUs,
+	}
+
+	// if GPU parameters are set for this container pass them over:
+	if len(execMD.EnabledGPUs) > 0 {
+		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {
+			return nil, fmt.Errorf("GPU support is not enabled, set _EXPERIMENTAL_DAGGER_GPU_SUPPORT")
+		}
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -126,14 +134,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		runOpts = append(runOpts, llb.AddEnv(name, val))
-	}
-
-	// if GPU parameters are set for this container pass them over:
-	if len(container.EnabledGPUs) > 0 {
-		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {
-			return nil, fmt.Errorf("GPU support is not enabled, set _EXPERIMENTAL_DAGGER_GPU_SUPPORT")
-		}
-		runOpts = append(runOpts, llb.AddEnv("_EXPERIMENTAL_DAGGER_GPU_PARAMS", strings.Join(container.EnabledGPUs, ",")))
 	}
 
 	secretsToScrub := SecretToScrubInfo{}

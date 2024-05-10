@@ -468,24 +468,10 @@ func setupBundle() (returnExitCode int) {
 			Options:     []string{"rbind", "ro"},
 		})
 
-		spec.Hooks = &specs.Hooks{}
-		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled != "" {
-			spec.Hooks.Prestart = []specs.Hook{
-				{
-					Args: []string{
-						"nvidia-container-runtime-hook",
-						"prestart",
-					},
-					Path: "/usr/bin/nvidia-container-runtime-hook",
-				},
-			}
-		}
-
 		// update the args to specify the shim as the init process
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	var gpuParams string
 	var otelEndpoint string
 	var otelProto string
 	var serverID string
@@ -511,9 +497,6 @@ func setupBundle() (returnExitCode int) {
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 			aliasEnvs = append(aliasEnvs, env)
-
-		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_GPU_PARAMS="):
-			_, gpuParams, _ = strings.Cut(env, "=")
 
 			// filter out Buildkit's OTLP env vars, we have our own
 		case strings.HasPrefix(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="):
@@ -592,10 +575,6 @@ func setupBundle() (returnExitCode int) {
 			"OTEL_EXPORTER_OTLP_METRICS_PROTOCOL="+otelProto,
 			"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="+otelEndpoint,
 		)
-	}
-
-	if gpuParams != "" {
-		spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s", gpuParams))
 	}
 
 	// write the updated config

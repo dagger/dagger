@@ -16,7 +16,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -47,6 +46,43 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type ExecutionMetadata struct {
+	SystemEnvNames []string
+	ClientID       string
+	ServerID       string
+	OTELEnvs       []string
+	EnabledGPUs    []string
+}
+
+const executionMetadataKey = "dagger.executionMetadata"
+
+func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, error) {
+	md := ExecutionMetadata{}
+
+	if vtx == nil {
+		return nil, false, nil
+	}
+
+	bs, ok := vtx.Options().Description[executionMetadataKey]
+	if !ok {
+		return nil, false, nil
+	}
+	if err := json.Unmarshal([]byte(bs), &md); err != nil {
+		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
+	}
+	return &md, true, nil
+}
+
+func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
+	bs, err := json.Marshal(md)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal execution metadata: %w", err)
+	}
+	return llb.WithDescription(map[string]string{
+		executionMetadataKey: string(bs),
+	}), nil
+}
+
 func (w *Worker) Run(
 	ctx context.Context,
 	id string,
@@ -58,8 +94,6 @@ func (w *Worker) Run(
 	if err := w.validateEntitlements(process.Meta); err != nil {
 		return nil, err
 	}
-
-	w.updateEnvs(&process)
 
 	if process.Meta.NetMode == pb.NetMode_HOST {
 		bklog.G(ctx).Info("enabling HostNetworking")
@@ -127,136 +161,6 @@ func (w *Worker) Run(
 		started,
 		setupCACerts,
 	)
-}
-
-const (
-	DaggerServerIDEnv      = "_DAGGER_SERVER_ID"
-	DaggerCallDigestEnv    = "_DAGGER_CALL_DIGEST"
-	DaggerEngineVersionEnv = "_DAGGER_ENGINE_VERSION"
-)
-
-// some envs that are used to scope cache but not needed at runtime
-var removeEnvs = map[string]struct{}{
-	DaggerCallDigestEnv:    {},
-	DaggerEngineVersionEnv: {},
-}
-
-func (w *Worker) updateEnvs(proc *executor.ProcessInfo) error {
-	filteredEnvs := make([]string, 0, len(proc.Meta.Env))
-	for _, env := range proc.Meta.Env {
-		k, _, ok := strings.Cut(env, "=")
-		if !ok {
-			continue
-		}
-		if _, ok := removeEnvs[k]; ok {
-			continue
-		}
-		filteredEnvs = append(filteredEnvs, env)
-	}
-	proc.Meta.Env = filteredEnvs
-
-	origEnvMap := make(map[string]string)
-	for _, env := range proc.Meta.Env {
-		k, v, ok := strings.Cut(env, "=")
-		if !ok {
-			continue
-		}
-		origEnvMap[k] = v
-	}
-
-	for _, upperProxyEnvName := range []string{
-		"HTTP_PROXY",
-		"HTTPS_PROXY",
-		"FTP_PROXY",
-		"NO_PROXY",
-		"ALL_PROXY",
-	} {
-		upperProxyVal, upperSet := origEnvMap[upperProxyEnvName]
-
-		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
-		lowerProxyVal, lowerSet := origEnvMap[lowerProxyEnvName]
-
-		// try to set both upper and lower case proxy env vars, some programs
-		// only respect one or the other
-		switch {
-		case upperSet && lowerSet:
-			// both were already set explicitly by the user, don't overwrite
-			continue
-		case upperSet:
-			// upper case was set, set lower case to the same value
-			proc.Meta.Env = append(proc.Meta.Env, lowerProxyEnvName+"="+upperProxyVal)
-		case lowerSet:
-			// lower case was set, set upper case to the same value
-			proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+lowerProxyVal)
-		default:
-			// neither was set by the user, check if the engine itself has the upper case
-			// set and pass that through to the container in both cases if so
-			val, ok := os.LookupEnv(upperProxyEnvName)
-			if ok {
-				proc.Meta.Env = append(proc.Meta.Env, upperProxyEnvName+"="+val, lowerProxyEnvName+"="+val)
-			}
-		}
-	}
-
-	if w.execMD == nil {
-		return nil
-	}
-
-	proc.Meta.Env = append(proc.Meta.Env, DaggerServerIDEnv+"="+w.execMD.ServerID)
-	proc.Meta.Env = append(proc.Meta.Env, w.execMD.OTELEnvs...)
-	if w.execMD.ClientID != "" {
-		proc.Meta.Env = append(proc.Meta.Env, "_DAGGER_NESTED_CLIENT_ID="+w.execMD.ClientID)
-	}
-
-	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
-	for _, systemEnvName := range w.execMD.SystemEnvNames {
-		if _, ok := origEnvMap[systemEnvName]; ok {
-			// don't overwrite explicit user-provided values
-			continue
-		}
-		systemVal, ok := os.LookupEnv(systemEnvPrefix + systemEnvName)
-		if ok {
-			proc.Meta.Env = append(proc.Meta.Env, systemEnvName+"="+systemVal)
-		}
-	}
-
-	return nil
-}
-
-type ExecutionMetadata struct {
-	SystemEnvNames []string
-	ClientID       string
-	ServerID       string
-	OTELEnvs       []string
-}
-
-const executionMetadataKey = "dagger.executionMetadata"
-
-func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, error) {
-	md := ExecutionMetadata{}
-
-	if vtx == nil {
-		return nil, false, nil
-	}
-
-	bs, ok := vtx.Options().Description[executionMetadataKey]
-	if !ok {
-		return nil, false, nil
-	}
-	if err := json.Unmarshal([]byte(bs), &md); err != nil {
-		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
-	}
-	return &md, true, nil
-}
-
-func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
-	bs, err := json.Marshal(md)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal execution metadata: %w", err)
-	}
-	return llb.WithDescription(map[string]string{
-		executionMetadataKey: string(bs),
-	}), nil
 }
 
 func (w *Worker) run(
@@ -374,13 +278,17 @@ func (w *Worker) run(
 
 	spec.Process.Terminal = process.Meta.Tty
 
+	if err := w.applySpecCustomizations(spec); err != nil {
+		return fmt.Errorf("failed to apply spec customizations: %w", err)
+	}
+
 	if err := json.NewEncoder(f).Encode(spec); err != nil {
 		return err
 	}
 	f.Close()
 
-	bklog.G(ctx).Debugf("> creating %s %v", id, process.Meta.Args)
-	defer bklog.G(ctx).Debugf("> container done %s %v", id, process.Meta.Args)
+	bklog.G(ctx).Debugf("> creating %s %v", id, spec.Process.Args)
+	defer bklog.G(ctx).Debugf("> container done %s %v", id, spec.Process.Args)
 
 	if installCACerts {
 		caInstaller, err := cacerts.NewInstaller(ctx, spec, func(ctx context.Context, args ...string) error {
@@ -480,8 +388,6 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		return err
 	}
 
-	w.updateEnvs(&process)
-
 	// first verify the container is running, if we get an error assume the container
 	// is in the process of being created and check again every 100ms or until
 	// context is canceled.
@@ -542,6 +448,10 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 
 	if len(process.Meta.Env) > 0 {
 		spec.Process.Env = process.Meta.Env
+	}
+
+	if err := w.applySpecCustomizations(spec); err != nil {
+		return fmt.Errorf("failed to apply spec customizations: %w", err)
 	}
 
 	err = w.exec(ctx, id, spec.Process, process, nil)
