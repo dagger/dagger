@@ -83,7 +83,7 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:scan
+      call: engine scan
 
   test-provision-macos:
     name: "Test SDK Provision / macos"

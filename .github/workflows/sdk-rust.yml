@@ -21,12 +21,12 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:rust:lint
+      call: sdk rust lint
       timeout: 10
 
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:rust:test
+      call: sdk rust test
       timeout: 10

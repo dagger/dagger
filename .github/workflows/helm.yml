@@ -20,16 +20,13 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Helm test
-        uses: dagger/dagger-for-github@v5
-        with:
-          version: '0.11.4'
-          args: --source=. helm test
-      - name: Helm publish (dry-run)
-        uses: dagger/dagger-for-github@v5
-        with:
-          version: '0.11.4'
-          args: --source=. helm publish --dry-run=true --tag=main
+    uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
+    with:
+      call: helm test
+
+  test-publish:
+    uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
+    with:
+      call: helm publish --dry-run=true --tag=main

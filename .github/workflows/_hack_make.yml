@@ -3,22 +3,25 @@ name: "hack/make"
 on:
   workflow_call:
     inputs:
-      mage-targets:
-        description: "The mage target(s) to execute"
+      call:
+        description: "The dagger call to execute"
         type: string
         required: true
+
       dev-engine:
         description: "Whether to run against a dev Engine"
         type: boolean
         default: false
         required: false
+
       timeout:
         description: "How many minutes to timeout after"
         type: number
         required: false
         # none of our jobs should take longer than a hour to run (and if they do,
         # should require *explicit* config)
-        default: 60  
+        default: 60
+
       size:
         type: string
         default: "dagger-v0-11-4-4c-nvme"
@@ -55,11 +58,21 @@ jobs:
 
             chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
           fi
-          ./hack/make engine:connect
+          dagger call --help
         timeout-minutes: ${{ inputs.timeout }}
-      - name: ${{ inputs.mage-targets }}
+      - name: Export secrets
         run: |
-          ./hack/make ${{ inputs.mage-targets }}
+          echo "$SECRET_CONTEXT" | jq -r 'to_entries | .[] | "\(.key | ascii_upcase)=\(.value)"' >> $GITHUB_ENV
+        env:
+          SECRET_CONTEXT: ${{ toJson(secrets) }}
+      - name: ${{ inputs.call }}
+        run: |
+          set -x
+          if [ -f $HOME/.docker/config.json ]; then
+            dagger call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.call }}
+          else
+            dagger call --source=".:default" ${{ inputs.call }}
+          fi
         timeout-minutes: ${{ inputs.timeout }}
 
   # Use new Dagger runners when running in the dagger/dagger repo (including PRs)
@@ -67,7 +80,7 @@ jobs:
     if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: ${{ inputs.size }}
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}
+      group: ${{github.workflow}}-${{ inputs.call }}-${{ github.head_ref || github.run_id }}
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -77,20 +90,29 @@ jobs:
           cache-dependency-path: "ci/go.sum"
       - name: Waiting for Dagger Engine to be ready...
         run: |
-          ./hack/make engine:connect
-        env:
-          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: ${{ inputs.mage-targets }}
+          dagger call --help
+      - name: Export secrets
         run: |
-          ./hack/make ${{ inputs.mage-targets }}
+          echo "$SECRET_CONTEXT" | jq -r 'to_entries | .[] | "\(.key | ascii_upcase)=\(.value)"' >> $GITHUB_ENV
+        env:
+          SECRET_CONTEXT: ${{ toJson(secrets) }}
+      - name: ${{ inputs.call }}
+        run: |
+          set -x
+          if [ -f $HOME/.docker/config.json ]; then
+            dagger call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.call }}
+          else
+            dagger call --source=".:default" ${{ inputs.call }}
+          fi
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+        timeout-minutes: ${{ inputs.timeout }}
 
   dagger-runner-v2-dind:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: dagger-v0-11-4-dind
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.mage-targets }}-${{ github.head_ref || github.run_id }}-v2
+      group: ${{github.workflow}}-${{ inputs.call }}-${{ github.head_ref || github.run_id }}-v2
       cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
@@ -107,12 +129,20 @@ jobs:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - name: Waiting for Dagger Dev Engine to be ready...
         run: |
-          ./hack/with-dev ./hack/make engine:connect
-        env:
-          DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
-      - name: ${{ inputs.mage-targets }}
+          dagger call --help
+      - name: Export secrets
         run: |
-          ./hack/with-dev ./hack/make ${{ inputs.mage-targets }}
+          echo "$SECRET_CONTEXT" | jq -r 'to_entries | .[] | "\(.key | ascii_upcase)=\(.value)"' >> $GITHUB_ENV
+        env:
+          SECRET_CONTEXT: ${{ toJson(secrets) }}
+      - name: ${{ inputs.call }}
+        run: |
+          set -x
+          if [ -f $HOME/.docker/config.json ]; then
+            dagger call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.call }}
+          else
+            dagger call --source=".:default" ${{ inputs.call }}
+          fi
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
         timeout-minutes: ${{ inputs.timeout }}

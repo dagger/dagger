@@ -22,5 +22,5 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: docs:lint
+      call: docs lint
       timeout: 10

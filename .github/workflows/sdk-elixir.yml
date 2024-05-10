@@ -21,12 +21,12 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:elixir:lint
+      call: sdk elixir lint
       timeout: 10
 
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:elixir:test
+      call: sdk elixir test
       timeout: 10

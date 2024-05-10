@@ -21,12 +21,12 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:java:lint
+      call: sdk java lint
       timeout: 10
 
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:java:test
+      call: sdk java test
       timeout: 10

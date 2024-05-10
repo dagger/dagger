@@ -25,7 +25,7 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:testrace
+      call: test all --race=true
       size: "dagger-v0-11-4-16c-nvme"
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
@@ -35,24 +35,30 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:testimportant
+      call: test important --race=true
       dev-engine: true
 
   test-publish-cli:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: cli:testpublish
+      call: cli test-publish
 
   test-publish-engine:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:testpublish
+      call: engine test-publish
+
+  test-publish-engine-gpu:
+    uses: ./.github/workflows/_hack_make.yml
+    secrets: inherit
+    with:
+      call: engine with-base --image=ubuntu --gpu-support=true test-publish
 
   scan-engine:
     name: "Scan Engine Image for Vulnerabilities"
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: engine:scan
+      call: engine scan

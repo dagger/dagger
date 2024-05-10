@@ -21,12 +21,12 @@ jobs:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:typescript:lint
+      call: sdk typescript lint
       timeout: 10
 
   test:
     uses: ./.github/workflows/_hack_make.yml
     secrets: inherit
     with:
-      mage-targets: sdk:typescript:test
+      call: sdk typescript test
       timeout: 10
