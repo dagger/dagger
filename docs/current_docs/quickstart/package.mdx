@@ -155,7 +155,7 @@ dagger call \
   publish --address ttl.sh/hello-dagger-$RANDOM
 ```
 
-To prevent name collisions, this command suffixes the container image name with a random number. You should the container image being built and published, with the final result being an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
+To prevent name collisions, this command suffixes the container image name with a random number. You should see the container image being built and published, with the final result being an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
 
 ```
 ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
@@ -167,7 +167,7 @@ Test the published container image using the command below (update the image nam
 docker run -d --rm --publish 8080:80 ttl.sh/hello-dagger-47384
 ```
 
-Browse to port 8080 of the Dagger host and confirm that you see a "Hello from Dagger!" welcome page, served by NGINX.
+Browse to port 8080 of your local machine and confirm that you see a "Hello from Dagger!" welcome page, served by NGINX.
 
 :::tip NO MORE DEPENDENCY HELL
 Did you notice that even though you're testing, building and packaging a Node.js application in this quickstart, you didn't need to install any dependencies on your local machine? You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
