@@ -353,6 +353,9 @@ module.exports = {
           "id": "manuals/developer/custom-types"
         },
         {
+          "id": "manuals/developer/constructor"
+        },
+        {
           "type": "doc",
           "id": "manuals/developer/state-functions"
         },
@@ -387,10 +390,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/constructor"
             },
             {
               "type": "link",
