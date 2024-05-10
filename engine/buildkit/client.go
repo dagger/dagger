@@ -120,7 +120,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		cancel:     cancel,
 	}
 
-	client.worker = opts.BaseWorker.WithServerID(opts.ServerID)
+	client.worker = opts.BaseWorker
 	wc, err := client.worker.AsWorkerController()
 	if err != nil {
 		return nil, err

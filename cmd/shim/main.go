@@ -507,9 +507,6 @@ func setupBundle() (returnExitCode int) {
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 			keepEnv = append(keepEnv, env)
 			serverID = strings.TrimPrefix(env, "_DAGGER_SERVER_ID=")
-		case strings.HasPrefix(env, "_DAGGER_ENGINE_VERSION="):
-			// don't need this at runtime, it is just for invalidating cache, which
-			// has already happened by now
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
@@ -530,11 +527,6 @@ func setupBundle() (returnExitCode int) {
 		}
 	}
 	spec.Process.Env = keepEnv
-
-	if isDaggerExec && serverID == "" {
-		fmt.Fprintln(os.Stderr, "missing server ID")
-		return errorExitCode
-	}
 
 	var searchDomains []string
 	if ns := serverID; ns != "" {
