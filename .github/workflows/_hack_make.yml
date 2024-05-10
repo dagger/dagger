@@ -97,7 +97,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
-          cache-dependency-path: "internal/mage/go.sum"
+          cache-dependency-path: "ci/go.sum"
       - name: Build Dagger Dev Engine...
         run: |
           ./hack/dev
@@ -115,3 +115,4 @@ jobs:
           ./hack/with-dev ./hack/make ${{ inputs.mage-targets }}
         env:
           DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+        timeout-minutes: ${{ inputs.timeout }}
