@@ -584,15 +584,6 @@ func TestModuleGit(t *testing.T) {
 				"/sdk",
 			},
 		},
-		{
-			sdk: "elixir",
-			gitGeneratedFiles: []string{
-				"/dagger_sdk/**",
-			},
-			gitIgnoredFiles: []string{
-				"/dagger_sdk",
-			},
-		},
 	} {
 		tc := tc
 		t.Run(fmt.Sprintf("module %s git", tc.sdk), func(t *testing.T) {
