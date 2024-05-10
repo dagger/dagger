@@ -87,13 +87,17 @@ The following code snippet shows how to add documentation for an object and its 
 ```go file=./snippets/documentation/go/object.go
 ```
 
-Here is an example of the result from `dagger functions`:
+Here is an example of the result from `dagger call --help`:
 
 ```
 Flags:
-      --age string      The age of the user.
-      --name string     The name of the user.
+      --age int
+      --name string
       ...
+
+Function Commands:
+  age           The age of the user.
+  name          The name of the user.
 ```
 
 </TabItem>
@@ -116,13 +120,17 @@ Flags:
 ```typescript file=./snippets/documentation/typescript/object.ts
 ```
 
-Here is an example of the result from `dagger functions`:
+Here is an example of the result from `dagger call --help`:
 
 ```
 Flags:
-      --age string      The age of the user.
-      --name string     The name of the user.
+      --age int
+      --name string
       ...
+
+Function Commands:
+  age           The age of the user.
+  name          The name of the user.
 ```
 </TabItem>
 </Tabs>

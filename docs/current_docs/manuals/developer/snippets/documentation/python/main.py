@@ -1,10 +1,9 @@
 """A simple example module to say hello."""
 
-"""Further documentation for the module here."""
-
 from typing import Annotated
-
 from dagger import Doc, function, object_type
+
+"""Further documentation for the module here."""
 
 
 @object_type
@@ -12,6 +11,7 @@ class MyModule:
     """Simple hello functions."""
 
     """A function to say hello."""
+
     @function
     def hello(
         self,
@@ -22,6 +22,7 @@ class MyModule:
         return f"{greeting}, {name}!"
 
     """A function to say a loud hello."""
+
     @function
     def loud_hello(
         self,

@@ -3,7 +3,6 @@
  *
  * Further documentation for the module here.
  */
-
 import { object, func } from "@dagger.io/dagger"
 
 @object()
