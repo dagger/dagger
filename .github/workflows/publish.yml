@@ -29,12 +29,13 @@ jobs:
           cache-dependency-path: "ci/go.sum"
       - name: "Publish Engine & CLI"
         run: |
+          cd ci/mage
           if [ $GITHUB_REF_NAME == 'main' ]; then
             # this is a push to the main branch, publish to the commit we're at
-            ./hack/make dagger:publish ${{ github.sha }}
+            go run main.go -w ../.. dagger:publish ${{ github.sha }}
           else
             # this is a tag push, publish to that tag
-            ./hack/make dagger:publish ${{ github.ref_name }}
+            go run main.go -w ../.. dagger:publish ${{ github.ref_name }}
           fi
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
