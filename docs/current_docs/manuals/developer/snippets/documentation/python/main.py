@@ -1,4 +1,7 @@
-"""A simple example module to say hello."""
+"""A simple example module to say hello.
+
+Further documentation for the module here.
+"""
 from typing import Annotated
 
 from dagger import Doc, function, object_type
