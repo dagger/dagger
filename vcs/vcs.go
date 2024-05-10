@@ -582,7 +582,6 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*$`,
 		vcs:    "git",
 		repo:   "https://{root}",
-		check:  noVCSSuffix,
 	},
 
 	// Codeberg
@@ -591,7 +590,6 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>codeberg\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*$`,
 		vcs:    "git",
 		repo:   "https://{root}",
-		check:  noVCSSuffix,
 	},
 
 	// Bitbucket
@@ -600,7 +598,6 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>bitbucket\.org/(?P<bitname>[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*$`,
 		repo:   "https://{root}",
 		vcs:    "git",
-		check:  noVCSSuffix,
 	},
 
 	// IBM DevOps Services (JazzHub)
@@ -609,7 +606,6 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>hub\.jazz\.net/git/[a-z0-9]+/[A-Za-z0-9_.\-]+)(/[A-Za-z0-9_.\-]+)*$`,
 		vcs:    "git",
 		repo:   "https://{root}",
-		check:  noVCSSuffix,
 	},
 
 	// Git at Apache
@@ -643,7 +639,6 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>git\.openstack\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(\.git)?(/[A-Za-z0-9_.\-]+)*$`,
 		vcs:    "git",
 		repo:   "https://{root}",
-		check:  noVCSSuffix,
 	},
 
 	// General syntax for any server.
@@ -660,19 +655,6 @@ func init() {
 	for _, srv := range vcsPaths {
 		srv.regexp = regexp.MustCompile(srv.re)
 	}
-}
-
-// noVCSSuffix checks that the repository name does not
-// end in .foo for any version control system foo.
-// The usual culprit is ".git".
-func noVCSSuffix(match map[string]string) error {
-	repo := match["repo"]
-	for _, vcs := range vcsList {
-		if strings.HasSuffix(repo, "."+vcs.Cmd) {
-			return fmt.Errorf("invalid version control suffix in %s path", match["prefix"])
-		}
-	}
-	return nil
 }
 
 // launchpadVCS solves the ambiguity for "lp.net/project/foo". In this case,
