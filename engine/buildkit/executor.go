@@ -47,26 +47,36 @@ import (
 )
 
 type ExecutionMetadata struct {
+	ClientID string
+	ServerID string
+
 	SystemEnvNames []string
-	ClientID       string
-	ServerID       string
-	OTELEnvs       []string
-	EnabledGPUs    []string
+
+	OTELEnvs []string
+
+	EnabledGPUs []string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
 
 func executionMetadataFromVtx(vtx solver.Vertex) (*ExecutionMetadata, bool, error) {
-	md := ExecutionMetadata{}
-
 	if vtx == nil {
 		return nil, false, nil
 	}
+	return ExecutionMetadataFromDescription(vtx.Options().Description)
+}
 
-	bs, ok := vtx.Options().Description[executionMetadataKey]
+func ExecutionMetadataFromDescription(desc map[string]string) (*ExecutionMetadata, bool, error) {
+	if desc == nil {
+		return nil, false, nil
+	}
+
+	bs, ok := desc[executionMetadataKey]
 	if !ok {
 		return nil, false, nil
 	}
+
+	md := ExecutionMetadata{}
 	if err := json.Unmarshal([]byte(bs), &md); err != nil {
 		return nil, false, fmt.Errorf("failed to unmarshal execution metadata: %w", err)
 	}
@@ -280,6 +290,18 @@ func (w *Worker) run(
 
 	if err := w.applySpecCustomizations(spec); err != nil {
 		return fmt.Errorf("failed to apply spec customizations: %w", err)
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("ENVS: %v", spec.Process.Env)
+	bklog.G(ctx).Debugf("HOSTNAME: %v", spec.Hostname)
+	if w.execMD != nil {
+		bklog.G(ctx).Debugf("SERVERID: %v", w.execMD.ServerID)
 	}
 
 	if err := json.NewEncoder(f).Encode(spec); err != nil {

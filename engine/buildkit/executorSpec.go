@@ -10,6 +10,7 @@ import (
 
 const (
 	DaggerServerIDEnv      = "_DAGGER_SERVER_ID"
+	DaggerClientIDEnv      = "_DAGGER_NESTED_CLIENT_ID"
 	DaggerCallDigestEnv    = "_DAGGER_CALL_DIGEST"
 	DaggerEngineVersionEnv = "_DAGGER_ENGINE_VERSION"
 )
@@ -21,14 +22,32 @@ var removeEnvs = map[string]struct{}{
 }
 
 func (w *Worker) applySpecCustomizations(spec *specs.Spec) error {
-	if err := w.updateEnvs(spec); err != nil {
+	origEnvMap := make(map[string]string)
+	for _, env := range spec.Process.Env {
+		k, v, ok := strings.Cut(env, "=")
+		if !ok {
+			continue
+		}
+		origEnvMap[k] = v
+	}
+
+	if err := w.setProxyEnvs(spec, origEnvMap); err != nil {
+		return err
+	}
+	if err := w.setupNestedClient(spec, origEnvMap); err != nil {
+		return err
+	}
+	if err := w.setupOTEL(spec); err != nil {
+		return err
+	}
+	if err := w.enableGPU(spec); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (w *Worker) updateEnvs(spec *specs.Spec) error {
+func (w *Worker) setProxyEnvs(spec *specs.Spec, origEnvMap map[string]string) error {
 	filteredEnvs := make([]string, 0, len(spec.Process.Env))
 	for _, env := range spec.Process.Env {
 		k, _, ok := strings.Cut(env, "=")
@@ -41,15 +60,6 @@ func (w *Worker) updateEnvs(spec *specs.Spec) error {
 		filteredEnvs = append(filteredEnvs, env)
 	}
 	spec.Process.Env = filteredEnvs
-
-	origEnvMap := make(map[string]string)
-	for _, env := range spec.Process.Env {
-		k, v, ok := strings.Cut(env, "=")
-		if !ok {
-			continue
-		}
-		origEnvMap[k] = v
-	}
 
 	for _, upperProxyEnvName := range []string{
 		"HTTP_PROXY",
@@ -89,12 +99,6 @@ func (w *Worker) updateEnvs(spec *specs.Spec) error {
 		return nil
 	}
 
-	spec.Process.Env = append(spec.Process.Env, DaggerServerIDEnv+"="+w.execMD.ServerID)
-	spec.Process.Env = append(spec.Process.Env, w.execMD.OTELEnvs...)
-	if w.execMD.ClientID != "" {
-		spec.Process.Env = append(spec.Process.Env, "_DAGGER_NESTED_CLIENT_ID="+w.execMD.ClientID)
-	}
-
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
 	for _, systemEnvName := range w.execMD.SystemEnvNames {
 		if _, ok := origEnvMap[systemEnvName]; ok {
@@ -106,6 +110,48 @@ func (w *Worker) updateEnvs(spec *specs.Spec) error {
 			spec.Process.Env = append(spec.Process.Env, systemEnvName+"="+systemVal)
 		}
 	}
+
+	return nil
+}
+
+func (w *Worker) setupOTEL(spec *specs.Spec) error {
+	if w.execMD == nil {
+		return nil
+	}
+	spec.Process.Env = append(spec.Process.Env, w.execMD.OTELEnvs...)
+
+	return nil
+}
+
+func (w *Worker) setupNestedClient(spec *specs.Spec, origEnvMap map[string]string) error {
+	// TODO: don't do basically any of this anymore once we serve nested clients from here
+	// TODO: don't do basically any of this anymore once we serve nested clients from here
+	// TODO: don't do basically any of this anymore once we serve nested clients from here
+	if w.execMD == nil {
+		return nil
+	}
+	spec.Process.Env = append(spec.Process.Env, DaggerServerIDEnv+"="+w.execMD.ServerID)
+
+	if w.execMD.ClientID == "" {
+		// don't let users manually set these
+		for _, envName := range []string{
+			DaggerServerIDEnv,
+			DaggerClientIDEnv,
+		} {
+			if _, ok := origEnvMap[envName]; ok {
+				return fmt.Errorf("cannot set %s manually", envName)
+			}
+		}
+		return nil
+	}
+
+	spec.Process.Env = append(spec.Process.Env, DaggerClientIDEnv+"="+w.execMD.ClientID)
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/.runner.sock",
+		Type:        "bind",
+		Options:     []string{"rbind"},
+		Source:      "/run/buildkit/buildkitd.sock",
+	})
 
 	return nil
 }

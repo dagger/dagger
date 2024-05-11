@@ -128,11 +128,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			_ = ok
 		}
 
-		// don't pass these through to the container when manually set, they are internal only
-		if name == "_DAGGER_NESTED_CLIENT_ID" && !opts.ExperimentalPrivilegedNesting {
-			continue
-		}
-
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
@@ -246,12 +241,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
-	execSt := fsSt.Run(runOpts...)
-
 	execMDOpt, err := execMD.AsConstraintsOpt()
 	if err != nil {
 		return nil, fmt.Errorf("execution metadata: %w", err)
 	}
+	runOpts = append(runOpts, execMDOpt)
+	execSt := fsSt.Run(runOpts...)
+
 	marshalOpts := []llb.ConstraintsOpt{
 		llb.Platform(platform.Spec()),
 		execMDOpt,

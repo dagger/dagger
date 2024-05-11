@@ -58,7 +58,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
+	container, err := d.bk.NewContainer(ctx, buildkit.NewContainerRequest{
 		Mounts: []bkgw.Mount{
 			{
 				Dest:      "/",

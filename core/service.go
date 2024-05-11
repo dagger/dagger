@@ -241,6 +241,16 @@ func (svc *Service) startContainer(
 		return nil, fmt.Errorf("service container must be result of withExec (expected exec op, got %T)", dag.GetOp())
 	}
 
+	execMD, ok, err := buildkit.ExecutionMetadataFromDescription(execOp.Metadata.Description)
+	if err != nil {
+		return nil, fmt.Errorf("parse execution metadata: %w", err)
+	}
+	if !ok {
+		execMD = &buildkit.ExecutionMetadata{
+			ServerID: clientMetadata.ServerID,
+		}
+	}
+
 	detachDeps, _, err := svc.Query.Services.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
@@ -305,10 +315,11 @@ func (svc *Service) startContainer(
 		mounts[i] = mount
 	}
 
-	gc, err := bk.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts:   mounts,
-		Hostname: fullHost,
-		Platform: &pbPlatform,
+	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{
+		Mounts:            mounts,
+		Hostname:          fullHost,
+		Platform:          &pbPlatform,
+		ExecutionMetadata: *execMD,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("new container: %w", err)

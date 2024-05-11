@@ -179,7 +179,7 @@ func shim() (returnExitCode int) {
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Fprintf(errWriter, "shim error: %v\n%s", err, string(debug.Stack()))
-			returnExitCode = errorExitCode
+			returnExitCode = errorExitCode + 2
 		}
 	}()
 
@@ -357,7 +357,7 @@ func setupBundle() (returnExitCode int) {
 	defer func() {
 		if err := recover(); err != nil {
 			fmt.Fprintf(errWriter, "shim error: %v\n%s", err, string(debug.Stack()))
-			returnExitCode = errorExitCode
+			returnExitCode = errorExitCode + 1
 		}
 		if stderrFile != nil {
 			stderrFile.Close()
@@ -479,17 +479,6 @@ func setupBundle() (returnExitCode int) {
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
-		case strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID="):
-			// keep the env var; we use it at runtime
-			keepEnv = append(keepEnv, env)
-
-			// mount buildkit sock since it's nesting
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.runner.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      "/run/buildkit/buildkitd.sock",
-			})
 		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 			keepEnv = append(keepEnv, env)
 			serverID = strings.TrimPrefix(env, "_DAGGER_SERVER_ID=")
@@ -550,7 +539,7 @@ func setupBundle() (returnExitCode int) {
 	for _, aliasEnv := range aliasEnvs {
 		if err := appendHostAlias(hostsFilePath, aliasEnv, searchDomains); err != nil {
 			fmt.Fprintln(os.Stderr, "host alias:", err)
-			return errorExitCode
+			return errorExitCode + 3
 		}
 	}
 
