@@ -292,6 +292,13 @@ func (w *Worker) run(
 		return fmt.Errorf("failed to apply spec customizations: %w", err)
 	}
 
+	if err := json.NewEncoder(f).Encode(spec); err != nil {
+		return err
+	}
+	f.Close()
+
+	bklog.G(ctx).Debugf("> creating %s %v", id, spec.Process.Args)
+	defer bklog.G(ctx).Debugf("> container done %s %v", id, spec.Process.Args)
 	// TODO:
 	// TODO:
 	// TODO:
@@ -303,14 +310,6 @@ func (w *Worker) run(
 	if w.execMD != nil {
 		bklog.G(ctx).Debugf("SERVERID: %v", w.execMD.ServerID)
 	}
-
-	if err := json.NewEncoder(f).Encode(spec); err != nil {
-		return err
-	}
-	f.Close()
-
-	bklog.G(ctx).Debugf("> creating %s %v", id, spec.Process.Args)
-	defer bklog.G(ctx).Debugf("> container done %s %v", id, spec.Process.Args)
 
 	if installCACerts {
 		caInstaller, err := cacerts.NewInstaller(ctx, spec, func(ctx context.Context, args ...string) error {

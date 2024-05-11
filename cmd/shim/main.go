@@ -22,14 +22,12 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/containerd/console"
 	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"golang.org/x/sys/unix"
-	"golang.org/x/term"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
@@ -234,10 +232,6 @@ func shim() (returnExitCode int) {
 	cmd := exec.Command(name, args...)
 	_, isTTY := internalEnv(core.ShimEnableTTYEnvVar)
 	if isTTY {
-		// Re-enable onlcr now that we're in the container.
-		if err := toggleONLCR(true); err != nil {
-			panic(err)
-		}
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -363,12 +357,6 @@ func setupBundle() (returnExitCode int) {
 			stderrFile.Close()
 		}
 	}()
-
-	// If we're running with a TTY, disable onlcr; it gets re-enabled on the
-	// container side.
-	if err := toggleONLCR(false); err != nil {
-		panic(err)
-	}
 
 	// Figure out the path to the bundle dir, in which we can obtain the
 	// oci runtime config.json
@@ -785,35 +773,6 @@ func replaceSearch(dst io.Writer, resolv string, searchDomains []string) error {
 	}
 
 	return nil
-}
-
-// toggleONLCR implements a tricky dance whereby we disable onlcr on the host
-// side when running a TTY and then re-enable it on the container side. This
-// way simple CLIs like bash will start with a sane terminal (onlcr) and TUIs
-// like vim are still able to turn it off.
-//
-// Disabling ONLCR and calling it a day is not really an option. It has to be
-// on by default. But when it's on by default on the host side, the container
-// side is unable to change it. But if it's only on in the container side, it
-// can be disabled properly.
-//
-// For clarity: the creator of the PTY we're dealing with is Buildkit itself,
-// in executor/runcexecutor/executor_linux.go. It would not necessarily make
-// sense to upstream this fix because you really need the other half
-// (re-enabling it in the container) for the change to be useful. Thankfully
-// we're able to access the container's PTY from both the host side and the
-// container side because the shim first runs as the OCI runtime and then
-// re-execs itself as the container.
-func toggleONLCR(enable bool) error {
-	fd := os.Stdin.Fd()
-	if !term.IsTerminal(int(fd)) {
-		return nil
-	}
-	if enable {
-		return console.SetONLCR(fd)
-	} else {
-		return console.ClearONLCR(fd)
-	}
 }
 
 // Some OpenTelemetry clients don't support unix:// endpoints, so we proxy them
