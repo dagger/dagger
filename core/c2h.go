@@ -82,7 +82,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	defer telemetry.End(span, func() error { return rerr })
 	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
-	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
+	container, err := d.bk.NewContainer(ctx, buildkit.NewContainerRequest{
 		Hostname: d.tunnelServiceHost,
 		Mounts:   mounts,
 	})

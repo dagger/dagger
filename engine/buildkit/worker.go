@@ -326,7 +326,7 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 				return nil, err
 			}
 			if ok {
-				w = &Worker{sharedWorkerState: w.sharedWorkerState, execMD: execMD}
+				w = w.withExecMD(*execMD)
 			}
 			return ops.NewExecOp(
 				vtx,
@@ -343,4 +343,8 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 
 	// otherwise, just use the default base.Worker's ResolveOp
 	return w.Worker.ResolveOp(vtx, s, sm)
+}
+
+func (w *Worker) withExecMD(execMD ExecutionMetadata) *Worker {
+	return &Worker{sharedWorkerState: w.sharedWorkerState, execMD: &execMD}
 }

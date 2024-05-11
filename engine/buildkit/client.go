@@ -25,6 +25,7 @@ import (
 	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
+	"github.com/moby/buildkit/solver/pb"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -403,7 +404,14 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	return c.llbBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
-func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {
+type NewContainerRequest struct {
+	Mounts   []bkgw.Mount
+	Platform *pb.Platform
+	Hostname string
+	ExecutionMetadata
+}
+
+func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (bkgw.Container, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -412,16 +420,9 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	ctx = withOutgoingContext(ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
 		ContainerID: identity.NewID(),
-		NetMode:     req.NetMode,
 		Hostname:    req.Hostname,
 		Mounts:      make([]bkcontainer.Mount, len(req.Mounts)),
 	}
-
-	extraHosts, err := bkcontainer.ParseExtraHosts(req.ExtraHosts)
-	if err != nil {
-		return nil, err
-	}
-	ctrReq.ExtraHosts = extraHosts
 
 	// get the input mounts in parallel in case they need to be evaluated, which can be expensive
 	eg, egctx := errgroup.WithContext(ctx)
@@ -469,7 +470,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	ctr, err := bkcontainer.NewContainer(
 		context.Background(),
 		c.worker.CacheManager(),
-		c.worker, // also implements Executor
+		c.worker.withExecMD(req.ExecutionMetadata), // also implements Executor
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
