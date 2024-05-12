@@ -2,7 +2,7 @@ module github.com/dagger/dagger/ci
 
 go 1.21.7
 
-require github.com/dagger/dagger v0.11.3
+require github.com/dagger/dagger v0.11.4
 
 require (
 	github.com/99designs/gqlgen v0.17.44
