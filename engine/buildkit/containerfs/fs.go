@@ -1,4 +1,4 @@
-package cacerts
+package containerfs
 
 import (
 	"bufio"
@@ -16,13 +16,15 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
-// containerFS is a vfs-like abstraction for operating on a container's filesystem without
+// ContainerFS is a vfs-like abstraction for operating on a container's filesystem without
 // needing to actually create all the mounts and unmount them (which can be expensive).
-type containerFS struct {
+type ContainerFS struct {
 	spec             *specs.Spec
-	executeContainer executeContainerFunc
+	executeContainer ExecuteContainerFunc
 	mounts           []mount
 }
+
+type ExecuteContainerFunc func(ctx context.Context, args ...string) error
 
 type mount struct {
 	specs.Mount
@@ -31,7 +33,7 @@ type mount struct {
 	ResolvedDest string
 }
 
-func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*containerFS, error) {
+func NewContainerFS(spec *specs.Spec, executeContainer ExecuteContainerFunc) (*ContainerFS, error) {
 	// hopefully the source is never a symlink, but resolve them just in case
 	// in order to simplify later code
 	for i, m := range spec.Mounts {
@@ -45,7 +47,7 @@ func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*c
 		spec.Mounts[i] = m
 	}
 
-	ctrFS := &containerFS{spec: spec, executeContainer: executeContainer}
+	ctrFS := &ContainerFS{spec: spec, executeContainer: executeContainer}
 
 	// resolve all the destinations of the mounts
 	ctrFS.mounts = []mount{{
@@ -68,7 +70,7 @@ func newContainerFS(spec *specs.Spec, executeContainer executeContainerFunc) (*c
 	return ctrFS, nil
 }
 
-func (ctrFS *containerFS) Open(name string) (fs.File, error) {
+func (ctrFS *ContainerFS) Open(name string) (fs.File, error) {
 	hostPath, err := ctrFS.hostPath(name)
 	if err != nil {
 		return nil, err
@@ -76,7 +78,7 @@ func (ctrFS *containerFS) Open(name string) (fs.File, error) {
 	return os.Open(hostPath)
 }
 
-func (ctrFS *containerFS) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
+func (ctrFS *ContainerFS) OpenFile(name string, flag int, perm fs.FileMode) (*os.File, error) {
 	hostPath, err := ctrFS.hostPath(name)
 	if err != nil {
 		return nil, err
@@ -84,7 +86,7 @@ func (ctrFS *containerFS) OpenFile(name string, flag int, perm fs.FileMode) (*os
 	return os.OpenFile(hostPath, flag, perm)
 }
 
-func (ctrFS *containerFS) ReadDir(name string) ([]fs.DirEntry, error) {
+func (ctrFS *ContainerFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	hostPath, err := ctrFS.hostPath(name)
 	if err != nil {
 		return nil, err
@@ -92,7 +94,7 @@ func (ctrFS *containerFS) ReadDir(name string) ([]fs.DirEntry, error) {
 	return os.ReadDir(hostPath)
 }
 
-func (ctrFS *containerFS) Stat(name string) (fs.FileInfo, error) {
+func (ctrFS *ContainerFS) Stat(name string) (fs.FileInfo, error) {
 	hostPath, err := ctrFS.hostPath(name)
 	if err != nil {
 		return nil, err
@@ -100,7 +102,7 @@ func (ctrFS *containerFS) Stat(name string) (fs.FileInfo, error) {
 	return os.Stat(hostPath)
 }
 
-func (ctrFS *containerFS) Lstat(name string) (fs.FileInfo, error) {
+func (ctrFS *ContainerFS) Lstat(name string) (fs.FileInfo, error) {
 	hostPath, err := ctrFS.hostPath(name)
 	if err != nil {
 		return nil, err
@@ -108,7 +110,7 @@ func (ctrFS *containerFS) Lstat(name string) (fs.FileInfo, error) {
 	return os.Lstat(hostPath)
 }
 
-func (ctrFS *containerFS) Symlink(oldname, newname string) error {
+func (ctrFS *ContainerFS) Symlink(oldname, newname string) error {
 	newHostPath, err := ctrFS.hostPath(newname)
 	if err != nil {
 		return err
@@ -116,7 +118,7 @@ func (ctrFS *containerFS) Symlink(oldname, newname string) error {
 	return os.Symlink(oldname, newHostPath)
 }
 
-func (ctrFS *containerFS) Readlink(name string) (string, error) {
+func (ctrFS *ContainerFS) Readlink(name string) (string, error) {
 	hostPath, err := ctrFS.hostPath(name)
 	if err != nil {
 		return "", err
@@ -124,11 +126,11 @@ func (ctrFS *containerFS) Readlink(name string) (string, error) {
 	return os.Readlink(hostPath)
 }
 
-func (ctrFS *containerFS) EvaluateSymlinks(name string) (string, error) {
+func (ctrFS *ContainerFS) EvaluateSymlinks(name string) (string, error) {
 	return ctrFS.resolvedContainerPath(name)
 }
 
-func (ctrFS *containerFS) ReadFile(path string) ([]byte, error) {
+func (ctrFS *ContainerFS) ReadFile(path string) ([]byte, error) {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return nil, err
@@ -136,7 +138,7 @@ func (ctrFS *containerFS) ReadFile(path string) ([]byte, error) {
 	return os.ReadFile(hostPath)
 }
 
-func (ctrFS *containerFS) WriteFile(path string, data []byte, perm fs.FileMode) error {
+func (ctrFS *ContainerFS) WriteFile(path string, data []byte, perm fs.FileMode) error {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return err
@@ -144,7 +146,7 @@ func (ctrFS *containerFS) WriteFile(path string, data []byte, perm fs.FileMode) 
 	return os.WriteFile(hostPath, data, perm)
 }
 
-func (ctrFS *containerFS) Remove(path string) error {
+func (ctrFS *ContainerFS) Remove(path string) error {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return err
@@ -152,7 +154,7 @@ func (ctrFS *containerFS) Remove(path string) error {
 	return os.Remove(hostPath)
 }
 
-func (ctrFS *containerFS) RemoveAll(path string) error {
+func (ctrFS *ContainerFS) RemoveAll(path string) error {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return err
@@ -161,7 +163,7 @@ func (ctrFS *containerFS) RemoveAll(path string) error {
 }
 
 // MkdirAll is like os.MkdirAll but returns the uppermost container parent dir that was created
-func (ctrFS *containerFS) MkdirAll(path string, perm fs.FileMode) (createdDir string, rerr error) {
+func (ctrFS *ContainerFS) MkdirAll(path string, perm fs.FileMode) (createdDir string, rerr error) {
 	split := strings.Split(path, "/")
 	curPath := "/"
 	for _, part := range split {
@@ -194,7 +196,7 @@ func (ctrFS *containerFS) MkdirAll(path string, perm fs.FileMode) (createdDir st
 	return createdDir, nil
 }
 
-func (ctrFS *containerFS) MtimeOf(path string) (int64, error) {
+func (ctrFS *ContainerFS) MtimeOf(path string) (int64, error) {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return 0, err
@@ -206,7 +208,7 @@ func (ctrFS *containerFS) MtimeOf(path string) (int64, error) {
 	return fi.ModTime().UnixNano(), nil
 }
 
-func (ctrFS *containerFS) SetMtime(path string, t int64) error {
+func (ctrFS *ContainerFS) SetMtime(path string, t int64) error {
 	hostPath, err := ctrFS.hostPath(path)
 	if err != nil {
 		return err
@@ -214,7 +216,7 @@ func (ctrFS *containerFS) SetMtime(path string, t int64) error {
 	return os.Chtimes(hostPath, time.Time{}, time.Unix(0, t))
 }
 
-func (ctrFS *containerFS) LookPath(cmd string) (string, error) {
+func (ctrFS *ContainerFS) LookPath(cmd string) (string, error) {
 	if filepath.IsAbs(cmd) {
 		return cmd, nil
 	}
@@ -246,11 +248,14 @@ func (ctrFS *containerFS) LookPath(cmd string) (string, error) {
 	return "", exec.ErrNotFound
 }
 
-func (ctrFS *containerFS) Exec(ctx context.Context, args ...string) error {
+func (ctrFS *ContainerFS) Exec(ctx context.Context, args ...string) error {
+	if ctrFS.executeContainer == nil {
+		return fmt.Errorf("no ExecuteContainerFunc provided")
+	}
 	return ctrFS.executeContainer(ctx, args...)
 }
 
-func (ctrFS *containerFS) AnyPathExists(paths []string) (bool, error) {
+func (ctrFS *ContainerFS) AnyPathExists(paths []string) (bool, error) {
 	// TODO: parallelize?
 	for _, path := range paths {
 		exists, err := ctrFS.PathExists(path)
@@ -264,7 +269,7 @@ func (ctrFS *containerFS) AnyPathExists(paths []string) (bool, error) {
 	return false, nil
 }
 
-func (ctrFS *containerFS) PathExists(path string) (bool, error) {
+func (ctrFS *ContainerFS) PathExists(path string) (bool, error) {
 	_, err := ctrFS.Stat(path)
 	if err == nil {
 		return true, nil
@@ -275,7 +280,7 @@ func (ctrFS *containerFS) PathExists(path string) (bool, error) {
 	return false, err
 }
 
-func (ctrFS *containerFS) OSReleaseFileContains(ids [][]byte, idLikes [][]byte) (bool, error) {
+func (ctrFS *ContainerFS) OSReleaseFileContains(ids [][]byte, idLikes [][]byte) (bool, error) {
 	f, err := ctrFS.Open("/etc/os-release")
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -326,7 +331,7 @@ func (ctrFS *containerFS) OSReleaseFileContains(ids [][]byte, idLikes [][]byte) 
 
 // Returned map is keyed with the contents of each cert in the bundle, with all newlines stripped.
 // The bundle file is presumed to have the format of each cert separated by a blank line.
-func (ctrFS *containerFS) ReadCABundleFile(path string) (map[string]struct{}, error) {
+func (ctrFS *ContainerFS) ReadCABundleFile(path string) (map[string]struct{}, error) {
 	certs := make(map[string]struct{})
 	f, err := ctrFS.Open(path)
 	if err != nil {
@@ -357,7 +362,7 @@ func (ctrFS *containerFS) ReadCABundleFile(path string) (map[string]struct{}, er
 	return certs, nil
 }
 
-func (ctrFS *containerFS) RemoveCertsFromCABundle(path string, certs map[string]string) error {
+func (ctrFS *ContainerFS) RemoveCertsFromCABundle(path string, certs map[string]string) error {
 	f, err := ctrFS.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -403,7 +408,7 @@ func (ctrFS *containerFS) RemoveCertsFromCABundle(path string, certs map[string]
 	return nil
 }
 
-func (ctrFS *containerFS) ReadCustomCADir(path string) (
+func (ctrFS *ContainerFS) ReadCustomCADir(path string) (
 	certsToFileName map[string]string,
 	symlinks map[string]string,
 	rerr error,
@@ -415,7 +420,7 @@ func (ctrFS *containerFS) ReadCustomCADir(path string) (
 	return ReadHostCustomCADir(hostPath)
 }
 
-func (ctrFS *containerFS) DirIsEmpty(path string) (bool, error) {
+func (ctrFS *ContainerFS) DirIsEmpty(path string) (bool, error) {
 	dirEnts, err := ctrFS.ReadDir(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -428,7 +433,7 @@ func (ctrFS *containerFS) DirIsEmpty(path string) (bool, error) {
 
 // resolvedContainerPath returns the resolved path in the container for the given path, including
 // resolving any symlinks in the path (including parent dirs and the base path)
-func (ctrFS *containerFS) resolvedContainerPath(containerPath string) (string, error) {
+func (ctrFS *ContainerFS) resolvedContainerPath(containerPath string) (string, error) {
 	containerPath, _, err := ctrFS.resolvePath(containerPath, true, 0)
 	return containerPath, err
 }
@@ -436,7 +441,7 @@ func (ctrFS *containerFS) resolvedContainerPath(containerPath string) (string, e
 // hostPath returns the host path for a given path in the container without resolving
 // symlinks in the base path (parent dir symlinks *are* resolved though), which supports
 // e.g. Lstat on a symlink path
-func (ctrFS *containerFS) hostPath(containerPath string) (string, error) {
+func (ctrFS *ContainerFS) hostPath(containerPath string) (string, error) {
 	_, hostPath, err := ctrFS.resolvePath(containerPath, false, 0)
 	if err != nil {
 		return "", err
@@ -464,7 +469,7 @@ linkCount is used to prevent infinite loops in case of symlink loops.
 TODO: this may benefit from memoization if it becomes a performance bottleneck, but need to reset
 the memo after any modifications are made (or mounts added, etc.)
 */
-func (ctrFS *containerFS) resolvePath(path string, resolveBase bool, linkCount int) (
+func (ctrFS *ContainerFS) resolvePath(path string, resolveBase bool, linkCount int) (
 	containerPath string,
 	hostPath string,
 	rerr error,

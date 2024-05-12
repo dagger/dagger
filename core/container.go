@@ -1034,31 +1034,6 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 	})
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, filePath string) (string, error) {
-	if container.Meta == nil {
-		ctr, err := container.WithExec(ctx, ContainerExecOpts{})
-		if err != nil {
-			return "", err
-		}
-		return ctr.MetaFileContents(ctx, filePath)
-	}
-
-	file := NewFile(
-		container.Query,
-		container.Meta,
-		path.Join(buildkit.MetaSourcePath, filePath),
-		container.Platform,
-		container.Services,
-	)
-
-	content, err := file.Contents(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	return string(content), nil
-}
-
 func (container *Container) Publish(
 	ctx context.Context,
 	ref string,
@@ -1510,51 +1485,6 @@ func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
 	}
 
 	return args, nil
-}
-
-func metaMount(stdin string) (llb.State, string) {
-	// because the shim might run as non-root, we need to make a world-writable
-	// directory first and then make it the base of the /dagger mount point.
-	//
-	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
-	if stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o666, []byte(stdin))
-	}
-
-	return llb.Scratch().File(
-			meta,
-			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
-		),
-		buildkit.MetaSourcePath
-}
-
-type ContainerExecOpts struct {
-	// Command to run instead of the container's default command
-	Args []string
-
-	// If the container has an entrypoint, ignore it for this exec rather than
-	// calling it with args.
-	SkipEntrypoint bool `default:"false"`
-
-	// Content to write to the command's standard input before closing
-	Stdin string `default:""`
-
-	// Redirect the command's standard output to a file in the container
-	RedirectStdout string `default:""`
-
-	// Redirect the command's standard error to a file in the container
-	RedirectStderr string `default:""`
-
-	// Provide the executed command access back to the Dagger API
-	ExperimentalPrivilegedNesting bool `default:"false"`
-
-	// Grant the process all root capabilities
-	InsecureRootCapabilities bool `default:"false"`
-
-	// (Internal-only) If this is a nested exec for a Function call, this should be set
-	// with the metadata for that call
-	NestedExecFunctionCall *FunctionCall `name:"-"`
 }
 
 type BuildArg struct {

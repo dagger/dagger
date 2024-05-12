@@ -45,10 +45,11 @@ const (
 	MaxFileContentsSize = 128 << 20
 
 	// MetaMountDestPath is the special path that the shim writes metadata to.
-	MetaMountDestPath = "/.dagger_meta_mount"
-
-	// MetaSourcePath is a world-writable directory created and mounted to /dagger.
-	MetaSourcePath = "meta"
+	MetaMountDestPath     = "/.dagger_meta_mount"
+	MetaMountExitCodePath = "exitCode"
+	MetaMountStdinPath    = "stdin"
+	MetaMountStdoutPath   = "stdout"
+	MetaMountStderrPath   = "stderr"
 )
 
 type Result = solverresult.Result[*ref]
@@ -303,16 +304,16 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 		return errors.Join(err, baseErr)
 	}
 
-	stdoutBytes, err := getExecMetaFile(ctx, mntable, "stdout")
+	stdoutBytes, err := getExecMetaFile(ctx, mntable, MetaMountStdoutPath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
-	stderrBytes, err := getExecMetaFile(ctx, mntable, "stderr")
+	stderrBytes, err := getExecMetaFile(ctx, mntable, MetaMountStderrPath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
 
-	exitCodeBytes, err := getExecMetaFile(ctx, mntable, "exitCode")
+	exitCodeBytes, err := getExecMetaFile(ctx, mntable, MetaMountExitCodePath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
@@ -335,7 +336,7 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 
 func getExecMetaFile(ctx context.Context, mntable snapshot.Mountable, fileName string) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
-	filePath := path.Join(MetaSourcePath, fileName)
+	filePath := path.Join(MetaMountDestPath, fileName)
 	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
 		// TODO: would be better to verify this is a "not exists" error, return err if not

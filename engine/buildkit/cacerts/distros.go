@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/dagger/dagger/engine/buildkit/containerfs"
 )
 
 /* TODO:Open questions
@@ -39,7 +41,7 @@ type debianLike struct {
 	*commonInstaller
 }
 
-func (d *debianLike) initialize(ctrFS *containerFS) error {
+func (d *debianLike) initialize(ctrFS *containerfs.ContainerFS) error {
 	bundlePath := "/etc/ssl/certs/ca-certificates.crt"
 	resolvedBundlePath, err := ctrFS.EvaluateSymlinks(bundlePath)
 	switch {
@@ -101,7 +103,7 @@ type rhelLike struct {
 	*commonInstaller
 }
 
-func (d *rhelLike) initialize(ctrFS *containerFS) error {
+func (d *rhelLike) initialize(ctrFS *containerfs.ContainerFS) error {
 	bundlePath := "/etc/pki/tls/certs/ca-bundle.crt"
 	resolvedBundlePath, err := ctrFS.EvaluateSymlinks(bundlePath)
 	switch {
@@ -161,7 +163,7 @@ func (d *rhelLike) detect() (bool, error) {
 // so far, the existing installers follow a common enough pattern that we can
 // abstract them into a common type and reduce duplication
 type commonInstaller struct {
-	ctrFS           *containerFS
+	ctrFS           *containerfs.ContainerFS
 	bundlePath      string
 	customCACertDir string
 	updateCmd       []string
@@ -213,7 +215,7 @@ func (d *commonInstaller) Install(ctx context.Context) (rerr error) {
 		return fmt.Errorf("failed to lookup %s: %w", d.updateCmd[0], lookupErr)
 	}
 
-	d.installedCerts, d.installedSymlinks, err = ReadHostCustomCADir(EngineCustomCACertsDir)
+	d.installedCerts, d.installedSymlinks, err = containerfs.ReadHostCustomCADir(EngineCustomCACertsDir)
 	if err != nil {
 		return fmt.Errorf("failed to read custom CA dir: %w", err)
 	}
