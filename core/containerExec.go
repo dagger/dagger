@@ -2,10 +2,9 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"path"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -14,6 +13,34 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
 )
+
+type ContainerExecOpts struct {
+	// Command to run instead of the container's default command
+	Args []string
+
+	// If the container has an entrypoint, ignore it for this exec rather than
+	// calling it with args.
+	SkipEntrypoint bool `default:"false"`
+
+	// Content to write to the command's standard input before closing
+	Stdin string `default:""`
+
+	// Redirect the command's standard output to a file in the container
+	RedirectStdout string `default:""`
+
+	// Redirect the command's standard error to a file in the container
+	RedirectStderr string `default:""`
+
+	// Provide the executed command access back to the Dagger API
+	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool `default:"false"`
+
+	// (Internal-only) If this is a nested exec for a Function call, this should be set
+	// with the metadata for that call
+	NestedExecFunctionCall *FunctionCall `name:"-"`
+}
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	container = container.Clone()
@@ -48,9 +75,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	execMD := buildkit.ExecutionMetadata{
-		ServerID:       clientMetadata.ServerID,
+		ServerID: clientMetadata.ServerID,
+
+		RedirectStdoutPath: opts.RedirectStdout,
+		RedirectStderrPath: opts.RedirectStderr,
+
 		SystemEnvNames: container.SystemEnvNames,
-		EnabledGPUs:    container.EnabledGPUs,
+
+		EnabledGPUs: container.EnabledGPUs,
 	}
 
 	// if GPU parameters are set for this container pass them over:
@@ -93,16 +125,18 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
 
-	// create /dagger mount point for the shim to write to
+	// create mount point for the executor to write stdout/stderr/exitcode to
 	runOpts = append(runOpts,
 		llb.AddMount(buildkit.MetaMountDestPath, metaSt, llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", opts.RedirectStdout))
+		// ensure this path is in the cache key
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStdoutEnv, opts.RedirectStdout))
 	}
 
 	if opts.RedirectStderr != "" {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", opts.RedirectStderr))
+		// ensure this path is in the cache key
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStderrEnv, opts.RedirectStderr))
 	}
 
 	for _, bnd := range container.Services {
@@ -131,7 +165,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
-	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range container.Secrets {
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Accessor)}
 
@@ -140,10 +173,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		case secret.EnvName != "":
 			secretDest = secret.EnvName
 			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
-			secretsToScrub.Envs = append(secretsToScrub.Envs, secret.EnvName)
+			execMD.SecretEnvNames = append(execMD.SecretEnvNames, secret.EnvName)
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
-			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
+			execMD.SecretFilePaths = append(execMD.SecretFilePaths, secret.MountPath)
 			if secret.Owner != nil {
 				secretOpts = append(secretOpts, llb.SecretFileOpt(
 					secret.Owner.UID,
@@ -156,18 +189,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
-	}
-
-	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
-		// we sort to avoid non-deterministic order that would break caching
-		sort.Strings(secretsToScrub.Envs)
-		sort.Strings(secretsToScrub.Files)
-
-		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
-		if err != nil {
-			return nil, fmt.Errorf("scrub secrets json: %w", err)
-		}
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_SCRUB_SECRETS", string(secretsToScrubJSON)))
 	}
 
 	for _, ctrSocket := range container.Sockets {
@@ -288,4 +309,46 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	container.ImageRef = ""
 
 	return container, nil
+}
+
+func (container *Container) MetaFileContents(ctx context.Context, filePath string) (string, error) {
+	if container.Meta == nil {
+		ctr, err := container.WithExec(ctx, ContainerExecOpts{})
+		if err != nil {
+			return "", err
+		}
+		return ctr.MetaFileContents(ctx, filePath)
+	}
+
+	file := NewFile(
+		container.Query,
+		container.Meta,
+		path.Join(buildkit.MetaMountDestPath, filePath),
+		container.Platform,
+		container.Services,
+	)
+
+	content, err := file.Contents(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
+func metaMount(stdin string) (llb.State, string) {
+	// because the shim might run as non-root, we need to make a world-writable
+	// directory first and then make it the base of the /dagger mount point.
+	//
+	// TODO(vito): have the shim exec as the other user instead?
+	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
+	if stdin != "" {
+		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
+	}
+
+	return llb.Scratch().File(
+			meta,
+			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
+		),
+		buildkit.MetaMountDestPath
 }

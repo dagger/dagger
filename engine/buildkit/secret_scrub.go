@@ -1,16 +1,14 @@
-package main
+package buildkit
 
 import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"golang.org/x/text/transform"
-
-	"github.com/dagger/dagger/core"
 )
 
 var (
@@ -18,10 +16,15 @@ var (
 	scrubString = []byte("***")
 )
 
-func NewSecretScrubReader(r io.Reader, currentDirPath string, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Reader, error) {
-	secrets := loadSecretsToScrubFromEnv(env, secretsToScrub.Envs)
+func NewSecretScrubReader(
+	r io.Reader,
+	env []string,
+	secretEnvs []string,
+	secretFiles []string,
+) (io.Reader, error) {
+	secrets := loadSecretsToScrubFromEnv(env, secretEnvs)
 
-	fileSecrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretsToScrub.Files)
+	fileSecrets, err := loadSecretsToScrubFromFiles(secretFiles)
 	if err != nil {
 		return nil, fmt.Errorf("could not load secrets from file: %w", err)
 	}
@@ -72,23 +75,16 @@ func loadSecretsToScrubFromEnv(env []string, secretsToScrub []string) []string {
 	return secrets
 }
 
-// loadSecretsToScrubFromFiles loads secrets from file path in secretFilePathsToScrub from the fsys, accessed from the absolute currentDirPathAbs.
-// It will attempt to make any file path as absolute file path by joining it with the currentDirPathAbs if need be.
-func loadSecretsToScrubFromFiles(currentDirPathAbs string, fsys fs.FS, secretFilePathsToScrub []string) ([]string, error) {
+// loadSecretsToScrubFromFiles loads secrets from file path in secretFilePathsToScrub, which must be absolute
+func loadSecretsToScrubFromFiles(secretFilePathsToScrub []string) ([]string, error) {
 	secrets := make([]string, 0, len(secretFilePathsToScrub))
 
 	for _, fileToScrub := range secretFilePathsToScrub {
-		absFileToScrub := fileToScrub
 		if !filepath.IsAbs(fileToScrub) {
-			absFileToScrub = filepath.Join("/", fileToScrub)
-		}
-		if strings.HasPrefix(fileToScrub, currentDirPathAbs) || strings.HasPrefix(fileToScrub, currentDirPathAbs[1:]) {
-			absFileToScrub = strings.TrimPrefix(fileToScrub, currentDirPathAbs)
-			absFileToScrub = filepath.Join("/", absFileToScrub)
+			return nil, fmt.Errorf("file path must be absolute: %s", fileToScrub)
 		}
 
-		// we remove the first `/` from the absolute path to  fileToScrub to work with fs.ReadFile
-		secret, err := fs.ReadFile(fsys, absFileToScrub[1:])
+		secret, err := os.ReadFile(fileToScrub)
 		if err != nil {
 			return nil, fmt.Errorf("secret value not available for: %w", err)
 		}

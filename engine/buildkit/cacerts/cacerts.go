@@ -7,6 +7,8 @@ import (
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/engine/buildkit/containerfs"
 )
 
 const (
@@ -25,15 +27,13 @@ type Installer interface {
 	// detect checks if the container is a match for this installer.
 	detect() (bool, error)
 	// initialize sets the installer's initial internal state
-	initialize(*containerFS) error
+	initialize(*containerfs.ContainerFS) error
 }
-
-type executeContainerFunc func(ctx context.Context, args ...string) error
 
 func NewInstaller(
 	ctx context.Context,
 	spec *specs.Spec,
-	executeContainer executeContainerFunc,
+	executeContainer containerfs.ExecuteContainerFunc,
 ) (Installer, error) {
 	dirEnts, err := os.ReadDir(EngineCustomCACertsDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -43,7 +43,7 @@ func NewInstaller(
 		return noopInstaller{}, nil
 	}
 
-	ctrFS, err := newContainerFS(spec, executeContainer)
+	ctrFS, err := containerfs.NewContainerFS(spec, executeContainer)
 	if err != nil {
 		return nil, err
 	}
@@ -103,10 +103,10 @@ func NewInstaller(
 
 type noopInstaller struct{}
 
-func (noopInstaller) Install(context.Context) error   { return nil }
-func (noopInstaller) Uninstall(context.Context) error { return nil }
-func (noopInstaller) detect() (bool, error)           { return false, nil }
-func (noopInstaller) initialize(*containerFS) error   { return nil }
+func (noopInstaller) Install(context.Context) error             { return nil }
+func (noopInstaller) Uninstall(context.Context) error           { return nil }
+func (noopInstaller) detect() (bool, error)                     { return false, nil }
+func (noopInstaller) initialize(*containerfs.ContainerFS) error { return nil }
 
 // Want identifiable separate type for cleanup errors since if those are
 // hit specifically we need to fail to the whole exec (whereas other errors

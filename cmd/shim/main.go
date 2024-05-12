@@ -38,19 +38,14 @@ import (
 )
 
 const (
-	metaMountPath = "/.dagger_meta_mount"
-	stdinPath     = metaMountPath + "/stdin"
-	exitCodePath  = metaMountPath + "/exitCode"
-	runcPath      = "/usr/local/bin/runc"
-	shimPath      = metaMountPath + "/shim"
+	runcPath = "/usr/local/bin/runc"
+	shimPath = "/.shim"
 
 	errorExitCode = 125
 )
 
 var (
-	stdoutPath = metaMountPath + "/stdout"
-	stderrPath = metaMountPath + "/stderr"
-	pipeWg     sync.WaitGroup
+	pipeWg sync.WaitGroup
 )
 
 /*
@@ -230,103 +225,22 @@ func shim() (returnExitCode int) {
 	}
 
 	cmd := exec.Command(name, args...)
+	cmd.Stdin = os.Stdin
+
 	_, isTTY := internalEnv(core.ShimEnableTTYEnvVar)
 	if isTTY {
-		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	} else {
-		if stdinFile, err := os.Open(stdinPath); err == nil {
-			defer stdinFile.Close()
-			cmd.Stdin = stdinFile
-		} else {
-			cmd.Stdin = nil
-		}
-
-		stderrFile, err := os.OpenFile(stderrPath, os.O_WRONLY|os.O_APPEND, 0o666)
-		if err != nil {
-			panic(err)
-		}
-		defer stderrFile.Close()
-		errWriter = io.MultiWriter(stderrFile, stderrOtel, os.Stderr)
-		stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
-		if found {
-			stderrRedirectFile, err := os.Create(stderrRedirectPath)
-			if err != nil {
-				panic(err)
-			}
-			defer stderrRedirectFile.Close()
-			errWriter = io.MultiWriter(stderrFile, stderrRedirectFile, stderrOtel, os.Stderr)
-		}
-
-		var outWriter io.Writer = os.Stdout
-		stdoutFile, err := os.OpenFile(stdoutPath, os.O_WRONLY|os.O_APPEND, 0o666)
-		if err != nil {
-			panic(err)
-		}
-		defer stdoutFile.Close()
-		outWriter = io.MultiWriter(stdoutFile, stdoutOtel, os.Stdout)
-		stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
-		if found {
-			stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
-			if err != nil {
-				panic(err)
-			}
-			defer stdoutRedirectFile.Close()
-			outWriter = io.MultiWriter(stdoutFile, stdoutRedirectFile, stdoutOtel, os.Stdout)
-		}
-
-		var secretsToScrub core.SecretToScrubInfo
-		secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
-		if found {
-			err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
-			if err != nil {
-				panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
-			}
-		}
-
-		currentDirPath := "/"
-		shimFS := os.DirFS(currentDirPath)
+		errWriter = io.MultiWriter(stderrOtel, os.Stderr)
+		outWriter := io.MultiWriter(stdoutOtel, os.Stdout)
 
 		// Direct slog to the new stderr. This is only for dev time debugging, and
 		// runtime errors/warnings.
 		slog.SetDefault(telemetry.PrettyLogger(errWriter, slog.LevelWarn))
 
-		if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
-			cmd.Stdout = outWriter
-			cmd.Stderr = errWriter
-		} else {
-			// Get pipes for command's stdout and stderr and process output
-			// through secret scrub reader in multiple goroutines:
-			envToScrub := os.Environ()
-			stdoutPipe, err := cmd.StdoutPipe()
-			if err != nil {
-				panic(err)
-			}
-			scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
-			if err != nil {
-				panic(err)
-			}
-			pipeWg.Add(1)
-			go func() {
-				defer pipeWg.Done()
-				io.Copy(outWriter, scrubOutReader)
-			}()
-
-			stderrPipe, err := cmd.StderrPipe()
-			if err != nil {
-				panic(err)
-			}
-			scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
-			if err != nil {
-				panic(err)
-			}
-			pipeWg.Add(1)
-			go func() {
-				defer pipeWg.Done()
-				io.Copy(errWriter, scrubErrReader)
-			}()
-		}
+		cmd.Stdout = outWriter
+		cmd.Stderr = errWriter
 	}
 
 	exitCode := 0
@@ -336,10 +250,6 @@ func shim() (returnExitCode int) {
 		} else {
 			panic(err)
 		}
-	}
-
-	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0o666); err != nil {
-		panic(err)
 	}
 
 	return exitCode
@@ -384,80 +294,6 @@ func setupBundle() (returnExitCode int) {
 	var spec specs.Spec
 	if err := json.Unmarshal(configBytes, &spec); err != nil {
 		panic(fmt.Errorf("error parsing config.json: %w", err))
-	}
-
-	// Check to see if this is a dagger exec, currently by using
-	// the presence of the dagger meta mount. If it is, set up the
-	// shim to be invoked as the init process. Otherwise, just
-	// pass through as is
-	var isDaggerExec bool
-	for _, mnt := range spec.Mounts {
-		if mnt.Destination == metaMountPath {
-			isDaggerExec = true
-
-			// setup the metaMount dir/files with the final container uid/gid owner so that
-			// we guarantee the container init shim process can read/write them. This is needed
-			// for the ca cert installer case where we may run some commands as root when the actual
-			// user exec is non-root. Just setting 0666 perms isn't sufficient due to umask settings,
-			// which we don't want to play with as it could subtly impact other things.
-			if err := containerChownPath(mnt.Source, &spec); err != nil {
-				panic(fmt.Errorf("error chowning meta mount path: %w", err))
-			}
-			for _, metaPath := range []string{
-				stdinPath,
-				stdoutPath,
-				stderrPath,
-				exitCodePath,
-			} {
-				path := filepath.Join(mnt.Source, strings.TrimPrefix(metaPath, metaMountPath))
-				if err := containerTouchPath(path, 0o666, &spec); err != nil {
-					panic(fmt.Errorf("error touching path %s: %w", path, err))
-				}
-
-				// for stderr specifically, also update errWriter to that file so that any
-				// errors here actually show up in the final error message passed to clients
-				if metaPath == stderrPath {
-					var err error
-					stderrFile, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o666)
-					if err != nil {
-						panic(err)
-					}
-					// don't both closing, will be closed when we exit and closing in defer here
-					// break panic defer at beginning
-					errWriter = io.MultiWriter(stderrFile, os.Stderr)
-				}
-			}
-
-			break
-		}
-	}
-	// We're running an internal shim command, i.e. a service health check
-	for _, env := range spec.Process.Env {
-		if strings.HasPrefix(env, "_DAGGER_INTERNAL_COMMAND=") {
-			isDaggerExec = true
-			break
-		}
-	}
-
-	if isDaggerExec {
-		// mount this executable into the container so it can be invoked as the shim
-		selfPath, err := os.Executable()
-		if err != nil {
-			panic(fmt.Errorf("error getting self path: %w", err))
-		}
-		selfPath, err = filepath.EvalSymlinks(selfPath)
-		if err != nil {
-			panic(fmt.Errorf("error getting self path: %w", err))
-		}
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: shimPath,
-			Type:        "bind",
-			Source:      selfPath,
-			Options:     []string{"rbind", "ro"},
-		})
-
-		// update the args to specify the shim as the init process
-		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
 	var otelEndpoint string
@@ -851,16 +687,4 @@ func proxyOtelSocket(l net.Listener, endpoint string) {
 			io.Copy(conn, remote)
 		}()
 	}
-}
-
-func containerTouchPath(path string, perms os.FileMode, spec *specs.Spec) error {
-	// mknod w/ S_IFREG is equivalent to "touch"
-	if err := unix.Mknod(path, uint32(perms)|unix.S_IFREG, 0); err != nil && !errors.Is(err, unix.EEXIST) {
-		return err
-	}
-	return containerChownPath(path, spec)
-}
-
-func containerChownPath(path string, spec *specs.Spec) error {
-	return unix.Chown(path, int(spec.Process.User.UID), int(spec.Process.User.GID))
 }

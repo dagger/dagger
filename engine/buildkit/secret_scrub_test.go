@@ -1,4 +1,4 @@
-package main
+package buildkit
 
 import (
 	"bufio"
@@ -7,14 +7,13 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/dagger/dagger/core"
 )
 
 var (
@@ -29,14 +28,13 @@ var (
 
 func TestSecretScrubWriterWrite(t *testing.T) {
 	t.Parallel()
-	fsys := fstest.MapFS{
-		"mysecret": &fstest.MapFile{
-			Data: []byte("my secret file"),
-		},
-		"subdir/alsosecret": &fstest.MapFile{
-			Data: []byte("a subdir secret file \nwith line feed"),
-		},
-	}
+	tempDir := t.TempDir()
+	mySecretPath := filepath.Join(tempDir, "mysecret")
+	require.NoError(t, os.WriteFile(mySecretPath, []byte("my secret file"), 0600))
+	subdirPath := filepath.Join(tempDir, "subdir")
+	require.NoError(t, os.Mkdir(subdirPath, 0700))
+	alsoSecretPath := filepath.Join(subdirPath, "alsosecret")
+	require.NoError(t, os.WriteFile(alsoSecretPath, []byte("a subdir secret file \nwith line feed"), 0600))
 	env := []string{
 		"MY_SECRET_ID=my secret value",
 	}
@@ -44,11 +42,10 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 	t.Run("scrub files and env", func(t *testing.T) {
 		var buf bytes.Buffer
 		buf.WriteString("I love to share my secret value to my close ones. But I keep my secret file to myself. As well as a subdir secret file \nwith line feed.")
-		currentDirPath := "/"
-		r, err := NewSecretScrubReader(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
-			Envs:  []string{"MY_SECRET_ID"},
-			Files: []string{"/mysecret", "/subdir/alsosecret"},
-		})
+		r, err := NewSecretScrubReader(&buf, env,
+			[]string{"MY_SECRET_ID"},
+			[]string{mySecretPath, alsoSecretPath},
+		)
 		require.NoError(t, err)
 		out, err := io.ReadAll(r)
 		require.NoError(t, err)
@@ -58,20 +55,17 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 
 	t.Run("do not scrub empty env", func(t *testing.T) {
 		env := append(env, "EMPTY_SECRET_ID=")
-		currentDirPath := "/"
-		fsys := fstest.MapFS{
-			"emptysecret": &fstest.MapFile{
-				Data: []byte(""),
-			},
-		}
+		tempDir := t.TempDir()
+		emptySecretPath := filepath.Join(tempDir, "emptysecret")
+		require.NoError(t, os.WriteFile(emptySecretPath, []byte(""), 0600))
 
 		var buf bytes.Buffer
 		buf.WriteString("I love to share my secret value to my close ones. But I keep my secret file to myself.")
 
-		r, err := NewSecretScrubReader(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
-			Envs:  []string{"EMPTY_SECRET_ID"},
-			Files: []string{"/emptysecret"},
-		})
+		r, err := NewSecretScrubReader(&buf, env,
+			[]string{"EMPTY_SECRET_ID"},
+			[]string{emptySecretPath},
+		)
 		require.NoError(t, err)
 		out, err := io.ReadAll(r)
 		require.NoError(t, err)
@@ -89,70 +83,25 @@ func TestLoadSecretsToScrubFromEnv(t *testing.T) {
 		"PUBLIC_STUFF=so public",
 	}
 
-	secretToScrub := core.SecretToScrubInfo{
-		Envs: []string{
-			"MY_SECRET_ID",
-		},
-	}
-
-	secrets := loadSecretsToScrubFromEnv(env, secretToScrub.Envs)
+	secrets := loadSecretsToScrubFromEnv(env, []string{"MY_SECRET_ID"})
 	require.NotContains(t, secrets, "PUBLIC_STUFF")
 	require.Contains(t, secrets, secretValue)
 }
 
 func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 	t.Parallel()
-	const currentDirPath = "/mnt"
-	t.Run("/mnt, fs relative, secret absolute", func(t *testing.T) {
-		fsys := fstest.MapFS{
-			"mysecret": &fstest.MapFile{
-				Data: []byte("my secret file"),
-			},
-			"subdir/alsosecret": &fstest.MapFile{
-				Data: []byte("a subdir secret file"),
-			},
-		}
-		secretFilePathsToScrub := []string{"/mnt/mysecret", "/mnt/subdir/alsosecret"}
+	tempDir := t.TempDir()
+	mySecretPath := filepath.Join(tempDir, "mysecret")
+	require.NoError(t, os.WriteFile(mySecretPath, []byte("my secret file"), 0600))
+	subdirPath := filepath.Join(tempDir, "subdir")
+	require.NoError(t, os.Mkdir(subdirPath, 0700))
+	alsoSecretPath := filepath.Join(subdirPath, "alsosecret")
+	require.NoError(t, os.WriteFile(alsoSecretPath, []byte("a subdir secret file"), 0600))
 
-		secrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretFilePathsToScrub)
-		require.NoError(t, err)
-		require.Contains(t, secrets, "my secret file")
-		require.Contains(t, secrets, "a subdir secret file")
-	})
-
-	t.Run("/mnt, fs relative, secret relative", func(t *testing.T) {
-		fsys := fstest.MapFS{
-			"mysecret": &fstest.MapFile{
-				Data: []byte("my secret file"),
-			},
-			"subdir/alsosecret": &fstest.MapFile{
-				Data: []byte("a subdir secret file"),
-			},
-		}
-		secretFilePathsToScrub := []string{"mysecret", "subdir/alsosecret"}
-
-		secrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretFilePathsToScrub)
-		require.NoError(t, err)
-		require.Contains(t, secrets, "my secret file")
-		require.Contains(t, secrets, "a subdir secret file")
-	})
-
-	t.Run("/mnt, fs absolute, secret relative", func(t *testing.T) {
-		fsys := fstest.MapFS{
-			"mnt/mysecret": &fstest.MapFile{
-				Data: []byte("my secret file"),
-			},
-			"mnt/subdir/alsosecret": &fstest.MapFile{
-				Data: []byte("a subdir secret file"),
-			},
-		}
-		secretFilePathsToScrub := []string{"mnt/mysecret", "mnt/subdir/alsosecret"}
-
-		secrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretFilePathsToScrub)
-		require.NoError(t, err)
-		require.Contains(t, secrets, "my secret file")
-		require.Contains(t, secrets, "a subdir secret file")
-	})
+	secrets, err := loadSecretsToScrubFromFiles([]string{mySecretPath, alsoSecretPath})
+	require.NoError(t, err)
+	require.Contains(t, secrets, "my secret file")
+	require.Contains(t, secrets, "a subdir secret file")
 }
 
 func TestScrubSecretWrite(t *testing.T) {
@@ -169,16 +118,11 @@ func TestScrubSecretWrite(t *testing.T) {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	envNames := []string{
+	secretEnvs := []string{
 		"secret1",
 		"secret2",
 		"sshSecretKey",
 		"sshPublicKey",
-	}
-
-	secretToScrubInfo := core.SecretToScrubInfo{
-		Envs:  envNames,
-		Files: []string{},
 	}
 
 	t.Run("multiline secret", func(t *testing.T) {
@@ -188,7 +132,7 @@ func TestScrubSecretWrite(t *testing.T) {
 			sshSecretKey:                          "***",
 		} {
 			var buf bytes.Buffer
-			r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
+			r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
 			require.NoError(t, err)
 			_, err = buf.WriteString(input)
 			require.NoError(t, err)
@@ -199,7 +143,7 @@ func TestScrubSecretWrite(t *testing.T) {
 	})
 	t.Run("single line secret", func(t *testing.T) {
 		var buf bytes.Buffer
-		r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
 		require.NoError(t, err)
 
 		input := "aaa\nsecret1 value\nno secret\n"
@@ -212,7 +156,7 @@ func TestScrubSecretWrite(t *testing.T) {
 
 	t.Run("multi write", func(t *testing.T) {
 		var buf bytes.Buffer
-		r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
 		require.NoError(t, err)
 
 		inputLines := []string{
@@ -255,19 +199,15 @@ func TestScrubSecretLogLatency(t *testing.T) {
 		"qux": "yyy",
 	}
 	env := []string{}
-	envNames := []string{}
+	secretEnvNames := []string{}
 	for k, v := range envMap {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
-		envNames = append(envNames, k)
-	}
-	secretToScrubInfo := core.SecretToScrubInfo{
-		Envs:  envNames,
-		Files: []string{},
+		secretEnvNames = append(secretEnvNames, k)
 	}
 
 	t.Run("plain", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -289,7 +229,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("secret", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -311,7 +251,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("secret double", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -333,7 +273,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("secret one byte", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -355,7 +295,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("secret half", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -382,7 +322,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("eof", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -409,7 +349,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("massive", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -456,7 +396,7 @@ func TestScrubSecretLogLatency(t *testing.T) {
 
 	t.Run("massive_eof", func(t *testing.T) {
 		in, out := io.Pipe()
-		r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
@@ -498,17 +438,13 @@ func BenchmarkScrubSecret(b *testing.B) {
 		"quz": strings.Repeat("j", 50),
 	}
 	env := []string{}
-	envNames := []string{}
+	secretEnvNames := []string{}
 	for k, v := range envMap {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
-		envNames = append(envNames, k)
-	}
-	secretToScrubInfo := core.SecretToScrubInfo{
-		Envs:  envNames,
-		Files: []string{},
+		secretEnvNames = append(secretEnvNames, k)
 	}
 	in, out := io.Pipe()
-	r, err := NewSecretScrubReader(in, "/", fstest.MapFS{}, env, secretToScrubInfo)
+	r, err := NewSecretScrubReader(in, env, secretEnvNames, []string{})
 	require.NoError(b, err)
 
 	wg := sync.WaitGroup{}

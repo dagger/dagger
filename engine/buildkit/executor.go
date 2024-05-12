@@ -50,6 +50,12 @@ type ExecutionMetadata struct {
 	ClientID string
 	ServerID string
 
+	RedirectStdoutPath string
+	RedirectStderrPath string
+
+	SecretEnvNames  []string
+	SecretFilePaths []string
+
 	SystemEnvNames []string
 
 	OTELEnvs []string
@@ -250,30 +256,39 @@ func (w *Worker) run(
 		}
 	}
 
-	spec, cleanup, err := oci.GenerateSpec(
-		ctx,
-		process.Meta,
-		mounts,
-		id,
-		resolvConf,
-		hostsFile,
-		namespace,
-		w.cgroupParent,
-		w.processMode,
-		w.idmap,
-		w.apparmorProfile,
-		w.selinux,
-		w.tracingSocket,
-		opts...,
-	)
-	if err != nil {
-		return err
+	spec := &spec{
+		cleanups:   &cleanups{},
+		procInfo:   &process,
+		rootfsPath: rootFSPath,
+		rootMount:  root,
+		mounts:     mounts,
+		id:         id,
+		resolvConf: resolvConf,
+		hostsFile:  hostsFile,
+		namespace:  namespace,
+		extraOpts:  opts,
 	}
-	defer cleanup()
-
-	spec.Root.Path = rootFSPath
-	if root.Readonly {
-		spec.Root.Readonly = true
+	defer func() {
+		if err := spec.cleanups.run(); err != nil {
+			bklog.G(ctx).Errorf("failed to cleanup spec: %v", err)
+		}
+	}()
+	for _, f := range []specFunc{
+		w.generateBaseSpec,
+		w.setOrigEnvMap,
+		w.filterMetaMount,
+		w.configureRootfs,
+		w.setExitCodePath,
+		w.setupStdio,
+		w.setupSecretScrubbing,
+		w.setProxyEnvs,
+		w.setupOTEL,
+		w.setupNestedClient,
+		w.enableGPU,
+	} {
+		if err := f(ctx, spec); err != nil {
+			return err
+		}
 	}
 
 	newp, err := fs.RootPath(rootFSPath, process.Meta.Cwd)
@@ -286,12 +301,6 @@ func (w *Worker) run(
 		}
 	}
 
-	spec.Process.Terminal = process.Meta.Tty
-
-	if err := w.applySpecCustomizations(spec); err != nil {
-		return fmt.Errorf("failed to apply spec customizations: %w", err)
-	}
-
 	if err := json.NewEncoder(f).Encode(spec); err != nil {
 		return err
 	}
@@ -299,20 +308,9 @@ func (w *Worker) run(
 
 	bklog.G(ctx).Debugf("> creating %s %v", id, spec.Process.Args)
 	defer bklog.G(ctx).Debugf("> container done %s %v", id, spec.Process.Args)
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	bklog.G(ctx).Debugf("ENVS: %v", spec.Process.Env)
-	bklog.G(ctx).Debugf("HOSTNAME: %v", spec.Hostname)
-	if w.execMD != nil {
-		bklog.G(ctx).Debugf("SERVERID: %v", w.execMD.ServerID)
-	}
 
 	if installCACerts {
-		caInstaller, err := cacerts.NewInstaller(ctx, spec, func(ctx context.Context, args ...string) error {
+		caInstaller, err := cacerts.NewInstaller(ctx, spec.Spec, func(ctx context.Context, args ...string) error {
 			id := randid.NewID()
 			meta := process.Meta
 
@@ -395,7 +393,7 @@ func (w *Worker) run(
 		})
 		return err
 	}
-	err = exitError(ctx, w.callWithIO(ctx, process, startedCallback, killer, runcCall))
+	err = exitError(ctx, spec.exitCodePath, w.callWithIO(ctx, process, startedCallback, killer, runcCall))
 	if err != nil {
 		w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
 		return err
@@ -437,16 +435,36 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		}
 	}
 
+	spec := &spec{
+		Spec:     &specs.Spec{},
+		cleanups: &cleanups{},
+		procInfo: &process,
+		id:       id,
+	}
+	defer func() {
+		if err := spec.cleanups.run(); err != nil {
+			bklog.G(ctx).Errorf("failed to cleanup spec: %v", err)
+		}
+	}()
+
 	// load default process spec (for Env, Cwd etc) from bundle
 	f, err := os.Open(filepath.Join(state.Bundle, "config.json"))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
-	spec := &specs.Spec{}
-	if err := json.NewDecoder(f).Decode(spec); err != nil {
+	if err := json.NewDecoder(f).Decode(spec.Spec); err != nil {
 		return err
+	}
+
+	spec.Process.Terminal = process.Meta.Tty
+	spec.Process.Args = process.Meta.Args
+	if process.Meta.Cwd != "" {
+		spec.Process.Cwd = process.Meta.Cwd
+	}
+
+	if len(process.Meta.Env) > 0 {
+		spec.Process.Env = process.Meta.Env
 	}
 
 	if process.Meta.User != "" {
@@ -461,22 +479,8 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		}
 	}
 
-	spec.Process.Terminal = process.Meta.Tty
-	spec.Process.Args = process.Meta.Args
-	if process.Meta.Cwd != "" {
-		spec.Process.Cwd = process.Meta.Cwd
-	}
-
-	if len(process.Meta.Env) > 0 {
-		spec.Process.Env = process.Meta.Env
-	}
-
-	if err := w.applySpecCustomizations(spec); err != nil {
-		return fmt.Errorf("failed to apply spec customizations: %w", err)
-	}
-
 	err = w.exec(ctx, id, spec.Process, process, nil)
-	return exitError(ctx, err)
+	return exitError(ctx, "", err)
 }
 
 func (w *Worker) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
@@ -502,7 +506,7 @@ func (w *Worker) validateEntitlements(meta executor.Meta) error {
 	})
 }
 
-func exitError(ctx context.Context, err error) error {
+func exitError(ctx context.Context, exitCodePath string, err error) error {
 	if err != nil {
 		exitErr := &gatewayapi.ExitError{
 			ExitCode: gatewayapi.UnknownExitStatus,
@@ -514,12 +518,20 @@ func exitError(ctx context.Context, err error) error {
 				ExitCode: uint32(runcExitError.Status),
 			}
 		}
+
+		if exitCodePath != "" {
+			if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitErr.ExitCode)), 0o600); err != nil {
+				bklog.G(ctx).Errorf("failed to write exit code %d to %s: %v", exitErr.ExitCode, exitCodePath, err)
+			}
+		}
+
 		trace.SpanFromContext(ctx).AddEvent(
 			"Container exited",
 			trace.WithAttributes(
 				attribute.Int("exit.code", int(exitErr.ExitCode)),
 			),
 		)
+
 		select {
 		case <-ctx.Done():
 			exitErr.Err = fmt.Errorf(exitErr.Error())
