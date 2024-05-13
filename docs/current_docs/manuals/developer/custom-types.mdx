@@ -11,12 +11,12 @@ import TabItem from '@theme/TabItem';
 
 A Dagger module can have multiple object types defined. It's important to understand that they are only accessible through [chaining](./chaining.mdx), starting from a function in the main object.
 
-Here is an example of a `github` Dagger module, with a function named `dagger_organization`
-that returns a custom `Organization` type, itself containing a collection of
-`Account` types:
-
 <Tabs groupId="language">
 <TabItem value="Go">
+
+Here is an example of a `github` Dagger module, with a function named `DaggerOrganization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
 
 ```go file=./snippets/custom-types/go/main.go
 ```
@@ -24,7 +24,11 @@ that returns a custom `Organization` type, itself containing a collection of
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/custom-types/python/main.py
+Here is an example of a `github` Dagger module, with a function named `dagger_organization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
+
+```python file=./snippets/custom-types/python/src/main/__init__.py
 ```
 
 The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) descriptors expose getter functions without arguments, for their [attributes](./python/944887-attribute-functions.mdx).
@@ -32,7 +36,11 @@ The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagg
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/custom-types/typescript/index.ts
+Here is an example of a `github` Dagger module, with a function named `daggerOrganization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
+
+```typescript file=./snippets/custom-types/typescript/src/index.ts
 ```
 
 TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords do not allows decorators.
