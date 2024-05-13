@@ -10,7 +10,7 @@ const (
 )
 
 const (
-	GolangVersion = "1.22.2"
+	GolangVersion = "1.22.3"
 	// GolangVersionRuncHack needs to be 1.21, since 1.22 is not yet
 	// supported, and can cause crashes: opencontainers/runc#4233
 	GolangVersionRuncHack = "1.21.7"
