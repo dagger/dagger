@@ -4,6 +4,21 @@ go 1.21.7
 
 require github.com/dagger/dagger v0.11.4
 
+replace (
+	github.com/dagger/dagger => ../
+
+	// HACK: override otel dependencies imported from ../ so that dagger
+	// codegen works - these can be removed once we get otel v1.26.0 in a
+	// dagger release.
+	go.opentelemetry.io/otel => go.opentelemetry.io/otel v1.24.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace => go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.24.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.24.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.24.0
+	go.opentelemetry.io/otel/metric => go.opentelemetry.io/otel/metric v1.24.0
+	go.opentelemetry.io/otel/sdk => go.opentelemetry.io/otel/sdk v1.24.0
+	go.opentelemetry.io/otel/trace => go.opentelemetry.io/otel/trace v1.24.0
+)
+
 require (
 	github.com/99designs/gqlgen v0.17.44
 	github.com/Khan/genqlient v0.7.0
@@ -45,5 +60,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240401170217-c3f982113cda // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )
-
-replace github.com/dagger/dagger => ../
