@@ -382,6 +382,17 @@ func (w *Worker) run(
 		caInstaller, err := cacerts.NewInstaller(ctx, spec, func(ctx context.Context, args ...string) error {
 			id := randid.NewID()
 			meta := process.Meta
+
+			// don't run this as a nested client, not necessary
+			var filteredEnvs []string
+			for _, env := range meta.Env {
+				if strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID=") {
+					continue
+				}
+				filteredEnvs = append(filteredEnvs, env)
+			}
+			meta.Env = filteredEnvs
+
 			meta.Args = args
 			meta.User = "0:0"
 			meta.Cwd = "/"

@@ -218,6 +218,10 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 		return dag.Container().
 			From(nodeImageRef).
 			WithoutEntrypoint().
+			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
+			// This enables use of custom CA certificates if configured in the dagger engine.
+			WithExec([]string{"apk", "add", "ca-certificates"}).
+			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
 			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
 	default:
