@@ -6,7 +6,6 @@ https://github.com/moby/buildkit/blob/08180a774253a8199ebdb629d21cd9f378a14419/e
 */
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,10 +21,7 @@ import (
 
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/mount"
-	containerdoci "github.com/containerd/containerd/oci"
-	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
@@ -49,6 +45,9 @@ import (
 type ExecutionMetadata struct {
 	ClientID string
 	ServerID string
+
+	// hostname -> list of aliases
+	HostAliases map[string][]string
 
 	RedirectStdoutPath string
 	RedirectStderrPath string
@@ -119,12 +118,12 @@ func (w *Worker) Run(
 	if !ok {
 		return nil, fmt.Errorf("unknown network mode %s", process.Meta.NetMode)
 	}
-	namespace, err := provider.New(ctx, process.Meta.Hostname)
+	networkNamespace, err := provider.New(ctx, process.Meta.Hostname)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err := namespace.Close(); err != nil {
+		if err := networkNamespace.Close(); err != nil {
 			bklog.G(ctx).Errorf("failed to close network namespace: %v", err)
 		}
 	}()
@@ -173,7 +172,7 @@ func (w *Worker) Run(
 		mounts,
 		rootFSPath,
 		process,
-		namespace,
+		networkNamespace,
 		started,
 		setupCACerts,
 	)
@@ -186,21 +185,24 @@ func (w *Worker) run(
 	mounts []executor.Mount,
 	rootFSPath string,
 	process executor.ProcessInfo,
-	namespace network.Namespace,
+	networkNamespace network.Namespace,
 	started chan<- struct{},
 	installCACerts bool,
 ) (rerr error) {
 	startedOnce := sync.Once{}
-	done := make(chan error, 1)
+	runState := &runningState{
+		done:   make(chan struct{}),
+		nsJobs: make(chan func()),
+	}
 	w.mu.Lock()
-	w.running[id] = done
+	w.running[id] = runState
 	w.mu.Unlock()
 	defer func() {
 		w.mu.Lock()
 		delete(w.running, id)
 		w.mu.Unlock()
-		done <- rerr
-		close(done)
+		runState.doneErr = rerr
+		close(runState.done)
 		if started != nil {
 			startedOnce.Do(func() {
 				close(started)
@@ -214,24 +216,6 @@ func (w *Worker) run(
 	}
 	defer os.RemoveAll(bundle)
 
-	uid, gid, sgids, err := oci.GetUser(rootFSPath, process.Meta.User)
-	if err != nil {
-		return err
-	}
-
-	resolvConf, err := oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, process.Meta.NetMode)
-	if err != nil {
-		return err
-	}
-
-	hostsFile, clean, err := oci.GetHostsFile(ctx, w.executorRoot, process.Meta.ExtraHosts, w.idmap, process.Meta.Hostname)
-	if err != nil {
-		return err
-	}
-	if clean != nil {
-		defer clean()
-	}
-
 	configPath := filepath.Join(bundle, "config.json")
 	f, err := os.Create(configPath)
 	if err != nil {
@@ -239,141 +223,57 @@ func (w *Worker) run(
 	}
 	defer f.Close()
 
-	opts := []containerdoci.SpecOpts{oci.WithUIDGID(uid, gid, sgids)}
-
-	if process.Meta.ReadonlyRootFS {
-		opts = append(opts, containerdoci.WithRootFSReadonly())
-	}
-
-	identity := idtools.Identity{
-		UID: int(uid),
-		GID: int(gid),
-	}
-	if w.idmap != nil {
-		identity, err = w.idmap.ToHost(identity)
-		if err != nil {
-			return err
-		}
-	}
-
-	spec := &spec{
-		cleanups:   &cleanups{},
-		procInfo:   &process,
-		rootfsPath: rootFSPath,
-		rootMount:  root,
-		mounts:     mounts,
-		id:         id,
-		resolvConf: resolvConf,
-		hostsFile:  hostsFile,
-		namespace:  namespace,
-		extraOpts:  opts,
-	}
+	cleanup := &cleanups{}
 	defer func() {
-		if err := spec.cleanups.run(); err != nil {
-			bklog.G(ctx).Errorf("failed to cleanup spec: %v", err)
+		if err := cleanup.run(); err != nil {
+			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
+			rerr = errors.Join(rerr, err)
 		}
 	}()
-	for _, f := range []specFunc{
+
+	spec := &spec{
+		cleanups:         cleanup,
+		runState:         runState,
+		procInfo:         &process,
+		rootfsPath:       rootFSPath,
+		rootMount:        root,
+		mounts:           mounts,
+		id:               id,
+		networkNamespace: networkNamespace,
+		installCACerts:   installCACerts,
+	}
+	for _, f := range []executorSetupFunc{
+		w.setUserGroup,
+		w.setupNetwork,
 		w.generateBaseSpec,
-		w.setOrigEnvMap,
+		w.setupNamespaces,
+		w.filterEnvs,
 		w.filterMetaMount,
 		w.configureRootfs,
 		w.setExitCodePath,
 		w.setupStdio,
+		w.setupOTEL,
 		w.setupSecretScrubbing,
 		w.setProxyEnvs,
-		w.setupOTEL,
 		w.setupNestedClient,
 		w.enableGPU,
+		w.createCWD,
+		w.installCACerts,
 	} {
 		if err := f(ctx, spec); err != nil {
 			return err
 		}
 	}
 
-	newp, err := fs.RootPath(rootFSPath, process.Meta.Cwd)
-	if err != nil {
-		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
-	}
-	if _, err := os.Stat(newp); err != nil {
-		if err := idtools.MkdirAllAndChown(newp, 0o755, identity); err != nil {
-			return fmt.Errorf("failed to create working directory %s: %w", newp, err)
-		}
-	}
-
 	if err := json.NewEncoder(f).Encode(spec); err != nil {
-		return err
+		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
 
 	bklog.G(ctx).Debugf("> creating %s %v", id, spec.Process.Args)
-	defer bklog.G(ctx).Debugf("> container done %s %v", id, spec.Process.Args)
-
-	if installCACerts {
-		caInstaller, err := cacerts.NewInstaller(ctx, spec.Spec, func(ctx context.Context, args ...string) error {
-			id := randid.NewID()
-			meta := process.Meta
-
-			// don't run this as a nested client, not necessary
-			var filteredEnvs []string
-			for _, env := range meta.Env {
-				if strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID=") {
-					continue
-				}
-				filteredEnvs = append(filteredEnvs, env)
-			}
-			meta.Env = filteredEnvs
-
-			meta.Args = args
-			meta.User = "0:0"
-			meta.Cwd = "/"
-			meta.Tty = false
-			output := new(bytes.Buffer)
-			process := executor.ProcessInfo{
-				Stdout: nopCloser{output},
-				Stderr: nopCloser{output},
-				Meta:   meta,
-			}
-			started := make(chan struct{}, 1)
-			installCACerts := false
-			err := w.run(
-				ctx,
-				id,
-				root,
-				mounts,
-				rootFSPath,
-				process,
-				namespace,
-				started,
-				installCACerts,
-			)
-			if err != nil {
-				return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
-			}
-			return nil
-		})
-		if err == nil {
-			err = caInstaller.Install(ctx)
-			if errors.As(err, new(cacerts.CleanupErr)) {
-				// if install failed and cleanup failed too, we have no choice but to fail this exec; otherwise we're
-				// leaving the container in some weird half state
-				return fmt.Errorf("failed to install cacerts: %w", err)
-			}
-			// if install failed but we were able to cleanup, then we should log it but don't need to fail the exec
-			if err != nil {
-				bklog.G(ctx).Errorf("failed to install cacerts but successfully cleaned up, continuing without CA certs: %v", err)
-			} else {
-				defer func() {
-					if err := caInstaller.Uninstall(ctx); err != nil {
-						bklog.G(ctx).Errorf("failed to uninstall cacerts: %v", err)
-						rerr = errors.Join(rerr, err)
-					}
-				}()
-			}
-		} else {
-			bklog.G(ctx).Errorf("failed to create cacerts installer, falling back to not installing CA certs: %v", err)
-		}
-	}
+	defer func() {
+		bklog.G(ctx).WithError(rerr).Debugf("> container done %s %v", id, spec.Process.Args)
+	}()
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 	killer := newRunProcKiller(w.runc, id)
@@ -402,6 +302,83 @@ func (w *Worker) run(
 	return w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
 }
 
+// Namespaced is something that has Linux namespaces set up.
+// Currently this is either a full-blown container or just a raw
+// network namespace that's setns'd into to support service tunneling
+// and similar.
+type Namespaced interface {
+	NamespaceID() string
+	Release(context.Context) error
+}
+
+type networkNamespace struct {
+	id      string
+	cleanup *cleanups
+}
+
+var _ Namespaced = (*networkNamespace)(nil)
+
+func (n *networkNamespace) NamespaceID() string {
+	return n.id
+}
+
+func (n *networkNamespace) Release(_ context.Context) error {
+	return n.cleanup.run()
+}
+
+func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNamespace, rerr error) {
+	provider, ok := w.networkProviders[pb.NetMode_UNSET] // get default CNI provider
+	if !ok {
+		return nil, fmt.Errorf("no default network provider found")
+	}
+
+	cleanup := &cleanups{}
+	defer func() {
+		if rerr != nil {
+			rerr = errors.Join(rerr, cleanup.run())
+		}
+	}()
+
+	netNS, err := provider.New(ctx, hostname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create network namespace: %w", err)
+	}
+	cleanup.add(netNS.Close)
+
+	var spec specs.Spec
+	if err := netNS.Set(&spec); err != nil {
+		return nil, fmt.Errorf("failed to set network namespace: %w", err)
+	}
+
+	runState := &runningState{
+		done:       make(chan struct{}),
+		namespaces: spec.Linux.Namespaces,
+		nsJobs:     make(chan func()),
+	}
+	cleanup.addNoErr(func() {
+		close(runState.done)
+	})
+
+	if err := w.runNamespaceWorkers(ctx, runState, cleanup); err != nil {
+		return nil, fmt.Errorf("failed to handle namespace jobs: %w", err)
+	}
+
+	id := randid.NewID()
+	w.mu.Lock()
+	w.running[id] = runState
+	w.mu.Unlock()
+	cleanup.addNoErr(func() {
+		w.mu.Lock()
+		delete(w.running, id)
+		w.mu.Unlock()
+	})
+
+	return &networkNamespace{
+		id:      id,
+		cleanup: cleanup,
+	}, nil
+}
+
 func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
 	if err := w.validateEntitlements(process.Meta); err != nil {
 		return err
@@ -412,9 +389,9 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 	// context is canceled.
 	var state *runc.Container
 	for {
-		w.mu.Lock()
-		done, ok := w.running[id]
-		w.mu.Unlock()
+		w.mu.RLock()
+		runState, ok := w.running[id]
+		w.mu.RUnlock()
 		if !ok {
 			return fmt.Errorf("container %s not found", id)
 		}
@@ -426,11 +403,11 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		select {
 		case <-ctx.Done():
 			return context.Cause(ctx)
-		case err, ok := <-done:
-			if !ok || err == nil {
+		case <-runState.done:
+			if runState.doneErr == nil {
 				return fmt.Errorf("container %s has stopped", id)
 			}
-			return fmt.Errorf("container %s has exited with error: %w", id, err)
+			return fmt.Errorf("container %s has exited with error: %w", id, runState.doneErr)
 		case <-time.After(100 * time.Millisecond):
 		}
 	}

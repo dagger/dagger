@@ -275,6 +275,8 @@ func main() { //nolint:gocyclo
 			logrus.SetLevel(logrus.DebugLevel)
 			// don't add noise reduction hook for extra debug level
 		case cfg.Debug:
+			// TODO:
+			// TODO:
 			slogOpts.Level = slog.LevelDebug
 			logrus.SetLevel(logrus.DebugLevel)
 			logrus.AddHook(noiseReduceHook)

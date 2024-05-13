@@ -3,110 +3,83 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"strings"
-	"syscall"
+	"time"
 
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
+	"github.com/cenkalti/backoff/v4"
 
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/telemetry"
 )
 
 type portHealthChecker struct {
-	bk    *buildkit.Client
-	host  string
-	ports []Port
+	bk        *buildkit.Client
+	ns        buildkit.Namespaced
+	host      string
+	ports     []Port
+	logWriter io.Writer
 }
 
-func newHealth(bk *buildkit.Client, host string, ports []Port) *portHealthChecker {
+func newHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port, logWriter io.Writer) *portHealthChecker {
 	return &portHealthChecker{
-		bk:    bk,
-		host:  host,
-		ports: ports,
+		bk:        bk,
+		ns:        ns,
+		host:      host,
+		ports:     ports,
+		logWriter: logWriter,
 	}
 }
 
 func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
-	args := []string{"check", d.host}
-	allPortsSkipped := true
+	ports := make([]Port, 0, len(d.ports))
+	portStrs := make([]string, 0, len(d.ports))
 	for _, port := range d.ports {
 		if !port.ExperimentalSkipHealthcheck {
-			args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
-			allPortsSkipped = false
+			ports = append(ports, port)
+			portStrs = append(portStrs, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
 		}
 	}
-	if allPortsSkipped {
+	if len(ports) == 0 {
 		return nil
 	}
 
 	// always show health checks
-	ctx, span := Tracer().Start(ctx, strings.Join(args, " "))
+	ctx, span := Tracer().Start(ctx, strings.Join(portStrs, " "))
 	defer telemetry.End(span, func() error { return rerr })
-	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
-	scratchDef, err := llb.Scratch().Marshal(ctx)
-	if err != nil {
-		return err
+	dialer := net.Dialer{
+		Timeout: time.Second,
 	}
 
-	scratchRes, err := d.bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: scratchDef.ToPB(),
-	})
-	if err != nil {
-		return err
-	}
+	for _, port := range ports {
+		retry := backoff.NewExponentialBackOff(backoff.WithInitialInterval(100 * time.Millisecond))
+		endpoint, err := backoff.RetryWithData(func() (string, error) {
+			return buildkit.RunInNamespace(ctx, d.bk, d.ns, func() (string, error) {
+				// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
+				// up, since it'll be a false positive even if they're not listening yet,
+				// but it at least checks that we're able to resolve the container address.
+				conn, err := dialer.Dial(
+					port.Protocol.Network(),
+					net.JoinHostPort(d.host, fmt.Sprintf("%d", port.Port)),
+				)
+				if err != nil {
+					fmt.Fprintf(d.logWriter, "port not ready: %v, elapsed: %s\n", err, retry.GetElapsedTime())
+					return "", err
+				}
 
-	container, err := d.bk.NewContainer(ctx, buildkit.NewContainerRequest{
-		Mounts: []bkgw.Mount{
-			{
-				Dest:      "/",
-				MountType: pb.MountType_BIND,
-				Ref:       scratchRes.Ref,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	// NB: use a different ctx than the one that'll be interrupted for anything
-	// that needs to run as part of post-interruption cleanup
-	cleanupCtx := context.WithoutCancel(ctx)
-
-	defer container.Release(cleanupCtx)
-
-	proc, err := container.Start(ctx, bkgw.StartRequest{
-		Args:   args,
-		Env:    append(telemetry.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
-		Stdout: nopCloser{stdout},
-		Stderr: nopCloser{stderr},
-	})
-	if err != nil {
-		return err
-	}
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- proc.Wait()
-	}()
-
-	select {
-	case err := <-exited:
+				endpoint := conn.RemoteAddr().String()
+				_ = conn.Close()
+				return endpoint, nil
+			})
+		}, backoff.WithContext(retry, ctx))
 		if err != nil {
-			return err
+			return fmt.Errorf("checking for port %d/%s: %w", port.Port, port.Protocol.Network(), err)
 		}
 
-		return nil
-	case <-ctx.Done():
-		err := proc.Signal(cleanupCtx, syscall.SIGKILL)
-		if err != nil {
-			return fmt.Errorf("interrupt check: %w", err)
-		}
-
-		<-exited
-
-		return ctx.Err()
+		fmt.Fprintf(d.logWriter, "port is up: %s\n", endpoint)
 	}
+
+	return nil
 }
