@@ -16,11 +16,11 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/blang/semver"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/imports"
 
@@ -38,7 +38,7 @@ const (
 	StarterTemplateFile = "main.go"
 )
 
-var goVersion = semver.MustParse(strings.TrimPrefix(runtime.Version(), "go"))
+var goVersion = strings.TrimPrefix(runtime.Version(), "go")
 
 type GoGenerator struct {
 	Config generator.Config
@@ -195,23 +195,16 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
 
 		mod.AddModuleStmt(modname)
-		mod.AddGoStmt(goVersion.String())
+		mod.AddGoStmt(goVersion)
 
 		needsRegen = true
 	}
 
 	// sanity check the parsed go version
+	//
 	// if this fails, then the go.mod version is too high! and in that case, we
 	// won't be able to load the resulting package
-	modGoVersion, err := semver.Parse(mod.Go.Version)
-	if err != nil {
-		var err2 error
-		modGoVersion, err2 = semver.Parse(mod.Go.Version + ".0")
-		if err2 != nil {
-			return nil, false, fmt.Errorf("parse go.mod version %q: %w", mod.Go.Version, err)
-		}
-	}
-	if modGoVersion.GT(goVersion) {
+	if semver.Compare("v"+mod.Go.Version, "v"+goVersion) > 0 {
 		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", mod.Go.Version, goVersion)
 	}
 
@@ -224,12 +217,14 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	for _, req := range mod.Require {
 		modRequires[req.Mod.Path] = req
 	}
-	for _, req := range daggerMod.Require {
-		if _, ok := modRequires[req.Mod.Path]; ok {
-			// check if mod already includes this
-			continue
+	for _, minReq := range daggerMod.Require {
+		// check if mod already at least this version
+		if currentReq, ok := modRequires[minReq.Mod.Path]; ok {
+			if semver.Compare(currentReq.Mod.Version, minReq.Mod.Version) >= 0 {
+				continue
+			}
 		}
-		mod.AddNewRequire(req.Mod.Path, req.Mod.Version, req.Indirect)
+		mod.AddNewRequire(minReq.Mod.Path, minReq.Mod.Version, minReq.Indirect)
 	}
 
 	// try and find a go.sum next to the go.mod, and use that to pin
