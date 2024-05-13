@@ -23,7 +23,7 @@ This Wolfi container builder module exposes a `Container()` function that return
 You can use this function to build and return a Wolfi container image containing specific packages - in this example, the `python3` package. You should see the container being built and the packages being added, as shown below:
 
 ```
-Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
+Container evaluated. Use "dagger call container --help" to see available sub-commands.
 ```
 
 This means that the build succeeded, and a `Container` type representing the built container image was returned. And, like `Directory`, `Container` is a Dagger core type which comes with useful functions of its own.
