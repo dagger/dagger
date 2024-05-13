@@ -314,10 +314,6 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/overview/dependencies"
-        },
-        {
-          "type": "doc",
           "id": "manuals/developer/secrets"
         },
         {

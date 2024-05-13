@@ -9,24 +9,41 @@ import TabItem from '@theme/TabItem';
 
 # Dependencies
 
+Modules can call each other. To add a dependency to your module, you can use `dagger install`, as in the following example:
+
+```sh
+dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
+```
+
+This module will be added to your `dagger.json`:
+
+```json
+...
+"dependencies": [
+  {
+    "name": "helloWorld",
+    "source": "github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990"
+  }
+]
+```
+
+You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
+
+```sh
+dagger install ./path/to/module
+```
 
 When you add a dependency to your module with `dagger install`, the dependent module will be added to the code-generation routines and can be accessed from your own module's code.
 
 The entrypoint to accessing dependent modules from your own module's code is `dag`, the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
 
-Here is an example:
-
-```shell
-dagger install github.com/shykes/daggerverse/helloWorld@26f8ed9f1748ec8c9345281add850fd392441990
-```
-
-This module can be accessed from your own module's code, as shown below:
+Here is an example of accessing the installed `helloWorld` module from your own module's code:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
 ```go
-func (m *MyModule) HelloWorld(ctx context.Context) (string, error) {
+func (m *MyModule) Greeting(ctx context.Context) (string, error) {
   return dag.HelloWorld().Message(ctx)
 }
 ```
@@ -36,7 +53,7 @@ func (m *MyModule) HelloWorld(ctx context.Context) (string, error) {
 
 ```python
 @function
-async def hello_world(self) -> str:
+async def greeting(self) -> str:
   return await dag.hello_world().message()
 ```
 
@@ -46,7 +63,7 @@ async def hello_world(self) -> str:
 
 ```typescript
 @func()
-async helloWorld(): Promise<string> {
+async greeting(): Promise<string> {
   return await dag.helloWorld().message()
 }
 ```
