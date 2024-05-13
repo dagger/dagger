@@ -28,7 +28,7 @@ func (m *HelloDagger) Ci(ctx context.Context, source *Directory) (string, error)
 // Returns a container with the production build
 func (m *HelloDagger) Package(source *Directory) *Container {
 	return dag.Container().From("nginx:1.25-alpine").
-		WithDirectory("/usr/share/nginx/html", m.Package(source)).
+		WithDirectory("/usr/share/nginx/html", m.Build(source)).
 		WithExposedPort(80)
 }
 

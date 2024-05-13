@@ -118,21 +118,6 @@ Dagger Functions can accept arguments, which may be simple string, numeric or Bo
 
 Once you've created your Dagger Functions, you can call them with the Dagger CLI. Here are a few examples to try!
 
-- Run the application's tests:
-
-    ```shell
-    dagger call \
-      test --source=.
-    ```
-
-- Build the application and export the build results from the Daggerized pipeline to a `build` directory on your machine:
-
-    ```shell
-    dagger call \
-      build --source=. \
-      export --path=./build
-    ```
-
 - Containerize the application, then open an interactive shell into the running container:
 
     ```shell
@@ -150,7 +135,7 @@ Once you've created your Dagger Functions, you can call them with the Dagger CLI
     ...running services
 
     ```shell
-    curl localhost:80
+    nginx
     ```
 
     ...and executing commands.
