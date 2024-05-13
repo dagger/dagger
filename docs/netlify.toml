@@ -63,6 +63,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific error handling page to multi-language page
+  from = "/manuals/developer/:language/:docid/error-handling"
+  to = "/manuals/developer/error-handling"
+  status = 301
+
+[[redirects]]
   # redirect user guide index to user manual index
   from = "/user-guide"
   to = "/manuals/user"

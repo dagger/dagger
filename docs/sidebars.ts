@@ -329,6 +329,10 @@ module.exports = {
           "id": "manuals/developer/chaining"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/error-handling"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -363,10 +367,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/error-handling"
             },
             {
               "type": "doc",
@@ -422,10 +422,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/name-overrides"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/error-handling"
             },
             {
               "type": "doc",
@@ -489,10 +485,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/error-handling"
             },
             {
               "type": "doc",
