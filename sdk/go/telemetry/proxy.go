@@ -67,8 +67,6 @@ func (s proxySpan) SetStatus(code codes.Code, message string) {
 	s.onUpdate(s.sp)
 }
 
-// func (s proxySpan) SetError(v bool) { s.sp.SetError(v) }
-
 func (s proxySpan) SetAttributes(attributes ...attribute.KeyValue) {
 	s.sp.SetAttributes(attributes...)
 	s.onUpdate(s.sp)
@@ -83,6 +81,11 @@ func (s proxySpan) RecordError(err error, opts ...trace.EventOption) {
 
 func (s proxySpan) AddEvent(event string, opts ...trace.EventOption) {
 	s.sp.AddEvent(event, opts...)
+	s.onUpdate(s.sp)
+}
+
+func (s proxySpan) AddLink(link trace.Link) {
+	s.sp.AddLink(link)
 	s.onUpdate(s.sp)
 }
 
