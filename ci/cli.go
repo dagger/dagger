@@ -34,7 +34,7 @@ func (cli *CLI) File(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v1.22.1-pro"
+	goReleaserVersion = "v1.26.0"
 )
 
 // Publish the CLI using GoReleaser
@@ -151,7 +151,7 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 
 func publishEnv(ctx context.Context) (*dagger.Container, error) {
 	ctr := dag.Container().
-		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
+		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s-pro", goReleaserVersion)).
 		WithEntrypoint([]string{}).
 		WithExec([]string{"apk", "add", "aws-cli"})
 
