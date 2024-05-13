@@ -1,8 +1,16 @@
 module github.com/dagger/dagger
 
-go 1.21
+go 1.21.7
 
-replace dagger.io/dagger => ./sdk/go
+require (
+	dagger.io/dagger v0.11.4
+	github.com/dagger/dagger/engine/distconsts v0.11.4
+)
+
+replace (
+	dagger.io/dagger => ./sdk/go
+	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
+)
 
 // Needed pending merge of these upstream PRs:
 // - https://github.com/moby/buildkit/pull/4887
@@ -10,7 +18,6 @@ replace dagger.io/dagger => ./sdk/go
 replace github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20240507174055-63352b0fb96b
 
 require (
-	dagger.io/dagger v0.11.4
 	github.com/99designs/gqlgen v0.17.44
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
