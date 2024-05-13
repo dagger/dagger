@@ -1,0 +1,33 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: dagger-custom-config-toml
+data:
+  config.toml: |
+    concurrent = 10
+    [[runners]]
+      environment = ["HOME=/tmp","FF_GITLAB_REGISTRY_HELPER_IMAGE=1", "_EXPERIMENTAL_DAGGER_RUNNER_HOST"="unix:///var/run/dagger/buildkitd.sock"]
+      pre_build_script = "export PATH=\"/tmp/:$PATH\""
+      name = "GitLab Runner with Dagger"
+      url = YOUR-GITLAB-URL
+      executor = "kubernetes"
+      [runners.kubernetes]
+        namespace = "dagger"
+        pull_policy = "always"
+        privileged = true
+      [runners.kubernetes.affinity]
+      [runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution]
+        [[runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms]]
+          [[runners.kubernetes.affinity.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms.match_expressions]]
+            key = "dagger-node"
+            operator = "In"
+            values = ["true"]
+      [runners.kubernetes.node_tolerations]
+        "dagger-node" = ""
+      [runners.kubernetes.pod_security_context]
+        run_as_non_root = false
+        run_as_user = 0
+        [[runners.kubernetes.volumes.host_path]]
+          name = "dagger"
+          mount_path = "/var/run/dagger"
+          host_path = "/var/run/dagger"

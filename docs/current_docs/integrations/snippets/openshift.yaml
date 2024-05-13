@@ -4,15 +4,15 @@ fullnameOverride: ""
 engine:
   image:
     repository: registry.dagger.io/engine
-    tag: v0.10.2
+    tag: latest
   tolerations:
     - effect: NoSchedule
-      key: builder-node
+      key: dagger-node
       operator: Exists
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
-          - key: builder-node
+          - key: dagger-node
             operator: Exists

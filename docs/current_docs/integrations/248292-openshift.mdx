@@ -11,12 +11,12 @@ First, create a `values.yaml` file to configure the Dagger Helm deployment. This
 ```yaml file=./snippets/openshift.yaml
 ```
 
-This configuration uses the label `builder-node=true` to taint the nodes on which the Dagger Engine should be deployed.
+This configuration uses the label `dagger-node=true` to taint the nodes on which the Dagger Engine should be deployed.
 
 Next, execute the following command for each node that is intended to host a Dagger Engine (replace the `NODE-NAME` placeholder with each node name):
 
 ```shell
-oc adm taint nodes NODE-NAME builder-node=true:NoSchedule
+oc adm taint nodes NODE-NAME dagger-node=true:NoSchedule
 ```
 
 Install the Dagger Engine using the Dagger Helm chart and the configuration above:
