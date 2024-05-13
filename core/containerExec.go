@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
@@ -77,6 +78,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD := buildkit.ExecutionMetadata{
 		ServerID: clientMetadata.ServerID,
 
+		HostAliases: make(map[string][]string),
+
 		RedirectStdoutPath: opts.RedirectStdout,
 		RedirectStderrPath: opts.RedirectStderr,
 
@@ -139,11 +142,18 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerRedirectStderrEnv, opts.RedirectStderr))
 	}
 
+	var aliasStrs []string
 	for _, bnd := range container.Services {
 		for _, alias := range bnd.Aliases {
-			runOpts = append(runOpts,
-				llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias, bnd.Hostname))
+			execMD.HostAliases[bnd.Hostname] = append(execMD.HostAliases[bnd.Hostname], alias)
+			aliasStrs = append(aliasStrs, bnd.Hostname+"="+alias)
 		}
+	}
+	if len(aliasStrs) > 0 {
+		// ensure these are in the cache key, sort them for stability
+		slices.Sort(aliasStrs)
+		runOpts = append(runOpts,
+			llb.AddEnv(buildkit.DaggerHostnameAliasesEnv, strings.Join(aliasStrs, ",")))
 	}
 
 	if cfg.User != "" {

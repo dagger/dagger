@@ -25,7 +25,6 @@ import (
 	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
-	"github.com/moby/buildkit/solver/pb"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -406,12 +405,24 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 
 type NewContainerRequest struct {
 	Mounts   []bkgw.Mount
-	Platform *pb.Platform
+	Platform *bksolverpb.Platform
 	Hostname string
 	ExecutionMetadata
 }
 
-func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (bkgw.Container, error) {
+type Container struct {
+	bkgw.Container
+	id string
+}
+
+var _ Namespaced = (*Container)(nil)
+
+func (ctr *Container) NamespaceID() string {
+	return ctr.id
+}
+
+func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Container, error) {
+	containerID := identity.NewID()
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -419,7 +430,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (bkg
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
-		ContainerID: identity.NewID(),
+		ContainerID: containerID,
 		Hostname:    req.Hostname,
 		Mounts:      make([]bkcontainer.Mount, len(req.Mounts)),
 	}
@@ -468,7 +479,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (bkg
 
 	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
-		context.Background(),
+		context.WithoutCancel(ctx),
 		c.worker.CacheManager(),
 		c.worker.withExecMD(req.ExecutionMetadata), // also implements Executor
 		c.SessionManager,
@@ -482,13 +493,45 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (bkg
 	c.containersMu.Lock()
 	defer c.containersMu.Unlock()
 	if c.containers == nil {
-		if err := ctr.Release(context.Background()); err != nil {
+		if err := ctr.Release(context.WithoutCancel(ctx)); err != nil {
 			return nil, fmt.Errorf("release after close: %w", err)
 		}
 		return nil, errors.New("client closed")
 	}
 	c.containers[ctr] = struct{}{}
-	return ctr, nil
+
+	return &Container{
+		Container: ctr,
+		id:        containerID,
+	}, nil
+}
+
+func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
+	return c.worker.newNetNS(ctx, hostname)
+}
+
+func RunInNamespace[T any](
+	ctx context.Context,
+	c *Client,
+	ns Namespaced,
+	fn func() (T, error),
+) (T, error) {
+	var zero T
+	if c == nil {
+		return zero, errors.New("client is nil")
+	}
+	if ns == nil {
+		return zero, errors.New("namespace is nil")
+	}
+
+	c.worker.mu.RLock()
+	runState, ok := c.worker.running[ns.NamespaceID()]
+	c.worker.mu.RUnlock()
+	if !ok {
+		return zero, fmt.Errorf("namespace for %s not found in running state", ns.NamespaceID())
+	}
+
+	return runInNamespace(ctx, runState, fn)
 }
 
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
