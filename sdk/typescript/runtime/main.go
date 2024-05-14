@@ -175,16 +175,16 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 
 	moduleFiles, err := base.Directory(".").Entries(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not list rootfs entries: %v", err)
+		return nil, fmt.Errorf("could not list rootfs entries: %w", err)
 	}
-	packageJsonExist := slices.Contains(moduleFiles, "package.json")
+	packageJSONExist := slices.Contains(moduleFiles, "package.json")
 
 	switch detectedRuntime {
 	case Bun:
 		// Check if the project has existing source:
 		// if it does: update the tsconfig in case dagger isn't part of the configuration
 		// if not: copy the template and replace QuickStart with the module name
-		if packageJsonExist {
+		if packageJSONExist {
 			base = base.WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
 			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
@@ -194,7 +194,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Check if the project has existing source:
 		// if it does: update the tsconfig in case dagger isn't part of the configuration
 		// if not: copy the template and replace QuickStart with the module name
-		if packageJsonExist {
+		if packageJSONExist {
 			base = base.WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
 			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
@@ -209,7 +209,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 
 	moduleSourceFiles, err := base.Directory("src").Entries(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not list module source entries: %v", err)
+		return nil, fmt.Errorf("could not list module source entries: %w", err)
 	}
 
 	// Check if there's a src directory with .ts files in it.
@@ -239,7 +239,7 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			// changed in the user file.
 			WithDirectory(GenDir, t.SDKSourceDir, ContainerWithDirectoryOpts{
 				Exclude: []string{"codegen", "runtime"},
-				}).
+			}).
 			WithWorkdir(GenDir).
 			WithExec([]string{"bun", "install"}), nil
 	case Node:
@@ -252,10 +252,10 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
 			WithMountedCache("/usr/local/share/.cache", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
-			WithExec([]string{"npm", "install", "-g", "tsx"}).			
+			WithExec([]string{"npm", "install", "-g", "tsx"}).
 			WithDirectory(GenDir, t.SDKSourceDir, ContainerWithDirectoryOpts{
 				Exclude: []string{"codegen", "runtime"},
-				}).
+			}).
 			WithWorkdir(GenDir).
 			WithExec([]string{"yarn", "install", "--production"}), nil
 	default:
