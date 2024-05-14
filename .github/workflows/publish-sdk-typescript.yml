@@ -5,10 +5,10 @@ on:
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: sdk python publish --tag="${{ github.ref_name }}" --npm-token=env:RELEASE_NPM_TOKEN
+      function: sdk python publish --tag="${{ github.ref_name }}" --npm-token=env:RELEASE_NPM_TOKEN
 
   notify:
     needs: publish

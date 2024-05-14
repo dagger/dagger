@@ -19,7 +19,7 @@ Available functionality:
 > [!NOTE]
 >
 > For best results, use the same version of dagger (both the CLI, and the
-> engine) as defined in [`.github/workflows/_hack_make.yml`](../.github/workflows/_hack_make.yml).
+> engine) as defined in [`.github/workflows/_dagger_call.yml`](../.github/workflows/_dagger_call.yml).
 > Without this, you may hit unexpected errors or other weird behavior.
 
 ## Developing after a fresh clone

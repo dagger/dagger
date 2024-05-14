@@ -18,15 +18,15 @@ permissions:
 
 jobs:
   lint:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: sdk elixir lint
+      function: sdk elixir lint
       timeout: 10
 
   test:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: sdk elixir test
+      function: sdk elixir test
       timeout: 10

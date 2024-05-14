@@ -22,43 +22,43 @@ permissions:
 
 jobs:
   test:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: test all --race=true
+      function: test all --race=true
       size: "dagger-v0-11-4-16c-nvme"
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
   # functionality rather than repeat every test already run in the other targets.
   testdev:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: test important --race=true
+      function: test important --race=true
       dev-engine: true
 
   test-publish-cli:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: cli test-publish
+      function: cli test-publish
 
   test-publish-engine:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: engine test-publish
+      function: engine test-publish
 
   test-publish-engine-gpu:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: engine with-base --image=ubuntu --gpu-support=true test-publish
+      function: engine with-base --image=ubuntu --gpu-support=true test-publish
 
   scan-engine:
     name: "Scan Engine Image for Vulnerabilities"
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: engine scan
+      function: engine scan

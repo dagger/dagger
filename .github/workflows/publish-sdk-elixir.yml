@@ -5,10 +5,10 @@ on:
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: sdk elixir publish --tag="${{ github.ref_name }}" --hex-apikey=env:HEX_API_KEY
+      function: sdk elixir publish --tag="${{ github.ref_name }}" --hex-apikey=env:HEX_API_KEY
 
   notify:
     needs: publish

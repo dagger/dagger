@@ -81,10 +81,10 @@ jobs:
     needs: publish
     # only run this on push events, not in PRs (since we only publish images during pushes)
     if: github.event_name == 'push' && github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: engine scan
+      function: engine scan
 
   test-provision-macos:
     name: "Test SDK Provision / macos"

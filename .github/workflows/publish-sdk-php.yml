@@ -6,10 +6,10 @@ on:
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: sdk php publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
+      function: sdk php publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
 
   notify:
     if: github.ref_type == 'tag'

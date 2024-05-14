@@ -5,10 +5,10 @@ on:
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      call: sdk rust publish --tag="${{ github.ref_name }}" --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
+      function: sdk rust publish --tag="${{ github.ref_name }}" --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
 
   notify:
     needs: publish
