@@ -1022,16 +1022,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	var namef string
-	if container.Focused {
-		namef = buildkit.FocusPrefix + "exec %s"
-	} else {
-		namef = "exec %s"
-	}
-
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		llb.WithCustomNamef(namef, strings.Join(args, " ")),
+		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
 	// this allows executed containers to communicate back to this API

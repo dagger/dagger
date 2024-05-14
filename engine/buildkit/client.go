@@ -41,7 +41,6 @@ import (
 )
 
 const (
-	FocusPrefix    = "[focus] "
 	InternalPrefix = "[internal] "
 
 	DaggerWorkerJobKey = "dagger.worker"
