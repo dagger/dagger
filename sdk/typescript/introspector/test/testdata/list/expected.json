@@ -1,0 +1,76 @@
+{
+  "name": "List",
+  "objects": {
+    "Number": {
+      "name": "Number",
+      "description": "",
+      "constructor": {
+        "args": {
+          "value": {
+            "name": "value",
+            "description": "",
+            "type": {
+              "kind": "INTEGER_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false
+          }
+        }
+      },
+      "methods": {
+        "positive": {
+          "name": "positive",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "BOOLEAN_KIND"
+          }
+        }
+      },
+      "properties": {
+        "value": {
+          "name": "value",
+          "description": "",
+          "type": {
+            "kind": "INTEGER_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "List": {
+      "name": "List",
+      "description": "",
+      "methods": {
+        "create": {
+          "name": "create",
+          "description": "",
+          "arguments": {
+            "n": {
+              "name": "n",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "INTEGER_KIND"
+                }
+              },
+              "isVariadic": true,
+              "isNullable": false,
+              "isOptional": true
+            }
+          },
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "OBJECT_KIND",
+              "name": "Number"
+            }
+          }
+        }
+      },
+      "properties": {}
+    }
+  }
+}

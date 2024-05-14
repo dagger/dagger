@@ -229,11 +229,31 @@ export async function loadResult(
       }
 
       let referencedObject: DaggerObject | undefined = undefined
+
+      // Handle nested objects
       if (property.type.kind === TypeDefKind.ObjectKind) {
         referencedObject =
           module.objects[
             (property.type as TypeDef<TypeDefKind.ObjectKind>).name
           ]
+      }
+
+      // Handle list of nested objects
+      if (property.type.kind === TypeDefKind.ListKind) {
+        let _property = property.type
+
+        // Loop until we find the original type.
+        while (_property.kind === TypeDefKind.ListKind) {
+          _property = (_property as TypeDef<TypeDefKind.ListKind>).typeDef
+        }
+
+        // If the original type is an object, we use it as the referenced object.
+        if (_property.kind === TypeDefKind.ObjectKind) {
+          referencedObject =
+            module.objects[
+              (_property as TypeDef<TypeDefKind.ObjectKind>).name
+            ]
+        }
       }
 
       // If there's no referenced object, we use the current object.
