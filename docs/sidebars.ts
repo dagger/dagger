@@ -353,6 +353,10 @@ module.exports = {
           "id": "manuals/developer/error-handling"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/ide-integration"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -379,10 +383,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/ide-integration"
             },
             {
               "type": "doc",
@@ -430,10 +430,6 @@ module.exports = {
 
             {
               "type": "doc",
-              "id": "manuals/developer/python/ide-integration"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/debugging"
             },
             {
@@ -478,10 +474,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/ide-integration"
             },
             {
               "type": "doc",
