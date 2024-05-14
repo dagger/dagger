@@ -524,6 +524,10 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return fmt.Errorf("response from query: %w", err)
 			}
 
+			if response == nil {
+				return nil
+			}
+
 			if fc.AfterResponse != nil {
 				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
 			}
