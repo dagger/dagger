@@ -6,178 +6,157 @@ displayed_sidebar: "current"
 ---
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
-import PartialInstallCli from '../partials/_install-cli.mdx';
 
 # Quickstart
 
 ## Speedrun
 
-This abbreviated, one-page version of the Dagger quickstart is designed to give you a quick taste of how Dagger works, by Daggerizing an example application in under 10 minutes. It's long on code and short on explanation. If you're looking for a slower and more detailed walkthrough, return to the primary [quickstart](./index.mdx).
+The best way to understand how Dagger works is by creating a composable CI pipeline in code for an application - a process we call "Daggerizing".
 
-### Install the Dagger CLI
+Daggerizing the CI pipeline for an existing application involves the following steps:
 
-The Dagger CLI is your primary interface to Dagger. It is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI configuration.
+1. Choose a Dagger SDK and bootstrap a new Dagger module for your pipeline with `dagger init`.
+2. Compose your pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
+3. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
 
-<PartialInstallCli />
+Follow the steps below to get a quick taste of Dagger's capabilities, by Daggerizing an example application. Don't worry about how it all works for the moment, it's explained in detail over the next few pages!
 
-### Get the example application
-
-The example application is a skeleton Vue framework application written in TypeScript and modified to return a "Hello from Dagger!" welcome page. Clone it and set it as the current working directory:
-
-```shell
-git clone https://github.com/dagger/hello-dagger
-cd hello-dagger
-```
-
-### Daggerize the pipeline
-
-"Daggerizing" is the process of creating a composable CI pipeline in code for an application. You do this by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
-
-Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```shell
-dagger init --sdk=go
-```
-
-This will generate a `dagger.json` module metadata file, an initial `dagger/main.go` source code template, as well as a `dagger/dagger.gen.go` file and `dagger/internal/` directory.
-</TabItem>
-<TabItem value="Python">
-
-```shell
-dagger init --sdk=python
-```
-
-This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
-</TabItem>
-<TabItem value="TypeScript">
-
-```shell
-dagger init --sdk=typescript
-```
-
-This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
-</TabItem>
-</Tabs>
-
-Dagger Functions are regular code, written in Go, Python or TypeScript using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on. These calls are chained together to achieve specific results, such as running tests, building a container image, and so on.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-Replace the generated `dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
-
-```go file=./snippets/cache/go/main.go
-```
-
-In this Dagger module, each Dagger Function performs a different operation:
-
-- The `Test()` Dagger Function runs the application's unit tests and returns the results.
-- The `Build()` Dagger Function builds the application and returns the build output directory.
-- The `Package()` Dagger Function returns a container image with the application code and an NGINX Web server ready to host and serve it.
-- The `Ci()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
-
-</TabItem>
-<TabItem value="Python">
-
-Replace the generated `dagger/src/main/__init__.py` file with the following code, which adds four Dagger Functions to your Dagger module:
-
-```python file=./snippets/cache/python/__init__.py
-```
-
-In this Dagger module, each Dagger Function performs a different operation:
-
-- The `test()` Dagger Function runs the application's unit tests and returns the results.
-- The `build()` Dagger Function builds the application and returns the build output directory.
-- The `package()` Dagger Function returns a container image with the application code and an NGINX Web server ready to host and serve it.
-- The `ci()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
-
-</TabItem>
-<TabItem value="TypeScript">
-
-Replace the generated `dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
-
-```typescript file=./snippets/cache/typescript/index.ts
-```
-
-In this Dagger module, each Dagger Function performs a different operation:
-
-- The `test()` Dagger Function runs the application's unit tests and returns the results.
-- The `build()` Dagger Function builds the application and returns the build output directory.
-- The `package()` Dagger Function returns a container image with the application code and an NGINX Web server ready to host and serve it.
-- The `ci()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
-
-</TabItem>
-</Tabs>
-
-Dagger Functions can accept arguments, which may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. In this listing, each Dagger Function expects a `source` argument of type `Directory`, which tells the Dagger Function where to find the application's source code.
-
-### Run the Daggerized pipeline
-
-Once you've created your Dagger Functions, you can call them with the Dagger CLI. Here are a few examples to try!
-
-- Containerize the application, then open an interactive shell into the running container:
+1. The example application is a skeleton Vue framework application written in TypeScript and modified to return a "Hello from Dagger!" welcome page. Clone it and set it as the current working directory:
 
     ```shell
-    dagger call \
-      package --source=. \
-      terminal
+    git clone https://github.com/dagger/hello-dagger
+    cd hello-dagger
     ```
 
-    From this shell, you can inspect the state of the container "live", including viewing and modifying the filesystem...
+1. Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory:
+
+    <Tabs groupId="language">
+    <TabItem value="Go">
 
     ```shell
-    tree /usr/share/nginx
+    dagger init --sdk=go
     ```
 
-    ...running services
+    This will generate a `dagger.json` module metadata file, an initial `dagger/main.go` source code template, as well as a `dagger/dagger.gen.go` file and `dagger/internal/` directory.
+    </TabItem>
+    <TabItem value="Python">
 
     ```shell
-    nginx
+    dagger init --sdk=python
     ```
 
-    ...and executing commands.
+    This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
+    </TabItem>
+    <TabItem value="TypeScript">
 
     ```shell
-    curl localhost:80
+    dagger init --sdk=typescript
     ```
 
-- Test, build, package and release the application to the [ttl.sh container registry](https://ttl.sh):
+    This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
+    </TabItem>
+    </Tabs>
 
-    ```shell
-    dagger call \
-      ci --source=.
+1. Dagger Functions are regular code, written in Go, Python or TypeScript using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on. These calls are chained together to achieve specific results, such as running tests, building a container image, and so on.
+
+    <Tabs groupId="language">
+    <TabItem value="Go">
+
+    Replace the generated `dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+    ```go file=./snippets/cache/go/main.go
     ```
 
-    When the container image is published, you should see an image reference on the [ttl.sh container registry](https://ttl.sh):
+    In this Dagger module, each Dagger Function performs a different operation:
 
+    - The `BuildEnv()` Dagger Function creates a container with the build environment for the application, including all required tooling and dependencies.
+    - The `Test()` Dagger Function uses the container to run the application's unit tests and returns the results.
+    - The `Build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+    - The `Publish()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
+
+    </TabItem>
+    <TabItem value="Python">
+
+    Replace the generated `dagger/src/main/__init__.py` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+    ```python file=./snippets/cache/python/__init__.py
     ```
-    ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
+
+    In this Dagger module, each Dagger Function performs a different operation:
+
+    - The `build_env()` Dagger Function creates a container with the build environment for the application, including all required tooling and dependencies.
+    - The `test()` Dagger Function uses the container to run the application's unit tests and returns the results.
+    - The `build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+    - The `publish()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
+
+    </TabItem>
+    <TabItem value="TypeScript">
+
+    Replace the generated `dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+    ```typescript file=./snippets/cache/typescript/index.ts
     ```
 
-    Test the published container image using the command below (update the image name as per the output of the previous Dagger Function call):
+    In this Dagger module, each Dagger Function performs a different operation:
 
-    ```shell
-    docker run -d --rm --publish 8080:80 ttl.sh/hello-dagger-47384
-    ```
+    - The `buildEnv()` Dagger Function creates a container with the build environment for the application, including all required tooling and dependencies.
+    - The `test()` Dagger Function uses the container to run the application's unit tests and returns the results.
+    - The `build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+    - The `Publish()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
 
-    Browse to port 8080 of your local machine and confirm that you see a "Hello from Dagger!" welcome page, served by NGINX.
+    </TabItem>
+    </Tabs>
+
+    Dagger Functions can accept arguments, which may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. In this listing, each Dagger Function expects a `source` argument of type `Directory`, which tells the Dagger Function where to find the application's source code.
+
+1. Once you've created your Dagger Functions, you can call them with the Dagger CLI. Here are a few examples to try!
+
+    - Test the application, then build and publish it as a container image to the [ttl.sh container registry](https://ttl.sh):
+
+        ```shell
+        dagger call \
+          publish --source=.
+        ```
+
+        When the container image is published, you should see an image reference on the [ttl.sh container registry](https://ttl.sh):
+
+        ```
+        ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
+        ```
+
+    - Create a container image with the application's build environment, then open an interactive shell into the running container:
+
+        ```shell
+        dagger call \
+          build-env --source=. \
+          terminal --cmd=bash
+        ```
+
+        From this shell, you can inspect and modify the state of the container "live", including viewing the filesystem...
+
+        ```shell
+        ls /src
+        ```
+
+        ...and running commands.
+
+        ```shell
+        npm run lint && npm run test:unit run
+        ```
+
+    - Build a container image containing the production-ready application and an NGINX service to host it, then test it by running it as a local service:
+
+        ```shell
+        dagger call \
+          build --source=. \
+          as-service \
+          up
+        ```
+
+        Browse to port 8080 of your local machine and confirm that you see a "Hello from Dagger!" welcome page, served by NGINX.
 
 :::tip DID YOU NOTICE...
-1. Even though you just tested, built and released a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
-1. Subsequent calls to `dagger call ci...` are significantly faster than the first run. Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
+1. Even though you just tested, built and published a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
+1. Subsequent calls to `dagger call publish...` are significantly faster than the first run. Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
 1. The Dagger SDK code used to create a Dagger Function in Go, Python or TypeScript looks remarkably similar, with only minor language-specific changes. Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
 :::
-
-### Next steps
-
-If what you've seen so far has intrigued you and made you want to learn more about Dagger, your immediate next step should be to return to the primary [quickstart](./index.mdx). It walks you through the same steps in a slower and more methodical manner, to teach you how Dagger works and to explain critical concepts and techniques.
-
-You can also visit the following resources for more information:
-
-- The Dagger [user manual](../manuals/user/index.mdx), for explanations of key Dagger concepts like [function chaining](../manuals/user/functions/539201-chaining.mdx), [just-in-time artifacts](../manuals/user/artifacts/723090-artifacts.mdx), [host access](../manuals/user/host/539261-host.mdx) and [pipeline visualization](../manuals/user/visualization/701082-visualization.mdx).
-- The Dagger [developer manual](../manuals/developer/index.mdx), for more detailed information on developing Dagger Functions.
-- Reference documentation for the [Dagger API](https://docs.dagger.io/api/reference) and the [Go](https://pkg.go.dev/dagger.io/dagger), [Python](https://dagger-io.readthedocs.org/) and [TypeScript](../reference/typescript/modules.md) SDKs.
-- The [Daggerverse](https://daggerverse.dev).
