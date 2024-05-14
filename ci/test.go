@@ -74,7 +74,7 @@ func (t *Test) test(
 	}
 
 	if race {
-		args = append(args, "-race", "-timeout=1h")
+		args = append(args, "-race")
 		cgoEnabledEnv = "1"
 	}
 

@@ -18,9 +18,9 @@ on:
         description: "How many minutes to timeout after"
         type: number
         required: false
-        # None of our jobs should take longer than a hour to run.
+        # None of our jobs should take longer than 30 mins to run.
         # If they do, set this explicitly.
-        default: 60
+        default: 30
 
       size:
         type: string
