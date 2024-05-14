@@ -1,20 +1,78 @@
 ---
-slug: /manuals/developer/typescript/292372/functions
+slug: /manuals/developer/functions
 displayed_sidebar: "current"
-toc_max_heading_level: 2
+toc_max_heading_level: 3
 title: "Functions"
 ---
-
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Functions
-
 
 Dagger Functions are regular code, written in a supported programming language, and running in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
 
 Here's an example of a simple Dagger Function:
 
-```typescript file=./snippets/functions/functions-simple/index.ts
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/functions-simple/go/main.go
 ```
+
+:::note
+The context and error return are optional in the module's function signature; remove them if you don't need them.
+:::
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/functions-simple/python/main.py
+```
+
+:::note 
+
+**Type annotations**
+
+Even though the Python runtime doesn’t enforce [type annotations][typing] at runtime,
+it’s important to define them with Dagger Functions. The Python SDK needs the
+typing information at runtime to correctly report to the API. It can’t rely on
+[type inference][inference], which is only possible for external [static type
+checkers][type-checker].
+
+If a function doesn’t have a return type annotation, it’ll be declared as `None`,
+which translates to the [dagger.Void][void] type in the API:
+
+```python
+@function
+def hello(self):
+    return "Hello world!"
+
+# Error: cannot convert string to Void
+```
+
+It’s fine however, when no value actually needs to be returned:
+
+```python
+@function
+def hello(self):
+    ...
+    # no return
+```
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
+[typing]: https://docs.python.org/3/library/typing.html
+[inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
+[type-checker]: https://realpython.com/python-type-checking/#static-type-checking
+[void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
+:::
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/functions-simple/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -30,8 +88,24 @@ Hello, world
 
 Here's an example of a more complex Dagger Function, which calls a remote API method:
 
-```typescript file=./snippets/functions/functions-complex/index.ts
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/functions-complex/go/main.go
 ```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/functions-complex/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/functions-complex/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -49,14 +123,30 @@ The result will look something like this:
 }
 ```
 
-## Arguments
+## Arguments 
 
 Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
 
 Here's an example of modifying the previous Dagger Function to accept a string argument:
 
-```typescript file=./snippets/functions/arguments-string/index.ts
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-string/go/main.go
 ```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-string/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-string/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -76,8 +166,25 @@ The result will look something like this:
 
 Here's an example of a Dagger Function that accepts a `Directory` as argument:
 
-```typescript file=./snippets/functions/arguments-directory/index.ts
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-directory/go/main.go
 ```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-directory/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -140,9 +247,25 @@ Function arguments can be marked as optional. In this case, the Dagger CLI will 
 
 Here's an example of a Dagger Function with an optional argument:
 
+<Tabs groupId="language">
 
-```typescript file=./snippets/functions/arguments-optional/index.ts
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-optional/go/main.go
 ```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-optional/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function, with the optional argument:
 
@@ -174,8 +297,25 @@ Function arguments can be configured to use default values if no value is suppli
 
 Here's an example of a Dagger Function with a default value for an argument:
 
-```typescript file=./snippets/functions/arguments-default/index.ts
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-default/go/main.go
 ```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-default/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-default/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function, without the required argument:
 
@@ -193,12 +333,29 @@ Hello, world
 
 Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
 
-This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory as argument (the source code) and return another directory (containing binaries) or a container image (with the binaries included).
+This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory with the source code as argument and return another directory containing just binaries or a container image with the binaries included.
 
 Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
 
-```typescript file=./snippets/functions/return-values-container/index.ts
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/return-values-container/go/main.go
 ```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/return-values-container/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/return-values-container/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
 
 Here is an example call for this Dagger Function:
 
@@ -220,3 +377,4 @@ hello
 Hello, world!
 /usr/local/bin #
 ```
+

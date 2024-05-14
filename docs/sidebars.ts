@@ -314,6 +314,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/functions"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/secrets"
         },
         {
@@ -343,10 +347,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/functions"
             },
             {
               "type": "doc",
@@ -398,10 +398,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/functions"
             },
             {
               "type": "doc",
@@ -457,10 +453,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/functions"
             },
             {
               "type": "doc",
