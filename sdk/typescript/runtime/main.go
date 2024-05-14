@@ -90,7 +90,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Node:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"yarn"}).
+			WithExec([]string{"yarn", "install"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -170,10 +170,6 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Mount users' module
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(filepath.Join(ModSourceDirPath, subPath)).
-		// Add sdk source code
-		WithDirectory(GenDir, t.SDKSourceDir, ContainerWithDirectoryOpts{
-			Exclude: []string{"codegen", "runtime"},
-		}).
 		// Add generated code
 		WithDirectory(GenDir, gen)
 
@@ -186,24 +182,20 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 	switch detectedRuntime {
 	case Bun:
 		// Check if the project has existing source:
-		// if it does: add sdk as dev dependency
+		// if it does: update the tsconfig in case dagger isn't part of the configuration
 		// if not: copy the template and replace QuickStart with the module name
 		if packageJsonExist {
-			base = base.
-				WithExec([]string{"bun", "install", GenDir}).
-				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"})
+			base = base.WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
 			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 		}
 
 	case Node:
 		// Check if the project has existing source:
-		// if it does: add sdk as dev dependency
+		// if it does: update the tsconfig in case dagger isn't part of the configuration
 		// if not: copy the template and replace QuickStart with the module name
 		if packageJsonExist {
-			base = base.
-				WithExec([]string{"yarn", "--production", GenDir}).
-				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"})
+			base = base.WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
 			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 		}
@@ -227,7 +219,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return path.Ext(s) == ".ts"
 	}) {
 		base = base.
-			WithExec([]string{"cp", "/opt/module/template/src/index.ts", "src/index.ts"}).
+			WithDirectory("src", base.Directory("/opt/module/template/src"), ContainerWithDirectoryOpts{Include: []string{"*.ts"}}).
 			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"})
 	}
 
@@ -241,7 +233,15 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 		return dag.Container().
 			From(bunImageRef).
 			WithoutEntrypoint().
-			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))), nil
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))).
+			// Add SDK source code before to install its dependencies so we can benefit from the cache
+			// and do not reinstall the dependencies each time the codegen is run or something
+			// changed in the user file.
+			WithDirectory(GenDir, t.SDKSourceDir, ContainerWithDirectoryOpts{
+				Exclude: []string{"codegen", "runtime"},
+				}).
+			WithWorkdir(GenDir).
+			WithExec([]string{"bun", "install"}), nil
 	case Node:
 		return dag.Container().
 			From(nodeImageRef).
@@ -251,7 +251,13 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			WithExec([]string{"apk", "add", "ca-certificates"}).
 			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
-			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
+			WithMountedCache("/usr/local/share/.cache", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
+			WithExec([]string{"npm", "install", "-g", "tsx"}).			
+			WithDirectory(GenDir, t.SDKSourceDir, ContainerWithDirectoryOpts{
+				Exclude: []string{"codegen", "runtime"},
+				}).
+			WithWorkdir(GenDir).
+			WithExec([]string{"yarn", "install", "--production"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
