@@ -490,6 +490,7 @@ describe("Invoke typescript function", function () {
 
     const resultList = await invoke(scanResult, input)
 
-    console.log(resultList)
+    assert.equal(resultList.length, 3)
+    assert.deepEqual(resultList, [{ value: -1 }, { value: 2 }, { value: 3 }])
   })
 })

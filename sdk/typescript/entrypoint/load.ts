@@ -250,9 +250,7 @@ export async function loadResult(
         // If the original type is an object, we use it as the referenced object.
         if (_property.kind === TypeDefKind.ObjectKind) {
           referencedObject =
-            module.objects[
-              (_property as TypeDef<TypeDefKind.ObjectKind>).name
-            ]
+            module.objects[(_property as TypeDef<TypeDefKind.ObjectKind>).name]
         }
       }
 
