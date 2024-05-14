@@ -10,7 +10,9 @@ class HelloDagger {
     // run unit tests
     this.test(source)
     // build and publish the container
-    return await this.build(source).publish("ttl.sh/myapp-" + Math.floor(Math.random() * 10000000))
+    return await this.build(source).publish(
+      "ttl.sh/myapp-" + Math.floor(Math.random() * 10000000),
+    )
   }
 
   /**
@@ -23,7 +25,9 @@ class HelloDagger {
     // use the build environment container
     // build the application
     // return the build output directory
-    const build = this.buildEnv(source).withExec(["npm", "run", "build"]).directory("./dist")
+    const build = this.buildEnv(source)
+      .withExec(["npm", "run", "build"])
+      .directory("./dist")
     // stage 2
     // start from a base nginx container
     // copy the build output directory to it
@@ -42,7 +46,9 @@ class HelloDagger {
   async test(source: Directory): Promise<string> {
     // use the build environment container
     // run unit tests
-    return this.buildEnv(source).withExec(["npm", "run", "test:unit", "run"]).stdout()
+    return this.buildEnv(source)
+      .withExec(["npm", "run", "test:unit", "run"])
+      .stdout()
   }
 
   /**
