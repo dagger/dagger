@@ -73,7 +73,7 @@ Directory evaluated. Use "dagger call build --help" to see available sub-command
 
 This means that the build succeeded, and a directory containing a production build of the application was returned as a `Directory` type. This is a ["just-in-time" directory](../manuals/user/artifacts/production/582201-directories.mdx) - a [transient artifact](../manuals/user/artifacts/723090-artifacts.mdx) produced as the result of a Dagger Function.
 
-However, since [Dagger Functions execute within containers spawned by the Dagger Engine](../manuals/developer/overview/942201-execution-environment.mdx), this build directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
+However, since [Dagger Functions execute within containers spawned by the Dagger Engine](../manuals/developer/execution-environment.mdx), this build directory is only available in the container, not on the host from where you ran `dagger call`. It must therefore be explicitly transferred or exported from the container to the host before you can use it.
 
 Just-in-time filesystem artifacts like `Directory` and `File` include a method to [export them to the host filesystem](../manuals/user/artifacts/consumption/273920-export.mdx). To see this in action, revise the previous `dagger call` command and chain an `export` function call to it:
 
