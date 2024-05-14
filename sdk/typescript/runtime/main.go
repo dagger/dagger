@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"slices"
 
@@ -189,7 +190,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// if not: copy the template and replace QuickStart with the module name
 		if packageJsonExist {
 			base = base.
-				WithExec([]string{"bun", "install", genDir}).
+				WithExec([]string{"bun", "install", GenDir}).
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
 			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
@@ -201,7 +202,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// if not: copy the template and replace QuickStart with the module name
 		if packageJsonExist {
 			base = base.
-				WithExec([]string{"yarn", "--production", genDir}).
+				WithExec([]string{"yarn", "--production", GenDir}).
 				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"})
 		} else {
 			base = base.WithDirectory(".", base.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
