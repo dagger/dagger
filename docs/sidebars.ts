@@ -21,14 +21,12 @@ module.exports = {
       "items": [
         "quickstart/index",
         "quickstart/cli",
-        "quickstart/setup",
-        "quickstart/init",
+        "quickstart/run",
         "quickstart/test",
         "quickstart/build",
         "quickstart/package",
         "quickstart/ci",
         "quickstart/cache",
-        "quickstart/install",
         "quickstart/refactor",
         "quickstart/conclusion"
       ]

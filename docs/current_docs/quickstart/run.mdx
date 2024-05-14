@@ -1,7 +1,7 @@
 ---
-slug: /quickstart/speedrun
-hide_table_of_contents: false
-title: "Speedrun"
+slug: /quickstart/run
+hide_table_of_contents: true
+title: "Build and run a pipeline"
 displayed_sidebar: "current"
 ---
 import Tabs from "@theme/Tabs";
@@ -9,7 +9,7 @@ import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Speedrun
+## Build and run a pipeline
 
 The best way to understand how Dagger works is by creating a composable CI pipeline in code for an application - a process we call "Daggerizing".
 
@@ -64,45 +64,45 @@ Follow the steps below to get a quick taste of Dagger's capabilities, by Daggeri
 
     Replace the generated `dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-    ```go file=./snippets/cache/go/main.go
+    ```go file=./snippets/publish/go/main.go
     ```
 
     In this Dagger module, each Dagger Function performs a different operation:
 
+    - The `Publish()` Dagger Function tests, builds and publishes a container image of the application to a registry. It depends on the `Test()` and `Build()` Dagger Functions.
+    - The `Test()` Dagger Function uses the container to run the application's unit tests and returns the results. It depends on the `BuildEnv()` Dagger Function.
+    - The `Build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it. It depends on the `BuildEnv()` Dagger Function.
     - The `BuildEnv()` Dagger Function creates a container with the build environment for the application, including all required tooling and dependencies.
-    - The `Test()` Dagger Function uses the container to run the application's unit tests and returns the results.
-    - The `Build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
-    - The `Publish()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
 
     </TabItem>
     <TabItem value="Python">
 
     Replace the generated `dagger/src/main/__init__.py` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-    ```python file=./snippets/cache/python/__init__.py
+    ```python file=./snippets/publish/python/__init__.py
     ```
 
     In this Dagger module, each Dagger Function performs a different operation:
 
+    - The `publish()` Dagger Function tests, builds and publishes a container image of the application to a registry. It depends on the `test()` and `build()` Dagger Functions.
+    - The `test()` Dagger Function uses the container to run the application's unit tests and returns the results. It depends on the `build_env()` Dagger Function.
+    - The `build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it. It depends on the `build_env()` Dagger Function.
     - The `build_env()` Dagger Function creates a container with the build environment for the application, including all required tooling and dependencies.
-    - The `test()` Dagger Function uses the container to run the application's unit tests and returns the results.
-    - The `build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
-    - The `publish()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
 
     </TabItem>
     <TabItem value="TypeScript">
 
     Replace the generated `dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
 
-    ```typescript file=./snippets/cache/typescript/index.ts
+    ```typescript file=./snippets/publish/typescript/index.ts
     ```
 
     In this Dagger module, each Dagger Function performs a different operation:
 
+    - The `publish()` Dagger Function tests, builds and publishes a container image of the application to a registry. It depends on the `test()` and `build()` Dagger Functions.
+    - The `test()` Dagger Function uses the container to run the application's unit tests and returns the results. It depends on the `buildEnv()` Dagger Function.
+    - The `build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it. It depends on the `buildEnv()` Dagger Function.
     - The `buildEnv()` Dagger Function creates a container with the build environment for the application, including all required tooling and dependencies.
-    - The `test()` Dagger Function uses the container to run the application's unit tests and returns the results.
-    - The `build()` Dagger Function uses the container to perform a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
-    - The `Publish()` Dagger Function combines the previous three Dagger Functions into a single pipeline and publishes the final container image to a registry.
 
     </TabItem>
     </Tabs>
@@ -138,10 +138,16 @@ Follow the steps below to get a quick taste of Dagger's capabilities, by Daggeri
         ls /src
         ```
 
-        ...and running commands.
+        ...and running commands:
 
         ```shell
-        npm run lint && npm run test:unit run
+        uname -a
+        ```
+        ```shell
+        npm run lint
+        ```
+        ```shell
+        npm run test:unit run
         ```
 
     - Build a container image containing the production-ready application and an NGINX service to host it, then test it by running it as a local service:
