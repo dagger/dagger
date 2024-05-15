@@ -318,6 +318,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/ide-integration"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/secrets"
         },
         {
@@ -351,10 +355,6 @@ module.exports = {
         {
           "type": "doc",
           "id": "manuals/developer/error-handling"
-        },
-        {
-          "type": "doc",
-          "id": "manuals/developer/ide-integration"
         },
         {
           "type": "category",
