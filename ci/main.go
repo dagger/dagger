@@ -73,6 +73,7 @@ func (ci *Dagger) SDK() *SDK {
 	}
 }
 
+// Develop the Dagger helm chart
 func (ci *Dagger) Helm() *Helm {
 	return &Helm{Dagger: ci}
 }
