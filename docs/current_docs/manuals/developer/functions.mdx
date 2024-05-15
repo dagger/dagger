@@ -194,7 +194,7 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument:
 Here is an example call for this Dagger Function:
 
 ```shell
-dagger call tree --dir=. --depth=1
+dagger call tree --src=. --depth=1
 ```
 
 The result will look like this:
@@ -206,40 +206,30 @@ The result will look like this:
 └── dagger.json
 
 2 directories, 2 files
-dagger call tree --src=https://github.com/dagger/dagger#main:sdk --depth=1
+```
 
 You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
 
 ```shell
-dagger call tree --dir=https://github.com/dagger/dagger#main:cmd/dagger --depth=1
+dagger call tree --src=https://github.com/dagger/dagger#main:sdk --depth=1
 ```
 
-The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/cmd/dagger):
+The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/sdk):
 
 ```shell
 .
-├── call.go
-├── cloud.go
-├── debug.go
-├── engine.go
-├── exec_nonunix.go
-├── exec_unix.go
-├── flags.go
-├── functions.go
-├── gen.go
-├── licenses.go
-├── listen.go
-├── log.go
-├── main.go
-├── module.go
-├── module_test.go
-├── query.go
-├── run.go
-├── session.go
-├── shell.go
-└── version.go
+├── CONTRIBUTING.md
+├── cue
+├── dotnet
+├── elixir
+├── go
+├── java
+├── php
+├── python
+├── rust
+└── typescript
 
-1 directory, 20 files
+10 directories, 1 file
 ```
 
 :::note
