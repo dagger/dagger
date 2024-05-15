@@ -28,7 +28,7 @@ Here is an example of a `github` Dagger module, with a function named `dagger_or
 that returns a custom `Organization` type, itself containing a collection of
 `Account` types:
 
-```python file=./snippets/custom-types/python/src/main/__init__.py
+```python file=./snippets/custom-types/python/main.py
 ```
 
 The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) descriptors expose getter functions without arguments, for their [attributes](./python/944887-attribute-functions.mdx).
@@ -40,7 +40,7 @@ Here is an example of a `github` Dagger module, with a function named `daggerOrg
 that returns a custom `Organization` type, itself containing a collection of
 `Account` types:
 
-```typescript file=./snippets/custom-types/typescript/src/index.ts
+```typescript file=./snippets/custom-types/typescript/index.ts
 ```
 
 TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords do not allows decorators.
