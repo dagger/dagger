@@ -19,9 +19,6 @@ Here's an example of a simple Dagger Function:
 ```go file=./snippets/functions/functions-simple/go/main.go
 ```
 
-:::note
-The context and error return are optional in the module's function signature; remove them if you don't need them.
-:::
 </TabItem>
 
 <TabItem value="Python">
@@ -93,6 +90,10 @@ Here's an example of a more complex Dagger Function, which calls a remote API me
 <TabItem value="Go">
 ```go file=./snippets/functions/functions-complex/go/main.go
 ```
+
+:::note
+Notice that this function now includes context as input and error as return in the module's function signature.
+:::
 </TabItem>
 
 <TabItem value="Python">
