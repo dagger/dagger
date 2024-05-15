@@ -9,7 +9,7 @@ jobs:
     uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      function: sdk elixir publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
+      function: sdk go publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
 
   notify:
     if: github.ref_type == 'tag'
