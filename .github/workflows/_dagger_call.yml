@@ -27,9 +27,22 @@ on:
         default: "dagger-v0-11-4-4c-nvme"
         required: false
 
+      size-dind:
+        type: string
+        default: "dagger-v0-11-4-dind"
+        required: false
+
       dagger-version:
         type: string
         default: "0.11.4"
+        required: false
+
+      # use to control concurrency groups from the caller. It will be appended
+      # to the existing concurrency group of the job
+      # to the concurrency groups 
+      concurrency:
+        type: string
+        default: ""
         required: false
 
 jobs:
@@ -80,7 +93,7 @@ jobs:
     if: ${{ !inputs.dev-engine && github.repository == 'dagger/dagger' }}
     runs-on: ${{ inputs.size }}
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.function }}-${{ github.head_ref || github.run_id }}
+      group: ${{github.workflow}}-${{ inputs.function }}-${{ github.head_ref || github.run_id }}${{ inputs.concurrency }}
       cancel-in-progress: true
     timeout-minutes: ${{ inputs.timeout }}
     steps:
@@ -110,9 +123,9 @@ jobs:
 
   dagger-runner-v2-dind:
     if: ${{ inputs.dev-engine && github.repository == 'dagger/dagger' }}
-    runs-on: dagger-v0-11-4-dind
+    runs-on: ${{ inputs.size-dind }}
     concurrency:
-      group: ${{github.workflow}}-${{ inputs.function }}-${{ github.head_ref || github.run_id }}-v2
+      group: ${{github.workflow}}-${{ inputs.function }}-${{ github.head_ref || github.run_id }}${{ inputs.concurrency }}
       cancel-in-progress: true
     timeout-minutes: ${{ inputs.timeout }}
     steps:

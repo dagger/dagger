@@ -28,6 +28,14 @@ jobs:
       function: test all --race=true
       size: "dagger-v0-11-4-16c-nvme"
 
+  test-nogc:
+    uses: ./.github/workflows/_dagger_call.yml
+    secrets: inherit
+    with:
+      function: test all --race=true
+      size: "dagger-v0-11-4-16c-nogc"
+      concurrency: "-nogc"
+
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
   # functionality rather than repeat every test already run in the other targets.
@@ -37,6 +45,15 @@ jobs:
     with:
       function: test important --race=true
       dev-engine: true
+
+  testdev-nogc:
+    uses: ./.github/workflows/_dagger_call.yml
+    secrets: inherit
+    with:
+      function: test important --race=true
+      dev-engine: true
+      size-dind: "dagger-v0-11-4-dind-nogc"
+      concurrency: "-nogc"
 
   test-publish-cli:
     uses: ./.github/workflows/_dagger_call.yml
