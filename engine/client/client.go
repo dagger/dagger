@@ -295,7 +295,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	ctx, _, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -382,8 +382,6 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			if elapsed > time.Second {
 				fmt.Fprintln(stderr, "Failed to connect; retrying...", err)
 			}
-		} else {
-			fmt.Fprintln(stdout, "OK!")
 		}
 		return err
 	}); err != nil {
