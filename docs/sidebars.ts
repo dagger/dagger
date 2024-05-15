@@ -370,10 +370,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/go/error-handling"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/go/module-structure"
             },
             {
