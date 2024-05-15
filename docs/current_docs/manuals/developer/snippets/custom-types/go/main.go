@@ -3,14 +3,21 @@ package main
 type Github struct{}
 
 func (module *Github) DaggerOrganization() *Organization {
+	url := "https://github.com/dagger"
 	return &Organization{
-		URL:          "https://github.com/dagger",
-		Repositories: []*GitRepository{dag.Git(`${organization.url}/dagger`)},
+		URL:          url,
+		Repositories: []*GitRepository{dag.Git(url + "/dagger")},
 		Members: []*Account{
 			{"jane", "jane@example.com"},
 			{"john", "john@example.com"},
 		},
 	}
+}
+
+type Organization struct {
+	URL          string
+	Repositories []*GitRepository
+	Members      []*Account
 }
 
 type Account struct {
@@ -20,10 +27,4 @@ type Account struct {
 
 func (account *Account) URL() string {
 	return "https://github.com/" + account.Username
-}
-
-type Organization struct {
-	URL          string
-	Repositories []*GitRepository
-	Members      []*Account
 }
