@@ -4201,3 +4201,19 @@ func TestContainerWithMountedSecretMode(t *testing.T) {
 	require.Contains(t, perms, "0666/-rw-rw-rw-")
 	require.NoError(t, err)
 }
+
+func TestContainerNestedExec(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	_, err := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ defaultPlatform }`,
+		}). // arbitrary valid query
+		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+}

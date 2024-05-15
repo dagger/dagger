@@ -1,12 +1,7 @@
 package consts
 
-import (
-	"github.com/dagger/dagger/engine/distconsts"
-)
-
 const (
 	EngineServerPath = "/usr/local/bin/dagger-engine"
-	EngineShimPath   = distconsts.EngineShimPath
 )
 
 const (

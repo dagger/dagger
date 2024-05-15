@@ -45,13 +45,18 @@ func (c *Client) newSession() (*bksession.Session, error) {
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
 	sess.Allow(&socketProxy{c})
 	sess.Allow(&authProxy{c})
-	sess.Allow(&client.AnyDirSource{})
-	sess.Allow(&client.AnyDirTarget{})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName:               c.worker.ContentStore(),
 		"oci:" + BuiltinContentOCIStoreName: builtinStore,
 	}))
+
+	filesyncer, err := client.NewFilesyncer("", "", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("new filesyncer: %w", err)
+	}
+	sess.Allow(filesyncer.AsSource())
+	sess.Allow(filesyncer.AsTarget())
 
 	clientConn, serverConn := net.Pipe()
 	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) { //nolint: unparam
@@ -86,11 +91,17 @@ func (c *Client) newSession() (*bksession.Session, error) {
 	return sess, nil
 }
 
-func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (bksession.Caller, error) {
+func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	bklog.G(ctx).Tracef("getting session for %q", clientMetadata.BuildkitSessionID())
+	defer func() {
+		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.BuildkitSessionID())
+	}()
+
 	caller, err := c.SessionManager.Get(ctx, clientMetadata.BuildkitSessionID(), !wait)
 	if err != nil {
 		return nil, err
