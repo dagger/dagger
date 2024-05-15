@@ -255,10 +255,10 @@ func (w *Worker) run(
 		w.setupOTEL,
 		w.setupSecretScrubbing,
 		w.setProxyEnvs,
-		w.setupNestedClient,
 		w.enableGPU,
 		w.createCWD,
 		w.installCACerts,
+		w.setupNestedClient,
 	} {
 		if err := f(ctx, spec); err != nil {
 			return err
@@ -343,7 +343,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network namespace: %w", err)
 	}
-	cleanup.add(netNS.Close)
+	cleanup.add("close netns", netNS.Close)
 
 	var spec specs.Spec
 	if err := netNS.Set(&spec); err != nil {
@@ -355,7 +355,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		namespaces: spec.Linux.Namespaces,
 		nsJobs:     make(chan func()),
 	}
-	cleanup.addNoErr(func() {
+	cleanup.addNoErr("mark run state done", func() {
 		close(runState.done)
 	})
 
@@ -367,7 +367,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	w.mu.Lock()
 	w.running[id] = runState
 	w.mu.Unlock()
-	cleanup.addNoErr(func() {
+	cleanup.addNoErr("delete run state", func() {
 		w.mu.Lock()
 		delete(w.running, id)
 		w.mu.Unlock()

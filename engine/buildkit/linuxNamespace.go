@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
@@ -18,7 +17,7 @@ import (
 
 const (
 	idleTimeout    = 1 * time.Second
-	workerPoolSize = 3
+	workerPoolSize = 5
 )
 
 func runInNamespace[T any](
@@ -81,7 +80,7 @@ func (w *Worker) runNamespaceWorkers(
 		if err != nil {
 			return fmt.Errorf("failed to open host namespace file %s: %w", nsType.procFSName, err)
 		}
-		cleanup.add(hostFile.Close)
+		cleanup.add("close host netns file", hostFile.Close)
 
 		var ctrFile *os.File
 		for _, ns := range runState.namespaces {
@@ -95,7 +94,7 @@ func (w *Worker) runNamespaceWorkers(
 			if err != nil {
 				return fmt.Errorf("failed to open container namespace file %s: %w", ns.Path, err)
 			}
-			cleanup.add(ctrFile.Close)
+			cleanup.add("close container netns file", ctrFile.Close)
 		}
 		if ctrFile == nil {
 			return fmt.Errorf("container namespace file not found for %s", nsType.specType)
@@ -110,12 +109,8 @@ func (w *Worker) runNamespaceWorkers(
 
 	ctx, cancel := context.WithCancel(ctx)
 	p := pool.New().WithContext(ctx)
-	cleanup.add(func() error {
-		slog.ExtraDebug("stopping namespace workers")
-		defer slog.ExtraDebug("namespace workers stopped")
-		return p.Wait()
-	})
-	cleanup.addNoErr(cancel)
+	cleanup.add("stopping namespace workers", p.Wait)
+	cleanup.addNoErr("canceling namespace workers", cancel)
 
 	for i := 0; i < workerPoolSize; i++ {
 		p.Go(func(ctx context.Context) (rerr error) {

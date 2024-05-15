@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -168,7 +170,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	}
 
 	conn, _, hijackmd := grpchijack.Hijack(stream)
+	return e.HandleConn(ctx, conn, opts, hijackmd)
+}
 
+func (e *BuildkitController) HandleConn(ctx context.Context, conn net.Conn, opts *engine.ClientMetadata, hijackmd map[string][]string) (rerr error) {
 	if !opts.RegisterClient {
 		// retry a few times since an initially connecting client is concurrently registering
 		// the server, so this it's okay for this to take a bit to succeed
@@ -199,19 +204,17 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	bklog.G(ctx).Trace("registering client")
 
 	eg, egctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
 		// overwrite the session ID to be our client ID + server ID
-		const sessionIDHeader = "x-docker-expose-session-uuid"
-		if _, ok := hijackmd[sessionIDHeader]; !ok {
-			// should never happen unless upstream changes the value of the header key,
-			// in which case we want to know
-			panic(fmt.Errorf("missing header %s", sessionIDHeader))
-		}
-		hijackmd[sessionIDHeader] = []string{opts.BuildkitSessionID()}
+		hijackmd[buildkit.BuildkitSessionIDHeader] = []string{opts.BuildkitSessionID()}
+		hijackmd[http.CanonicalHeaderKey(buildkit.BuildkitSessionIDHeader)] = []string{opts.BuildkitSessionID()}
 
-		bklog.G(ctx).Trace("session manager handling conn")
+		bklog.G(ctx).Debugf("session manager handling conn %s %+v", opts.BuildkitSessionID(), hijackmd)
+		defer func() {
+			bklog.G(ctx).WithError(rerr).Debugf("session manager handle conn done %s", opts.BuildkitSessionID())
+		}()
+
 		err := e.SessionManager.HandleConn(egctx, conn, hijackmd)
-		bklog.G(ctx).WithError(err).Trace("session manager handle conn done")
 		slog.Trace("session manager handle conn done", "err", err, "ctxErr", ctx.Err(), "egCtxErr", egctx.Err())
 		if err != nil {
 			return fmt.Errorf("handleConn: %w", err)
@@ -230,6 +233,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	if !ok {
 		bklog.G(ctx).Trace("initializing new server")
 
+		var err error
 		srv, err = e.newDaggerServer(ctx, opts)
 		if err != nil {
 			e.perServerMu.Unlock(opts.ServerID)
@@ -258,7 +262,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	}
 	e.perServerMu.Unlock(opts.ServerID)
 
-	err = srv.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
+	err := srv.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
 	if err != nil {
 		return fmt.Errorf("failed to register client: %w", err)
 	}

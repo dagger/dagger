@@ -3,6 +3,7 @@ package buildkit
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,6 +45,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -64,9 +66,14 @@ type Worker struct {
 	execMD *ExecutionMetadata
 }
 
+type Controller interface {
+	HandleConn(context.Context, net.Conn, *engine.ClientMetadata, map[string][]string) error
+}
+
 type sharedWorkerState struct {
 	*base.Worker
-	root string
+	Controller Controller
+	root       string
 
 	// executor specific
 	runc             *runc.Runc

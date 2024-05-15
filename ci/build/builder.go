@@ -193,7 +193,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	ctr := base.
 		WithFile(consts.EngineServerPath, build.engineBinary()).
-		WithFile(consts.EngineShimPath, build.shimBinary()).
 		WithFile("/usr/bin/dial-stdio", build.dialstdioBinary()).
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
 		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
@@ -239,10 +238,6 @@ func (build *Builder) CodegenBinary() *dagger.File {
 
 func (build *Builder) engineBinary() *dagger.File {
 	return build.binary("./cmd/engine", true)
-}
-
-func (build *Builder) shimBinary() *dagger.File {
-	return build.binary("./cmd/shim", false)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {

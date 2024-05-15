@@ -9,26 +9,31 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/containerd/containerd/mount"
 	ctdoci "github.com/containerd/containerd/oci"
 	"github.com/containerd/continuity/fs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	randid "github.com/moby/buildkit/identity"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/propagation"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/telemetry"
 )
@@ -41,6 +46,12 @@ const (
 	DaggerRedirectStdoutEnv  = "_DAGGER_REDIRECT_STDOUT"
 	DaggerRedirectStderrEnv  = "_DAGGER_REDIRECT_STDERR"
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
+
+	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
+	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+
+	// this is set by buildkit, we cannot change
+	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
 
 	OTELTraceParentEnv      = "TRACEPARENT"
 	OTELExporterProtocolEnv = "OTEL_EXPORTER_OTLP_PROTOCOL"
@@ -117,7 +128,7 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 		return fmt.Errorf("get base hosts file: %w", err)
 	}
 	if cleanupBaseHosts != nil {
-		spec.cleanups.addNoErr(cleanupBaseHosts)
+		spec.cleanups.addNoErr("cleanup base hosts file", cleanupBaseHosts)
 	}
 
 	if w.execMD == nil || w.execMD.ServerID == "" {
@@ -143,7 +154,7 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 	}
 	defer ctrResolvFile.Close()
 	spec.resolvConfPath = ctrResolvFile.Name()
-	spec.cleanups.add(func() error {
+	spec.cleanups.add("remove resolv.conf", func() error {
 		return os.Remove(spec.resolvConfPath)
 	})
 
@@ -191,7 +202,7 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 	}
 	defer ctrHostsFile.Close()
 	spec.hostsFilePath = ctrHostsFile.Name()
-	spec.cleanups.add(func() error {
+	spec.cleanups.add("remove hosts file", func() error {
 		return os.Remove(spec.hostsFilePath)
 	})
 
@@ -261,7 +272,7 @@ func (w *Worker) generateBaseSpec(ctx context.Context, spec *spec) error {
 	if err != nil {
 		return err
 	}
-	spec.cleanups.addNoErr(ociSpecCleanup)
+	spec.cleanups.addNoErr("base OCI spec cleanup", ociSpecCleanup)
 
 	spec.Spec = baseSpec
 	return nil
@@ -312,30 +323,6 @@ func (w *Worker) filterMetaMount(_ context.Context, spec *spec) error {
 	}
 	spec.Mounts = filteredMounts
 
-	isDaggerExec := spec.metaMount != nil
-	if isDaggerExec {
-		shimBinPath := "/usr/local/bin/dagger-shim"
-		if !filepath.IsAbs(shimBinPath) {
-			var err error
-			shimBinPath, err = exec.LookPath(shimBinPath)
-			if err != nil {
-				return fmt.Errorf("find shim binary: %w", err)
-			}
-		}
-		shimBinPath, err := filepath.EvalSymlinks(shimBinPath)
-		if err != nil {
-			return fmt.Errorf("resolve shim binary symlink: %w", err)
-		}
-
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: "/.shim",
-			Type:        "bind",
-			Source:      shimBinPath,
-			Options:     []string{"rbind", "ro"},
-		})
-		spec.Process.Args = append([]string{"/.shim"}, spec.Process.Args...)
-	}
-
 	return nil
 }
 
@@ -368,7 +355,7 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 	stdinFile, err := os.Open(stdinPath)
 	switch {
 	case err == nil:
-		spec.cleanups.add(stdinFile.Close)
+		spec.cleanups.add("close container stdin file", stdinFile.Close)
 		spec.procInfo.Stdin = stdinFile
 	case os.IsNotExist(err):
 		// no stdin to send
@@ -385,7 +372,7 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 	if err != nil {
 		return fmt.Errorf("open stdout file: %w", err)
 	}
-	spec.cleanups.add(stdoutFile.Close)
+	spec.cleanups.add("close container stdout file", stdoutFile.Close)
 	stdoutWriters = append(stdoutWriters, stdoutFile)
 
 	var stderrWriters []io.Writer
@@ -397,7 +384,7 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 	if err != nil {
 		return fmt.Errorf("open stderr file: %w", err)
 	}
-	spec.cleanups.add(stderrFile.Close)
+	spec.cleanups.add("close container stderr file", stderrFile.Close)
 	stderrWriters = append(stderrWriters, stderrFile)
 
 	if w.execMD != nil && (w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
@@ -423,7 +410,7 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stdout file: %w", err)
 			}
-			spec.cleanups.add(redirectStdoutFile.Close)
+			spec.cleanups.add("close redirect stdout file", redirectStdoutFile.Close)
 			if err := redirectStdoutFile.Chown(int(spec.Process.User.UID), int(spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stdout file: %w", err)
 			}
@@ -439,7 +426,7 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stderr file: %w", err)
 			}
-			spec.cleanups.add(redirectStderrFile.Close)
+			spec.cleanups.add("close redirect stderr file", redirectStderrFile.Close)
 			if err := redirectStderrFile.Chown(int(spec.Process.User.UID), int(spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stderr file: %w", err)
 			}
@@ -465,7 +452,7 @@ func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
 	traceParent, ok := spec.origEnvMap[OTELTraceParentEnv]
 	if ok {
 		otelCtx := propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": traceParent})
-		otelLogger := telemetry.Logger("dagger.io/shim") // TODO:(sipsma) can this string be safely updated now?
+		otelLogger := telemetry.Logger("dagger.io/executor")
 		stdout := &telemetry.OtelWriter{
 			Ctx:    otelCtx,
 			Logger: otelLogger,
@@ -552,9 +539,9 @@ func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
 				})
 			}
 		})
-		spec.cleanups.addNoErr(proxyConnPool.Wait)
-		spec.cleanups.add(listenerPool.Wait)
-		spec.cleanups.addNoErr(cancelListener)
+		spec.cleanups.addNoErr("wait for otel proxy conn pool", proxyConnPool.Wait)
+		spec.cleanups.add("wait for otel listener pool", listenerPool.Wait)
+		spec.cleanups.addNoErr("cancel otel listener context", cancelListener)
 	}
 
 	spec.Process.Env = append(spec.Process.Env,
@@ -575,7 +562,7 @@ func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
 	return nil
 }
 
-func (w *Worker) setupSecretScrubbing(_ context.Context, spec *spec) error {
+func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) error {
 	if w.execMD == nil {
 		return nil
 	}
@@ -596,12 +583,15 @@ func (w *Worker) setupSecretScrubbing(_ context.Context, spec *spec) error {
 		if !path.IsAbs(filePath) {
 			filePath = filepath.Join(ctrCwd, filePath)
 		}
-		for i := len(spec.Mounts) - 1; i >= 0; i-- {
-			mnt := spec.Mounts[i]
-			if mnt.Destination == filePath {
-				secretFilePaths = append(secretFilePaths, mnt.Source)
-				break
-			}
+		var err error
+		filePath, err = fs.RootPath(state.rootfsPath, filePath)
+		if err != nil {
+			return fmt.Errorf("secret file path %s points to invalid target: %w", filePath, err)
+		}
+		if _, err := os.Stat(filePath); err == nil {
+			secretFilePaths = append(secretFilePaths, filePath)
+		} else if !os.IsNotExist(err) {
+			bklog.G(ctx).Warnf("failed to stat secret file path %s: %v", filePath, err)
 		}
 	}
 
@@ -634,11 +624,11 @@ func (w *Worker) setupSecretScrubbing(_ context.Context, spec *spec) error {
 		io.Copy(finalStderr, stderrScrubReader)
 	}()
 
-	spec.cleanups.add(stderrR.Close)
-	spec.cleanups.add(stdoutR.Close)
-	spec.cleanups.addNoErr(pipeWg.Wait)
-	spec.cleanups.add(stderrW.Close)
-	spec.cleanups.add(stdoutW.Close)
+	spec.cleanups.add("close secret scrub stderr reader", stderrR.Close)
+	spec.cleanups.add("close secret scrub stdout reader", stdoutR.Close)
+	spec.cleanups.addNoErr("wait for secret scrubber pipes", pipeWg.Wait)
+	spec.cleanups.add("close secret scrub stderr writer", stderrW.Close)
+	spec.cleanups.add("close secret scrub stdout writer", stdoutW.Close)
 
 	return nil
 }
@@ -693,36 +683,6 @@ func (w *Worker) setProxyEnvs(_ context.Context, spec *spec) error {
 			spec.Process.Env = append(spec.Process.Env, systemEnvName+"="+systemVal)
 		}
 	}
-
-	return nil
-}
-
-func (w *Worker) setupNestedClient(_ context.Context, spec *spec) error {
-	if w.execMD == nil {
-		return nil
-	}
-	spec.Process.Env = append(spec.Process.Env, DaggerServerIDEnv+"="+w.execMD.ServerID)
-
-	if w.execMD.ClientID == "" {
-		// don't let users manually set these
-		for _, envName := range []string{
-			DaggerServerIDEnv,
-			DaggerClientIDEnv,
-		} {
-			if _, ok := spec.origEnvMap[envName]; ok {
-				return fmt.Errorf("cannot set %s manually", envName)
-			}
-		}
-		return nil
-	}
-
-	spec.Process.Env = append(spec.Process.Env, DaggerClientIDEnv+"="+w.execMD.ClientID)
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Destination: "/.runner.sock",
-		Type:        "bind",
-		Options:     []string{"rbind"},
-		Source:      "/run/buildkit/buildkitd.sock",
-	})
 
 	return nil
 }
@@ -823,7 +783,7 @@ func (w *Worker) installCACerts(ctx context.Context, spec *spec) error {
 	err = caInstaller.Install(ctx)
 	switch {
 	case err == nil:
-		spec.cleanups.add(func() error {
+		spec.cleanups.add("uninstall CA certs", func() error {
 			err := caInstaller.Uninstall(ctx)
 			if err != nil {
 				bklog.G(ctx).Errorf("failed to uninstall cacerts: %v", err)
@@ -838,6 +798,215 @@ func (w *Worker) installCACerts(ctx context.Context, spec *spec) error {
 		// if install failed but we were able to cleanup, then we should log it but don't need to fail the exec
 		bklog.G(ctx).Errorf("failed to install cacerts but successfully cleaned up, continuing without CA certs: %v", err)
 	}
+
+	return nil
+}
+
+func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error) {
+	if w.execMD == nil {
+		return nil
+	}
+	if w.execMD.ClientID == "" {
+		return nil
+	}
+
+	nestedClientMD := engine.ClientMetadata{
+		ClientID:          w.execMD.ClientID,
+		ClientSecretToken: randid.NewID(),
+		ServerID:          w.execMD.ServerID,
+		ClientHostname:    spec.Hostname,
+		// TODO: Labels?
+		// TODO: CloudToken?
+		// TODO: DoNotTrack?
+	}
+
+	spec.Process.Env = append(spec.Process.Env, DaggerSessionTokenEnv+"="+nestedClientMD.ClientSecretToken)
+
+	sessionCtx, cancelSession := context.WithCancel(ctx)
+	defer func() {
+		if rerr != nil {
+			cancelSession()
+		}
+	}()
+
+	bkSessionName := randid.NewID()
+	bkSessionSharedKey := ""
+	bkSession, err := bksession.NewSession(sessionCtx, bkSessionName, bkSessionSharedKey)
+	if err != nil {
+		return fmt.Errorf("create buildkit session: %w", err)
+	}
+	spec.cleanups.add("close nested client buildkit session", bkSession.Close)
+
+	bkSession.Allow(client.SocketProvider{
+		EnableHostNetworkAccess: true,
+		Dialer: func(network, addr string) (net.Conn, error) {
+			return runInNamespace(sessionCtx, spec.runState, func() (net.Conn, error) {
+				return net.Dial(network, addr)
+			})
+		},
+	})
+	bkSession.Allow(session.NewTunnelListenerAttachable(sessionCtx, func(network, addr string) (net.Listener, error) {
+		return runInNamespace(sessionCtx, spec.runState, func() (net.Listener, error) {
+			return net.Listen(network, addr)
+		})
+	}))
+
+	// TODO: do this much earlier for all containers, will enable cleaning up containerfs code massively
+	// TODO: do this much earlier for all containers, will enable cleaning up containerfs code massively
+	// TODO: do this much earlier for all containers, will enable cleaning up containerfs code massively
+	var bindMnts []mount.Mount
+	var filteredMounts []specs.Mount
+	for _, mnt := range spec.Mounts {
+		switch mnt.Type {
+		case "overlay":
+			// should never happen, we should only be given bind mounts from overlays
+			return fmt.Errorf("unexpected overlay mount in spec: %v", mnt)
+		case "bind", "rbind": // not an actual mount type in linux, but containerd/buildkit code sets this anyways
+			bindMnts = append(bindMnts, mount.Mount{
+				Type:    mnt.Type,
+				Source:  mnt.Source,
+				Target:  mnt.Destination,
+				Options: mnt.Options,
+			})
+		default:
+			filteredMounts = append(filteredMounts, mnt)
+		}
+	}
+	spec.Mounts = filteredMounts
+
+	for _, bindMnt := range bindMnts {
+		dstPath, err := fs.RootPath(spec.rootfsPath, bindMnt.Target)
+		if err != nil {
+			return fmt.Errorf("bind mount %s points to invalid target: %w", bindMnt.Target, err)
+		}
+		// ref: https://github.com/opencontainers/runc/blob/9d02c20df7faf7b356a632e35dfccf332fc7efed/libcontainer/rootfs_linux.go#L1173
+		if _, err := os.Stat(dstPath); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("stat bind mount target %s: %w", dstPath, err)
+			}
+			srcStat, err := os.Stat(bindMnt.Source)
+			if err != nil {
+				return fmt.Errorf("stat bind mount source %s: %w", bindMnt.Source, err)
+			}
+			switch srcStat.Mode() & os.ModeType {
+			case os.ModeDir:
+				if err := os.MkdirAll(dstPath, 0o755); err != nil {
+					return fmt.Errorf("create bind mount target dir %s: %w", dstPath, err)
+				}
+			default:
+				if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+					return fmt.Errorf("create bind mount target parent dir %s: %w", dstPath, err)
+				}
+				if f, err := os.OpenFile(dstPath, os.O_CREATE, 0o755); err != nil {
+					return fmt.Errorf("create bind mount target file %s: %w", dstPath, err)
+				} else {
+					f.Close()
+				}
+			}
+		}
+	}
+
+	if err := mount.All(bindMnts, spec.rootfsPath); err != nil {
+		return fmt.Errorf("mount bind mounts: %w", err)
+	}
+	spec.cleanups.add("unmount container bind mounts", func() error {
+		return mount.UnmountMounts(bindMnts, spec.rootfsPath, 0)
+	})
+
+	// TODO: HANDLE CWD NOT EXISTING? OR I THINK THATS ALREADY DONE SOMEHWERE?
+	cwdPath := spec.rootfsPath
+	if spec.Process.Cwd != "" {
+		cwdPath, err = fs.RootPath(spec.rootfsPath, spec.Process.Cwd)
+		if err != nil {
+			return fmt.Errorf("working dir %s points to invalid target: %w", spec.Process.Cwd, err)
+		}
+	}
+
+	// TODO: eval symlinks on rootfsPath just to be extra safe?
+	filesyncer, err := client.NewFilesyncer(spec.rootfsPath, cwdPath, &spec.uid, &spec.gid)
+	if err != nil {
+		return fmt.Errorf("create filesyncer: %w", err)
+	}
+	bkSession.Allow(filesyncer.AsSource())
+	bkSession.Allow(filesyncer.AsTarget())
+
+	// TODO: auth provider? or nah?
+
+	buildkitSessionMDCh := make(chan map[string][]string)
+	sessionClientConn, sessionServerConn := net.Pipe()
+	sessionPool := pool.New().WithContext(sessionCtx).WithCancelOnError()
+	sessionPool.Go(func(ctx context.Context) error {
+		defer close(buildkitSessionMDCh)
+		return bkSession.Run(ctx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+			select {
+			case <-ctx.Done():
+				return nil, context.Cause(ctx)
+			case buildkitSessionMDCh <- meta:
+			}
+			return sessionClientConn, nil
+		})
+	})
+
+	var bkSessionMD map[string][]string
+	select {
+	case <-sessionCtx.Done():
+		return fmt.Errorf("session closed before buildkit session metadata received: %w", context.Cause(sessionCtx))
+	case bkSessionMD = <-buildkitSessionMDCh:
+	}
+
+	registerClientMD := nestedClientMD
+	registerClientMD.RegisterClient = true
+	sessionPool.Go(func(ctx context.Context) error {
+		defer sessionClientConn.Close()
+		ctx = engine.ContextWithClientMetadata(ctx, &registerClientMD)
+		return w.Controller.HandleConn(ctx, sessionServerConn, &registerClientMD, bkSessionMD)
+	})
+
+	httpListener, err := runInNamespace(ctx, spec.runState, func() (net.Listener, error) {
+		return net.Listen("tcp", "127.0.0.1:0")
+	})
+	if err != nil {
+		return fmt.Errorf("listen for nested client: %w", err)
+	}
+
+	tcpAddr, ok := httpListener.Addr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
+	}
+	spec.Process.Env = append(spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
+
+	handleConnPool := pool.New().WithContext(sessionCtx)
+	httpListenerPool := pool.New().WithContext(sessionCtx).WithCancelOnError()
+	httpListenerPool.Go(func(ctx context.Context) error {
+		<-ctx.Done()
+		err := httpListener.Close()
+		if err != nil {
+			return fmt.Errorf("close nested client listener: %w", err)
+		}
+		return nil
+	})
+	httpListenerPool.Go(func(ctx context.Context) error {
+		for {
+			conn, err := httpListener.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return nil
+				}
+				return fmt.Errorf("accept nested client connection: %w", err)
+			}
+
+			handleConnPool.Go(func(ctx context.Context) error {
+				defer conn.Close()
+				ctx = engine.ContextWithClientMetadata(ctx, &nestedClientMD)
+				return w.Controller.HandleConn(ctx, conn, &nestedClientMD, nil)
+			})
+		}
+	})
+
+	spec.cleanups.add("wait for nested client buildkit session pool", sessionPool.Wait)
+	spec.cleanups.add("wait for nested client conn pool", handleConnPool.Wait)
+	spec.cleanups.add("wait for nested client listener pool", httpListenerPool.Wait)
+	spec.cleanups.addNoErr("cancel nested client buildkit session", cancelSession)
 
 	return nil
 }
