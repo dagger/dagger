@@ -592,8 +592,10 @@ func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) err
 	}
 	if !row.Span.Encapsulate || row.Span.Status().Code == codes.Error || fe.Verbosity >= 2 {
 		for _, child := range row.Children {
-			if err := fe.renderRow(out, child, depth); err != nil {
-				return err
+			if !child.Span.Encapsulated || row.Span.Status().Code == codes.Error || fe.Verbosity >= 2 {
+				if err := fe.renderRow(out, child, depth); err != nil {
+					return err
+				}
 			}
 		}
 	}

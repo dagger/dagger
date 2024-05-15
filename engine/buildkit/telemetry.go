@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/telemetry"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
 )
@@ -41,19 +40,23 @@ type buildkitTracer struct {
 }
 
 func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	internal := false
+	opts = append([]trace.SpanStartOption{}, opts...)
 
 	if rest, ok := strings.CutPrefix(spanName, InternalPrefix); ok {
 		spanName = rest
-		internal = true
+		opts = append(opts, telemetry.Internal())
 	} else if rest, ok := strings.CutPrefix(spanName, "load cache: "+InternalPrefix); ok {
 		spanName = "load cache: " + rest
-		internal = true
+		opts = append(opts, telemetry.Internal())
 	}
 
-	if internal {
-		opts = append([]trace.SpanStartOption{}, opts...)
-		opts = append(opts, trace.WithAttributes(attribute.Bool(telemetry.UIInternalAttr, true)))
+	if spanName == "remotes.docker.resolver.HTTPRequest" {
+		opts = append(opts, telemetry.Encapsulated())
+	}
+	if spanName == "HTTP GET" {
+		// HACK: resolver.do is wrapped with a new span, resolver.authorize isn't :)
+		// so we need this special case, to make sure to catch the auth requests
+		opts = append(opts, telemetry.Encapsulated())
 	}
 
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
