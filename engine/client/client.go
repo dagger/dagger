@@ -224,11 +224,13 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	}
 
 	provisionCtx, provisionSpan := Tracer().Start(ctx, "starting engine")
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	connector, err := driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		UserAgent:        c.UserAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 	})
+	provisionCancel()
 	telemetry.End(provisionSpan, func() error { return err })
 	if err != nil {
 		return err
