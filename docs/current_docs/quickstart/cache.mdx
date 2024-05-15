@@ -26,8 +26,7 @@ Dagger lets you define one or more such directories as cache volumes and persist
 Cache volumes are not meant to be shared outside of Dagger; they are for persisting specific parts of the internal state of your pipeline, for optimal use of Dagger's caching features.
 :::
 
-Remember that the Dagger Function that creates the build environment executes the `npm install` command to download the application's dependencies every time it is called. These dependencies are usually locked to specific versions in the application's manifest and don't change frequently. Therefore, re-downloading them on every pipeline run is inefficient and time-consuming. That's why it makes sense to add a cache volume to this Dagger Function for the application dependencies.
-
+Remember that when creating the build environment, the Dagger Function executes the `npm install` command to download the application's dependencies. These dependencies are usually locked to specific versions in the application's manifest and don't change frequently. Therefore, re-downloading them on every Dagger Function call is inefficient and time-consuming. That's why it makes sense to add a cache volume for the application dependencies.
 
 <Tabs groupId="language">
 <TabItem value="Go">
