@@ -299,17 +299,6 @@ The result will look like this:
 Hello, world
 ```
 
-:::note
-The API considers any type that accepts a `None` value to be optional. Thus,
-if the `name` argument is omitted from an API request, it will be set to `None`
-automatically.
-
-However, when used directly from Python code, it's a required argument
-since it has no default value. In this context, the term "optional" is the same
-concept as the older [`typing.Optional[X]`](https://docs.python.org/3/library/typing.html#typing.Optional)
-annotation for a type that allows the `None` value.
-:::
-
 
 ## Default values
 
