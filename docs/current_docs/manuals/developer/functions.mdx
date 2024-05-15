@@ -338,17 +338,6 @@ The result will look like this:
 Hello, world
 ```
 
-:::tip
-For consistency between Python and the API, choose to always set optionals
-with a default value, even if it's:
-
-```python
-name: str | None = None
-```
-The above is necessary if the default value needs to be set from the
-function body instead of the signature (dynamic, complex or a mutable value).
-:::
-
 ## Return values
 
 Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
