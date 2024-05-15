@@ -63,10 +63,8 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineNameCallback func(string)
-	CloudURLCallback   func(string)
-	EngineTrace        sdktrace.SpanExporter
-	EngineLogs         sdklog.LogExporter
+	EngineTrace sdktrace.SpanExporter
+	EngineLogs  sdklog.LogExporter
 }
 
 type Client struct {
@@ -283,10 +281,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 
 	c.bkClient = bkClient
 
-	if c.EngineNameCallback != nil {
-		engineName := fmt.Sprintf("%s (version %s)", bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
-		c.EngineNameCallback(engineName)
-	}
+	slog.Info("Connected to engine", "name", bkInfo.BuildkitVersion.Revision, "version", bkInfo.BuildkitVersion.Version)
 
 	return nil
 }

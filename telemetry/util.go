@@ -45,6 +45,28 @@ func parseSCPLike(endpoint string) (string, bool) {
 	return fmt.Sprintf("%s/%s", host, strings.TrimSuffix(path, ".git")), true
 }
 
+type daggerToken struct {
+	orgName string
+	token   string
+}
+
+func parseDaggerToken(s string) (daggerToken, bool) {
+	s, ok := strings.CutPrefix(s, "dag_")
+	if !ok {
+		return daggerToken{}, false
+	}
+
+	orgName, token, ok := strings.Cut(s, "_")
+	if !ok {
+		return daggerToken{}, false
+	}
+
+	return daggerToken{
+		orgName: orgName,
+		token:   token,
+	}, true
+}
+
 // matchesURLScheme returns true if the given string matches a URL-like
 // format scheme.
 func matchesURLScheme(url string) bool {

@@ -32,6 +32,7 @@ import (
 
 var configuredCloudSpanExporter sdktrace.SpanExporter
 var configuredCloudLogsExporter sdklog.LogExporter
+var configuredCloudTelemetry bool
 var ocnfiguredCloudExportersOnce sync.Once
 
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.LogExporter, bool) {
@@ -99,10 +100,11 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			Headers:  headers,
 		}
 		configuredCloudLogsExporter = otlploghttp.NewClient(cfg)
+
+		configuredCloudTelemetry = true
 	})
 
-	return configuredCloudSpanExporter, configuredCloudLogsExporter,
-		configuredCloudSpanExporter != nil
+	return configuredCloudSpanExporter, configuredCloudLogsExporter, configuredCloudTelemetry
 }
 
 func OtelConfigured() bool {

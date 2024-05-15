@@ -27,8 +27,6 @@ import (
 	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
-var consoleSink = os.Stderr
-
 type Frontend struct {
 	// Debug tells the frontend to show everything and do one big final render.
 	Debug bool
@@ -99,7 +97,7 @@ func New() *Frontend {
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
 	// redirect slog to the logs pane
-	level := slog.LevelWarn
+	level := slog.LevelInfo
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
@@ -134,21 +132,6 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 
 	// return original err
 	return runErr
-}
-
-// ConnectedToEngine is called when the CLI connects to an engine.
-func (fe *Frontend) ConnectedToEngine(name string) {
-	if !fe.Silent && fe.Plain {
-		fmt.Fprintln(consoleSink, "Connected to engine", name)
-	}
-}
-
-// ConnectedToCloud is called when the CLI has started emitting events to
-// The Cloud.
-func (fe *Frontend) ConnectedToCloud(cloudURL string) {
-	if !fe.Silent && fe.Plain {
-		fmt.Fprintln(consoleSink, "Dagger Cloud URL:", cloudURL)
-	}
 }
 
 // SetPrimary tells the frontend which span should be treated like the focal
