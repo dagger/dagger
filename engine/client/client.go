@@ -168,10 +168,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 
-	connectSpanOpts := []trace.SpanStartOption{
-		telemetry.Encapsulate(),
-	}
-
+	connectSpanOpts := []trace.SpanStartOption{}
 	if configuredServerID != "" {
 		// infer that this is not a main client caller, server ID is never set for those currently
 		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
@@ -226,14 +223,19 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		cloudToken = v
 	}
 
-	connector, err := driver.Provision(ctx, remote, &drivers.DriverOpts{
+	provisionCtx, provisionSpan := Tracer().Start(ctx, "starting engine")
+	connector, err := driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		UserAgent:        c.UserAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 	})
+	telemetry.End(provisionSpan, func() error { return err })
 	if err != nil {
 		return err
 	}
+
+	ctx, span := Tracer().Start(ctx, "connecting to engine")
+	defer telemetry.End(span, func() error { return rerr })
 
 	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
 		// Open a separate connection for telemetry.
