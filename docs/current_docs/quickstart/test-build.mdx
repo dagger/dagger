@@ -91,7 +91,11 @@ The result of this Dagger Function is a `Container` representing the final produ
 
 Since the return value is a just-in-time `Container`, you can use your knowledge of function chaining and just-in-time artifacts to inspect it "live" with the `terminal` function, as you did earlier. But this is a good place to explore another interesting built-in `Container` function: the `as-service` function.
 
-The `as-service` function can be used to [start a just-in-time container as a local service in your local environment](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This has many potential use cases, such as manually testing web applications or database services directly from the host browser or host system.
+The `as-service` function can be used to [start a just-in-time container as a local service in your local environment](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
+
+:::TIP SPINNING UP CONTAINERS AS SERVICES
+The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.
+:::
 
 To see this in action, chain additional function calls to `as-service` and `up` on the returned `Container`:
 
