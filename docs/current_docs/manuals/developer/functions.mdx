@@ -336,6 +336,14 @@ Not only can Dagger Functions use Dagger's core types in their arguments; they c
 
 This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory with the source code as argument and return another directory containing just binaries or a container image with the binaries included.
 
+:::note 
+If a function doesn’t have a return type annotation, it’ll be translated to the [dagger.Void][void-type] type in the API.
+
+[void-type]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
+:::
+
+https://docs.dagger.io/api/reference/#definition-Void 
+
 Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
 
 <Tabs groupId="language">
