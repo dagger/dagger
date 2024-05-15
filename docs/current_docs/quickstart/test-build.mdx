@@ -1,14 +1,14 @@
 ---
 slug: /quickstart/test-build
 hide_table_of_contents: true
-title: "Daggerize the test and build stages"
+title: "Inspect the test and build stages"
 ---
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Daggerize the test and build steps
+## Inspect the test and build stages
 
 Once you have the build environment in place, you can use it for the next stages of the pipeline: test and build. Let's look into that next!
 
@@ -93,7 +93,7 @@ Since the return value is a just-in-time `Container`, you can use your knowledge
 
 The `as-service` function can be used to [start a just-in-time container as a local service in your local environment](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
 
-:::TIP SPINNING UP CONTAINERS AS SERVICES
+:::tip SPINNING UP CONTAINERS AS SERVICES
 The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.
 :::
 
