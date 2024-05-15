@@ -6,10 +6,10 @@ import (
 
 type MyModule struct{}
 
-func (m *MyModule) Tree(ctx context.Context, dir *Directory, depth string) (string, error) {
+func (m *MyModule) Tree(ctx context.Context, src *Directory, depth string) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
-		WithMountedDirectory("/mnt", dir).
+		WithMountedDirectory("/mnt", src).
 		WithWorkdir("/mnt").
 		WithExec([]string{"apk", "add", "tree"}).
 		WithExec([]string{"tree", "-L", depth}).
