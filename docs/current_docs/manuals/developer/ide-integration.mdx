@@ -9,6 +9,8 @@ import TabItem from '@theme/TabItem';
 
 # IDE Integration
 
+Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
@@ -39,7 +41,32 @@ echo go.work.sum >> .gitignore
 </TabItem>
 <TabItem value="Python">
 
-To get your IDE to recognize a Dagger Python module and any added Dagger module dependencies in the generated client, install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) from the generated `./sdk` directory, as shown below:
+To get your IDE to recognize a Dagger Python module and any added Dagger module dependencies in the generated client, follow the steps below for your package manager.
+
+<Tabs groupId="pytools">
+<TabItem value="pip">
+
+Install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) from the generated `./sdk` directory, as shown below:
+
+```shell
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ./sdk
+```
+</TabItem>
+<TabItem value="Poetry">
+
+Install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) and add `./sdk` as a development dependency:
+
+```shell
+python -m venv .venv
+source .venv/bin/activate
+poetry add -e --group=dev ./sdk
+```
+</TabItem>
+<TabItem value="Hatch">
+
+Install the Python SDK in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) from the generated `./sdk` directory, as shown below:
 
 ```shell
 python -m venv .venv
@@ -47,17 +74,7 @@ source .venv/bin/activate
 pip install -e ./sdk
 ```
 
-:::tip
-If you place the virtual environment (`.venv`) inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json` to avoid uploading those files to the runtime container unnecessarily.
-:::
-
-When using [Poetry](https://python-poetry.org), instead of the above, add `./sdk` as a development dependency:
-
-```shell
-poetry add -e --group=dev ./sdk
-```
-
-When using [Hatch](https://github.com/pypa/hatch), update `pyproject.toml` to [allow direct references](https://hatch.pypa.io/latest/config/metadata/#allowing-direct-references), and add a [local](https://hatch.pypa.io/latest/config/dependency/#local) dependency:
+Update `pyproject.toml` to [allow direct references](https://hatch.pypa.io/latest/config/metadata/#allowing-direct-references), and add a [local](https://hatch.pypa.io/latest/config/dependency/#local) dependency:
 
 ```toml
 [project]
@@ -78,13 +95,19 @@ Confirm it was installed:
 ```shell
 hatch run dev:pip list
 ```
+</TabItem>
+<TabItem value="Others">
+For other package managers, check their documentation on how to accomplish the same.
+</TabItem>
+</Tabs>
 
-For other package managers, look for their documentation on how to accomplish the same.
+:::tip
+If you place the virtual environment (`.venv`) inside the module, don't forget to add it to `.gitignore` and to `"exclude"` in `dagger.json` to avoid uploading those files to the runtime container unnecessarily.
+:::
 
 :::note
 It's important to install the SDK in editable mode (the `-e` in the `pip install` and `poetry add` commands) so you don't have to reinstall it after a `dagger develop`. However, it's always recommended to reinstall the SDK after upgrading Dagger to cover possible dependency changes.
 :::
-
 
 </TabItem>
 <TabItem value="TypeScript">
