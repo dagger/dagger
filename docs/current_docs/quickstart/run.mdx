@@ -13,13 +13,13 @@ import TabItem from "@theme/TabItem";
 
 The best way to understand how Dagger works is by creating a composable CI pipeline in code for an application - a process we call "Daggerizing".
 
-Daggerizing the CI pipeline for an existing application involves the following steps:
-
+:::tip DAGGERIZING
 1. Choose a Dagger SDK and bootstrap a new Dagger module for your pipeline with `dagger init`.
 2. Compose your pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
 3. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
+:::
 
-Follow the steps below to get a quick taste of Dagger's capabilities, by Daggerizing an example application. Don't worry about how it all works for the moment, it's explained in detail over the next few pages!
+Follow the steps below to Daggerize an example application. Don't worry about how it all works for the moment, it's explained in detail over the next few pages!
 
 1. The example application is a skeleton Vue framework application written in TypeScript and modified to return a "Hello from Dagger!" welcome page. Clone it and set it as the current working directory:
 
@@ -118,7 +118,7 @@ Follow the steps below to get a quick taste of Dagger's capabilities, by Daggeri
           publish --source=.
         ```
 
-        When the container image is published, you should see an image reference on the [ttl.sh container registry](https://ttl.sh):
+        When the container image is published, you should see an image reference on the registry:
 
         ```
         ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
@@ -132,22 +132,28 @@ Follow the steps below to get a quick taste of Dagger's capabilities, by Daggeri
           terminal --cmd=bash
         ```
 
-        From this shell, you can inspect and modify the state of the container "live", including viewing the filesystem...
+        From this shell, you can inspect and modify the state of the container "live", including running commands to view the contents of the filesystem...
 
         ```shell
         ls /src
         ```
 
-        ...and running commands:
+        ...get operating system details
 
         ```shell
         uname -a
         ```
+
+        ...list installed Node packages
+
+        ```shell
+        npm list
+        ```
+
+        ...lint the application code, and so on.
+
         ```shell
         npm run lint
-        ```
-        ```shell
-        npm run test:unit run
         ```
 
     - Build a container image containing the production-ready application and an NGINX service to host it, then test it by running it as a local service:
@@ -156,13 +162,26 @@ Follow the steps below to get a quick taste of Dagger's capabilities, by Daggeri
         dagger call \
           build --source=. \
           as-service \
-          up
+          up --ports=8080:80
         ```
 
         Browse to port 8080 of your local machine and confirm that you see a "Hello from Dagger!" welcome page, served by NGINX.
 
+    - Run the application's unit tests:
+
+        ```shell
+        dagger call \
+          test --source=.
+        ```
+
+    - Inspect the module to see available Dagger Functions:
+
+        ```shell
+        dagger functions
+        ```
+
 :::tip DID YOU NOTICE...
 1. Even though you just tested, built and published a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
 1. Subsequent calls to `dagger call publish...` are significantly faster than the first run. Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
-1. The Dagger SDK code used to create a Dagger Function in Go, Python or TypeScript looks remarkably similar, with only minor language-specific changes. Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
+1. The code used to create a Dagger Function in Go, Python or TypeScript looks remarkably similar, with only minor language-specific changes. Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
 :::

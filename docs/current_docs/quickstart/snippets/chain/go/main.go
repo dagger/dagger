@@ -6,12 +6,12 @@ import (
 
 type HelloDagger struct{}
 
-// Returns a directory
-func (m *HelloDagger) Foo() *Directory {
-	return dag.Container().From("cgr.dev/chainguard/wolfi-base").Directory("/")
+// Returns a container
+func (m *HelloDagger) Foo() *Container {
+	return dag.Container().From("cgr.dev/chainguard/wolfi-base")
 }
 
-// Returns entries in a directory
-func (m *HelloDagger) Bar(ctx context.Context) ([]string, error) {
-	return m.Foo().Entries(ctx)
+// Publishes a container
+func (m *HelloDagger) Bar(ctx context.Context) (string, error) {
+	return m.Foo().Publish(ctx, "ttl.sh/bar")
 }

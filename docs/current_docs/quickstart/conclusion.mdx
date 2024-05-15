@@ -10,6 +10,10 @@ title: "Conclusion"
 
 Over the last few pages, this quickstart has walked you through the process of creating a CI pipeline to test, build, package and release an example application using Dagger. It has taught you key Dagger concepts and introduced you to Dagger API, the Dagger CLI, Dagger Functions and the Daggerverse.
 
+:::tip DAGGERIZING
+A common question from our Discord is "how much of my pipeline should I Daggerize?". Our advice is to Daggerize as much as you can get away with, within the constraints of your project. In the extreme version of this, you can collapse your entire CI pipeline into a single Dagger Function, which receives a raw source code change event and takes over from there; essentially, your entire CI workflow expressed in code. But typically, you would begin by only Daggerizing simple individual tasks - one Dagger Function per task - and manually configure your CI to call each Dagger Function. This allows for very incremental adoption of Dagger in an existing stack that is hard to change.
+:::
+
 Once you've Daggerized your application's pipeline, where do you go next? Here are some ideas:
 
 - Transfer and run your pipeline from your CI provider/tool. You can integrate Dagger with [GitHub Actions](../integrations/642920-github-actions.mdx), [GitLab CI](../integrations/734201-gitlab.mdx), [CircleCI](../integrations/592501-circleci.mdx), [Jenkins](../integrations/322019-jenkins.mdx), [Azure Pipelines](../integrations/197291-azure-pipelines.mdx), [AWS CodeBuild](../integrations/963919-aws-codebuild.mdx), [Argo Workflows](../integrations/533927-argo-workflows.mdx) and [Tekton](../integrations/728101-tekton.mdx).

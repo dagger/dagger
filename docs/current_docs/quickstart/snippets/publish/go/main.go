@@ -41,7 +41,7 @@ func (m *HelloDagger) Build(source *Directory) *Container {
 	// expose container port 8080
 	return dag.Container().From("nginx:1.25-alpine").
 		WithDirectory("/usr/share/nginx/html", build).
-		WithExposedPort(8080)
+		WithExposedPort(80)
 }
 
 // Returns the result of running unit tests

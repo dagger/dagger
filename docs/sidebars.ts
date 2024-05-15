@@ -22,6 +22,11 @@ module.exports = {
         "quickstart/index",
         "quickstart/cli",
         "quickstart/run",
+        "quickstart/env",
+        "quickstart/test-build",
+        "quickstart/publish",
+        "quickstart/cache",
+        "quickstart/refactor",
         "quickstart/conclusion"
       ]
     },
