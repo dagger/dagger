@@ -6,13 +6,13 @@ import (
 
 type MyModule struct{}
 
-func (m *MyModule) Build(ctx context.Context, src *Directory, architecture string, os string) *Container {
+func (m *MyModule) Build(ctx context.Context, src *Directory, arch string, os string) *Container {
 
 	dir := dag.Container().
 		From("golang:1.21").
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
-		WithEnvVariable("GOARCH", architecture).
+		WithEnvVariable("GOARCH", arch).
 		WithEnvVariable("GOOS", os).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "build/"}).
