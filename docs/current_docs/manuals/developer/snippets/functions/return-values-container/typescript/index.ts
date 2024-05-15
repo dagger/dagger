@@ -3,11 +3,11 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   @func()
-  build(source: Directory, architecture: string, os: string): Container {
+  build(src: Directory, architecture: string, os: string): Container {
     const dir = dag
       .container()
       .from("golang:1.21")
-      .withMountedDirectory("/src", source)
+      .withMountedDirectory("/src", src)
       .withWorkdir("/src")
       .withEnvVariable("GOARCH", architecture)
       .withEnvVariable("GOOS", os)

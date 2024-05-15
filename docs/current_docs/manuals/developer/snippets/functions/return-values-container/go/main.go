@@ -6,11 +6,11 @@ import (
 
 type MyModule struct{}
 
-func (m *MyModule) Build(ctx context.Context, source *Directory, architecture string, os string) *Container {
+func (m *MyModule) Build(ctx context.Context, src *Directory, architecture string, os string) *Container {
 
 	dir := dag.Container().
 		From("golang:1.21").
-		WithMountedDirectory("/src", source).
+		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
 		WithEnvVariable("GOARCH", architecture).
 		WithEnvVariable("GOOS", os).
