@@ -1,0 +1,6 @@
+kind: Fixed
+body: returned nested list of object
+time: 2024-05-14T21:07:10.439029+02:00
+custom:
+  Author: TomChv
+  PR: "7381"
