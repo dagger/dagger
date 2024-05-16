@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/containerd/continuity/fs"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -21,46 +22,40 @@ import (
 )
 
 type Filesyncer struct {
-	// Absolute path to the rootfs directory (defaults to "/")
+	// Absolute path to the rootfs directory. If no special rootDir,
+	// this is "" and the default system root dir is assumed
 	rootDir string
-	// Absolute path to the cwd *under the rootfs* (defaults to os.Getwd()).
-	// If rootDir is "/foo/bar" and the the real cwd is "/foo/bar/baz", then this
-	// will be "/baz".
-	cwdAbsPathUnderRoot string
+
+	// Path to the cwd relative to the rootDir. If no special rootDir,
+	// this is "" and the default system cwd is assumed
+	cwdRelPath string
 
 	uid, gid uint32
 }
 
 func NewFilesyncer(rootDir, cwdPath string, uid, gid *uint32) (Filesyncer, error) {
-	if rootDir == "" {
-		rootDir = "/"
-	}
-	if cwdPath == "" {
-		var err error
-		cwdPath, err = os.Getwd()
-		if err != nil {
-			return Filesyncer{}, fmt.Errorf("get cwd: %w", err)
+	if rootDir != "" {
+		if runtime.GOOS == "windows" {
+			return Filesyncer{}, errors.New("rootDir not supported on Windows")
 		}
+		if !filepath.IsAbs(rootDir) {
+			return Filesyncer{}, fmt.Errorf("rootDir must be an absolute path: %s", rootDir)
+		}
+		rootDir = filepath.Clean(rootDir)
 	}
-
-	if !filepath.IsAbs(rootDir) {
-		return Filesyncer{}, errors.New("rootDir must be an absolute path")
-	}
-	if !filepath.IsAbs(cwdPath) {
-		return Filesyncer{}, errors.New("cwdPath must be an absolute path")
-	}
-
-	cwdRelPath, err := filepath.Rel(rootDir, cwdPath)
-	if err != nil {
-		return Filesyncer{}, fmt.Errorf("get cwd rel path: %w", err)
-	}
-	if !filepath.IsLocal(cwdRelPath) {
-		return Filesyncer{}, errors.New("cwdPath must be within rootDir")
+	if cwdPath != "" {
+		if runtime.GOOS == "windows" {
+			return Filesyncer{}, errors.New("cwdPath not supported on Windows")
+		}
+		if filepath.IsAbs(cwdPath) {
+			return Filesyncer{}, fmt.Errorf("cwdPath must be a relative path, got %q", cwdPath)
+		}
+		cwdPath = filepath.Clean(cwdPath)
 	}
 
 	f := Filesyncer{
-		rootDir:             filepath.Clean(rootDir),
-		cwdAbsPathUnderRoot: filepath.Join("/", cwdRelPath),
+		rootDir:    rootDir,
+		cwdRelPath: cwdPath,
 	}
 
 	if uid == nil {
@@ -101,30 +96,18 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		return fmt.Errorf("get local import opts: %w", err)
 	}
 
-	// find the full path underneath the rootfs
-	opts.Path = filepath.Clean(opts.Path)
-	if !path.IsAbs(opts.Path) {
-		opts.Path = filepath.Join(s.cwdAbsPathUnderRoot, opts.Path)
-	}
-
-	// save the original baseName before any symlinks are resolved in case we
-	// want to Lstat it below
-	baseName := path.Base(opts.Path)
-
-	// resolve the full path on the system, *including* the parent rootfs, evaluating and bounding
-	// symlinks under the rootfs
-	opts.Path, err = fs.RootPath(s.rootDir, opts.Path)
+	absPath, baseName, err := Filesyncer(s).fullRootPathAndBaseName(opts.Path)
 	if err != nil {
-		return fmt.Errorf("get root path: %w", err)
+		return fmt.Errorf("get full root path: %w", err)
 	}
 
 	switch {
 	case opts.StatPathOnly:
 		// fsutil.Stat is actually Lstat, so be sure to not evaluate baseName in case
-		// it's a symlink. Also important that the returned stat.Path is just the
+		// it's a symlink. Also important to note that the returned stat.Path is just the
 		// base name of the path, not the full path provided.
-		opts.Path = filepath.Join(filepath.Dir(opts.Path), baseName)
-		stat, err := fsutil.Stat(opts.Path)
+		absPath = filepath.Join(filepath.Dir(absPath), baseName)
+		stat, err := fsutil.Stat(absPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return status.Errorf(codes.NotFound, "stat path: %s", err)
@@ -133,7 +116,11 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		}
 
 		if opts.StatReturnAbsPath {
-			stat.Path = strings.TrimPrefix(opts.Path, s.rootDir)
+			if s.rootDir == "" {
+				stat.Path = absPath
+			} else {
+				stat.Path = filepath.Join("/", strings.TrimPrefix(absPath, s.rootDir))
+			}
 		}
 
 		stat.Path = filepath.ToSlash(stat.Path)
@@ -141,7 +128,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 
 	case opts.ReadSingleFileOnly:
 		// just stream the file bytes to the caller
-		fileContents, err := os.ReadFile(opts.Path)
+		fileContents, err := os.ReadFile(absPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return status.Errorf(codes.NotFound, "read path: %s", err)
@@ -156,7 +143,7 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 
 	default:
 		// otherwise, do the whole directory sync back to the caller
-		fs, err := fsutil.NewFS(opts.Path)
+		fs, err := fsutil.NewFS(absPath)
 		if err != nil {
 			return err
 		}
@@ -189,26 +176,21 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		return fmt.Errorf("get local export opts: %w", err)
 	}
 
-	// find the full path underneath the rootfs
-	opts.Path = filepath.Clean(opts.Path)
-	if !path.IsAbs(opts.Path) {
-		opts.Path = filepath.Join(t.cwdAbsPathUnderRoot, opts.Path)
-	}
-
-	// resolve the full path on the system, *including* the parent rootfs, evaluating and bounding
-	// symlinks under the rootfs
-	opts.Path, err = fs.RootPath(t.rootDir, opts.Path)
+	absPath, _, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path)
 	if err != nil {
-		return fmt.Errorf("get root path: %w", err)
+		return fmt.Errorf("get full root path: %w", err)
 	}
 
 	if !opts.IsFileStream {
 		// we're writing a full directory tree, normal fsutil.Receive is good
-		if err := mkdirAllWithOwner(filepath.FromSlash(opts.Path), 0o700, t.uid, t.gid); err != nil {
-			return fmt.Errorf("failed to create synctarget dest dir %s: %w", opts.Path, err)
+		if err := idtools.MkdirAllAndChownNew(filepath.FromSlash(absPath), 0o700, idtools.Identity{
+			UID: int(t.uid),
+			GID: int(t.gid),
+		}); err != nil {
+			return fmt.Errorf("failed to create synctarget dest dir %s: %w", absPath, err)
 		}
 
-		err := fsutil.Receive(stream.Context(), stream, opts.Path, fsutil.ReceiveOpt{
+		err := fsutil.Receive(stream.Context(), stream, absPath, fsutil.ReceiveOpt{
 			Merge: opts.Merge,
 			Filter: func(path string, stat *fstypes.Stat) bool {
 				stat.Uid = t.uid
@@ -238,35 +220,38 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 
 	var destParentDir string
 	var finalDestPath string
-	stat, err := os.Lstat(opts.Path)
+	stat, err := os.Stat(absPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		// we are writing the file to a new path
-		destParentDir = filepath.Dir(opts.Path)
-		finalDestPath = opts.Path
+		destParentDir = filepath.Dir(absPath)
+		finalDestPath = absPath
 	case err != nil:
 		// something went unrecoverably wrong if stat failed and it wasn't just because the path didn't exist
-		return fmt.Errorf("failed to stat synctarget dest %s: %w", opts.Path, err)
+		return fmt.Errorf("failed to stat synctarget dest %s: %w", absPath, err)
 	case !stat.IsDir():
 		// we are overwriting an existing file
-		destParentDir = filepath.Dir(opts.Path)
-		finalDestPath = opts.Path
+		destParentDir = filepath.Dir(absPath)
+		finalDestPath = absPath
 	case !allowParentDirPath:
 		// we are writing to an existing directory, but allowParentDirPath is not set, so fail
-		return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", opts.Path)
+		return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", absPath)
 	default:
 		// we are writing to an existing directory, and allowParentDirPath is set,
 		// so write the file under the directory using the same file name as the source file
 		if fileOriginalName == "" {
 			// NOTE: we could instead just default to some name like container.tar or something if desired
-			return fmt.Errorf("cannot export container tar to existing directory %q", opts.Path)
+			return fmt.Errorf("cannot export container tar to existing directory %q", absPath)
 		}
-		destParentDir = opts.Path
+		destParentDir = absPath
 		finalDestPath = filepath.Join(destParentDir, fileOriginalName)
 	}
 
-	if err := mkdirAllWithOwner(destParentDir, 0o700, t.uid, t.gid); err != nil {
-		return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
+	if err := idtools.MkdirAllAndChownNew(filepath.FromSlash(destParentDir), 0o700, idtools.Identity{
+		UID: int(t.uid),
+		GID: int(t.gid),
+	}); err != nil {
+		return fmt.Errorf("failed to create synctarget dest dir %s: %w", absPath, err)
 	}
 
 	if opts.FileMode == 0 {
@@ -295,45 +280,30 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	}
 }
 
-// TODO: idtools.MkdirAllAndChown does this
-// TODO: idtools.MkdirAllAndChown does this
-// TODO: idtools.MkdirAllAndChown does this
-// TODO: idtools.MkdirAllAndChown does this
-func mkdirAllWithOwner(path string, perm os.FileMode, uid, gid uint32) error {
-	alreadyUID := uid == uint32(os.Getuid())
-	alreadyGID := gid == uint32(os.Getgid())
-	if alreadyUID && alreadyGID {
-		return os.MkdirAll(path, perm)
-	}
+func (f Filesyncer) fullRootPathAndBaseName(reqPath string) (rootPath string, baseName string, err error) {
+	reqPath = filepath.Clean(reqPath)
 
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("path must be absolute: %s", path)
-	}
-
-	split := strings.Split(path, "/")
-	curPath := "/"
-	for _, part := range split {
-		if part == "" {
-			continue
+	if f.rootDir == "" {
+		// rootDir is "" when we are a Windows client and when we are NOT a client running in a nested exec
+		rootPath, err = filepath.Abs(reqPath)
+		if err != nil {
+			return "", "", fmt.Errorf("get abs path: %w", err)
 		}
-		curPath = filepath.Join(curPath, part)
-
-		stat, err := os.Stat(curPath) // purposely resolve symlinks here
-		switch {
-		case err == nil:
-			if !stat.IsDir() {
-				return fmt.Errorf("non-dir path part in mkdirAllWithOwner: %s %s", stat.Mode().Type(), curPath)
-			}
-		case errors.Is(err, os.ErrNotExist):
-			if err := os.Mkdir(curPath, perm); err != nil {
-				return err
-			}
-			if err := os.Chown(curPath, int(uid), int(gid)); err != nil {
-				return err
-			}
-		default:
-			return err
-		}
+		return rootPath, filepath.Base(rootPath), nil
 	}
-	return nil
+
+	// We are serving a nested exec whose rootDir is set to some path in the engine container.
+	// We can safely assume we are handling Linux paths.
+	// Resolve the full path on the system, *including* the rootDir, evaluating and bounding
+	// symlinks under the rootDir
+	if !filepath.IsAbs(reqPath) {
+		reqPath = filepath.Join(f.cwdRelPath, reqPath)
+	}
+	baseName = filepath.Base(reqPath) // save this now since fs.RootPath will resolve all symlinks
+
+	rootPath, err = fs.RootPath(f.rootDir, reqPath)
+	if err != nil {
+		return "", "", fmt.Errorf("get full root path: %w", err)
+	}
+	return rootPath, baseName, nil
 }

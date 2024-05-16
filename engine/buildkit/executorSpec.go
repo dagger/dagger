@@ -972,24 +972,16 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		})
 	}))
 
-	// TODO: HANDLE CWD NOT EXISTING? OR I THINK THATS ALREADY DONE SOMEHWERE?
-	cwdPath := state.rootfsPath
-	if state.spec.Process.Cwd != "" {
-		cwdPath, err = fs.RootPath(state.rootfsPath, state.spec.Process.Cwd)
-		if err != nil {
-			return fmt.Errorf("working dir %s points to invalid target: %w", state.spec.Process.Cwd, err)
-		}
-	}
-
-	// TODO: eval symlinks on rootfsPath just to be extra safe?
-	filesyncer, err := client.NewFilesyncer(state.rootfsPath, cwdPath, &state.uid, &state.gid)
+	filesyncer, err := client.NewFilesyncer(
+		state.rootfsPath,
+		strings.TrimPrefix(state.spec.Process.Cwd, "/"),
+		&state.uid, &state.gid,
+	)
 	if err != nil {
 		return fmt.Errorf("create filesyncer: %w", err)
 	}
 	bkSession.Allow(filesyncer.AsSource())
 	bkSession.Allow(filesyncer.AsTarget())
-
-	// TODO: auth provider? or nah?
 
 	buildkitSessionMDCh := make(chan map[string][]string)
 	sessionClientConn, sessionServerConn := net.Pipe()
