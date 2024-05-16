@@ -12,7 +12,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/muesli/termenv"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -54,10 +53,6 @@ func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(co
 func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {}
 
 func (fe *frontendPlain) Background(cmd tea.ExecCommand) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (fe *frontendPlain) DumpID(out *termenv.Output, id *call.ID) error {
 	return fmt.Errorf("not implemented")
 }
 

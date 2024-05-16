@@ -18,8 +18,8 @@ func main() {
 	if err := idp.Decode(strings.TrimSpace(string(bytes))); err != nil {
 		panic(err)
 	}
-	fe := idtui.New()
-	if err := fe.DumpID(idtui.NewOutput(os.Stdout), &idp); err != nil {
+
+	if err := idtui.DumpID(idtui.NewOutput(os.Stdout), &idp); err != nil {
 		panic(err)
 	}
 }

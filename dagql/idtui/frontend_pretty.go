@@ -11,15 +11,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
-	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/ui"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
-	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
@@ -451,22 +448,6 @@ func (fe *frontendPretty) View() string {
 	return view
 }
 
-func (fe *frontendPretty) DumpID(out *termenv.Output, id *call.ID) error {
-	if id.Base() != nil {
-		if err := fe.DumpID(out, id.Base()); err != nil {
-			return err
-		}
-	}
-	dag, err := id.ToProto()
-	if err != nil {
-		return err
-	}
-	for dig, call := range dag.CallsByDigest {
-		fe.db.Calls[dig] = call
-	}
-	return fe.renderCall(out, nil, id.Call(), 0, false)
-}
-
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
 	if !fe.ShouldShow(row) && !fe.Debug {
 		return nil
@@ -489,13 +470,15 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth in
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
+	r := renderer{db: fe.db, width: fe.window.Width}
+
 	id := span.Call
 	if id != nil {
-		if err := fe.renderCall(out, span, id, depth, false); err != nil {
+		if err := r.renderCall(out, span, id, depth, false); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := fe.renderVertex(out, span, depth); err != nil {
+		if err := r.renderVertex(out, span, depth); err != nil {
 			return err
 		}
 	}
@@ -521,227 +504,6 @@ func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int)
 	}
 }
 
-func indent(out io.Writer, depth int) {
-	fmt.Fprint(out, strings.Repeat("  ", depth))
-}
-
-const (
-	kwColor     = termenv.ANSICyan
-	parentColor = termenv.ANSIWhite
-	moduleColor = termenv.ANSIMagenta
-)
-
-func (fe *frontendPretty) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
-	typeName := call.Type.ToAST().Name()
-	parent := out.String(typeName)
-	if call.Module != nil {
-		parent = parent.Foreground(moduleColor)
-	}
-	fmt.Fprint(out, parent.String())
-	return nil
-}
-
-func (fe *frontendPretty) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call, depth int, inline bool) error {
-	if !inline {
-		indent(out, depth)
-	}
-
-	if span != nil {
-		fe.renderStatus(out, span)
-	}
-
-	if id.ReceiverDigest != "" {
-		if err := fe.renderIDBase(out, fe.db.MustCall(id.ReceiverDigest)); err != nil {
-			return err
-		}
-		fmt.Fprint(out, ".")
-	}
-
-	fmt.Fprint(out, out.String(id.Field).Bold())
-
-	if len(id.Args) > 0 {
-		fmt.Fprint(out, "(")
-		var needIndent bool
-		for _, arg := range id.Args {
-			if arg.GetValue().GetCallDigest() != "" {
-				needIndent = true
-				break
-			}
-		}
-		if needIndent {
-			fmt.Fprintln(out)
-			depth++
-			depth++
-			for _, arg := range id.Args {
-				indent(out, depth)
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
-				val := arg.GetValue()
-				fmt.Fprint(out, " ")
-				if argDig := val.GetCallDigest(); argDig != "" {
-					argCall := fe.db.Simplify(fe.db.MustCall(argDig))
-					span := fe.db.MostInterestingSpan(argDig)
-					if err := fe.renderCall(out, span, argCall, depth-1, true); err != nil {
-						return err
-					}
-				} else {
-					fe.renderLiteral(out, arg.GetValue())
-					fmt.Fprintln(out)
-				}
-			}
-			depth--
-			indent(out, depth)
-			depth-- //nolint:ineffassign
-		} else {
-			for i, arg := range id.Args {
-				if i > 0 {
-					fmt.Fprint(out, ", ")
-				}
-				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String()+" ", arg.GetName())
-				fe.renderLiteral(out, arg.GetValue())
-			}
-		}
-		fmt.Fprint(out, ")")
-	}
-
-	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
-	fmt.Fprint(out, typeStr)
-
-	if span != nil {
-		fe.renderDuration(out, span)
-	}
-
-	fmt.Fprintln(out)
-
-	return nil
-}
-
-func (fe *frontendPretty) renderVertex(out *termenv.Output, span *Span, depth int) error {
-	indent(out, depth)
-	fe.renderStatus(out, span)
-	fmt.Fprint(out, span.Name())
-	// TODO: when a span has child spans that have progress, do 2-d progress
-	// fe.renderVertexTasks(out, span, depth)
-	fe.renderDuration(out, span)
-	fmt.Fprintln(out)
-	return nil
-}
-
-func (fe *frontendPretty) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
-	switch val := lit.GetValue().(type) {
-	case *callpbv1.Literal_Bool:
-		fmt.Fprint(out, out.String(fmt.Sprintf("%v", val.Bool)).Foreground(termenv.ANSIRed))
-	case *callpbv1.Literal_Int:
-		fmt.Fprint(out, out.String(fmt.Sprintf("%d", val.Int)).Foreground(termenv.ANSIRed))
-	case *callpbv1.Literal_Float:
-		fmt.Fprint(out, out.String(fmt.Sprintf("%f", val.Float)).Foreground(termenv.ANSIRed))
-	case *callpbv1.Literal_String_:
-		if fe.window.Width != -1 && len(val.Value()) > fe.window.Width {
-			display := string(digest.FromString(val.Value()))
-			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(termenv.ANSIYellow))
-			return
-		}
-		fmt.Fprint(out, out.String(fmt.Sprintf("%q", val.String_)).Foreground(termenv.ANSIYellow))
-	case *callpbv1.Literal_CallDigest:
-		fmt.Fprint(out, out.String(val.CallDigest).Foreground(termenv.ANSIMagenta))
-	case *callpbv1.Literal_Enum:
-		fmt.Fprint(out, out.String(val.Enum).Foreground(termenv.ANSIYellow))
-	case *callpbv1.Literal_Null:
-		fmt.Fprint(out, out.String("null").Foreground(termenv.ANSIBrightBlack))
-	case *callpbv1.Literal_List:
-		fmt.Fprint(out, "[")
-		for i, item := range val.List.GetValues() {
-			if i > 0 {
-				fmt.Fprint(out, ", ")
-			}
-			fe.renderLiteral(out, item)
-		}
-		fmt.Fprint(out, "]")
-	case *callpbv1.Literal_Object:
-		fmt.Fprint(out, "{")
-		for i, item := range val.Object.GetValues() {
-			if i > 0 {
-				fmt.Fprint(out, ", ")
-			}
-			fmt.Fprintf(out, "%s: ", item.GetName())
-			fe.renderLiteral(out, item.GetValue())
-		}
-		fmt.Fprint(out, "}")
-	}
-}
-
-func (fe *frontendPretty) renderStatus(out *termenv.Output, span *Span) {
-	var symbol string
-	var color termenv.Color
-	switch {
-	case span.IsRunning():
-		symbol = ui.DotFilled
-		color = termenv.ANSIYellow
-	case span.Canceled:
-		symbol = ui.IconSkipped
-		color = termenv.ANSIBrightBlack
-	case span.Status().Code == codes.Error:
-		symbol = ui.IconFailure
-		color = termenv.ANSIRed
-	default:
-		symbol = ui.IconSuccess
-		color = termenv.ANSIGreen
-	}
-
-	symbol = out.String(symbol).Foreground(color).String()
-
-	fmt.Fprintf(out, "%s ", symbol)
-}
-
-func (fe *frontendPretty) renderDuration(out *termenv.Output, span *Span) {
-	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(span.Duration()))
-	if span.IsRunning() {
-		duration = duration.Foreground(termenv.ANSIYellow)
-	} else {
-		duration = duration.Faint()
-	}
-	fmt.Fprint(out, duration)
-}
-
-// var (
-// 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
-// )
-
-//	func (fe *Frontend) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
-//		tasks := fe.db.Tasks[span.SpanContext().SpanID()]
-//		if len(tasks) == 0 {
-//			return nil
-//		}
-//		var spaced bool
-//		for _, t := range tasks {
-//			var sym termenv.Style
-//			if t.Total != 0 {
-//				percent := int(100 * (float64(t.Current) / float64(t.Total)))
-//				idx := (len(progChars) - 1) * percent / 100
-//				chr := progChars[idx]
-//				sym = out.String(chr)
-//			} else {
-//				// TODO: don't bother printing non-progress-bar tasks for now
-//				// else if t.Completed != nil {
-//				// sym = out.String(ui.IconSuccess)
-//				// } else if t.Started != nil {
-//				// sym = out.String(ui.DotFilled)
-//				// }
-//				continue
-//			}
-//			if t.Completed.IsZero() {
-//				sym = sym.Foreground(termenv.ANSIYellow)
-//			} else {
-//				sym = sym.Foreground(termenv.ANSIGreen)
-//			}
-//			if !spaced {
-//				fmt.Fprint(out, " ")
-//				spaced = true
-//			}
-//			fmt.Fprint(out, sym)
-//		}
-//		return nil
-//	}
 type prettyLogs struct {
 	Logs     map[trace.SpanID]*Vterm
 	LogWidth int
