@@ -27,6 +27,29 @@ pagination_prev: null
 # CLI Reference
 `
 
+// Build the docs website
+func (d Docs) Site() *Directory {
+	return dag.
+		Docusaurus(
+			d.Dagger.Source,
+			DocusaurusOpts{Dir: "/src/docs", DisableCache: true},
+		).
+		Build()
+}
+
+// Build the docs server
+func (d Docs) Server() *Container {
+	nginxConfig := dag.CurrentModule().Source().File("docs-nginx.conf")
+	return dag.
+		Container().
+		From("nginx").
+		WithoutEntrypoint().
+		WithFile("/etc/nginx/conf.d/default.conf", nginxConfig).
+		WithDefaultArgs([]string{"nginx", "-g", "daemon off;"}).
+		WithDirectory("/var/www", d.Site()).
+		WithExposedPort(8000)
+}
+
 // Lint documentation files
 func (d Docs) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
