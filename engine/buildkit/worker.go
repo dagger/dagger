@@ -41,11 +41,11 @@ import (
 	wlabel "github.com/moby/buildkit/worker/label"
 	workerrunc "github.com/moby/buildkit/worker/runc"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -83,20 +83,12 @@ type sharedWorkerState struct {
 	processMode      oci.ProcessMode
 	idmap            *idtools.IdentityMapping
 	dns              *oci.DNSConfig
-	running          map[string]*runningState
+	running          map[string]*execState
 	mu               sync.RWMutex
 	apparmorProfile  string
 	selinux          bool
 	tracingSocket    string
 	entitlements     entitlements.Set
-}
-
-type runningState struct {
-	doneErr error
-	done    chan struct{}
-
-	namespaces []specs.LinuxNamespace
-	nsJobs     chan func()
 }
 
 type NewWorkerOpts struct {
@@ -135,7 +127,7 @@ func NewWorker(ctx context.Context, opts *NewWorkerOpts) (*Worker, error) {
 		processMode:     opts.ProcessMode,
 		idmap:           opts.IDMapping,
 		dns:             opts.DNSConfig,
-		running:         make(map[string]*runningState),
+		running:         make(map[string]*execState),
 		apparmorProfile: opts.ApparmorProfile,
 		selinux:         opts.SELinux,
 		tracingSocket:   opts.TraceSocket,
@@ -164,7 +156,7 @@ func NewWorker(ctx context.Context, opts *NewWorkerOpts) (*Worker, error) {
 	os.RemoveAll(filepath.Join(w.executorRoot, "resolv.conf"))
 
 	w.runc = &runc.Runc{
-		Command:      "/usr/local/bin/runc",
+		Command:      distconsts.RuncPath,
 		Log:          filepath.Join(w.executorRoot, "runc-log.json"),
 		LogFormat:    runc.JSON,
 		Setpgid:      true,

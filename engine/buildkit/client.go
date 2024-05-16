@@ -510,7 +510,7 @@ func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Name
 	return c.worker.newNetNS(ctx, hostname)
 }
 
-func RunInNamespace[T any](
+func RunInNetNS[T any](
 	ctx context.Context,
 	c *Client,
 	ns Namespaced,
@@ -531,7 +531,7 @@ func RunInNamespace[T any](
 		return zero, fmt.Errorf("namespace for %s not found in running state", ns.NamespaceID())
 	}
 
-	return runInNamespace(ctx, runState, fn)
+	return runInNetNS(ctx, runState, fn)
 }
 
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.

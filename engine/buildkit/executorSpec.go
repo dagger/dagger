@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/telemetry"
@@ -73,62 +75,83 @@ var removeEnvs = map[string]struct{}{
 	DaggerHostnameAliasesEnv: {},
 }
 
-type spec struct {
-	// should be set by the caller
-	cleanups         *cleanups
-	runState         *runningState
-	procInfo         *executor.ProcessInfo
-	rootfsPath       string
-	rootMount        executor.Mount
-	mounts           []executor.Mount
-	id               string
-	networkNamespace bknetwork.Namespace
-	installCACerts   bool
+type execState struct {
+	id        string
+	procInfo  *executor.ProcessInfo
+	rootMount executor.Mount
+	mounts    []executor.Mount
 
-	// will be set by the generator
-	*specs.Spec
-	uid             uint32
-	gid             uint32
-	sgids           []uint32
-	resolvConfPath  string
-	hostsFilePath   string
-	exitCodePath    string
-	metaMount       *specs.Mount
-	otelTraceparent string
-	otelEndpoint    string
-	otelProto       string
-	origEnvMap      map[string]string
-	extraOpts       []ctdoci.SpecOpts
+	cleanups *cleanups
+
+	spec                *specs.Spec
+	networkNamespace    bknetwork.Namespace
+	rootfsPath          string
+	uid                 uint32
+	gid                 uint32
+	sgids               []uint32
+	resolvConfPath      string
+	hostsFilePath       string
+	exitCodePath        string
+	metaMount           *specs.Mount
+	otelEndpoint        string
+	otelUnixSockSrcPath string
+	otelProto           string
+	origEnvMap          map[string]string
+
+	doneErr error
+	done    chan struct{}
+
+	netNSJobs chan func()
 }
 
-type executorSetupFunc func(context.Context, *spec) error
+func newExecState(
+	id string,
+	procInfo *executor.ProcessInfo,
+	rootMount executor.Mount,
+	mounts []executor.Mount,
+) *execState {
+	return &execState{
+		id:        id,
+		procInfo:  procInfo,
+		rootMount: rootMount,
+		mounts:    mounts,
+		cleanups:  &cleanups{},
+		done:      make(chan struct{}),
+		netNSJobs: make(chan func()),
+	}
+}
 
-func (w *Worker) setUserGroup(_ context.Context, spec *spec) error {
-	var err error
-	spec.uid, spec.gid, spec.sgids, err = oci.GetUser(spec.rootfsPath, spec.procInfo.Meta.User)
+type executorSetupFunc func(context.Context, *execState) error
+
+func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
+	provider, ok := w.networkProviders[state.procInfo.Meta.NetMode]
+	if !ok {
+		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
+	}
+	networkNamespace, err := provider.New(ctx, state.procInfo.Meta.Hostname)
 	if err != nil {
-		return fmt.Errorf("get user: %w", err)
+		return fmt.Errorf("create network namespace: %w", err)
+	}
+	state.cleanups.add("close network namespace", networkNamespace.Close)
+	state.networkNamespace = networkNamespace
+
+	if err := w.runNetNSWorkers(ctx, state); err != nil {
+		return fmt.Errorf("failed to handle namespace jobs: %w", err)
 	}
 
-	spec.extraOpts = append(spec.extraOpts, oci.WithUIDGID(spec.uid, spec.gid, spec.sgids))
-	return nil
-}
-
-func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
-	var err error
-	spec.resolvConfPath, err = oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, spec.procInfo.Meta.NetMode)
+	state.resolvConfPath, err = oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, state.procInfo.Meta.NetMode)
 	if err != nil {
 		return fmt.Errorf("get base resolv.conf: %w", err)
 	}
 
 	var cleanupBaseHosts func()
-	spec.hostsFilePath, cleanupBaseHosts, err = oci.GetHostsFile(
-		ctx, w.executorRoot, spec.procInfo.Meta.ExtraHosts, w.idmap, spec.procInfo.Meta.Hostname)
+	state.hostsFilePath, cleanupBaseHosts, err = oci.GetHostsFile(
+		ctx, w.executorRoot, state.procInfo.Meta.ExtraHosts, w.idmap, state.procInfo.Meta.Hostname)
 	if err != nil {
 		return fmt.Errorf("get base hosts file: %w", err)
 	}
 	if cleanupBaseHosts != nil {
-		spec.cleanups.addNoErr("cleanup base hosts file", cleanupBaseHosts)
+		state.cleanups.addNoErr("cleanup base hosts file", cleanupBaseHosts)
 	}
 
 	if w.execMD == nil || w.execMD.ServerID == "" {
@@ -137,7 +160,7 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 
 	extraSearchDomain := network.ClientDomain(w.execMD.ServerID)
 
-	baseResolvFile, err := os.Open(spec.resolvConfPath)
+	baseResolvFile, err := os.Open(state.resolvConfPath)
 	if err != nil {
 		return fmt.Errorf("open base resolv.conf: %w", err)
 	}
@@ -153,9 +176,9 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 		return fmt.Errorf("create container resolv.conf tmp file: %w", err)
 	}
 	defer ctrResolvFile.Close()
-	spec.resolvConfPath = ctrResolvFile.Name()
-	spec.cleanups.add("remove resolv.conf", func() error {
-		return os.Remove(spec.resolvConfPath)
+	state.resolvConfPath = ctrResolvFile.Name()
+	state.cleanups.add("remove resolv.conf", func() error {
+		return os.RemoveAll(state.resolvConfPath)
 	})
 
 	if err := ctrResolvFile.Chmod(baseResolvStat.Mode().Perm()); err != nil {
@@ -185,7 +208,7 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 		return nil
 	}
 
-	baseHostsFile, err := os.Open(spec.hostsFilePath)
+	baseHostsFile, err := os.Open(state.hostsFilePath)
 	if err != nil {
 		return fmt.Errorf("open base hosts file: %w", err)
 	}
@@ -201,9 +224,9 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 		return fmt.Errorf("create container hosts tmp file: %w", err)
 	}
 	defer ctrHostsFile.Close()
-	spec.hostsFilePath = ctrHostsFile.Name()
-	spec.cleanups.add("remove hosts file", func() error {
-		return os.Remove(spec.hostsFilePath)
+	state.hostsFilePath = ctrHostsFile.Name()
+	state.cleanups.add("remove hosts file", func() error {
+		return os.RemoveAll(state.hostsFilePath)
 	})
 
 	if err := ctrHostsFile.Chmod(baseHostsStat.Mode().Perm()); err != nil {
@@ -248,115 +271,255 @@ func (w *Worker) setupNetwork(ctx context.Context, spec *spec) error {
 	return nil
 }
 
-func (w *Worker) generateBaseSpec(ctx context.Context, spec *spec) error {
-	if spec.procInfo.Meta.ReadonlyRootFS {
-		spec.extraOpts = append(spec.extraOpts, ctdoci.WithRootFSReadonly())
+type hostBindMount struct {
+	srcPath string
+}
+
+var _ executor.Mountable = (*hostBindMount)(nil)
+
+func (m hostBindMount) Mount(_ context.Context, readonly bool) (executor.MountableRef, error) {
+	if !readonly {
+		return nil, errors.New("host bind mounts must be readonly")
+	}
+	return hostBindMountRef(m), nil
+}
+
+type hostBindMountRef hostBindMount
+
+var _ executor.MountableRef = (*hostBindMountRef)(nil)
+
+func (m hostBindMountRef) Mount() ([]mount.Mount, func() error, error) {
+	return []mount.Mount{{
+		Type:    "bind",
+		Source:  m.srcPath,
+		Options: []string{"ro", "rbind"},
+	}}, func() error { return nil }, nil
+}
+
+func (m hostBindMountRef) IdentityMapping() *idtools.IdentityMapping {
+	return nil
+}
+
+func (w *Worker) injectDumbInit(_ context.Context, state *execState) error {
+	dumbInitPath := "/.init"
+	state.mounts = append(state.mounts, executor.Mount{
+		Src:      hostBindMount{srcPath: distconsts.DumbInitPath},
+		Dest:     dumbInitPath,
+		Readonly: true,
+	})
+	state.procInfo.Meta.Args = append([]string{dumbInitPath}, state.procInfo.Meta.Args...)
+
+	return nil
+}
+
+func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
+	var extraOpts []ctdoci.SpecOpts
+	if state.procInfo.Meta.ReadonlyRootFS {
+		extraOpts = append(extraOpts, ctdoci.WithRootFSReadonly())
 	}
 
 	baseSpec, ociSpecCleanup, err := oci.GenerateSpec(
 		ctx,
-		spec.procInfo.Meta,
-		spec.mounts,
-		spec.id,
-		spec.resolvConfPath,
-		spec.hostsFilePath,
-		spec.networkNamespace,
+		state.procInfo.Meta,
+		state.mounts,
+		state.id,
+		state.resolvConfPath,
+		state.hostsFilePath,
+		state.networkNamespace,
 		w.cgroupParent,
 		w.processMode,
 		w.idmap,
 		w.apparmorProfile,
 		w.selinux,
 		w.tracingSocket,
-		spec.extraOpts...,
+		extraOpts...,
 	)
 	if err != nil {
 		return err
 	}
-	spec.cleanups.addNoErr("base OCI spec cleanup", ociSpecCleanup)
+	state.cleanups.addNoErr("base OCI spec cleanup", ociSpecCleanup)
 
-	spec.Spec = baseSpec
+	state.spec = baseSpec
 	return nil
 }
 
-func (w *Worker) setupNamespaces(ctx context.Context, spec *spec) error {
-	spec.runState.namespaces = spec.Linux.Namespaces
-	if err := w.runNamespaceWorkers(ctx, spec.runState, spec.cleanups); err != nil {
-		return fmt.Errorf("failed to handle namespace jobs: %w", err)
-	}
-	return nil
-}
-
-func (w *Worker) filterEnvs(_ context.Context, spec *spec) error {
-	spec.origEnvMap = make(map[string]string)
-	filteredEnvs := make([]string, 0, len(spec.Process.Env))
-	for _, env := range spec.Process.Env {
+func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
+	state.origEnvMap = make(map[string]string)
+	filteredEnvs := make([]string, 0, len(state.spec.Process.Env))
+	for _, env := range state.spec.Process.Env {
 		k, v, ok := strings.Cut(env, "=")
 		if !ok {
 			continue
 		}
 		switch k {
 		case OTELTracesEndpointEnv:
-			spec.otelEndpoint = v
+			state.otelEndpoint = v
 		case OTELTracesProtocolEnv:
-			spec.otelProto = v
+			state.otelProto = v
 		default:
 			if _, ok := removeEnvs[k]; !ok {
-				spec.origEnvMap[k] = v
+				state.origEnvMap[k] = v
 				filteredEnvs = append(filteredEnvs, env)
 			}
 		}
 	}
-	spec.Process.Env = filteredEnvs
+	state.spec.Process.Env = filteredEnvs
 
 	return nil
 }
 
-func (w *Worker) filterMetaMount(_ context.Context, spec *spec) error {
+func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
+	var err error
+	state.rootfsPath, err = os.MkdirTemp("", "rootfs")
+	if err != nil {
+		return fmt.Errorf("create rootfs temp dir: %w", err)
+	}
+	state.cleanups.add("remove rootfs temp dir", func() error {
+		return os.RemoveAll(state.rootfsPath)
+	})
+	state.spec.Root.Path = state.rootfsPath
+
+	rootMountable, err := state.rootMount.Src.Mount(ctx, false)
+	if err != nil {
+		return fmt.Errorf("get rootfs mountable: %w", err)
+	}
+	rootMnts, releaseRootMount, err := rootMountable.Mount()
+	if err != nil {
+		return fmt.Errorf("get rootfs mount: %w", err)
+	}
+	if releaseRootMount != nil {
+		state.cleanups.add("release rootfs mount", releaseRootMount)
+	}
+	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
+		return fmt.Errorf("mount rootfs: %w", err)
+	}
+	state.cleanups.add("unmount rootfs", func() error {
+		return mount.Unmount(state.rootfsPath, 0)
+	})
+
+	var nonRootMounts []mount.Mount
 	var filteredMounts []specs.Mount
-	for _, mnt := range spec.Mounts {
-		if mnt.Destination == MetaMountDestPath {
+	for _, mnt := range state.spec.Mounts {
+		switch {
+		case mnt.Destination == MetaMountDestPath:
 			mnt := mnt
-			spec.metaMount = &mnt
-			continue
+			state.metaMount = &mnt
+		case mnt.Destination == strings.TrimPrefix(state.otelEndpoint, "unix://"):
+			state.otelUnixSockSrcPath = mnt.Source
+		case containerfs.IsSpecialMountType(mnt.Type):
+			// only keep special namespaced mounts like /proc, /sys, /dev, etc. in the actual spec
+			filteredMounts = append(filteredMounts, mnt)
+		default:
+			// bind, overlay, etc. mounts will be done to the rootfs now rather than by runc.
+			// This is to support read/write ops on them from the executor, such as filesync
+			// for nested execs, stdout/err redirection, CA configuration, etc.
+			nonRootMounts = append(nonRootMounts, mount.Mount{
+				Type:    mnt.Type,
+				Source:  mnt.Source,
+				Target:  mnt.Destination,
+				Options: mnt.Options,
+			})
 		}
-		filteredMounts = append(filteredMounts, mnt)
 	}
-	spec.Mounts = filteredMounts
+	state.spec.Mounts = filteredMounts
+
+	state.cleanups.addNoErr("cleanup rootfs stubs",
+		executor.MountStubsCleaner(ctx, state.rootfsPath, state.mounts, state.procInfo.Meta.RemoveMountStubsRecursive))
+
+	for _, mnt := range nonRootMounts {
+		dstPath, err := fs.RootPath(state.rootfsPath, mnt.Target)
+		if err != nil {
+			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
+		}
+
+		// ref: https://github.com/opencontainers/runc/blob/9d02c20df7faf7b356a632e35dfccf332fc7efed/libcontainer/rootfs_linux.go#L1173
+		if _, err := os.Stat(dstPath); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("stat mount target %s: %w", dstPath, err)
+			}
+			srcStat, err := os.Stat(mnt.Source)
+			if err != nil {
+				return fmt.Errorf("stat mount source %s: %w", mnt.Source, err)
+			}
+			switch srcStat.Mode() & os.ModeType {
+			case os.ModeDir:
+				if err := os.MkdirAll(dstPath, 0o755); err != nil {
+					return fmt.Errorf("create mount target dir %s: %w", dstPath, err)
+				}
+			default:
+				if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+					return fmt.Errorf("create mount target parent dir %s: %w", dstPath, err)
+				}
+				if f, err := os.OpenFile(dstPath, os.O_CREATE, 0o755); err != nil {
+					return fmt.Errorf("create mount target file %s: %w", dstPath, err)
+				} else {
+					f.Close()
+				}
+			}
+		}
+
+		if err := mnt.Mount(state.rootfsPath); err != nil {
+			return fmt.Errorf("mount to rootfs %s: %w", mnt.Target, err)
+		}
+		state.cleanups.add("unmount from rootfs "+mnt.Target, func() error {
+			return mount.Unmount(dstPath, 0)
+		})
+	}
 
 	return nil
 }
 
-func (w *Worker) configureRootfs(_ context.Context, spec *spec) error {
-	spec.Root.Path = spec.rootfsPath
-	if spec.rootMount.Readonly {
-		spec.Root.Readonly = true
+func (w *Worker) setUserGroup(_ context.Context, state *execState) error {
+	var err error
+	state.uid, state.gid, state.sgids, err = oci.GetUser(state.rootfsPath, state.procInfo.Meta.User)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	if state.spec.Process == nil {
+		state.spec.Process = &specs.Process{}
+	}
+	state.spec.Process.User.UID = state.uid
+	state.spec.Process.User.GID = state.gid
+	state.spec.Process.User.AdditionalGids = state.sgids
+	// ensure the primary GID is also included in the additional GID list
+	var found bool
+	for _, gid := range state.sgids {
+		if gid == state.gid {
+			found = true
+			break
+		}
+	}
+	if !found {
+		state.spec.Process.User.AdditionalGids = append([]uint32{state.gid}, state.sgids...)
+	}
+
+	return nil
+}
+
+func (w *Worker) setExitCodePath(_ context.Context, state *execState) error {
+	if state.metaMount != nil {
+		state.exitCodePath = filepath.Join(state.metaMount.Source, MetaMountExitCodePath)
 	}
 	return nil
 }
 
-func (w *Worker) setExitCodePath(_ context.Context, spec *spec) error {
-	if spec.metaMount != nil {
-		spec.exitCodePath = filepath.Join(spec.metaMount.Source, MetaMountExitCodePath)
-	}
-	return nil
-}
-
-func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
-	if spec.procInfo.Meta.Tty {
-		spec.Process.Terminal = true
+func (w *Worker) setupStdio(_ context.Context, state *execState) error {
+	if state.procInfo.Meta.Tty {
+		state.spec.Process.Terminal = true
 		// no more stdio setup needed
 		return nil
 	}
-	if spec.metaMount == nil {
+	if state.metaMount == nil {
 		return nil
 	}
 
-	stdinPath := filepath.Join(spec.metaMount.Source, MetaMountStdinPath)
+	stdinPath := filepath.Join(state.metaMount.Source, MetaMountStdinPath)
 	stdinFile, err := os.Open(stdinPath)
 	switch {
 	case err == nil:
-		spec.cleanups.add("close container stdin file", stdinFile.Close)
-		spec.procInfo.Stdin = stdinFile
+		state.cleanups.add("close container stdin file", stdinFile.Close)
+		state.procInfo.Stdin = stdinFile
 	case os.IsNotExist(err):
 		// no stdin to send
 	default:
@@ -364,36 +527,36 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 	}
 
 	var stdoutWriters []io.Writer
-	if spec.procInfo.Stdout != nil {
-		stdoutWriters = append(stdoutWriters, spec.procInfo.Stdout)
+	if state.procInfo.Stdout != nil {
+		stdoutWriters = append(stdoutWriters, state.procInfo.Stdout)
 	}
-	stdoutPath := filepath.Join(spec.metaMount.Source, MetaMountStdoutPath)
+	stdoutPath := filepath.Join(state.metaMount.Source, MetaMountStdoutPath)
 	stdoutFile, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open stdout file: %w", err)
 	}
-	spec.cleanups.add("close container stdout file", stdoutFile.Close)
+	state.cleanups.add("close container stdout file", stdoutFile.Close)
 	stdoutWriters = append(stdoutWriters, stdoutFile)
 
 	var stderrWriters []io.Writer
-	if spec.procInfo.Stderr != nil {
-		stderrWriters = append(stderrWriters, spec.procInfo.Stderr)
+	if state.procInfo.Stderr != nil {
+		stderrWriters = append(stderrWriters, state.procInfo.Stderr)
 	}
-	stderrPath := filepath.Join(spec.metaMount.Source, MetaMountStderrPath)
+	stderrPath := filepath.Join(state.metaMount.Source, MetaMountStderrPath)
 	stderrFile, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open stderr file: %w", err)
 	}
-	spec.cleanups.add("close container stderr file", stderrFile.Close)
+	state.cleanups.add("close container stderr file", stderrFile.Close)
 	stderrWriters = append(stderrWriters, stderrFile)
 
 	if w.execMD != nil && (w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
-		ctrFS, err := containerfs.NewContainerFS(spec.Spec, nil)
+		ctrFS, err := containerfs.NewContainerFS(state.spec, nil)
 		if err != nil {
 			return err
 		}
 
-		ctrCwd := spec.Process.Cwd
+		ctrCwd := state.spec.Process.Cwd
 		if ctrCwd == "" {
 			ctrCwd = "/"
 		}
@@ -410,8 +573,8 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stdout file: %w", err)
 			}
-			spec.cleanups.add("close redirect stdout file", redirectStdoutFile.Close)
-			if err := redirectStdoutFile.Chown(int(spec.Process.User.UID), int(spec.Process.User.GID)); err != nil {
+			state.cleanups.add("close redirect stdout file", redirectStdoutFile.Close)
+			if err := redirectStdoutFile.Chown(int(state.spec.Process.User.UID), int(state.spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stdout file: %w", err)
 			}
 			stdoutWriters = append(stdoutWriters, redirectStdoutFile)
@@ -426,30 +589,30 @@ func (w *Worker) setupStdio(_ context.Context, spec *spec) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stderr file: %w", err)
 			}
-			spec.cleanups.add("close redirect stderr file", redirectStderrFile.Close)
-			if err := redirectStderrFile.Chown(int(spec.Process.User.UID), int(spec.Process.User.GID)); err != nil {
+			state.cleanups.add("close redirect stderr file", redirectStderrFile.Close)
+			if err := redirectStderrFile.Chown(int(state.spec.Process.User.UID), int(state.spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stderr file: %w", err)
 			}
 			stderrWriters = append(stderrWriters, redirectStderrFile)
 		}
 	}
 
-	spec.procInfo.Stdout = nopCloser{io.MultiWriter(stdoutWriters...)}
-	spec.procInfo.Stderr = nopCloser{io.MultiWriter(stderrWriters...)}
+	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdoutWriters...)}
+	state.procInfo.Stderr = nopCloser{io.MultiWriter(stderrWriters...)}
 
 	return nil
 }
 
-func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
+func (w *Worker) setupOTEL(ctx context.Context, state *execState) error {
 	if w.execMD != nil {
-		spec.Process.Env = append(spec.Process.Env, w.execMD.OTELEnvs...)
+		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTELEnvs...)
 	}
 
-	if spec.otelEndpoint == "" {
+	if state.otelEndpoint == "" {
 		return nil
 	}
 
-	traceParent, ok := spec.origEnvMap[OTELTraceParentEnv]
+	traceParent, ok := state.origEnvMap[OTELTraceParentEnv]
 	if ok {
 		otelCtx := propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": traceParent})
 		otelLogger := telemetry.Logger("dagger.io/executor")
@@ -463,40 +626,29 @@ func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
 			Logger: otelLogger,
 			Stream: 2,
 		}
-		spec.procInfo.Stdout = nopCloser{io.MultiWriter(stdout, spec.procInfo.Stdout)}
-		spec.procInfo.Stderr = nopCloser{io.MultiWriter(stderr, spec.procInfo.Stderr)}
+		state.procInfo.Stdout = nopCloser{io.MultiWriter(stdout, state.procInfo.Stdout)}
+		state.procInfo.Stderr = nopCloser{io.MultiWriter(stderr, state.procInfo.Stderr)}
 	}
 
-	if strings.HasPrefix(spec.otelEndpoint, "/") {
+	if strings.HasPrefix(state.otelEndpoint, "/") {
 		// Buildkit currently sets this to /dev/otel-grpc.sock which is not a valid
 		// endpoint URL despite being set in an OTEL_* env var.
-		spec.otelEndpoint = "unix://" + spec.otelEndpoint
+		state.otelEndpoint = "unix://" + state.otelEndpoint
 	}
 
-	if strings.HasPrefix(spec.otelEndpoint, "unix://") {
+	if strings.HasPrefix(state.otelEndpoint, "unix://") {
 		// setup tcp proxying of unix endpoints for better client compatibility
-		otelSockDestPath := strings.TrimPrefix(spec.otelEndpoint, "unix://")
-		var otelSockSrcPath string
-		var filteredMounts []specs.Mount
-		for _, mnt := range spec.Mounts {
-			if mnt.Destination == otelSockDestPath {
-				otelSockSrcPath = mnt.Source
-				continue
-			}
-			filteredMounts = append(filteredMounts, mnt)
+		if state.otelUnixSockSrcPath == "" {
+			return fmt.Errorf("no mount found for otel unix socket %s", state.otelUnixSockSrcPath)
 		}
-		if otelSockSrcPath == "" {
-			return fmt.Errorf("no mount found for otel unix socket %s", otelSockDestPath)
-		}
-		spec.Mounts = filteredMounts
 
-		listener, err := runInNamespace(ctx, spec.runState, func() (net.Listener, error) {
+		listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 			return net.Listen("tcp", "127.0.0.1:0")
 		})
 		if err != nil {
 			return fmt.Errorf("otel tcp proxy listen: %w", err)
 		}
-		spec.otelEndpoint = "http://" + listener.Addr().String()
+		state.otelEndpoint = "http://" + listener.Addr().String()
 
 		proxyConnPool := pool.New()
 		listenerCtx, cancelListener := context.WithCancel(ctx)
@@ -522,7 +674,7 @@ func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
 
 				// TODO:(sipsma) logging that existed before? Was it useful?
 
-				remote, err := net.Dial("unix", otelSockSrcPath)
+				remote, err := net.Dial("unix", state.otelUnixSockSrcPath)
 				if err != nil {
 					conn.Close()
 					return fmt.Errorf("dial otel unix socket: %w", err)
@@ -539,24 +691,24 @@ func (w *Worker) setupOTEL(ctx context.Context, spec *spec) error {
 				})
 			}
 		})
-		spec.cleanups.addNoErr("wait for otel proxy conn pool", proxyConnPool.Wait)
-		spec.cleanups.add("wait for otel listener pool", listenerPool.Wait)
-		spec.cleanups.addNoErr("cancel otel listener context", cancelListener)
+		state.cleanups.addNoErr("wait for otel proxy conn pool", proxyConnPool.Wait)
+		state.cleanups.add("wait for otel listener pool", listenerPool.Wait)
+		state.cleanups.addNoErr("cancel otel listener context", cancelListener)
 	}
 
-	spec.Process.Env = append(spec.Process.Env,
-		OTELExporterProtocolEnv+"="+spec.otelProto,
-		OTELExporterEndpointEnv+"="+spec.otelEndpoint,
-		OTELTracesProtocolEnv+"="+spec.otelProto,
-		OTELTracesEndpointEnv+"="+spec.otelEndpoint,
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		OTELExporterProtocolEnv+"="+state.otelProto,
+		OTELExporterEndpointEnv+"="+state.otelEndpoint,
+		OTELTracesProtocolEnv+"="+state.otelProto,
+		OTELTracesEndpointEnv+"="+state.otelEndpoint,
 		// Dagger sets up a log exporter too. Explicitly set it so things can
 		// detect support for it.
-		OTELLogsProtocolEnv+"="+spec.otelProto,
-		OTELLogsEndpointEnv+"="+spec.otelEndpoint,
+		OTELLogsProtocolEnv+"="+state.otelProto,
+		OTELLogsEndpointEnv+"="+state.otelEndpoint,
 		// Dagger doesn't set up metrics yet, but we should set this anyway,
 		// since otherwise some tools default to localhost.
-		OTELMetricsProtocolEnv+"="+spec.otelProto,
-		OTELMetricsEndpointEnv+"="+spec.otelEndpoint,
+		OTELMetricsProtocolEnv+"="+state.otelProto,
+		OTELMetricsEndpointEnv+"="+state.otelEndpoint,
 	)
 
 	return nil
@@ -570,7 +722,7 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 		return nil
 	}
 
-	ctrCwd := spec.Process.Cwd
+	ctrCwd := state.spec.Process.Cwd
 	if ctrCwd == "" {
 		ctrCwd = "/"
 	}
@@ -596,44 +748,44 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 	}
 
 	stdoutR, stdoutW := io.Pipe()
-	stdoutScrubReader, err := NewSecretScrubReader(stdoutR, spec.Process.Env, w.execMD.SecretEnvNames, secretFilePaths)
+	stdoutScrubReader, err := NewSecretScrubReader(stdoutR, state.spec.Process.Env, w.execMD.SecretEnvNames, secretFilePaths)
 	if err != nil {
 		return fmt.Errorf("setup stdout secret scrubbing: %w", err)
 	}
 	stderrR, stderrW := io.Pipe()
-	stderrScrubReader, err := NewSecretScrubReader(stderrR, spec.Process.Env, w.execMD.SecretEnvNames, secretFilePaths)
+	stderrScrubReader, err := NewSecretScrubReader(stderrR, state.spec.Process.Env, w.execMD.SecretEnvNames, secretFilePaths)
 	if err != nil {
 		return fmt.Errorf("setup stderr secret scrubbing: %w", err)
 	}
 
 	var pipeWg sync.WaitGroup
 
-	finalStdout := spec.procInfo.Stdout
-	spec.procInfo.Stdout = stdoutW
+	finalStdout := state.procInfo.Stdout
+	state.procInfo.Stdout = stdoutW
 	pipeWg.Add(1)
 	go func() {
 		defer pipeWg.Done()
 		io.Copy(finalStdout, stdoutScrubReader)
 	}()
 
-	finalStderr := spec.procInfo.Stderr
-	spec.procInfo.Stderr = stderrW
+	finalStderr := state.procInfo.Stderr
+	state.procInfo.Stderr = stderrW
 	pipeWg.Add(1)
 	go func() {
 		defer pipeWg.Done()
 		io.Copy(finalStderr, stderrScrubReader)
 	}()
 
-	spec.cleanups.add("close secret scrub stderr reader", stderrR.Close)
-	spec.cleanups.add("close secret scrub stdout reader", stdoutR.Close)
-	spec.cleanups.addNoErr("wait for secret scrubber pipes", pipeWg.Wait)
-	spec.cleanups.add("close secret scrub stderr writer", stderrW.Close)
-	spec.cleanups.add("close secret scrub stdout writer", stdoutW.Close)
+	state.cleanups.add("close secret scrub stderr reader", stderrR.Close)
+	state.cleanups.add("close secret scrub stdout reader", stdoutR.Close)
+	state.cleanups.addNoErr("wait for secret scrubber pipes", pipeWg.Wait)
+	state.cleanups.add("close secret scrub stderr writer", stderrW.Close)
+	state.cleanups.add("close secret scrub stdout writer", stdoutW.Close)
 
 	return nil
 }
 
-func (w *Worker) setProxyEnvs(_ context.Context, spec *spec) error {
+func (w *Worker) setProxyEnvs(_ context.Context, state *execState) error {
 	for _, upperProxyEnvName := range []string{
 		"HTTP_PROXY",
 		"HTTPS_PROXY",
@@ -641,10 +793,10 @@ func (w *Worker) setProxyEnvs(_ context.Context, spec *spec) error {
 		"NO_PROXY",
 		"ALL_PROXY",
 	} {
-		upperProxyVal, upperSet := spec.origEnvMap[upperProxyEnvName]
+		upperProxyVal, upperSet := state.origEnvMap[upperProxyEnvName]
 
 		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
-		lowerProxyVal, lowerSet := spec.origEnvMap[lowerProxyEnvName]
+		lowerProxyVal, lowerSet := state.origEnvMap[lowerProxyEnvName]
 
 		// try to set both upper and lower case proxy env vars, some programs
 		// only respect one or the other
@@ -654,16 +806,16 @@ func (w *Worker) setProxyEnvs(_ context.Context, spec *spec) error {
 			continue
 		case upperSet:
 			// upper case was set, set lower case to the same value
-			spec.Process.Env = append(spec.Process.Env, lowerProxyEnvName+"="+upperProxyVal)
+			state.spec.Process.Env = append(state.spec.Process.Env, lowerProxyEnvName+"="+upperProxyVal)
 		case lowerSet:
 			// lower case was set, set upper case to the same value
-			spec.Process.Env = append(spec.Process.Env, upperProxyEnvName+"="+lowerProxyVal)
+			state.spec.Process.Env = append(state.spec.Process.Env, upperProxyEnvName+"="+lowerProxyVal)
 		default:
 			// neither was set by the user, check if the engine itself has the upper case
 			// set and pass that through to the container in both cases if so
 			val, ok := os.LookupEnv(upperProxyEnvName)
 			if ok {
-				spec.Process.Env = append(spec.Process.Env, upperProxyEnvName+"="+val, lowerProxyEnvName+"="+val)
+				state.spec.Process.Env = append(state.spec.Process.Env, upperProxyEnvName+"="+val, lowerProxyEnvName+"="+val)
 			}
 		}
 	}
@@ -674,20 +826,20 @@ func (w *Worker) setProxyEnvs(_ context.Context, spec *spec) error {
 
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
 	for _, systemEnvName := range w.execMD.SystemEnvNames {
-		if _, ok := spec.origEnvMap[systemEnvName]; ok {
+		if _, ok := state.origEnvMap[systemEnvName]; ok {
 			// don't overwrite explicit user-provided values
 			continue
 		}
 		systemVal, ok := os.LookupEnv(systemEnvPrefix + systemEnvName)
 		if ok {
-			spec.Process.Env = append(spec.Process.Env, systemEnvName+"="+systemVal)
+			state.spec.Process.Env = append(state.spec.Process.Env, systemEnvName+"="+systemVal)
 		}
 	}
 
 	return nil
 }
 
-func (w *Worker) enableGPU(_ context.Context, spec *spec) error {
+func (w *Worker) enableGPU(_ context.Context, state *execState) error {
 	if w.execMD == nil {
 		return nil
 	}
@@ -695,32 +847,32 @@ func (w *Worker) enableGPU(_ context.Context, spec *spec) error {
 		return nil
 	}
 
-	if spec.Hooks == nil {
-		spec.Hooks = &specs.Hooks{}
+	if state.spec.Hooks == nil {
+		state.spec.Hooks = &specs.Hooks{}
 	}
-	spec.Hooks.Prestart = append(spec.Hooks.Prestart, specs.Hook{
+	state.spec.Hooks.Prestart = append(state.spec.Hooks.Prestart, specs.Hook{
 		Args: []string{
 			"nvidia-container-runtime-hook",
 			"prestart",
 		},
 		Path: "/usr/bin/nvidia-container-runtime-hook",
 	})
-	spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s",
+	state.spec.Process.Env = append(state.spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s",
 		strings.Join(w.execMD.EnabledGPUs, ","),
 	))
 
 	return nil
 }
 
-func (w *Worker) createCWD(_ context.Context, spec *spec) error {
-	newp, err := fs.RootPath(spec.rootfsPath, spec.procInfo.Meta.Cwd)
+func (w *Worker) createCWD(_ context.Context, state *execState) error {
+	newp, err := fs.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
 	if err != nil {
 		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
 	}
 	if _, err := os.Stat(newp); err != nil {
 		if err := idtools.MkdirAllAndChown(newp, 0o755, idtools.Identity{
-			UID: int(spec.uid),
-			GID: int(spec.gid),
+			UID: int(state.uid),
+			GID: int(state.gid),
 		}); err != nil {
 			return fmt.Errorf("failed to create working directory %s: %w", newp, err)
 		}
@@ -729,80 +881,7 @@ func (w *Worker) createCWD(_ context.Context, spec *spec) error {
 	return nil
 }
 
-func (w *Worker) installCACerts(ctx context.Context, spec *spec) error {
-	if !spec.installCACerts {
-		return nil
-	}
-
-	caInstaller, err := cacerts.NewInstaller(ctx, spec.Spec, func(ctx context.Context, args ...string) error {
-		id := randid.NewID()
-		meta := spec.procInfo.Meta
-
-		// don't run this as a nested client, not necessary
-		var filteredEnvs []string
-		for _, env := range meta.Env {
-			if strings.HasPrefix(env, "_DAGGER_NESTED_CLIENT_ID=") {
-				continue
-			}
-			filteredEnvs = append(filteredEnvs, env)
-		}
-		meta.Env = filteredEnvs
-
-		meta.Args = args
-		meta.User = "0:0"
-		meta.Cwd = "/"
-		meta.Tty = false
-		output := new(bytes.Buffer)
-		process := executor.ProcessInfo{
-			Stdout: nopCloser{output},
-			Stderr: nopCloser{output},
-			Meta:   meta,
-		}
-		started := make(chan struct{}, 1)
-		err := w.run(
-			ctx,
-			id,
-			spec.rootMount,
-			spec.mounts,
-			spec.rootfsPath,
-			process,
-			spec.networkNamespace,
-			started,
-			false,
-		)
-		if err != nil {
-			return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
-		}
-		return nil
-	})
-	if err != nil {
-		bklog.G(ctx).Errorf("failed to create cacerts installer, falling back to not installing CA certs: %v", err)
-		return nil
-	}
-
-	err = caInstaller.Install(ctx)
-	switch {
-	case err == nil:
-		spec.cleanups.add("uninstall CA certs", func() error {
-			err := caInstaller.Uninstall(ctx)
-			if err != nil {
-				bklog.G(ctx).Errorf("failed to uninstall cacerts: %v", err)
-			}
-			return err
-		})
-	case errors.As(err, new(cacerts.CleanupErr)):
-		// if install failed and cleanup failed too, we have no choice but to fail this exec; otherwise we're
-		// leaving the container in some weird half state
-		return fmt.Errorf("failed to install cacerts: %w", err)
-	default:
-		// if install failed but we were able to cleanup, then we should log it but don't need to fail the exec
-		bklog.G(ctx).Errorf("failed to install cacerts but successfully cleaned up, continuing without CA certs: %v", err)
-	}
-
-	return nil
-}
-
-func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error) {
+func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr error) {
 	if w.execMD == nil {
 		return nil
 	}
@@ -814,13 +893,13 @@ func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error)
 		ClientID:          w.execMD.ClientID,
 		ClientSecretToken: randid.NewID(),
 		ServerID:          w.execMD.ServerID,
-		ClientHostname:    spec.Hostname,
+		ClientHostname:    state.spec.Hostname,
 		// TODO: Labels?
 		// TODO: CloudToken?
 		// TODO: DoNotTrack?
 	}
 
-	spec.Process.Env = append(spec.Process.Env, DaggerSessionTokenEnv+"="+nestedClientMD.ClientSecretToken)
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+nestedClientMD.ClientSecretToken)
 
 	sessionCtx, cancelSession := context.WithCancel(ctx)
 	defer func() {
@@ -835,95 +914,33 @@ func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error)
 	if err != nil {
 		return fmt.Errorf("create buildkit session: %w", err)
 	}
-	spec.cleanups.add("close nested client buildkit session", bkSession.Close)
+	state.cleanups.add("close nested client buildkit session", bkSession.Close)
 
 	bkSession.Allow(client.SocketProvider{
 		EnableHostNetworkAccess: true,
 		Dialer: func(network, addr string) (net.Conn, error) {
-			return runInNamespace(sessionCtx, spec.runState, func() (net.Conn, error) {
+			return runInNetNS(sessionCtx, state, func() (net.Conn, error) {
 				return net.Dial(network, addr)
 			})
 		},
 	})
 	bkSession.Allow(session.NewTunnelListenerAttachable(sessionCtx, func(network, addr string) (net.Listener, error) {
-		return runInNamespace(sessionCtx, spec.runState, func() (net.Listener, error) {
+		return runInNetNS(sessionCtx, state, func() (net.Listener, error) {
 			return net.Listen(network, addr)
 		})
 	}))
 
-	// TODO: do this much earlier for all containers, will enable cleaning up containerfs code massively
-	// TODO: do this much earlier for all containers, will enable cleaning up containerfs code massively
-	// TODO: do this much earlier for all containers, will enable cleaning up containerfs code massively
-	var bindMnts []mount.Mount
-	var filteredMounts []specs.Mount
-	for _, mnt := range spec.Mounts {
-		switch mnt.Type {
-		case "overlay":
-			// should never happen, we should only be given bind mounts from overlays
-			return fmt.Errorf("unexpected overlay mount in spec: %v", mnt)
-		case "bind", "rbind": // not an actual mount type in linux, but containerd/buildkit code sets this anyways
-			bindMnts = append(bindMnts, mount.Mount{
-				Type:    mnt.Type,
-				Source:  mnt.Source,
-				Target:  mnt.Destination,
-				Options: mnt.Options,
-			})
-		default:
-			filteredMounts = append(filteredMounts, mnt)
-		}
-	}
-	spec.Mounts = filteredMounts
-
-	for _, bindMnt := range bindMnts {
-		dstPath, err := fs.RootPath(spec.rootfsPath, bindMnt.Target)
-		if err != nil {
-			return fmt.Errorf("bind mount %s points to invalid target: %w", bindMnt.Target, err)
-		}
-		// ref: https://github.com/opencontainers/runc/blob/9d02c20df7faf7b356a632e35dfccf332fc7efed/libcontainer/rootfs_linux.go#L1173
-		if _, err := os.Stat(dstPath); err != nil {
-			if !os.IsNotExist(err) {
-				return fmt.Errorf("stat bind mount target %s: %w", dstPath, err)
-			}
-			srcStat, err := os.Stat(bindMnt.Source)
-			if err != nil {
-				return fmt.Errorf("stat bind mount source %s: %w", bindMnt.Source, err)
-			}
-			switch srcStat.Mode() & os.ModeType {
-			case os.ModeDir:
-				if err := os.MkdirAll(dstPath, 0o755); err != nil {
-					return fmt.Errorf("create bind mount target dir %s: %w", dstPath, err)
-				}
-			default:
-				if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
-					return fmt.Errorf("create bind mount target parent dir %s: %w", dstPath, err)
-				}
-				if f, err := os.OpenFile(dstPath, os.O_CREATE, 0o755); err != nil {
-					return fmt.Errorf("create bind mount target file %s: %w", dstPath, err)
-				} else {
-					f.Close()
-				}
-			}
-		}
-	}
-
-	if err := mount.All(bindMnts, spec.rootfsPath); err != nil {
-		return fmt.Errorf("mount bind mounts: %w", err)
-	}
-	spec.cleanups.add("unmount container bind mounts", func() error {
-		return mount.UnmountMounts(bindMnts, spec.rootfsPath, 0)
-	})
-
 	// TODO: HANDLE CWD NOT EXISTING? OR I THINK THATS ALREADY DONE SOMEHWERE?
-	cwdPath := spec.rootfsPath
-	if spec.Process.Cwd != "" {
-		cwdPath, err = fs.RootPath(spec.rootfsPath, spec.Process.Cwd)
+	cwdPath := state.rootfsPath
+	if state.spec.Process.Cwd != "" {
+		cwdPath, err = fs.RootPath(state.rootfsPath, state.spec.Process.Cwd)
 		if err != nil {
-			return fmt.Errorf("working dir %s points to invalid target: %w", spec.Process.Cwd, err)
+			return fmt.Errorf("working dir %s points to invalid target: %w", state.spec.Process.Cwd, err)
 		}
 	}
 
 	// TODO: eval symlinks on rootfsPath just to be extra safe?
-	filesyncer, err := client.NewFilesyncer(spec.rootfsPath, cwdPath, &spec.uid, &spec.gid)
+	filesyncer, err := client.NewFilesyncer(state.rootfsPath, cwdPath, &state.uid, &state.gid)
 	if err != nil {
 		return fmt.Errorf("create filesyncer: %w", err)
 	}
@@ -962,7 +979,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error)
 		return w.Controller.HandleConn(ctx, sessionServerConn, &registerClientMD, bkSessionMD)
 	})
 
-	httpListener, err := runInNamespace(ctx, spec.runState, func() (net.Listener, error) {
+	httpListener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")
 	})
 	if err != nil {
@@ -973,7 +990,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error)
 	if !ok {
 		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
 	}
-	spec.Process.Env = append(spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
 
 	handleConnPool := pool.New().WithContext(sessionCtx)
 	httpListenerPool := pool.New().WithContext(sessionCtx).WithCancelOnError()
@@ -1003,10 +1020,84 @@ func (w *Worker) setupNestedClient(ctx context.Context, spec *spec) (rerr error)
 		}
 	})
 
-	spec.cleanups.add("wait for nested client buildkit session pool", sessionPool.Wait)
-	spec.cleanups.add("wait for nested client conn pool", handleConnPool.Wait)
-	spec.cleanups.add("wait for nested client listener pool", httpListenerPool.Wait)
-	spec.cleanups.addNoErr("cancel nested client buildkit session", cancelSession)
+	state.cleanups.add("wait for nested client buildkit session pool", sessionPool.Wait)
+	state.cleanups.add("wait for nested client conn pool", handleConnPool.Wait)
+	state.cleanups.add("wait for nested client listener pool", httpListenerPool.Wait)
+	state.cleanups.addNoErr("cancel nested client buildkit session", cancelSession)
+
+	return nil
+}
+
+func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
+	caInstaller, err := cacerts.NewInstaller(ctx, state.spec, func(ctx context.Context, args ...string) error {
+		output := new(bytes.Buffer)
+		caExecState := &execState{
+			id: randid.NewID(),
+			procInfo: &executor.ProcessInfo{
+				Stdout: nopCloser{output},
+				Stderr: nopCloser{output},
+				Meta: executor.Meta{
+					Args: args,
+					Env:  state.spec.Process.Env,
+					User: "0:0",
+					Cwd:  "/",
+				},
+			},
+			rootMount: state.rootMount,
+			mounts:    state.mounts,
+
+			cleanups: &cleanups{},
+
+			spec:             &specs.Spec{},
+			networkNamespace: state.networkNamespace,
+			rootfsPath:       state.rootfsPath,
+			resolvConfPath:   state.resolvConfPath,
+			hostsFilePath:    state.hostsFilePath,
+
+			done: make(chan struct{}),
+
+			netNSJobs: state.netNSJobs,
+		}
+
+		// copy the spec by doing a json ser/deser round (this could be more efficient, but
+		// probably not a bottlneck)
+		bs, err := json.Marshal(state.spec)
+		if err != nil {
+			return fmt.Errorf("marshal spec: %w", err)
+		}
+		if err := json.Unmarshal(bs, caExecState.spec); err != nil {
+			return fmt.Errorf("unmarshal spec: %w", err)
+		}
+		caExecState.spec.Process.Args = caExecState.procInfo.Meta.Args
+		caExecState.spec.Process.User.UID = 0
+		caExecState.spec.Process.User.GID = 0
+		caExecState.spec.Process.Cwd = "/"
+
+		started := make(chan struct{}, 1)
+		if err := w.run(ctx, caExecState, started); err != nil {
+			return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
+		}
+		return nil
+	})
+	if err != nil {
+		bklog.G(ctx).Errorf("failed to create cacerts installer, falling back to not installing CA certs: %v", err)
+		return nil
+	}
+
+	err = caInstaller.Install(ctx)
+	switch {
+	case err == nil:
+		state.cleanups.add("uninstall CA certs", func() error {
+			return caInstaller.Uninstall(ctx)
+		})
+	case errors.As(err, new(cacerts.CleanupErr)):
+		// if install failed and cleanup failed too, we have no choice but to fail this exec; otherwise we're
+		// leaving the container in some weird half state
+		return fmt.Errorf("failed to install cacerts: %w", err)
+	default:
+		// if install failed but we were able to cleanup, then we should log it but don't need to fail the exec
+		bklog.G(ctx).Errorf("failed to install cacerts but successfully cleaned up, continuing without CA certs: %v", err)
+	}
 
 	return nil
 }

@@ -56,7 +56,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 	for _, port := range ports {
 		retry := backoff.NewExponentialBackOff(backoff.WithInitialInterval(100 * time.Millisecond))
 		endpoint, err := backoff.RetryWithData(func() (string, error) {
-			return buildkit.RunInNamespace(ctx, d.bk, d.ns, func() (string, error) {
+			return buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
 				// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
 				// up, since it'll be a false positive even if they're not listening yet,
 				// but it at least checks that we're able to resolve the container address.

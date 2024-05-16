@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"time"
 
@@ -20,9 +19,9 @@ const (
 	workerPoolSize = 5
 )
 
-func runInNamespace[T any](
+func runInNetNS[T any](
 	ctx context.Context,
-	runState *runningState,
+	state *execState,
 	fn func() (T, error),
 ) (T, error) {
 	var zero T
@@ -35,9 +34,9 @@ func runInNamespace[T any](
 	select {
 	case <-ctx.Done():
 		return zero, context.Cause(ctx)
-	case <-runState.done:
+	case <-state.done:
 		return zero, fmt.Errorf("container exited")
-	case runState.nsJobs <- func() {
+	case state.netNSJobs <- func() {
 		v, err := fn()
 		resultCh <- result{value: v, err: err}
 	}:
@@ -46,71 +45,50 @@ func runInNamespace[T any](
 	select {
 	case <-ctx.Done():
 		return zero, context.Cause(ctx)
-	case <-runState.done:
+	case <-state.done:
 		return zero, fmt.Errorf("container exited")
 	case result := <-resultCh:
 		return result.value, result.err
 	}
 }
 
-func (w *Worker) runNamespaceWorkers(
-	ctx context.Context,
-	runState *runningState,
-	cleanup *cleanups,
-) error {
-	var namespaces []*namespaceFiles
-	// TODO: switch this to iterate over runState.namespaces instead
-	// TODO: switch this to iterate over runState.namespaces instead
-	// TODO: switch this to iterate over runState.namespaces instead
-	for _, nsType := range []namespaceType{
-		/* TODO: for later
-		{
-			specType:   specs.MountNamespace,
-			procFSName: "mnt",
-			setNSArg:   unix.CLONE_NEWNS,
-		},
-		*/
-		{
-			specType:   specs.NetworkNamespace,
-			procFSName: "net",
-			setNSArg:   unix.CLONE_NEWNET,
-		},
-	} {
-		hostFile, err := os.OpenFile(filepath.Join("/proc/self/ns", nsType.procFSName), os.O_RDONLY, 0)
-		if err != nil {
-			return fmt.Errorf("failed to open host namespace file %s: %w", nsType.procFSName, err)
-		}
-		cleanup.add("close host netns file", hostFile.Close)
-
-		var ctrFile *os.File
-		for _, ns := range runState.namespaces {
-			if ns.Type != nsType.specType {
-				continue
-			}
-			if ns.Path == "" {
-				continue
-			}
-			ctrFile, err = os.OpenFile(ns.Path, os.O_RDONLY, 0)
-			if err != nil {
-				return fmt.Errorf("failed to open container namespace file %s: %w", ns.Path, err)
-			}
-			cleanup.add("close container netns file", ctrFile.Close)
-		}
-		if ctrFile == nil {
-			return fmt.Errorf("container namespace file not found for %s", nsType.specType)
-		}
-
-		namespaces = append(namespaces, &namespaceFiles{
-			hostFile: hostFile,
-			ctrFile:  ctrFile,
-			setNSArg: nsType.setNSArg,
-		})
+func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
+	if state.networkNamespace == nil {
+		return fmt.Errorf("network namespace not found")
 	}
+
+	// need this to extract the namespace file
+	var tmpSpec specs.Spec
+	if err := state.networkNamespace.Set(&tmpSpec); err != nil {
+		return fmt.Errorf("failed to set network namespace: %w", err)
+	}
+	var ctrNetNSPath string
+	for _, ns := range tmpSpec.Linux.Namespaces {
+		if ns.Type == specs.NetworkNamespace {
+			ctrNetNSPath = ns.Path
+			break
+		}
+	}
+	if ctrNetNSPath == "" {
+		return fmt.Errorf("network namespace path not found")
+	}
+
+	hostFile, err := os.OpenFile("/proc/self/ns/net", os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open host netns file: %w", err)
+	}
+	state.cleanups.add("close host netns file", hostFile.Close)
+
+	ctrFile, err := os.OpenFile(ctrNetNSPath, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open container netns file: %w", err)
+	}
+	state.cleanups.add("close container netns file", ctrFile.Close)
 
 	ctx, cancel := context.WithCancel(ctx)
 	p := pool.New().WithContext(ctx)
-	cleanup.add("stopping namespace workers", p.Wait)
-	cleanup.addNoErr("canceling namespace workers", cancel)
+	state.cleanups.add("stopping namespace workers", p.Wait)
+	state.cleanups.addNoErr("canceling namespace workers", cancel)
 
 	for i := 0; i < workerPoolSize; i++ {
 		p.Go(func(ctx context.Context) (rerr error) {
@@ -118,17 +96,21 @@ func (w *Worker) runNamespaceWorkers(
 				select {
 				case <-ctx.Done():
 					return nil
-				case <-runState.done:
+				case <-state.done:
 					return nil
 				default:
 				}
 
-				nsw := &namespaceWorker{namespaces: namespaces}
+				nsw := &namespaceWorker{namespaces: []*namespaceFiles{{
+					hostFile: hostFile,
+					ctrFile:  ctrFile,
+					setNSArg: unix.CLONE_NEWNET,
+				}}}
 
 				// must run in it's own isolated goroutine since it will lock to threads
 				errCh := make(chan error)
 				go func() {
-					errCh <- nsw.run(ctx, runState.nsJobs)
+					errCh <- nsw.run(ctx, state.netNSJobs)
 				}()
 				err := <-errCh
 				if err != nil && !errors.Is(err, context.Canceled) {
@@ -139,12 +121,6 @@ func (w *Worker) runNamespaceWorkers(
 	}
 
 	return nil
-}
-
-type namespaceType struct {
-	specType   specs.LinuxNamespaceType
-	procFSName string
-	setNSArg   int
 }
 
 type namespaceWorker struct {

@@ -4217,3 +4217,15 @@ func TestContainerNestedExec(t *testing.T) {
 		Sync(ctx)
 	require.NoError(t, err)
 }
+
+func TestContainerEmptyExecDiff(t *testing.T) {
+	// if an exec makes no changes, the diff should be empty, including of files
+	// mounted in by the engine like the init/resolv.conf/etc.
+	t.Parallel()
+	c, ctx := connect(t)
+
+	base := c.Container().From(alpineImage)
+	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)
+	require.NoError(t, err)
+	require.Len(t, ents, 0)
+}
