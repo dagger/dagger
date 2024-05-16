@@ -17,7 +17,7 @@ class MyModule:
     def hello(
         self,
         name: Annotated[str, Doc("Who to greet")],
-        greeting: Annotated[str, Doc("The greeting to display")] = "Hello",
+        greeting: Annotated[str, Doc("The greeting to display")],
     ) -> str:
         """Return a greeting."""
         return f"{greeting}, {name}!"
@@ -28,7 +28,7 @@ class MyModule:
     def loud_hello(
         self,
         name: Annotated[str, Doc("Who to greet")],
-        greeting: Annotated[str, Doc("The greeting to display")] = "Hello",
+        greeting: Annotated[str, Doc("The greeting to display")],
     ) -> str:
         """Return a loud greeting.
 
