@@ -35,7 +35,7 @@ Dagger is a tool that lets you replace your software project's artisanal scripts
 
 * Join the [Dagger community server](https://discord.gg/ufnyBtc8uY)
 * Follow us on [Twitter](https://twitter.com/dagger_io)
-* Come to a [Dagger community call](https://dagger.io/events).
+* Check out our [community activities](https://dagger.io/community)
 
 ## Contributing
 
