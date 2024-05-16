@@ -57,7 +57,7 @@ var (
 
 	hasTTY = stdoutIsTTY || stderrIsTTY
 
-	Frontend = idtui.New()
+	Frontend idtui.Frontend
 )
 
 func init() {
@@ -252,12 +252,13 @@ func main() {
 	}
 	switch progress {
 	case "plain":
-		opts.Plain = true
+		Frontend = idtui.NewPlain()
 	case "tty":
 		if !hasTTY {
 			fmt.Fprintf(os.Stderr, "no tty available for progress %q\n", progress)
 			os.Exit(1)
 		}
+		Frontend = idtui.New()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)
