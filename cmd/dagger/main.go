@@ -262,13 +262,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)
 	}
-	Frontend.FrontendOpts = opts
 
 	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx := context.Background()
 
-	if err := Frontend.Run(ctx, func(ctx context.Context) (rerr error) {
+	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx = telemetry.Init(ctx, telemetry.Config{
