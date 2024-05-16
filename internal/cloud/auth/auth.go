@@ -82,20 +82,34 @@ func Token(ctx context.Context) (*oauth2.Token, error) {
 	return tokenSource.Token()
 }
 
-func Org() (string, error) {
-	data, err := os.ReadFile(orgFile)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+type Org struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
-func SetOrg(org string) error {
+func CurrentOrg() (*Org, error) {
+	data, err := os.ReadFile(orgFile)
+	if err != nil {
+		return nil, err
+	}
+	org := Org{}
+	if err := json.Unmarshal(data, &org); err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
+func SetCurrentOrg(org *Org) error {
 	if err := os.MkdirAll(filepath.Dir(orgFile), 0o755); err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(orgFile, []byte(org), 0o600); err != nil {
+	data, err := json.Marshal(org)
+	if err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(orgFile, data, 0o600); err != nil {
 		return err
 	}
 	return nil

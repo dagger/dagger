@@ -38,7 +38,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 	ocnfiguredCloudExportersOnce.Do(func() {
 		var (
 			authHeader string
-			orgID      string
+			org        *auth.Org
 		)
 
 		// Try token auth first
@@ -52,7 +52,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 				return
 			}
 			authHeader = token.Type() + " " + token.AccessToken
-			orgID, err = auth.Org()
+			org, err = auth.CurrentOrg()
 			if err != nil {
 				return
 			}
@@ -80,8 +80,8 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 		headers := map[string]string{
 			"Authorization": authHeader,
 		}
-		if orgID != "" {
-			headers["X-Dagger-Org"] = orgID
+		if org != nil {
+			headers["X-Dagger-Org"] = org.ID
 		}
 
 		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,

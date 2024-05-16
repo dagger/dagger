@@ -67,13 +67,13 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	var orgID string
+	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
 		fmt.Fprintf(os.Stderr, "You are not a member of any organizations.\n")
 		os.Exit(1)
 	case 1:
-		orgID = user.Orgs[0].ID
+		selectedOrg = &user.Orgs[0]
 	default:
 		if orgName == "" {
 			fmt.Fprintf(os.Stderr, "You are a member of multiple organizations. Please select one with `dagger login ORG`:\n\n")
@@ -83,18 +83,19 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			os.Exit(1)
 		}
 		for _, org := range user.Orgs {
+			org := org
 			if org.Name == orgName {
-				orgID = org.ID
+				selectedOrg = &org
 				break
 			}
 		}
-		if orgID == "" {
+		if selectedOrg == nil {
 			fmt.Fprintf(os.Stderr, "Organization %s not found\n", orgName)
 			os.Exit(1)
 		}
 	}
 
-	if err := auth.SetOrg(orgID); err != nil {
+	if err := auth.SetCurrentOrg(selectedOrg); err != nil {
 		return err
 	}
 

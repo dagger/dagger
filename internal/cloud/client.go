@@ -40,14 +40,9 @@ func NewClient(ctx context.Context) (*Client, error) {
 	}, nil
 }
 
-type OrgResponse struct {
-	ID   string
-	Name string
-}
-
 type UserResponse struct {
-	ID   string
-	Orgs []OrgResponse
+	ID   string     `json:"id"`
+	Orgs []auth.Org `json:"orgs"`
 }
 
 func (c *Client) User(ctx context.Context) (*UserResponse, error) {
