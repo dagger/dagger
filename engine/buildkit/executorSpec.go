@@ -24,6 +24,7 @@ import (
 	"github.com/moby/buildkit/executor/oci"
 	randid "github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -135,8 +136,11 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	state.cleanups.add("close network namespace", networkNamespace.Close)
 	state.networkNamespace = networkNamespace
 
-	if err := w.runNetNSWorkers(ctx, state); err != nil {
-		return fmt.Errorf("failed to handle namespace jobs: %w", err)
+	if state.procInfo.Meta.NetMode == pb.NetMode_UNSET {
+		// only run namespace workers for default CNI mode
+		if err := w.runNetNSWorkers(ctx, state); err != nil {
+			return fmt.Errorf("failed to handle namespace jobs: %w", err)
+		}
 	}
 
 	state.resolvConfPath, err = oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, state.procInfo.Meta.NetMode)
@@ -404,11 +408,14 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			mnt := mnt
 			state.metaMount = &mnt
+
 		case mnt.Destination == strings.TrimPrefix(state.otelEndpoint, "unix://"):
 			state.otelUnixSockSrcPath = mnt.Source
+
 		case containerfs.IsSpecialMountType(mnt.Type):
 			// only keep special namespaced mounts like /proc, /sys, /dev, etc. in the actual spec
 			filteredMounts = append(filteredMounts, mnt)
+
 		default:
 			// bind, overlay, etc. mounts will be done to the rootfs now rather than by runc.
 			// This is to support read/write ops on them from the executor, such as filesync
@@ -636,8 +643,8 @@ func (w *Worker) setupOTEL(ctx context.Context, state *execState) error {
 		state.otelEndpoint = "unix://" + state.otelEndpoint
 	}
 
-	if strings.HasPrefix(state.otelEndpoint, "unix://") {
-		// setup tcp proxying of unix endpoints for better client compatibility
+	if strings.HasPrefix(state.otelEndpoint, "unix://") && state.procInfo.Meta.NetMode == pb.NetMode_UNSET {
+		// if otel endpoint is unix and we are in CNI mode, setup tcp proxying of the unix endpoint for better client compatibility
 		if state.otelUnixSockSrcPath == "" {
 			return fmt.Errorf("no mount found for otel unix socket %s", state.otelUnixSockSrcPath)
 		}
