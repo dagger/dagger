@@ -42,7 +42,25 @@ type FrontendOpts struct {
 	Verbosity int
 }
 
-type Frontend struct {
+type Frontend interface {
+	// Run starts a frontend, and runs the target function.
+	Run(ctx context.Context, opts FrontendOpts, f func(context.Context) error) error
+
+	// SetPrimary tells the frontend which span should be treated like the focal
+	// point of the command. Its output will be displayed at the end, and its
+	// children will be promoted to the "top-level" of the TUI.
+	SetPrimary(spanID trace.SpanID)
+	Background(cmd tea.ExecCommand) error
+
+	// Can consume otel spans and logs.
+	sdktrace.SpanExporter
+	sdklog.LogExporter
+
+	// DumpID is exposed for troubleshooting.
+	DumpID(*termenv.Output, *call.ID) error
+}
+
+type frontend struct {
 	FrontendOpts
 
 	// updated by Run
@@ -79,11 +97,11 @@ type Frontend struct {
 	mu sync.Mutex
 }
 
-func New() *Frontend {
+func New() Frontend {
 	profile := ColorProfile()
 	logsView := NewVterm()
 	logsOut := new(strings.Builder)
-	return &Frontend{
+	return &frontend{
 		db:                NewDB(),
 		streamingExporter: newStreamingExporter(),
 
@@ -99,7 +117,10 @@ func New() *Frontend {
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
-func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
+func (fe *frontend) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
+	fe.FrontendOpts = opts
+
+	// set global log profile
 	ctx = telemetry.WithLogProfile(ctx, fe.profile)
 
 	// redirect slog to the logs pane
@@ -136,16 +157,13 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 	return runErr
 }
 
-// SetPrimary tells the frontend which span should be treated like the focal
-// point of the command. Its output will be displayed at the end, and its
-// children will be promoted to the "top-level" of the TUI.
-func (fe *Frontend) SetPrimary(spanID trace.SpanID) {
+func (fe *frontend) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
 	fe.db.PrimarySpan = spanID
 	fe.mu.Unlock()
 }
 
-func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
+func (fe *frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
 	// NOTE: establish color cache before we start consuming stdin
 	out := NewOutput(ttyOut, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
@@ -195,7 +213,7 @@ func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.F
 
 // finalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
-func (fe *Frontend) finalRender() error {
+func (fe *frontend) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
@@ -218,7 +236,7 @@ func (fe *Frontend) finalRender() error {
 	return fe.renderPrimaryOutput()
 }
 
-func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error) {
+func (fe *frontend) renderMessages(out *termenv.Output, full bool) (bool, error) {
 	if fe.messagesView.UsedHeight() == 0 {
 		return false, nil
 	}
@@ -232,7 +250,7 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 	return true, err
 }
 
-func (fe *Frontend) renderPrimaryOutput() error {
+func (fe *frontend) renderPrimaryOutput() error {
 	logs := fe.db.PrimaryLogs[fe.db.PrimarySpan]
 	if len(logs) == 0 {
 		return nil
@@ -284,9 +302,7 @@ func findTTYs() (in *os.File, out *os.File) {
 	return
 }
 
-var _ sdktrace.SpanExporter = (*Frontend)(nil)
-
-func (fe *Frontend) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (fe *frontend) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	slog.Debug("frontend exporting", "spans", len(spans))
@@ -309,9 +325,7 @@ func (fe *Frontend) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySp
 	return fe.db.ExportSpans(ctx, spans)
 }
 
-var _ sdklog.LogExporter = (*Frontend)(nil)
-
-func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+func (fe *frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	slog.Debug("frontend exporting logs", "logs", len(logs))
@@ -324,7 +338,7 @@ func (fe *Frontend) ExportLogs(ctx context.Context, logs []*sdklog.LogData) erro
 	return fe.db.ExportLogs(ctx, logs)
 }
 
-func (fe *Frontend) Shutdown(c context.Context) error {
+func (fe *frontend) Shutdown(c context.Context) error {
 	eg, ctx := errgroup.WithContext(c)
 
 	if fe.Plain {
@@ -346,7 +360,7 @@ func (fe *Frontend) Shutdown(c context.Context) error {
 
 type eofMsg struct{}
 
-func (fe *Frontend) Close() error {
+func (fe *frontend) Close() error {
 	if fe.program != nil {
 		fe.program.Send(eofMsg{})
 	}
@@ -358,7 +372,7 @@ type backgroundMsg struct {
 	errs chan<- error
 }
 
-func (fe *Frontend) Background(cmd tea.ExecCommand) error {
+func (fe *frontend) Background(cmd tea.ExecCommand) error {
 	errs := make(chan error, 1)
 	fe.program.Send(backgroundMsg{
 		cmd:  cmd,
@@ -367,7 +381,7 @@ func (fe *Frontend) Background(cmd tea.ExecCommand) error {
 	return <-errs
 }
 
-func (fe *Frontend) Render(out *termenv.Output) error {
+func (fe *frontend) Render(out *termenv.Output) error {
 	fe.recalculateView()
 	if _, err := fe.renderMessages(out, false); err != nil {
 		return err
@@ -378,13 +392,13 @@ func (fe *Frontend) Render(out *termenv.Output) error {
 	return nil
 }
 
-func (fe *Frontend) recalculateView() {
+func (fe *frontend) recalculateView() {
 	steps := CollectSpans(fe.db, trace.TraceID{})
 	rows := CollectRows(steps)
 	fe.logsView = CollectLogsView(rows)
 }
 
-func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
+func (fe *frontend) renderProgress(out *termenv.Output) (bool, error) {
 	var renderedAny bool
 	if fe.logsView == nil {
 		return false, nil
@@ -407,7 +421,7 @@ func (fe *Frontend) renderProgress(out *termenv.Output) (bool, error) {
 	return renderedAny, nil
 }
 
-func (fe *Frontend) ShouldShow(row *TraceRow) bool {
+func (fe *frontend) ShouldShow(row *TraceRow) bool {
 	span := row.Span
 	if span.Err() != nil {
 		// show errors always
@@ -432,9 +446,7 @@ func (fe *Frontend) ShouldShow(row *TraceRow) bool {
 	return false
 }
 
-var _ tea.Model = (*Frontend)(nil)
-
-func (fe *Frontend) Init() tea.Cmd {
+func (fe *frontend) Init() tea.Cmd {
 	return tea.Batch(
 		ui.Frame(fe.fps),
 		fe.spawn,
@@ -445,7 +457,7 @@ type doneMsg struct {
 	err error
 }
 
-func (fe *Frontend) spawn() (msg tea.Msg) {
+func (fe *frontend) spawn() (msg tea.Msg) {
 	defer func() {
 		if r := recover(); r != nil {
 			fe.restore()
@@ -457,7 +469,7 @@ func (fe *Frontend) spawn() (msg tea.Msg) {
 
 type backgroundDoneMsg struct{}
 
-func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (fe *frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case doneMsg: // run finished
 		slog.Debug("run finished", "err", msg.err)
@@ -522,20 +534,20 @@ func (fe *Frontend) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (fe *Frontend) SetWindowSize(msg tea.WindowSizeMsg) {
+func (fe *frontend) SetWindowSize(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.db.SetWidth(msg.Width)
 	fe.messagesView.SetWidth(msg.Width)
 }
 
-func (fe *Frontend) render() {
+func (fe *frontend) render() {
 	fe.mu.Lock()
 	fe.view.Reset()
 	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
 	fe.mu.Unlock()
 }
 
-func (fe *Frontend) View() string {
+func (fe *frontend) View() string {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	view := fe.view.String()
@@ -551,8 +563,7 @@ func (fe *Frontend) View() string {
 	return view
 }
 
-// DumpID is exposed for troubleshooting.
-func (fe *Frontend) DumpID(out *termenv.Output, id *call.ID) error {
+func (fe *frontend) DumpID(out *termenv.Output, id *call.ID) error {
 	if id.Base() != nil {
 		if err := fe.DumpID(out, id.Base()); err != nil {
 			return err
@@ -568,7 +579,7 @@ func (fe *Frontend) DumpID(out *termenv.Output, id *call.ID) error {
 	return fe.renderCall(out, nil, id.Call(), 0, false)
 }
 
-func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
+func (fe *frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
 	if !fe.ShouldShow(row) && !fe.Debug {
 		return nil
 	}
@@ -589,7 +600,7 @@ func (fe *Frontend) renderRow(out *termenv.Output, row *TraceRow, depth int) err
 	return nil
 }
 
-func (fe *Frontend) renderStep(out *termenv.Output, span *Span, depth int) error {
+func (fe *frontend) renderStep(out *termenv.Output, span *Span, depth int) error {
 	id := span.Call
 	if id != nil {
 		if err := fe.renderCall(out, span, id, depth, false); err != nil {
@@ -611,7 +622,7 @@ func (fe *Frontend) renderStep(out *termenv.Output, span *Span, depth int) error
 	return nil
 }
 
-func (fe *Frontend) renderLogs(out *termenv.Output, span *Span, depth int) {
+func (fe *frontend) renderLogs(out *termenv.Output, span *Span, depth int) {
 	if logs, ok := fe.db.Logs[span.SpanContext().SpanID()]; ok {
 		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		if depth != -1 {
@@ -637,7 +648,7 @@ const (
 	moduleColor = termenv.ANSIMagenta
 )
 
-func (fe *Frontend) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
+func (fe *frontend) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
 	if call.Module != nil {
@@ -647,7 +658,7 @@ func (fe *Frontend) renderIDBase(out *termenv.Output, call *callpbv1.Call) error
 	return nil
 }
 
-func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call, depth int, inline bool) error {
+func (fe *frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call, depth int, inline bool) error {
 	if !inline {
 		indent(out, depth)
 	}
@@ -721,7 +732,7 @@ func (fe *Frontend) renderCall(out *termenv.Output, span *Span, id *callpbv1.Cal
 	return nil
 }
 
-func (fe *Frontend) renderVertex(out *termenv.Output, span *Span, depth int) error {
+func (fe *frontend) renderVertex(out *termenv.Output, span *Span, depth int) error {
 	indent(out, depth)
 	fe.renderStatus(out, span)
 	fmt.Fprint(out, span.Name())
@@ -732,7 +743,7 @@ func (fe *Frontend) renderVertex(out *termenv.Output, span *Span, depth int) err
 	return nil
 }
 
-func (fe *Frontend) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
+func (fe *frontend) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	switch val := lit.GetValue().(type) {
 	case *callpbv1.Literal_Bool:
 		fmt.Fprint(out, out.String(fmt.Sprintf("%v", val.Bool)).Foreground(termenv.ANSIRed))
@@ -775,7 +786,7 @@ func (fe *Frontend) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	}
 }
 
-func (fe *Frontend) renderStatus(out *termenv.Output, span *Span) {
+func (fe *frontend) renderStatus(out *termenv.Output, span *Span) {
 	var symbol string
 	var color termenv.Color
 	switch {
@@ -798,7 +809,7 @@ func (fe *Frontend) renderStatus(out *termenv.Output, span *Span) {
 	fmt.Fprintf(out, "%s ", symbol)
 }
 
-func (fe *Frontend) renderDuration(out *termenv.Output, span *Span) {
+func (fe *frontend) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(fmtDuration(span.Duration()))
 	if span.IsRunning() {
