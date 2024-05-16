@@ -232,6 +232,9 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 		case telemetry.UIEncapsulateAttr:
 			spanData.Encapsulate = attr.Value.AsBool()
 
+		case telemetry.UIEncapsulatedAttr:
+			spanData.Encapsulated = attr.Value.AsBool()
+
 		case telemetry.UIInternalAttr:
 			spanData.Internal = attr.Value.AsBool()
 
