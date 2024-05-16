@@ -108,10 +108,6 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
 	ttyIn, ttyOut := findTTYs()
-	if ttyOut == nil {
-		// Simplify logic elsewhere by just setting Plain to true.
-		fe.Plain = true
-	}
 
 	var runErr error
 	if fe.Plain || fe.Silent {

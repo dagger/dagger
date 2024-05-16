@@ -67,7 +67,7 @@ dagger call lint stdout
 		// Even though these flags are global, we only check them just before query
 		// execution because you may want to debug an error during loading or for
 		// --help.
-		if silent || !(progress == "auto" && autoTTY || progress == "tty") {
+		if silent || !(progress == "auto" && hasTTY || progress == "tty") {
 			return fmt.Errorf("running shell without the TUI is not supported")
 		}
 		if outputPath != "" {

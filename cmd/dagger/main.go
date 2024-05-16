@@ -55,7 +55,7 @@ var (
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
-	autoTTY = stdoutIsTTY || stderrIsTTY
+	hasTTY = stdoutIsTTY || stderrIsTTY
 
 	Frontend = idtui.New()
 )
@@ -237,8 +237,27 @@ func (e ExitError) Error() string {
 func main() {
 	parseGlobalFlags()
 
+	if progress == "auto" {
+		if hasTTY {
+			progress = "tty"
+		} else {
+			progress = "plain"
+		}
+	}
+	switch progress {
+	case "plain":
+		Frontend.Plain = true
+	case "tty":
+		if !hasTTY {
+			fmt.Fprintf(os.Stderr, "no tty available for progress %q\n", progress)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
+		os.Exit(1)
+	}
+
 	Frontend.Debug = debug
-	Frontend.Plain = progress == "plain"
 	Frontend.Silent = silent
 	Frontend.Verbosity = verbosity
 
