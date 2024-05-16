@@ -27,7 +27,7 @@ import (
 	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
-type Frontend struct {
+type FrontendOpts struct {
 	// Debug tells the frontend to show everything and do one big final render.
 	Debug bool
 
@@ -40,10 +40,13 @@ type Frontend struct {
 
 	// Verbosity is the level of detail to show in the TUI.
 	Verbosity int
+}
+
+type Frontend struct {
+	FrontendOpts
 
 	// updated by Run
 	program     *tea.Program
-	out         *termenv.Output
 	run         func(context.Context) error
 	runCtx      context.Context
 	interrupt   func()
@@ -52,12 +55,13 @@ type Frontend struct {
 	err         error
 
 	// updated as events are written
-	db *DB
+	db           *DB
+	eof          bool
+	backgrounded bool
+	logsView     *LogsView
+
 	// for streaming output
 	streamingExporter *streamingExporter
-	eof               bool
-	backgrounded      bool
-	logsView          *LogsView
 
 	// global logs
 	messagesView *Vterm
@@ -143,7 +147,7 @@ func (fe *Frontend) SetPrimary(spanID trace.SpanID) {
 
 func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
 	// NOTE: establish color cache before we start consuming stdin
-	fe.out = NewOutput(ttyOut, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
+	out := NewOutput(ttyOut, termenv.WithProfile(fe.profile), termenv.WithColorCache(true))
 
 	var stdin io.Reader
 	if ttyIn != nil {
@@ -168,7 +172,7 @@ func (fe *Frontend) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.F
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
 		tea.WithInput(stdin),
-		tea.WithOutput(fe.out),
+		tea.WithOutput(out),
 		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
 		// counter-productive.
 		tea.WithoutCatchPanics(),

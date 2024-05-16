@@ -237,6 +237,12 @@ func (e ExitError) Error() string {
 func main() {
 	parseGlobalFlags()
 
+	opts := idtui.FrontendOpts{
+		Debug:     debug,
+		Silent:    silent,
+		Verbosity: verbosity,
+	}
+
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"
@@ -246,7 +252,7 @@ func main() {
 	}
 	switch progress {
 	case "plain":
-		Frontend.Plain = true
+		opts.Plain = true
 	case "tty":
 		if !hasTTY {
 			fmt.Fprintf(os.Stderr, "no tty available for progress %q\n", progress)
@@ -256,10 +262,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)
 	}
-
-	Frontend.Debug = debug
-	Frontend.Silent = silent
-	Frontend.Verbosity = verbosity
+	Frontend.FrontendOpts = opts
 
 	installGlobalFlags(rootCmd.PersistentFlags())
 
