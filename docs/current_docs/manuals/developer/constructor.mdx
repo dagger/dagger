@@ -27,19 +27,17 @@ Here is an example module with a constructor:
 ```python file=./snippets/constructor/python/main.py
 ```
 
+:::info
 In the Python SDK, the [`@dagger.object_type`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type) decorator wraps [`@dataclasses.dataclass`](https://docs.python.org/3/library/dataclasses.html), which means that an `__init__()` method is automatically generated, with parameters that match the declared class attributes.
+:::
 
 The code listing above is an example of an object that has typed attributes.
-
-[Learn more about Python module constructors](./python/constructor.mdx).
 
 </TabItem>
 <TabItem value="TypeScript">
 
 ```typescript file=./snippets/constructor/typescript/index.ts
 ```
-
-[Learn more about TypeScript module constructors](./typescript/constructor.mdx).
 
 </TabItem>
 </Tabs>
@@ -57,9 +55,14 @@ Hello, Foo!
 ```
 
 :::note
-Dagger modules have only one constructor. Constructors of custom types are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
+Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
 :::
 
 :::note
-If you plan to use constructor fields in other module functions, ensure that they are declared as public. This is because Dagger stores fields using JSON marshalling and private fields are omitted during the marshalling process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
+If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
 :::
+
+Also see:
+
+- [Module constructors in Python](./python/constructor.mdx).
+- [Module constructors in TypeScript](./typescript/constructor.mdx).

@@ -353,6 +353,7 @@ module.exports = {
           "id": "manuals/developer/custom-types"
         },
         {
+          "type": "doc",
           "id": "manuals/developer/constructor"
         },
         {

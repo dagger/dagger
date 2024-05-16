@@ -7,10 +7,6 @@ title: "Module Constructor"
 
 # Module Constructor
 
-:::info
-This language-specific page should be read together with the main [module constructor documentation](../constructor.mdx).
-:::
-
 ## Inline documentation
 
 Constructor arguments are documented through their attribute documentation,
@@ -68,9 +64,13 @@ use a [factory function][factory] without arguments in
 
 ## Asynchronous constructor
 
-If a constructor argument needs an async call to set the default value, it's
+If a constructor argument needs an asynchronous call to set the default value, it's
 possible to replace the default constructor function from `__init__()` to
-a factory class method which must be named `create`:
+a factory class method named `create`, as in the following code listing:
+
+:::warning
+This factory class method must be named `create`.
+:::
 
 ```python file=./snippets/constructor/async/main.py
 ```
@@ -79,3 +79,4 @@ a factory class method which must be named `create`:
 [initvar]: https://docs.python.org/3/library/dataclasses.html#init-only-variables
 [factory]: https://docs.python.org/3/library/dataclasses.html#default-factory-functions
 [mutable]: https://docs.python.org/3/library/dataclasses.html#mutable-default-values
+[dataclass]: https://docs.python.org/3/library/dataclasses.html
