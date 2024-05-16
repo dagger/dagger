@@ -85,12 +85,12 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Bun:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"bun", "install"}).
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).
 			WithEntrypoint([]string{"bun", entrypointPath}), nil
 	case Node:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"yarn", "install"}).
+			WithExec([]string{"yarn", "--prefer-offline", "--no-progress", "--silent", "--ignore-engines", "--non-interactive", "--pure-lockfile"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -108,13 +108,18 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
-	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
+	return dag.GeneratedCode(
+		dag.Directory().WithDirectory(
+			".",
+			ctr.Directory(ModSourceDirPath),
+			DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules/**"}}),
+	).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",
 		}).
 		WithVCSIgnoredPaths([]string{
 			GenDir,
-			"node_modules/**",
+			"**/node_modules/**",
 		}), nil
 }
 
@@ -201,16 +206,18 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container, runtime
 
 	packageJSONExist := slices.Contains(moduleFiles, "package.json")
 
-	// If there's a package.json, run the tsconfig updator script.
+	// If there's a package.json, run the tsconfig updator script and install the genDir.
 	// else, copy the template config files.
 	if packageJSONExist {
-		executor := "tsx"
-
 		if runtime == Bun {
-			executor = "bun"
+			ctr = ctr.
+				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
+				WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
+		} else {
+			ctr = ctr.
+				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
+				WithExec([]string{"npm", "pkg", "set", "devDependencies[@dagger.io/dagger]=./sdk"})
 		}
-
-		ctr = ctr.WithExec([]string{executor, "/opt/module/bin/__tsconfig.updator.ts"})
 	} else {
 		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 	}
@@ -249,9 +256,9 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 
 	switch runtime {
 	case Bun:
-		return ctr.WithExec([]string{"bun", "install"}).Directory(ModSourceDirPath)
+		return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
 	case Node:
-		return ctr.WithExec([]string{"yarn", "install", "--production"}).Directory(ModSourceDirPath)
+		return ctr.WithExec([]string{"yarn", "--production", "--prefer-offline", "--no-progress"}).Directory(ModSourceDirPath)
 	default:
 		// Should never happen since we verify the runtime before calling this function.
 		return nil
