@@ -524,13 +524,15 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return fmt.Errorf("response from query: %w", err)
 			}
 
+			if fn.ReturnType.Kind == dagger.VoidKind {
+				return nil
+			}
+
 			if fc.AfterResponse != nil {
 				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
 			}
 
-			if fn.ReturnType.Kind != dagger.VoidKind {
-				cmd.Println(response)
-			}
+			cmd.Println(response)
 
 			return nil
 		},
