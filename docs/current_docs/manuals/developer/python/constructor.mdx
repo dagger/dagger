@@ -15,15 +15,17 @@ using the same annotation used on function arguments:
 ```python file=./snippets/constructor/doc/main.py
 ```
 
-The flags can be seen documented in the output of `dagger call --help`:
+The arguments can be seen documented in the output of `dagger call --help`:
 
 ```shell
-Flags:
+...
+FUNCTIONS
+  message       Return the greeting message
+
+ARGUMENTS
       --greeting string   The greeting to use (default "Hello")
       --name string       Who to greet (default "World")
-
-Function Commands:
-  message       Return the greeting message
+...
 ```
 
 ## Exclude argument in constructor
