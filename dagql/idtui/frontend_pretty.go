@@ -14,7 +14,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock/ui"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
@@ -40,6 +39,7 @@ type frontendPretty struct {
 
 	// updated as events are written
 	db           *DB
+	logs         *prettyLogs
 	eof          bool
 	backgrounded bool
 	logsView     *LogsView
@@ -64,8 +64,10 @@ func New() Frontend {
 	profile := ColorProfile()
 	logsView := NewVterm()
 	logsOut := new(strings.Builder)
+
 	return &frontendPretty{
-		db: NewDB(),
+		db:   NewDB(),
+		logs: newPrettyLogs(),
 
 		fps:          30, // sane default, fine-tune if needed
 		profile:      profile,
@@ -196,7 +198,7 @@ func (fe *frontendPretty) finalRender() error {
 		}
 	}
 
-	return fe.renderPrimaryOutput()
+	return renderPrimaryOutput(fe.db)
 }
 
 func (fe *frontendPretty) renderMessages(out *termenv.Output, full bool) (bool, error) {
@@ -210,59 +212,6 @@ func (fe *frontendPretty) renderMessages(out *termenv.Output, full bool) (bool, 
 	}
 	_, err := fmt.Fprintln(out, fe.messagesView.View())
 	return true, err
-}
-
-func (fe *frontendPretty) renderPrimaryOutput() error {
-	logs := fe.db.PrimaryLogs[fe.db.PrimarySpan]
-	if len(logs) == 0 {
-		return nil
-	}
-
-	for _, l := range logs {
-		data := l.Body().AsString()
-		var stream int
-		l.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetry.LogStreamAttr {
-				stream = int(attr.Value.AsInt64())
-				return false
-			}
-			return true
-		})
-		switch stream {
-		case 1:
-			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
-				return err
-			}
-		case 2:
-			if _, err := fmt.Fprint(os.Stderr, data); err != nil {
-				return err
-			}
-		}
-	}
-
-	trailingLn := false
-	if len(logs) > 0 {
-		trailingLn = strings.HasSuffix(logs[len(logs)-1].Body().AsString(), "\n")
-	}
-	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
-		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
-		// encourage module authors to add one of their own
-		fmt.Fprintln(os.Stdout)
-	}
-	return nil
-}
-
-func findTTYs() (in *os.File, out *os.File) {
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		in = os.Stdin
-	}
-	for _, f := range []*os.File{os.Stderr, os.Stdout} {
-		if term.IsTerminal(int(f.Fd())) {
-			out = f
-			break
-		}
-	}
-	return
 }
 
 func (fe *frontendPretty) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
@@ -286,7 +235,10 @@ func (fe *frontendPretty) ExportLogs(ctx context.Context, logs []*sdklog.LogData
 	defer fe.mu.Unlock()
 	slog.Debug("frontend exporting logs", "logs", len(logs))
 
-	return fe.db.ExportLogs(ctx, logs)
+	if err := fe.db.ExportLogs(ctx, logs); err != nil {
+		return err
+	}
+	return fe.logs.ExportLogs(ctx, logs)
 }
 
 func (fe *frontendPretty) Shutdown(ctx context.Context) error {
@@ -472,7 +424,7 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (fe *frontendPretty) SetWindowSize(msg tea.WindowSizeMsg) {
 	fe.window = msg
-	fe.db.SetWidth(msg.Width)
+	fe.logs.SetWidth(msg.Width)
 	fe.messagesView.SetWidth(msg.Width)
 }
 
@@ -559,7 +511,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 }
 
 func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) {
-	if logs, ok := fe.db.Logs[span.SpanContext().SpanID()]; ok {
+	if logs, ok := fe.logs.Logs[span.SpanContext().SpanID()]; ok {
 		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		if depth != -1 {
 			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
@@ -755,38 +707,97 @@ func (fe *frontendPretty) renderDuration(out *termenv.Output, span *Span) {
 // 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
 // )
 
-// func (fe *Frontend) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
-// 	tasks := fe.db.Tasks[span.SpanContext().SpanID()]
-// 	if len(tasks) == 0 {
-// 		return nil
-// 	}
-// 	var spaced bool
-// 	for _, t := range tasks {
-// 		var sym termenv.Style
-// 		if t.Total != 0 {
-// 			percent := int(100 * (float64(t.Current) / float64(t.Total)))
-// 			idx := (len(progChars) - 1) * percent / 100
-// 			chr := progChars[idx]
-// 			sym = out.String(chr)
-// 		} else {
-// 			// TODO: don't bother printing non-progress-bar tasks for now
-// 			// else if t.Completed != nil {
-// 			// sym = out.String(ui.IconSuccess)
-// 			// } else if t.Started != nil {
-// 			// sym = out.String(ui.DotFilled)
-// 			// }
-// 			continue
-// 		}
-// 		if t.Completed.IsZero() {
-// 			sym = sym.Foreground(termenv.ANSIYellow)
-// 		} else {
-// 			sym = sym.Foreground(termenv.ANSIGreen)
-// 		}
-// 		if !spaced {
-// 			fmt.Fprint(out, " ")
-// 			spaced = true
-// 		}
-// 		fmt.Fprint(out, sym)
-// 	}
-// 	return nil
-// }
+//	func (fe *Frontend) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
+//		tasks := fe.db.Tasks[span.SpanContext().SpanID()]
+//		if len(tasks) == 0 {
+//			return nil
+//		}
+//		var spaced bool
+//		for _, t := range tasks {
+//			var sym termenv.Style
+//			if t.Total != 0 {
+//				percent := int(100 * (float64(t.Current) / float64(t.Total)))
+//				idx := (len(progChars) - 1) * percent / 100
+//				chr := progChars[idx]
+//				sym = out.String(chr)
+//			} else {
+//				// TODO: don't bother printing non-progress-bar tasks for now
+//				// else if t.Completed != nil {
+//				// sym = out.String(ui.IconSuccess)
+//				// } else if t.Started != nil {
+//				// sym = out.String(ui.DotFilled)
+//				// }
+//				continue
+//			}
+//			if t.Completed.IsZero() {
+//				sym = sym.Foreground(termenv.ANSIYellow)
+//			} else {
+//				sym = sym.Foreground(termenv.ANSIGreen)
+//			}
+//			if !spaced {
+//				fmt.Fprint(out, " ")
+//				spaced = true
+//			}
+//			fmt.Fprint(out, sym)
+//		}
+//		return nil
+//	}
+type prettyLogs struct {
+	Logs     map[trace.SpanID]*Vterm
+	LogWidth int
+}
+
+func newPrettyLogs() *prettyLogs {
+	return &prettyLogs{
+		Logs:     make(map[trace.SpanID]*Vterm),
+		LogWidth: -1,
+	}
+}
+
+var _ sdklog.LogExporter = (*prettyLogs)(nil)
+
+func (l *prettyLogs) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+	for _, log := range logs {
+		slog.Debug("exporting log", "span", log.SpanID, "body", log.Body().AsString())
+
+		// render vterm for TUI
+		_, _ = fmt.Fprint(l.spanLogs(log.SpanID), log.Body().AsString())
+	}
+	return nil
+}
+
+func (l *prettyLogs) spanLogs(id trace.SpanID) *Vterm {
+	term, found := l.Logs[id]
+	if !found {
+		term = NewVterm()
+		if l.LogWidth > -1 {
+			term.SetWidth(l.LogWidth)
+		}
+		l.Logs[id] = term
+	}
+	return term
+}
+
+func (l *prettyLogs) SetWidth(width int) {
+	l.LogWidth = width
+	for _, vt := range l.Logs {
+		vt.SetWidth(width)
+	}
+}
+
+func (l *prettyLogs) Shutdown(ctx context.Context) error {
+	return nil
+}
+
+func findTTYs() (in *os.File, out *os.File) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		in = os.Stdin
+	}
+	for _, f := range []*os.File{os.Stderr, os.Stdout} {
+		if term.IsTerminal(int(f.Fd())) {
+			out = f
+			break
+		}
+	}
+	return
+}
