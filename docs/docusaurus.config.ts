@@ -127,21 +127,68 @@ const config: Config = {
       },
       items: [
         {
-          position: "right",
-          to: "https://dagger.io/blog",
-          label: "Blog",
+          position: "left",
+          type: "dropdown",
+          label: "Platform",
+          className: "navbar-blog-link",
+          items: [
+            {
+              label: "Dagger Engine",
+              href: "https://dagger.io/dagger-engine",
+            },
+            {
+              label: "Dagger Cloud",
+              href: "https://dagger.io/cloud",
+            },
+            {
+              label: "Integrations",
+              href: "https://dagger.io/integrations",
+            },
+            {
+              label: "Pricing",
+              href: "https://dagger.io/pricing",
+            },
+          ]
+        },
+        {
+          position: "left",
+          to: "https://daggerverse.dev/",
+          label: "Daggerverse",
           className: "navbar-blog-link",
         },
         {
-          position: "right",
-          href: "https://github.com/dagger/dagger",
-          className: "header-github-link hide-target-icon",
-          "aria-label": "GitHub repository",
+          position: "left",
+          to: "https://dagger.io/resources",
+          label: "Resources",
+          className: "navbar-blog-link",
         },
         {
-          position: "right",
-          href: "https://discord.gg/ufnyBtc8uY",
-          className: "header-discord-link",
+          position: "left",
+          type: "dropdown",
+          label: "Community",
+          className: "navbar-blog-link",
+          items: [
+            {
+              label: "Get involved",
+              href: "https://dagger.io/community",
+            },
+            {
+              label: "Dagger Love",
+              href: "https://dagger.io/dagger-love",
+            },
+          ]
+        },
+        {
+          position: "left",
+          to: "/",
+          label: "Docs",
+          className: "navbar-blog-link",
+        },
+        {
+          position: "left",
+          to: "https://dagger.io/blog",
+          label: "Blog",
+          className: "navbar-blog-link",
         },
         {
           type: "search",
