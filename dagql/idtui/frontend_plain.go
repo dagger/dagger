@@ -11,13 +11,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/muesli/termenv"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
-type streamingExporter struct {
+type frontendPlain struct {
+	FrontendOpts
+
 	spanNames sync.Map
 
 	// incr idx for spanID
@@ -34,70 +38,85 @@ type streamingExporter struct {
 	doneOnce sync.Once
 }
 
-func newStreamingExporter() *streamingExporter {
-	return &streamingExporter{
+func NewPlain() Frontend {
+	return &frontendPlain{
 		output:      NewOutput(os.Stderr),
 		done:        make(chan struct{}),
 		frameTicker: time.NewTicker(50 * time.Millisecond),
 	}
 }
 
-func (t *streamingExporter) Shutdown(ctx context.Context) error {
-	t.doneOnce.Do(func() {
-		t.frameTicker.Stop()
-		close(t.done)
+func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
+	fe.FrontendOpts = opts
+	return run(ctx)
+}
+
+func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {}
+
+func (fe *frontendPlain) Background(cmd tea.ExecCommand) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (fe *frontendPlain) DumpID(out *termenv.Output, id *call.ID) error {
+	return fmt.Errorf("not implemented")
+}
+
+func (fe *frontendPlain) Shutdown(ctx context.Context) error {
+	fe.doneOnce.Do(func() {
+		fe.frameTicker.Stop()
+		close(fe.done)
 	})
 
 	// wait all printers outputs
-	t.batchPrinterWg.Wait()
+	fe.batchPrinterWg.Wait()
 	return nil
 }
 
-func (t *streamingExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (fe *frontendPlain) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	for _, span := range spans {
-		t.spanNames.Store(span.SpanContext().SpanID(), span.Name())
+		fe.spanNames.Store(span.SpanContext().SpanID(), span.Name())
 	}
 	return nil
 }
 
-func (t *streamingExporter) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+func (fe *frontendPlain) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 	for _, log := range logs {
-		t.export(log)
+		fe.export(log)
 	}
 	return nil
 }
 
-func (t *streamingExporter) getSpanName(spanID trace.SpanID) string {
-	if name, ok := t.spanNames.Load(spanID); ok {
+func (fe *frontendPlain) getSpanName(spanID trace.SpanID) string {
+	if name, ok := fe.spanNames.Load(spanID); ok {
 		return name.(string)
 	}
 	return ""
 }
 
-func (t *streamingExporter) export(logData *sdklog.LogData) {
+func (fe *frontendPlain) export(logData *sdklog.LogData) {
 	// FIXME may add GC when printer idle
-	get, _ := t.batchPrinterGetters.LoadOrStore(logData.SpanID, sync.OnceValue(func() logPrinter {
+	get, _ := fe.batchPrinterGetters.LoadOrStore(logData.SpanID, sync.OnceValue(func() logPrinter {
 		w := &batchPrinter{
 			spanID:      logData.SpanID,
-			num:         atomic.AddInt64(&t.idx, 1),
-			getSpanName: t.getSpanName,
+			num:         atomic.AddInt64(&fe.idx, 1),
+			getSpanName: fe.getSpanName,
 		}
 
-		t.batchPrinterWg.Add(1)
+		fe.batchPrinterWg.Add(1)
 
 		go func() {
-			defer t.batchPrinterWg.Done()
+			defer fe.batchPrinterWg.Done()
 
-			<-t.done
+			<-fe.done
 
-			t.tryRender(func(out *termenv.Output) {
+			fe.tryRender(func(out *termenv.Output) {
 				w.render(out, true)
 			})
 		}()
 
 		go func() {
-			for range t.frameTicker.C {
-				t.tryRender(func(out *termenv.Output) {
+			for range fe.frameTicker.C {
+				fe.tryRender(func(out *termenv.Output) {
 					w.render(out, false)
 				})
 			}
@@ -109,11 +128,11 @@ func (t *streamingExporter) export(logData *sdklog.LogData) {
 	get.(func() logPrinter)().PrintLog(logData)
 }
 
-func (t *streamingExporter) tryRender(print func(out *termenv.Output)) {
-	t.outputMu.Lock()
-	defer t.outputMu.Unlock()
+func (fe *frontendPlain) tryRender(print func(out *termenv.Output)) {
+	fe.outputMu.Lock()
+	defer fe.outputMu.Unlock()
 
-	print(t.output)
+	print(fe.output)
 }
 
 type batchPrinter struct {
