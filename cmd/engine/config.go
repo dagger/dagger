@@ -12,7 +12,7 @@ func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 	}
 
 	if cfg.Workers.OCI.Binary == "" {
-		cfg.Workers.OCI.Binary = distconsts.EngineShimPath
+		cfg.Workers.OCI.Binary = distconsts.RuncPath
 	}
 
 	if cfg.DNS == nil {

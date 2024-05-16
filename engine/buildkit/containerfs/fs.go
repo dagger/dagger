@@ -37,7 +37,7 @@ func NewContainerFS(spec *specs.Spec, executeContainer ExecuteContainerFunc) (*C
 	// hopefully the source is never a symlink, but resolve them just in case
 	// in order to simplify later code
 	for i, m := range spec.Mounts {
-		if ok := isSpecialMountType(m.Type); ok {
+		if ok := IsSpecialMountType(m.Type); ok {
 			continue
 		}
 		var err error
@@ -516,7 +516,7 @@ func (ctrFS *ContainerFS) resolvePath(path string, resolveBase bool, linkCount i
 			}
 		}
 
-		if ok := isSpecialMountType(resolvedMount.Type); ok {
+		if ok := IsSpecialMountType(resolvedMount.Type); ok {
 			// can't resolve any paths under special mounts
 			return filepath.Join(curPath, rest), "", nil
 		}
@@ -589,7 +589,7 @@ func ReadHostCustomCADir(path string) (
 	return certsToFileName, symlinks, nil
 }
 
-func isSpecialMountType(mntType string) bool {
+func IsSpecialMountType(mntType string) bool {
 	switch mntType {
 	case "proc", "sysfs", "tmpfs", "devpts", "shm", "mqueue", "cgroup", "cgroup2":
 		return true

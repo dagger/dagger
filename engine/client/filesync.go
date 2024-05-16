@@ -295,6 +295,10 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	}
 }
 
+// TODO: idtools.MkdirAllAndChown does this
+// TODO: idtools.MkdirAllAndChown does this
+// TODO: idtools.MkdirAllAndChown does this
+// TODO: idtools.MkdirAllAndChown does this
 func mkdirAllWithOwner(path string, perm os.FileMode, uid, gid uint32) error {
 	alreadyUID := uid == uint32(os.Getuid())
 	alreadyGID := gid == uint32(os.Getgid())

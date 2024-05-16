@@ -20,9 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/console"
-	"github.com/containerd/containerd/mount"
 	runc "github.com/containerd/go-runc"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -33,7 +31,6 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/network"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/sys/signal"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -101,108 +98,61 @@ func (md ExecutionMetadata) AsConstraintsOpt() (llb.ConstraintsOpt, error) {
 func (w *Worker) Run(
 	ctx context.Context,
 	id string,
-	root executor.Mount,
+	rootMount executor.Mount,
 	mounts []executor.Mount,
-	process executor.ProcessInfo,
+	procInfo executor.ProcessInfo,
 	started chan<- struct{},
 ) (_ resourcestypes.Recorder, rerr error) {
-	if err := w.validateEntitlements(process.Meta); err != nil {
-		return nil, err
-	}
-
-	if process.Meta.NetMode == pb.NetMode_HOST {
-		bklog.G(ctx).Info("enabling HostNetworking")
-	}
-
-	provider, ok := w.networkProviders[process.Meta.NetMode]
-	if !ok {
-		return nil, fmt.Errorf("unknown network mode %s", process.Meta.NetMode)
-	}
-	networkNamespace, err := provider.New(ctx, process.Meta.Hostname)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := networkNamespace.Close(); err != nil {
-			bklog.G(ctx).Errorf("failed to close network namespace: %v", err)
-		}
-	}()
-
-	mountable, err := root.Src.Mount(ctx, false)
-	if err != nil {
-		return nil, err
-	}
-
-	rootMount, release, err := mountable.Mount()
-	if err != nil {
-		return nil, err
-	}
-	if release != nil {
-		defer release()
-	}
-
 	if id == "" {
 		id = randid.NewID()
 	}
 
-	identity := idtools.Identity{}
-	if w.idmap != nil {
-		identity = w.idmap.RootPair()
-	}
-
-	rootFSPath, err := os.MkdirTemp("", "rootfs")
-	if err != nil {
+	if err := w.validateEntitlements(procInfo.Meta); err != nil {
 		return nil, err
 	}
-	if err := idtools.MkdirAllAndChown(rootFSPath, 0o700, identity); err != nil {
-		return nil, err
-	}
-	if err := mount.All(rootMount, rootFSPath); err != nil {
-		return nil, err
-	}
-	defer mount.Unmount(rootFSPath, 0)
 
-	defer executor.MountStubsCleaner(ctx, rootFSPath, mounts, process.Meta.RemoveMountStubsRecursive)()
-
-	setupCACerts := true
-	return nil, w.run(
-		ctx,
-		id,
-		root,
-		mounts,
-		rootFSPath,
-		process,
-		networkNamespace,
-		started,
-		setupCACerts,
+	state := newExecState(id, &procInfo, rootMount, mounts)
+	return nil, w.run(ctx, state, started,
+		w.setupNetwork,
+		w.injectDumbInit,
+		w.generateBaseSpec,
+		w.filterEnvs,
+		w.setupRootfs,
+		w.setUserGroup,
+		w.setExitCodePath,
+		w.setupStdio,
+		w.setupOTEL,
+		w.setupSecretScrubbing,
+		w.setProxyEnvs,
+		w.enableGPU,
+		w.createCWD,
+		w.setupNestedClient,
+		w.installCACerts,
 	)
 }
 
 func (w *Worker) run(
 	ctx context.Context,
-	id string,
-	root executor.Mount,
-	mounts []executor.Mount,
-	rootFSPath string,
-	process executor.ProcessInfo,
-	networkNamespace network.Namespace,
+	state *execState,
 	started chan<- struct{},
-	installCACerts bool,
+	setupFuncs ...executorSetupFunc,
 ) (rerr error) {
 	startedOnce := sync.Once{}
-	runState := &runningState{
-		done:   make(chan struct{}),
-		nsJobs: make(chan func()),
-	}
 	w.mu.Lock()
-	w.running[id] = runState
+	w.running[state.id] = state
 	w.mu.Unlock()
 	defer func() {
 		w.mu.Lock()
-		delete(w.running, id)
+		delete(w.running, state.id)
 		w.mu.Unlock()
-		runState.doneErr = rerr
-		close(runState.done)
+
+		close(state.done)
+		if err := state.cleanups.run(); err != nil {
+			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
+			rerr = errors.Join(rerr, err)
+		}
+		state.doneErr = rerr
+
 		if started != nil {
 			startedOnce.Do(func() {
 				close(started)
@@ -210,7 +160,13 @@ func (w *Worker) run(
 		}
 	}()
 
-	bundle := filepath.Join(w.executorRoot, id)
+	for _, f := range setupFuncs {
+		if err := f(ctx, state); err != nil {
+			return err
+		}
+	}
+
+	bundle := filepath.Join(w.executorRoot, state.id)
 	if err := os.Mkdir(bundle, 0o711); err != nil {
 		return err
 	}
@@ -223,60 +179,18 @@ func (w *Worker) run(
 	}
 	defer f.Close()
 
-	cleanup := &cleanups{}
-	defer func() {
-		if err := cleanup.run(); err != nil {
-			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
-			rerr = errors.Join(rerr, err)
-		}
-	}()
-
-	spec := &spec{
-		cleanups:         cleanup,
-		runState:         runState,
-		procInfo:         &process,
-		rootfsPath:       rootFSPath,
-		rootMount:        root,
-		mounts:           mounts,
-		id:               id,
-		networkNamespace: networkNamespace,
-		installCACerts:   installCACerts,
-	}
-	for _, f := range []executorSetupFunc{
-		w.setUserGroup,
-		w.setupNetwork,
-		w.generateBaseSpec,
-		w.setupNamespaces,
-		w.filterEnvs,
-		w.filterMetaMount,
-		w.configureRootfs,
-		w.setExitCodePath,
-		w.setupStdio,
-		w.setupOTEL,
-		w.setupSecretScrubbing,
-		w.setProxyEnvs,
-		w.enableGPU,
-		w.createCWD,
-		w.installCACerts,
-		w.setupNestedClient,
-	} {
-		if err := f(ctx, spec); err != nil {
-			return err
-		}
-	}
-
-	if err := json.NewEncoder(f).Encode(spec); err != nil {
+	if err := json.NewEncoder(f).Encode(state.spec); err != nil {
 		return fmt.Errorf("failed to encode spec: %w", err)
 	}
 	f.Close()
 
-	bklog.G(ctx).Debugf("> creating %s %v", id, spec.Process.Args)
+	bklog.G(ctx).Debugf("> creating %s %v", state.id, state.spec.Process.Args)
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Debugf("> container done %s %v", id, spec.Process.Args)
+		bklog.G(ctx).WithError(rerr).Debugf("> container done %s %v", state.id, state.spec.Process.Args)
 	}()
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
-	killer := newRunProcKiller(w.runc, id)
+	killer := newRunProcKiller(w.runc, state.id)
 	startedCallback := func() {
 		startedOnce.Do(func() {
 			trace.SpanFromContext(ctx).AddEvent("Container started")
@@ -286,20 +200,20 @@ func (w *Worker) run(
 		})
 	}
 	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
-		_, err := w.runc.Run(ctx, id, bundle, &runc.CreateOpts{
+		_, err := w.runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
 			Started:   started,
 			IO:        io,
 			ExtraArgs: []string{"--keep"},
 		})
 		return err
 	}
-	err = exitError(ctx, spec.exitCodePath, w.callWithIO(ctx, process, startedCallback, killer, runcCall))
+	err = exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall))
 	if err != nil {
-		w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
+		w.runc.Delete(context.TODO(), state.id, &runc.DeleteOpts{})
 		return err
 	}
 
-	return w.runc.Delete(context.TODO(), id, &runc.DeleteOpts{})
+	return w.runc.Delete(context.TODO(), state.id, &runc.DeleteOpts{})
 }
 
 // Namespaced is something that has Linux namespaces set up.
@@ -345,27 +259,23 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	}
 	cleanup.add("close netns", netNS.Close)
 
-	var spec specs.Spec
-	if err := netNS.Set(&spec); err != nil {
-		return nil, fmt.Errorf("failed to set network namespace: %w", err)
-	}
-
-	runState := &runningState{
-		done:       make(chan struct{}),
-		namespaces: spec.Linux.Namespaces,
-		nsJobs:     make(chan func()),
+	state := &execState{
+		done:             make(chan struct{}),
+		networkNamespace: netNS,
+		netNSJobs:        make(chan func()),
+		cleanups:         cleanup,
 	}
 	cleanup.addNoErr("mark run state done", func() {
-		close(runState.done)
+		close(state.done)
 	})
 
-	if err := w.runNamespaceWorkers(ctx, runState, cleanup); err != nil {
+	if err := w.runNetNSWorkers(ctx, state); err != nil {
 		return nil, fmt.Errorf("failed to handle namespace jobs: %w", err)
 	}
 
 	id := randid.NewID()
 	w.mu.Lock()
-	w.running[id] = runState
+	w.running[id] = state
 	w.mu.Unlock()
 	cleanup.addNoErr("delete run state", func() {
 		w.mu.Lock()
@@ -387,50 +297,39 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 	// first verify the container is running, if we get an error assume the container
 	// is in the process of being created and check again every 100ms or until
 	// context is canceled.
-	var state *runc.Container
+	var runcState *runc.Container
 	for {
 		w.mu.RLock()
-		runState, ok := w.running[id]
+		execState, ok := w.running[id]
 		w.mu.RUnlock()
 		if !ok {
 			return fmt.Errorf("container %s not found", id)
 		}
 
-		state, _ = w.runc.State(ctx, id)
-		if state != nil && state.Status == "running" {
+		runcState, _ = w.runc.State(ctx, id)
+		if runcState != nil && runcState.Status == "running" {
 			break
 		}
 		select {
 		case <-ctx.Done():
 			return context.Cause(ctx)
-		case <-runState.done:
-			if runState.doneErr == nil {
+		case <-execState.done:
+			if execState.doneErr == nil {
 				return fmt.Errorf("container %s has stopped", id)
 			}
-			return fmt.Errorf("container %s has exited with error: %w", id, runState.doneErr)
+			return fmt.Errorf("container %s has exited with error: %w", id, execState.doneErr)
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 
-	spec := &spec{
-		Spec:     &specs.Spec{},
-		cleanups: &cleanups{},
-		procInfo: &process,
-		id:       id,
-	}
-	defer func() {
-		if err := spec.cleanups.run(); err != nil {
-			bklog.G(ctx).Errorf("failed to cleanup spec: %v", err)
-		}
-	}()
-
 	// load default process spec (for Env, Cwd etc) from bundle
-	f, err := os.Open(filepath.Join(state.Bundle, "config.json"))
+	spec := &specs.Spec{}
+	f, err := os.Open(filepath.Join(runcState.Bundle, "config.json"))
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	if err := json.NewDecoder(f).Decode(spec.Spec); err != nil {
+	if err := json.NewDecoder(f).Decode(spec); err != nil {
 		return err
 	}
 
@@ -445,7 +344,7 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 	}
 
 	if process.Meta.User != "" {
-		uid, gid, sgids, err := oci.GetUser(state.Rootfs, process.Meta.User)
+		uid, gid, sgids, err := oci.GetUser(runcState.Rootfs, process.Meta.User)
 		if err != nil {
 			return err
 		}
@@ -467,7 +366,7 @@ func (w *Worker) exec(ctx context.Context, id string, specsProcess *specs.Proces
 	}
 	defer killer.Cleanup()
 
-	return w.callWithIO(ctx, process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+	return w.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
 		return w.runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
 			Started: started,
 			IO:      io,
@@ -807,7 +706,7 @@ func handleSignals(ctx context.Context, runcProcess *procHandle, signals <-chan 
 
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error
 
-func (w *Worker) callWithIO(ctx context.Context, process executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
+func (w *Worker) callWithIO(ctx context.Context, process *executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
 	runcProcess, ctx := runcProcessHandle(ctx, killer)
 	defer runcProcess.Release()
 

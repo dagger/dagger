@@ -51,7 +51,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 			)
 
 			frontend := getFrontend(port)
-			listener, err := buildkit.RunInNamespace(ctx, d.bk, d.ns, func() (net.Listener, error) {
+			listener, err := buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
 				return net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", frontend))
 			})
 			if err != nil {

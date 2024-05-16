@@ -196,7 +196,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		WithFile("/usr/bin/dial-stdio", build.dialstdioBinary()).
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
 		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
-		WithFile("/usr/local/bin/runc", build.runcBin(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
+		WithFile(consts.RuncPath, build.runcBin(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
+		WithFile(consts.DumbInitPath, build.dumbInit(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
 		WithDirectory("/usr/local/bin", build.qemuBins()).
 		WithDirectory("/", build.cniPlugins()).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
@@ -351,6 +352,16 @@ func (build *Builder) cniPlugins() *dagger.Directory {
 	}
 
 	return pluginDir
+}
+
+func (build *Builder) dumbInit() *dagger.File {
+	// dumb init is static, so we can use it on any base image
+	return dag.Container().From(consts.AlpineImage).
+		WithExec([]string{"apk", "add", "build-base", "bash"}).
+		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
+		WithWorkdir("/src").
+		WithExec([]string{"make"}).
+		File("dumb-init")
 }
 
 func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
