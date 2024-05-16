@@ -56,10 +56,6 @@ func (span *Span) IsRunning() bool {
 	return inner.EndTime().Before(inner.StartTime())
 }
 
-func (span *Span) Logs() *Vterm {
-	return span.db.Logs[span.SpanContext().SpanID()]
-}
-
 func (span *Span) Name() string {
 	return span.ReadOnlySpan.Name()
 }
