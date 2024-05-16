@@ -12,22 +12,7 @@ import TabItem from "@theme/TabItem";
 
 You're now ready to dive into Dagger and see how Dagger Functions work!
 
-Here's a graphical representation of the pipeline you just ran:
-
-```mermaid
-graph LR
-    subgraph module["Pipeline stages"]
-        direction LR
-        FnA1["build-env"]
-        FnA2["build"]
-        FnA3["test"]
-        FnA4["publish"]
-    end
-    FnA1 --> FnA3
-    FnA1 --> FnA2 --> FnA4
-```
-
-The `publish` stage depends on the `test` and `build` stages, which in turn depend on the `build-env` stage. Dagger represents these stages and dependencies in a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph), which it then runs concurrently to maximize pipeline speed and accuracy.
+In the example pipeline you just ran, the `publish` stage depends on the `test` and `build` stages, which in turn depend on the `build-env` stage. Dagger represents these stages and dependencies in a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph), which it then runs concurrently to maximize pipeline speed and accuracy.
 
 Let's start with the result - publishing a container image - and work our way back through through the pipeline stages. Begin by calling the corresponding Dagger Function with the Dagger CLI:
 
