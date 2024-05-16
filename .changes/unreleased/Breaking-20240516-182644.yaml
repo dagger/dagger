@@ -1,0 +1,6 @@
+kind: Breaking
+body: "engine: Remove `--oci-max-parallelism`"
+time: 2024-05-16T18:26:44.143973+01:00
+custom:
+  Author: gerhard
+  PR: "7395"

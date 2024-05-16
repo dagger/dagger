@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"runtime"
 	"testing"
 
 	"github.com/moby/buildkit/cmd/buildkitd/config"
@@ -28,20 +27,6 @@ func TestParallelismFlag(t *testing.T) {
 		err := app.Run([]string{"buildkitd"})
 		require.NoError(t, err)
 		require.Equal(t, 0, cfg.Workers.OCI.MaxParallelism)
-	})
-	t.Run("int", func(t *testing.T) {
-		err := app.Run([]string{"buildkitd", "--oci-max-parallelism", "5"})
-		require.NoError(t, err)
-		require.Equal(t, 5, cfg.Workers.OCI.MaxParallelism)
-	})
-	t.Run("num-cpu", func(t *testing.T) {
-		err := app.Run([]string{"buildkitd", "--oci-max-parallelism", "num-cpu"})
-		require.NoError(t, err)
-		require.Equal(t, runtime.NumCPU(), cfg.Workers.OCI.MaxParallelism)
-	})
-	t.Run("invalid", func(t *testing.T) {
-		err := app.Run([]string{"buildkitd", "--oci-max-parallelism", "foo"})
-		require.Error(t, err)
 	})
 }
 
