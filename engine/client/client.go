@@ -150,13 +150,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		c.httpClient = &http.Client{
 			Transport: &http.Transport{
-				DialContext: c.DialContext,
-				// TODO: is disabling keepalives in this code path necessary?
-				// TODO: is disabling keepalives in this code path necessary?
-				// TODO: is disabling keepalives in this code path necessary?
-				// TODO: is disabling keepalives in this code path necessary?
-				// TODO: is disabling keepalives in this code path necessary?
-				// TODO: is disabling keepalives in this code path necessary?
+				DialContext:       c.DialContext,
 				DisableKeepAlives: true,
 			},
 		}
@@ -617,13 +611,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 	isNestedSession := c.nestedSessionPort != 0
 	if isNestedSession {
 		conn, err = (&net.Dialer{
-			Cancel: ctx.Done(),
-			// TODO: is disabling keepalives in this code path necessary?
-			// TODO: is disabling keepalives in this code path necessary?
-			// TODO: is disabling keepalives in this code path necessary?
-			// TODO: is disabling keepalives in this code path necessary?
-			// TODO: is disabling keepalives in this code path necessary?
-			// TODO: is disabling keepalives in this code path necessary?
+			Cancel:    ctx.Done(),
 			KeepAlive: -1, // disable for now
 		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
 	} else {

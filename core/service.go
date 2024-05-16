@@ -578,7 +578,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	checkPorts := []Port{}
-	var descs []string
+	descs := make([]string, 0, len(svc.HostPorts))
 	for _, p := range svc.HostPorts {
 		desc := fmt.Sprintf("tunnel %s %d -> %d", p.Protocol, p.FrontendOrBackendPort(), p.Backend)
 		descs = append(descs, desc)
