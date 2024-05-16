@@ -96,12 +96,14 @@ func New() *Frontend {
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
+	ctx = telemetry.WithLogProfile(ctx, fe.profile)
+
 	// redirect slog to the logs pane
 	level := slog.LevelInfo
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
-	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, level))
+	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, fe.profile, level))
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
