@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -49,6 +48,9 @@ func (cli *CloudCLI) Client(ctx context.Context) (*cloud.Client, error) {
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
+	outW := cmd.OutOrStdout()
+	errW := cmd.ErrOrStderr()
+
 	var orgName string
 	if len(args) > 0 {
 		orgName = args[0]
@@ -70,17 +72,17 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
-		fmt.Fprintf(os.Stderr, "You are not a member of any organizations.\n")
-		os.Exit(1)
+		fmt.Fprintln(errW, "You are not a member of any organizations.")
+		return Fail
 	case 1:
 		selectedOrg = &user.Orgs[0]
 	default:
 		if orgName == "" {
-			fmt.Fprintf(os.Stderr, "You are a member of multiple organizations. Please select one with `dagger login ORG`:\n\n")
+			fmt.Fprintf(errW, "You are a member of multiple organizations. Please select one with `dagger login ORG`:\n\n")
 			for _, org := range user.Orgs {
-				fmt.Fprintf(os.Stderr, "- %s\n", org.Name)
+				fmt.Fprintf(errW, "- %s\n", org.Name)
 			}
-			os.Exit(1)
+			return Fail
 		}
 		for _, org := range user.Orgs {
 			org := org
@@ -90,8 +92,8 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if selectedOrg == nil {
-			fmt.Fprintf(os.Stderr, "Organization %s not found\n", orgName)
-			os.Exit(1)
+			fmt.Fprintln(errW, "Organization", orgName, "not found.")
+			return Fail
 		}
 	}
 
@@ -99,7 +101,8 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "Success.\n")
+	fmt.Fprintln(outW, "Success.")
+
 	return nil
 }
 

@@ -103,8 +103,9 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "dagger",
-	Short: "The Dagger CLI provides a command-line interface to Dagger.",
+	Use:           "dagger",
+	Short:         "The Dagger CLI provides a command-line interface to Dagger.",
+	SilenceErrors: true, // handled in func main() instead
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
@@ -214,6 +215,23 @@ func Resource() *resource.Resource {
 	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
 }
 
+// ExitError is an error that indicates a command should exit with a specific
+// status code, without printing an error message, assuming a human readable
+// message has been printed already.
+//
+// It is basically a shortcut for `os.Exit` while giving the TUI a chance to
+// exit gracefully and flush output.
+type ExitError struct {
+	Code int
+}
+
+var Fail = ExitError{Code: 1}
+
+func (e ExitError) Error() string {
+	// Not actually printed anywhere.
+	return fmt.Sprintf("exit code %d", e.Code)
+}
+
 func main() {
 	parseGlobalFlags()
 
@@ -255,7 +273,13 @@ func main() {
 
 		return rootCmd.ExecuteContext(ctx)
 	}); err != nil {
-		os.Exit(1)
+		var exit ExitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.Code)
+		} else {
+			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)
+			os.Exit(1)
+		}
 	}
 }
 

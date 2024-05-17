@@ -49,7 +49,7 @@ dagger run python main.py
 `,
 	),
 	GroupID:      execGroup.ID,
-	Run:          Run,
+	RunE:         Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 }
@@ -71,21 +71,19 @@ func init() {
 	runCmd.Flags().BoolVar(&runFocus, "focus", false, "Only show output for focused commands.")
 }
 
-func Run(cmd *cobra.Command, args []string) {
+func Run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	err := run(ctx, args)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(os.Stderr, "run canceled")
-			os.Exit(2)
-			return
+			return ExitError{Code: 2}
 		}
-
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-		return
+		return err
 	}
+
+	return nil
 }
 
 func run(ctx context.Context, args []string) error {
