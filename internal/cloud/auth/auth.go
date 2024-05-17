@@ -53,7 +53,7 @@ func Login(ctx context.Context) error {
 		return err
 	}
 
-	return saveCredentials(token)
+	return saveToken(token)
 }
 
 // Logout deletes the client credentials
@@ -66,7 +66,7 @@ func Logout() error {
 }
 
 func TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
-	token, err := loadCredentials()
+	token, err := Token(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +75,44 @@ func TokenSource(ctx context.Context) (oauth2.TokenSource, error) {
 }
 
 func Token(ctx context.Context) (*oauth2.Token, error) {
-	tokenSource, err := TokenSource(ctx)
+	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, err
 	}
-	return tokenSource.Token()
+	token := &oauth2.Token{}
+	if err := json.Unmarshal(data, token); err != nil {
+		return nil, err
+	}
+	// Check if the token is still valid
+	if token.Valid() {
+		return token, nil
+	}
+
+	// Refresh
+	token, err = authConfig.TokenSource(ctx, token).Token()
+	if err != nil {
+		return nil, err
+	}
+	if err := saveToken(token); err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
+func saveToken(token *oauth2.Token) error {
+	data, err := json.Marshal(token)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(credentialsFile), 0o755); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(credentialsFile, data, 0o600); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Org struct {
@@ -110,34 +143,6 @@ func SetCurrentOrg(org *Org) error {
 	}
 
 	if err := os.WriteFile(orgFile, data, 0o600); err != nil {
-		return err
-	}
-	return nil
-}
-
-func loadCredentials() (*oauth2.Token, error) {
-	data, err := os.ReadFile(credentialsFile)
-	if err != nil {
-		return nil, err
-	}
-	token := &oauth2.Token{}
-	if err := json.Unmarshal(data, token); err != nil {
-		return nil, err
-	}
-	return token, nil
-}
-
-func saveCredentials(token *oauth2.Token) error {
-	data, err := json.Marshal(token)
-	if err != nil {
-		return err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(credentialsFile), 0o755); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(credentialsFile, data, 0o600); err != nil {
 		return err
 	}
 	return nil
