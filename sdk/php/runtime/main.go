@@ -8,10 +8,11 @@ import (
 
 const (
 	DefaultImage          = "php:8.3-cli-alpine"
+	// TODO: figure out issue with Directory.Diff() "/" != "/src"
 	ModSourceDirPath      = "/"
-	RuntimeExecutablePath = "/runtime"
+	RuntimeExecutablePath = "/"
 	GenDir                = "sdk"
-	GenPath               = "src/dagger/CodeGen/CodeGen.php"
+	GenPath               = "../generated"
 	SchemaPath            = "/schema.json"
 	LockFilePath          = "requirements.lock"
 )
@@ -27,6 +28,12 @@ func New(
 	// +optional
 	sourceDir *Directory,
 ) *PhpSdk {
+	if sourceDir == nil {
+		sourceDir = dag.
+			Directory().
+			WithNewFile("index.php", "<?php\n echo 'hi';")
+	}
+	
 	return &PhpSdk{
 		SourceDir:  sourceDir,
 
@@ -46,11 +53,14 @@ func New(
 
 func (sdk *PhpSdk) Codegen() (*GeneratedCode, error) {
 
-	ctr := sdk.Container
-
-
-	ctr = ctr.WithExec([]string{"mkdir", "/src"}).
-		WithExec([]string{"echo", "<?php\n echo 'hi';", ">/src/index.php"})
+	/**
+	 * returns the container with a directory mounted at the given path
+	 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Container.WithMountedDirectory
+	 */ 
+	ctr := sdk.Container.WithMountedDirectory(ModSourceDirPath, sdk.SourceDir)
+	//		WithMountedDirectory(RuntimeExecutablePath, dag.CurrentModule().Source()).
+	//	WithMountedDirectory(GenDir, dag.CurrentModule().Source().Directory(GenPath))
+	
 
 	// ctr = ctr.WithMountedDirectory("/codegen", sdk.SourceDir.Directory("src")).
 	//	WithMountedFile("/")
