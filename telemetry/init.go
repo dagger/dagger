@@ -347,7 +347,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 
 	// Log to slog.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		slog.Error("OpenTelemetry error", "error", err)
+		slog.Error("failed to emit telemetry", "error", err)
 	}))
 
 	if cfg.Resource == nil {
