@@ -302,15 +302,15 @@ module.exports = {
       "items": [
         {
           "type": "doc",
-          "id": "manuals/developer/overview/modules-vs-functions"
+          "id": "manuals/developer/modules-vs-functions"
         },
         {
           "type": "doc",
-          "id": "manuals/developer/overview/architecture"
+          "id": "manuals/developer/architecture"
         },
         {
           "type": "doc",
-          "id": "manuals/developer/overview/execution-environment"
+          "id": "manuals/developer/execution-environment"
         },
         {
           "type": "doc",
@@ -331,6 +331,10 @@ module.exports = {
         {
           "type": "doc",
           "id": "manuals/developer/chaining"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/custom-types"
         },
         {
           "type": "doc",
@@ -363,10 +367,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/custom-types"
             },
             {
               "type": "doc",
@@ -410,10 +410,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/attribute-functions"
-            },
-              {
-              "type": "doc",
-              "id": "manuals/developer/python/custom-types"
             },
             {
               "type": "doc",
@@ -461,10 +457,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/custom-types"
             },
             {
               "type": "doc",

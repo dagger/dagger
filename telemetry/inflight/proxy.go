@@ -47,7 +47,8 @@ type ProxyTracer struct {
 
 func (t ProxyTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
-	return ctx, proxySpan{sp: span, onUpdate: t.onUpdate}
+	span = proxySpan{sp: span, onUpdate: t.onUpdate}
+	return trace.ContextWithSpan(ctx, span), span
 }
 
 type proxySpan struct {

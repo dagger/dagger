@@ -18,15 +18,15 @@ permissions:
 
 jobs:
   lint:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      mage-targets: sdk:java:lint
+      function: sdk java lint
       timeout: 10
 
   test:
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      mage-targets: sdk:java:test
+      function: sdk java test
       timeout: 10

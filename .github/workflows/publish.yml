@@ -20,7 +20,7 @@ jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
     # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
-    runs-on: dagger-v0-11-2-16c-nvme
+    runs-on: dagger-v0-11-4-16c-nvme
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -29,12 +29,13 @@ jobs:
           cache-dependency-path: "ci/go.sum"
       - name: "Publish Engine & CLI"
         run: |
+          cd ci/mage
           if [ $GITHUB_REF_NAME == 'main' ]; then
             # this is a push to the main branch, publish to the commit we're at
-            ./hack/make dagger:publish ${{ github.sha }}
+            go run main.go -w ../.. dagger:publish ${{ github.sha }}
           else
             # this is a tag push, publish to that tag
-            ./hack/make dagger:publish ${{ github.ref_name }}
+            go run main.go -w ../.. dagger:publish ${{ github.ref_name }}
           fi
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
@@ -80,10 +81,10 @@ jobs:
     needs: publish
     # only run this on push events, not in PRs (since we only publish images during pushes)
     if: github.event_name == 'push' && github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_hack_make.yml
+    uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      mage-targets: engine:scan
+      function: engine scan
 
   test-provision-macos:
     name: "Test SDK Provision / macos"

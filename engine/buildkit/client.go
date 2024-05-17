@@ -41,7 +41,6 @@ import (
 )
 
 const (
-	FocusPrefix    = "[focus] "
 	InternalPrefix = "[internal] "
 
 	DaggerWorkerJobKey = "dagger.worker"
@@ -734,6 +733,7 @@ func withOutgoingContext(ctx context.Context) context.Context {
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
+	ctx = buildkitTelemetryContext(ctx)
 	return ctx
 }
 

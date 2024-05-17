@@ -470,4 +470,27 @@ describe("Invoke typescript function", function () {
       { content: "HELLO UNIVERSE" },
     ])
   })
+
+  it("Should correctly handle list of returned object", async function () {
+    const files = await listFiles(`${rootDirectory}/list`)
+
+    // Load function
+    await load(files)
+
+    const scanResult = scan(files)
+
+    const input = {
+      parentName: "List",
+      fnName: "create",
+      parentArgs: {},
+      fnArgs: {
+        n: [-1, 2, 3],
+      },
+    }
+
+    const resultList = await invoke(scanResult, input)
+
+    assert.equal(resultList.length, 3)
+    assert.deepEqual(resultList, [{ value: -1 }, { value: 2 }, { value: 3 }])
+  })
 })

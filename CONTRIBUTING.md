@@ -6,6 +6,17 @@ You can ask questions along the way, we're always happy to help you with your co
 the earlier you should talk to maintainers to make sure you're taking the right approach and are not wasting your effort
 on something that will not get merged.
 
+## Building/Running/Testing
+
+For more detailed instructions on building, running and testing dagger locally,
+see the dagger [ci module](https://github.com/dagger/dagger/tree/main/ci).
+
+Working on dagger requires dagger to bootstrap it - you can install dagger
+using the instructions at [https://docs.dagger.io/install](https://docs.dagger.io/install).
+Because we dogfood all of our tooling ourselves, we recommend using the *most
+recent* version of dagger to build (you can find the exact version used in our
+ci by looking in `go.mod`).
+
 ## GitHub Workflow
 
 The recommended workflow is to fork the repository and open pull requests from your fork.
@@ -201,78 +212,6 @@ If a vulnerability is reported in the Go stdlib, we'll want to upgrade the versi
 Otherwise, you'll want to check if the binary in question has a newer version with the vulnerability gone. The versions of these binaries are also controlled in `ci/consts/versions.go`.
 
 If there isn't a newer version to upgrade to, we'll be in a tougher spot and may need some combination of upgrading to a non-released commit, sending patches upstream or (as a worst-case fallback) patching it ourselves. Reach out to the Dagger team on Github or Discord if you're unsure how to best proceed.
-
-## FAQ
-
-### How to run a development engine?
-
-To automatically build and start a development engine (and stop any previously
-running one):
-
-```shell
-./hack/dev
-```
-
-The above will build the CLI and the engine, and provide configuration details
-to connect to the engine:
-
-```shell
-export _EXPERIMENTAL_DAGGER_CLI_BIN=bin/dagger
-export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
-```
-
-To run the dev CLI:
-
-```shell
-> ./bin/dagger version
-dagger devel () linux/amd64
-```
-
-### How to run tests locally?
-
-To run all go tests against an engine built from local code (with some parallelism):
-
-```shell
-./hack/dev go test -parallel 4 -v -count=1 ./...
-```
-
-To run one go test against an engine built from local code:
-
-```shell
-./hack/dev go test -v -count=1 -run TestExtensionMount $(pwd)/core/integration/
-```
-
-:::tip
-When running core integration tests don't specify an individual file; always run with the full core/integration/ package or you will get errors (due to use of an init func in suite_test.go).
-:::
-
-### How to run linters locally?
-
-To run all linters:
-
-```shell
-./hack/make lint
-```
-
-To list available linters:
-
-```shell
-> ./hack/make -l | grep lint
-  docs:lint               lints documentation files
-  engine:lint             lints the engine
-  lint                    runs all linters
-  sdk:all:lint            runs all SDK linters
-  sdk:elixir:lint         lints the Elixir SDK
-  sdk:go:lint             lints the Go SDK
-  sdk:java:lint           lints the Java SDK
-  sdk:typescript:lint     lints the TypeScript SDK
-  sdk:python:lint         lints the Python SDK
-  sdk:rust:lint           lints the Rust SDK
-```
-
-:::tip
-The `docs:lint` is misleading as it only lints the Markdown in documentation (`.md`). Go snippets in documentation are linted in `engine:lint` while the others are linted in `sdk:<name>:lint`.
-:::
 
 ### How to test SDK changes locally?
 

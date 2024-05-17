@@ -26,7 +26,7 @@ async function generateExpectedScan() {
     const diffExpectedPath = path.join(__dirname, entry, diffExpectedFileName)
     const currentExpected = fs.readFileSync(expectedPath, "utf8")
 
-    if (currentExpected !== JSON.stringify(result, null, 2)) {
+    if (currentExpected.trimEnd() !== JSON.stringify(result, null, 2)) {
       console.log(
         `/!\\ Expected scan file for : ${path.join(entry, expectedFilename)} is different from the current result.`,
       )

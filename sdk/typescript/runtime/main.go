@@ -31,8 +31,8 @@ const (
 func New(
 	// +optional
 	sdkSourceDir *Directory,
-) *TypeScriptSdk {
-	return &TypeScriptSdk{
+) *TypescriptSdk {
+	return &TypescriptSdk{
 		SDKSourceDir: sdkSourceDir,
 		RequiredPaths: []string{
 			"**/package.json",
@@ -42,7 +42,7 @@ func New(
 	}
 }
 
-type TypeScriptSdk struct {
+type TypescriptSdk struct {
 	SDKSourceDir  *Directory
 	RequiredPaths []string
 }
@@ -59,7 +59,7 @@ const (
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
-func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func (t *TypeScriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
+func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
 	// Get base container
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
@@ -119,7 +119,7 @@ func (t *TypeScriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
 	// Load module name for the template class
 	name, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
@@ -207,7 +207,7 @@ func (t *TypeScriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
-func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
+func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	switch runtime {
 	case Bun:
 		return dag.Container().
@@ -234,7 +234,7 @@ func (t *TypeScriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 // If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
 // If a bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
-func (t *TypeScriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
+func (t *TypescriptSdk) DetectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
 	// Try to detect runtime from package.json
 	source := modSource.ContextDirectory().Directory(subPath)
 

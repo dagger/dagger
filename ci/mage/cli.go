@@ -48,12 +48,3 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 
 	return util.DaggerCall(ctx, args...)
 }
-
-// TestPublish verifies that the CLI builds without actually publishing anything
-// TODO: ideally this would also use go releaser, but we want to run this step in
-// PRs and locally and we use goreleaser pro features that require a key which is private.
-// For now, this just builds the CLI for the same targets so there's at least some
-// coverage
-func (cl Cli) TestPublish(ctx context.Context) error {
-	return util.DaggerCall(ctx, "cli", "test-publish")
-}

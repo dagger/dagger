@@ -33,7 +33,15 @@ const (
 	UIInternalAttr = "dagger.io/ui.internal"
 
 	// Hide child spans by default.
+	//
+	// Encapsulated child spans may typically be revealed if the parent span errors.
 	UIEncapsulateAttr = "dagger.io/ui.encapsulate"
+
+	// Hide span by default.
+	//
+	// This is functionally the same as UIEncapsulateAttr, but is instead set
+	// on a child instead of a parent.
+	UIEncapsulatedAttr = "dagger.io/ui.encapsulated"
 
 	// Substitute the span for its children and move its logs to its parent.
 	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
