@@ -55,6 +55,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 				return net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", frontend))
 			})
 			if err != nil {
+				fmt.Fprintf(d.logWriter, "failed to listen on %s:%d : %v\n", port.Protocol.Network(), frontend, err)
 				return fmt.Errorf("failed to listen on network namespace: %w", err)
 			}
 			fmt.Fprintf(d.logWriter, "listening on %s:%d\n", port.Protocol.Network(), frontend)
@@ -68,6 +69,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 				downstreamConn, err := listener.Accept()
 				if err != nil {
 					if errors.Is(err, net.ErrClosed) {
+						fmt.Fprintf(d.logWriter, "listener closed\n")
 						return nil
 					}
 					return fmt.Errorf("fatal accept error: %w", err)
@@ -81,17 +83,29 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 					}),
 				)
 				if err != nil {
+					fmt.Fprintf(d.logWriter, "failed to create upstream client %s: %v\n", upstreamSock.SSHID(), err)
 					return fmt.Errorf("failed to create upstream client %s: %w", upstreamSock.SSHID(), err)
 				}
 
 				proxyConnPool.Go(func(ctx context.Context) error {
-					return sshforward.Copy(ctx, downstreamConn, upstreamClient, upstreamClient.CloseSend)
+					err := sshforward.Copy(ctx, downstreamConn, upstreamClient, upstreamClient.CloseSend)
+					if err != nil {
+						fmt.Fprintf(d.logWriter, "failed to copy: %v\n", err)
+					}
+					return err
 				})
 			}
 		})
 	}
 
-	rerr = errors.Join(rerr, listenerPool.Wait())
-	rerr = errors.Join(rerr, proxyConnPool.Wait())
+	if err := listenerPool.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("listener pool failed: %w", err))
+	}
+	if err := proxyConnPool.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("proxy conn pool failed: %w", err))
+	}
+	if rerr != nil {
+		fmt.Fprintf(d.logWriter, "tunnel failed: %v\n", rerr)
+	}
 	return rerr
 }

@@ -925,9 +925,37 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	bkSession.Allow(client.SocketProvider{
 		EnableHostNetworkAccess: true,
-		Dialer: func(network, addr string) (net.Conn, error) {
+		Dialer: func(networkType, addr string) (net.Conn, error) {
+			// To handle the case where the host being looked up is another service container
+			// endpoint without any qualification, we check both the unqualified and
+			// search-domain-qualified hostnames.
+			// The alternative here would be to also enter into the container's mount namespace,
+			// which while entirely feasible is an annoyance that outweighs the annoyance of this.
+			hostName, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("split host port %s: %w", addr, err)
+			}
+			var resolvedHost string
+			var errs error
+			for _, searchDomain := range []string{"", network.ClientDomain(w.execMD.ServerID)} {
+				qualified := hostName
+				if searchDomain != "" {
+					qualified += "." + searchDomain
+				}
+				_, err := net.LookupIP(qualified)
+				if err == nil {
+					resolvedHost = qualified
+					break
+				}
+				errs = errors.Join(errs, err)
+			}
+			if resolvedHost == "" {
+				return nil, fmt.Errorf("resolve %s: %w", hostName, errors.Join(errs))
+			}
+			addr = net.JoinHostPort(resolvedHost, port)
+
 			return runInNetNS(sessionCtx, state, func() (net.Conn, error) {
-				return net.Dial(network, addr)
+				return net.Dial(networkType, addr)
 			})
 		},
 	})

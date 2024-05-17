@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/url"
 
@@ -95,8 +96,12 @@ func (p *socketProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgent
 func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
 	conn, err := p.dialer(p.network, p.addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("dialer failed: %w", err)
 	}
 
-	return sshforward.Copy(context.TODO(), conn, stream, nil)
+	err = sshforward.Copy(context.TODO(), conn, stream, nil)
+	if err != nil {
+		return fmt.Errorf("copy failed: %w", err)
+	}
+	return nil
 }
