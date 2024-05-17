@@ -65,6 +65,8 @@ const (
 	OTELLogsEndpointEnv     = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
 	OTELMetricsProtocolEnv  = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
 	OTELMetricsEndpointEnv  = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+
+	buildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 )
 
 var removeEnvs = map[string]struct{}{
@@ -411,6 +413,11 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 
 		case mnt.Destination == strings.TrimPrefix(state.otelEndpoint, "unix://"):
 			state.otelUnixSockSrcPath = mnt.Source
+
+		case mnt.Destination == buildkitQemuEmulatorMountPoint:
+			// buildkit puts the qemu emulator under /dev, which we aren't mounting now, so just
+			// leave it be
+			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):
 			// only keep special namespaced mounts like /proc, /sys, /dev, etc. in the actual spec
