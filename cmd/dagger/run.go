@@ -80,6 +80,10 @@ func Run(cmd *cobra.Command, args []string) error {
 			fmt.Fprintln(os.Stderr, "run canceled")
 			return ExitError{Code: 2}
 		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return ExitError{Code: exitErr.ExitCode()}
+		}
 		return err
 	}
 
