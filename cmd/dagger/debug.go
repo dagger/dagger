@@ -2,11 +2,10 @@ package main
 
 import (
 	"expvar"
-	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/pprof"
-	"os"
 	"runtime"
 
 	"golang.org/x/net/trace"
@@ -27,7 +26,7 @@ func setupDebugHandlers(addr string) error {
 
 	m.Handle("/debug/gc", http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		runtime.GC()
-		fmt.Fprintln(os.Stderr, "triggered GC from debug endpoint")
+		slog.Warn("triggered GC from debug endpoint")
 	}))
 
 	// setting debugaddr is opt-in. permission is defined by listener address
@@ -39,7 +38,7 @@ func setupDebugHandlers(addr string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "debug handlers listening at", addr)
+	slog.Info("debug handlers listening", "debugAddr", addr)
 	go http.Serve(l, m) //nolint:gosec
 	return nil
 }

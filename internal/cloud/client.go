@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"net/url"
+	"os"
 
 	"github.com/shurcooL/graphql"
 	"golang.org/x/oauth2"
@@ -15,9 +16,10 @@ type Client struct {
 	c *graphql.Client
 }
 
-func NewClient(ctx context.Context, api string) (*Client, error) {
-	if api == "" {
-		api = "https://api.dagger.cloud"
+func NewClient(ctx context.Context) (*Client, error) {
+	api := "https://api.dagger.cloud"
+	if cloudURL := os.Getenv("DAGGER_CLOUD_URL"); cloudURL != "" {
+		api = cloudURL
 	}
 
 	u, err := url.Parse(api)
@@ -25,7 +27,12 @@ func NewClient(ctx context.Context, api string) (*Client, error) {
 		return nil, err
 	}
 
-	httpClient := oauth2.NewClient(ctx, auth.TokenSource(ctx))
+	tokenSource, err := auth.TokenSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	httpClient := oauth2.NewClient(ctx, tokenSource)
 
 	return &Client{
 		u: u,
@@ -34,7 +41,8 @@ func NewClient(ctx context.Context, api string) (*Client, error) {
 }
 
 type UserResponse struct {
-	ID string
+	ID   string     `json:"id"`
+	Orgs []auth.Org `json:"orgs"`
 }
 
 func (c *Client) User(ctx context.Context) (*UserResponse, error) {
