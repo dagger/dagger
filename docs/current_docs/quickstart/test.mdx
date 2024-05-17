@@ -1,64 +1,54 @@
 ---
 slug: /quickstart/test
-hide_table_of_contents: true
-title: "Inspect the test stage"
+title: "Run unit tests"
 ---
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Inspect the test stage
+## Run unit tests
 
-The pipeline also runs the application's unit tests, to make sure everything works before building the final container image.
+The `test` stage of the pipeline runs the application's unit tests and depends on the `build-env` stage. Let's look at its Dagger Function next.
+
+### Inspect the Dagger Function
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Remember that the `Publish()` Dagger Function also depends on the `Test()` Dagger Function. Let's look at that next!
-
 ```go file=./snippets/test/go/main.go
 ```
-
-The `Test()` Dagger Function works merely as a CLI wrapper around the `npm run test:unit run` command.
-- It first calls `BuildEnv()` to obtain the build environment container.
-- It then uses the `Container().WithExec()` method to set this command to run in the container, and the `Container().Stdout()` method to capture and return the output as a string.
 
 </TabItem>
 <TabItem value="Python">
 
-FIXME
+```python file=./snippets/test/python/__init__.py
+```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-FIXME
+```typescript file=./snippets/test/typescript/index.ts
+```
 
 </TabItem>
 </Tabs>
 
-Call it with the Dagger CLI:
+This Dagger Function works merely as a CLI wrapper. It starts with the `Container` result of the previous Dagger Function, executes the `npm run test:unit run` command in the container, and captures and returns the output as a string (refer to the code comments for details).
+
+### Call the Dagger Function
+
+Call the Dagger Function as below:
 
 ```shell
 dagger call \
   test --source=.
 ```
 
-You should see various operations taking place, ending with a test run and the following output:
+Here's what you should see:
 
-```
-> hello-dagger@0.0.0 test:unit
-> vitest run
+FIXME ADD GIF
 
- RUN  v1.5.3 /src
-
- ✓ src/components/__tests__/HelloWorld.spec.ts  (1 test) 28ms
-
- Test Files  1 passed (1)
-      Tests  1 passed (1)
-   Start at  12:30:25
-   Duration  9.93s (transform 436ms, setup 1ms, collect 436ms, tests 28ms, environment 8.46s, prepare 724ms)
-```
 
 :::tip SANDBOXING
 All the Dagger Functions in this quickstart receive the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is [by design](../manuals/developer/execution-environment.mdx): Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, network services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.

@@ -1,75 +1,61 @@
 ---
 slug: /quickstart/publish
-hide_table_of_contents: true
-title: "Inspect the publish stage"
+title: "Publish the container image"
 ---
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Inspect the publish stage
+## Publish the container image
 
-As you've seen, you can call individual Dagger Functions to execute the individual stages of your pipeline, such as running tests and creating a container image. But what if you want to combine multiple Dagger Function calls?
+The end stage of the example pipeline is the `publish` stage, which publishes the container image to a registry.
 
-There are various reasons you might want to do this. One common reason is that when developing locally, it's quicker and easier to trigger your test-build-release pipeline using a single command (`dagger call publish ...`) instead of multiple commands (`dagger call test ... && dagger call build ... && dagger call release ...`).
-
-One approach would be to stitch together `dagger call` commands using the CLI and a shell script or a Makefile. However, this approach is not recommended, because you will typically end up with long and unwieldy CLI commands and shell scripting "glue" that is hard to debug and maintain.
-
-A better approach is to create a higher-level Dagger Function, which can then orchestrate other Dagger Functions as required through code. Using code (instead of shell scripts or Makefiles) to combine Dagger Functions in this way has multiple benefits:
-- It improves maintainability, because it encourages you to transform your workflows into structured, discrete and composable units with clear inputs and outputs.
-- It removes environment-related variance which can destabilize shell scripts in unexpected ways and makes the pipeline more reliable.
-- It promotes closer adherence to coding standards and best practices.
-- It improves the development experience, because it opens up access to the programming language's existing ecosystem and tooling.
+### Inspect the Dagger Function
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-The `Publish()` Dagger Function is an example of this approach:
-
 ```go file=./snippets/publish/go/main.go
 ```
-
-This Dagger Function expects a `Directory` as argument. It performs the following operations:
-
-- It calls the `Test()` Dagger Function to run the application's tests and return the results.
-- It calls the `Build()` Dagger Function to build and return a container image of the application.
-- It calls the `Container().Publish()` method to publish the container image to the registry and return the image identifier.
 
 </TabItem>
 <TabItem value="Python">
 
-FIXME
+```python file=./snippets/publish/python/__init__.py
+```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-FIXME
+```typescript file=./snippets/publish/typescript/index.ts
+```
 
 </TabItem>
 </Tabs>
 
-Call the Dagger Function to run the pipeline and publish the containerized application to the [ttl.sh container registry](https://ttl.sh):
+Just as you can call Dagger Functions individually from the CLI, you can also call (and combine) them using a programming language. This Dagger Function is an example. It is a higher-level function which orchestrates the Dagger Functions in previous sections and the core Dagger API to:
+- run the application's tests and return the results;
+- build and return a container image of the final application;
+- publish the container image to a registry and return the image identifier.
+
+### Call the Dagger Function
+
+Call the Dagger Function:
 
 ```shell
 dagger call \
   publish --source=.
 ```
 
-You should see the application being tested, built, packaged and published. The final result will be an image reference on the [ttl.sh container registry](https://ttl.sh), as shown below:
+You should see the application being tested, built, packaged and published to the [ttl.sh container registry](https://ttl.sh):
 
-```
-ttl.sh/hello-dagger-47384@sha256:57c15999fdc59df452161f648aaa9b9a1ea9dbda710a0a0242f509966a286b4b
-```
+FIXME ADD GIF
 
-Test the published container image using the command below (update the image name as per the output of the previous Dagger Function call):
+You can test the published container image by pulling and running it with `docker run`:
 
-```shell
-docker run -d --rm --publish 8080:80 ttl.sh/hello-dagger-47384
-```
+FIXME ADD GIF
 
-Browse to port 8080 of your local machine and confirm that you see a "Hello from Dagger!" welcome page.
-
-:::tip NO MORE DEPENDENCY HELL
-Did you notice that even though you're testing, building and publishing a Node.js application in this quickstart, you didn't need to install any dependencies on your local machine? You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature of Dagger, because it allows development teams to create standardized tooling and eliminates all the variables and dependencies related to the host environment and/or configuration.
-:::
+:::tip COMBINING DAGGER FUNCTIONS
+There are various reasons why you might want to write Dagger Functions that call other Dagger Functions. A common reason is that when developing locally, it's quicker and easier to trigger your pipeline using a single command (`dagger call publish ...`) instead of multiple commands (`dagger call test ... && dagger call build ... &&  ...`).
+:::tip

@@ -1,175 +1,65 @@
 ---
 slug: /quickstart/build
-hide_table_of_contents: true
-title: "Inspect the build stage"
+title: "Build the application"
 ---
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
 # Quickstart
 
-## Inspect the build stage
+## Build the application
 
-Let's move to the previous stage of the pipeline - building the container image!
+The `build` stage of the pipeline creates a container image with a production build of the application. It also depends on the `build-env` stage. Let's look at its Dagger Function next.
+
+### Inspect the Dagger Function
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-Remember that the `Publish()` Dagger Function depends on the `Build()` Dagger Function, which in turn depends on the `BuildEnv()` Dagger Function. Let's look at these Dagger Functions next!
-
 ```go file=./snippets/build/go/main.go
 ```
-
-The `BuildEnv()` Dagger Function does the following:
-
-- It begins by calling the `dag` client. `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
-- It uses the `dag.CacheVolume()` method to initialize a new Dagger cache volume for the application dependencies. [Caching](./cache.mdx) is discussed in more detail later.
-- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image - in this case, the `node:21-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object representing the container image.
-- It uses the `Container().WithDirectory()` method to mount the source code directory at the `/src` mount point in the container. The location of the source code directory is obtained from the `source` argument passed to the Dagger Function.
-  - The `source` argument is of type `Directory`, which is a special Dagger type. This type comes with its own methods, one of which is `Directory().WithoutDirectory()`. This method is used to exclude specific directories from the mount - in this case, Dagger's own working directory.
-- It uses the `Container().WithMountedCache()` method to mount the cache volume at the `/src/node_modules/` mount point in the container. [Caching](./cache.mdx) is discussed in more detail later.
-- It uses the `Container().WithWorkdir()` method to set the working directory to the `/src` mount point.
-- It uses the `Container().WithExec()` method to set the `npm install` command to install dependencies in the container.
-
-If you've worked with Dockerfiles, this code listing should look very familiar to you. Similar to the instructions in a Dockerfile, it starts with a base container image, then calls a series of functions in sequence to revise and enhance the base image.
-
-Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects, each with pre-defined functions of their own. When using these objects, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called ["function chaining"](../manuals/user/functions/539201-chaining.mdx), and is a core feature of Dagger.
 
 </TabItem>
 <TabItem value="Python">
 
-FIXME
+```python file=./snippets/build/python/__init__.py
+```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-FIXME
+```typescript file=./snippets/build/typescript/index.ts
+```
 
 </TabItem>
 </Tabs>
 
-The return value of this Dagger Function is a revised `Container` representing the build environment for the application. This is a `node:21-slim` container image with the application source code mounted at `/src` and a cache volume for application dependencies.
 
-Now that you know how this Dagger Function works, let's try calling it with the Dagger CLI:
+This Dagger Function performs a multi-stage build, as follows:
 
-```shell
-dagger call \
-  build-env --source=.
-```
-
-You should see various operations taking place, ending with this output:
-
-```
-Container evaluated. Use "dagger call build-env --help" to see available sub-commands.
-```
-
-This means that the build succeeded, and a `Container` type representing the build environment was returned. This is a ["just-in-time" container](../manuals/user/artifacts/production/472010-containers.mdx) - a [transient artifact](../manuals/user/artifacts/723090-artifacts.mdx) produced as the result of a Dagger Function.
-
-Just-in-time artifacts come with useful functions of their own, which you can call by chaining them to the artifact in the `dagger call` command. One of the most interesting `Container` functions is `terminal`, which can be used to [open an interactive terminal session with a just-in-time container](../manuals/user/artifacts/consumption/138393-exec.mdx).
-
-To see this in action, revise the previous command and chain an additional function call to `terminal` on the returned `Container`:
-
-```shell
-dagger call \
-  build-env --source=. \
-  terminal --cmd=bash
-```
-
-This revised command builds the container image and then drops you into an interactive terminal running the `bash` shell.
-
-You can now directly execute commands in the running container. For example, you can get information about the container operating system and platform:
-
-```shell
-uname -a
-```
-
-You should see output similar to the below:
-
-```
-Linux dn7uagqhmd42g.r5s4kfkvo1mjq.dagger.local 6.1.0-21-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.90-1 (2024-05-03) x86_64 GNU/Linux
-```
-
-Or, you can inspect the contents of the container filesystem and confirm that it contains the application source code:
-
-```shell
-ls /src
-```
-
-You should see a listing of the application's files, similar to the below:
-
-```
-LICENSE    cypress.config.ts  index.html         package.json  tsconfig.app.json   tsconfig.vitest.json
-README.md  dagger.json        node_modules       public        tsconfig.json       vite.config.ts
-cypress    env.d.ts           package-lock.json  src           tsconfig.node.json  vitest.config.ts
-```
-
-:::tip INTERACTIVE CONTAINER DEBUGGING
-The `terminal` function is very useful for debugging and experimenting, since it allows you to interact directly with containers and inspect their state, at any stage of your Dagger Function execution.
-:::
-
-You can also inspect the list of installed dependencies:
-
-```shell
-npm list
-```
-
-You should see a list similar to the below (truncated for brevity):
-
-```
-hello-dagger@0.0.0 /src
-+-- @rushstack/eslint-patch@1.10.2
-+-- @tsconfig/node20@20.1.4
-+-- @types/jsdom@21.1.6
-+-- @types/node@20.12.11
-+-- @vitejs/plugin-vue-jsx@3.1.0
-...
-```
-
-Exit the interactive terminal once done:
-
-```shell
-exit
-```
-
-<Tabs>
-<TabItem value="Go">
-The build environment container returned by the `BuildEnv()` Dagger Function is used by the `Build()` Dagger Function, which uses it to create a production-ready build of the application and transfer this build to a slim image holding just the final application code and an NGINX server to run it.
-
-```go file=./snippets/build/go/main.go
-```
-
-The `Build()` Dagger Function performs a multi-stage build, as follows:
-
-- It first calls the `BuildEnv()` Dagger Function to obtain the build environment as a `Container` object.
-- It uses the `Container().WithExec()` method to run the `npm run build` command in the container. This creates a compressed, production-ready build of the application and places the result in a `dist/` directory in the container filesystem.
-- It uses the `Container().Directory()` method to return the `dist/` directory as Dagger's special `Directory` type.
-- It uses the `dag` client's `Container().From()` method to initialize a new container from a base image - in this case, the `nginx:1.25-alpine` image. The `From()` method returns a new `Container` object representing the container image.
-  -  `dag` is the Dagger client, which is pre-initialized in every Dagger Function. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
-- It uses the `Container().WithDirectory()` method to copy the `dist/` directory to the NGINX Web server root directory `/usr/share/nginx/html` in the container.
-- It uses the `Container().WithExposedPort()` function to expose port 80 (the default NGINX port in the `nginx:1.25-alpine` image).
-
-</TabItem>
-<TabItem value="Python">
-
-FIXME
-
-</TabItem>
-<TabItem value="TypeScript">
-
-FIXME
-
-</TabItem>
-</Tabs>
+- It starts with the build environment `Container` and executes the `npm run build` command in the container. This creates a compressed, production-ready build of the application and places the result in a `dist/` directory in the container filesystem. This directory is stored and referenced as Dagger's special `Directory` type.
+- It initializes a new `nginx:1.25-alpine` image as a second `Container` and copies the directory to the NGINX Web server root directory in the container. It also exposes container port 80 (the default NGINX port).
 
 The result of this Dagger Function is a `Container` representing the final production build of the application. This is an `nginx:1.25-alpine` container image with an NGINX Web server ready to host and serve the built application.
 
-Since the return value is a just-in-time `Container`, you can use your knowledge of function chaining and just-in-time artifacts to inspect it "live" with the `terminal` function, as you did earlier. But this is a good place to explore another interesting built-in `Container` function: the `as-service` function.
+### Call the Dagger Function
 
-The `as-service` function can be used to [start a just-in-time container as a local service in your local environment](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
+Call the Dagger Function as below:
 
-:::tip SPINNING UP CONTAINERS AS SERVICES
-The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.
-:::
+```shell
+dagger call \
+  build --source=.
+```
+
+Here's what you should see:
+
+FIXME ADD GIF
+
+This output means that the build succeeded, and a `Container` type representing the built container image was returned. Since this is another just-in-time `Container`, you can use your knowledge of function chaining and just-in-time artifacts to inspect it "live" with the `terminal` function, as you did earlier. But this is a good place to explore another interesting built-in `Container` function: the `as-service` function.
+
+### Run a container as a local service
+
+The `as-service` function can be used to [start a just-in-time container as a local service](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
 
 To see this in action, chain additional function calls to `as-service` and `up` on the returned `Container`:
 
@@ -182,7 +72,17 @@ dagger call \
 
 By default, Dagger will map each exposed container service port to the same port on the host. Since NGINX operates on port 80, which is often a privileged port on the host, the additional `--ports 8080:80` argument re-maps container port 80 to unprivileged host port 8080.
 
+Here's what you should see:
+
+FIXME ADD GIF
+
 You should now be able to access the application by browsing to `http://localhost:8080` on the Dagger host (replace `localhost` with your Dagger host's network name or IP address if accessing it remotely). You should see a "Hello from Dagger!" welcome page, served by NGINX.
+
+:::tip CONTAINERS AS SERVICES
+The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.
+:::
+
+
 
 :::tip FUNCTION CHAINING
 [Function chaining](../manuals/user/functions/539201-chaining.mdx) works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using the Dagger CLI. The following are equivalent:

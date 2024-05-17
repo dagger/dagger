@@ -8,10 +8,10 @@ title: "Conclusion"
 
 ## Conclusion
 
-Over the last few pages, this quickstart has walked you through the process of creating a CI pipeline to test, build, and publish an example application using Dagger. It has taught you key Dagger concepts and introduced you to the Dagger API, the Dagger CLI, Dagger Functions and the Daggerverse.
+Over the last few sections, this quickstart has walked you through the process of Daggerizing an example application. It has taught you key Dagger concepts and introduced you to the Dagger API, the Dagger CLI, Dagger Functions and the Daggerverse.
 
 :::tip DAGGERIZING
-A common question from our Discord is "how much of my pipeline should I Daggerize?". Our advice is to Daggerize as much as you can get away with, within the constraints of your project. In the extreme version of this, you can collapse your entire CI pipeline into a single Dagger Function, which receives a raw source code change event and takes over from there; essentially, your entire CI workflow expressed in code. But typically, you would begin by only Daggerizing simple individual tasks - one Dagger Function per task - and manually configure your CI to call each Dagger Function. This allows for very incremental adoption of Dagger in an existing stack that is hard to change.
+A common question from our Discord is "how much of my pipeline should I Daggerize?". Our advice is to Daggerize as much as you can get away with, within the constraints of your project. In the extreme version of this, you can collapse your entire application delivery pipeline into a single Dagger Function, which receives a raw source code change event and takes over from there; essentially, your entire CI workflow expressed in code. But typically, you would begin by only Daggerizing simple individual tasks - one Dagger Function per task - and manually configure your CI to call each Dagger Function. This allows for very incremental adoption of Dagger in an existing stack that is hard to change.
 :::
 
 Once you've Daggerized your application's pipeline, where do you go next? Here are some ideas:

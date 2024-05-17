@@ -21,31 +21,12 @@ module.exports = {
       "items": [
         "quickstart/index",
         "quickstart/cli",
-        "quickstart/run",
-        {
-          "type": "category",
-          "label": "Top-down explanation",
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            "quickstart/publish-2",
-            "quickstart/build",
-            "quickstart/test",
-          ]
-        },
-        {
-          "type": "category",
-          "label": "Bottom-up explanation",
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            "quickstart/env",
-            "quickstart/test-build",
-            "quickstart/publish",
-          ]
-        },
-        "quickstart/cache",
-        "quickstart/refactor",
+        "quickstart/daggerize",
+        "quickstart/env",
+        "quickstart/test",
+        "quickstart/build",
+        "quickstart/publish",
+        "quickstart/simplify",
         "quickstart/conclusion"
       ]
     },

@@ -1,0 +1,158 @@
+---
+slug: /quickstart/daggerize
+title: "Daggerize an example application"
+displayed_sidebar: "current"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Daggerize an example application
+
+The best way to understand how Dagger works is by creating a delivery pipeline using Dagger Functions - a process we call "Daggerizing".
+
+:::tip DAGGERIZING
+1. Choose a Dagger SDK and bootstrap a new Dagger module for your application's pipeline with `dagger init`.
+2. Construct the pipeline by creating and combining one or more Dagger Functions to produce the desired results. Your Dagger Functions can use the core Dagger API and/or call Dagger Functions from third-party Daggerverse modules.
+3. Use `dagger call` to run and test your pipeline locally. Once you're satisfied, transfer your Dagger module and your `dagger call` commands to your CI configuration.
+:::
+
+### Get the example application
+
+The example application is a skeleton Vue framework application that returns a "Hello from Dagger!" welcome page. Clone its repository and set it as the current working directory:
+
+```shell
+git clone https://github.com/dagger/hello-dagger
+cd hello-dagger
+```
+
+### Initialize a Dagger module
+
+Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```shell
+dagger init --sdk=go
+```
+
+This will generate a `dagger.json` module metadata file, an initial `dagger/main.go` source code template, as well as a `dagger/dagger.gen.go` file and `dagger/internal/` directory.
+</TabItem>
+<TabItem value="Python">
+
+```shell
+dagger init --sdk=python
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
+</TabItem>
+<TabItem value="TypeScript">
+
+```shell
+dagger init --sdk=typescript
+```
+
+This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.
+</TabItem>
+</Tabs>
+
+### Construct a pipeline using Dagger Functions
+
+Dagger Functions are regular code, written in Go, Python or TypeScript using the corresponding Dagger SDK. They consist of a series of method/function calls, such as "pull a container image", "copy a file", "forward a TCP port", and so on, which can be chained together.
+
+:::note
+Don't worry about how the Dagger Functions shown below work for the moment - it's explained in detail in  the next sections!
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Replace the generated `dagger/main.go` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+```go file=./snippets/daggerize/go/main.go
+```
+
+In this Dagger module, each Dagger Function performs a different operation:
+
+- The `Publish()` Dagger Function tests, builds and publishes a container image of the application to a registry.
+- The `Test()` Dagger Function runs the application's unit tests and returns the results.
+- The `Build()` Dagger Function performs a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+- The `BuildEnv()` Dagger Function creates a container with the build environment for the application.
+
+</TabItem>
+<TabItem value="Python">
+
+Replace the generated `dagger/src/main/__init__.py` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+```python file=./snippets/daggerize/python/__init__.py
+```
+
+In this Dagger module, each Dagger Function performs a different operation:
+
+- The `publish()` Dagger Function tests, builds and publishes a container image of the application to a registry.
+- The `test()` Dagger Function runs the application's unit tests and returns the results.
+- The `build()` Dagger Function performs a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+- The `build_env()` Dagger Function creates a container with the build environment for the application.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+Replace the generated `dagger/src/index.ts` file with the following code, which adds four Dagger Functions to your Dagger module:
+
+```typescript file=./snippets/daggerize/typescript/index.ts
+```
+
+In this Dagger module, each Dagger Function performs a different operation:
+
+- The `publish()` Dagger Function tests, builds and publishes a container image of the application to a registry.
+- The `test()` Dagger Function runs the application's unit tests and returns the results.
+- The `build()` Dagger Function performs a multi-stage build and returns a final container image with the production-ready application and an NGINX Web server to host and serve it.
+- The `buildEnv()` Dagger Function creates a container with the build environment for the application.
+
+</TabItem>
+</Tabs>
+
+### Run the pipeline
+
+Call a Dagger Function to run the pipeline:
+
+```shell
+dagger call \
+  publish --source=.
+```
+
+This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:
+
+FIXME ADD GIF
+
+:::tip DID YOU NOTICE...
+1. Even though you just tested, built and published a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
+1. Subsequent calls to `dagger call publish...` are significantly faster than the first run (try it!). Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
+:::
+
+
+FIXME USE LATER
+
+
+1. The code used to create a Dagger Function in Go, Python or TypeScript looks remarkably similar, with only minor language-specific changes. Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
+
+
+
+Dagger Functions can accept arguments, which may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. In this listing, each Dagger Function expects a `source` argument of type `Directory`, which tells the Dagger Function where to find the application's source code.
+
+Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`.
+
+It is critical knowledge for when no Daggerverse module exists for your requirements and you need to start from scratch.
+
+:::tip SANDBOXING
+The Dagger Function on this page receives the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is [by design](../manuals/developer/execution-environment.mdx): Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, network services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
+:::
+
+
+Using Dagger Functions, instead of shell scripts or Makefiles, has multiple benefits:
+- Messy workflows transform into structured, discrete and composable units with clear inputs and outputs.
+- Environment-related variance, which can destabilize shell scripts, is eliminated because workflows run in container.
+- Using a programming language instead of YAML promotes usage of coding standards and best practices and opens up access to the existing ecosystem.
+:::
