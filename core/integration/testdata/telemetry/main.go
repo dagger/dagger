@@ -12,9 +12,9 @@ import (
 
 func main() {
 	err := http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint: gosec
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer test" {
-			panic(fmt.Sprintf("authorization header must be %q, got %q", "Bearer test", auth))
+		auth, _, ok := r.BasicAuth()
+		if !ok || auth != "test" {
+			panic("invalid authorization header")
 		}
 
 		eventsFp := filepath.Join("/events", fmt.Sprintf("%s.json", r.URL.Path))
