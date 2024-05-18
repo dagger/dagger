@@ -29,13 +29,6 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 		return fmt.Errorf("failed to get buildkit session caller %s: %w", d.sessionID, err)
 	}
 
-	getFrontend := func(port PortForward) int {
-		if port.Frontend != nil {
-			return *port.Frontend
-		}
-		return port.Backend
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	listenerPool := pool.New().WithContext(ctx)
@@ -50,7 +43,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 				d.sessionID,
 			)
 
-			frontend := getFrontend(port)
+			frontend := port.FrontendOrBackendPort()
 			listener, err := buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
 				return net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", frontend))
 			})
