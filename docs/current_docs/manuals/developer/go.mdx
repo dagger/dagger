@@ -1,13 +1,15 @@
 ---
-slug: /manuals/developer/go/637319/interfaces
+slug: /manuals/developer/go
 displayed_sidebar: "current"
 toc_max_heading_level: 2
-title: "Interfaces"
+title: "Go Extras"
 ---
 
+# Go Extras
 
-# Interfaces
+This page lists features specific to the Go SDK.
 
+## Interfaces
 
 The Go SDK supports interfaces, which allow you to define Go-style interface
 definitions so that your module can accept arbitrary values from other modules
@@ -16,7 +18,7 @@ without being tightly coupled to the concrete type underneath.
 To use an interface, define a Go interface that embeds `DaggerObject` and use
 it in a function argument:
 
-```go file=./snippets/interfaces/main.go
+```go file=./snippets/go/interfaces/main.go
 ```
 
 Functions defined in interface definitions must match the client-side API

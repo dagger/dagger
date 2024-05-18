@@ -1,11 +1,15 @@
 ---
-slug: /manuals/developer/typescript/356352/runtime
+slug: /manuals/developer/typescript
 displayed_sidebar: "current"
 toc_max_heading_level: 2
-title: "Runtimes"
+title: "TypeScript Extras"
 ---
 
-# Runtimes
+# TypeScript Extras
+
+This page lists features specific to the TypeScript SDK.
+
+## Runtimes
 
 TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via tsx), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively).
 
@@ -17,7 +21,7 @@ For now, the TypeScript SDK only supports Node.js (stable) and Bun (experimental
 
 To change the TypeScript SDK runtime, set the field `dagger.runtime` in the `package.json` file.
 
-## Node  
+### Node.js
 
 Set the field to `node` to use the Node.js runtime. Node.js is also the default runtime used if this field is omitted.
 
@@ -27,7 +31,7 @@ Set the field to `node` to use the Node.js runtime. Node.js is also the default 
   }
 ```
 
-## Bun 
+### Bun
 
 Set the field to `bun` to use the Bun runtime.
 
@@ -40,7 +44,9 @@ Set the field to `bun` to use the Bun runtime.
 :::warning
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
 :::
-## Automatic Detection
+
+### Automatic detection
+
 When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's lock files inside the project's `dagger` directory.
 
 - If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
@@ -51,3 +57,21 @@ When a runtime is not explicitly defined within the `package.json` file, Dagger 
 :::warning
 This behavior however should be seen as a sensible fallback and not as an explicit configuration.
 :::
+
+## Name overrides
+
+You can change the name of an exposed field or function to work around a reserved keyword or some other naming conflict, but still be able to expose the desired name in the Dagger API. For example, using `import_` in the language, but `import` in the Dagger API. To do so, simply add the alias as a parameter of the corresponding decorator.
+
+Here is an example of a module with the field `ctr` aliased as `container` and the function `displayVersion` aliased as `version`:
+
+```typescript file=./snippets/typescript/name-overrides/index.ts
+```
+
+Field and function names are overridden by their aliases in the output of `dagger functions`:
+
+```shell
+dagger functions
+Name        Description
+container   -
+version     -
+```

@@ -341,6 +341,18 @@ module.exports = {
           "id": "manuals/developer/error-handling"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/go"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/python"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/typescript"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -359,10 +371,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/interfaces"
             },
             {
               "type": "doc",
@@ -417,10 +425,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/module-structure"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/python-dependencies"
             },
             {
@@ -464,10 +468,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/typescript/aliases"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/typescript/visibility"
             },
             {
@@ -485,10 +485,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/runtime"
             },
             {
               "type": "doc",

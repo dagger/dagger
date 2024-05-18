@@ -75,6 +75,30 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual TypeScript-specific pages to TypeScript common page
+  from = "/manuals/developer/typescript/:docid/runtime"
+  to = "/manuals/developer/typescript"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual TypeScript-specific pages to TypeScript common page
+  from = "/manuals/developer/typescript/:docid/aliases"
+  to = "/manuals/developer/typescript"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Go-specific pages to Go common page
+  from = "/manuals/developer/go/:docid/interfaces"
+  to = "/manuals/developer/go"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Python-specific pages to Python common page
+  from = "/manuals/developer/python/:docid/name-overrides"
+  to = "/manuals/developer/python"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"
