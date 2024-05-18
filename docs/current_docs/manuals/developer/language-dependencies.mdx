@@ -1,0 +1,50 @@
+---
+slug: /manuals/developer/language-dependencies
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Language Dependencies"
+---
+
+# Language Dependencies
+
+Dagger Functions are just regular code, written in your usual language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily add and use these packages/modules as dependencies in your Dagger module via your language's package manager.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+To add a Go dependency, add it to your `go.mod` file using `go get`. For example:
+
+```shell
+go get github.com/spf13/cobra
+```
+
+</TabItem>
+<TabItem value="Python">
+
+To add a Python dependency, [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements). For example:
+
+```toml
+[project]
+dependencies = [
+    "infisical-python>=2.1.8",
+]
+```
+
+Of course, for tools that support it, you can simply use the CLI, as below:
+
+```shell
+poetry add infisical-python
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+To add a TypeScript dependency, add it to the `package.json` file using your favorite package manager. For example:
+
+```shell
+npm install pm2
+```
+
+Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
+</TabItem>
+</Tabs>
