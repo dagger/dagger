@@ -340,10 +340,6 @@ func (container *Container) MetaFileContents(ctx context.Context, filePath strin
 }
 
 func metaMount(stdin string) (llb.State, string) {
-	// because the shim might run as non-root, we need to make a world-writable
-	// directory first and then make it the base of the /dagger mount point.
-	//
-	// TODO(vito): have the shim exec as the other user instead?
 	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
 	if stdin != "" {
 		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
