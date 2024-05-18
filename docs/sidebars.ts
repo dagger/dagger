@@ -352,57 +352,6 @@ module.exports = {
           "type": "doc",
           "id": "manuals/developer/typescript"
         },
-
-          "type": "category",
-          "label": "Develop with TypeScript",
-          "link": {
-            "type": "doc",
-            "id": "manuals/developer/typescript/index"
-          },
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/decorators"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/typescript-dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/debugging"
-            },
-            {
-              "type": "doc",
-              "label": "Reference",
-              "id": "reference/typescript/modules"
-            }
-          ]
-        },
 //        {
 //          "type": "doc",
 //          "label": "Cookbook",
