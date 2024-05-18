@@ -369,6 +369,21 @@ module.exports = {
         },
         {
           "type": "link",
+          "label": "Go SDK Reference",
+          "href": "https://pkg.go.dev/dagger.io/dagger"
+        },
+        {
+          "type": "link",
+          "label": "Python SDK Reference",
+          "href": "https://dagger-io.readthedocs.org/"
+        },
+        {
+          "type": "doc",
+          "label": "TypeScript SDK Reference",
+          "id": "reference/typescript/modules"
+        },
+        {
+          "type": "link",
           "label": "API Reference",
           "href": "https://docs.dagger.io/api/reference"
         },
