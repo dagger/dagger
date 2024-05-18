@@ -40,7 +40,7 @@ poetry add infisical-python
 
 While Python doesn't have a [lock file standard](https://discuss.python.org/t/lock-files-again-but-this-time-w-sdists/46593/313) yet, other than using a tool that has a proprietary format (like Poetry), the most common way to do it is with a `pip`-compatible format like [`pip-tools`](https://pip-tools.readthedocs.io/en/latest/) uses.
 
-Since the introduction of [uv](./820256-module-structure.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
+Since the introduction of [uv](./python/820256-module-structure.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
 
 :::tip
 Check [compatibility with `pip` and `pip-tools`](https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md) if migrating from or integrating with those tools.
