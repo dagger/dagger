@@ -369,6 +369,10 @@ module.exports = {
           "id": "manuals/developer/error-handling"
         },
         {
+          "type": "doc",
+          "id": "manuals/developer/debugging"
+        },
+        {
           "type": "category",
           "label": "Develop with Go",
           "link": {
@@ -387,10 +391,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/debugging"
             },
             {
               "type": "link",
@@ -424,10 +424,6 @@ module.exports = {
               "id": "manuals/developer/python/name-overrides"
             },
             {
-              "type": "doc",
-              "id": "manuals/developer/python/debugging"
-            },
-            {
               "type": "link",
               "label": "Python SDK Reference",
               "href": "https://dagger-io.readthedocs.org/"
@@ -457,14 +453,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/decorators"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/debugging"
             },
             {
               "type": "doc",
