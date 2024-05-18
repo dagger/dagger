@@ -48,6 +48,54 @@ ARGUMENTS
 [dag-arg]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.Arg
 [Annotated]: https://docs.python.org/3/library/typing.html#typing.Annotated
 
+## Language dependencies
+
+### Lock file
+
+While Python doesn't have a [lock file standard](https://discuss.python.org/t/lock-files-again-but-this-time-w-sdists/46593/313) yet, other than using a tool that has a proprietary format (like Poetry), the most common way to do it is with a `pip`-compatible format like [`pip-tools`](https://pip-tools.readthedocs.io/en/latest/) uses.
+
+Since the introduction of [uv](./820256-module-structure.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
+
+:::tip
+Check [compatibility with `pip` and `pip-tools`](https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md) if migrating from or integrating with those tools.
+:::
+
+The lock file is only created automatically for new modules. For existing modules that don't have it, it can be created (and updated) manually. For example:
+
+```console
+uv pip compile --generate-hashes --update-all -o requirements.lock pyproject.toml sdk/pyproject.toml
+```
+
+The above command pulls in dependencies from `pyproject.toml` and `sdk/pyproject.toml`, gets their latest compatible versions, and writes them to `requirements.lock` with added hashes to verify integrity when downloading during install.
+
+:::important
+Make sure that `./sdk/pyproject.toml` is up to date first with:
+
+```console
+dagger develop
+```
+:::
+
+:::note
+The lock file should only include dependencies, and not the editable installs for the `./sdk` and current module.
+:::
+
+#### Poetry's lock file
+
+Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./820256-module-structure.mdx#modules-as-python-libraries). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
+
+```console
+poetry export --with dev --without main -o requirements.lock
+```
+
+:::important
+The `dagger-io` dev dependency is [not exported correctly](https://github.com/python-poetry/poetry-plugin-export/issues/145), so it needs to be removed:
+
+```console
+sed -i '' '/dagger-io @/d' requirements.lock
+```
+:::
+
 ## Python debug logs
 
 The Python SDK prints debugging information at various steps of the execution
