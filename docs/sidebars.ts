@@ -352,6 +352,147 @@ module.exports = {
           "type": "doc",
           "id": "manuals/developer/typescript"
         },
+        {
+          "type": "category",
+          "label": "Develop with Go",
+          "link": {
+            "type": "doc",
+            "id": "manuals/developer/go/index"
+          },
+          "items": [
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/first-module"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/constructor"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/visibility"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/go/debugging"
+            },
+            {
+              "type": "link",
+              "label": "Go SDK Reference",
+              "href": "https://pkg.go.dev/dagger.io/dagger"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Develop with Python",
+          "link": {
+            "type": "doc",
+            "id": "manuals/developer/python/index"
+          },
+          "items": [
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/first-module"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/constructor"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/attribute-functions"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/python-dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/python/debugging"
+            },
+            {
+              "type": "link",
+              "label": "Python SDK Reference",
+              "href": "https://dagger-io.readthedocs.org/"
+            }
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Develop with TypeScript",
+          "link": {
+            "type": "doc",
+            "id": "manuals/developer/typescript/index"
+          },
+          "items": [
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/first-module"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/constructor"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/decorators"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/visibility"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/module-structure"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/typescript-dependencies"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "manuals/developer/typescript/debugging"
+            },
+            {
+              "type": "doc",
+              "label": "Reference",
+              "id": "reference/typescript/modules"
+            }
+          ]
+        },
 //        {
 //          "type": "doc",
 //          "label": "Cookbook",
@@ -367,21 +508,7 @@ module.exports = {
           "id": "guides",
           "label": "Guides"
         },
-        {
-          "type": "link",
-          "label": "Go SDK Reference",
-          "href": "https://pkg.go.dev/dagger.io/dagger"
-        },
-        {
-          "type": "link",
-          "label": "Python SDK Reference",
-          "href": "https://dagger-io.readthedocs.org/"
-        },
-        {
-          "type": "doc",
-          "label": "TypeScript SDK Reference",
-          "id": "reference/typescript/modules"
-        },
+
         {
           "type": "link",
           "label": "API Reference",
