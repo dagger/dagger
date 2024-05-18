@@ -163,7 +163,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"--privileged",
 	}...)
 
-	runArgs = append(runArgs, imageName, "--debug", "--debugaddr=0.0.0.0:6060")
+	runArgs = append(runArgs, imageName, "--extra-debug", "--debugaddr=0.0.0.0:6060")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker run: %w: %s", err, output)

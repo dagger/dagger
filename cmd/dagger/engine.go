@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/telemetry"
 )
 
 type runClientCallback func(context.Context, *client.Client) error

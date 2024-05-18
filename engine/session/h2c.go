@@ -7,11 +7,10 @@ import (
 	"net"
 	"sync"
 
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
-
-	"github.com/dagger/dagger/telemetry"
 )
 
 type TunnelListenerAttachable struct {
@@ -40,7 +39,7 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 }
 
 func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
-	log := telemetry.GlobalLogger(s.rootCtx)
+	log := slog.GlobalLogger(s.rootCtx)
 
 	req, err := srv.Recv()
 	if err != nil {

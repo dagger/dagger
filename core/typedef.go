@@ -911,9 +911,6 @@ type FunctionCall struct {
 
 	// Whether to serve the schema for the function's own module to it or not
 	SkipSelfSchema bool
-
-	// Various OTEL values that need to be set in the function container
-	OTELEnvs []string
 }
 
 func (*FunctionCall) Type() *ast.Type {

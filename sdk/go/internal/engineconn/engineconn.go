@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
-	"os"
 
 	"github.com/Khan/genqlient/graphql"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
+	"dagger.io/dagger/telemetry"
 )
 
 type EngineConn interface {
@@ -72,11 +73,7 @@ func fallbackSpanContext(ctx context.Context) context.Context {
 	if trace.SpanContextFromContext(ctx).IsValid() {
 		return ctx
 	}
-	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
-		slog.Debug("falling back to $TRACEPARENT", "value", p)
-		return propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": p})
-	}
-	return ctx
+	return otel.GetTextMapPropagator().Extract(ctx, telemetry.NewEnvCarrier(true))
 }
 
 func defaultHTTPClient(p *ConnectParams) *http.Client {
@@ -93,7 +90,7 @@ func defaultHTTPClient(p *ConnectParams) *http.Client {
 			r = r.WithContext(fallbackSpanContext(r.Context()))
 
 			// propagate span context via headers (i.e. for Dagger-in-Dagger)
-			propagation.TraceContext{}.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
+			otel.GetTextMapPropagator().Inject(r.Context(), propagation.HeaderCarrier(r.Header))
 
 			return dialTransport.RoundTrip(r)
 		}),

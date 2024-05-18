@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"go.opentelemetry.io/otel/trace"
@@ -36,4 +37,26 @@ func URLForTrace(ctx context.Context) (string, bool) {
 		trace.SpanContextFromContext(ctx).TraceID().String(),
 	)
 	return url, true
+}
+
+type daggerToken struct {
+	orgName string
+	token   string
+}
+
+func parseDaggerToken(s string) (daggerToken, bool) {
+	s, ok := strings.CutPrefix(s, "dag_")
+	if !ok {
+		return daggerToken{}, false
+	}
+
+	orgName, token, ok := strings.Cut(s, "_")
+	if !ok {
+		return daggerToken{}, false
+	}
+
+	return daggerToken{
+		orgName: orgName,
+		token:   token,
+	}, true
 }

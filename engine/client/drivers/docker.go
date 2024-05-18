@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -21,7 +22,6 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
 )
 
 func init() {
@@ -60,7 +60,7 @@ const (
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
 func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
-	log := telemetry.ContextLogger(ctx, slog.LevelWarn) // TODO
+	log := slog.ContextLogger(ctx, slog.LevelWarn)
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
@@ -203,7 +203,7 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
 	defer telemetry.End(span, func() error { return rerr })
-	_, stdout, stderr := telemetry.WithStdioToOtel(ctx, "")
+	_, stdout, stderr := slog.WithStdioToOTel(ctx, "")
 	outBuf := new(bytes.Buffer)
 	cmd.Stdout = io.MultiWriter(stdout, outBuf)
 	cmd.Stderr = io.MultiWriter(stderr, outBuf)

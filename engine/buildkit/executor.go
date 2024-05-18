@@ -54,7 +54,7 @@ type ExecutionMetadata struct {
 
 	SystemEnvNames []string
 
-	OTELEnvs []string
+	OTelEnvs []string
 
 	EnabledGPUs []string
 }
@@ -121,7 +121,7 @@ func (w *Worker) Run(
 		w.setUserGroup,
 		w.setExitCodePath,
 		w.setupStdio,
-		w.setupOTEL,
+		w.setupOTel,
 		w.setupSecretScrubbing,
 		w.setProxyEnvs,
 		w.enableGPU,

@@ -3,14 +3,11 @@ package telemetry
 import (
 	"context"
 
-	"github.com/moby/buildkit/identity"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 type MultiSpanExporter []sdktrace.SpanExporter
@@ -93,13 +90,10 @@ type FilterLiveSpansExporter struct {
 // ExportSpans passes each span to the span processor's OnEnd hook so that it
 // can be batched and emitted more efficiently.
 func (exp FilterLiveSpansExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	batch := identity.NewID()
 	filtered := make([]sdktrace.ReadOnlySpan, 0, len(spans))
 	for _, span := range spans {
 		if span.StartTime().After(span.EndTime()) {
-			slog.ExtraDebug("skipping unfinished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
 		} else {
-			slog.ExtraDebug("keeping finished span", "batch", batch, "span", span.Name(), "id", span.SpanContext().SpanID())
 			filtered = append(filtered, span)
 		}
 	}
@@ -110,12 +104,12 @@ func (exp FilterLiveSpansExporter) ExportSpans(ctx context.Context, spans []sdkt
 }
 
 type LogForwarder struct {
-	Processors []sdklog.LogProcessor
+	Processors []sdklog.Processor
 }
 
-var _ sdklog.LogExporter = LogForwarder{}
+var _ sdklog.Exporter = LogForwarder{}
 
-func (m LogForwarder) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+func (m LogForwarder) Export(ctx context.Context, logs []sdklog.Record) error {
 	eg := new(errgroup.Group)
 	for _, e := range m.Processors {
 		e := e
@@ -135,6 +129,17 @@ func (m LogForwarder) Shutdown(ctx context.Context) error {
 		e := e
 		eg.Go(func() error {
 			return e.Shutdown(ctx)
+		})
+	}
+	return eg.Wait()
+}
+
+func (m LogForwarder) ForceFlush(ctx context.Context) error {
+	eg := new(errgroup.Group)
+	for _, e := range m.Processors {
+		e := e
+		eg.Go(func() error {
+			return e.ForceFlush(ctx)
 		})
 	}
 	return eg.Wait()

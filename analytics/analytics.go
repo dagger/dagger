@@ -15,7 +15,7 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/engine/telemetry"
 )
 
 const (

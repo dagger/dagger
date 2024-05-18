@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -31,8 +32,9 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
+	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 var (
@@ -148,7 +150,7 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
-		labels := telemetry.LoadDefaultLabels(workdir, engine.Version)
+		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
 		cmd.SetContext(analytics.WithContext(cmd.Context(), t))
 		cobra.OnFinalize(func() {
@@ -210,7 +212,7 @@ func Resource() *resource.Resource {
 		semconv.ServiceVersion(engine.Version),
 		semconv.ProcessCommandArgs(os.Args...),
 	}
-	for k, v := range telemetry.LoadDefaultLabels(workdir, engine.Version) {
+	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version) {
 		attrs = append(attrs, attribute.String(k, v))
 	}
 	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
@@ -268,14 +270,19 @@ func main() {
 	ctx := context.Background()
 
 	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
-		// Init tracing as early as possible and shutdown after the command
-		// completes, ensuring progress is fully flushed to the frontend.
-		ctx = telemetry.Init(ctx, telemetry.Config{
+		telemetryCfg := telemetry.Config{
 			Detect:             true,
 			Resource:           Resource(),
-			LiveTraceExporters: []sdktrace.SpanExporter{Frontend},
-			LiveLogExporters:   []sdklog.LogExporter{Frontend},
-		})
+			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
+			LiveLogExporters:   []sdklog.Exporter{Frontend.LogExporter()},
+		}
+		if spans, logs, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
+			telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
+			telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
+		}
+		// Init tracing as early as possible and shutdown after the command
+		// completes, ensuring progress is fully flushed to the frontend.
+		ctx = telemetry.Init(ctx, telemetryCfg)
 		defer telemetry.Close()
 
 		// Set the full command string as the name of the root span.
@@ -290,7 +297,7 @@ func main() {
 		Frontend.SetPrimary(span.SpanContext().SpanID())
 
 		// Direct command stdout/stderr to span logs via OpenTelemetry.
-		ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, "dagger")
+		ctx, stdout, stderr := slog.WithStdioToOTel(ctx, "dagger.io/cli")
 		rootCmd.SetOut(stdout)
 		rootCmd.SetErr(stderr)
 

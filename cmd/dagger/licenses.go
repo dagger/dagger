@@ -10,7 +10,6 @@ import (
 	"github.com/mitchellh/go-spdx"
 
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -62,7 +61,7 @@ var licenseFiles = []string{
 }
 
 func findOrCreateLicense(ctx context.Context, dir string) error {
-	log := telemetry.ContextLogger(ctx, slog.LevelWarn)
+	log := slog.ContextLogger(ctx, slog.LevelWarn)
 
 	id := licenseID
 	if id == "" {

@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/util/compression"
 )
 
@@ -127,7 +126,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 
 	dag := dagql.NewServer[*Query](d.root)
 
-	dag.Around(telemetry.AroundFunc)
+	dag.Around(AroundFunc)
 
 	// share the same cache session-wide
 	dag.Cache = d.root.Cache

@@ -58,6 +58,9 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 			"go.work",
 			"go.work.sum",
 
+			// don't rebuild on test-only-changes
+			"**/*_test.go",
+
 			// rust
 			"**/target",
 

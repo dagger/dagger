@@ -29,6 +29,7 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/moby/buildkit/util/grpcerrors"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -37,13 +38,14 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type Params struct {
@@ -67,7 +69,7 @@ type Params struct {
 	CloudCallback  func(string)
 
 	EngineTrace sdktrace.SpanExporter
-	EngineLogs  sdklog.LogExporter
+	EngineLogs  sdklog.Exporter
 }
 
 type Client struct {
@@ -76,6 +78,8 @@ type Client struct {
 	rootCtx context.Context
 
 	eg *errgroup.Group
+
+	connector drivers.Connector
 
 	internalCtx    context.Context
 	internalCancel context.CancelFunc
@@ -102,11 +106,12 @@ type Client struct {
 
 	nestedSessionPort int
 
-	labels telemetry.Labels
+	labels enginetel.Labels
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
 	c := &Client{Params: params}
+
 	if c.ID == "" {
 		c.ID = identity.NewID()
 	}
@@ -126,6 +131,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
 	c.closeCtx, c.closeRequests = context.WithCancel(context.WithoutCancel(ctx))
 
+	// FIXME: is this still needed? (not a problem, just want to be sure)
 	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 
 	defer func() {
@@ -139,7 +145,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 
-	c.labels = telemetry.LoadDefaultLabels(workdir, engine.Version)
+	c.labels = enginetel.LoadDefaultLabels(workdir, engine.Version)
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
@@ -237,6 +243,8 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		return err
 	}
 
+	c.connector = connector
+
 	ctx, span := Tracer().Start(ctx, "connecting to engine")
 	defer telemetry.End(span, func() error { return rerr })
 
@@ -247,11 +255,16 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.bkClient = bkClient
 
 	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
+		slog.Info("dialing telemetry", "remote", c.RunnerHost)
+
 		// Open a separate connection for telemetry.
-		telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
+		telemetryConn, err := grpc.NewClient(
+			"passthrough:"+c.RunnerHost,
 			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-				return connector.Connect(c.internalCtx)
+				return c.connector.Connect(c.internalCtx)
 			}),
+			// Propagate the session ID to the server (via baggage).
+			grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 			// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
 			// Shrinking IDs might help.
 			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
@@ -261,22 +274,25 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 			// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
 			grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
+			slog.Error("failed to dial telemetry", "error", err, "elapsed", elapsed)
 			return fmt.Errorf("telemetry grpc dial: %w", err)
 		}
 		c.telemetryConn = telemetryConn
 		c.telemetry = new(errgroup.Group)
 
 		if c.EngineTrace != nil {
-			if err := c.exportTraces(telemetry.NewTracesSourceClient(telemetryConn)); err != nil {
+			if err := c.exportTraces(enginetel.NewTracesSourceClient(telemetryConn)); err != nil {
 				return fmt.Errorf("export traces: %w", err)
 			}
 		}
 
 		if c.EngineLogs != nil {
-			if err := c.exportLogs(telemetry.NewLogsSourceClient(telemetryConn)); err != nil {
+			if err := c.exportLogs(enginetel.NewLogsSourceClient(telemetryConn)); err != nil {
 				return fmt.Errorf("export logs: %w", err)
 			}
 		}
+
+		slog.Info("dialed telemetry", "elapsed", elapsed)
 
 		return nil
 	}); err != nil {
@@ -287,7 +303,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		c.EngineCallback(bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
 	}
 	if c.CloudCallback != nil {
-		if url, ok := telemetry.URLForTrace(ctx); ok {
+		if url, ok := enginetel.URLForTrace(ctx); ok {
 			c.CloudCallback(url)
 		}
 	}
@@ -299,7 +315,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	ctx, _, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -384,7 +400,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			// only show errors once the time between attempts exceeds this threshold, otherwise common
 			// cases of 1 or 2 retries become too noisy
 			if elapsed > time.Second {
-				fmt.Fprintln(stderr, "Failed to connect; retrying...", err)
+				slog.Warn("failed to connect; retrying...", "error", err)
 			}
 		}
 		return err
@@ -474,14 +490,15 @@ func (c *Client) Close() (rerr error) {
 	return rerr
 }
 
-func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
+func (c *Client) exportTraces(tracesClient enginetel.TracesSourceClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
 	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	spans, err := tracesClient.Subscribe(ctx, &telemetry.TelemetryRequest{
-		TraceId: traceID[:],
+	spans, err := tracesClient.Subscribe(ctx, &enginetel.SubscribeRequest{
+		TraceId:  traceID[:],
+		ClientId: c.ID,
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe to spans: %w", err)
@@ -498,10 +515,10 @@ func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
 				if errors.Is(err, context.Canceled) {
 					return nil
 				}
-				return fmt.Errorf("recv log: %w", err)
+				return fmt.Errorf("recv spans: %w", err)
 			}
 
-			spans := telemetry.SpansFromProto(data.GetResourceSpans())
+			spans := telemetry.SpansFromPB(data.GetResourceSpans())
 
 			slog.Debug("received spans from engine", "len", len(spans))
 
@@ -518,14 +535,15 @@ func (c *Client) exportTraces(tracesClient telemetry.TracesSourceClient) error {
 	return nil
 }
 
-func (c *Client) exportLogs(logsClient telemetry.LogsSourceClient) error {
+func (c *Client) exportLogs(logsClient enginetel.LogsSourceClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
 	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	logs, err := logsClient.Subscribe(ctx, &telemetry.TelemetryRequest{
-		TraceId: traceID[:],
+	logs, err := logsClient.Subscribe(ctx, &enginetel.SubscribeRequest{
+		TraceId:  traceID[:],
+		ClientId: c.ID,
 	})
 	if err != nil {
 		return fmt.Errorf("subscribe to logs: %w", err)
@@ -545,11 +563,11 @@ func (c *Client) exportLogs(logsClient telemetry.LogsSourceClient) error {
 				return fmt.Errorf("recv log: %w", err)
 			}
 
-			logs := telemetry.TransformPBLogs(data.GetResourceLogs())
+			logs := telemetry.LogsFromPB(data.GetResourceLogs())
 
 			slog.Debug("received logs from engine", "len", len(logs))
 
-			if err := c.EngineLogs.ExportLogs(ctx, logs); err != nil {
+			if err := c.EngineLogs.Export(ctx, logs); err != nil {
 				return fmt.Errorf("export %d logs: %w", len(logs), err)
 			}
 		}

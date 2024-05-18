@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/engine/telemetry"
 )
 
 func TestLoadClientLabels(t *testing.T) {

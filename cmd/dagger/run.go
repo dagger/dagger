@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/telemetry"
 )
 
 var runCmd = &cobra.Command{

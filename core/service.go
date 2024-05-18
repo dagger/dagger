@@ -15,13 +15,14 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -263,7 +264,7 @@ func (svc *Service) startContainer(
 	}()
 
 	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
-	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	ctx, stdout, stderr := slog.WithStdioToOTel(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -590,7 +591,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	ctx, span := Tracer().Start(ctx, strings.Join(descs, ", "))
-	ctx, _, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	ctx, _, stderr := slog.WithStdioToOTel(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was

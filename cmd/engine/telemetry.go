@@ -5,16 +5,19 @@ import (
 	"os"
 	"time"
 
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 const (
@@ -44,8 +47,8 @@ func init() {
 	}
 }
 
-func InitTelemetry(ctx context.Context) (context.Context, *telemetry.PubSub) {
-	pubsub := telemetry.NewPubSub()
+func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
+	pubsub := enginetel.NewPubSub()
 
 	otelResource := resource.NewWithAttributes(
 		semconv.SchemaURL,
@@ -55,16 +58,16 @@ func InitTelemetry(ctx context.Context) (context.Context, *telemetry.PubSub) {
 	)
 
 	// Send engine telemetry to Cloud if configured.
-	if _, logs, ok := telemetry.ConfiguredCloudExporters(ctx); ok {
+	if _, logs, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
 		// TODO revive if/when we want engine logs to correlate to a trace
 		// spanProcessor := sdktrace.NewBatchSpanProcessor(spans)
 		// engineTraceProvider = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanProcessor))
 
 		// ctx, rootSpan = engineTraceProvider.Tracer(InstrumentationScopeName).Start(ctx, "dagger engine")
 
-		engineLoggerProvider = sdklog.NewLoggerProvider(otelResource)
-		engineLoggerProvider.RegisterLogProcessor(
-			sdklog.NewBatchLogProcessor(logs),
+		engineLoggerProvider = sdklog.NewLoggerProvider(
+			sdklog.WithResource(otelResource),
+			sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)),
 		)
 		logrus.AddHook(&otelLogrusHook{
 			rootSpan: rootSpan,
@@ -79,14 +82,43 @@ func InitTelemetry(ctx context.Context) (context.Context, *telemetry.PubSub) {
 		// telemetry to Cloud or OTEL_* - only Engine-specific telemetry.
 		Detect: false,
 
+		SpanProcessors: []sdktrace.SpanProcessor{
+			// Install a span processor that annotates each span with the client ID
+			// that it came from.
+			ClientAnnotator{},
+		},
+
 		// Send everything to the pub/sub, which distributes telemetry to
 		// individual clients.
-		LiveTraceExporters: []sdktrace.SpanExporter{pubsub},
-		LiveLogExporters:   []sdklog.LogExporter{pubsub},
+		LiveTraceExporters: []sdktrace.SpanExporter{pubsub.Spans()},
+		LiveLogExporters:   []sdklog.Exporter{pubsub.Logs()},
 	})
 
 	return ctx, pubsub
 }
+
+type ClientAnnotator struct {
+}
+
+var _ sdktrace.SpanProcessor = ClientAnnotator{}
+
+func (c ClientAnnotator) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
+	for _, attr := range span.Attributes() {
+		if attr.Key == telemetry.ClientIDAttr {
+			// has client ID already, so don't clobber it
+			return
+		}
+	}
+
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err == nil {
+		span.SetAttributes(attribute.String(telemetry.ClientIDAttr, metadata.ClientID))
+	}
+}
+
+func (c ClientAnnotator) OnEnd(span sdktrace.ReadOnlySpan)     {}
+func (c ClientAnnotator) Shutdown(ctx context.Context) error   { return nil }
+func (c ClientAnnotator) ForceFlush(ctx context.Context) error { return nil }
 
 func CloseTelemetry() {
 	telemetry.Close()

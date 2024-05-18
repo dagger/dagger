@@ -101,7 +101,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}
-		execMD.OTELEnvs = callerOpts.OTELEnvs
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))

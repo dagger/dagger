@@ -1,31 +1,79 @@
 package telemetry
 
+// The following attributes are used by the UI to interpret spans and control
+// their behavior in the UI.
 const (
-	DagDigestAttr = "dagger.io/dag.digest"
-
-	DagInputsAttr = "dagger.io/dag.inputs"
-	DagOutputAttr = "dagger.io/dag.output"
-
-	CachedAttr   = "dagger.io/dag.cached"
-	CanceledAttr = "dagger.io/dag.canceled"
-	InternalAttr = "dagger.io/dag.internal"
-
+	// The base64-encoded, protobuf-marshalled callpbv1.Call that this span
+	// represents.
 	DagCallAttr = "dagger.io/dag.call"
 
-	LLBOpAttr = "dagger.io/llb.op"
+	// The digest of the protobuf-marshalled Call that this span represents.
+	//
+	// This value acts as a node ID in the conceptual DAG.
+	DagDigestAttr = "dagger.io/dag.digest"
+
+	// The list of DAG digests that the span depends on.
+	//
+	// This is not currently used by the UI, but it could be used to drive higher
+	// level DAG walking processes without having to unmarshal the full call.
+	DagInputsAttr = "dagger.io/dag.inputs"
+
+	// The DAG call digest that the call returned, if the call returned an
+	// Object.
+	//
+	// This information is used to simplify values in the UI by showing their
+	// highest-level creator. For example, if foo().bar() returns a().b().c(), we
+	// will show foo().bar() instead of a().b().c() as it will be a more
+	// recognizable value to the user.
+	DagOutputAttr = "dagger.io/dag.output"
+
+	// Indicates that this span is "internal" and can be hidden by default.
+	//
+	// Internal spans may typically be revealed with a toggle.
+	UIInternalAttr = "dagger.io/ui.internal"
 
 	// Hide child spans by default.
+	//
+	// Encapsulated child spans may typically be revealed if the parent span errors.
 	UIEncapsulateAttr = "dagger.io/ui.encapsulate"
 
-	// The following are theoretical, if/when we want to express the same
-	// concepts from Progrock.
+	// Hide span by default.
+	//
+	// This is functionally the same as UIEncapsulateAttr, but is instead set
+	// on a child instead of a parent.
+	UIEncapsulatedAttr = "dagger.io/ui.encapsulated"
 
-	// The parent span of this task. Might not need this at all, if we want to
-	// just rely on span parent, but the thinking is the span parent could be
-	// pretty brittle.
-	TaskParentAttr = "dagger.io/task.parent"
+	// Substitute the span for its children and move its logs to its parent.
+	UIPassthroughAttr = "dagger.io/ui.passthrough" //nolint: gosec // lol
 
-	// Progress bars.
+	// Causes the parent span to act as if Passthrough was set.
+	UIMaskAttr = "dagger.io/ui.mask"
+
+	// NB: the following attributes are not currently used.
+
+	// Indicates that this span was a cache hit and did nothing.
+	CachedAttr = "dagger.io/dag.cached"
+
+	// Indicates that this span was interrupted.
+	CanceledAttr = "dagger.io/dag.canceled"
+
+	// The base64-encoded, protobuf-marshalled Buildkit LLB op payload that this
+	// span represents.
+	LLBOpAttr = "dagger.io/llb.op"
+
+	// The digests of the LLB operations that this span depends on, allowing the
+	// UI to attribute their future "cost."
+	LLBDigestsAttr = "dagger.io/llb.digests"
+
+	// The amount of progress that needs to be reached.
+	ProgressTotalAttr = "dagger.io/progress.total"
+
+	// Current value for the progress.
 	ProgressCurrentAttr = "dagger.io/progress.current"
-	ProgressTotalAttr   = "dagger.io/progress.total"
+
+	// Indicates the units for the progress numbers.
+	ProgressUnitsAttr = "dagger.io/progress.units"
+
+	// The client ID that generated this telemetry.
+	ClientIDAttr = "dagger.io/client.id"
 )

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,8 +30,9 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
-	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/log"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/buildkit/containerfs"
@@ -38,7 +40,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -56,15 +57,16 @@ const (
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
 
-	OTELTraceParentEnv      = "TRACEPARENT"
-	OTELExporterProtocolEnv = "OTEL_EXPORTER_OTLP_PROTOCOL"
-	OTELExporterEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	OTELTracesProtocolEnv   = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
-	OTELTracesEndpointEnv   = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
-	OTELLogsProtocolEnv     = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
-	OTELLogsEndpointEnv     = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
-	OTELMetricsProtocolEnv  = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
-	OTELMetricsEndpointEnv  = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+	OTelTraceParentEnv      = "TRACEPARENT"
+	OTelExporterProtocolEnv = "OTEL_EXPORTER_OTLP_PROTOCOL"
+	OTelExporterEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
+	OTelTracesProtocolEnv   = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
+	OTelTracesEndpointEnv   = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+	OTelTracesLiveEnv       = "OTEL_EXPORTER_OTLP_TRACES_LIVE"
+	OTelLogsProtocolEnv     = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL"
+	OTelLogsEndpointEnv     = "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"
+	OTelMetricsProtocolEnv  = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"
+	OTelMetricsEndpointEnv  = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
 
 	buildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 )
@@ -86,20 +88,17 @@ type execState struct {
 
 	cleanups *cleanups
 
-	spec                *specs.Spec
-	networkNamespace    bknetwork.Namespace
-	rootfsPath          string
-	uid                 uint32
-	gid                 uint32
-	sgids               []uint32
-	resolvConfPath      string
-	hostsFilePath       string
-	exitCodePath        string
-	metaMount           *specs.Mount
-	otelEndpoint        string
-	otelUnixSockSrcPath string
-	otelProto           string
-	origEnvMap          map[string]string
+	spec             *specs.Spec
+	networkNamespace bknetwork.Namespace
+	rootfsPath       string
+	uid              uint32
+	gid              uint32
+	sgids            []uint32
+	resolvConfPath   string
+	hostsFilePath    string
+	exitCodePath     string
+	metaMount        *specs.Mount
+	origEnvMap       map[string]string
 
 	doneErr error
 	done    chan struct{}
@@ -346,7 +345,7 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 		w.idmap,
 		w.apparmorProfile,
 		w.selinux,
-		w.tracingSocket,
+		"",
 		extraOpts...,
 	)
 	if err != nil {
@@ -367,10 +366,6 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 			continue
 		}
 		switch k {
-		case OTELTracesEndpointEnv:
-			state.otelEndpoint = v
-		case OTELTracesProtocolEnv:
-			state.otelProto = v
 		default:
 			if _, ok := removeEnvs[k]; !ok {
 				state.origEnvMap[k] = v
@@ -419,9 +414,6 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			mnt := mnt
 			state.metaMount = &mnt
-
-		case mnt.Destination == strings.TrimPrefix(state.otelEndpoint, "unix://"):
-			state.otelUnixSockSrcPath = mnt.Source
 
 		case mnt.Destination == buildkitQemuEmulatorMountPoint:
 			// buildkit puts the qemu emulator under /dev, which we aren't mounting now, so just
@@ -626,114 +618,146 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setupOTEL(ctx context.Context, state *execState) error {
-	if w.execMD != nil {
-		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTELEnvs...)
-	}
-
-	if state.otelEndpoint == "" {
+func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
+	if state.procInfo.Meta.NetMode != pb.NetMode_UNSET {
+		// align with setupNetwork; otherwise we hang waiting for a netNS worker
 		return nil
 	}
 
-	traceParent, ok := state.origEnvMap[OTELTraceParentEnv]
-	if ok {
-		otelCtx := propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": traceParent})
-		otelLogger := telemetry.Logger("dagger.io/executor")
-		stdout := &telemetry.OtelWriter{
-			Ctx:    otelCtx,
-			Logger: otelLogger,
-			Stream: 1,
-		}
-		stderr := &telemetry.OtelWriter{
-			Ctx:    otelCtx,
-			Logger: otelLogger,
-			Stream: 2,
-		}
-		state.procInfo.Stdout = nopCloser{io.MultiWriter(stdout, state.procInfo.Stdout)}
-		state.procInfo.Stderr = nopCloser{io.MultiWriter(stderr, state.procInfo.Stderr)}
+	otelLogger := telemetry.Logger("dagger.io/executor")
+	stdout := &telemetry.OTelWriter{
+		Ctx:    ctx,
+		Logger: otelLogger,
+		Stream: 1,
+	}
+	stderr := &telemetry.OTelWriter{
+		Ctx:    ctx,
+		Logger: otelLogger,
+		Stream: 2,
 	}
 
-	if strings.HasPrefix(state.otelEndpoint, "/") {
-		// Buildkit currently sets this to /dev/otel-grpc.sock which is not a valid
-		// endpoint URL despite being set in an OTEL_* env var.
-		state.otelEndpoint = "unix://" + state.otelEndpoint
+	if w.execMD != nil {
+		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTelEnvs...)
+
+		logAttrs := []log.KeyValue{
+			log.String(telemetry.ClientIDAttr, w.execMD.ClientID),
+		}
+		stdout.Attributes = logAttrs
+		stderr.Attributes = logAttrs
 	}
 
-	if strings.HasPrefix(state.otelEndpoint, "unix://") && state.procInfo.Meta.NetMode == pb.NetMode_UNSET {
-		// if otel endpoint is unix and we are in CNI mode, setup tcp proxying of the unix endpoint for better client compatibility
-		if state.otelUnixSockSrcPath == "" {
-			return fmt.Errorf("no mount found for otel unix socket %s", state.otelUnixSockSrcPath)
-		}
+	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdout, state.procInfo.Stdout)}
+	state.procInfo.Stderr = nopCloser{io.MultiWriter(stderr, state.procInfo.Stderr)}
 
-		listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
-			return net.Listen("tcp", "127.0.0.1:0")
-		})
+	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
+		return net.Listen("tcp", "127.0.0.1:0")
+	})
+	if err != nil {
+		return fmt.Errorf("otel tcp proxy listen: %w", err)
+	}
+
+	proxyConnPool := pool.New()
+	listenerCtx, cancelListener := context.WithCancel(ctx)
+	listenerPool := pool.New().WithContext(listenerCtx).WithCancelOnError()
+
+	otelProto := "http/protobuf"
+	otelEndpoint := "http://" + listener.Addr().String()
+	otelSrv := &http.Server{
+		Handler: w.telemetryPubSub,
+	}
+
+	listenerPool.Go(func(ctx context.Context) error {
+		<-ctx.Done()
+		err := listener.Close()
 		if err != nil {
-			return fmt.Errorf("otel tcp proxy listen: %w", err)
+			return fmt.Errorf("close otel proxy listener: %w", err)
 		}
-		state.otelEndpoint = "http://" + listener.Addr().String()
-
-		proxyConnPool := pool.New()
-		listenerCtx, cancelListener := context.WithCancel(ctx)
-		listenerPool := pool.New().WithContext(listenerCtx).WithCancelOnError()
-
-		listenerPool.Go(func(ctx context.Context) error {
-			<-ctx.Done()
-			err := listener.Close()
+		return nil
+	})
+	listenerPool.Go(func(ctx context.Context) error {
+		for {
+			conn, err := listener.Accept()
 			if err != nil {
-				return fmt.Errorf("close otel proxy listener: %w", err)
-			}
-			return nil
-		})
-		listenerPool.Go(func(ctx context.Context) error {
-			for {
-				conn, err := listener.Accept()
-				if err != nil {
-					if errors.Is(err, net.ErrClosed) {
-						err = nil
-					}
-					return err
+				if errors.Is(err, net.ErrClosed) {
+					err = nil
 				}
-
-				// TODO:(sipsma) logging that existed before? Was it useful?
-
-				remote, err := net.Dial("unix", state.otelUnixSockSrcPath)
-				if err != nil {
-					conn.Close()
-					return fmt.Errorf("dial otel unix socket: %w", err)
-				}
-
-				proxyConnPool.Go(func() {
-					defer remote.Close()
-					io.Copy(remote, conn)
-				})
-
-				proxyConnPool.Go(func() {
-					defer conn.Close()
-					io.Copy(conn, remote)
-				})
+				return err
 			}
-		})
-		state.cleanups.addNoErr("wait for otel proxy conn pool", proxyConnPool.Wait)
-		state.cleanups.add("wait for otel listener pool", listenerPool.Wait)
-		state.cleanups.addNoErr("cancel otel listener context", cancelListener)
-	}
 
+			l := &singleConnListener{
+				conn:    conn,
+				closeCh: make(chan struct{}),
+			}
+			proxyConnPool.Go(func() {
+				<-listenerCtx.Done()
+				l.Close()
+			})
+
+			proxyConnPool.Go(func() {
+				otelSrv.Serve(l)
+			})
+		}
+	})
+	state.cleanups.addNoErr("wait for otel proxy conn pool", proxyConnPool.Wait)
+	state.cleanups.add("wait for otel listener pool", listenerPool.Wait)
+	state.cleanups.addNoErr("cancel otel listener context", cancelListener)
+
+	// Configure our OpenTelemetry proxy. A lot.
 	state.spec.Process.Env = append(state.spec.Process.Env,
-		OTELExporterProtocolEnv+"="+state.otelProto,
-		OTELExporterEndpointEnv+"="+state.otelEndpoint,
-		OTELTracesProtocolEnv+"="+state.otelProto,
-		OTELTracesEndpointEnv+"="+state.otelEndpoint,
+		OTelExporterProtocolEnv+"="+otelProto,
+		OTelExporterEndpointEnv+"="+otelEndpoint,
+		OTelTracesProtocolEnv+"="+otelProto,
+		OTelTracesEndpointEnv+"="+otelEndpoint+"/v1/traces",
+		// Indicate that the /v1/trace endpoint accepts live telemetry.
+		OTelTracesLiveEnv+"=1",
 		// Dagger sets up a log exporter too. Explicitly set it so things can
 		// detect support for it.
-		OTELLogsProtocolEnv+"="+state.otelProto,
-		OTELLogsEndpointEnv+"="+state.otelEndpoint,
+		OTelLogsProtocolEnv+"="+otelProto,
+		OTelLogsEndpointEnv+"="+otelEndpoint+"/v1/logs",
 		// Dagger doesn't set up metrics yet, but we should set this anyway,
 		// since otherwise some tools default to localhost.
-		OTELMetricsProtocolEnv+"="+state.otelProto,
-		OTELMetricsEndpointEnv+"="+state.otelEndpoint,
+		OTelMetricsProtocolEnv+"="+otelProto,
+		OTelMetricsEndpointEnv+"="+otelEndpoint+"/v1/metrics",
 	)
 
+	// Telemetry propagation (traceparent, tracestate, baggage, etc)
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		telemetry.PropagationEnv(ctx)...)
+
+	return nil
+}
+
+// TODO dedup from engine/server
+// converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
+type singleConnListener struct {
+	conn      net.Conn
+	l         sync.Mutex
+	closeCh   chan struct{}
+	closeOnce sync.Once
+}
+
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	l.l.Lock()
+	if l.conn == nil {
+		l.l.Unlock()
+		<-l.closeCh
+		return nil, io.ErrClosedPipe
+	}
+	defer l.l.Unlock()
+
+	c := l.conn
+	l.conn = nil
+	return c, nil
+}
+
+func (l *singleConnListener) Addr() net.Addr {
+	return nil
+}
+
+func (l *singleConnListener) Close() error {
+	l.closeOnce.Do(func() {
+		close(l.closeCh)
+	})
 	return nil
 }
 

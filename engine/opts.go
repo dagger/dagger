@@ -15,7 +15,7 @@ import (
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/dagger/dagger/telemetry"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 const (
@@ -60,7 +60,7 @@ type ClientMetadata struct {
 	ClientHostname string `json:"client_hostname"`
 
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
-	Labels telemetry.Labels `json:"labels"`
+	Labels enginetel.Labels `json:"labels"`
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry

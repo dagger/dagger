@@ -11,7 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type querySchema struct {
@@ -78,7 +78,7 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (dagql.Boolean, error) {
-	logger := telemetry.GlobalLogger(ctx)
+	logger := slog.GlobalLogger(ctx)
 
 	// Skip development version
 	if _, err := semver.Parse(engine.Version); err != nil {

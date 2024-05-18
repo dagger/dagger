@@ -16,10 +16,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/telemetry"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
-var sessionLabels = telemetry.NewLabelFlag()
+var sessionLabels = enginetel.NewLabelFlag()
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{

@@ -18,10 +18,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type FrontendOpts struct {
@@ -46,8 +46,8 @@ type Frontend interface {
 	Background(cmd tea.ExecCommand) error
 
 	// Can consume otel spans and logs.
-	sdktrace.SpanExporter
-	sdklog.LogExporter
+	SpanExporter() sdktrace.SpanExporter
+	LogExporter() sdklog.Exporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
 	ConnectedToEngine(name string, version string)
