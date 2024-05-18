@@ -421,10 +421,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/name-overrides"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/python-dependencies"
             },
             {
