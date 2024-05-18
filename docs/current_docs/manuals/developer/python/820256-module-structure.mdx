@@ -54,11 +54,11 @@ The runtime container installs the SDK as an editable install, similar to the fo
 uv pip install -e ./sdk
 ```
 
-This is why the initial `pyproject.toml` file doesn't include any [dependencies](./077133-python-dependencies.mdx).
+This is why the initial `pyproject.toml` file doesn't include any [dependencies](../language-dependencies.mdx).
 
 ### UV installer
 
-[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./077133-python-dependencies.mdx#lock-file) (starting with [Dagger v0.11.0][v11]). It's possible to specify a newer version, if needed, in `pyproject.toml`:
+[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](../language-dependencies.mdx#lock-file) (starting with [Dagger v0.11.0][v11]). It's possible to specify a newer version, if needed, in `pyproject.toml`:
 
 ```toml
 [tool.dagger]
@@ -72,7 +72,7 @@ If `pip` is required instead, `uv` can be disabled:
 use-uv = false
 ```
 
-Note, however, that [pinning](./077133-python-dependencies.mdx#lock-file) via `requirements.lock` is only supported with `uv`.
+Note, however, that [pinning](../language-dependencies.mdx#lock-file) via `requirements.lock` is only supported with `uv`.
 
 ## Modules as Python libraries
 
