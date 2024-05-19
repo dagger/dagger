@@ -23,7 +23,3 @@ The Dagger Engine runs in a dedicated Docker container and emits log messages as
 DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^dagger-engine-*' --format '{{.Names}}')"
 docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
 ```
-
-Also see:
-
-- Additional debugging suggestions (Python)
