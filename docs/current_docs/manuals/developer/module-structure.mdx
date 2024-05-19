@@ -124,7 +124,7 @@ func DoThing(client *dagger.Client) *dagger.Directory {
 
 ## Python version
 
-Dagger Modules run in a [container](../execution-environment.mdx) that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It currently runs Python 3.11 by default but, starting with [Dagger v0.11.0][v11], the version can be changed.
+Dagger Modules run in a [container](./execution-environment.mdx) that's bootstrapped specifically by the Python SDK, with the necessary environment to run the module's code. It currently runs Python 3.11 by default but, starting with [Dagger v0.11.0][v11], the version can be changed.
 
 The desired interpreter version can be pinned by creating a `.python-version` file next to your `pyproject.toml`:
 
