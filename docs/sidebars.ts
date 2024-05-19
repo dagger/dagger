@@ -322,6 +322,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/module-structure"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/secrets"
         },
         {
@@ -382,10 +386,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/go/module-structure"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/go/debugging"
             },
             {
@@ -423,11 +423,6 @@ module.exports = {
               "type": "doc",
               "id": "manuals/developer/python/name-overrides"
             },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/module-structure"
-            },
-
             {
               "type": "doc",
               "id": "manuals/developer/python/debugging"
@@ -470,10 +465,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/module-structure"
             },
             {
               "type": "doc",
