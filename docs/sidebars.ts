@@ -378,10 +378,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/go/module-structure"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/go/ide-integration"
             },
             {
@@ -418,10 +414,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/attribute-functions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/module-structure"
             },
             {
               "type": "doc",
@@ -469,10 +461,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/module-structure"
             },
             {
               "type": "doc",

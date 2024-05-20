@@ -9,6 +9,78 @@ title: "TypeScript Extras"
 
 This page lists features specific to the TypeScript SDK.
 
+## module structure
+
+### Runtime container with Node 21.3
+
+Dagger modules run in a container (called the "runtime container") that's bootstrapped specifically by the TypeScript SDK, with the necessary environment to run the module's code. It's currently hardcoded to run in Node.js 21.3 (although this may be configurable in future).
+
+[Bun](https://bun.sh/) is experimentally supported and [work is in progress](https://github.com/dagger/dagger/issues/4368) to support [Deno](https://deno.com/).
+
+### Automatic SDK install
+
+The TypeScript SDK is installed automatically, including dependencies, with a version that's tied to the currently running Dagger Engine container[^1]:
+
+```shell
+# executed by the runtime container
+npm install --package-lock-only ./sdk
+```
+
+This is why the initial `package.json` doesn't include any dependencies except a local link to the `sdk` generated directory.
+
+```json
+{
+  "dependencies": {
+    "typescript": "^5.3.2"
+  },
+  "devDependencies": {
+    "@dagger.io/dagger": "./sdk"
+  }
+}
+```
+
+[^1]: The SDK filesare mounted under `/sdk` in the Dagger Engine runtime container.
+
+### modules as TypeScript libraries
+
+Dagger modules in Typescript are built to be installed, like libraries. The runtime container installs the module code with:
+
+```shell
+# executed by the runtime container
+npm install
+```
+
+This means that so long as the project has a `package.json` file, it can be used as a library and it can be managed using any Node.js package manager such as [`npm`](https://www.npmjs.com/), [`pnpm`](https://pnpm.io/) or [`yarn`](https://yarnpkg.com/).
+
+### Multiple files
+
+Due to TypeScript limitations, it is not possible to split your main class module (`index.ts`) into multiple files. However, it is possible to create sub-classes in different files and access them from your main class module:
+
+```typescript
+// src/index.ts
+import { func, object } from "@dagger.io/dagger"
+
+import { Test } from "./test" // in src/test.ts
+import { Lint } from "./lint" // in src/lint.ts
+
+@object()
+class Mymodule {
+  @func()
+  test(): Test {
+    return new Test()
+  }
+
+  @func()
+  lint(): Lint {
+    return new Lint()
+  }
+}
+```
+
+### `src` layout
+
+The default template from `dagger init` creates a `index.ts` file inside a `src/` directory. The TypeScript SDK expects to find the Dagger module's source code inside the `src/` directory.
+
 ## Runtimes
 
 TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via tsx), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively).
