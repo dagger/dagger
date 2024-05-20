@@ -39,6 +39,10 @@ Just as you can call Dagger Functions individually from the CLI, you can also ca
 - build and return a container image of the final application;
 - publish the container image to a registry and return the image identifier.
 
+:::tip COMBINING DAGGER FUNCTIONS
+There are various reasons why you might want to write Dagger Functions that call other Dagger Functions. A common reason is that when developing locally, it's quicker and easier to trigger your pipeline using a single command (`dagger call publish ...`) instead of multiple commands (`dagger call test ... && dagger call build ... &&  ...`).
+:::tip
+
 ### Call the Dagger Function
 
 Call the Dagger Function:
@@ -56,6 +60,37 @@ You can test the published container image by pulling and running it with `docke
 
 ![Docker run](/img/current_docs/quickstart/docker.gif)
 
-:::tip COMBINING DAGGER FUNCTIONS
-There are various reasons why you might want to write Dagger Functions that call other Dagger Functions. A common reason is that when developing locally, it's quicker and easier to trigger your pipeline using a single command (`dagger call publish ...`) instead of multiple commands (`dagger call test ... && dagger call build ... &&  ...`).
-:::tip
+
+:::tip FUNCTION CHAINING
+[Function chaining](../manuals/user/functions/539201-chaining.mdx) works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using the Dagger CLI. The following are equivalent:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/chain/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/chain/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/chain/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call foo --address="ttl.sh/bar"
+```
+
+```shell
+dagger call bar
+```
+</TabItem>
+</Tabs>
+:::

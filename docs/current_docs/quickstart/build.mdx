@@ -83,39 +83,3 @@ You should now be able to access the application by browsing to `http://localhos
 :::tip CONTAINERS AS SERVICES
 The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.
 :::
-
-
-
-:::tip FUNCTION CHAINING
-[Function chaining](../manuals/user/functions/539201-chaining.mdx) works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using the Dagger CLI. The following are equivalent:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/chain/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/chain/python/__init__.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=./snippets/chain/typescript/index.ts
-```
-
-</TabItem>
-<TabItem value="Dagger CLI">
-```shell
-dagger call foo --address="ttl.sh/bar"
-```
-
-```shell
-dagger call bar
-```
-</TabItem>
-</Tabs>
-:::
