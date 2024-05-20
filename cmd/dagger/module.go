@@ -1139,7 +1139,7 @@ type modFunction struct {
 
 func (f *modFunction) IsUnsupported() bool {
 	for _, arg := range f.Args {
-		if arg.IsUnsupportedFlag() {
+		if arg.IsRequired() && arg.IsUnsupportedFlag() {
 			return true
 		}
 	}

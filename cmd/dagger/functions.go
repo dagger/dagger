@@ -562,6 +562,10 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 
 	for _, arg := range fn.Args {
 		if err := arg.AddFlag(cmd.Flags()); err != nil {
+			var e *UnsupportedFlagError
+			if errors.As(err, &e) {
+				continue
+			}
 			return err
 		}
 		if arg.IsRequired() {
