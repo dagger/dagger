@@ -284,6 +284,11 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	path := v.String()
 	path = strings.TrimPrefix(path, "file://")
 
+	// The core module doesn't have a ModuleSource.
+	if modSrc == nil {
+		return dag.Host().Directory(path), nil
+	}
+
 	// Check if there's a :view.
 	// This technically prevents use of paths containing a ":", but that's
 	// generally considered a no-no anyways since it isn't in the

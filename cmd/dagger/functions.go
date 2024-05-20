@@ -32,6 +32,9 @@ const (
 	Platform     string = "Platform"
 	Socket       string = "Socket"
 	Terminal     string = "Terminal"
+
+	// coreModRef is the exact value for `-m` to call fields from Query.
+	coreModRef string = "-"
 )
 
 var (
@@ -401,36 +404,41 @@ func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "initialize")
 	defer telemetry.End(span, func() error { return rerr })
 
-	resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
-	defer telemetry.End(resolveSpan, func() error { return rerr })
-	modConf, err := getDefaultModuleConfiguration(resolveCtx, dag, true, true)
-	if err != nil {
-		return fmt.Errorf("failed to get configured module: %w", err)
-	}
-	if !modConf.FullyInitialized() {
-		return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
-	}
-	resolveSpan.End()
-	mod := modConf.Source.AsModule().Initialize()
+	srcRefStr, ok := getExplicitModuleSourceRef()
+	if ok && srcRefStr == coreModRef {
+		fc.mod = &moduleDef{}
+	} else {
+		resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
+		defer telemetry.End(resolveSpan, func() error { return rerr })
+		modConf, err := getDefaultModuleConfiguration(resolveCtx, dag, true, true)
+		if err != nil {
+			return fmt.Errorf("failed to get configured module: %w", err)
+		}
+		if !modConf.FullyInitialized() {
+			return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
+		}
+		resolveSpan.End()
+		mod := modConf.Source.AsModule().Initialize()
 
-	serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
-	err = mod.Serve(serveCtx)
-	telemetry.End(serveSpan, func() error { return err })
-	if err != nil {
-		return err
-	}
+		serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
+		err = mod.Serve(serveCtx)
+		telemetry.End(serveSpan, func() error { return err })
+		if err != nil {
+			return err
+		}
 
-	ctx, loadSpan := Tracer().Start(ctx, "analyzing module", telemetry.Encapsulate())
-	defer telemetry.End(loadSpan, func() error { return rerr })
+		ctx, loadSpan := Tracer().Start(ctx, "analyzing module", telemetry.Encapsulate())
+		defer telemetry.End(loadSpan, func() error { return rerr })
 
-	name, err := mod.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get module name: %w", err)
-	}
+		name, err := mod.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("get module name: %w", err)
+		}
 
-	fc.mod = &moduleDef{
-		Name:   name,
-		Source: modConf.Source,
+		fc.mod = &moduleDef{
+			Name:   name,
+			Source: modConf.Source,
+		}
 	}
 
 	if err := fc.mod.loadTypeDefs(ctx, dag); err != nil {
@@ -525,6 +533,14 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		}
 		if err := c.ValidateFlagGroups(); err != nil {
 			return err
+		}
+
+		// The function name can be empty if it's the mocked constructor for
+		// the root type (Query). That constructor has `fn.ReturnType` set to
+		// the root type itself, but empty name so we can exclude a selection
+		// in the query builder here.
+		if fn.Name == "" {
+			return nil
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.

@@ -790,11 +790,18 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 	}
 
 	name := gqlObjectName(m.Name)
+	if name == "" {
+		name = "Query"
+	}
 
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
 		case dagger.ObjectKind:
 			obj := typeDef.AsObject
+			// FIXME: we could get the real constructor's name through the field
+			// in Query which would avoid the need to convert the module name,
+			// but the Query TypeDef is loaded before the module so the module
+			// isn't not available in its functions list.
 			if name == gqlObjectName(obj.Name) {
 				m.MainObject = typeDef
 
@@ -805,8 +812,10 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 					obj.Constructor = &modFunction{ReturnType: typeDef}
 				}
 
-				// Constructors have an empty function name in ObjectTypeDef.
-				obj.Constructor.Name = gqlFieldName(obj.Name)
+				if name != "Query" {
+					// Constructors have an empty function name in ObjectTypeDef.
+					obj.Constructor.Name = gqlFieldName(obj.Name)
+				}
 			}
 			m.Objects = append(m.Objects, typeDef)
 		case dagger.InterfaceKind:
@@ -1091,6 +1100,26 @@ func (o *modObject) IsCore() bool {
 	return o.SourceModuleName == ""
 }
 
+func skipFunction(obj, field string) bool {
+	// TODO: make this configurable in the API but may not be easy to
+	// generalize because an "internal" field may still need to exist in
+	// codegen, for example.
+	skip := map[string][]string{
+		"Query": {
+			// for SDKs only
+			"typeDef",
+			"currentFunctionCall",
+			"currentModule",
+			// for tests only
+			"secret",
+		},
+	}
+	if fields, ok := skip[obj]; ok {
+		return slices.Contains(fields, field)
+	}
+	return false
+}
+
 // GetFunctions returns the object's function definitions including the fields,
 // which are treated as functions with no arguments.
 func (o *modObject) GetFunctions() []*modFunction {
@@ -1102,7 +1131,12 @@ func (o *modObject) GetFunctions() []*modFunction {
 			ReturnType:  f.TypeDef,
 		})
 	}
-	return append(fns, o.Functions...)
+	for _, f := range o.Functions {
+		if !skipFunction(o.Name, f.Name) {
+			fns = append(fns, f)
+		}
+	}
+	return fns
 }
 
 type modInterface struct {
@@ -1122,7 +1156,13 @@ func (o *modInterface) IsCore() bool {
 }
 
 func (o *modInterface) GetFunctions() []*modFunction {
-	return o.Functions
+	fns := make([]*modFunction, 0, len(o.Functions))
+	for _, f := range o.Functions {
+		if !skipFunction(o.Name, f.Name) {
+			fns = append(fns, f)
+		}
+	}
+	return fns
 }
 
 type modScalar struct {
