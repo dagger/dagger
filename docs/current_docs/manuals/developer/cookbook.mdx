@@ -97,26 +97,26 @@ dagger call modify-directory \
 
 ## Secrets
 
-### Use secrets
+### Use secret variables
 
 The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/secrets/go/main.go
+```go file=./snippets/secrets/secret-variable/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/secrets/python/main.py
+```python file=./snippets/secrets/secret-variable/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/secrets/typescript/index.ts
+```typescript file=./snippets/secrets/secret-variable/typescript/index.ts
 ```
 
 </TabItem>
@@ -130,12 +130,44 @@ dagger call github-api \
     --token=env:GITHUB_API_TOKEN
 
 dagger call github-api \
-    --endpoint=https://api.github.com/repos/dagger/dagger/issues
+    --endpoint=https://api.github.com/repos/dagger/dagger/issues \
     --token=file:./github.txt
 
 dagger call github-api \
-    --endpoint=https://api.github.com/repos/dagger/dagger/issues
+    --endpoint=https://api.github.com/repos/dagger/dagger/issues \
     --token=cmd:"gh auth token"
+```
+
+### Use secret files
+
+The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secrets/secret-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secrets/secret-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secrets/secret-file/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+```shell
+dagger call github-auth \
+    --secret=file:$HOME/.config/gh/hosts.yml
 ```
 
 ## Services
