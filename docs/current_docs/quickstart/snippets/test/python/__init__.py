@@ -17,4 +17,4 @@ class HelloDagger:
                 # capture and return the command output
                 .stdout()
             )
-         )
+        )
