@@ -1,0 +1,6 @@
+kind: Changed
+body: 'cli: list available functions when chain ends in an object'
+time: 2024-05-20T15:52:21.507104Z
+custom:
+  Author: helderco
+  PR: "7421"
