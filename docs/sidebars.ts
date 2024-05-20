@@ -338,6 +338,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/runtimes"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/error-handling"
         },
         {
@@ -485,10 +489,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/runtime"
             },
             {
               "type": "doc",
