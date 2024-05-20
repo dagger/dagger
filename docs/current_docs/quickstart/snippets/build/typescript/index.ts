@@ -15,12 +15,13 @@ class HelloDagger {
       // get the build output directory
       .directory("./dist")
     return dag
-      .container()
-      // start from a slim NGINX container
-      .from("nginx:1.25-alpine")
-  		// copy the build output directory to the container
-      .withDirectory("/usr/share/nginx/html", build)
-  		// expose the container port
-      .withExposedPort(8080)
+        .container()
+        // start from a slim NGINX container
+        .from("nginx:1.25-alpine")
+  		  // copy the build output directory to the container
+        .withDirectory("/usr/share/nginx/html", build)
+  		  // expose the container port
+        .withExposedPort(8080)
+
   }
 }
