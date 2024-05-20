@@ -13,6 +13,7 @@ engine:
   #     mirrors = ["mirror.gcr.io"]
   #   [log]
   #     format = "json"
+  labels: {}
   resources:
     limits: {}
     # limits:
