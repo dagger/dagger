@@ -12,7 +12,7 @@ title: "IDE Integration"
 To get your IDE to recognize the Dagger Go module:
 
 - Run `dagger develop` to generate all the local Go files locally. You can choose to omit these from your version control system if you like, they aren't required to run your module.
-- [Configure your `go.work` file](./882081-module-structure.mdx#go-workspaces) to include the path to your module.
+- [Configure your `go.work` file](../go.mdx#go-workspaces) to include the path to your module.
 
 When you generate a Dagger Module for the first time, Dagger will create a `go.mod` file just for the module. If the module exists in a sub-directory of an outer Go project (such as `dagger/`, the default), this might confuse the IDE.
 
