@@ -274,6 +274,20 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
+// printCommands prints the available functions for the current command.
+func (fc *FuncCommand) printCommands(cmd *cobra.Command) {
+	if cmd.HasAvailableSubCommands() {
+		cmd.Println(toUpperBold("Available functions"))
+		for _, c := range cmd.Commands() {
+			if c.IsAvailableCommand() {
+				cmd.Println(cmdShortWrapped(c))
+			}
+		}
+		cmd.Println()
+		cmd.Printf("Use '%v <function> --help' for more information about a function.\n", cmd.CommandPath())
+	}
+}
+
 func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
 
@@ -325,9 +339,10 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		return fc.Execute(fc, cmd)
 	}
 
-	// No args to the parent command, default to showing help.
+	// No args to the parent command.
 	if cmd == c {
-		return cmd.Help()
+		fc.printCommands(cmd)
+		return nil
 	}
 
 	return cmd.RunE(cmd, flags)
@@ -489,25 +504,27 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			switch fn.ReturnType.Kind {
 			case dagger.ObjectKind, dagger.InterfaceKind:
-				if fc.OnSelectObjectLeaf == nil {
-					// there is no handling of this object and no further selections, error out
-					fc.showUsage = true
-					return fmt.Errorf("%q requires a sub-command", cmd.Name())
+				origSel := fc.q
+
+				if fc.OnSelectObjectLeaf != nil {
+					if err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.Name()); err != nil {
+						fc.showUsage = true
+						return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
+					}
 				}
 
-				// the top-level command may handle this via OnSelectObjectLeaf
-				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.Name())
-				if err != nil {
-					fc.showUsage = true
-					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
+				// unless the selection was changed in OnSelectObjectLeaf,
+				// list available commands.
+				if fc.q == origSel {
+					fc.printCommands(cmd)
+					return nil
 				}
 
 			case dagger.ListKind:
 				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
-					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
-					fc.showUsage = true
-					return fmt.Errorf("%q requires a sub-command", cmd.Name())
+					fc.printCommands(cmd)
+					return nil
 				}
 			}
 

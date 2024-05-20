@@ -49,13 +49,9 @@ dagger call lint stdout
 				if name == File {
 					c.Arg("allowParentDirPath", true)
 				}
-				return nil
 			}
-			c.Select("sync")
 		case Terminal:
 			c.Select("websocketEndpoint")
-		default:
-			return fmt.Errorf("return type %q requires a sub-command", name)
 		}
 		return nil
 	},
@@ -88,60 +84,50 @@ dagger call lint stdout
 				logOutputSuccess(cmd, outputPath)
 				return nil
 			}
-
-			// Just `sync`, don't print the result (id), but let user know.
-
-			// TODO: This is only "needed" when there's no output because
-			// you're left wondering if the command did anything. Otherwise,
-			// the output is sent only to progrock (TUI), so we'd need to check
-			// there if possible. Decide whether this message is ok in all cases,
-			// better to not print it, or to conditionally check.
-			cmd.PrintErrf("%s evaluated. Use \"%s --help\" to see available sub-commands.\n", modType.Name(), cmd.CommandPath())
-			return nil
-		default:
-			// TODO: Since IDs aren't stable to be used in the CLI, we should
-			// silence all ID results (or present in a compact way like
-			// ´<ContainerID:etpdi9gue9l5>`), but need a KindScalar TypeDef
-			// to get the name from modType.
-			// You can't select `id`, but you can select `sync`, and there
-			// may be others.
-			buf := new(bytes.Buffer)
-
-			// especially useful for lists and maps
-			if jsonOutput {
-				// disable HTML escaping to improve readability
-				encoder := json.NewEncoder(buf)
-				encoder.SetEscapeHTML(false)
-				encoder.SetIndent("", "    ")
-				if err := encoder.Encode(response); err != nil {
-					return err
-				}
-			} else {
-				if err := printFunctionResult(buf, response); err != nil {
-					return err
-				}
-			}
-
-			if outputPath != "" {
-				if err := writeOutputFile(outputPath, buf); err != nil {
-					return fmt.Errorf("couldn't write output to file: %w", err)
-				}
-				logOutputSuccess(cmd, outputPath)
-			}
-
-			writer := cmd.OutOrStdout()
-			buf.WriteTo(writer)
-
-			// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
-			// vertex, which currently adds its own linebreak (as well as all the
-			// other UI clutter), so there's no point doing this. consider adding
-			// back when we switch to printing "clean" output on exit.
-			// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
-			// 	fmt.Fprintln(writer, "⏎")
-			// }
-
-			return nil
 		}
+
+		// TODO: Since IDs aren't stable to be used in the CLI, we should
+		// silence all ID results (or present in a compact way like
+		// ´<ContainerID:etpdi9gue9l5>`), but need a KindScalar TypeDef
+		// to get the name from modType.
+		// You can't select `id`, but you can select `sync`, and there
+		// may be others.
+		buf := new(bytes.Buffer)
+
+		// especially useful for lists and maps
+		if jsonOutput {
+			// disable HTML escaping to improve readability
+			encoder := json.NewEncoder(buf)
+			encoder.SetEscapeHTML(false)
+			encoder.SetIndent("", "    ")
+			if err := encoder.Encode(response); err != nil {
+				return err
+			}
+		} else {
+			if err := printFunctionResult(buf, response); err != nil {
+				return err
+			}
+		}
+
+		if outputPath != "" {
+			if err := writeOutputFile(outputPath, buf); err != nil {
+				return fmt.Errorf("couldn't write output to file: %w", err)
+			}
+			logOutputSuccess(cmd, outputPath)
+		}
+
+		writer := cmd.OutOrStdout()
+		buf.WriteTo(writer)
+
+		// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
+		// vertex, which currently adds its own linebreak (as well as all the
+		// other UI clutter), so there's no point doing this. consider adding
+		// back when we switch to printing "clean" output on exit.
+		// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
+		// 	fmt.Fprintln(writer, "⏎")
+		// }
+
+		return nil
 	},
 }
 
