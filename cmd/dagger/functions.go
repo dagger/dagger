@@ -561,8 +561,7 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 	}
 
 	for _, arg := range fn.Args {
-		_, err := arg.AddFlag(cmd.Flags())
-		if err != nil {
+		if err := arg.AddFlag(cmd.Flags()); err != nil {
 			return err
 		}
 		if arg.IsRequired() {

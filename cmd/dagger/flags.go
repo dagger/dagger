@@ -24,6 +24,19 @@ import (
 	"dagger.io/dagger"
 )
 
+type UnsupportedFlagError struct {
+	Name string
+	Type string
+}
+
+func (e *UnsupportedFlagError) Error() string {
+	msg := fmt.Sprintf("unsupported type for flag --%s", e.Name)
+	if e.Type != "" {
+		msg = fmt.Sprintf("%s: %s", msg, e.Type)
+	}
+	return msg
+}
+
 // GetCustomFlagValue returns a pflag.Value instance for a dagger.ObjectTypeDef name.
 func GetCustomFlagValue(name string) DaggerValue {
 	switch name {
@@ -629,59 +642,69 @@ func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.M
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
-func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
+func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 	name := r.FlagName()
 	usage := r.Description
 
 	if flags.Lookup(name) != nil {
-		return nil, fmt.Errorf("flag already exists: %s", name)
+		return fmt.Errorf("flag already exists: %s", name)
 	}
 
 	switch r.TypeDef.Kind {
 	case dagger.StringKind:
 		val, _ := getDefaultValue[string](r)
-		return flags.String(name, val, usage), nil
+		flags.String(name, val, usage)
+		return nil
 
 	case dagger.IntegerKind:
 		val, _ := getDefaultValue[int](r)
-		return flags.Int(name, val, usage), nil
+		flags.Int(name, val, usage)
+		return nil
 
 	case dagger.BooleanKind:
 		val, _ := getDefaultValue[bool](r)
-		return flags.Bool(name, val, usage), nil
+		flags.Bool(name, val, usage)
+		return nil
 
 	case dagger.ScalarKind:
 		scalarName := r.TypeDef.AsScalar.Name
 
 		if val := GetCustomFlagValue(scalarName); val != nil {
 			flags.Var(val, name, usage)
-			return val, nil
+			return nil
 		}
 
 		val, _ := getDefaultValue[string](r)
-		return flags.String(name, val, usage), nil
+		flags.String(name, val, usage)
+		return nil
 
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
 		if val := GetCustomFlagValue(objName); val != nil {
 			flags.Var(val, name, usage)
-			return val, nil
+			return nil
 		}
 
 		// TODO: default to JSON?
-		return nil, fmt.Errorf("unsupported object type %q for flag: %s", objName, name)
+		return &UnsupportedFlagError{
+			Name: name,
+			Type: fmt.Sprintf("%q object", objName),
+		}
 
 	case dagger.InputKind:
 		inputName := r.TypeDef.AsInput.Name
 
 		if val := GetCustomFlagValue(inputName); val != nil {
 			flags.Var(val, name, usage)
-			return val, nil
+			return nil
 		}
 
 		// TODO: default to JSON?
-		return nil, fmt.Errorf("unsupported input type %q for flag: %s", inputName, name)
+		return &UnsupportedFlagError{
+			Name: name,
+			Type: fmt.Sprintf("%q input", inputName),
+		}
 
 	case dagger.ListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
@@ -689,55 +712,68 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) (any, error) {
 		switch elementType.Kind {
 		case dagger.StringKind:
 			val, _ := getDefaultValue[[]string](r)
-			return flags.StringSlice(name, val, usage), nil
+			flags.StringSlice(name, val, usage)
+			return nil
 
 		case dagger.IntegerKind:
 			val, _ := getDefaultValue[[]int](r)
-			return flags.IntSlice(name, val, usage), nil
+			flags.IntSlice(name, val, usage)
+			return nil
 
 		case dagger.BooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
-			return flags.BoolSlice(name, val, usage), nil
+			flags.BoolSlice(name, val, usage)
+			return nil
 
 		case dagger.ScalarKind:
 			scalarName := elementType.AsScalar.Name
 
 			if val := GetCustomFlagValueSlice(scalarName); val != nil {
 				flags.Var(val, name, usage)
-				return val, nil
+				return nil
 			}
 
 			val, _ := getDefaultValue[[]string](r)
-			return flags.StringSlice(name, val, usage), nil
+			flags.StringSlice(name, val, usage)
+			return nil
 
 		case dagger.ObjectKind:
 			objName := elementType.AsObject.Name
 
 			if val := GetCustomFlagValueSlice(objName); val != nil {
 				flags.Var(val, name, usage)
-				return val, nil
+				return nil
 			}
 
 			// TODO: default to JSON?
-			return nil, fmt.Errorf("unsupported list of objects %q for flag: %s", objName, name)
+			return &UnsupportedFlagError{
+				Name: name,
+				Type: fmt.Sprintf("list of %q objects", objName),
+			}
 
 		case dagger.InputKind:
 			inputName := elementType.AsInput.Name
 
 			if val := GetCustomFlagValueSlice(inputName); val != nil {
 				flags.Var(val, name, usage)
-				return val, nil
+				return nil
 			}
 
 			// TODO: default to JSON?
-			return nil, fmt.Errorf("unsupported list of input type %q for flag: %s", inputName, name)
+			return &UnsupportedFlagError{
+				Name: name,
+				Type: fmt.Sprintf("list of %q inputs", inputName),
+			}
 
 		case dagger.ListKind:
-			return nil, fmt.Errorf("unsupported list of lists for flag: %s", name)
+			return &UnsupportedFlagError{
+				Name: name,
+				Type: "list of lists",
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("unsupported type for argument: %s", r.Name)
+	return &UnsupportedFlagError{Name: name}
 }
 
 func readAsCSV(val string) ([]string, error) {

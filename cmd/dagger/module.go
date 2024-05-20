@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -1051,7 +1052,11 @@ func (o *modObject) GetFunctions() []*modFunction {
 			ReturnType:  f.TypeDef,
 		})
 	}
-	fns = append(fns, o.Functions...)
+	for _, f := range o.Functions {
+		if !f.IsUnsupported() {
+			fns = append(fns, f)
+		}
+	}
 	return fns
 }
 
@@ -1086,7 +1091,11 @@ func (o *modInterface) ProviderName() string {
 
 func (o *modInterface) GetFunctions() []*modFunction {
 	fns := make([]*modFunction, 0, len(o.Functions))
-	fns = append(fns, o.Functions...)
+	for _, f := range o.Functions {
+		if !f.IsUnsupported() {
+			fns = append(fns, f)
+		}
+	}
 	return fns
 }
 
@@ -1128,6 +1137,15 @@ type modFunction struct {
 	Args        []*modFunctionArg
 }
 
+func (f *modFunction) IsUnsupported() bool {
+	for _, arg := range f.Args {
+		if arg.IsUnsupportedFlag() {
+			return true
+		}
+	}
+	return false
+}
+
 // modFunctionArg is a representation of dagger.FunctionArg.
 type modFunctionArg struct {
 	Name         string
@@ -1147,6 +1165,13 @@ func (r *modFunctionArg) FlagName() string {
 
 func (r *modFunctionArg) IsRequired() bool {
 	return !r.TypeDef.Optional && r.DefaultValue == ""
+}
+
+func (r *modFunctionArg) IsUnsupportedFlag() bool {
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	err := r.AddFlag(flags)
+	var e *UnsupportedFlagError
+	return errors.As(err, &e)
 }
 
 func getDefaultValue[T any](r *modFunctionArg) (T, error) {
