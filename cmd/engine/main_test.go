@@ -13,11 +13,11 @@ import (
 func TestParallelismFlag(t *testing.T) {
 	t.Parallel()
 	app := cli.NewApp()
-	app.Flags = append(app.Flags, appFlags...)
+	addFlags(app)
 
 	cfg := &config.Config{}
 	app.Action = func(c *cli.Context) error {
-		err := applyOCIFlags(c, cfg)
+		err := applyMainFlags(c, cfg)
 		if err != nil {
 			return err
 		}
@@ -47,7 +47,7 @@ func TestParallelismFlag(t *testing.T) {
 
 func TestEngineNameLabel(t *testing.T) {
 	app := cli.NewApp()
-	app.Flags = append(app.Flags, appFlags...)
+	addFlags(app)
 
 	t.Run("default to hostname", func(t *testing.T) {
 		enableRunc := true
@@ -56,7 +56,7 @@ func TestEngineNameLabel(t *testing.T) {
 		cfg.Workers.OCI.Enabled = &enableRunc
 		cfg.Workers.OCI.Binary = "/proc/self/exe"
 		app.Action = func(c *cli.Context) error {
-			err := applyOCIFlags(c, cfg)
+			err := applyMainFlags(c, cfg)
 			if err != nil {
 				return err
 			}

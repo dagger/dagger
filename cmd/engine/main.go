@@ -12,47 +12,24 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/containerd/containerd/pkg/seed" //nolint:staticcheck // SA1019 deprecated
 	"github.com/containerd/containerd/pkg/userns"
-	"github.com/containerd/containerd/platforms"
-	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
-	"github.com/moby/buildkit/cache/remotecache"
-	"github.com/moby/buildkit/cache/remotecache/azblob"
-	"github.com/moby/buildkit/cache/remotecache/gha"
-	inlineremotecache "github.com/moby/buildkit/cache/remotecache/inline"
-	localremotecache "github.com/moby/buildkit/cache/remotecache/local"
-	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
-	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
-	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/executor/oci"
-	"github.com/moby/buildkit/frontend"
-	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
-	"github.com/moby/buildkit/frontend/gateway"
-	"github.com/moby/buildkit/frontend/gateway/forwarder"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/bboltcachestorage"
-	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/util/apicaps"
 	"github.com/moby/buildkit/util/appcontext"
-	"github.com/moby/buildkit/util/appdefaults"
-	"github.com/moby/buildkit/util/archutil"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/profiler"
-	"github.com/moby/buildkit/util/resolver"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
-	"github.com/moby/buildkit/worker"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
@@ -62,17 +39,10 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
-	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
-)
-
-const (
-	autoMode              = "auto"
-	daggerCacheServiceURL = "https://api.dagger.cloud/magicache"
 )
 
 func init() {
@@ -86,25 +56,7 @@ func init() {
 	}
 }
 
-type workerInitializerOpt struct {
-	config         *config.Config
-	sessionManager *session.Manager
-	pubsub         *telemetry.PubSub
-}
-
-var (
-	appFlags []cli.Flag
-)
-
-func main() { //nolint:gocyclo
-	cli.VersionPrinter = func(c *cli.Context) {
-		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
-	}
-	app := cli.NewApp()
-	app.Name = "buildkitd"
-	app.Usage = "build daemon"
-	app.Version = version.Version
-
+func addFlags(app *cli.App) {
 	defaultConf, err := defaultConf()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
@@ -198,8 +150,97 @@ func main() { //nolint:gocyclo
 			Usage: "address range to use for networked containers",
 			Value: network.DefaultCIDR,
 		},
+		cli.StringSliceFlag{
+			Name:  "oci-worker-labels",
+			Usage: "user-specific annotation labels (com.example.foo=bar)",
+		},
+		cli.StringFlag{
+			Name:  "oci-worker-snapshotter",
+			Usage: "name of snapshotter (overlayfs, native, etc.)",
+			Value: defaultConf.Workers.OCI.Snapshotter,
+		},
+		cli.StringFlag{
+			Name:  "oci-worker-proxy-snapshotter-path",
+			Usage: "address of proxy snapshotter socket (do not include 'unix://' prefix)",
+		},
+		cli.StringSliceFlag{
+			Name:  "oci-worker-platform",
+			Usage: "override supported platforms for worker",
+		},
+		cli.StringFlag{
+			Name:  "oci-worker-net",
+			Usage: "worker network type (auto, cni or host)",
+			Value: defaultConf.Workers.OCI.NetworkConfig.Mode,
+		},
+		cli.StringFlag{
+			Name:  "oci-cni-config-path",
+			Usage: "path of cni config file",
+			Value: defaultConf.Workers.OCI.NetworkConfig.CNIConfigPath,
+		},
+		cli.StringFlag{
+			Name:  "oci-cni-binary-dir",
+			Usage: "path of cni binary files",
+			Value: defaultConf.Workers.OCI.NetworkConfig.CNIBinaryPath,
+		},
+		cli.IntFlag{
+			Name:  "oci-cni-pool-size",
+			Usage: "size of cni network namespace pool",
+			Value: defaultConf.Workers.OCI.NetworkConfig.CNIPoolSize,
+		},
+		cli.StringFlag{
+			Name:  "oci-worker-binary",
+			Usage: "name of specified oci worker binary",
+			Value: defaultConf.Workers.OCI.Binary,
+		},
+		cli.StringFlag{
+			Name:  "oci-worker-apparmor-profile",
+			Usage: "set the name of the apparmor profile applied to containers",
+		},
+		cli.BoolFlag{
+			Name:  "oci-worker-selinux",
+			Usage: "apply SELinux labels",
+		},
+		cli.StringFlag{
+			Name:  "oci-max-parallelism",
+			Usage: "maximum number of parallel build steps that can be run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism.",
+		},
+		cli.Int64Flag{
+			Name:  "oci-worker-gc-keepstorage",
+			Usage: "Amount of storage GC keep locally (MB)",
+			Value: func() int64 {
+				keep := defaultConf.Workers.OCI.GCKeepStorage.AsBytes(defaultConf.Root)
+				if keep == 0 {
+					keep = config.DiskSpace{Percentage: 75}.AsBytes(defaultConf.Root)
+				}
+				return keep / 1e6
+			}(),
+			Hidden: len(defaultConf.Workers.OCI.GCPolicy) != 0,
+		},
 	)
-	app.Flags = append(app.Flags, appFlags...)
+
+	if defaultConf.Workers.OCI.GC == nil || *defaultConf.Workers.OCI.GC {
+		app.Flags = append(app.Flags, cli.BoolTFlag{
+			Name:  "oci-worker-gc",
+			Usage: "Enable automatic garbage collection on worker",
+		})
+	} else {
+		app.Flags = append(app.Flags, cli.BoolFlag{
+			Name:  "oci-worker-gc",
+			Usage: "Enable automatic garbage collection on worker",
+		})
+	}
+}
+
+func main() { //nolint:gocyclo
+	cli.VersionPrinter = func(c *cli.Context) {
+		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
+	}
+	app := cli.NewApp()
+	app.Name = "buildkitd"
+	app.Usage = "build daemon"
+	app.Version = version.Version
+
+	addFlags(app)
 
 	app.Action = func(c *cli.Context) error {
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
@@ -241,9 +282,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
-		setDaggerDefaults(&cfg, netConf)
-
-		setDefaultConfig(&cfg)
+		setDefaultConfig(&cfg, netConf)
 
 		if err := applyMainFlags(c, &cfg); err != nil {
 			return err
@@ -281,6 +320,8 @@ func main() { //nolint:gocyclo
 		sloglogrus.LogLevels[slog.LevelTrace] = logrus.TraceLevel
 		slog.SetDefault(slog.New(slogOpts.NewLogrusHandler()))
 
+		bklog.G(context.Background()).Debugf("engine name: %s", engineName)
+
 		if cfg.GRPC.DebugAddress != "" {
 			if err := setupDebugHandlers(cfg.GRPC.DebugAddress); err != nil {
 				return err
@@ -288,7 +329,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("creating engine GRPC server")
-		server := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
+		grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
 		// relative path does not work with nightlyone/lockfile
 		root, err := filepath.Abs(cfg.Root)
@@ -316,20 +357,6 @@ func main() { //nolint:gocyclo
 			os.RemoveAll(lockPath)
 		}()
 
-		bklog.G(ctx).Debug("creating engine controller")
-		controller, cacheManager, err := newController(ctx, c, &cfg, pubsub)
-		if err != nil {
-			return err
-		}
-		defer controller.Close()
-
-		controller.Register(server)
-
-		go logMetrics(context.Background(), cfg.Root, controller)
-		if cfg.Trace {
-			go logTraceMetrics(context.Background())
-		}
-
 		ents := c.GlobalStringSlice("allow-insecure-entitlement")
 		if len(ents) > 0 {
 			cfg.Entitlements = []string{}
@@ -345,8 +372,26 @@ func main() { //nolint:gocyclo
 			}
 		}
 
+		bklog.G(ctx).Debug("creating engine server")
+		srv, err := server.NewServer(ctx, &server.NewServerOpts{
+			Config:          &cfg,
+			Name:            engineName,
+			TelemetryPubSub: pubsub,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create engine: %w", err)
+		}
+		defer eng.Close()
+
+		eng.Register(grpcServer)
+
+		go logMetrics(context.Background(), cfg.Root, srv)
+		if cfg.Trace {
+			go logTraceMetrics(context.Background())
+		}
+
 		bklog.G(ctx).Debug("starting optional cache mount synchronization")
-		err = cacheManager.StartCacheMountSynchronization(ctx)
+		err = srv.SolverCache.StartCacheMountSynchronization(ctx)
 		if err != nil {
 			bklog.G(ctx).WithError(err).Error("failed to start cache mount synchronization")
 			// continue on, doesn't need to be fatal
@@ -355,7 +400,7 @@ func main() { //nolint:gocyclo
 		// start serving on the listeners for actual clients
 		bklog.G(ctx).Debug("starting main engine grpc listeners")
 		errCh := make(chan error, 1)
-		if err := serveGRPC(cfg.GRPC, server, errCh); err != nil {
+		if err := serveGRPC(cfg.GRPC, grpcServer, errCh); err != nil {
 			return err
 		}
 
@@ -375,7 +420,7 @@ func main() { //nolint:gocyclo
 		bklog.G(ctx).Debug("stopping cache manager")
 		stopCacheCtx, cancelCacheCtx := context.WithTimeout(context.Background(), 600*time.Second)
 		defer cancelCacheCtx()
-		stopCacheErr := cacheManager.Close(stopCacheCtx)
+		stopCacheErr := srv.SolverCache.Close(stopCacheCtx)
 		if stopCacheErr != nil {
 			bklog.G(ctx).WithError(stopCacheErr).Error("failed to stop cache")
 		}
@@ -387,7 +432,7 @@ func main() { //nolint:gocyclo
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
-		server.GracefulStop()
+		grpcServer.GracefulStop()
 		return err
 	}
 
@@ -445,77 +490,7 @@ func serveGRPC(cfg config.GRPCConfig, server *grpc.Server, errCh chan error) err
 	return nil
 }
 
-func defaultConfigPath() string {
-	if userns.RunningInUserNS() {
-		return filepath.Join(appdefaults.UserConfigDir(), "buildkitd.toml")
-	}
-	return filepath.Join(appdefaults.ConfigDir, "buildkitd.toml")
-}
-
-func defaultConf() (config.Config, error) {
-	cfg, err := config.LoadFile(defaultConfigPath())
-	if err != nil {
-		var pe *os.PathError
-		if !errors.As(err, &pe) {
-			return config.Config{}, err
-		}
-		logrus.Warnf("failed to load default config: %v", err)
-	}
-	setDefaultConfig(&cfg)
-
-	return cfg, nil
-}
-
-func setDefaultNetworkConfig(nc config.NetworkConfig) config.NetworkConfig {
-	if nc.Mode == "" {
-		nc.Mode = autoMode
-	}
-	if nc.CNIConfigPath == "" {
-		nc.CNIConfigPath = appdefaults.DefaultCNIConfigPath
-	}
-	if nc.CNIBinaryPath == "" {
-		nc.CNIBinaryPath = appdefaults.DefaultCNIBinDir
-	}
-	return nc
-}
-
-func setDefaultConfig(cfg *config.Config) {
-	orig := *cfg
-
-	if cfg.Root == "" {
-		cfg.Root = appdefaults.Root
-	}
-
-	if len(cfg.GRPC.Address) == 0 {
-		cfg.GRPC.Address = []string{appdefaults.Address}
-	}
-
-	if cfg.Workers.OCI.Platforms == nil {
-		cfg.Workers.OCI.Platforms = formatPlatforms(archutil.SupportedPlatforms(false))
-	}
-	if cfg.Workers.Containerd.Platforms == nil {
-		cfg.Workers.Containerd.Platforms = formatPlatforms(archutil.SupportedPlatforms(false))
-	}
-
-	cfg.Workers.OCI.NetworkConfig = setDefaultNetworkConfig(cfg.Workers.OCI.NetworkConfig)
-	cfg.Workers.Containerd.NetworkConfig = setDefaultNetworkConfig(cfg.Workers.Containerd.NetworkConfig)
-
-	if userns.RunningInUserNS() {
-		// if buildkitd is being executed as the mapped-root (not only EUID==0 but also $USER==root)
-		// in a user namespace, we need to enable the rootless mode but
-		// we don't want to honor $HOME for setting up default paths.
-		if u := os.Getenv("USER"); u != "" && u != "root" {
-			if orig.Root == "" {
-				cfg.Root = appdefaults.UserRoot()
-			}
-			if len(orig.GRPC.Address) == 0 {
-				cfg.GRPC.Address = []string{appdefaults.UserAddress()}
-			}
-			appdefaults.EnsureUserAddressDir()
-		}
-	}
-}
-
+//nolint:gocyclo
 func applyMainFlags(c *cli.Context, cfg *config.Config) error {
 	if c.IsSet("debug") {
 		cfg.Debug = c.Bool("debug")
@@ -567,6 +542,86 @@ func applyMainFlags(c *cli.Context, cfg *config.Config) error {
 	if tlsca := c.String("tlscacert"); tlsca != "" {
 		cfg.GRPC.TLS.CA = tlsca
 	}
+
+	labels, err := attrMap(c.GlobalStringSlice("oci-worker-labels"))
+	if err != nil {
+		return err
+	}
+	if cfg.Workers.OCI.Labels == nil {
+		cfg.Workers.OCI.Labels = make(map[string]string)
+	}
+	for k, v := range labels {
+		cfg.Workers.OCI.Labels[k] = v
+	}
+
+	if c.GlobalIsSet("oci-worker-snapshotter") {
+		cfg.Workers.OCI.Snapshotter = c.GlobalString("oci-worker-snapshotter")
+	}
+
+	if c.GlobalIsSet("rootless") || c.GlobalBool("rootless") {
+		cfg.Workers.OCI.Rootless = c.GlobalBool("rootless")
+	}
+	if c.GlobalIsSet("oci-worker-rootless") {
+		if !userns.RunningInUserNS() || os.Geteuid() > 0 {
+			return errors.New("rootless mode requires to be executed as the mapped root in a user namespace; you may use RootlessKit for setting up the namespace")
+		}
+		cfg.Workers.OCI.Rootless = c.GlobalBool("oci-worker-rootless")
+	}
+	if c.GlobalIsSet("oci-worker-no-process-sandbox") {
+		cfg.Workers.OCI.NoProcessSandbox = c.GlobalBool("oci-worker-no-process-sandbox")
+	}
+
+	if platforms := c.GlobalStringSlice("oci-worker-platform"); len(platforms) != 0 {
+		cfg.Workers.OCI.Platforms = platforms
+	}
+
+	if c.GlobalIsSet("oci-worker-gc") {
+		v := c.GlobalBool("oci-worker-gc")
+		cfg.Workers.OCI.GC = &v
+	}
+
+	if c.GlobalIsSet("oci-worker-gc-keepstorage") {
+		cfg.Workers.OCI.GCKeepStorage = config.DiskSpace{Bytes: c.GlobalInt64("oci-worker-gc-keepstorage") * 1e6}
+	}
+
+	if c.GlobalIsSet("oci-worker-net") {
+		cfg.Workers.OCI.NetworkConfig.Mode = c.GlobalString("oci-worker-net")
+	}
+	if c.GlobalIsSet("oci-cni-config-path") {
+		cfg.Workers.OCI.NetworkConfig.CNIConfigPath = c.GlobalString("oci-cni-worker-path")
+	}
+	if c.GlobalIsSet("oci-cni-binary-dir") {
+		cfg.Workers.OCI.NetworkConfig.CNIBinaryPath = c.GlobalString("oci-cni-binary-dir")
+	}
+	if c.GlobalIsSet("oci-cni-pool-size") {
+		cfg.Workers.OCI.NetworkConfig.CNIPoolSize = c.GlobalInt("oci-cni-pool-size")
+	}
+	if c.GlobalIsSet("oci-worker-binary") {
+		cfg.Workers.OCI.Binary = c.GlobalString("oci-worker-binary")
+	}
+	if c.GlobalIsSet("oci-worker-proxy-snapshotter-path") {
+		cfg.Workers.OCI.ProxySnapshotterPath = c.GlobalString("oci-worker-proxy-snapshotter-path")
+	}
+	if c.GlobalIsSet("oci-worker-apparmor-profile") {
+		cfg.Workers.OCI.ApparmorProfile = c.GlobalString("oci-worker-apparmor-profile")
+	}
+	if c.GlobalIsSet("oci-worker-selinux") {
+		cfg.Workers.OCI.SELinux = c.GlobalBool("oci-worker-selinux")
+	}
+	if c.GlobalIsSet("oci-max-parallelism") {
+		maxParallelismStr := c.GlobalString("oci-max-parallelism")
+		var maxParallelism int
+		if maxParallelismStr == "num-cpu" {
+			maxParallelism = runtime.NumCPU()
+		} else {
+			maxParallelism, err = strconv.Atoi(maxParallelismStr)
+			if err != nil {
+				return errors.Wrap(err, "failed to parse oci-max-parallelism, should be positive integer, 0 for unlimited, or 'num-cpu' for setting to the number of CPUs")
+			}
+		}
+		cfg.Workers.OCI.MaxParallelism = maxParallelism
+	}
+
 	return nil
 }
 
@@ -673,127 +728,6 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubsub *telemetry.PubSub) (*server.BuildkitController, cache.Manager, error) {
-	sessionManager, err := session.NewManager()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	w, err := newWorker(ctx, c, workerInitializerOpt{
-		config:         cfg,
-		sessionManager: sessionManager,
-		pubsub:         pubsub,
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create worker: %w", err)
-	}
-
-	p := w.Platforms(false)
-	logrus.Infof("found worker %q, labels=%v, platforms=%v", w.ID(), w.Labels(), formatPlatforms(p))
-	archutil.WarnIfUnsupported(p)
-
-	wc, err := w.AsWorkerController()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create worker controller: %w", err)
-	}
-
-	frontends := map[string]frontend.Frontend{}
-	frontends["dockerfile.v0"] = forwarder.NewGatewayForwarder(wc.Infos(), dockerfile.Build)
-	frontendGateway, err := gateway.NewGatewayFrontend(wc.Infos(), nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	frontends["gateway.v0"] = frontendGateway
-
-	cacheStorage, err := bboltcachestorage.NewStore(filepath.Join(cfg.Root, "cache.db"))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
-	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
-
-	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
-	// TODO: deprecate in a future release
-	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
-		cacheServiceToken = v
-	}
-
-	if cacheServiceURL == "" {
-		cacheServiceURL = daggerCacheServiceURL
-	}
-	cacheManager, err := cache.NewManager(ctx, cache.ManagerConfig{
-		KeyStore:     cacheStorage,
-		ResultStore:  worker.NewCacheResultStorage(wc),
-		Worker:       w,
-		MountManager: mounts.NewMountManager("dagger-cache", w.CacheManager(), sessionManager),
-		ServiceURL:   cacheServiceURL,
-		Token:        cacheServiceToken,
-		EngineID:     engineName,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resolverFn := resolverFunc(cfg)
-	remoteCacheExporterFuncs := map[string]remotecache.ResolveCacheExporterFunc{
-		"registry": registryremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
-		"local":    localremotecache.ResolveCacheExporterFunc(sessionManager),
-		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
-		"gha":      gha.ResolveCacheExporterFunc(),
-		"s3":       s3remotecache.ResolveCacheExporterFunc(),
-		"azblob":   azblob.ResolveCacheExporterFunc(),
-		// for backwards compatibility:
-		"dagger": func(ctx context.Context, g session.Group, attrs map[string]string) (remotecache.Exporter, error) {
-			return nil, nil
-		},
-	}
-	remoteCacheImporterFuncs := map[string]remotecache.ResolveCacheImporterFunc{
-		"registry": registryremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn),
-		"local":    localremotecache.ResolveCacheImporterFunc(sessionManager),
-		"gha":      gha.ResolveCacheImporterFunc(),
-		"s3":       s3remotecache.ResolveCacheImporterFunc(),
-		"azblob":   azblob.ResolveCacheImporterFunc(),
-		// for backwards compatibility:
-		"dagger": func(ctx context.Context, g session.Group, attrs map[string]string) (remotecache.Importer, ocispecs.Descriptor, error) {
-			return &noopCacheImporter{}, ocispecs.Descriptor{}, nil
-		},
-	}
-
-	bkLogsW := io.Discard
-	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
-		bkLogsW = os.Stderr
-	}
-
-	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
-	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
-		Worker:                 w,
-		SessionManager:         sessionManager,
-		CacheManager:           cacheManager,
-		ContentStore:           w.ContentStore(),
-		LeaseManager:           w.LeaseManager(),
-		Entitlements:           cfg.Entitlements,
-		EngineName:             engineName,
-		Frontends:              frontends,
-		TelemetryPubSub:        pubsub,
-		UpstreamCacheExporters: remoteCacheExporterFuncs,
-		UpstreamCacheImporters: remoteCacheImporterFuncs,
-		DNSConfig:              getDNSConfig(cfg.DNS),
-		BuildkitLogSink:        bkLogsW,
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ctrler.Worker.Controller = ctrler
-
-	return ctrler, cacheManager, nil
-}
-
-func resolverFunc(cfg *config.Config) docker.RegistryHosts {
-	return resolver.NewRegistryConfig(cfg.Registries)
-}
-
 func attrMap(sl []string) (map[string]string, error) {
 	m := map[string]string{}
 	for _, v := range sl {
@@ -804,74 +738,6 @@ func attrMap(sl []string) (map[string]string, error) {
 		m[parts[0]] = parts[1]
 	}
 	return m, nil
-}
-
-func formatPlatforms(p []ocispecs.Platform) []string {
-	str := make([]string, 0, len(p))
-	for _, pp := range p {
-		str = append(str, platforms.Format(platforms.Normalize(pp)))
-	}
-	return str
-}
-
-func parsePlatforms(platformsStr []string) ([]ocispecs.Platform, error) {
-	out := make([]ocispecs.Platform, 0, len(platformsStr))
-	for _, s := range platformsStr {
-		p, err := platforms.Parse(s)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, platforms.Normalize(p))
-	}
-	return out, nil
-}
-
-func getGCPolicy(cfg config.GCConfig, root string) []client.PruneInfo {
-	if cfg.GC != nil && !*cfg.GC {
-		return nil
-	}
-	if len(cfg.GCPolicy) == 0 {
-		cfg.GCPolicy = config.DefaultGCPolicy(cfg.GCKeepStorage)
-	}
-	out := make([]client.PruneInfo, 0, len(cfg.GCPolicy))
-	for _, rule := range cfg.GCPolicy {
-		out = append(out, client.PruneInfo{
-			Filter:       rule.Filters,
-			All:          rule.All,
-			KeepBytes:    rule.KeepBytes.AsBytes(root),
-			KeepDuration: rule.KeepDuration.Duration,
-		})
-	}
-	return out
-}
-
-func getBuildkitVersion() client.BuildkitVersion {
-	return client.BuildkitVersion{
-		Package:  version.Package,
-		Version:  version.Version,
-		Revision: version.Revision,
-	}
-}
-
-func getDNSConfig(cfg *config.DNSConfig) *oci.DNSConfig {
-	var dns *oci.DNSConfig
-	if cfg != nil {
-		dns = &oci.DNSConfig{
-			Nameservers:   cfg.Nameservers,
-			Options:       cfg.Options,
-			SearchDomains: cfg.SearchDomains,
-		}
-	}
-	return dns
-}
-
-// parseBoolOrAuto returns (nil, nil) if s is "auto"
-func parseBoolOrAuto(s string) (*bool, error) {
-	if s == "" || strings.EqualFold(s, autoMode) {
-		return nil, nil
-	}
-	b, err := strconv.ParseBool(s)
-	return &b, err
 }
 
 type networkConfig struct {
@@ -910,12 +776,4 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 		Bridge:        bridge,
 		CNIConfigPath: cniConfigPath,
 	}, nil
-}
-
-type noopCacheImporter struct{}
-
-var _ remotecache.Importer = &noopCacheImporter{}
-
-func (i *noopCacheImporter) Resolve(ctx context.Context, desc ocispecs.Descriptor, id string, w worker.Worker) (solver.CacheManager, error) {
-	return nil, nil
 }
