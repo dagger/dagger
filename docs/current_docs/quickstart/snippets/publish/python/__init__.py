@@ -1,7 +1,7 @@
 import random
 
 import dagger
-from dagger import dag, function, object_type
+from dagger import function, object_type
 
 
 @object_type

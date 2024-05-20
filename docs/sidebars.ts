@@ -19,7 +19,6 @@ module.exports = {
         "id": "quickstart/index"
       },
       "items": [
-        "quickstart/index",
         "quickstart/cli",
         "quickstart/daggerize",
         "quickstart/env",
