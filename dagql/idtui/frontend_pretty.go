@@ -24,6 +24,7 @@ import (
 
 type frontendPretty struct {
 	FrontendOpts
+	spanFilter
 
 	// updated by Run
 	program     *tea.Program
@@ -65,6 +66,11 @@ func New() Frontend {
 	return &frontendPretty{
 		db:   NewDB(),
 		logs: newPrettyLogs(),
+
+		spanFilter: spanFilter{
+			tooFastThreshold: 100 * time.Millisecond,
+			gcThreshold:      1 * time.Second,
+		},
 
 		fps:          30, // sane default, fine-tune if needed
 		profile:      profile,
@@ -291,7 +297,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 		return false, nil
 	}
 	for _, row := range fe.logsView.Body {
-		if fe.Debug || fe.ShouldShow(row) {
+		if fe.Debug || fe.shouldShow(fe.FrontendOpts, row) {
 			if err := fe.renderRow(out, row, 0); err != nil {
 				return renderedAny, err
 			}
@@ -306,29 +312,6 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 		renderedAny = true
 	}
 	return renderedAny, nil
-}
-
-func (fe *frontendPretty) ShouldShow(row *TraceRow) bool {
-	span := row.Span
-	if span.Err() != nil {
-		// show errors always
-		return true
-	}
-	if span.IsInternal() && fe.Verbosity < 2 {
-		// internal steps are hidden by default
-		return false
-	}
-	if span.Duration() < TooFastThreshold && fe.Verbosity < 3 {
-		// ignore fast steps; signal:noise is too poor
-		return false
-	}
-	if row.IsRunning {
-		return true
-	}
-	if time.Since(span.EndTime()) < GCThreshold || fe.Verbosity >= 1 {
-		return true
-	}
-	return false
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -449,7 +432,7 @@ func (fe *frontendPretty) View() string {
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
-	if !fe.ShouldShow(row) && !fe.Debug {
+	if !fe.shouldShow(fe.FrontendOpts, row) && !fe.Debug {
 		return nil
 	}
 	if !row.Span.Passthrough {
@@ -457,13 +440,9 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth in
 		fe.renderLogs(out, row.Span, depth)
 		depth++
 	}
-	if !row.Span.Encapsulate || row.Span.Status().Code == codes.Error || fe.Verbosity >= 2 {
-		for _, child := range row.Children {
-			if !child.Span.Encapsulated || row.Span.Status().Code == codes.Error || fe.Verbosity >= 2 {
-				if err := fe.renderRow(out, child, depth); err != nil {
-					return err
-				}
-			}
+	for _, child := range row.Children {
+		if err := fe.renderRow(out, child, depth); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -474,16 +453,18 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, depth, false); err != nil {
+		if err := r.renderCall(out, span, id, "", depth, false); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderVertex(out, span, depth); err != nil {
+		if err := r.renderVertex(out, span, span.Name(), "", depth); err != nil {
 			return err
 		}
 	}
+	fmt.Fprintln(out)
+
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
-		indent(out, depth)
+		r.indent(out, depth)
 		// print error description above it
 		fmt.Fprintf(out,
 			out.String("! %s\n").Foreground(termenv.ANSIYellow).String(),

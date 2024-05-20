@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
@@ -69,7 +70,7 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 		db:    db,
 		width: -1,
 	}
-	return r.renderCall(out, nil, id.Call(), 0, false)
+	return r.renderCall(out, nil, id.Call(), "", 0, false)
 }
 
 type renderer struct {
@@ -84,7 +85,7 @@ const (
 	moduleColor = termenv.ANSIMagenta
 )
 
-func indent(out io.Writer, depth int) {
+func (r renderer) indent(out io.Writer, depth int) {
 	fmt.Fprint(out, strings.Repeat("  ", depth))
 }
 
@@ -98,9 +99,10 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 	return nil
 }
 
-func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call, depth int, inline bool) error {
+func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call, prefix string, depth int, inline bool) error {
 	if !inline {
-		indent(out, depth)
+		fmt.Fprint(out, prefix)
+		r.indent(out, depth)
 	}
 
 	if span != nil {
@@ -130,23 +132,28 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 			depth++
 			depth++
 			for _, arg := range id.Args {
-				indent(out, depth)
+				fmt.Fprint(out, prefix)
+				r.indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
 				val := arg.GetValue()
 				fmt.Fprint(out, " ")
 				if argDig := val.GetCallDigest(); argDig != "" {
 					argCall := r.db.Simplify(r.db.MustCall(argDig))
-					span := r.db.MostInterestingSpan(argDig)
-					if err := r.renderCall(out, span, argCall, depth-1, true); err != nil {
+					var argSpan *Span
+					if span != nil {
+						argSpan = r.db.MostInterestingSpan(argDig)
+					}
+					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true); err != nil {
 						return err
 					}
 				} else {
 					r.renderLiteral(out, arg.GetValue())
-					fmt.Fprintln(out)
 				}
+				fmt.Fprintln(out)
 			}
 			depth--
-			indent(out, depth)
+			fmt.Fprint(out, prefix)
+			r.indent(out, depth)
 			depth-- //nolint:ineffassign
 		} else {
 			for i, arg := range id.Args {
@@ -167,19 +174,25 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 		r.renderDuration(out, span)
 	}
 
-	fmt.Fprintln(out)
-
 	return nil
 }
 
-func (r renderer) renderVertex(out *termenv.Output, span *Span, depth int) error {
-	indent(out, depth)
-	r.renderStatus(out, span)
-	fmt.Fprint(out, span.Name())
-	// TODO: when a span has child spans that have progress, do 2-d progress
-	// fe.renderVertexTasks(out, span, depth)
-	r.renderDuration(out, span)
-	fmt.Fprintln(out)
+func (r renderer) renderVertex(out *termenv.Output, span *Span, name string, prefix string, depth int) error {
+	fmt.Fprint(out, prefix)
+	r.indent(out, depth)
+
+	if span != nil {
+		r.renderStatus(out, span)
+	}
+
+	fmt.Fprint(out, name)
+
+	if span != nil {
+		// TODO: when a span has child spans that have progress, do 2-d progress
+		// fe.renderVertexTasks(out, span, depth)
+		r.renderDuration(out, span)
+	}
+
 	return nil
 }
 
@@ -299,6 +312,40 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // 	}
 // 	return nil
 // }
+
+type spanFilter struct {
+	gcThreshold      time.Duration
+	tooFastThreshold time.Duration
+}
+
+func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
+	span := row.Span
+	if span.IsInternal() && opts.Verbosity < 2 {
+		// internal steps are hidden by default
+		return false
+	}
+	if row.Parent != nil && (span.Encapsulated || row.Parent.Span.Encapsulate) && row.Parent.Span.Err() == nil && opts.Verbosity < 2 {
+		// encapsulated steps are hidden (even on error) unless their parent errors
+		return false
+	}
+	if span.Err() != nil {
+		// show errors
+		return true
+	}
+	if sf.tooFastThreshold > 0 && span.Duration() < sf.tooFastThreshold && opts.Verbosity < 3 {
+		// ignore fast steps; signal:noise is too poor
+		return false
+	}
+	if row.IsRunning {
+		// show running steps
+		return true
+	}
+	if sf.gcThreshold > 0 && time.Since(span.EndTime()) > sf.gcThreshold && opts.Verbosity < 1 {
+		// stop showing steps that ended after a given threshold
+		return false
+	}
+	return true
+}
 
 func renderPrimaryOutput(db *DB) error {
 	logs := db.PrimaryLogs[db.PrimarySpan]

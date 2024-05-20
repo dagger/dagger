@@ -140,11 +140,6 @@ func CollectLogsView(rows []*TraceRow) *LogsView {
 	return view
 }
 
-const (
-	TooFastThreshold = 100 * time.Millisecond
-	GCThreshold      = 1 * time.Second
-)
-
 func (row *TraceRow) Depth() int {
 	if row.Parent == nil {
 		return 0
