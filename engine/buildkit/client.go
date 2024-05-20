@@ -53,13 +53,12 @@ const (
 type Opts struct {
 	ServerID string
 
-	BaseWorker     *Worker
+	Worker         *Worker
 	SessionManager *bksession.Manager
 	GenericSolver  *bksolver.Solver
 	CacheManager   bksolver.CacheManager
 
-	PrivilegedExecEnabled bool
-	Entitlements          []string
+	Entitlements entitlements.Set
 
 	SecretStore  bksecrets.SecretStore
 	AuthProvider *auth.RegistryAuthProvider
@@ -120,8 +119,8 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		cancel:     cancel,
 	}
 
-	client.worker = opts.BaseWorker
-	wc, err := client.worker.AsWorkerController()
+	client.worker = opts.Worker
+	wc, err := AsWorkerController(client.worker)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +131,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		CacheManager:     opts.CacheManager,
 		SessionManager:   opts.SessionManager,
 		CacheResolvers:   opts.UpstreamCacheImporters,
-		Entitlements:     opts.Entitlements,
+		Entitlements:     toEntitlementStrings(opts.Entitlements),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create solver: %w", err)
@@ -161,11 +160,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	// in buildkitcontroller.go) can access and use it for resolving ops
 	client.job.SetValue(DaggerWorkerJobKey, client.worker)
 
-	entitlementSet := entitlements.Set{}
-	if opts.PrivilegedExecEnabled {
-		entitlementSet[entitlements.EntitlementSecurityInsecure] = struct{}{}
-	}
-	client.job.SetValue(entitlementsJobKey, entitlementSet)
+	client.job.SetValue(entitlementsJobKey, opts.Entitlements)
 
 	// NOTE: we don't go through the LLBSolver's Executor interface here since
 	// we need to use our custom one directly later. But our executor has the
@@ -864,4 +859,12 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 	default:
 		return &bkfrontend.Result{}, nil
 	}
+}
+
+func toEntitlementStrings(ents entitlements.Set) []string {
+	var out []string
+	for ent := range ents {
+		out = append(out, string(ent))
+	}
+	return out
 }

@@ -69,7 +69,7 @@ type DaggerServer struct {
 	upstreamCacheExporters    map[string]remotecache.ResolveCacheExporterFunc
 }
 
-func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata *engine.ClientMetadata) (*DaggerServer, error) {
+func (e *Engine) newDaggerServer(ctx context.Context, clientMetadata *engine.ClientMetadata) (*DaggerServer, error) {
 	s := &DaggerServer{
 		serverID: clientMetadata.ServerID,
 
@@ -81,12 +81,12 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 		doneCh: make(chan struct{}, 1),
 
-		pubsub: e.TelemetryPubSub,
+		pubsub: e.telemetryPubSub,
 
 		services: core.NewServices(),
 
 		mainClientCallerID:     clientMetadata.ClientID,
-		upstreamCacheExporters: e.UpstreamCacheExporters,
+		upstreamCacheExporters: e.cacheExporters,
 	}
 
 	if traceID := trace.SpanContextFromContext(ctx).TraceID(); traceID.IsValid() {
@@ -96,9 +96,9 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	}
 
 	labels := enginetel.Labels(clientMetadata.Labels).
-		WithEngineLabel(e.EngineName).
+		WithEngineLabel(e.engineName).
 		WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
-			e.cacheManager.ID() != cache.LocalCacheID)
+			e.SolverCache.ID() != cache.LocalCacheID)
 
 	s.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -108,7 +108,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 	getSessionCtx, getSessionCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer getSessionCancel()
-	sessionCaller, err := e.SessionManager.Get(getSessionCtx, clientMetadata.BuildkitSessionID(), false)
+	sessionCaller, err := e.bkSessionManager.Get(getSessionCtx, clientMetadata.BuildkitSessionID(), false)
 	if err != nil {
 		return nil, fmt.Errorf("get session: %w", err)
 	}
@@ -118,7 +118,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 
 	cacheImporterCfgs := make([]bkgw.CacheOptionsEntry, 0, len(clientMetadata.UpstreamCacheImportConfig))
 	for _, cacheImportCfg := range clientMetadata.UpstreamCacheImportConfig {
-		_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
+		_, ok := e.cacheImporters[cacheImportCfg.Type]
 		if !ok {
 			return nil, fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
 		}
@@ -128,7 +128,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		})
 	}
 	for _, cacheExportCfg := range clientMetadata.UpstreamCacheExportConfig {
-		_, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
+		_, ok := e.cacheExporters[cacheExportCfg.Type]
 		if !ok {
 			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
 		}
@@ -142,30 +142,33 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		BuildkitOpts: &buildkit.Opts{
 			ServerID: s.serverID,
 
-			BaseWorker:     e.Worker,
-			SessionManager: e.SessionManager,
-			GenericSolver:  e.genericSolver,
-			CacheManager:   e.cacheManager,
+			Worker:         e.worker,
+			SessionManager: e.bkSessionManager,
+			GenericSolver:  e.solver,
+			CacheManager:   e.SolverCache,
 
-			PrivilegedExecEnabled: e.privilegedExecEnabled,
-			Entitlements:          e.Entitlements,
+			Entitlements: e.entitlements,
 
 			SecretStore:  secretStore,
 			AuthProvider: authProvider,
 
-			UpstreamCacheImporters: e.UpstreamCacheImporters,
+			UpstreamCacheImporters: e.cacheImporters,
 			UpstreamCacheImports:   cacheImporterCfgs,
 
 			MainClientCaller: sessionCaller,
-			DNSConfig:        e.DNSConfig,
-			Frontends:        e.Frontends,
-			BuildkitLogSink:  e.BuildkitLogSink,
+			DNSConfig:        e.dns,
+			Frontends:        e.frontends,
+			BuildkitLogSink:  e.buildkitLogSink,
 		},
-		Services:           s.services,
-		Platform:           core.Platform(e.Worker.Platforms(true)[0]),
+		Services: s.services,
+		// TODO: double check the first platform is always right
+		// TODO: double check the first platform is always right
+		// TODO: double check the first platform is always right
+		// TODO: double check the first platform is always right
+		Platform:           core.Platform(e.enabledPlatforms[0]),
 		Secrets:            secretStore,
-		OCIStore:           e.Worker.ContentStore(),
-		LeaseManager:       e.Worker.LeaseManager(),
+		OCIStore:           e.contentStore,
+		LeaseManager:       e.leaseManager,
 		Auth:               authProvider,
 		ClientCallContext:  s.clientCallContext,
 		ClientCallMu:       s.clientCallMu,

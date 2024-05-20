@@ -83,12 +83,12 @@ func logTraceMetrics(ctx context.Context) {
 	}
 }
 
-func logMetrics(ctx context.Context, engineStateRootDir string, ctrl *server.BuildkitController) {
+func logMetrics(ctx context.Context, engineStateRootDir string, eng *server.Engine) {
 	for range time.Tick(60 * time.Second) {
 		l := bklog.G(ctx)
 
 		// controller stats
-		l = ctrl.LogMetrics(l)
+		l = eng.LogMetrics(l)
 
 		// goroutine stats
 		l = l.WithField("goroutine-count", runtime.NumGoroutine())
