@@ -131,28 +131,3 @@ This single command runs the application's tests, then builds and publishes it a
 1. Even though you just tested, built and published a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
 1. Subsequent calls to `dagger call publish...` are significantly faster than the first run (try it!). Dagger caches every operation by default and automatically generates a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) to run your pipeline steps concurrently to maximize pipeline speed and accuracy.
 :::
-
-
-FIXME USE LATER
-
-
-1. The code used to create a Dagger Function in Go, Python or TypeScript looks remarkably similar, with only minor language-specific changes. Dagger uses GraphQL as its low-level language-agnostic API query language, and each Dagger SDK generates native code-bindings for all dependencies from this API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
-
-
-
-Dagger Functions can accept arguments, which may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`. In this listing, each Dagger Function expects a `source` argument of type `Directory`, which tells the Dagger Function where to find the application's source code.
-
-Arguments to Dagger Functions may be simple string, numeric or Boolean arguments, or more complex Dagger-specific types like `Directory`, `File`, or `Container`.
-
-It is critical knowledge for when no Daggerverse module exists for your requirements and you need to start from scratch.
-
-:::tip SANDBOXING
-The Dagger Function on this page receives the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is [by design](../manuals/developer/execution-environment.mdx): Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, network services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
-:::
-
-
-Using Dagger Functions, instead of shell scripts or Makefiles, has multiple benefits:
-- Messy workflows transform into structured, discrete and composable units with clear inputs and outputs.
-- Environment-related variance, which can destabilize shell scripts, is eliminated because workflows run in container.
-- Using a programming language instead of YAML promotes usage of coding standards and best practices and opens up access to the existing ecosystem.
-:::
