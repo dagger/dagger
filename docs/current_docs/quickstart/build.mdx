@@ -53,7 +53,7 @@ dagger call \
 
 Here's what you should see:
 
-FIXME ADD GIF
+![Final container](/img/current_docs/quickstart/build.gif)
 
 This output means that the build succeeded, and a `Container` type representing the built container image was returned. Since this is another just-in-time `Container`, you can use your knowledge of function chaining and just-in-time artifacts to inspect it "live" with the `terminal` function, as you did earlier. But this is a good place to explore another interesting built-in `Container` function: the `as-service` function.
 
@@ -74,9 +74,11 @@ By default, Dagger will map each exposed container service port to the same port
 
 Here's what you should see:
 
-FIXME ADD GIF
+![Final container as service](/img/current_docs/quickstart/build-service.gif)
 
 You should now be able to access the application by browsing to `http://localhost:8080` on the Dagger host (replace `localhost` with your Dagger host's network name or IP address if accessing it remotely). You should see a "Hello from Dagger!" welcome page, served by NGINX.
+
+![Test service](/img/current_docs/quickstart/curl.gif)
 
 :::tip CONTAINERS AS SERVICES
 The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.

@@ -50,11 +50,11 @@ dagger call \
 
 You should see the application being tested, built, packaged and published to the [ttl.sh container registry](https://ttl.sh):
 
-FIXME ADD GIF
+![Publish](/img/current_docs/quickstart/publish.gif)
 
 You can test the published container image by pulling and running it with `docker run`:
 
-FIXME ADD GIF
+![Docker run](/img/current_docs/quickstart/docker.gif)
 
 :::tip COMBINING DAGGER FUNCTIONS
 There are various reasons why you might want to write Dagger Functions that call other Dagger Functions. A common reason is that when developing locally, it's quicker and easier to trigger your pipeline using a single command (`dagger call publish ...`) instead of multiple commands (`dagger call test ... && dagger call build ... &&  ...`).
