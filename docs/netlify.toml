@@ -75,6 +75,18 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual Go visibility page to multi-language page
+  from = "/manuals/developer/go/:docid/visibility"
+  to = "/manuals/developer/state-functions"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Python attributes as functions page to multi-language page
+  from = "/manuals/developer/python/:docid/attribute-functions"
+  to = "/manuals/developer/state-functions"
+  status = 301
+
+[[redirects]]
   # redirect developer manual TypeScript runtimes page to multi-language page
   from = "/manuals/developer/typescript/:docid/runtime"
   to = "/manuals/developer/runtimes"
@@ -108,6 +120,12 @@
   # redirect developer manual language-specific module structure page to multi-language page
   from = "/manuals/developer/:language/:docid/module-structure"
   to = "/manuals/developer/module-structure"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual TypeScript visibility page to multi-language page
+  from = "/manuals/developer/typescript/:docid/visibility"
+  to = "/manuals/developer/state-functions"
   status = 301
 
 [[redirects]]

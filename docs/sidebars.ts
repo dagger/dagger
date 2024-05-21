@@ -350,6 +350,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/state-functions"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/runtimes"
         },
         {
@@ -421,10 +425,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/attribute-functions"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/name-overrides"
             },
             {
@@ -465,10 +465,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/visibility"
             },
             {
               "type": "doc",
