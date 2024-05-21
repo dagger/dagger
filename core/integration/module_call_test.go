@@ -710,10 +710,8 @@ type Test struct {
 			ctr := modGen.With(daggerCall("ctr"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "Container evaluated")
+			require.Contains(t, out, "AVAILABLE FUNCTIONS")
+			require.Contains(t, out, "stdout")
 		})
 
 		t.Run("output", func(t *testing.T) {
@@ -756,10 +754,8 @@ type Test struct {
 			ctr := modGen.With(daggerCall("dir"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "Directory evaluated")
+			require.Contains(t, out, "AVAILABLE FUNCTIONS")
+			require.Contains(t, out, "entries")
 		})
 
 		t.Run("output", func(t *testing.T) {
@@ -809,10 +805,8 @@ type Test struct {
 			ctr := modGen.With(daggerCall("file"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "File evaluated")
+			require.Contains(t, out, "AVAILABLE FUNCTIONS")
+			require.Contains(t, out, "contents")
 		})
 
 		t.Run("output", func(t *testing.T) {
@@ -846,8 +840,7 @@ type Test struct {
 `,
 			})
 
-		// adding sync disables the default behavior of **not** printing the ID
-		// just verify it works without error for now
+		// sync should still work if used explicitly
 		_, err := modGen.With(daggerCall("ctr", "sync")).Stdout(ctx)
 		require.NoError(t, err)
 	})
