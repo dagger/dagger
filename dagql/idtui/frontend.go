@@ -228,6 +228,7 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 		fe.messagesView.SetHeight(10)
 	}
 	_, err := fmt.Fprint(out, fe.messagesView.View())
+	fmt.Fprintln(out)
 	return true, err
 }
 
@@ -368,10 +369,10 @@ func (fe *Frontend) Background(cmd tea.ExecCommand) error {
 
 func (fe *Frontend) Render(out *termenv.Output) error {
 	fe.recalculateView()
-	if _, err := fe.renderProgress(out); err != nil {
+	if _, err := fe.renderMessages(out, false); err != nil {
 		return err
 	}
-	if _, err := fe.renderMessages(out, false); err != nil {
+	if _, err := fe.renderProgress(out); err != nil {
 		return err
 	}
 	return nil
