@@ -87,6 +87,7 @@ func init() {
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
+	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
@@ -325,6 +326,13 @@ func isExperimental(cmd *cobra.Command) bool {
 	return experimental
 }
 
+func hasInheritedFlags(cmd *cobra.Command) bool {
+	if val, ok := cmd.Annotations["help:hideInherited"]; ok && val == "true" {
+		return false
+	}
+	return cmd.HasAvailableInheritedFlags()
+}
+
 // getViewWidth returns the width of the terminal, or 80 if it cannot be determined.
 func getViewWidth() int {
 	width, _, err := term.GetSize(int(os.Stdout.Fd()))
@@ -502,7 +510,7 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- end}}
 
-{{- if .HasAvailableInheritedFlags}}
+{{- if hasInheritedFlags . }}
 
 {{ "Inherited Options" | toUpperBold }}
 {{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces }}

@@ -478,6 +478,11 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			// Need to make the query selection before chaining off.
 			return fc.selectFunc(ctx, fn.Name, fn, cmd, dag)
 		},
+		// FIXME: Persistent flags should be marked as hidden for sub-commands
+		// but it's not working, so setting an annotation to circumvent it.
+		Annotations: map[string]string{
+			"help:hideInherited": "true",
+		},
 
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
