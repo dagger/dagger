@@ -85,7 +85,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Bun:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}).
 			WithEntrypoint([]string{"bun", entrypointPath}), nil
 	case Node:
 		return ctr.
