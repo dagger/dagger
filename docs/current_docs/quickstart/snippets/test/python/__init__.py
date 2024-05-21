@@ -6,7 +6,7 @@ from dagger import function, object_type
 class HelloDagger:
     @function
     async def test(self, source: dagger.Directory) -> str:
-        """Returns the result of running unit tests"""
+        """Return the result of running unit tests"""
         return (
             await (
                 # get the build environment container

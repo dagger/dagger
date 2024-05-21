@@ -119,8 +119,7 @@ In this Dagger module, each Dagger Function performs a different operation:
 Call a Dagger Function to run the pipeline:
 
 ```shell
-dagger call \
-  publish --source=.
+dagger call publish --source=.
 ```
 
 This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:

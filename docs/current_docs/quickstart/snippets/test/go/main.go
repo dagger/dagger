@@ -6,7 +6,7 @@ import (
 
 type HelloDagger struct{}
 
-// Returns the result of running unit tests
+// Return the result of running unit tests
 func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
 	// get the build environment container
 	// by calling another Dagger Function

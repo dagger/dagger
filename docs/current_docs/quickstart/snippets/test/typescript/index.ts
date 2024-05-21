@@ -3,7 +3,7 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class HelloDagger {
   /**
-   * Returns the result of running unit tests
+   * Return the result of running unit tests
    */
   @func()
   async test(source: Directory): Promise<string> {

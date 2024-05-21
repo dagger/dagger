@@ -8,7 +8,7 @@ from dagger import function, object_type
 class HelloDagger:
     @function
     async def publish(self, source: dagger.Directory) -> str:
-        """Tests, builds and publishes the application"""
+        """Publish the application container after building and testing it on-the-fly"""
         # call Dagger Function to run unit tests
         self.test(source)
         # call Dagger Function to build the application image

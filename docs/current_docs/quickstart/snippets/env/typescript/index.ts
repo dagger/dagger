@@ -3,7 +3,7 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class HelloDagger {
   /**
-   * Returns a container with the build environment
+   * Build a ready-to-use development environment
    */
   @func()
   buildEnv(source: Directory): Container {

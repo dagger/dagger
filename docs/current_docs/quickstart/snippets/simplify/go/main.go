@@ -9,7 +9,7 @@ import (
 
 type HelloDagger struct{}
 
-// Tests, builds and publishes the application
+// Publish the application container after building and testing it on-the-fly
 func (m *HelloDagger) Publish(ctx context.Context, source *Directory) (string, error) {
 	_, err := m.Test(ctx, source)
 	if err != nil {
@@ -23,7 +23,7 @@ func (m *HelloDagger) Publish(ctx context.Context, source *Directory) (string, e
 	return address, nil
 }
 
-// Returns a container with the production build and an NGINX service
+// Build the application container
 func (m *HelloDagger) Build(source *Directory) *Container {
 	build := dag.Node(NodeOpts{Ctr: m.BuildEnv(source)}).
 		Commands().
@@ -34,7 +34,7 @@ func (m *HelloDagger) Build(source *Directory) *Container {
 		WithExposedPort(80)
 }
 
-// Returns the result of running unit tests
+// Return the result of running unit tests
 func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, error) {
 	return dag.Node(NodeOpts{Ctr: m.BuildEnv(source)}).
 		Commands().
@@ -42,7 +42,7 @@ func (m *HelloDagger) Test(ctx context.Context, source *Directory) (string, erro
 		Stdout(ctx)
 }
 
-// Returns a container with the build environment
+// Build a ready-to-use development environment
 func (m *HelloDagger) BuildEnv(source *Directory) *Container {
 	return dag.Node(NodeOpts{Version: "21"}).
 		WithNpm().

@@ -2,7 +2,7 @@ package main
 
 type HelloDagger struct{}
 
-// Returns a container with the production build and an NGINX service
+// Build the application container
 func (m *HelloDagger) Build(source *Directory) *Container {
 	// get the build environment container
 	// by calling another Dagger Function

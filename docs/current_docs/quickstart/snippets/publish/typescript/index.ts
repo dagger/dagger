@@ -3,7 +3,7 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class HelloDagger {
   /**
-   * Tests, builds and publishes the application
+   * Publish the application container after building and testing it on-the-fly
    */
   @func()
   async publish(source: Directory): Promise<string> {

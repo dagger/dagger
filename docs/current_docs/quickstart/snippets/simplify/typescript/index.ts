@@ -3,7 +3,7 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class HelloDagger {
   /**
-   * Tests, builds and publishes the application
+   * Publish the application container after building and testing it on-the-fly
    */
   @func()
   async publish(source: Directory): Promise<string> {
@@ -14,7 +14,7 @@ class HelloDagger {
   }
 
   /**
-   * Returns a container with the production build and an NGINX service
+   * Build the application container
    */
   @func()
   build(source: Directory): Container {
@@ -31,7 +31,7 @@ class HelloDagger {
   }
 
   /**
-   * Returns the result of running unit tests
+   * Return the result of running unit tests
    */
   @func()
   async test(source: Directory): Promise<string> {
@@ -43,7 +43,7 @@ class HelloDagger {
   }
 
   /**
-   * Returns a container with the build environment
+   * Build a ready-to-use development environment
    */
   @func()
   buildEnv(source: Directory): Container {

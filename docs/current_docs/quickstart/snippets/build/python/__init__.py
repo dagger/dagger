@@ -6,7 +6,7 @@ from dagger import dag, function, object_type
 class HelloDagger:
     @function
     def build(self, source: dagger.Directory) -> dagger.Container:
-        """Returns a container with the production build and an NGINX service"""
+        """Build the application container"""
         build = (
             # get the build environment container
             # by calling another Dagger Function

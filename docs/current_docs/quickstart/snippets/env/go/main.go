@@ -2,7 +2,7 @@ package main
 
 type HelloDagger struct{}
 
-// Returns a container with the build environment
+// Build a ready-to-use development environment
 func (m *HelloDagger) BuildEnv(source *Directory) *Container {
 	// create a Dagger cache volume for dependencies
 	nodeCache := dag.CacheVolume("node")

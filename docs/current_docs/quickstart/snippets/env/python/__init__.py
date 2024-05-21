@@ -6,7 +6,7 @@ from dagger import dag, function, object_type
 class HelloDagger:
     @function
     def build_env(self, source: dagger.Directory) -> dagger.Container:
-        """Returns a container with the build environment"""
+        """Build a ready-to-use development environment"""
         # create a Dagger cache volume for dependencies
         node_cache = dag.cache_volume("node")
         return (
