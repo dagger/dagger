@@ -511,7 +511,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 func originToPath(origin string) (string, error) {
 	parsedURL, err := gitutil.ParseURL(origin)
 	if err != nil {
-		// If no procotol was specified, try with "https://"
+		// If no protocol was specified, try with "https://"
 		if err == gitutil.ErrUnknownProtocol {
 			parsedURL, err = gitutil.ParseURL("https://" + origin)
 		}

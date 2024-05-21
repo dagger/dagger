@@ -187,8 +187,8 @@ func splitRootAndSubdir(ref, rootURLPath, modPath string) (string, string) {
 	trimmedModPath := strings.TrimPrefix(modPath, "/")
 
 	// Remove .git from the paths
-	noGitTrimmedRootURLPath := strings.Replace(trimmedRootURLPath, ".git", "", -1)
-	noGitTrimmedModPath := strings.Replace(trimmedModPath, ".git", "", -1)
+	noGitTrimmedRootURLPath := strings.ReplaceAll(trimmedRootURLPath, ".git", "")
+	noGitTrimmedModPath := strings.ReplaceAll(trimmedModPath, ".git", "")
 
 	// Check if the root URL path is a prefix of the module path
 	if !strings.HasPrefix(noGitTrimmedModPath, noGitTrimmedRootURLPath) {
