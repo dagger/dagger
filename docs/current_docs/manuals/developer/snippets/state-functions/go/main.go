@@ -14,12 +14,8 @@ type MyModule struct {
 
 func New(greeting string, name string) *MyModule {
 	return &MyModule{
-		// The greeting to use
-		// +default="Hello"
 		Greeting: greeting,
-		// Who to greet
-		// +default="World"
-		Name: name,
+		Name:     name,
 	}
 }
 

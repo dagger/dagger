@@ -13,7 +13,6 @@ Object state can be exposed as a Dagger Function, without having to create a get
 
 <Tabs groupId="language">
 <TabItem value="Go">
-
 Dagger only exposes a struct's public fields; private fields will not be exposed.
 
 Here's an example where one struct field is exposed as a Dagger Function, while the other is not:
@@ -26,7 +25,7 @@ Here's an example where one struct field is exposed as a Dagger Function, while 
 The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) descriptor is a wrapper of
 [`dataclasses.field`](https://docs.python.org/3/library/dataclasses.html#mutable-default-values). It creates a getter function for the attribute as well so that it's accessible from the Dagger API.
 
-Here's an example where one attribute is exposed as a function, while the other is not:
+Here's an example where one attribute is exposed as a Dagger Function, while the other is not:
 
 ```python file=./snippets/state-functions/python/main.py
 ```
@@ -39,9 +38,9 @@ In a future version of the Python SDK, the `dagger.function` decorator will be u
 
 </TabItem>
 <TabItem value="TypeScript">
-TypeScript already offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those fields of a Dagger module that are explicitly decorated with the `@field()` decorator. Other fields will remain private.
+TypeScript already offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those members of a Dagger module that are explicitly decorated with the `@field()` decorator. Others will remain private.
 
-Here's an example where one attribute is exposed as a function, while the other is not:
+Here's an example where one field is exposed as a Dagger Function, while the other is not:
 
 ```typescript file=./snippets/state-functions/typescript/index.ts
 ```

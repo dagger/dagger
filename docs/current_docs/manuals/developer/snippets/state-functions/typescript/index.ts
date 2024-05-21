@@ -17,7 +17,7 @@ class MyModule {
     /**
      * The greeting to use
      */
-    greeting: string  = "Hello",
+    greeting: string = "Hello",
     /**
      * Who to greet
      */
@@ -25,7 +25,7 @@ class MyModule {
   ) {
     this.greeting = greeting
     this.name = name
-    }
+  }
 
   /**
    * Return the greeting message
