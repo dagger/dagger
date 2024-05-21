@@ -1,0 +1,168 @@
+name: Windows test
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  test-provision-windows:
+    name: "Test SDK Provision / windows"
+    # needs: publish
+    # if: |
+    #   always() &&
+    #   github.repository == 'dagger/dagger' &&
+    #   (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: windows-server-2022-8c-32g-300gb
+    # runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # - name: "Setup"
+      #   shell: pwsh
+      #   run: |
+      #     # New-VMSwitch -Name VmNAT -SwitchType Internal
+      #     New-VMSwitch -Name VmNAT -NetAdapterName "Ethernet 3"
+      #     New-NetNat –Name LocalNAT –InternalIPInterfaceAddressPrefix "192.168.100.0/24"
+
+      #     Get-NetAdapter "vEthernet (VmNat)" | New-NetIPAddress -IPAddress 192.168.100.1 -AddressFamily IPv4 -PrefixLength 24
+
+      #     # Get-NetAdapter "vEthernet (VmNat)" | New-NetIPAddress -IPAddress 192.168.100.2 -DefaultGateway 192.168.100.1 -AddressFamily IPv4 -PrefixLength 24
+      #     # Netsh interface ip add dnsserver "vEthernet (VmNat)" address=1.1.1.1
+
+      - name: "Setup docker"
+        run: |
+          set -x
+          systeminfo
+
+          choco install minikube
+
+          minikube delete || true
+          minikube start --vm=true --driver=hyperv --container-runtime=docker --hyperv-use-external-switch=true --no-kubernetes=true --alsologtostderr -v=7
+          # minikube start --vm=true --driver=hyperv --container-runtime=docker --hyperv-use-external-switch=true --hyperv-virtual-switch=VmNat --no-kubernetes=true --alsologtostderr -v=7 --wait-timeout 1m30s
+
+      # - name: "Info"
+      #   shell: pwsh
+      #   run: |
+      #     Hyper-V\Get-VM minikube | Format-List *
+      #     Hyper-V\Get-VM minikube | Format-List -Property *
+      #     Hyper-V\Get-VM minikube | format-custom *
+
+      # - name: "Setup docker 2"
+      #   run: |
+      #     minikube status || true
+      #     minikube profile list || true
+
+      #     minikube start --container-runtime=docker --vm=true
+      #     minikube docker-env
+
+      # - uses: msys2/setup-msys2@v2
+
+      # - name: "Setup docker"
+      #   shell: msys2 {0}
+      #   run: |
+      #     # minikube status || true
+      #     # minikube profile list || true
+
+      #     # choco install qemu
+      #     pacman --noconfirm -Sy
+      #     pacman --noconfirm -S mingw-w64-ucrt-x86_64-qemu
+      #     minikube start --container-runtime=docker --driver qemu --network builtin --no-kubernetes --alsologtostderr -v=7
+      #     minikube docker-env
+
+      # - name: "Set CLI Test URL"
+      #   run: |
+      #     if [ ${{ github.event_name }} == 'push' ]; then
+      #       BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
+      #       if [ $GITHUB_REF_NAME == 'main' ]; then
+      #         # this is a push to the main branch
+      #         ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_windows_amd64.zip"
+      #         CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+      #         RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+      #       else
+      #         # this is a tag push
+      #         GITHUB_REF_NAME=v0.11.4
+      #         ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_windows_amd64.zip"
+      #         CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+      #         RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+      #       fi
+      #       echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+      #       echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+      #       echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+      #     fi
+
+      # - name: Setup minikube
+      #   id: minikube
+      #   uses: medyagh/setup-minikube@latest
+
+      # - name: "Enable Hyper-V"
+      #   shell: cmd
+      #   run: |
+      #     DISM /Online /Enable-Feature /All /FeatureName:Microsoft-Hyper-V
+
+      # - name: "Install Chocolatey"
+      #   run: |
+      #     Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
+
+      #     Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+      #     choco feature enable -n allowGlobalConfirmation
+
+      #     choco install Containers Microsoft-Hyper-V-All Microsoft-Hyper-V-Tools-All --source windowsfeatures
+
+      #     choco install minikube
+      #     minikube start --container-runtime=docker --vm=true -v6
+      #     minikube docker-env
+
+      # Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-Tools-All -All
+      # - name: "Install Docker"
+      #   run: |
+      #     set -x
+      #     minikube status || true
+      #     minikube profile list || true
+      #     minikube docker-env
+
+      # - uses: actions/checkout@v4
+
+      # - uses: actions/setup-go@v5
+      #   with:
+      #     go-version: "1.22"
+      # - name: "Test Go SDK"
+      #   run: |
+      #     cd sdk/go
+      #     go test -v -run TestProvision ./...
+
+      # - uses: actions/setup-python@v4
+      #   with:
+      #     python-version: "3.11"
+      #     cache: "pip"
+      #     cache-dependency-path: "sdk/python/requirements.txt"
+      # - name: "Test Python SDK"
+      #   run: |
+      #     cd sdk/python
+      #     pip install -r requirements.txt .
+      #     pytest -xm provision
+
+      # - uses: actions/setup-node@v2
+      #   with:
+      #     node-version: 18
+      # - uses: oven-sh/setup-bun@v1
+      #   with:
+      #     bun-version: 1.0.x
+      # - name: "Test TypeScript SDK (Node)"
+      #   run: |
+      #     cd sdk/typescript
+      #     yarn install
+      #     yarn test:node -g 'Automatic Provisioned CLI Binary'
+      # - name: "Test TypeScript SDK (Bun)"
+      #   run: |
+      #     cd sdk/typescript
+      #     yarn install
+      #     yarn test:bun -g 'Automatic Provisioned CLI Binary'
+
+      # - name: "ALWAYS print engine logs - especially useful on failure"
+      #   if: always()
+      #   run: docker logs $(docker ps -q --filter name=dagger-engine)
