@@ -11,15 +11,11 @@ title: "Alternative Runtimes"
 The information on this page is only applicable to the TypeScript SDK. Alternative runtimes are not currently supported in the Python and Go SDKs.
 :::
 
-TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via `tsx`), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively).
+TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via `tsx`), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively). However, the Dagger TypeScript SDK only supports Node.js (stable) and Bun (experimental).
 
-By default, the TypeScript SDK executes functions using the Node.js runtime, but you can configure an alternative runtime in the `package.json` file.
+By default, the TypeScript SDK executes functions using the Node.js runtime, but you can configure an alternative runtime in your Dagger module's `package.json` file.
 
-:::note
-For now, the TypeScript SDK only supports Node.js (stable) and Bun (experimental).
-:::
-
-To change the TypeScript SDK runtime, set the field `dagger.runtime` in the `package.json` file.
+To change the TypeScript SDK runtime, set the field `dagger.runtime` in your Dagger module's `package.json` file.
 
 ## Node.js
 
