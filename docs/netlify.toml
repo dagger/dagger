@@ -75,6 +75,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual TypeScript runtimes page to multi-language page
+  from = "/manuals/developer/typescript/:docid/runtime"
+  to = "/manuals/developer/runtimes"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"
