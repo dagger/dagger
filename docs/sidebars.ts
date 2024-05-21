@@ -390,10 +390,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/go/visibility"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/go/debugging"
             },
             {

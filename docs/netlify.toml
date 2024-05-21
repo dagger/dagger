@@ -135,6 +135,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual TypeScript visibility page to multi-language page
+  from = "/manuals/developer/typescript/:docid/visibility"
+  to = "/manuals/developer/state-functions"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"
