@@ -13,8 +13,6 @@ import (
 func init() {
 	cloud := &CloudCLI{}
 
-	rootCmd.PersistentFlags().MarkHidden("api")
-
 	group := &cobra.Group{
 		ID:    "cloud",
 		Title: "Dagger Cloud Commands",
@@ -22,7 +20,7 @@ func init() {
 	rootCmd.AddGroup(group)
 
 	loginCmd := &cobra.Command{
-		Use:     "login [flags] [ORG]",
+		Use:     "login [options] [org]",
 		Short:   "Log in to Dagger Cloud",
 		GroupID: group.ID,
 		RunE:    cloud.Login,
@@ -78,7 +76,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		selectedOrg = &user.Orgs[0]
 	default:
 		if orgName == "" {
-			fmt.Fprintf(errW, "You are a member of multiple organizations. Please select one with `dagger login ORG`:\n\n")
+			fmt.Fprintf(errW, "You are a member of multiple organizations. Please select one with `dagger login <org>`:\n\n")
 			for _, org := range user.Orgs {
 				fmt.Fprintf(errW, "- %s\n", org.Name)
 			}
