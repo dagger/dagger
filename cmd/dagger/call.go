@@ -20,12 +20,9 @@ var callCmd = &FuncCommand{
 	Short: "Call a module function",
 	Long: strings.ReplaceAll(`Call a module function and print the result.
 
-If the last argument is either a Container, Directory, or File, the pipeline
-will be evaluated (the result of calling ´sync´) without presenting any output.
-Providing the ´--output´ option (shorthand: ´-o´) is equivalent to calling
-´export´ instead. To print a property of these core objects, continue chaining
-by appending it to the end of the command (for example, ´stdout´, ´entries´, or
-´contents´).
+If the last argument is either a Container, Directory, or File, and the
+´--output´ option is provided (shorthand: ´-o´), it's equivalent
+to appending the ´export´ function.
 `,
 		"´",
 		"`",
