@@ -12,7 +12,7 @@ class MyModule {
     /**
      * Definition
      */
-    def_: string = "latest"
+    def_: string = "latest",
   ) {
     this.def_ = def_
   }
@@ -26,7 +26,7 @@ class MyModule {
      * Image ref
      */
     @field("from")
-    from_: string = "alpine"
+    from_: string = "alpine",
   ): Container {
     return dag.container().withLabel("definition", this.def_).from(from_)
   }
