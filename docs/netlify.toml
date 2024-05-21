@@ -81,6 +81,18 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual TypeScript-specific pages to TypeScript common page
+  from = "/manuals/developer/typescript/:docid/aliases"
+  to = "/manuals/developer/name-overrides"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Python-specific pages to Python common page
+  from = "/manuals/developer/python/:docid/name-overrides"
+  to = "/manuals/developer/name-overrides"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"

@@ -1,0 +1,67 @@
+---
+slug: /manuals/developer/name-overrides
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Name Overrides"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Name Overrides
+
+:::important
+The information on this page is only applicable to the Python and TypeScript SDKs. Name overrides are not currently supported in the Go SDK.
+:::
+
+You can change the name of an exposed field or function to work around a reserved keyword or some other naming conflict, but still be able to expose the desired name in the Dagger API. For example, using `import_` in the language, but `import` in the Dagger API.
+
+<Tabs groupId="language">
+<TabItem value="Python">
+
+The [`@dagger.function`][@function] decorator and the
+[`dagger.field`][dag-field] descriptor have a `name` argument to provide
+an alternative name for the Dagger API. And for function arguments,
+[annotate][Annotated] with an additional [`dagger.Arg`][dag-arg] metadata.
+
+Here's an example with a renamed object attribute (and constructor argument),
+function and function argument:
+
+```python file=./snippets/name-overrides/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+Add the name override (alias) as a parameter of the corresponding `@field()` or `@func()` decorators
+
+Here's an example with a renamed object attribute (and constructor argument),
+function and function argument:
+
+```typescript file=./snippets/name-overrides/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Confirm with `dagger call --help` that the names were overridden:
+
+```
+FUNCTIONS
+  def           Definition
+  import        Import the specified image
+
+ARGUMENTS
+      --def string   Definition (default "latest")
+```
+
+Confirm the same for the function argument, with `dagger call import --help`:
+
+```
+ARGUMENTS
+      --from string   Image ref (default "alpine")
+```
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[dag-field]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field
+[dag-arg]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.Arg
+[Annotated]: https://docs.python.org/3/library/typing.html#typing.Annotated

@@ -342,6 +342,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/name-overrides"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/error-handling"
         },
         {
@@ -417,10 +421,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/name-overrides"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/module-structure"
             },
             {
@@ -465,10 +465,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/decorators"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/aliases"
             },
             {
               "type": "doc",
