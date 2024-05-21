@@ -90,7 +90,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Node:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"yarn", "--prefer-offline", "--no-progress", "--silent", "--ignore-engines", "--non-interactive", "--pure-lockfile"}).
+			WithExec([]string{"yarn", "install", "--production"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -177,12 +177,13 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 		return dag.Container().
 			From(nodeImageRef).
 			WithoutEntrypoint().
+			WithExec([]string{"corepack", "enable"}).
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
 			WithExec([]string{"apk", "add", "ca-certificates"}).
 			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
-			WithMountedCache("/usr/local/share/.cache", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
+			// WithMountedCache("/usr/local/share/.cache", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
 			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
@@ -216,7 +217,7 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container, runtime
 		} else {
 			ctr = ctr.
 				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
-				WithExec([]string{"npm", "pkg", "set", "devDependencies[@dagger.io/dagger]=./sdk"})
+				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
 		}
 	} else {
 		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
@@ -258,7 +259,7 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 	case Bun:
 		return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
 	case Node:
-		return ctr.WithExec([]string{"yarn", "--production", "--prefer-offline", "--no-progress"}).Directory(ModSourceDirPath)
+		return ctr.WithExec([]string{"yarn", "workspaces", "focus", "--production"}).Directory(ModSourceDirPath)
 	default:
 		// Should never happen since we verify the runtime before calling this function.
 		return nil
