@@ -99,7 +99,7 @@ dagger call modify-directory \
 
 ### Use secret variables
 
-The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API. The secret may be sourced from a host environment variable, host file or host command execution.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -138,7 +138,7 @@ dagger call github-api \
     --token=cmd:"gh auth token"
 ```
 
-### Use secret files
+### Mount files as secrets
 
 The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
 
