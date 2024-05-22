@@ -94,6 +94,56 @@ dagger call modify-directory \
     --path=/src \
   entries
 ```
+## Builds
+
+### Perform multi-stage build 
+
+The following code listing performs a multi-stage build. 
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/multi-stage-build/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/multi-stage-build/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/multi-stage-build/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+```shell
+dagger call build --dir "https://github.com/golang/example#master:hello"
+```
+
+{/* ### Perform matrix build 
+
+### Build multi-arch image 
+
+### Build multi-arch image with cross-compliation 
+
+### Build image from Dockerfile
+
+### Build image from Dockerfile using different build context 
+
+### Add OCI annotations to image 
+
+### Define build-time variables 
+
+### Access private Git repository
+
+### Invalidate cache */}
 
 ## Secrets
 
@@ -138,7 +188,7 @@ dagger call github-api \
     --token=cmd:"gh auth token"
 ```
 
-## Services
+## Services 
 
 ### Bind and use services
 
