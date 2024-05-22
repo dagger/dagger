@@ -3,7 +3,7 @@
 param (
     [Parameter(Mandatory = $false)] [System.Management.Automation.SemanticVersion]$DaggerVersion,
     [Parameter(Mandatory = $false)] [string]$DaggerCommit,
-    [Parameter(Mandatory = $false)] [string]$InstallPath = $env:HOMEPATH + '\dagger',
+    [Parameter(Mandatory = $false)] [string]$InstallPath = $env:USERPROFILE + '\dagger',
 
     [Parameter(Mandatory = $false)] [System.Boolean]$InteractiveInstall = $false
 )
