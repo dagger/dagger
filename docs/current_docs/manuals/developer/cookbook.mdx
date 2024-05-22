@@ -310,9 +310,9 @@ dagger call github-api \
 
 ### Expose services in Dagger Functions to each other and to the host
 
-The following Dagger Function returns an HTTP service. This service can be used:
-- from another Dagger Function, via a service binding using an alias
-- from the host
+The first Dagger Function below creates and returns an HTTP service. This service can be used:
+- from a different Dagger Function, via a service binding using an alias; or
+- from the host.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -337,7 +337,7 @@ The following Dagger Function returns an HTTP service. This service can be used:
 
 Example usage:
 
-- Send an HTTP request from one Dagger Function to a bound service (instantiated by a different Dagger Function and aliased as `www`) and return the response:
+- Send a request from one Dagger Function to a bound HTTP service instantiated by a different Dagger Function:
 
     ```shell
     dagger call get
@@ -361,7 +361,7 @@ Example usage:
 
 ### Expose host services to Dagger Functions
 
-The following Dagger Function accepts a `Service`, representing a service running on the host. It then binds the service using the alias `db` and creates a client to access it.
+The following Dagger Function accepts a `Service` running on the host, binds it using an alias, and creates a client to access it via the service binding. This example uses a MariaDB database service running on host port 3306, aliased as `db` in the Dagger Function.
 
 :::note
 This implies that a service is already listening on a port on the host, out-of-band of Dagger.
@@ -390,16 +390,16 @@ This implies that a service is already listening on a port on the host, out-of-b
 
 Example usage:
 
-- Send a request to the host service listening on port 3306 and return the result as a string:
+- Send a query to the database service listening on host port 3306 and return the result as a string:
 
     ```shell
-    # assumes a service is available on host port 3306
+    # assumes a service is listening on host port 3306
     dagger call user-list --svc=tcp://localhost:3306
     ```
 
 ### Create a transient service for unit tests
 
-The following Dagger Function creates a service and binds it to an application container for unit testing.
+The following Dagger Function creates a service and binds it to an application container for unit testing. In this example, the application being tested is Drupal. Drupal includes a large number of unit tests, including tests which depend on an active database service. This database service is created on-the-fly by the Dagger Function.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -424,7 +424,7 @@ The following Dagger Function creates a service and binds it to an application c
 
 Example usage:
 
-- Run unit tests, instantiating a database service during the process:
+- Run Drupal's unit tests, instantiating a database service during the process:
 
     ```shell
     dagger call test
@@ -432,7 +432,7 @@ Example usage:
 
 ### Start and stop services
 
-The following Dagger Function demonstrates explicitly starting and stopping a service.
+The following Dagger Function demonstrates explicitly starting and stopping a service. This example uses a Redis service.
 
 <Tabs groupId="language">
 <TabItem value="Go">
