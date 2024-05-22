@@ -3233,6 +3233,114 @@ export class Test {
 			})
 		}
 	})
+
+	t.Run("custom external enum type", func(ctx context.Context, t *testctx.T) {
+		depSrc := `package main
+
+// Enum for Status
+type Status string
+
+const (
+	// Active status
+	Active Status = "ACTIVE"
+
+	// Inactive status
+	Inactive Status = "INACTIVE"
+)
+
+type Dep struct{}
+
+func (m *Dep) Active() Status {
+	return Active
+}
+
+func (m *Dep) Inactive() Status {
+	return Inactive
+}
+
+func (m *Dep) Invert(status Status) Status {
+	switch status {
+	case Active:
+		return Inactive
+	case Inactive:
+		return Active
+	default:
+		panic("invalid status")
+	}
+}
+`
+
+		type testCase struct {
+			sdk    string
+			source string
+		}
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+				
+import "context"
+
+type Test struct{}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+	status, err := dag.Dep().Active(ctx)
+	if err != nil {
+		return "", err
+	}
+	status, err = dag.Dep().Invert(ctx, status)
+	if err != nil {
+		return "", err
+	}
+	return string(status), nil
+}
+`,
+			},
+			{
+				sdk: "python",
+				source: `import dagger
+from dagger import dag
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def test(self) -> str:
+        status = await dag.dep().active()
+        status = await dag.dep().invert(status)
+        return str(status)
+`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { dag, func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async test(): Promise<string> {
+    let status = await dag.dep().active();
+    status = await dag.dep().invert(status);
+    return status;
+  }
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := modInit(t, c, tc.sdk, tc.source).
+					With(withModInitAt("./dep", "go", depSrc)).
+					With(daggerExec("install", "./dep"))
+
+				out, err := modGen.With(daggerQuery(`{test{test}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "INACTIVE", gjson.Get(out, "test.test").String())
+			})
+		}
+	})
 }
 
 func (ModuleSuite) TestConflictingSameNameDeps(ctx context.Context, t *testctx.T) {
@@ -6597,6 +6705,10 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 	return fileContents(sdkSourceFile(sdk), contents)
 }
 
+func sdkSourceAt(dir, sdk, contents string) dagger.WithContainerFunc {
+	return fileContents(filepath.Join(dir, sdkSourceFile(sdk)), contents)
+}
+
 func sdkSourceFile(sdk string) string {
 	switch sdk {
 	case "go":
@@ -6628,9 +6740,23 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 
 func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Container {
 	t.Helper()
-	return daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk="+sdk)).
-		With(sdkSource(sdk, contents))
+	return daggerCliBase(t, c).With(withModInit(sdk, contents))
+}
+
+func withModInit(sdk, contents string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(daggerExec("init", "--name=test", "--sdk="+sdk)).
+			With(sdkSource(sdk, contents))
+	}
+}
+
+func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir)).
+			With(sdkSourceAt(dir, sdk, contents))
+	}
 }
 
 func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *introspection.Schema {
