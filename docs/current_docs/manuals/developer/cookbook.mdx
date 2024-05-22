@@ -36,19 +36,26 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 
 Example usage:
 
-```
-dagger call write-directory \
-    --d=./myapp/
+- Write the contents of the `/myapp` directory on the host to the `/src` directory in the container and return the modified container:
 
-dagger call write-directory \
-    --d=github.com/dagger/dagger#main \
+    ```shell
+    dagger call write-directory --d=./myapp/
+    ```
 
-dagger call write-directory \
-    --d=https://github.com/dagger/dagger#main \
-  directory \
-    --path=/src \
-  entries
-```
+- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the modified container:
+
+    ```shell
+    dagger call write-directory --d=github.com/dagger/dagger#main
+    ```
+
+- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the directory's contents as a string:
+
+    ```shell
+    dagger call \
+      write-directory --d=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
 
 ### Add a local directory or remote repository to a container and modify its contents
 
@@ -81,12 +88,11 @@ When using a local directory, modifications made to the directory's contents aft
 
 Example usage:
 
-```
-dagger call modify-directory \
-    --d=./myapp/
+- Write the contents of the `/myapp` directory on the host to the `/src` directory in the container, add a file to it, and return the modified container:
 
-dagger call modify-directory \
-    --d=github.com/dagger/dagger#main \
+    ```shell
+    dagger call modify-directory --d=./myapp/
+    ```
 
 dagger call modify-directory \
     --d=https://github.com/dagger/dagger#main \
@@ -94,11 +100,29 @@ dagger call modify-directory \
     --path=/src \
   entries
 ```
+
+- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the modified container::
+
+    ```shell
+    dagger call modify-directory \
+        --d=github.com/dagger/dagger#main \
+    ```
+
+- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the directory's contents as a string:
+
+    ```shell
+    dagger call modify-directory \
+        --d=https://github.com/dagger/dagger#main \
+      directory \
+        --path=/src \
+      entries
+    ```
+
 ## Builds
 
-### Perform multi-stage build 
+### Perform multi-stage build
 
-The following code listing performs a multi-stage build. 
+The following code listing performs a multi-stage build.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -123,14 +147,15 @@ The following code listing performs a multi-stage build.
 
 Example usage:
 
-Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
-```shell
-dagger call build --src="https://github.com/golang/example#master:hello"
-```
+- Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
 
-### Perform matrix build 
+    ```shell
+    dagger call build --src="https://github.com/golang/example#master:hello"
+    ```
 
-The following code listing performs a matrix build. 
+### Perform matrix build
+
+The following code listing performs a matrix build.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -155,43 +180,44 @@ The following code listing performs a matrix build.
 
 Example usage:
 
-Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
-```shell
-dagger call build \
-  --src="https://github.com/golang/example#master:hello" \
-  export --path /tmp/matrix-builds
-```
+- Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
 
-Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
+    ```shell
+    dagger call build \
+      --src="https://github.com/golang/example#master:hello" \
+      export --path /tmp/matrix-builds
+    ```
 
-```shell
-/tmp/matrix-builds
-└── build
-    ├── darwin
-    │   ├── amd64
-    │   │   └── hello
-    │   └── arm64
-    │       └── hello
-    └── linux
-        ├── amd64
-        │   └── hello
-        └── arm64
-            └── hello
+    Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
 
-8 directories, 4 files
-```
+    ```shell
+    /tmp/matrix-builds
+    └── build
+        ├── darwin
+        │   ├── amd64
+        │   │   └── hello
+        │   └── arm64
+        │       └── hello
+        └── linux
+            ├── amd64
+            │   └── hello
+            └── arm64
+                └── hello
 
-{/* ### Build multi-arch image 
+    8 directories, 4 files
+    ```
 
-### Build multi-arch image with cross-compliation 
+{/* ### Build multi-arch image
+
+### Build multi-arch image with cross-compliation
 
 ### Build image from Dockerfile
 
-### Build image from Dockerfile using different build context 
+### Build image from Dockerfile using different build context
 
-### Add OCI annotations to image 
+### Add OCI annotations to image
 
-### Define build-time variables 
+### Define build-time variables
 
 ### Access private Git repository
 
@@ -236,8 +262,6 @@ Example usage:
     dagger call \
       copy-file --f=/home/admin/archives.zip \
       directory --path=/src \
-      entries
-    ```
 
 ## Secrets
 
@@ -282,11 +306,13 @@ dagger call github-api \
     --token=cmd:"gh auth token"
 ```
 
-## Services 
+## Services
 
-### Bind and use services
+### Expose services in Dagger Functions to each other and to the host
 
-The following Dagger Function returns an HTTP service. This service is used by another Dagger Function, which creates a service binding using the alias `www` and then accesses the HTTP service using this alias.
+The following Dagger Function returns an HTTP service. This service can be used:
+- from another Dagger Function, via a service binding using an alias
+- from the host
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -311,9 +337,131 @@ The following Dagger Function returns an HTTP service. This service is used by a
 
 Example usage:
 
-```shell
-dagger call get
+- Send an HTTP request from one Dagger Function to a bound service (instantiated by a different Dagger Function and aliased as `www`) and return the response:
+
+    ```shell
+    dagger call get
+    ```
+
+- Expose the HTTP service instantiated by a Dagger Function to the host on the default port:
+
+    ```shell
+    dagger call http-service up
+    # access the service from the host
+    curl localhost:8080
+    ```
+
+- Expose the HTTP service instantiated by a Dagger Function to the host on a different host port:
+
+    ```shell
+    dagger call http-service up --ports 9000:8080
+    # access the service from the host
+    curl localhost:9000
+    ```
+
+### Expose host services to Dagger Functions
+
+The following Dagger Function accepts a `Service`, representing a service running on the host. It then binds the service using the alias `db` and creates a client to access it.
+
+:::note
+This implies that a service is already listening on a port on the host, out-of-band of Dagger.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/expose-host-services-to-dagger/go/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/expose-host-services-to-dagger/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+- Send a request to the host service listening on port 3306 and return the result as a string:
+
+    ```shell
+    # assumes a service is available on host port 3306
+    dagger call user-list --svc=tcp://localhost:3306
+    ```
+
+### Create a transient service for unit tests
+
+The following Dagger Function creates a service and binds it to an application container for unit testing.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/test-against-db-service/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/test-against-db-service/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/test-against-db-service/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+- Run unit tests, instantiating a database service during the process:
+
+    ```shell
+    dagger call test
+    ```
+
+### Start and stop services
+
+The following Dagger Function demonstrates explicitly starting and stopping a service.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/start-stop-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/start-stop-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/start-stop-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+- Start a Redis service, write and read data, and then stop it:
+
+    ```shell
+    dagger call redis-service
+    ```
 
 ## Optimizations
 
