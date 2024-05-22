@@ -1,6 +1,5 @@
 import ts from "typescript"
 
-import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 import { DaggerModule } from "./abtractions/module.js"
 import { ClassTypeDef, FunctionTypedef } from "./typeDefs.js"
 
@@ -25,12 +24,17 @@ export type ScanResult = {
  */
 export function scan(files: string[], moduleName = ""): DaggerModule {
   if (files.length === 0) {
-    throw new UnknownDaggerError("no files to introspect found", {})
+    throw new Error("no files to introspect found")
   }
 
   // Interpret the given typescript source files.
   const program = ts.createProgram(files, { experimentalDecorators: true })
   const checker = program.getTypeChecker()
 
-  return new DaggerModule(checker, moduleName, program.getSourceFiles())
+  const module = new DaggerModule(checker, moduleName, program.getSourceFiles())
+  if (Object.keys(module.objects).length === 0) {
+    throw new Error("no objects found in the module")
+  }
+
+  return module
 }
