@@ -262,7 +262,9 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 	case Bun:
 		return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
 	case Node:
-		return ctr.WithExec([]string{"yarn", "workspaces", "focus", "--production"}).Directory(ModSourceDirPath)
+		return ctr.
+			WithExec([]string{"yarn", "set", "version", "stable"}).
+			WithExec([]string{"yarn", "workspaces", "focus", "--production"}).Directory(ModSourceDirPath)
 	default:
 		// Should never happen since we verify the runtime before calling this function.
 		return nil
