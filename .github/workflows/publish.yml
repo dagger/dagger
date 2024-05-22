@@ -157,11 +157,15 @@ jobs:
       - name: "Test TypeScript SDK (Node)"
         run: |
           cd sdk/typescript
+          corepack enable
+          yarn set version stable
           yarn install
           yarn test:node -g 'Automatic Provisioned CLI Binary'
       - name: "Test TypeScript SDK (Bun)"
         run: |
           cd sdk/typescript
+          corepack enable
+          yarn set version stable
           yarn install
           yarn test:bun -g 'Automatic Provisioned CLI Binary'
 
@@ -293,11 +297,15 @@ jobs:
       - name: "Test TypeScript SDK (Node)"
         run: |
           cd sdk/typescript
+          corepack enable
+          yarn set version stable
           yarn install
           yarn test:node -g 'Automatic Provisioned CLI Binary'
       - name: "Test TypeScript SDK (Bun)"
         run: |
           cd sdk/typescript
+          corepack enable
+          yarn set version stable
           yarn install
           yarn test:bun -g 'Automatic Provisioned CLI Binary'
       - name: "ALWAYS print engine logs - especially useful on failure"
