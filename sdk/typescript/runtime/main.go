@@ -177,13 +177,16 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 		return dag.Container().
 			From(nodeImageRef).
 			WithoutEntrypoint().
+			// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
 			WithExec([]string{"corepack", "enable"}).
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
 			WithExec([]string{"apk", "add", "ca-certificates"}).
 			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
-			// WithMountedCache("/usr/local/share/.cache", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
+			// Comment cache here, it seems it creates cache conflicts with yarn (v1 and v4).
+			// We should investigate this further and see if we hit the same issue with pnpm.
+			// WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
 			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
