@@ -1,0 +1,6 @@
+kind: Added
+body: Improve TypeScript SDK performances
+time: 2024-05-22T15:03:52.547331+02:00
+custom:
+  Author: TomChv
+  PR: "7096"
