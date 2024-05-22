@@ -585,6 +585,30 @@ export type DirectoryWithNewFileOpts = {
   permissions?: number
 }
 
+export type DirectoryWithoutDirectoryOpts = {
+  /**
+   * Allow wildcards in the path (e.g., "*.txt").
+   */
+  allowWildCard?: boolean
+
+  /**
+   * Allow the operation to not fail if the directory does not exist.
+   */
+  allowNotFound?: boolean
+}
+
+export type DirectoryWithoutFileOpts = {
+  /**
+   * Allow wildcards in the path (e.g., "*.txt").
+   */
+  allowWildCard?: boolean
+
+  /**
+   * Allow the operation to not fail if the directory does not exist.
+   */
+  allowNotFound?: boolean
+}
+
 /**
  * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
  */
@@ -3265,14 +3289,19 @@ export class Directory extends BaseClient {
   /**
    * Retrieves this directory with the directory at the given path removed.
    * @param path Location of the directory to remove (e.g., ".github/").
+   * @param opts.allowWildCard Allow wildcards in the path (e.g., "*.txt").
+   * @param opts.allowNotFound Allow the operation to not fail if the directory does not exist.
    */
-  withoutDirectory = (path: string): Directory => {
+  withoutDirectory = (
+    path: string,
+    opts?: DirectoryWithoutDirectoryOpts,
+  ): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withoutDirectory",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -3282,14 +3311,16 @@ export class Directory extends BaseClient {
   /**
    * Retrieves this directory with the file at the given path removed.
    * @param path Location of the file to remove (e.g., "/file.txt").
+   * @param opts.allowWildCard Allow wildcards in the path (e.g., "*.txt").
+   * @param opts.allowNotFound Allow the operation to not fail if the directory does not exist.
    */
-  withoutFile = (path: string): Directory => {
+  withoutFile = (path: string, opts?: DirectoryWithoutFileOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withoutFile",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       ctx: this._ctx,

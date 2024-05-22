@@ -2234,9 +2234,27 @@ func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	}
 }
 
+// DirectoryWithoutDirectoryOpts contains options for Directory.WithoutDirectory
+type DirectoryWithoutDirectoryOpts struct {
+	// Allow wildcards in the path (e.g., "*.txt").
+	AllowWildCard bool
+	// Allow the operation to not fail if the directory does not exist.
+	AllowNotFound bool
+}
+
 // Retrieves this directory with the directory at the given path removed.
-func (r *Directory) WithoutDirectory(path string) *Directory {
+func (r *Directory) WithoutDirectory(path string, opts ...DirectoryWithoutDirectoryOpts) *Directory {
 	q := r.query.Select("withoutDirectory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `allowWildCard` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowWildCard) {
+			q = q.Arg("allowWildCard", opts[i].AllowWildCard)
+		}
+		// `allowNotFound` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowNotFound) {
+			q = q.Arg("allowNotFound", opts[i].AllowNotFound)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{
@@ -2244,9 +2262,27 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 	}
 }
 
+// DirectoryWithoutFileOpts contains options for Directory.WithoutFile
+type DirectoryWithoutFileOpts struct {
+	// Allow wildcards in the path (e.g., "*.txt").
+	AllowWildCard bool
+	// Allow the operation to not fail if the directory does not exist.
+	AllowNotFound bool
+}
+
 // Retrieves this directory with the file at the given path removed.
-func (r *Directory) WithoutFile(path string) *Directory {
+func (r *Directory) WithoutFile(path string, opts ...DirectoryWithoutFileOpts) *Directory {
 	q := r.query.Select("withoutFile")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `allowWildCard` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowWildCard) {
+			q = q.Arg("allowWildCard", opts[i].AllowWildCard)
+		}
+		// `allowNotFound` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AllowNotFound) {
+			q = q.Arg("allowNotFound", opts[i].AllowNotFound)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{

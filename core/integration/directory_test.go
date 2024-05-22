@@ -521,6 +521,13 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"some-dir", "some-file"}, entries)
 
+	// Test without dir with allow not found = false
+	_, err = dir1.
+		WithoutDirectory("non-existant", dagger.DirectoryWithoutDirectoryOpts{AllowNotFound: false}).
+		Entries(ctx)
+
+	require.Error(t, err)
+
 	dir := c.Directory().
 		WithNewFile("foo.txt", "foo").
 		WithNewFile("a/bar.txt", "bar").
@@ -549,6 +556,12 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, []string{"data.json"}, entries)
+
+	_, err = dir.
+		WithoutDirectory("b/*.txt", dagger.DirectoryWithoutDirectoryOpts{AllowWildCard: false}).
+		Entries(ctx)
+
+	require.Error(t, err)
 
 	entries, err = dir.
 		WithoutFile("c/*a1*").

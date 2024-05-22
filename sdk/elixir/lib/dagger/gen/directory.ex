@@ -257,10 +257,17 @@ defmodule Dagger.Directory do
   end
 
   @doc "Retrieves this directory with the directory at the given path removed."
-  @spec without_directory(t(), String.t()) :: Dagger.Directory.t()
-  def without_directory(%__MODULE__{} = directory, path) do
+  @spec without_directory(t(), String.t(), [
+          {:allow_wild_card, boolean() | nil},
+          {:allow_not_found, boolean() | nil}
+        ]) :: Dagger.Directory.t()
+  def without_directory(%__MODULE__{} = directory, path, optional_args \\ []) do
     selection =
-      directory.selection |> select("withoutDirectory") |> put_arg("path", path)
+      directory.selection
+      |> select("withoutDirectory")
+      |> put_arg("path", path)
+      |> maybe_put_arg("allowWildCard", optional_args[:allow_wild_card])
+      |> maybe_put_arg("allowNotFound", optional_args[:allow_not_found])
 
     %Dagger.Directory{
       selection: selection,
@@ -269,10 +276,17 @@ defmodule Dagger.Directory do
   end
 
   @doc "Retrieves this directory with the file at the given path removed."
-  @spec without_file(t(), String.t()) :: Dagger.Directory.t()
-  def without_file(%__MODULE__{} = directory, path) do
+  @spec without_file(t(), String.t(), [
+          {:allow_wild_card, boolean() | nil},
+          {:allow_not_found, boolean() | nil}
+        ]) :: Dagger.Directory.t()
+  def without_file(%__MODULE__{} = directory, path, optional_args \\ []) do
     selection =
-      directory.selection |> select("withoutFile") |> put_arg("path", path)
+      directory.selection
+      |> select("withoutFile")
+      |> put_arg("path", path)
+      |> maybe_put_arg("allowWildCard", optional_args[:allow_wild_card])
+      |> maybe_put_arg("allowNotFound", optional_args[:allow_not_found])
 
     %Dagger.Directory{
       selection: selection,

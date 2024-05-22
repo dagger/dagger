@@ -2568,30 +2568,54 @@ class Directory(Type):
         _ctx = self._select("withTimestamps", _args)
         return Directory(_ctx)
 
-    def without_directory(self, path: str) -> Self:
+    def without_directory(
+        self,
+        path: str,
+        *,
+        allow_wild_card: bool | None = True,
+        allow_not_found: bool | None = True,
+    ) -> Self:
         """Retrieves this directory with the directory at the given path removed.
 
         Parameters
         ----------
         path:
             Location of the directory to remove (e.g., ".github/").
+        allow_wild_card:
+            Allow wildcards in the path (e.g., "*.txt").
+        allow_not_found:
+            Allow the operation to not fail if the directory does not exist.
         """
         _args = [
             Arg("path", path),
+            Arg("allowWildCard", allow_wild_card, True),
+            Arg("allowNotFound", allow_not_found, True),
         ]
         _ctx = self._select("withoutDirectory", _args)
         return Directory(_ctx)
 
-    def without_file(self, path: str) -> Self:
+    def without_file(
+        self,
+        path: str,
+        *,
+        allow_wild_card: bool | None = True,
+        allow_not_found: bool | None = True,
+    ) -> Self:
         """Retrieves this directory with the file at the given path removed.
 
         Parameters
         ----------
         path:
             Location of the file to remove (e.g., "/file.txt").
+        allow_wild_card:
+            Allow wildcards in the path (e.g., "*.txt").
+        allow_not_found:
+            Allow the operation to not fail if the directory does not exist.
         """
         _args = [
             Arg("path", path),
+            Arg("allowWildCard", allow_wild_card, True),
+            Arg("allowNotFound", allow_not_found, True),
         ]
         _ctx = self._select("withoutFile", _args)
         return Directory(_ctx)

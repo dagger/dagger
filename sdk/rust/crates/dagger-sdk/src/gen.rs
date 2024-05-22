@@ -3341,6 +3341,24 @@ pub struct DirectoryWithNewFileOpts {
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithoutDirectoryOpts {
+    /// Allow the operation to not fail if the directory does not exist.
+    #[builder(setter(into, strip_option), default)]
+    pub allow_not_found: Option<bool>,
+    /// Allow wildcards in the path (e.g., "*.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub allow_wild_card: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithoutFileOpts {
+    /// Allow the operation to not fail if the directory does not exist.
+    #[builder(setter(into, strip_option), default)]
+    pub allow_not_found: Option<bool>,
+    /// Allow wildcards in the path (e.g., "*.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub allow_wild_card: Option<bool>,
+}
 impl Directory {
     /// Load the directory as a Dagger module
     ///
@@ -3830,8 +3848,49 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the directory to remove (e.g., ".github/").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutDirectory");
+        query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the directory at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to remove (e.g., ".github/").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryWithoutDirectoryOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("withoutDirectory");
+        query = query.arg("path", path.into());
+        if let Some(allow_wild_card) = opts.allow_wild_card {
+            query = query.arg("allowWildCard", allow_wild_card);
+        }
+        if let Some(allow_not_found) = opts.allow_not_found {
+            query = query.arg("allowNotFound", allow_not_found);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the file at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to remove (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_file(&self, path: impl Into<String>) -> Directory {
+        let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
         Directory {
             proc: self.proc.clone(),
@@ -3844,9 +3903,20 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the file to remove (e.g., "/file.txt").
-    pub fn without_file(&self, path: impl Into<String>) -> Directory {
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_file_opts(
+        &self,
+        path: impl Into<String>,
+        opts: DirectoryWithoutFileOpts,
+    ) -> Directory {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
+        if let Some(allow_wild_card) = opts.allow_wild_card {
+            query = query.arg("allowWildCard", allow_wild_card);
+        }
+        if let Some(allow_not_found) = opts.allow_not_found {
+            query = query.arg("allowNotFound", allow_not_found);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,

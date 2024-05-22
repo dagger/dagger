@@ -244,20 +244,36 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this directory with the directory at the given path removed.
      */
-    public function withoutDirectory(string $path): Directory
+    public function withoutDirectory(
+        string $path,
+        ?bool $allowWildCard = true,
+        ?bool $allowNotFound = true,
+    ): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDirectory');
         $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $allowWildCard) {
+        $innerQueryBuilder->setArgument('allowWildCard', $allowWildCard);
+        }
+        if (null !== $allowNotFound) {
+        $innerQueryBuilder->setArgument('allowNotFound', $allowNotFound);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
      * Retrieves this directory with the file at the given path removed.
      */
-    public function withoutFile(string $path): Directory
+    public function withoutFile(string $path, ?bool $allowWildCard = true, ?bool $allowNotFound = true): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFile');
         $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $allowWildCard) {
+        $innerQueryBuilder->setArgument('allowWildCard', $allowWildCard);
+        }
+        if (null !== $allowNotFound) {
+        $innerQueryBuilder->setArgument('allowNotFound', $allowNotFound);
+        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }
