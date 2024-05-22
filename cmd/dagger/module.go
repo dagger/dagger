@@ -293,7 +293,7 @@ var moduleDevelopCmd = &cobra.Command{
 	Short: "Setup or update all the resources needed to develop on a module locally",
 	Long: `Setup or update all the resources needed to develop on a module locally.
 
-This command re-regerates the module's generated code based on dependencies
+This command regenerates the module's code based on dependencies
 and the current state of the module's source code.
 
 If --sdk is set, the config file and generated code will be updated with those values reflected. It currently can only be used to set the SDK of a module that does not have one already.
