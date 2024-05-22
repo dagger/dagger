@@ -969,6 +969,11 @@ export type ServiceStopOpts = {
    * Immediately kill the service without waiting for a graceful exit
    */
   kill?: boolean
+
+  /**
+   * The signal to send to the service.
+   */
+  signal?: SignalTypes
 }
 
 export type ServiceUpOpts = {
@@ -990,6 +995,46 @@ export type ServiceUpOpts = {
  */
 export type ServiceID = string & { __ServiceID: never }
 
+/**
+ * Signaltypes to be sent to processes.
+ */
+export enum SignalTypes {
+  Sigabrt = "SIGABRT",
+  Sigalrm = "SIGALRM",
+  Sigbus = "SIGBUS",
+  Sigchld = "SIGCHLD",
+  Sigcld = "SIGCLD",
+  Sigcont = "SIGCONT",
+  Sigfpe = "SIGFPE",
+  Sighup = "SIGHUP",
+  Sigill = "SIGILL",
+  Sigint = "SIGINT",
+  Sigio = "SIGIO",
+  Sigiot = "SIGIOT",
+  Sigkill = "SIGKILL",
+  Sigpipe = "SIGPIPE",
+  Sigpoll = "SIGPOLL",
+  Sigprof = "SIGPROF",
+  Sigpwr = "SIGPWR",
+  Sigquit = "SIGQUIT",
+  Sigsegv = "SIGSEGV",
+  Sigstkflt = "SIGSTKFLT",
+  Sigstop = "SIGSTOP",
+  Sigsys = "SIGSYS",
+  Sigterm = "SIGTERM",
+  Sigtrap = "SIGTRAP",
+  Sigtstp = "SIGTSTP",
+  Sigttin = "SIGTTIN",
+  Sigttou = "SIGTTOU",
+  Sigunused = "SIGUNUSED",
+  Sigurg = "SIGURG",
+  Sigusr1 = "SIGUSR1",
+  Sigusr2 = "SIGUSR2",
+  Sigvtalrm = "SIGVTALRM",
+  Sigwinch = "SIGWINCH",
+  Sigxcpu = "SIGXCPU",
+  Sigxfsz = "SIGXFSZ",
+}
 /**
  * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
@@ -8176,6 +8221,7 @@ export class Service extends BaseClient {
   private readonly _id?: ServiceID = undefined
   private readonly _endpoint?: string = undefined
   private readonly _hostname?: string = undefined
+  private readonly _signal?: ServiceID = undefined
   private readonly _start?: ServiceID = undefined
   private readonly _stop?: ServiceID = undefined
   private readonly _up?: Void = undefined
@@ -8188,6 +8234,7 @@ export class Service extends BaseClient {
     _id?: ServiceID,
     _endpoint?: string,
     _hostname?: string,
+    _signal?: ServiceID,
     _start?: ServiceID,
     _stop?: ServiceID,
     _up?: Void,
@@ -8197,6 +8244,7 @@ export class Service extends BaseClient {
     this._id = _id
     this._endpoint = _endpoint
     this._hostname = _hostname
+    this._signal = _signal
     this._start = _start
     this._stop = _stop
     this._up = _up
@@ -8311,6 +8359,29 @@ export class Service extends BaseClient {
   }
 
   /**
+   * Signal the service.
+   * @param signal The signal to send to the service.
+   */
+  signal = async (signal: SignalTypes): Promise<Service> => {
+    const metadata: Metadata = {
+      signal: { is_enum: true },
+    }
+
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "signal",
+          args: { signal, __metadata: metadata },
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return this
+  }
+
+  /**
    * Start the service and wait for its health checks to succeed.
    *
    * Services bound to a Container do not need to be manually started.
@@ -8332,14 +8403,19 @@ export class Service extends BaseClient {
   /**
    * Stop the service.
    * @param opts.kill Immediately kill the service without waiting for a graceful exit
+   * @param opts.signal The signal to send to the service.
    */
   stop = async (opts?: ServiceStopOpts): Promise<Service> => {
+    const metadata: Metadata = {
+      signal: { is_enum: true },
+    }
+
     await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "stop",
-          args: { ...opts },
+          args: { ...opts, __metadata: metadata },
         },
       ],
       await this._ctx.connection(),

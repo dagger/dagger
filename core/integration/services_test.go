@@ -1277,6 +1277,18 @@ func TestServiceStartStopKill(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, out)
 
+	// attempt to SIGABRT the service
+	_, err = httpSrv.Signal(ctx, dagger.Sigabrt)
+	require.NoError(t, err)
+
+	// ensures that the subprocess gets the above signals
+	require.Eventually(t, func() bool {
+		out, err = fetch()
+		require.NoError(t, err)
+		fmt.Println(out)
+		return strings.Contains(out, "Aborted\n")
+	}, time.Minute, time.Second)
+
 	eg := errgroup.Group{}
 	eg.Go(func() error {
 		// attempt to SIGTERM the service
@@ -1285,16 +1297,23 @@ func TestServiceStartStopKill(t *testing.T) {
 		_, err := httpSrv.Stop(ctx)
 		return err
 	})
+	eg.Go(func() error {
+		// attempt to SIGINT the service (same as above)
+		_, err := httpSrv.Stop(ctx, dagger.ServiceStopOpts{
+			Signal: dagger.Sigint,
+		})
+		return err
+	})
 
-	// ensures that the subprocess gets SIGTERM
+	// ensures that the subprocess gets the above signals
 	require.Eventually(t, func() bool {
 		out, err = fetch()
 		require.NoError(t, err)
-		return out == "Terminated\n"
+		return strings.Contains(out, "Terminated\n") && strings.Contains(out, "Interrupt\n")
 	}, time.Minute, time.Second)
 
 	eg.Go(func() error {
-		// attempt to SIGKILL the serive (this will work)
+		// attempt to SIGKILL the service (this will work)
 		_, err := httpSrv.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
 		return err
 	})
@@ -1832,7 +1851,7 @@ import time
 def print_signal(signum, frame):
         with open("./signals.txt", "a+") as f:
                 print(signal.strsignal(signum), file=f)
-for sig in [signal.SIGINT, signal.SIGTERM]:
+for sig in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT]:
 	signal.signal(sig, print_signal)
 
 with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as httpd:

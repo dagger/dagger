@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"syscall"
 	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -61,9 +62,13 @@ type RunningService struct {
 	// or 0 frontend ports set to the same as the backend port.
 	Ports []Port
 
-	// Stop forcibly stops the service. It is normally called after all clients
-	// have detached, but may also be called manually by the user.
-	Stop func(ctx context.Context, force bool) error
+	// Signal sends a specified signal to the service.
+	Signal func(ctx context.Context, signal syscall.Signal) error
+
+	// Stop sends a specified signal to the service, and then waits for it to
+	// stop. It is normally called after all clients have detached, but may
+	// also be called manually by the user.
+	Stop func(ctx context.Context, signal syscall.Signal) error
 
 	// Block until the service has exited or the provided context is canceled.
 	Wait func(ctx context.Context) error
@@ -236,8 +241,26 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	return detach, running, nil
 }
 
+func (ss *Services) Signal(ctx context.Context, id *call.ID, signal syscall.Signal) error {
+	return ss.withRunningService(ctx, id, func(ctx context.Context, running *RunningService) error {
+		if running == nil {
+			return nil
+		}
+		return ss.signal(ctx, running, signal)
+	})
+}
+
 // Stop stops the given service. If the service is not running, it is a no-op.
-func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
+func (ss *Services) Stop(ctx context.Context, id *call.ID, signal syscall.Signal) error {
+	return ss.withRunningService(ctx, id, func(ctx context.Context, running *RunningService) error {
+		if running == nil {
+			return nil
+		}
+		return ss.stop(ctx, running, signal)
+	})
+}
+
+func (ss *Services) withRunningService(ctx context.Context, id *call.ID, f func(context.Context, *RunningService) error) error {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return err
@@ -256,10 +279,10 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 
 	switch {
 	case isRunning:
-		// running; stop it
-		return ss.stop(ctx, running, kill)
+		// running
+		return f(ctx, running)
 	case isStarting:
-		// starting; wait for the attempt to finish and then stop it
+		// starting; wait for the attempt to finish
 		starting.Wait()
 
 		ss.l.Lock()
@@ -267,15 +290,15 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 		ss.l.Unlock()
 
 		if isRunning {
-			// starting succeeded as normal; now stop it
-			return ss.stop(ctx, running, kill)
+			// starting succeeded as normal
+			return f(ctx, running)
 		}
 
-		// starting didn't work; nothing to do
-		return nil
+		// starting didn't work; call with nil
+		return f(ctx, nil)
 	default:
-		// not starting or running; nothing to do
-		return nil
+		// not starting or running; call with nil
+		return f(ctx, nil)
 	}
 }
 
@@ -298,7 +321,7 @@ func (ss *Services) StopClientServices(ctx context.Context, serverID string) err
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
 			// force kill the service, users should manually shutdown services if they're
 			// concerned about graceful termination
-			if err := ss.stop(ctx, svc, true); err != nil {
+			if err := ss.stop(ctx, svc, syscall.SIGKILL); err != nil {
 				return fmt.Errorf("stop %s: %w", svc.Host, err)
 			}
 			return nil
@@ -341,8 +364,22 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	go ss.stopGraceful(ctx, running, TerminateGracePeriod)
 }
 
-func (ss *Services) stop(ctx context.Context, running *RunningService, force bool) error {
-	err := running.Stop(ctx, force)
+func (ss *Services) signal(ctx context.Context, running *RunningService, signal syscall.Signal) error {
+	if running.Signal == nil {
+		// tunnels can't be signalled
+		return nil
+	}
+
+	err := running.Signal(ctx, signal)
+	if err != nil {
+		return fmt.Errorf("signal: %w", err)
+	}
+
+	return nil
+}
+
+func (ss *Services) stop(ctx context.Context, running *RunningService, signal syscall.Signal) error {
+	err := running.Stop(ctx, signal)
 	if err != nil {
 		return fmt.Errorf("stop: %w", err)
 	}
@@ -359,10 +396,10 @@ func (ss *Services) stopGraceful(ctx context.Context, running *RunningService, t
 	// attempt to gentle stop within a timeout
 	cause := errors.New("service did not terminate")
 	ctx2, _ := context.WithTimeoutCause(ctx, timeout, cause)
-	err := running.Stop(ctx2, false)
+	err := running.Stop(ctx2, syscall.SIGTERM)
 	if context.Cause(ctx2) == cause {
 		// service didn't terminate within timeout, so force it to stop
-		err = running.Stop(ctx, true)
+		err = running.Stop(ctx, syscall.SIGKILL)
 	}
 	if err != nil {
 		return err

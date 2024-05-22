@@ -2464,6 +2464,12 @@ type Service {
   """Retrieves the list of ports provided by the service."""
   ports: [Port!]!
 
+  """Signal the service."""
+  signal(
+    """The signal to send to the service."""
+    signal: SignalTypes!
+  ): ServiceID!
+
   """
   Start the service and wait for its health checks to succeed.
   
@@ -2475,6 +2481,9 @@ type Service {
   stop(
     """Immediately kill the service without waiting for a graceful exit"""
     kill: Boolean = false
+
+    """The signal to send to the service."""
+    signal: SignalTypes
   ): ServiceID!
 
   """
@@ -2497,6 +2506,45 @@ type Service {
 The `ServiceID` scalar type represents an identifier for an object of type Service.
 """
 scalar ServiceID
+
+"""Signaltypes to be sent to processes."""
+enum SignalTypes {
+  SIGABRT
+  SIGALRM
+  SIGBUS
+  SIGCHLD
+  SIGCLD
+  SIGCONT
+  SIGFPE
+  SIGHUP
+  SIGILL
+  SIGINT
+  SIGIO
+  SIGIOT
+  SIGKILL
+  SIGPIPE
+  SIGPOLL
+  SIGPROF
+  SIGPWR
+  SIGQUIT
+  SIGSEGV
+  SIGSTKFLT
+  SIGSTOP
+  SIGSYS
+  SIGTERM
+  SIGTRAP
+  SIGTSTP
+  SIGTTIN
+  SIGTTOU
+  SIGUNUSED
+  SIGURG
+  SIGUSR1
+  SIGUSR2
+  SIGVTALRM
+  SIGWINCH
+  SIGXCPU
+  SIGXFSZ
+}
 
 """A Unix or TCP/IP socket that can be mounted into a container."""
 type Socket {

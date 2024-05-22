@@ -240,6 +240,80 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
+class SignalTypes(Enum):
+    """Signaltypes to be sent to processes."""
+
+    SIGABRT = "SIGABRT"
+
+    SIGALRM = "SIGALRM"
+
+    SIGBUS = "SIGBUS"
+
+    SIGCHLD = "SIGCHLD"
+
+    SIGCLD = "SIGCLD"
+
+    SIGCONT = "SIGCONT"
+
+    SIGFPE = "SIGFPE"
+
+    SIGHUP = "SIGHUP"
+
+    SIGILL = "SIGILL"
+
+    SIGINT = "SIGINT"
+
+    SIGIO = "SIGIO"
+
+    SIGIOT = "SIGIOT"
+
+    SIGKILL = "SIGKILL"
+
+    SIGPIPE = "SIGPIPE"
+
+    SIGPOLL = "SIGPOLL"
+
+    SIGPROF = "SIGPROF"
+
+    SIGPWR = "SIGPWR"
+
+    SIGQUIT = "SIGQUIT"
+
+    SIGSEGV = "SIGSEGV"
+
+    SIGSTKFLT = "SIGSTKFLT"
+
+    SIGSTOP = "SIGSTOP"
+
+    SIGSYS = "SIGSYS"
+
+    SIGTERM = "SIGTERM"
+
+    SIGTRAP = "SIGTRAP"
+
+    SIGTSTP = "SIGTSTP"
+
+    SIGTTIN = "SIGTTIN"
+
+    SIGTTOU = "SIGTTOU"
+
+    SIGUNUSED = "SIGUNUSED"
+
+    SIGURG = "SIGURG"
+
+    SIGUSR1 = "SIGUSR1"
+
+    SIGUSR2 = "SIGUSR2"
+
+    SIGVTALRM = "SIGVTALRM"
+
+    SIGWINCH = "SIGWINCH"
+
+    SIGXCPU = "SIGXCPU"
+
+    SIGXFSZ = "SIGXFSZ"
+
+
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
@@ -6413,6 +6487,29 @@ class Service(Type):
             for v in _ids
         ]
 
+    async def signal(self, signal: SignalTypes) -> Self:
+        """Signal the service.
+
+        Parameters
+        ----------
+        signal:
+            The signal to send to the service.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("signal", signal),
+        ]
+        _ctx = self._select("signal", _args)
+        _id = await _ctx.execute(ServiceID)
+        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
+        return Service(_ctx)
+
     async def start(self) -> Self:
         """Start the service and wait for its health checks to succeed.
 
@@ -6431,13 +6528,20 @@ class Service(Type):
         _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
         return Service(_ctx)
 
-    async def stop(self, *, kill: bool | None = False) -> Self:
+    async def stop(
+        self,
+        *,
+        kill: bool | None = False,
+        signal: SignalTypes | None = None,
+    ) -> Self:
         """Stop the service.
 
         Parameters
         ----------
         kill:
             Immediately kill the service without waiting for a graceful exit
+        signal:
+            The signal to send to the service.
 
         Raises
         ------
@@ -6448,6 +6552,7 @@ class Service(Type):
         """
         _args = [
             Arg("kill", kill, False),
+            Arg("signal", signal, None),
         ]
         _ctx = self._select("stop", _args)
         _id = await _ctx.execute(ServiceID)
@@ -6882,6 +6987,7 @@ __all__ = [
     "SecretID",
     "Service",
     "ServiceID",
+    "SignalTypes",
     "Socket",
     "SocketID",
     "Terminal",
