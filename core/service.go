@@ -176,8 +176,12 @@ func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
 	return err
 }
 
-func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
-	return svc.Query.Services.Stop(ctx, id, kill)
+func (svc *Service) Stop(ctx context.Context, id *call.ID, signal syscall.Signal) error {
+	return svc.Query.Services.Stop(ctx, id, signal)
+}
+
+func (svc *Service) Signal(ctx context.Context, id *call.ID, signal syscall.Signal) error {
+	return svc.Query.Services.Signal(ctx, id, signal)
 }
 
 func (svc *Service) Start(
@@ -415,12 +419,15 @@ func (svc *Service) startContainer(
 		span.End()
 	}()
 
-	stopSvc := func(ctx context.Context, force bool) error {
-		sig := syscall.SIGTERM
-		if force {
-			sig = syscall.SIGKILL
+	signalSvc := func(ctx context.Context, signal syscall.Signal) error {
+		if err := svcProc.Signal(ctx, signal); err != nil {
+			return fmt.Errorf("signal: %w", err)
 		}
-		if err := svcProc.Signal(ctx, sig); err != nil {
+		return nil
+	}
+
+	stopSvc := func(ctx context.Context, signal syscall.Signal) error {
+		if err := svcProc.Signal(ctx, signal); err != nil {
 			return fmt.Errorf("signal: %w", err)
 		}
 		select {
@@ -454,8 +461,9 @@ func (svc *Service) startContainer(
 				Digest:   dig,
 				ServerID: clientMetadata.ServerID,
 			},
-			Stop: stopSvc,
-			Wait: waitSvc,
+			Stop:   stopSvc,
+			Signal: signalSvc,
+			Wait:   waitSvc,
 		}, nil
 	case <-exited:
 		if exitErr != nil {
@@ -542,7 +550,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 		},
 		Host:  dialHost,
 		Ports: ports,
-		Stop: func(_ context.Context, _ bool) error {
+		Stop: func(_ context.Context, _ syscall.Signal) error {
 			stop()
 			svcs.Detach(svcCtx, upstream)
 			var errs []error
@@ -638,7 +646,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			},
 			Host:  fullHost,
 			Ports: checkPorts,
-			Stop: func(context.Context, bool) error {
+			Stop: func(_ context.Context, _ syscall.Signal) error {
 				netNS.Release(svcCtx)
 				stop()
 				span.End()
@@ -710,4 +718,109 @@ func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 	}
 
 	*bndp = merged
+}
+
+type SignalTypes string
+
+var SignalTypesEnum = dagql.NewEnum[SignalTypes]()
+
+// derived from syscall/zerrors_linux_amd64.go
+var (
+	SIGABRT   = SignalTypesEnum.Register("SIGABRT")
+	SIGALRM   = SignalTypesEnum.Register("SIGALRM")
+	SIGBUS    = SignalTypesEnum.Register("SIGBUS")
+	SIGCHLD   = SignalTypesEnum.Register("SIGCHLD")
+	SIGCLD    = SignalTypesEnum.Register("SIGCLD")
+	SIGCONT   = SignalTypesEnum.Register("SIGCONT")
+	SIGFPE    = SignalTypesEnum.Register("SIGFPE")
+	SIGHUP    = SignalTypesEnum.Register("SIGHUP")
+	SIGILL    = SignalTypesEnum.Register("SIGILL")
+	SIGINT    = SignalTypesEnum.Register("SIGINT")
+	SIGIO     = SignalTypesEnum.Register("SIGIO")
+	SIGIOT    = SignalTypesEnum.Register("SIGIOT")
+	SIGKILL   = SignalTypesEnum.Register("SIGKILL")
+	SIGPIPE   = SignalTypesEnum.Register("SIGPIPE")
+	SIGPOLL   = SignalTypesEnum.Register("SIGPOLL")
+	SIGPROF   = SignalTypesEnum.Register("SIGPROF")
+	SIGPWR    = SignalTypesEnum.Register("SIGPWR")
+	SIGQUIT   = SignalTypesEnum.Register("SIGQUIT")
+	SIGSEGV   = SignalTypesEnum.Register("SIGSEGV")
+	SIGSTKFLT = SignalTypesEnum.Register("SIGSTKFLT")
+	SIGSTOP   = SignalTypesEnum.Register("SIGSTOP")
+	SIGSYS    = SignalTypesEnum.Register("SIGSYS")
+	SIGTERM   = SignalTypesEnum.Register("SIGTERM")
+	SIGTRAP   = SignalTypesEnum.Register("SIGTRAP")
+	SIGTSTP   = SignalTypesEnum.Register("SIGTSTP")
+	SIGTTIN   = SignalTypesEnum.Register("SIGTTIN")
+	SIGTTOU   = SignalTypesEnum.Register("SIGTTOU")
+	SIGUNUSED = SignalTypesEnum.Register("SIGUNUSED")
+	SIGURG    = SignalTypesEnum.Register("SIGURG")
+	SIGUSR1   = SignalTypesEnum.Register("SIGUSR1")
+	SIGUSR2   = SignalTypesEnum.Register("SIGUSR2")
+	SIGVTALRM = SignalTypesEnum.Register("SIGVTALRM")
+	SIGWINCH  = SignalTypesEnum.Register("SIGWINCH")
+	SIGXCPU   = SignalTypesEnum.Register("SIGXCPU")
+	SIGXFSZ   = SignalTypesEnum.Register("SIGXFSZ")
+)
+
+// derived from syscall/zerrors_linux_amd64.go
+var allSignals = map[SignalTypes]syscall.Signal{
+	"SIGABRT":   syscall.SIGABRT,
+	"SIGALRM":   syscall.SIGALRM,
+	"SIGBUS":    syscall.SIGBUS,
+	"SIGCHLD":   syscall.SIGCHLD,
+	"SIGCLD":    syscall.SIGCLD,
+	"SIGCONT":   syscall.SIGCONT,
+	"SIGFPE":    syscall.SIGFPE,
+	"SIGHUP":    syscall.SIGHUP,
+	"SIGILL":    syscall.SIGILL,
+	"SIGINT":    syscall.SIGINT,
+	"SIGIO":     syscall.SIGIO,
+	"SIGIOT":    syscall.SIGIOT,
+	"SIGKILL":   syscall.SIGKILL,
+	"SIGPIPE":   syscall.SIGPIPE,
+	"SIGPOLL":   syscall.SIGPOLL,
+	"SIGPROF":   syscall.SIGPROF,
+	"SIGPWR":    syscall.SIGPWR,
+	"SIGQUIT":   syscall.SIGQUIT,
+	"SIGSEGV":   syscall.SIGSEGV,
+	"SIGSTKFLT": syscall.SIGSTKFLT,
+	"SIGSTOP":   syscall.SIGSTOP,
+	"SIGSYS":    syscall.SIGSYS,
+	"SIGTERM":   syscall.SIGTERM,
+	"SIGTRAP":   syscall.SIGTRAP,
+	"SIGTSTP":   syscall.SIGTSTP,
+	"SIGTTIN":   syscall.SIGTTIN,
+	"SIGTTOU":   syscall.SIGTTOU,
+	"SIGUNUSED": syscall.SIGUNUSED,
+	"SIGURG":    syscall.SIGURG,
+	"SIGUSR1":   syscall.SIGUSR1,
+	"SIGUSR2":   syscall.SIGUSR2,
+	"SIGVTALRM": syscall.SIGVTALRM,
+	"SIGWINCH":  syscall.SIGWINCH,
+	"SIGXCPU":   syscall.SIGXCPU,
+	"SIGXFSZ":   syscall.SIGXFSZ,
+}
+
+func (signal SignalTypes) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SignalTypes",
+		NonNull:   true,
+	}
+}
+
+func (signal SignalTypes) TypeDescription() string {
+	return "Signaltypes to be sent to processes."
+}
+
+func (signal SignalTypes) Decoder() dagql.InputDecoder {
+	return SignalTypesEnum
+}
+
+func (signal SignalTypes) ToLiteral() call.Literal {
+	return SignalTypesEnum.Literal(signal)
+}
+
+func (signal SignalTypes) ToSignal() syscall.Signal {
+	return allSignals[signal]
 }

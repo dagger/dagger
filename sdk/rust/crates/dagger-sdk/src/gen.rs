@@ -6690,6 +6690,9 @@ pub struct ServiceStopOpts {
     /// Immediately kill the service without waiting for a graceful exit
     #[builder(setter(into, strip_option), default)]
     pub kill: Option<bool>,
+    /// The signal to send to the service.
+    #[builder(setter(into, strip_option), default)]
+    pub signal: Option<SignalTypes>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceUpOpts {
@@ -6752,6 +6755,16 @@ impl Service {
             graphql_client: self.graphql_client.clone(),
         }];
     }
+    /// Signal the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `signal` - The signal to send to the service.
+    pub async fn signal(&self, signal: SignalTypes) -> Result<ServiceId, DaggerError> {
+        let mut query = self.selection.select("signal");
+        query = query.arg("signal", signal);
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Start the service and wait for its health checks to succeed.
     /// Services bound to a Container do not need to be manually started.
     pub async fn start(&self) -> Result<ServiceId, DaggerError> {
@@ -6776,6 +6789,9 @@ impl Service {
         let mut query = self.selection.select("stop");
         if let Some(kill) = opts.kill {
             query = query.arg("kill", kill);
+        }
+        if let Some(signal) = opts.signal {
+            query = query.arg("signal", signal);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -7193,6 +7209,79 @@ pub enum NetworkProtocol {
     Tcp,
     #[serde(rename = "UDP")]
     Udp,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum SignalTypes {
+    #[serde(rename = "SIGABRT")]
+    Sigabrt,
+    #[serde(rename = "SIGALRM")]
+    Sigalrm,
+    #[serde(rename = "SIGBUS")]
+    Sigbus,
+    #[serde(rename = "SIGCHLD")]
+    Sigchld,
+    #[serde(rename = "SIGCLD")]
+    Sigcld,
+    #[serde(rename = "SIGCONT")]
+    Sigcont,
+    #[serde(rename = "SIGFPE")]
+    Sigfpe,
+    #[serde(rename = "SIGHUP")]
+    Sighup,
+    #[serde(rename = "SIGILL")]
+    Sigill,
+    #[serde(rename = "SIGINT")]
+    Sigint,
+    #[serde(rename = "SIGIO")]
+    Sigio,
+    #[serde(rename = "SIGIOT")]
+    Sigiot,
+    #[serde(rename = "SIGKILL")]
+    Sigkill,
+    #[serde(rename = "SIGPIPE")]
+    Sigpipe,
+    #[serde(rename = "SIGPOLL")]
+    Sigpoll,
+    #[serde(rename = "SIGPROF")]
+    Sigprof,
+    #[serde(rename = "SIGPWR")]
+    Sigpwr,
+    #[serde(rename = "SIGQUIT")]
+    Sigquit,
+    #[serde(rename = "SIGSEGV")]
+    Sigsegv,
+    #[serde(rename = "SIGSTKFLT")]
+    Sigstkflt,
+    #[serde(rename = "SIGSTOP")]
+    Sigstop,
+    #[serde(rename = "SIGSYS")]
+    Sigsys,
+    #[serde(rename = "SIGTERM")]
+    Sigterm,
+    #[serde(rename = "SIGTRAP")]
+    Sigtrap,
+    #[serde(rename = "SIGTSTP")]
+    Sigtstp,
+    #[serde(rename = "SIGTTIN")]
+    Sigttin,
+    #[serde(rename = "SIGTTOU")]
+    Sigttou,
+    #[serde(rename = "SIGUNUSED")]
+    Sigunused,
+    #[serde(rename = "SIGURG")]
+    Sigurg,
+    #[serde(rename = "SIGUSR1")]
+    Sigusr1,
+    #[serde(rename = "SIGUSR2")]
+    Sigusr2,
+    #[serde(rename = "SIGVTALRM")]
+    Sigvtalrm,
+    #[serde(rename = "SIGWINCH")]
+    Sigwinch,
+    #[serde(rename = "SIGXCPU")]
+    Sigxcpu,
+    #[serde(rename = "SIGXFSZ")]
+    Sigxfsz,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum TypeDefKind {

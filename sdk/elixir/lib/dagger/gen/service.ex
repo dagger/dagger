@@ -67,6 +67,15 @@ defmodule Dagger.Service do
     end
   end
 
+  @doc "Signal the service."
+  @spec signal(t(), Dagger.SignalTypes.t()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+  def signal(%__MODULE__{} = service, signal) do
+    selection =
+      service.selection |> select("signal") |> put_arg("signal", signal)
+
+    execute(selection, service.client)
+  end
+
   @doc """
   Start the service and wait for its health checks to succeed.
 
@@ -81,10 +90,14 @@ defmodule Dagger.Service do
   end
 
   @doc "Stop the service."
-  @spec stop(t(), [{:kill, boolean() | nil}]) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+  @spec stop(t(), [{:kill, boolean() | nil}, {:signal, Dagger.SignalTypes.t() | nil}]) ::
+          {:ok, Dagger.ServiceID.t()} | {:error, term()}
   def stop(%__MODULE__{} = service, optional_args \\ []) do
     selection =
-      service.selection |> select("stop") |> maybe_put_arg("kill", optional_args[:kill])
+      service.selection
+      |> select("stop")
+      |> maybe_put_arg("kill", optional_args[:kill])
+      |> maybe_put_arg("signal", optional_args[:signal])
 
     execute(selection, service.client)
   end
