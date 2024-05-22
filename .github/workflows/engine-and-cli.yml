@@ -25,7 +25,7 @@ jobs:
     uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      function: test all --race=true
+      function: test all --race=true --parallel=16
       size: "dagger-v0-11-4-16c-nvme"
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
@@ -35,7 +35,7 @@ jobs:
     uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      function: test important --race=true
+      function: test important --race=true --parallel=16
       dev-engine: true
 
   test-publish-cli:
