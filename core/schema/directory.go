@@ -55,7 +55,9 @@ func (s *directorySchema) Install() {
 			ArgDoc("permissions", `Permission given to the copied file (e.g., 0600).`),
 		dagql.Func("withoutFile", s.withoutFile).
 			Doc(`Retrieves this directory with the file at the given path removed.`).
-			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`),
+			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`).
+			ArgDoc("allowWildCard", `Allow wildcards in the path (e.g., "*.txt").`).
+			ArgDoc("allowNotFound", `Allow the operation to not fail if the directory does not exist.`),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
 			ArgDoc("path", `Location of the directory to retrieve (e.g., "/src").`),
@@ -71,7 +73,9 @@ func (s *directorySchema) Install() {
 			ArgDoc("permissions", `Permission granted to the created directory (e.g., 0777).`),
 		dagql.Func("withoutDirectory", s.withoutDirectory).
 			Doc(`Retrieves this directory with the directory at the given path removed.`).
-			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`),
+			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`).
+			ArgDoc("allowWildCard", `Allow wildcards in the path (e.g., "*.txt").`).
+			ArgDoc("allowNotFound", `Allow the operation to not fail if the directory does not exist.`),
 		dagql.Func("diff", s.diff).
 			Doc(`Gets the difference between this directory and an another directory.`).
 			ArgDoc("other", `Identifier of the directory to compare.`),
@@ -233,18 +237,22 @@ func (s *directorySchema) withFiles(ctx context.Context, parent *core.Directory,
 
 type withoutDirectoryArgs struct {
 	Path string
+	AllowWildCard bool `default:"true"`
+	AllowNotFound bool `default:"true"`
 }
 
 func (s *directorySchema) withoutDirectory(ctx context.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Path)
+	return parent.Without(ctx, args.Path, args.AllowWildCard, args.AllowNotFound)
 }
 
 type withoutFileArgs struct {
 	Path string
+	AllowWildCard bool `default:"true"`
+	AllowNotFound bool `default:"true"`
 }
 
 func (s *directorySchema) withoutFile(ctx context.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
-	return parent.Without(ctx, args.Path)
+	return parent.Without(ctx, args.Path, args.AllowWildCard, args.AllowNotFound)
 }
 
 type diffArgs struct {

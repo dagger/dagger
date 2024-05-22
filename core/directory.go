@@ -677,7 +677,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, path string) (*Directory, error) {
+func (dir *Directory) Without(ctx context.Context, path string, allowWildCard bool, allowNotFound bool) (*Directory, error) {
 	dir = dir.Clone()
 
 	st, err := dir.State()
@@ -685,8 +685,13 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
+	fmt.Println("path", path)
+	fmt.Println("allowNotfound", allowNotFound)
+	fmt.Println("allowWildCard", allowWildCard)
+
+
 	path = filepath.Join(dir.Dir, path)
-	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))))
+	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(allowWildCard), llb.WithAllowNotFound(allowNotFound))))
 	if err != nil {
 		return nil, err
 	}
