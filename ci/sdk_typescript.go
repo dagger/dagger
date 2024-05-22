@@ -161,7 +161,7 @@ always-auth=true`, plaintext)
 }
 
 // Bump the Typescript SDK's Engine dependency
-func (t TypescriptSDK) Bump(version string) (*Directory, error) {
+func (t TypescriptSDK) Bump(ctx context.Context, version string) (*Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
