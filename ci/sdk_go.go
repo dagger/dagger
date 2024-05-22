@@ -100,7 +100,7 @@ func (t GoSDK) Publish(
 }
 
 // Bump the Go SDK's Engine dependency
-func (t GoSDK) Bump(version string) (*Directory, error) {
+func (t GoSDK) Bump(ctx context.Context, version string) (*Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
