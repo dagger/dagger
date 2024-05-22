@@ -7,10 +7,13 @@ class MyModule {
     return await dag
       .container()
       .from("alpine:3.17")
-      .withExec(["apk", "add", "github-cli"])
-      .withMountedSecret("/root/.config/gh/hosts.yml", secret)
-      .withWorkdir("/root")
-      .withExec(["gh", "auth", "status"])
+      .withSecretVariable("GITHUB_API_TOKEN", secret)
+      .withExec(["apk", "add", "curl"])
+      .withExec([
+        "sh",
+        "-c",
+        `curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_API_TOKEN"`,
+      ])
       .stdout()
   }
 }
