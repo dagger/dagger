@@ -19,6 +19,12 @@ func New(
 	// +optional
 	sdkSourceDir *Directory,
 ) *ElixirSdk {
+	if sdkSourceDir == nil {
+		sdkSourceDir = dag.Git("https://github.com/dagger/dagger.git").
+			Branch("main").
+			Tree().
+			Directory("sdk/elixir")
+	}
 	return &ElixirSdk{
 		SDKSourceDir:  sdkSourceDir,
 		RequiredPaths: []string{},
@@ -102,7 +108,8 @@ func (m *ElixirSdk) Base(modSource *ModuleSource, subPath string) *ElixirSdk {
 	m.Container = m.baseContainer(m.Container).
 		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-		WithWorkdir(path.Join(ModSourceDirPath, subPath))
+		WithWorkdir(path.Join(ModSourceDirPath, subPath)).
+		WithExec([]string{"ls", "-lha", sdkSrc})
 	return m
 }
 
