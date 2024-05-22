@@ -5,11 +5,11 @@ from dagger import dag, function, object_type
 @object_type
 class MyModule:
     @function
-    async def github_auth(self, secret: dagger.Secret) -> str:
+    async def github_api(self, token: dagger.Secret) -> str:
         return await (
             dag.container(platform=dagger.Platform("linux/amd64"))
             .from_("alpine:3.17")
-            .with_secret_variable("GITHUB_API_TOKEN", secret)
+            .with_secret_variable("GITHUB_API_TOKEN", token)
             .with_exec(["apk", "add", "curl"])
             .with_exec(
                 [
