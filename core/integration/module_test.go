@@ -6079,6 +6079,44 @@ func (m *Test) Fn(ctx context.Context) ([]string, error) {
 	}
 }
 
+func TestModuleLargeObjectFieldVal(t *testing.T) {
+	// make sure we don't hit any limits when an object field value is large
+	t.Parallel()
+	c, ctx := connect(t)
+
+	// put a timeout on this since failures modes could result in hangs
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	_, err := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(sdkSource("go", `package main
+
+import "strings"
+
+type Test struct {
+	BigVal string
+}
+
+func New() *Test {
+	return &Test{
+		BigVal: strings.Repeat("a", 30*1024*1024),
+	}
+}
+
+// add a func for returning the val in order to test mode codepaths that
+// involve serializing and passing the object around
+func (m *Test) Fn() string {
+	return m.BigVal
+}
+`)).
+		With(daggerCall("fn")).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{

@@ -646,7 +646,7 @@ func (s *moduleSchema) moduleInitialize(
 	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
-	mod, err := inst.Self.Initialize(ctx, inst, dagql.CurrentID(ctx))
+	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
 	}

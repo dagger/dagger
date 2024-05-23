@@ -11,6 +11,8 @@ import (
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -46,19 +48,28 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 	defer sessionL.Close()
 
 	var handler http.Handler = engineClient
+
 	if allowCORS {
 		handler = cors.AllowAll().Handler(handler)
 	}
 
+	handler = otelhttp.NewHandler(handler, "listen", otelhttp.WithSpanNameFormatter(func(o string, r *http.Request) string {
+		return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
+	}))
+
+	http2Srv := &http2.Server{}
+	handler = h2c.NewHandler(handler, http2Srv)
+
 	srv := &http.Server{
-		Handler: otelhttp.NewHandler(handler, "listen", otelhttp.WithSpanNameFormatter(func(o string, r *http.Request) string {
-			return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
-		})),
+		Handler: handler,
 		// Gosec G112: prevent slowloris attacks
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
+	}
+	if err := http2.ConfigureServer(srv, http2Srv); err != nil {
+		return fmt.Errorf("http2 server configuration: %w", err)
 	}
 
 	go func() {

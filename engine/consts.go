@@ -44,6 +44,16 @@ const (
 	FTPProxyEnvName   = "FTP_PROXY"
 	NoProxyEnvName    = "NO_PROXY"
 	AllProxyEnvName   = "ALL_PROXY"
+
+	SessionAttachablesEndpoint = "/sessionAttachables"
+	QueryEndpoint              = "/query"
+	ShutdownEndpoint           = "/shutdown"
+
+	// Buildkit-interpreted session keys, can't change
+	SessionIDMetaKey         = "X-Docker-Expose-Session-Uuid"
+	SessionNameMetaKey       = "X-Docker-Expose-Session-Name"
+	SessionSharedKeyMetaKey  = "X-Docker-Expose-Session-Sharedkey"
+	SessionMethodNameMetaKey = "X-Docker-Expose-Session-Grpc-Method"
 )
 
 var ProxyEnvNames = []string{

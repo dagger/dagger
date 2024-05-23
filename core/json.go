@@ -47,8 +47,21 @@ func (p JSON) MarshalJSON() ([]byte, error) {
 	if p == nil {
 		return []byte("null"), nil
 	}
-	// TODO this feels weird but it's hard to articulate. maybe this is overused.
+	// The SDKs expect a string, not direct JSON, so marshal to that
 	return json.Marshal(string(p))
+}
+
+func (p *JSON) UnmarshalJSON(bs []byte) error {
+	if p == nil {
+		return fmt.Errorf("cannot unmarshal into nil JSON")
+	}
+	// mirroring MarshalJSON, unmarshal to a *string*
+	var s string
+	if err := json.Unmarshal(bs, &s); err != nil {
+		return err
+	}
+	*p = JSON(s)
+	return nil
 }
 
 var _ dagql.ScalarType = JSON{}

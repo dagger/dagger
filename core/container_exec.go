@@ -12,10 +12,8 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type ContainerExecOpts struct {
@@ -41,9 +39,8 @@ type ContainerExecOpts struct {
 	// Grant the process all root capabilities
 	InsecureRootCapabilities bool `default:"false"`
 
-	// (Internal-only) If this is a nested exec for a Function call, this should be set
-	// with the metadata for that call
-	NestedExecFunctionCall *FunctionCall `name:"-"`
+	// (Internal-only) If this is a nested exec, exec metadata to use for it
+	NestedExecMetadata *buildkit.ExecutionMetadata `name:"-"`
 }
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
@@ -72,18 +69,18 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	execMD := buildkit.ExecutionMetadata{
-		ServerID: clientMetadata.ServerID,
-
-		HostAliases: make(map[string][]string),
-
-		RedirectStdoutPath: opts.RedirectStdout,
-		RedirectStderrPath: opts.RedirectStderr,
-
-		SystemEnvNames: container.SystemEnvNames,
-
-		EnabledGPUs: container.EnabledGPUs,
+	execMD := buildkit.ExecutionMetadata{}
+	if opts.NestedExecMetadata != nil {
+		execMD = *opts.NestedExecMetadata
 	}
+	execMD.SessionID = clientMetadata.SessionID
+	if execMD.HostAliases == nil {
+		execMD.HostAliases = make(map[string][]string)
+	}
+	execMD.RedirectStdoutPath = opts.RedirectStdout
+	execMD.RedirectStderrPath = opts.RedirectStderr
+	execMD.SystemEnvNames = container.SystemEnvNames
+	execMD.EnabledGPUs = container.EnabledGPUs
 
 	// if GPU parameters are set for this container pass them over:
 	if len(execMD.EnabledGPUs) > 0 {
@@ -94,30 +91,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		callerOpts := opts.NestedExecFunctionCall
-		if callerOpts == nil {
-			// default to caching the nested exec
-			callerOpts = &FunctionCall{
-				Cache: true,
-			}
-		}
-
 		// directing telemetry to another span (i.e. a function call).
-		if callerOpts.SpanContext.IsValid() {
-			execMD.SpanContext = propagation.MapCarrier{}
-			otel.GetTextMapPropagator().Inject(
-				trace.ContextWithSpanContext(ctx, callerOpts.SpanContext),
-				execMD.SpanContext,
-			)
-
+		if execMD.SpanContext != nil {
 			// hide the exec span
 			spanName = buildkit.InternalPrefix + spanName
 		}
 
-		execMD.ClientID, err = container.Query.RegisterCaller(ctx, callerOpts)
-		if err != nil {
-			return nil, fmt.Errorf("register caller: %w", err)
-		}
+		execMD.ClientID = identity.NewID()
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
@@ -125,13 +105,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		// include a digest of the current call so that we scope of the cache of the ExecOp to this call
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerCallDigestEnv, string(dagql.CurrentID(ctx).Digest())))
 
-		if !callerOpts.Cache {
-			// include the ServerID here so that we bust cache once-per-session
+		if execMD.CachePerSession {
+			// include the SessionID here so that we bust cache once-per-session
 			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 			if err != nil {
 				return nil, err
 			}
-			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerServerIDEnv, clientMetadata.ServerID))
+			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
 		}
 	}
 

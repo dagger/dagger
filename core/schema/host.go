@@ -314,7 +314,7 @@ func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostSe
 				},
 				{
 					Name:  "sessionId",
-					Value: dagql.NewString(clientMetadata.BuildkitSessionID()),
+					Value: dagql.NewString(clientMetadata.ClientID),
 				},
 			},
 		},

@@ -5,11 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"unicode"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	EngineVersionMetaKey = "x-dagger-engine"
+	EngineVersionMetaKey = "X-Dagger-Engine"
 
-	ClientMetadataMetaKey  = "x-dagger-client-metadata"
-	localImportOptsMetaKey = "x-dagger-local-import-opts"
-	localExportOptsMetaKey = "x-dagger-local-export-opts"
+	ClientMetadataMetaKey  = "X-Dagger-Client-Metadata"
+	localImportOptsMetaKey = "X-Dagger-Local-Import-Opts"
+	localExportOptsMetaKey = "X-Dagger-Local-Export-Opts"
 
 	// local dir import (set by buildkit, can't change)
 	localDirImportDirNameMetaKey         = "dir-name"
@@ -31,24 +31,18 @@ const (
 )
 
 type ClientMetadata struct {
-	// ClientID is unique to each client. The main client's ID is the empty string,
-	// any module and/or nested exec client's ID is a unique digest.
+	// ClientID is unique to each client, randomly generated each time a client initializes.
+	// It's also used as the *buildkit* session ID (as opposed to the dagger session ID), which
+	// is created for each client.
 	ClientID string `json:"client_id"`
 
-	// ClientSecretToken is a secret token that is unique to every client. It's
-	// initially provided to the server in the controller.Session request. Every
-	// other request w/ that client ID must also include the same token.
+	// ClientSecretToken is a secret token that is unique to every client.
+	// Every request w/ that client ID must also include the same token.
 	ClientSecretToken string `json:"client_secret_token"`
 
-	// ServerID is the id of the server that a client and any of its nested
+	// SessionID is the id of the dagger session that a client and any of its nested
 	// module clients connect to
-	ServerID string `json:"server_id"`
-
-	// If RegisterClient is true, then a call to Session will initialize the
-	// server if it hasn't already been initialized and register the session's
-	// attachables with it either way. If false, then the session conn will be
-	// forwarded to the server
-	RegisterClient bool `json:"register_client"`
+	SessionID string `json:"session_id"`
 
 	// ClientHostname is the hostname of the client that made the request. It's
 	// used opportunistically as a best-effort, semi-stable identifier for the
@@ -76,44 +70,50 @@ type ClientMetadata struct {
 	DoNotTrack bool
 }
 
-func (m ClientMetadata) ToGRPCMD() metadata.MD {
-	return encodeMeta(ClientMetadataMetaKey, m)
-}
-
-func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
-	for k, v := range m.ToGRPCMD() {
-		md[k] = append(md[k], v...)
-	}
-	return md
-}
-
-// The ID to use for this client's buildkit session. It's a combination of both
-// the client and the server IDs to account for the fact that the client ID is
-// a content digest for functions/nested-execs, meaning it can reoccur across
-// different servers; that doesn't work because buildkit's SessionManager is
-// global to the whole process.
-func (m ClientMetadata) BuildkitSessionID() string {
-	return strings.Join([]string{m.ClientID, m.ServerID}, "-")
-}
+type clientMetadataCtxKey struct{}
 
 func ContextWithClientMetadata(ctx context.Context, clientMetadata *ClientMetadata) context.Context {
-	return contextWithMD(ctx, clientMetadata.ToGRPCMD())
+	return context.WithValue(ctx, clientMetadataCtxKey{}, clientMetadata)
 }
 
 func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
+	md, ok := ctx.Value(clientMetadataCtxKey{}).(*ClientMetadata)
 	if !ok {
-		return nil, fmt.Errorf("failed to get metadata from context")
+		return nil, fmt.Errorf("failed to get client metadata from context")
 	}
-	clientMetadata := &ClientMetadata{}
-	if err := decodeMeta(md, ClientMetadataMetaKey, clientMetadata); err != nil {
-		return nil, err
+
+	return md, nil
+}
+
+func ClientMetadataFromHTTPHeaders(h http.Header) (*ClientMetadata, error) {
+	bs, err := base64.StdEncoding.DecodeString(h.Get(ClientMetadataMetaKey))
+	if err != nil {
+		return nil, fmt.Errorf("failed to base64-decode %s: %w", ClientMetadataMetaKey, err)
 	}
-	if clientMetadata.ClientVersion == "" {
+
+	m := &ClientMetadata{}
+	if err := json.Unmarshal(bs, m); err != nil {
+		return nil, fmt.Errorf("failed to JSON-unmarshal %s: %w", ClientMetadataMetaKey, err)
+	}
+
+	if m.ClientVersion == "" {
 		// fallback for old clients that don't send a client version!
-		clientMetadata.ClientVersion = clientMetadata.Labels["dagger.io/client.version"]
+		m.ClientVersion = m.Labels["dagger.io/client.version"]
 	}
-	return clientMetadata, nil
+
+	return m, nil
+}
+
+func (m ClientMetadata) AppendToHTTPHeaders(h http.Header) http.Header {
+	h = h.Clone()
+
+	bs, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	h.Set(ClientMetadataMetaKey, base64.StdEncoding.EncodeToString(bs))
+
+	return h
 }
 
 type LocalImportOpts struct {
@@ -138,14 +138,14 @@ func (o LocalImportOpts) ToGRPCMD() metadata.MD {
 }
 
 func (o *LocalImportOpts) FromGRPCMD(md metadata.MD) error {
-	if _, ok := md[localImportOptsMetaKey]; ok {
+	if v := md.Get(localImportOptsMetaKey); v != nil {
 		err := decodeMeta(md, localImportOptsMetaKey, o)
 		if err != nil {
 			return err
 		}
 	} else {
 		// otherwise, this is coming from buildkit directly
-		dirNameVals := md[localDirImportDirNameMetaKey]
+		dirNameVals := md.Get(localDirImportDirNameMetaKey)
 		if len(dirNameVals) != 1 {
 			return fmt.Errorf("expected exactly one %s, got %d", localDirImportDirNameMetaKey, len(dirNameVals))
 		}
@@ -235,26 +235,6 @@ func LocalExportOptsFromContext(ctx context.Context) (*LocalExportOpts, error) {
 	return opts, nil
 }
 
-func contextWithMD(ctx context.Context, mds ...metadata.MD) context.Context {
-	incomingMD, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		incomingMD = metadata.MD{}
-	}
-	outgoingMD, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		outgoingMD = metadata.MD{}
-	}
-	for _, md := range mds {
-		for k, v := range md {
-			incomingMD[k] = v
-			outgoingMD[k] = v
-		}
-	}
-	ctx = metadata.NewIncomingContext(ctx, incomingMD)
-	ctx = metadata.NewOutgoingContext(ctx, outgoingMD)
-	return ctx
-}
-
 func encodeMeta(key string, v interface{}) metadata.MD {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -264,10 +244,7 @@ func encodeMeta(key string, v interface{}) metadata.MD {
 }
 
 func decodeMeta(md metadata.MD, key string, dest interface{}) error {
-	vals, ok := md[key]
-	if !ok {
-		return fmt.Errorf("failed to get %s from metadata", key)
-	}
+	vals := md.Get(key)
 	if len(vals) != 1 {
 		return fmt.Errorf("expected exactly one %s value, got %d", key, len(vals))
 	}

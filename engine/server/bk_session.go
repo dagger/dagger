@@ -1,4 +1,4 @@
-package buildkit
+package server
 
 import (
 	"context"
@@ -15,24 +15,13 @@ import (
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
 
-	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
-const (
-	// OCIStoreName is the name of the OCI content store used for OCI tarball
-	// imports.
-	OCIStoreName = "dagger-oci"
-
-	// BuiltinContentOCIStoreName is the name of the OCI content store used for
-	// builtins like SDKs that we package with the engine container but still use
-	// in LLB.
-	BuiltinContentOCIStoreName = "dagger-builtin-content"
-)
-
-func (c *Client) newSession() (*bksession.Session, error) {
-	sess, err := bksession.NewSession(c.closeCtx, identity.NewID(), "")
+func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bksession.Session, error) {
+	sess, err := bksession.NewSession(ctx, identity.NewID(), "")
 	if err != nil {
 		return nil, err
 	}
@@ -42,13 +31,13 @@ func (c *Client) newSession() (*bksession.Session, error) {
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
-	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
-	sess.Allow(&socketProxy{c})
-	sess.Allow(&authProxy{c})
+	sess.Allow(secretsprovider.NewSecretProvider(c.daggerSession.secretStore))
+	sess.Allow(&socketProxy{c, srv.bkSessionManager})
+	sess.Allow(&authProxy{c, srv.bkSessionManager})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
-		"oci:" + OCIStoreName:               c.worker.ContentStore(),
-		"oci:" + BuiltinContentOCIStoreName: builtinStore,
+		"oci:" + buildkit.OCIStoreName:               srv.contentStore,
+		"oci:" + buildkit.BuiltinContentOCIStoreName: builtinStore,
 	}))
 
 	filesyncer, err := client.NewFilesyncer("", "", nil, nil)
@@ -62,7 +51,7 @@ func (c *Client) newSession() (*bksession.Session, error) {
 	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) { //nolint: unparam
 		go func() {
 			defer serverConn.Close()
-			err := c.SessionManager.HandleConn(ctx, serverConn, meta)
+			err := srv.bkSessionManager.HandleConn(ctx, serverConn, meta)
 			if err != nil {
 				lg := bklog.G(ctx).WithError(err)
 				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
@@ -78,9 +67,9 @@ func (c *Client) newSession() (*bksession.Session, error) {
 		defer clientConn.Close()
 		defer sess.Close()
 		// this ctx will be cancelled when Client is closed
-		err := sess.Run(c.closeCtx, dialer)
+		err := sess.Run(context.WithoutCancel(ctx), dialer)
 		if err != nil {
-			lg := bklog.G(c.closeCtx).WithError(err)
+			lg := bklog.G(ctx).WithError(err)
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 				lg.Debug("client session ended")
 			} else {
@@ -89,25 +78,4 @@ func (c *Client) newSession() (*bksession.Session, error) {
 		}
 	}()
 	return sess, nil
-}
-
-func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	bklog.G(ctx).Tracef("getting session for %q", clientMetadata.BuildkitSessionID())
-	defer func() {
-		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.BuildkitSessionID())
-	}()
-
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.BuildkitSessionID(), !wait)
-	if err != nil {
-		return nil, err
-	}
-	if caller == nil {
-		return nil, fmt.Errorf("session for %q not found", clientMetadata.BuildkitSessionID())
-	}
-	return caller, nil
 }

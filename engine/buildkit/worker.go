@@ -1,8 +1,7 @@
 package buildkit
 
 import (
-	"context"
-	"net"
+	"net/http"
 	"sync"
 
 	runc "github.com/containerd/go-runc"
@@ -11,7 +10,7 @@ import (
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
-	"github.com/moby/buildkit/session"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver/ops"
 	"github.com/moby/buildkit/solver/pb"
@@ -21,7 +20,6 @@ import (
 	"github.com/moby/buildkit/worker/base"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/telemetry"
 )
 
@@ -31,7 +29,7 @@ just inherited from buildkit's base.Worker, with the exception of methods involv
 executor.Executor (most importantly ResolveOp).
 
 We need a custom Executor implementation for setting up containers (currently, just
-for providing ServerID, but in the future everything the shim does will be migrated
+for providing SessionID, but in the future everything the shim does will be migrated
 here). For simplicity, this Worker struct also implements that Executor interface
 (in executor.go) since Worker+Executor are so tightly bound together anyways.
 */
@@ -40,16 +38,13 @@ type Worker struct {
 	execMD *ExecutionMetadata
 }
 
-type Controller interface {
-	HandleConn(context.Context, net.Conn, *engine.ClientMetadata, map[string][]string) error
-}
-
 type sharedWorkerState struct {
 	*base.Worker
-	Controller      Controller
-	root            string
-	executorRoot    string
-	telemetryPubSub *telemetry.PubSub
+	root             string
+	executorRoot     string
+	telemetryPubSub  *telemetry.PubSub
+	bkSessionManager *bksession.Manager
+	sessionHandler   sessionHandler
 
 	runc             *runc.Runc
 	cgroupParent     string
@@ -67,12 +62,17 @@ type sharedWorkerState struct {
 	mu      sync.RWMutex
 }
 
+type sessionHandler interface {
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *ExecutionMetadata)
+}
+
 type NewWorkerOpts struct {
-	WorkerRoot      string
-	ExecutorRoot    string
-	BaseWorker      *base.Worker
-	Controller      Controller
-	TelemetryPubSub *telemetry.PubSub
+	WorkerRoot       string
+	ExecutorRoot     string
+	BaseWorker       *base.Worker
+	TelemetryPubSub  *telemetry.PubSub
+	BKSessionManager *bksession.Manager
+	SessionHandler   sessionHandler
 
 	Runc                *runc.Runc
 	DefaultCgroupParent string
@@ -89,11 +89,12 @@ type NewWorkerOpts struct {
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
 	return &Worker{sharedWorkerState: &sharedWorkerState{
-		Worker:          opts.BaseWorker,
-		Controller:      opts.Controller,
-		root:            opts.WorkerRoot,
-		executorRoot:    opts.ExecutorRoot,
-		telemetryPubSub: opts.TelemetryPubSub,
+		Worker:           opts.BaseWorker,
+		root:             opts.WorkerRoot,
+		executorRoot:     opts.ExecutorRoot,
+		telemetryPubSub:  opts.TelemetryPubSub,
+		bkSessionManager: opts.BKSessionManager,
+		sessionHandler:   opts.SessionHandler,
 
 		runc:             opts.Runc,
 		cgroupParent:     opts.DefaultCgroupParent,
@@ -115,7 +116,7 @@ func (w *Worker) Executor() executor.Executor {
 	return w
 }
 
-func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error) {
+func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *bksession.Manager) (solver.Op, error) {
 	// if this is an ExecOp, pass in ourself as executor
 	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
 		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {

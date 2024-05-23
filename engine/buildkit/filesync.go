@@ -46,7 +46,7 @@ func (c *Client) LocalImport(
 	}
 
 	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.BuildkitSessionID()),
+		llb.SessionID(clientMetadata.ClientID),
 		llb.SharedKeyHint(strings.Join([]string{clientMetadata.ClientHostname, srcPath}, " ")),
 	}
 
@@ -111,7 +111,7 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 
 	ctx = opts.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, true)
+	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -136,7 +136,7 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 		MaxFileSize:        MaxFileContentsChunkSize,
 	}, &msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 	return msg.Data, nil
 }
@@ -149,7 +149,7 @@ func (c *Client) StatCallerHostPath(ctx context.Context, path string, returnAbsP
 		StatReturnAbsPath: returnAbsPath,
 	}, &msg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to stat path: %w", err)
 	}
 	return &msg, nil
 }
@@ -190,7 +190,7 @@ func (c *Client) LocalDirExport(
 		return fmt.Errorf("failed to convert result: %w", err)
 	}
 
-	exporter, err := c.worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
+	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
 	if err != nil {
 		return err
 	}
@@ -210,7 +210,7 @@ func (c *Client) LocalDirExport(
 		Merge: merge,
 	}.AppendToOutgoingContext(ctx)
 
-	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.BuildkitSessionID())
+	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
 	if err != nil {
 		return fmt.Errorf("failed to export: %w", err)
 	}
@@ -293,7 +293,7 @@ func (c *Client) LocalFileExport(
 		FileMode:           stat.Mode().Perm(),
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, true)
+	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -356,7 +356,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		FileMode:         destMode,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, true)
+	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}

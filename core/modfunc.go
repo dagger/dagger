@@ -10,6 +10,8 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/analytics"
@@ -175,18 +177,33 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
 	}
 
-	callMeta := &FunctionCall{
-		Query:          fn.root,
-		Name:           fn.metadata.OriginalName,
-		Parent:         parentJSON,
-		InputArgs:      callInputs,
-		Module:         mod,
-		Cache:          opts.Cache,
-		SkipSelfSchema: opts.SkipSelfSchema,
-		SpanContext:    trace.SpanContextFromContext(ctx),
+	execMD := buildkit.ExecutionMetadata{
+		CachePerSession: !opts.Cache,
+	}
+	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
+		execMD.SpanContext = propagation.MapCarrier{}
+		otel.GetTextMapPropagator().Inject(
+			trace.ContextWithSpanContext(ctx, spanCtx),
+			execMD.SpanContext,
+		)
+	}
+
+	execMD.EncodedModuleID, err = mod.InstanceID.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode module ID: %w", err)
+	}
+
+	fnCall := &FunctionCall{
+		Name:      fn.metadata.OriginalName,
+		Parent:    parentJSON,
+		InputArgs: callInputs,
 	}
 	if fn.objDef != nil {
-		callMeta.ParentName = fn.objDef.OriginalName
+		fnCall.ParentName = fn.objDef.OriginalName
+	}
+	execMD.EncodedFunctionCall, err = json.Marshal(fnCall)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal function call: %w", err)
 	}
 
 	ctr := fn.runtime
@@ -200,7 +217,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	// Setup the Exec for the Function call and evaluate it
 	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
-		NestedExecFunctionCall:        callMeta,
+		NestedExecMetadata:            &execMD,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)

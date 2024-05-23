@@ -4,19 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
-	"time"
 
-	"github.com/koron-go/prefixw"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
-	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
@@ -29,7 +24,6 @@ import (
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/progress/progressui"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
@@ -37,51 +31,49 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
 )
 
 const (
 	InternalPrefix = "[internal] "
 
-	DaggerWorkerJobKey = "dagger.worker"
-
 	// from buildkit, cannot change
-	entitlementsJobKey = "llb.entitlements"
+	EntitlementsJobKey = "llb.entitlements"
+
+	// OCIStoreName is the name of the OCI content store used for OCI tarball
+	// imports.
+	OCIStoreName = "dagger-oci"
+
+	// BuiltinContentOCIStoreName is the name of the OCI content store used for
+	// builtins like SDKs that we package with the engine container but still use
+	// in LLB.
+	BuiltinContentOCIStoreName = "dagger-builtin-content"
 )
 
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
-	ServerID string
-
-	Worker         *Worker
-	SessionManager *bksession.Manager
-	GenericSolver  *bksolver.Solver
-	CacheManager   bksolver.CacheManager
-
-	Entitlements entitlements.Set
-
-	SecretStore  bksecrets.SecretStore
-	AuthProvider *auth.RegistryAuthProvider
-
+	Worker                 *Worker
+	SessionManager         *bksession.Manager
+	BkSession              *bksession.Session
+	Job                    *bksolver.Job
+	LLBSolver              *llbsolver.Solver
+	LLBBridge              bkfrontend.FrontendLLBBridge
+	Dialer                 *net.Dialer
+	GetMainClientCaller    func() (bksession.Caller, error)
+	Entitlements           entitlements.Set
+	SecretStore            bksecrets.SecretStore
+	AuthProvider           *auth.RegistryAuthProvider
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	UpstreamCacheImports   []bkgw.CacheOptionsEntry
+	Frontends              map[string]bkfrontend.Frontend
 
-	// MainClientCaller is the caller who initialized the server associated with this
-	// client. It is special in that when it shuts down, the client will be closed and
-	// that registry auth and sockets are currently only ever sourced from this caller,
-	// not any nested clients (may change in future).
-	MainClientCaller bksession.Caller
-	DNSConfig        *oci.DNSConfig
-	Frontends        map[string]bkfrontend.Frontend
-	BuildkitLogSink  io.Writer
-	sharedClientState
-}
+	Refs         map[Reference]struct{}
+	RefsMu       *sync.Mutex
+	Containers   map[bkgw.Container]struct{}
+	ContainersMu *sync.Mutex
 
-// these maps are shared across all clients for a given DaggerServer and are
-// mutated by each client
-type sharedClientState struct {
-	refsMu sync.Mutex
-	refs   map[*ref]struct{}
+	SpanCtx trace.SpanContext
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -89,19 +81,6 @@ type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remo
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
 	*Opts
-
-	spanCtx trace.SpanContext
-
-	session   *bksession.Session
-	job       *bksolver.Job
-	llbSolver *llbsolver.Solver
-	llbBridge bkfrontend.FrontendLLBBridge
-	worker    *Worker
-
-	containers   map[bkgw.Container]struct{}
-	containersMu sync.Mutex
-
-	dialer *net.Dialer
 
 	closeCtx context.Context
 	cancel   context.CancelFunc
@@ -112,168 +91,16 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	// override the outer cancel, we will manage cancellation ourselves here
 	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	client := &Client{
-		Opts:       opts,
-		spanCtx:    trace.SpanContextFromContext(ctx),
-		containers: make(map[bkgw.Container]struct{}),
-		closeCtx:   ctx,
-		cancel:     cancel,
+		Opts:     opts,
+		closeCtx: ctx,
+		cancel:   cancel,
 	}
-
-	client.worker = opts.Worker
-	wc, err := AsWorkerController(client.worker)
-	if err != nil {
-		return nil, err
-	}
-
-	client.llbSolver, err = llbsolver.New(llbsolver.Opt{
-		WorkerController: wc,
-		Frontends:        opts.Frontends,
-		CacheManager:     opts.CacheManager,
-		SessionManager:   opts.SessionManager,
-		CacheResolvers:   opts.UpstreamCacheImporters,
-		Entitlements:     toEntitlementStrings(opts.Entitlements),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create solver: %w", err)
-	}
-
-	// initialize ref caches if needed
-	client.refsMu.Lock()
-	if client.refs == nil {
-		client.refs = make(map[*ref]struct{})
-	}
-	client.refsMu.Unlock()
-
-	session, err := client.newSession()
-	if err != nil {
-		return nil, err
-	}
-	client.session = session
-
-	job, err := client.GenericSolver.NewJob(client.ID())
-	if err != nil {
-		return nil, err
-	}
-	client.job = job
-	client.job.SessionID = client.ID()
-	// add the worker to the job so the op resolver (currently configured
-	// in buildkitcontroller.go) can access and use it for resolving ops
-	client.job.SetValue(DaggerWorkerJobKey, client.worker)
-
-	client.job.SetValue(entitlementsJobKey, opts.Entitlements)
-
-	// NOTE: we don't go through the LLBSolver's Executor interface here since
-	// we need to use our custom one directly later. But our executor has the
-	// entitlement validation logic in it, so no harm done.
-	br := client.llbSolver.Bridge(client.job)
-	client.llbBridge = br
-
-	client.dialer = &net.Dialer{}
-
-	if opts.DNSConfig != nil {
-		client.dialer.Resolver = &net.Resolver{
-			PreferGo: true,
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				if len(opts.DNSConfig.Nameservers) == 0 {
-					return nil, errors.New("no nameservers configured")
-				}
-
-				var errs []error
-				for _, ns := range opts.DNSConfig.Nameservers {
-					conn, err := client.dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
-					if err != nil {
-						errs = append(errs, err)
-						continue
-					}
-
-					return conn, nil
-				}
-
-				return nil, errors.Join(errs...)
-			},
-		}
-	}
-
-	bkLogsW := opts.BuildkitLogSink
-	if bkLogsW == nil {
-		bkLogsW = io.Discard
-	}
-	go client.WriteStatusesTo(ctx, bkLogsW)
 
 	return client, nil
 }
 
-func (c *Client) WriteStatusesTo(ctx context.Context, dest io.Writer) {
-	prefix := fmt.Sprintf("[buildkit] [trace=%s] [client=%s] ", c.spanCtx.TraceID(), c.ID())
-	dest = prefixw.New(dest, prefix)
-	statusCh := make(chan *bkclient.SolveStatus, 8)
-	pw, err := progressui.NewDisplay(dest, progressui.PlainMode)
-	if err != nil {
-		bklog.G(ctx).WithError(err).Error("failed to initialize progress writer")
-		return
-	}
-	go pw.UpdateFrom(ctx, statusCh)
-	err = c.job.Status(ctx, statusCh)
-	if err != nil && !errors.Is(err, context.Canceled) {
-		bklog.G(ctx).WithError(err).Error("failed to write status updates")
-	}
-}
-
 func (c *Client) ID() string {
-	return c.session.ID()
-}
-
-func (c *Client) Close() error {
-	c.closeMu.Lock()
-	defer c.closeMu.Unlock()
-	select {
-	case <-c.closeCtx.Done():
-		// already closed
-		return nil
-	default:
-	}
-	c.cancel()
-
-	c.job.Discard()
-	c.job.CloseProgress()
-
-	c.refsMu.Lock()
-	for rf := range c.refs {
-		if rf != nil {
-			rf.resultProxy.Release(context.Background())
-		}
-	}
-	c.refs = nil
-	c.refsMu.Unlock()
-
-	c.containersMu.Lock()
-	var containerReleaseGroup errgroup.Group
-	for ctr := range c.containers {
-		if ctr := ctr; ctr != nil {
-			containerReleaseGroup.Go(func() error {
-				// in theory this shouldn't block very long and just kill the container,
-				// but add a safeguard just in case
-				releaseCtx, cancelRelease := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancelRelease()
-				return ctr.Release(releaseCtx)
-			})
-		}
-	}
-	err := containerReleaseGroup.Wait()
-	if err != nil {
-		bklog.G(context.Background()).WithError(err).Error("failed to release containers")
-	}
-	c.containers = nil
-	c.containersMu.Unlock()
-
-	if c.llbSolver != nil {
-		if err := c.llbSolver.Close(); err != nil {
-			bklog.G(context.Background()).WithError(err).Error("failed to close solver")
-		}
-		c.llbSolver = nil
-	}
-
-	return nil
+	return c.BkSession.ID()
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
@@ -326,13 +153,13 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return nil, err
 	}
 
-	c.refsMu.Lock()
-	defer c.refsMu.Unlock()
+	c.RefsMu.Lock()
+	defer c.RefsMu.Unlock()
 	if res.Ref != nil {
-		c.refs[res.Ref] = struct{}{}
+		c.Refs[res.Ref] = struct{}{}
 	}
 	for _, rf := range res.Refs {
-		c.refs[rf] = struct{}{}
+		c.Refs[rf] = struct{}{}
 	}
 	return res, nil
 }
@@ -345,7 +172,7 @@ func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourcer
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
 
-	imr := sourceresolver.NewImageMetaResolver(c.llbBridge)
+	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
 	return imr.ResolveImageConfig(ctx, ref, opt)
 }
 
@@ -357,7 +184,7 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
 
-	return c.llbBridge.ResolveSourceMetadata(ctx, op, opt)
+	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
 type NewContainerRequest struct {
@@ -437,8 +264,8 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
 		context.WithoutCancel(ctx),
-		c.worker.CacheManager(),
-		c.worker.withExecMD(req.ExecutionMetadata), // also implements Executor
+		c.Worker.CacheManager(),
+		c.Worker.withExecMD(req.ExecutionMetadata), // also implements Executor
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
@@ -447,15 +274,15 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 		return nil, err
 	}
 
-	c.containersMu.Lock()
-	defer c.containersMu.Unlock()
-	if c.containers == nil {
+	c.ContainersMu.Lock()
+	defer c.ContainersMu.Unlock()
+	if c.Containers == nil {
 		if err := ctr.Release(context.WithoutCancel(ctx)); err != nil {
 			return nil, fmt.Errorf("release after close: %w", err)
 		}
 		return nil, errors.New("client closed")
 	}
-	c.containers[ctr] = struct{}{}
+	c.Containers[ctr] = struct{}{}
 
 	return &Container{
 		Container: ctr,
@@ -464,7 +291,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
-	return c.worker.newNetNS(ctx, hostname)
+	return c.Worker.newNetNS(ctx, hostname)
 }
 
 func RunInNetNS[T any](
@@ -481,9 +308,9 @@ func RunInNetNS[T any](
 		return zero, errors.New("namespace is nil")
 	}
 
-	c.worker.mu.RLock()
-	runState, ok := c.worker.running[ns.NamespaceID()]
-	c.worker.mu.RUnlock()
+	c.Worker.mu.RLock()
+	runState, ok := c.Worker.running[ns.NamespaceID()]
+	c.Worker.mu.RUnlock()
 	if !ok {
 		return zero, fmt.Errorf("namespace for %s not found in running state", ns.NamespaceID())
 	}
@@ -494,17 +321,17 @@ func RunInNetNS[T any](
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
 // This is useful for constructing a result for upstream remote caching.
 func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
-	c.refsMu.Lock()
-	mergeInputs := make([]llb.State, 0, len(c.refs))
-	for r := range c.refs {
+	c.RefsMu.Lock()
+	mergeInputs := make([]llb.State, 0, len(c.Refs))
+	for r := range c.Refs {
 		state, err := r.ToState()
 		if err != nil {
-			c.refsMu.Unlock()
+			c.RefsMu.Unlock()
 			return nil, err
 		}
 		mergeInputs = append(mergeInputs, state)
 	}
-	c.refsMu.Unlock()
+	c.RefsMu.Unlock()
 	llbdef, err := llb.Merge(mergeInputs, llb.WithCustomName("combined session result")).Marshal(ctx)
 	if err != nil {
 		return nil, err
@@ -603,6 +430,27 @@ func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) con
 	})
 }
 
+func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	bklog.G(ctx).Tracef("getting session for %q", clientMetadata.ClientID)
+	defer func() {
+		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.ClientID)
+	}()
+
+	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, !wait)
+	if err != nil {
+		return nil, err
+	}
+	if caller == nil {
+		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
+	}
+	return caller, nil
+}
+
 func (c *Client) ListenHostToContainer(
 	ctx context.Context,
 	hostListenAddr, proto, upstream string,
@@ -668,7 +516,7 @@ func (c *Client) ListenHostToContainer(
 			connsL.Unlock()
 
 			if !found {
-				conn, err := c.dialer.Dial(proto, upstream)
+				conn, err := c.Dialer.Dial(proto, upstream)
 				if err != nil {
 					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
 					return
@@ -766,7 +614,7 @@ func newFilterGateway(client *Client, req bkgw.SolveRequest) *filteringGateway {
 
 	return &filteringGateway{
 		client:            client,
-		FrontendLLBBridge: client.llbBridge,
+		FrontendLLBBridge: client.LLBBridge,
 
 		skipInputs: inputs,
 	}
@@ -836,7 +684,7 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 		llbRes, err := f.Solve(
 			ctx,
 			gw,
-			gw.client.worker, // also implements Executor
+			gw.client.Worker, // also implements Executor
 			req.FrontendOpt,
 			req.FrontendInputs,
 			sid,
@@ -861,7 +709,7 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 	}
 }
 
-func toEntitlementStrings(ents entitlements.Set) []string {
+func ToEntitlementStrings(ents entitlements.Set) []string {
 	var out []string
 	for ent := range ents {
 		out = append(out, string(ent))

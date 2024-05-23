@@ -78,18 +78,18 @@ func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("failed to open host netns file: %w", err)
 	}
-	state.cleanups.add("close host netns file", hostFile.Close)
+	state.cleanups.Add("close host netns file", hostFile.Close)
 
 	ctrFile, err := os.OpenFile(ctrNetNSPath, os.O_RDONLY, 0)
 	if err != nil {
 		return fmt.Errorf("failed to open container netns file: %w", err)
 	}
-	state.cleanups.add("close container netns file", ctrFile.Close)
+	state.cleanups.Add("close container netns file", ctrFile.Close)
 
 	ctx, cancel := context.WithCancel(ctx)
 	p := pool.New().WithContext(ctx)
-	state.cleanups.add("stopping namespace workers", p.Wait)
-	state.cleanups.addNoErr("canceling namespace workers", cancel)
+	state.cleanups.Add("stopping namespace workers", p.Wait)
+	state.cleanups.Add("canceling namespace workers", Infallible(cancel))
 
 	for i := 0; i < workerPoolSize; i++ {
 		p.Go(func(ctx context.Context) (rerr error) {

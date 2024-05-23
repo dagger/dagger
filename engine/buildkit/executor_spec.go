@@ -33,6 +33,8 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
@@ -45,7 +47,7 @@ import (
 )
 
 const (
-	DaggerServerIDEnv        = "_DAGGER_SERVER_ID"
+	DaggerSessionIDEnv       = "_DAGGER_SESSION_ID"
 	DaggerClientIDEnv        = "_DAGGER_NESTED_CLIENT_ID"
 	DaggerCallDigestEnv      = "_DAGGER_CALL_DIGEST"
 	DaggerEngineVersionEnv   = "_DAGGER_ENGINE_VERSION"
@@ -88,7 +90,7 @@ type execState struct {
 	rootMount executor.Mount
 	mounts    []executor.Mount
 
-	cleanups *cleanups
+	cleanups *Cleanups
 
 	spec             *specs.Spec
 	networkNamespace bknetwork.Namespace
@@ -119,7 +121,7 @@ func newExecState(
 		procInfo:  procInfo,
 		rootMount: rootMount,
 		mounts:    mounts,
-		cleanups:  &cleanups{},
+		cleanups:  &Cleanups{},
 		done:      make(chan struct{}),
 		netNSJobs: make(chan func()),
 	}
@@ -137,7 +139,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("create network namespace: %w", err)
 	}
-	state.cleanups.add("close network namespace", networkNamespace.Close)
+	state.cleanups.Add("close network namespace", networkNamespace.Close)
 	state.networkNamespace = networkNamespace
 
 	if state.procInfo.Meta.NetMode == pb.NetMode_UNSET {
@@ -159,14 +161,14 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return fmt.Errorf("get base hosts file: %w", err)
 	}
 	if cleanupBaseHosts != nil {
-		state.cleanups.addNoErr("cleanup base hosts file", cleanupBaseHosts)
+		state.cleanups.Add("cleanup base hosts file", Infallible(cleanupBaseHosts))
 	}
 
-	if w.execMD == nil || w.execMD.ServerID == "" {
+	if w.execMD == nil || w.execMD.SessionID == "" {
 		return nil
 	}
 
-	extraSearchDomain := network.ClientDomain(w.execMD.ServerID)
+	extraSearchDomain := network.ClientDomain(w.execMD.SessionID)
 
 	baseResolvFile, err := os.Open(state.resolvConfPath)
 	if err != nil {
@@ -185,7 +187,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 	defer ctrResolvFile.Close()
 	state.resolvConfPath = ctrResolvFile.Name()
-	state.cleanups.add("remove resolv.conf", func() error {
+	state.cleanups.Add("remove resolv.conf", func() error {
 		return os.RemoveAll(state.resolvConfPath)
 	})
 
@@ -241,7 +243,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 	defer ctrHostsFile.Close()
 	state.hostsFilePath = ctrHostsFile.Name()
-	state.cleanups.add("remove hosts file", func() error {
+	state.cleanups.Add("remove hosts file", func() error {
 		return os.RemoveAll(state.hostsFilePath)
 	})
 
@@ -353,7 +355,7 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 	if err != nil {
 		return err
 	}
-	state.cleanups.addNoErr("base OCI spec cleanup", ociSpecCleanup)
+	state.cleanups.Add("base OCI spec cleanup", Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
 	return nil
@@ -383,7 +385,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("create rootfs temp dir: %w", err)
 	}
-	state.cleanups.add("remove rootfs temp dir", func() error {
+	state.cleanups.Add("remove rootfs temp dir", func() error {
 		return os.RemoveAll(state.rootfsPath)
 	})
 	state.spec.Root.Path = state.rootfsPath
@@ -397,12 +399,12 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		return fmt.Errorf("get rootfs mount: %w", err)
 	}
 	if releaseRootMount != nil {
-		state.cleanups.add("release rootfs mount", releaseRootMount)
+		state.cleanups.Add("release rootfs mount", releaseRootMount)
 	}
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
-	state.cleanups.add("unmount rootfs", func() error {
+	state.cleanups.Add("unmount rootfs", func() error {
 		return mount.Unmount(state.rootfsPath, 0)
 	})
 
@@ -437,8 +439,12 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	}
 	state.spec.Mounts = filteredMounts
 
-	state.cleanups.addNoErr("cleanup rootfs stubs",
-		executor.MountStubsCleaner(ctx, state.rootfsPath, state.mounts, state.procInfo.Meta.RemoveMountStubsRecursive))
+	state.cleanups.Add("cleanup rootfs stubs", Infallible(executor.MountStubsCleaner(
+		ctx,
+		state.rootfsPath,
+		state.mounts,
+		state.procInfo.Meta.RemoveMountStubsRecursive,
+	)))
 
 	for _, mnt := range nonRootMounts {
 		dstPath, err := fs.RootPath(state.rootfsPath, mnt.Target)
@@ -475,7 +481,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		if err := mnt.Mount(state.rootfsPath); err != nil {
 			return fmt.Errorf("mount to rootfs %s: %w", mnt.Target, err)
 		}
-		state.cleanups.add("unmount from rootfs "+mnt.Target, func() error {
+		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
 			return mount.Unmount(dstPath, 0)
 		})
 	}
@@ -532,7 +538,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	stdinFile, err := os.Open(stdinPath)
 	switch {
 	case err == nil:
-		state.cleanups.add("close container stdin file", stdinFile.Close)
+		state.cleanups.Add("close container stdin file", stdinFile.Close)
 		state.procInfo.Stdin = stdinFile
 	case os.IsNotExist(err):
 		// no stdin to send
@@ -549,7 +555,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("open stdout file: %w", err)
 	}
-	state.cleanups.add("close container stdout file", stdoutFile.Close)
+	state.cleanups.Add("close container stdout file", stdoutFile.Close)
 	stdoutWriters = append(stdoutWriters, stdoutFile)
 
 	var stderrWriters []io.Writer
@@ -561,7 +567,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("open stderr file: %w", err)
 	}
-	state.cleanups.add("close container stderr file", stderrFile.Close)
+	state.cleanups.Add("close container stderr file", stderrFile.Close)
 	stderrWriters = append(stderrWriters, stderrFile)
 
 	if w.execMD != nil && (w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
@@ -587,7 +593,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stdout file: %w", err)
 			}
-			state.cleanups.add("close redirect stdout file", redirectStdoutFile.Close)
+			state.cleanups.Add("close redirect stdout file", redirectStdoutFile.Close)
 			if err := redirectStdoutFile.Chown(int(state.spec.Process.User.UID), int(state.spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stdout file: %w", err)
 			}
@@ -603,7 +609,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stderr file: %w", err)
 			}
-			state.cleanups.add("close redirect stderr file", redirectStderrFile.Close)
+			state.cleanups.Add("close redirect stderr file", redirectStderrFile.Close)
 			if err := redirectStderrFile.Chown(int(state.spec.Process.User.UID), int(state.spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stderr file: %w", err)
 			}
@@ -630,12 +636,11 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		if w.execMD.SpanContext != nil {
 			ctx = otel.GetTextMapPropagator().Extract(ctx, w.execMD.SpanContext)
 		}
-		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTelEnvs...)
 		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
 	}
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, logAttrs...)
-	state.cleanups.add("close logs", stdio.Close)
+	state.cleanups.Add("close logs", stdio.Close)
 
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
@@ -647,21 +652,20 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return fmt.Errorf("otel tcp proxy listen: %w", err)
 	}
 	otelSrv := &http.Server{
-		Handler: w.telemetryPubSub,
-
+		Handler:           w.telemetryPubSub,
 		ReadHeaderTimeout: 10 * time.Second, // for gocritic
 	}
 	listenerPool := pool.New().WithErrors()
 	listenerPool.Go(func() error {
 		return otelSrv.Serve(listener)
 	})
-	state.cleanups.add("wait for otel proxy", func() error {
+	state.cleanups.Add("wait for otel proxy", func() error {
 		if err := listenerPool.Wait(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
 	})
-	state.cleanups.add("shutdown otel proxy", func() error {
+	state.cleanups.Add("shutdown otel proxy", func() error {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		return otelSrv.Shutdown(shutdownCtx)
@@ -756,11 +760,11 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 		io.Copy(finalStderr, stderrScrubReader)
 	}()
 
-	state.cleanups.add("close secret scrub stderr reader", stderrR.Close)
-	state.cleanups.add("close secret scrub stdout reader", stdoutR.Close)
-	state.cleanups.addNoErr("wait for secret scrubber pipes", pipeWg.Wait)
-	state.cleanups.add("close secret scrub stderr writer", stderrW.Close)
-	state.cleanups.add("close secret scrub stdout writer", stdoutW.Close)
+	state.cleanups.Add("close secret scrub stderr reader", stderrR.Close)
+	state.cleanups.Add("close secret scrub stdout reader", stdoutR.Close)
+	state.cleanups.Add("wait for secret scrubber pipes", Infallible(pipeWg.Wait))
+	state.cleanups.Add("close secret scrub stderr writer", stderrW.Close)
+	state.cleanups.Add("close secret scrub stdout writer", stdoutW.Close)
 
 	return nil
 }
@@ -864,74 +868,14 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	}
 
-	nestedClientMD := engine.ClientMetadata{
-		ClientID:          w.execMD.ClientID,
-		ClientSecretToken: randid.NewID(),
-		ServerID:          w.execMD.ServerID,
-		ClientHostname:    state.spec.Hostname,
-		// TODO: Labels?
-		// TODO: CloudToken?
-		// TODO: DoNotTrack?
+	if w.execMD.SecretToken == "" {
+		w.execMD.SecretToken = randid.NewID()
+	}
+	if w.execMD.Hostname == "" {
+		w.execMD.Hostname = state.spec.Hostname
 	}
 
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+nestedClientMD.ClientSecretToken)
-
-	sessionCtx, cancelSession := context.WithCancel(ctx)
-	defer func() {
-		if rerr != nil {
-			cancelSession()
-		}
-	}()
-
-	bkSessionName := randid.NewID()
-	bkSessionSharedKey := ""
-	bkSession, err := bksession.NewSession(sessionCtx, bkSessionName, bkSessionSharedKey)
-	if err != nil {
-		return fmt.Errorf("create buildkit session: %w", err)
-	}
-	state.cleanups.add("close nested client buildkit session", bkSession.Close)
-
-	bkSession.Allow(client.SocketProvider{
-		EnableHostNetworkAccess: true,
-		Dialer: func(networkType, addr string) (net.Conn, error) {
-			// To handle the case where the host being looked up is another service container
-			// endpoint without any qualification, we check both the unqualified and
-			// search-domain-qualified hostnames.
-			// The alternative here would be to also enter into the container's mount namespace,
-			// which while entirely feasible is an annoyance that outweighs the annoyance of this.
-			hostName, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, fmt.Errorf("split host port %s: %w", addr, err)
-			}
-			var resolvedHost string
-			var errs error
-			for _, searchDomain := range []string{"", network.ClientDomain(w.execMD.ServerID)} {
-				qualified := hostName
-				if searchDomain != "" {
-					qualified += "." + searchDomain
-				}
-				_, err := net.LookupIP(qualified)
-				if err == nil {
-					resolvedHost = qualified
-					break
-				}
-				errs = errors.Join(errs, err)
-			}
-			if resolvedHost == "" {
-				return nil, fmt.Errorf("resolve %s: %w", hostName, errors.Join(errs))
-			}
-			addr = net.JoinHostPort(resolvedHost, port)
-
-			return runInNetNS(sessionCtx, state, func() (net.Conn, error) {
-				return net.Dial(networkType, addr)
-			})
-		},
-	})
-	bkSession.Allow(session.NewTunnelListenerAttachable(sessionCtx, func(network, addr string) (net.Listener, error) {
-		return runInNetNS(sessionCtx, state, func() (net.Listener, error) {
-			return net.Listen(network, addr)
-		})
-	}))
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
 	filesyncer, err := client.NewFilesyncer(
 		state.rootfsPath,
@@ -941,37 +885,74 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if err != nil {
 		return fmt.Errorf("create filesyncer: %w", err)
 	}
-	bkSession.Allow(filesyncer.AsSource())
-	bkSession.Allow(filesyncer.AsTarget())
 
-	buildkitSessionMDCh := make(chan map[string][]string)
-	sessionClientConn, sessionServerConn := net.Pipe()
-	sessionPool := pool.New().WithContext(sessionCtx).WithCancelOnError()
-	sessionPool.Go(func(ctx context.Context) error {
-		defer close(buildkitSessionMDCh)
-		return bkSession.Run(ctx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			select {
-			case <-ctx.Done():
-				return nil, context.Cause(ctx)
-			case buildkitSessionMDCh <- meta:
-			}
-			return sessionClientConn, nil
-		})
-	})
+	attachables := []bksession.Attachable{
+		client.SocketProvider{
+			EnableHostNetworkAccess: true,
+			Dialer: func(networkType, addr string) (net.Conn, error) {
+				// To handle the case where the host being looked up is another service container
+				// endpoint without any qualification, we check both the unqualified and
+				// search-domain-qualified hostnames.
+				// The alternative here would be to also enter into the container's mount namespace,
+				// which while entirely feasible is an annoyance that outweighs the annoyance of this.
+				hostName, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, fmt.Errorf("split host port %s: %w", addr, err)
+				}
+				var resolvedHost string
+				var errs error
+				for _, searchDomain := range []string{"", network.ClientDomain(w.execMD.SessionID)} {
+					qualified := hostName
+					if searchDomain != "" {
+						qualified += "." + searchDomain
+					}
+					_, err := net.LookupIP(qualified)
+					if err == nil {
+						resolvedHost = qualified
+						break
+					}
+					errs = errors.Join(errs, err)
+				}
+				if resolvedHost == "" {
+					return nil, fmt.Errorf("resolve %s: %w", hostName, errors.Join(errs))
+				}
+				addr = net.JoinHostPort(resolvedHost, port)
 
-	var bkSessionMD map[string][]string
-	select {
-	case <-sessionCtx.Done():
-		return fmt.Errorf("session closed before buildkit session metadata received: %w", context.Cause(sessionCtx))
-	case bkSessionMD = <-buildkitSessionMDCh:
+				return runInNetNS(ctx, state, func() (net.Conn, error) {
+					return net.Dial(networkType, addr)
+				})
+			},
+		},
+		session.NewTunnelListenerAttachable(ctx, func(network, addr string) (net.Listener, error) {
+			return runInNetNS(ctx, state, func() (net.Listener, error) {
+				return net.Listen(network, addr)
+			})
+		}),
+		filesyncer.AsSource(),
+		filesyncer.AsTarget(),
 	}
 
-	registerClientMD := nestedClientMD
-	registerClientMD.RegisterClient = true
-	sessionPool.Go(func(ctx context.Context) error {
-		defer sessionClientConn.Close()
-		ctx = engine.ContextWithClientMetadata(ctx, &registerClientMD)
-		return w.Controller.HandleConn(ctx, sessionServerConn, &registerClientMD, bkSessionMD)
+	sessionClientConn, sessionSrvConn := net.Pipe()
+	state.cleanups.Add("close session client conn", sessionClientConn.Close)
+	state.cleanups.Add("close session server conn", sessionSrvConn.Close)
+
+	sessionSrv := client.NewBuildkitSessionServer(ctx, sessionClientConn, attachables...)
+	stopSessionSrv := state.cleanups.Add("stop session server", Infallible(sessionSrv.Stop))
+
+	srvCtx, srvCancel := context.WithCancel(ctx)
+	state.cleanups.Add("cancel session server", Infallible(srvCancel))
+	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
+	srvPool.Go(func(ctx context.Context) error {
+		sessionSrv.Run(ctx)
+		return nil
+	})
+	srvPool.Go(func(ctx context.Context) error {
+		return w.bkSessionManager.HandleConn(ctx, sessionSrvConn, map[string][]string{
+			engine.SessionIDMetaKey:         {w.execMD.ClientID},
+			engine.SessionNameMetaKey:       {w.execMD.ClientID},
+			engine.SessionSharedKeyMetaKey:  {""},
+			engine.SessionMethodNameMetaKey: sessionSrv.MethodURLs,
+		})
 	})
 
 	httpListener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
@@ -980,6 +961,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if err != nil {
 		return fmt.Errorf("listen for nested client: %w", err)
 	}
+	state.cleanups.Add("close nested client listener", IgnoreErrs(httpListener.Close, net.ErrClosed))
 
 	tcpAddr, ok := httpListener.Addr().(*net.TCPAddr)
 	if !ok {
@@ -987,38 +969,29 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
 
-	handleConnPool := pool.New().WithContext(sessionCtx)
-	httpListenerPool := pool.New().WithContext(sessionCtx).WithCancelOnError()
-	httpListenerPool.Go(func(ctx context.Context) error {
-		<-ctx.Done()
-		err := httpListener.Close()
-		if err != nil {
-			return fmt.Errorf("close nested client listener: %w", err)
+	http2Srv := &http2.Server{}
+	httpSrv := &http.Server{
+		ReadHeaderTimeout: 10 * time.Second,
+		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD)
+		}), http2Srv),
+	}
+	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {
+		return fmt.Errorf("configure nested client http2 server: %w", err)
+	}
+
+	srvPool.Go(func(_ context.Context) error {
+		err := httpSrv.Serve(httpListener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
+			return fmt.Errorf("serve nested client listener: %w", err)
 		}
 		return nil
 	})
-	httpListenerPool.Go(func(ctx context.Context) error {
-		for {
-			conn, err := httpListener.Accept()
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					return nil
-				}
-				return fmt.Errorf("accept nested client connection: %w", err)
-			}
 
-			handleConnPool.Go(func(ctx context.Context) error {
-				defer conn.Close()
-				ctx = engine.ContextWithClientMetadata(ctx, &nestedClientMD)
-				return w.Controller.HandleConn(ctx, conn, &nestedClientMD, nil)
-			})
-		}
-	})
-
-	state.cleanups.add("wait for nested client buildkit session pool", sessionPool.Wait)
-	state.cleanups.add("wait for nested client conn pool", handleConnPool.Wait)
-	state.cleanups.add("wait for nested client listener pool", httpListenerPool.Wait)
-	state.cleanups.addNoErr("cancel nested client buildkit session", cancelSession)
+	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
+	state.cleanups.ReAdd(stopSessionSrv)
+	state.cleanups.Add("close nested client http server", httpSrv.Close)
+	state.cleanups.Add("cancel nested client server pool", Infallible(srvCancel))
 
 	return nil
 }
@@ -1041,7 +1014,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 			rootMount: state.rootMount,
 			mounts:    state.mounts,
 
-			cleanups: &cleanups{},
+			cleanups: &Cleanups{},
 
 			spec:             &specs.Spec{},
 			networkNamespace: state.networkNamespace,
@@ -1082,7 +1055,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 	err = caInstaller.Install(ctx)
 	switch {
 	case err == nil:
-		state.cleanups.add("uninstall CA certs", func() error {
+		state.cleanups.Add("uninstall CA certs", func() error {
 			return caInstaller.Uninstall(ctx)
 		})
 	case errors.As(err, new(cacerts.CleanupErr)):

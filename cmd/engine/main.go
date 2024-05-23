@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	goerrors "errors"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -30,11 +31,12 @@ import (
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
-	"github.com/pkg/errors"
 	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
@@ -339,7 +341,7 @@ func main() { //nolint:gocyclo
 		cfg.Root = root
 
 		if err := os.MkdirAll(root, 0o700); err != nil {
-			return errors.Wrapf(err, "failed to create %s", root)
+			return fmt.Errorf("failed to create %s: %w", root, err)
 		}
 
 		bklog.G(ctx).Debug("creating engine lockfile")
@@ -347,10 +349,10 @@ func main() { //nolint:gocyclo
 		lock := flock.New(lockPath)
 		locked, err := lock.TryLock()
 		if err != nil {
-			return errors.Wrapf(err, "could not lock %s", lockPath)
+			return fmt.Errorf("could not lock %s: %w", lockPath, err)
 		}
 		if !locked {
-			return errors.Errorf("could not lock %s, another instance running?", lockPath)
+			return fmt.Errorf("could not lock %s, another instance running?", lockPath)
 		}
 		defer func() {
 			lock.Unlock()
@@ -367,7 +369,7 @@ func main() { //nolint:gocyclo
 				case "network.host":
 					cfg.Entitlements = append(cfg.Entitlements, e)
 				default:
-					return errors.Errorf("invalid entitlement : %s", e)
+					return fmt.Errorf("invalid entitlement : %s", e)
 				}
 			}
 		}
@@ -381,9 +383,7 @@ func main() { //nolint:gocyclo
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
 		}
-		defer eng.Close()
-
-		eng.Register(grpcServer)
+		defer srv.Close()
 
 		go logMetrics(context.Background(), cfg.Root, srv)
 		if cfg.Trace {
@@ -398,9 +398,26 @@ func main() { //nolint:gocyclo
 		}
 
 		// start serving on the listeners for actual clients
-		bklog.G(ctx).Debug("starting main engine grpc listeners")
+		bklog.G(ctx).Debug("starting main engine api listeners")
+		srv.Register(grpcServer)
+		http2Server := &http2.Server{}
+		httpServer := &http.Server{
+			ReadHeaderTimeout: 30 * time.Second,
+			Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
+					// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
+					// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
+					grpcServer.ServeHTTP(w, r)
+					return
+				}
+				srv.ServeHTTP(w, r)
+			}), http2Server),
+		}
+		if err := http2.ConfigureServer(httpServer, http2Server); err != nil {
+			return fmt.Errorf("failed to configure http2 server: %w", err)
+		}
 		errCh := make(chan error, 1)
-		if err := serveGRPC(cfg.GRPC, grpcServer, errCh); err != nil {
+		if err := serveAPI(cfg.GRPC, httpServer, errCh); err != nil {
 			return err
 		}
 
@@ -424,7 +441,7 @@ func main() { //nolint:gocyclo
 		if stopCacheErr != nil {
 			bklog.G(ctx).WithError(stopCacheErr).Error("failed to stop cache")
 		}
-		err = goerrors.Join(err, stopCacheErr)
+		err = errors.Join(err, stopCacheErr)
 		cancelNetworking()
 
 		bklog.G(ctx).Infof("stopping server")
@@ -449,7 +466,11 @@ func main() { //nolint:gocyclo
 	}
 }
 
-func serveGRPC(cfg config.GRPCConfig, server *grpc.Server, errCh chan error) error {
+func serveAPI(
+	cfg config.GRPCConfig,
+	httpServer *http.Server,
+	errCh chan error,
+) error {
 	addrs := cfg.Address
 	if len(addrs) == 0 {
 		return errors.New("--addr cannot be empty")
@@ -480,7 +501,12 @@ func serveGRPC(cfg config.GRPCConfig, server *grpc.Server, errCh chan error) err
 			eg.Go(func() error {
 				defer l.Close()
 				logrus.Infof("running server on %s", l.Addr())
-				return server.Serve(l)
+
+				err := httpServer.Serve(l)
+				if err != nil {
+					return fmt.Errorf("serve: %w", err)
+				}
+				return nil
 			})
 		}(l)
 	}
@@ -616,7 +642,7 @@ func applyMainFlags(c *cli.Context, cfg *config.Config) error {
 		} else {
 			maxParallelism, err = strconv.Atoi(maxParallelismStr)
 			if err != nil {
-				return errors.Wrap(err, "failed to parse oci-max-parallelism, should be positive integer, 0 for unlimited, or 'num-cpu' for setting to the number of CPUs")
+				return fmt.Errorf("failed to parse oci-max-parallelism, should be positive integer, 0 for unlimited, or 'num-cpu' for setting to the number of CPUs: %w", err)
 			}
 		}
 		cfg.Workers.OCI.MaxParallelism = maxParallelism
@@ -661,7 +687,7 @@ func grouptoGID(group string) (int, error) {
 func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener, error) {
 	addrSlice := strings.SplitN(addr, "://", 2)
 	if len(addrSlice) < 2 {
-		return nil, errors.Errorf("address %s does not contain proto, you meant unix://%s ?",
+		return nil, fmt.Errorf("address %s does not contain proto, you meant unix://%s ?",
 			addr, addr)
 	}
 	proto := addrSlice[0]
@@ -686,7 +712,7 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 		}
 		return tls.NewListener(l, tlsConfig), nil
 	default:
-		return nil, errors.Errorf("addr %s not supported", addr)
+		return nil, fmt.Errorf("addr %s not supported", addr)
 	}
 }
 
@@ -706,7 +732,7 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	}
 	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not load server key pair")
+		return nil, fmt.Errorf("could not load server key pair: %w", err)
 	}
 	tlsConf := &tls.Config{
 		Certificates: []tls.Certificate{certificate},
@@ -716,7 +742,7 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 		certPool := x509.NewCertPool()
 		ca, err := os.ReadFile(caFile)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not read ca certificate")
+			return nil, fmt.Errorf("could not read ca certificate: %w", err)
 		}
 		// Append the client certificates from the CA
 		if ok := certPool.AppendCertsFromPEM(ca); !ok {
@@ -733,7 +759,7 @@ func attrMap(sl []string) (map[string]string, error) {
 	for _, v := range sl {
 		parts := strings.SplitN(v, "=", 2)
 		if len(parts) != 2 {
-			return nil, errors.Errorf("invalid value %s", v)
+			return nil, fmt.Errorf("invalid value %s", v)
 		}
 		m[parts[0]] = parts[1]
 	}

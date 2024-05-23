@@ -71,8 +71,8 @@ type RunningService struct {
 
 // ServiceKey is a unique identifier for a service.
 type ServiceKey struct {
-	Digest   digest.Digest
-	ServerID string
+	Digest    digest.Digest
+	SessionID string
 }
 
 // NewServices returns a new Services.
@@ -97,8 +97,8 @@ func (ss *Services) Get(ctx context.Context, id *call.ID) (*RunningService, erro
 	dig := id.Digest()
 
 	key := ServiceKey{
-		Digest:   dig,
-		ServerID: clientMetadata.ServerID,
+		Digest:    dig,
+		SessionID: clientMetadata.SessionID,
 	}
 
 	notRunningErr := fmt.Errorf("service %s is not running", network.HostHash(dig))
@@ -143,8 +143,8 @@ func (ss *Services) Start(ctx context.Context, id *call.ID, svc Startable) (*Run
 
 	dig := id.Digest()
 	key := ServiceKey{
-		Digest:   dig,
-		ServerID: clientMetadata.ServerID,
+		Digest:    dig,
+		SessionID: clientMetadata.SessionID,
 	}
 
 dance:
@@ -245,8 +245,8 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 
 	dig := id.Digest()
 	key := ServiceKey{
-		Digest:   dig,
-		ServerID: clientMetadata.ServerID,
+		Digest:    dig,
+		SessionID: clientMetadata.SessionID,
 	}
 
 	ss.l.Lock()
@@ -281,11 +281,11 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 
 // StopClientServices stops all of the services being run by the given server.
 // It is called when a server is closing.
-func (ss *Services) StopClientServices(ctx context.Context, serverID string) error {
+func (ss *Services) StopClientServices(ctx context.Context, sessionID string) error {
 	ss.l.Lock()
 	var svcs []*RunningService
 	for _, svc := range ss.running {
-		if svc.Key.ServerID == serverID {
+		if svc.Key.SessionID == sessionID {
 			svcs = append(svcs, svc)
 		}
 	}

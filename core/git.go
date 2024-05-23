@@ -105,5 +105,5 @@ func (ref *GitRef) getState(ctx context.Context) (llb.State, error) {
 		return llb.State{}, err
 	}
 
-	return gitdns.Git(ref.Repo.URL, ref.Ref, clientMetadata.ServerID, opts...), nil
+	return gitdns.Git(ref.Repo.URL, ref.Ref, clientMetadata.SessionID, opts...), nil
 }

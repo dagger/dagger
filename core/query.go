@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/containerd/containerd/content"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -15,16 +13,13 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
 )
 
 // Query forms the root of the DAG and houses all necessary state and
 // dependencies for evaluating queries.
 type Query struct {
 	QueryOpts
-	Buildkit *buildkit.Client
 
 	// The current pipeline.
 	Pipeline pipeline.Path
@@ -34,6 +29,8 @@ var ErrNoCurrentModule = fmt.Errorf("no current module")
 
 // Settings for Query that are shared across all instances for a given DaggerServer
 type QueryOpts struct {
+	Server
+
 	Services *Services
 
 	Secrets *SecretStore
@@ -52,31 +49,21 @@ type QueryOpts struct {
 	// The DagQL query cache.
 	Cache dagql.Cache
 
-	BuildkitOpts *buildkit.Opts
+	Buildkit *buildkit.Client
 
-	// The metadata of client calls.
-	// For the special case of the main client caller, the key is just empty string.
-	// This is never explicitly deleted from; instead it will just be garbage collected
-	// when this server for the session shuts down
-	ClientCallContext  map[string]*ClientCallContext
-	ClientCallMu       *sync.RWMutex
 	MainClientCallerID string
-
-	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
-	Endpoints  map[string]http.Handler
-	EndpointMu *sync.RWMutex
 }
 
-func NewRoot(ctx context.Context, opts QueryOpts) (*Query, error) {
-	bk, err := buildkit.NewClient(ctx, opts.BuildkitOpts)
-	if err != nil {
-		return nil, fmt.Errorf("buildkit client: %w", err)
-	}
+type Server interface {
+	ServeModule(context.Context, *Module) error
+	CurrentModule(context.Context) (*Module, error)
+	CurrentFunctionCall(context.Context) (*FunctionCall, error)
+	CurrentServedDeps(context.Context) (*ModDeps, error)
+	MuxEndpoint(context.Context, string, http.Handler) error
+}
 
-	return &Query{
-		QueryOpts: opts,
-		Buildkit:  bk,
-	}, nil
+func NewRoot(opts QueryOpts) *Query {
+	return &Query{QueryOpts: opts}
 }
 
 func (*Query) Type() *ast.Type {
@@ -92,137 +79,6 @@ func (*Query) TypeDescription() string {
 
 func (q Query) Clone() *Query {
 	return &q
-}
-
-func (q *Query) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
-	q.EndpointMu.Lock()
-	defer q.EndpointMu.Unlock()
-	q.Endpoints[path] = handler
-	return nil
-}
-
-type ClientCallContext struct {
-	Root *Query
-
-	// the DAG of modules being served to this client
-	Deps *ModDeps
-
-	// If the client is itself from a function call in a user module, these are set with the
-	// metadata of that ongoing function call
-	FnCall *FunctionCall
-}
-
-func (q *Query) ServeModule(ctx context.Context, mod *Module) error {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	q.ClientCallMu.Lock()
-	defer q.ClientCallMu.Unlock()
-	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
-	if !ok {
-		return fmt.Errorf("client call not found")
-	}
-	callCtx.Deps = callCtx.Deps.Append(mod)
-	return nil
-}
-
-// Setup a module or nested-exec client. Returns the client ID to use.
-func (q *Query) RegisterCaller(ctx context.Context, call *FunctionCall) (string, error) {
-	if call == nil {
-		call = &FunctionCall{}
-	}
-	callCtx := &ClientCallContext{
-		FnCall: call,
-	}
-
-	clientID := identity.NewID()
-	slog.ExtraDebug("registering nested caller",
-		"client_id", clientID,
-		"op", dagql.CurrentID(ctx).Display(),
-	)
-
-	if call.Module == nil {
-		callCtx.Deps = q.DefaultDeps
-	} else {
-		callCtx.Deps = call.Module.Deps
-		// By default, serve both deps and the module's own API to itself. But if SkipSelfSchema is set,
-		// only serve the APIs of the deps of this module. This is currently only needed for the special
-		// case of the function used to get the definition of the module itself (which can't obviously
-		// be served the API its returning the definition of).
-		if !call.SkipSelfSchema {
-			callCtx.Deps = callCtx.Deps.Append(call.Module)
-		}
-	}
-
-	q.ClientCallMu.Lock()
-	defer q.ClientCallMu.Unlock()
-	_, ok := q.ClientCallContext[clientID]
-	if ok {
-		return clientID, nil
-	}
-
-	var err error
-	callCtx.Root, err = NewRoot(ctx, q.QueryOpts)
-	if err != nil {
-		return "", err
-	}
-
-	q.ClientCallContext[clientID] = callCtx
-	return clientID, nil
-}
-
-func (q *Query) CurrentModule(ctx context.Context) (*Module, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if clientMetadata.ClientID == q.MainClientCallerID {
-		return nil, fmt.Errorf("%w: main client caller has no current module", ErrNoCurrentModule)
-	}
-
-	q.ClientCallMu.RLock()
-	defer q.ClientCallMu.RUnlock()
-	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
-	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
-	}
-	if callCtx.FnCall.Module == nil {
-		return nil, ErrNoCurrentModule
-	}
-	return callCtx.FnCall.Module, nil
-}
-
-func (q *Query) CurrentFunctionCall(ctx context.Context) (*FunctionCall, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if clientMetadata.ClientID == q.MainClientCallerID {
-		return nil, fmt.Errorf("%w: main client caller has no function", ErrNoCurrentModule)
-	}
-
-	q.ClientCallMu.RLock()
-	defer q.ClientCallMu.RUnlock()
-	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
-	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
-	}
-
-	return callCtx.FnCall, nil
-}
-
-func (q *Query) CurrentServedDeps(ctx context.Context) (*ModDeps, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	callCtx, ok := q.ClientCallContext[clientMetadata.ClientID]
-	if !ok {
-		return nil, fmt.Errorf("client call %s not found", clientMetadata.ClientID)
-	}
-	return callCtx.Deps, nil
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {

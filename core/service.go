@@ -248,7 +248,7 @@ func (svc *Service) startContainer(
 	}
 	if !ok {
 		execMD = &buildkit.ExecutionMetadata{
-			ServerID: clientMetadata.ServerID,
+			SessionID: clientMetadata.SessionID,
 		}
 	}
 
@@ -274,7 +274,7 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
+	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
 
 	bk := svc.Query.Buildkit
 
@@ -454,8 +454,8 @@ func (svc *Service) startContainer(
 			Host:    fullHost,
 			Ports:   ctr.Ports,
 			Key: ServiceKey{
-				Digest:   dig,
-				ServerID: clientMetadata.ServerID,
+				Digest:    dig,
+				SessionID: clientMetadata.SessionID,
 			},
 			Stop: stopSvc,
 			Wait: waitSvc,
@@ -540,8 +540,8 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 	return &RunningService{
 		Service: svc,
 		Key: ServiceKey{
-			Digest:   dig,
-			ServerID: clientMetadata.ServerID,
+			Digest:    dig,
+			SessionID: clientMetadata.SessionID,
 		},
 		Host:  dialHost,
 		Ports: ports,
@@ -570,7 +570,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		return nil, err
 	}
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
+	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
 
 	bk := svc.Query.Buildkit
 
@@ -634,8 +634,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		return &RunningService{
 			Service: svc,
 			Key: ServiceKey{
-				Digest:   dig,
-				ServerID: clientMetadata.ServerID,
+				Digest:    dig,
+				SessionID: clientMetadata.SessionID,
 			},
 			Host:  fullHost,
 			Ports: checkPorts,

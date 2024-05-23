@@ -5,7 +5,6 @@ import (
 	"time"
 
 	controlapi "github.com/moby/buildkit/api/services/control"
-	"github.com/moby/buildkit/client"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/bklog"
@@ -13,9 +12,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func (e *Engine) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
+func (srv *Server) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
 	resp := &controlapi.DiskUsageResponse{}
-	du, err := e.baseWorker.DiskUsage(ctx, bkclient.DiskUsageInfo{
+	du, err := srv.baseWorker.DiskUsage(ctx, bkclient.DiskUsageInfo{
 		Filter: r.Filter,
 	})
 	if err != nil {
@@ -39,12 +38,12 @@ func (e *Engine) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) 
 	return resp, nil
 }
 
-func (e *Engine) Prune(req *controlapi.PruneRequest, stream controlapi.Control_PruneServer) error {
+func (srv *Server) Prune(req *controlapi.PruneRequest, stream controlapi.Control_PruneServer) error {
 	eg, ctx := errgroup.WithContext(stream.Context())
 
-	e.serverMu.RLock()
-	cancelLeases := len(e.servers) == 0
-	e.serverMu.RUnlock()
+	srv.daggerSessionsMu.RLock()
+	cancelLeases := len(srv.daggerSessions) == 0
+	srv.daggerSessionsMu.RUnlock()
 	if cancelLeases {
 		imageutil.CancelCacheLeases()
 	}
@@ -52,7 +51,7 @@ func (e *Engine) Prune(req *controlapi.PruneRequest, stream controlapi.Control_P
 	didPrune := false
 	defer func() {
 		if didPrune {
-			if e, ok := e.SolverCache.(interface {
+			if e, ok := srv.SolverCache.(interface {
 				ReleaseUnreferenced(context.Context) error
 			}); ok {
 				if err := e.ReleaseUnreferenced(ctx); err != nil {
@@ -66,7 +65,7 @@ func (e *Engine) Prune(req *controlapi.PruneRequest, stream controlapi.Control_P
 
 	eg.Go(func() error {
 		defer close(ch)
-		return e.baseWorker.Prune(ctx, ch, bkclient.PruneInfo{
+		return srv.baseWorker.Prune(ctx, ch, bkclient.PruneInfo{
 			Filter:       req.Filter,
 			All:          req.All,
 			KeepDuration: time.Duration(req.KeepDuration),
@@ -104,9 +103,9 @@ func (e *Engine) Prune(req *controlapi.PruneRequest, stream controlapi.Control_P
 	return eg.Wait()
 }
 
-func (e *Engine) gc() {
-	e.gcmu.Lock()
-	defer e.gcmu.Unlock()
+func (srv *Server) gc() {
+	srv.gcmu.Lock()
+	defer srv.gcmu.Unlock()
 
 	ch := make(chan bkclient.UsageInfo)
 	eg, ctx := errgroup.WithContext(context.TODO())
@@ -121,8 +120,8 @@ func (e *Engine) gc() {
 
 	eg.Go(func() error {
 		defer close(ch)
-		if policy := e.baseWorker.GCPolicy(); len(policy) > 0 {
-			return e.baseWorker.Prune(ctx, ch, policy...)
+		if policy := srv.baseWorker.GCPolicy(); len(policy) > 0 {
+			return srv.baseWorker.Prune(ctx, ch, policy...)
 		}
 		return nil
 	})
@@ -136,16 +135,16 @@ func (e *Engine) gc() {
 	}
 }
 
-func getGCPolicy(cfg config.GCConfig, root string) []client.PruneInfo {
+func getGCPolicy(cfg config.GCConfig, root string) []bkclient.PruneInfo {
 	if cfg.GC != nil && !*cfg.GC {
 		return nil
 	}
 	if len(cfg.GCPolicy) == 0 {
 		cfg.GCPolicy = config.DefaultGCPolicy(cfg.GCKeepStorage)
 	}
-	out := make([]client.PruneInfo, 0, len(cfg.GCPolicy))
+	out := make([]bkclient.PruneInfo, 0, len(cfg.GCPolicy))
 	for _, rule := range cfg.GCPolicy {
-		out = append(out, client.PruneInfo{
+		out = append(out, bkclient.PruneInfo{
 			Filter:       rule.Filters,
 			All:          rule.All,
 			KeepBytes:    rule.KeepBytes.AsBytes(root),

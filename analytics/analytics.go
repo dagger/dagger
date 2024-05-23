@@ -29,8 +29,8 @@ type Event struct {
 	Type       string            `json:"type,omitempty"`
 	Properties map[string]string `json:"properties,omitempty"`
 
-	DeviceID string `json:"device_id,omitempty"`
-	ServerID string `json:"server_id,omitempty"`
+	DeviceID  string `json:"device_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 
 	ClientVersion string `json:"client_version,omitempty"`
 	ClientOS      string `json:"client_os,omitempty"`
@@ -155,7 +155,7 @@ func (t *CloudTracker) Capture(ctx context.Context, event string, properties map
 		ev.GitAuthorHashed = fmt.Sprintf("%x", sha256.Sum256([]byte(author)))
 	}
 	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		ev.ServerID = clientMetadata.ServerID
+		ev.SessionID = clientMetadata.SessionID
 	}
 
 	t.queue = append(t.queue, &queuedEvent{ctx: ctx, event: ev})

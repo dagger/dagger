@@ -66,9 +66,9 @@ func TestServicesStartHappyDifferentServers(t *testing.T) {
 
 	svc := newStartable("fake")
 
-	startOne := func(t *testing.T, stub *fakeStartable, serverID string) {
+	startOne := func(t *testing.T, stub *fakeStartable, sessionID string) {
 		ctx := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
-			ServerID: serverID,
+			SessionID: sessionID,
 		})
 
 		expected := stub.Succeed()
@@ -318,8 +318,8 @@ func (f *fakeStartable) Starts() int {
 func (f *fakeStartable) Succeed() *core.RunningService {
 	running := &core.RunningService{
 		Key: core.ServiceKey{
-			Digest:   f.digest,
-			ServerID: "doesnt-matter",
+			Digest:    f.digest,
+			SessionID: "doesnt-matter",
 		},
 		Host: f.name + "-host",
 	}
