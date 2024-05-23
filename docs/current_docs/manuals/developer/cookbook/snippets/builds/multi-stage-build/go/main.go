@@ -11,12 +11,12 @@ func (m *MyModule) Build(
 	ctx context.Context,
 	// source code location
 	// can be local directory or remote Git repository
-	dir *Directory,
+	src *Directory,
 ) string {
 	// build app
 	builder := dag.Container().
 		From("golang:latest").
-		WithDirectory("/src", dir).
+		WithDirectory("/src", src).
 		WithWorkdir("/src").
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "myapp"})

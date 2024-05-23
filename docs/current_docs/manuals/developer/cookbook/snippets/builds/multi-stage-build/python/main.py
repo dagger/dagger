@@ -5,15 +5,13 @@ from dagger import dag, function, object_type
 @object_type
 class MyModule:
     @function
-    def build(self, dir: dagger.Directory) -> str:
-        """
-        Build multi stage docker container and publish to registry
-        """
+    def build(self, src: dagger.Directory) -> str:
+        """Build and publish Docker container"""
         # build app
         builder = (
             dag.container()
             .from_("golang:latest")
-            .with_directory("/src", dir)
+            .with_directory("/src", src)
             .with_workdir("/src")
             .with_env_variable("CGO_ENABLED", "0")
             .with_exec(["go", "build", "-o", "myapp"])
