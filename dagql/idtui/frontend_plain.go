@@ -119,6 +119,9 @@ func (fe *frontendPlain) ConnectedToCloud(url string) {
 func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
 	fe.FrontendOpts = opts
 
+	// set default context logs
+	ctx = telemetry.WithLogProfile(ctx, fe.profile)
+
 	// redirect slog to the logs pane
 	level := slog.LevelInfo
 	if fe.Debug {
