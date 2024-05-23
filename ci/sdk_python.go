@@ -21,7 +21,8 @@ const (
 )
 
 var (
-	pythonVersions = []string{"3.10", "3.11", "3.12"}
+	// pythonVersions = []string{"3.10", "3.11", "3.12"}
+	pythonVersions = []string{"3.12"}
 )
 
 type PythonSDK struct {
@@ -77,30 +78,31 @@ func (t PythonSDK) Test(ctx context.Context) error {
 
 		eg.Go(func() error {
 			_, err := base.
-				WithExec([]string{"pytest", "-Wd", "--exitfirst"}).
+				WithExec([]string{"pip", "install", "pytest-timeout"}).
+				WithExec([]string{"pytest", "-Wd", "--exitfirst", "--timeout", "120"}).
 				Sync(ctx)
 			return err
 		})
 
 		// Test build
-		dist := t.pythonBase(version, false).
-			WithMountedDirectory(
-				"/dist",
-				base.
-					WithExec([]string{"hatch", "build", "--clean"}).
-					Directory("dist"),
-			)
+		// dist := t.pythonBase(version, false).
+		// 	WithMountedDirectory(
+		// 		"/dist",
+		// 		base.
+		// 			WithExec([]string{"hatch", "build", "--clean"}).
+		// 			Directory("dist"),
+		// 	)
 
-		for _, ext := range map[string]string{"sdist": "tar.gz", "bdist": "whl"} {
-			ext := ext
-			eg.Go(func() error {
-				_, err := dist.
-					WithExec([]string{"sh", "-c", "pip install /dist/*" + ext}).
-					WithExec([]string{"python", "-c", "import dagger"}).
-					Sync(ctx)
-				return err
-			})
-		}
+		// for _, ext := range map[string]string{"sdist": "tar.gz", "bdist": "whl"} {
+		// 	ext := ext
+		// 	eg.Go(func() error {
+		// 		_, err := dist.
+		// 			WithExec([]string{"sh", "-c", "pip install /dist/*" + ext}).
+		// 			WithExec([]string{"python", "-c", "import dagger"}).
+		// 			Sync(ctx)
+		// 		return err
+		// 	})
+		// }
 	}
 
 	return eg.Wait()

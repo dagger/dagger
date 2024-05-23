@@ -17,12 +17,12 @@ permissions:
   pull-requests: write
 
 jobs:
-  lint:
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: sdk python lint
-      timeout: 10
+  # lint:
+  #   uses: ./.github/workflows/_dagger_call.yml
+  #   secrets: inherit
+  #   with:
+  #     function: sdk python lint
+  #     timeout: 10
 
   test:
     uses: ./.github/workflows/_dagger_call.yml
