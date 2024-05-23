@@ -315,7 +315,7 @@ Example usage:
 dagger call get
 ```
 
-## Optimization
+## Optimizations
 
 ### Cache application dependencies
 
@@ -341,3 +341,11 @@ The following Dagger Function uses a cache volume for application dependencies. 
 
 </TabItem>
 </Tabs>
+
+Example usage:
+
+- Build an application using cached dependencies:
+
+    ```shell
+    dagger call build --source=.
+    ```
