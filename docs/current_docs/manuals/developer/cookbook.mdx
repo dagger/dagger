@@ -314,3 +314,30 @@ Example usage:
 ```shell
 dagger call get
 ```
+
+## Optimization
+
+### Cache application dependencies
+
+The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/cache-dependencies/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/cache-dependencies/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/cache-dependencies/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
