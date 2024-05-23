@@ -7,7 +7,7 @@ import (
 
 type MyModule struct{}
 
-// Returns a container with a specified file
+// Return a container with a specified file
 func (m *MyModule) CopyFile(ctx context.Context, f *File) *Container {
 	name, _ := f.Name(ctx)
 	return dag.Container().

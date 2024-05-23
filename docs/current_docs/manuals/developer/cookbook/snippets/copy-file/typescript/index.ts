@@ -3,7 +3,7 @@ import { dag, Container, File, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Returns a container with a specified file
+   * Return a container with a specified file
    */
   @func()
   async copyFile(f: File): Promise<Container> {
