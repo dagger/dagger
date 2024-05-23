@@ -122,9 +122,9 @@ The following code listing performs a multi-stage build.
 </Tabs>
 
 Example usage:
-
+Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
 ```shell
-dagger call build --dir "https://github.com/golang/example#master:hello"
+dagger call build --dir="https://github.com/golang/example#master:hello"
 ```
 
 {/* ### Perform matrix build 
