@@ -31,7 +31,6 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/dagger/dagger/telemetry/sdklog"
 )
@@ -294,10 +293,6 @@ func main() {
 		ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, "dagger")
 		rootCmd.SetOut(stdout)
 		rootCmd.SetErr(stderr)
-
-		if url, ok := telemetry.URLForTrace(ctx); ok {
-			slog.Info("Connected to cloud", "url", url)
-		}
 
 		return rootCmd.ExecuteContext(ctx)
 	}); err != nil {

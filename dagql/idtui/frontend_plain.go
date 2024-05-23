@@ -104,6 +104,18 @@ func NewPlain() Frontend {
 	}
 }
 
+func (fe *frontendPlain) ConnectedToEngine(name string, version string) {
+	if !fe.Silent {
+		slog.Info("Connected to engine", "name", name, "version", version)
+	}
+}
+
+func (fe *frontendPlain) ConnectedToCloud(url string) {
+	if !fe.Silent {
+		slog.Info("Connected to cloud", "url", url)
+	}
+}
+
 func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
 	fe.FrontendOpts = opts
 
