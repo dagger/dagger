@@ -805,6 +805,9 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			},
 		},
 	)
+	if err != nil {
+		return inst, fmt.Errorf("failed to load the context directory: %w", err)
+	}
 
 	if src.WithName != "" {
 		err = s.dag.Select(ctx, inst, &inst,
