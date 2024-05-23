@@ -11,7 +11,7 @@ import TabItem from "@theme/TabItem";
 
 ### Copy a local directory or remote repository to a container
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container and returns the modified container.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -36,19 +36,19 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 
 Example usage:
 
-- Copy the `/myapp` directory on the host to the `/src` directory in the container and return the modified container:
+- Copy the `/myapp` host directory to `/src` in the container and return the modified container:
 
     ```shell
     dagger call copy-directory --d=./myapp/
     ```
 
-- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the modified container:
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
 
     ```shell
     dagger call copy-directory --d=github.com/dagger/dagger#main
     ```
 
-- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and list the contents of the directory:
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
 
     ```shell
     dagger call \
@@ -59,10 +59,10 @@ Example usage:
 
 ### Copy a local directory or remote repository to a container and modify its contents
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path, adds a file to it, and then returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
 :::note
-When using a local directory, modifications made to the directory's contents after it is written to a container filesystem do not appear on the host. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the host, you must explicitly export the directory back to the host filesystem.
+Modifications made to a directory's contents after it is written to a container filesystem do not appear on the source. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory back to the host filesystem.
 :::
 
 <Tabs groupId="language">
@@ -88,19 +88,19 @@ When using a local directory, modifications made to the directory's contents aft
 
 Example usage:
 
-- Copy the `/myapp` directory on the host to the `/src` directory in the container, add a file to it, and return the modified container:
+- Copy the `/myapp` host directory to `/src` in the container, add a file to it, and return the modified container:
 
     ```shell
     dagger call copy-and-modify-directory --d=./myapp/
     ```
 
-- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the modified container:
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
 
     ```shell
     dagger call copy-and-modify-directory --d=github.com/dagger/dagger#main
     ```
 
-- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and list the contents of the directory:
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and list the contents of the directory:
 
     ```shell
     dagger call \
