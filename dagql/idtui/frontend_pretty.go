@@ -82,6 +82,14 @@ func New() Frontend {
 	}
 }
 
+func (fe *frontendPretty) ConnectedToEngine(name string, version string) {
+	// noisy, so suppress this for now
+}
+
+func (fe *frontendPretty) ConnectedToCloud(url string) {
+	// noisy, so suppress this for now
+}
+
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
@@ -120,10 +128,6 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	// return original err
 	return runErr
 }
-
-func (fe *frontendPretty) ConnectedToEngine(name string) {}
-
-func (fe *frontendPretty) ConnectedToCloud(cloudURL string) {}
 
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()

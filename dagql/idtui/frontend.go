@@ -48,6 +48,11 @@ type Frontend interface {
 	// Can consume otel spans and logs.
 	sdktrace.SpanExporter
 	sdklog.LogExporter
+
+	// ConnectedToEngine is called when the CLI connects to an engine.
+	ConnectedToEngine(name string, version string)
+	// ConnectedToCloud is called when the CLI has started emitting events to The Cloud.
+	ConnectedToCloud(url string)
 }
 
 // DumpID is exposed for troubleshooting.
