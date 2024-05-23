@@ -2,508 +2,617 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
-	"runtime"
-	"runtime/debug"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
-	"dagger.io/dagger/telemetry"
-	"github.com/99designs/gqlgen/graphql"
-	"github.com/99designs/gqlgen/graphql/handler"
-	"github.com/containerd/containerd/defaults"
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/content/local"
+	"github.com/containerd/containerd/diff/apply"
+	"github.com/containerd/containerd/diff/walking"
+	ctdmetadata "github.com/containerd/containerd/metadata"
+	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/containerd/remotes/docker"
+	ctdsnapshot "github.com/containerd/containerd/snapshots"
+	"github.com/containerd/go-runc"
+	controlapi "github.com/moby/buildkit/api/services/control"
+	apitypes "github.com/moby/buildkit/api/types"
+	bkcache "github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/cache/metadata"
 	"github.com/moby/buildkit/cache/remotecache"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/cache/remotecache/azblob"
+	"github.com/moby/buildkit/cache/remotecache/gha"
+	inlineremotecache "github.com/moby/buildkit/cache/remotecache/inline"
+	localremotecache "github.com/moby/buildkit/cache/remotecache/local"
+	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
+	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
+	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/cmd/buildkitd/config"
+	"github.com/moby/buildkit/executor/oci"
+	"github.com/moby/buildkit/frontend"
+	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/gateway"
+	"github.com/moby/buildkit/frontend/gateway/forwarder"
+	bksession "github.com/moby/buildkit/session"
+	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
+	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/bboltcachestorage"
+	"github.com/moby/buildkit/solver/llbsolver/mounts"
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/source"
+	srcgit "github.com/moby/buildkit/source/git"
+	srchttp "github.com/moby/buildkit/source/http"
+	"github.com/moby/buildkit/util/archutil"
+	"github.com/moby/buildkit/util/entitlements"
+	"github.com/moby/buildkit/util/leaseutil"
+	"github.com/moby/buildkit/util/network"
+	"github.com/moby/buildkit/util/network/cniprovider"
+	"github.com/moby/buildkit/util/network/netproviders"
+	"github.com/moby/buildkit/util/resolver"
+	"github.com/moby/buildkit/util/throttle"
+	"github.com/moby/buildkit/util/winlayers"
+	"github.com/moby/buildkit/version"
+	bkworker "github.com/moby/buildkit/worker"
+	"github.com/moby/buildkit/worker/base"
+	wlabel "github.com/moby/buildkit/worker/label"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
-	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
+	bolt "go.etcd.io/bbolt"
+	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"golang.org/x/sync/semaphore"
+	"google.golang.org/grpc"
 
-	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/cache"
+	daggercache "github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/dagger/dagger/engine/sources/httpdns"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
-type DaggerServer struct {
-	serverID string
-	traceID  trace.TraceID
+const (
+	daggerCacheServiceURL = "https://api.dagger.cloud/magicache"
+)
 
-	clientIDToSecretToken map[string]string
-	connectedClients      int
-	clientIDMu            sync.RWMutex
+type Server struct {
+	engineName string
 
-	// The metadata of client calls.
-	// This is never explicitly deleted from; instead it will just be garbage collected
-	// when this server for the session shuts down
-	clientCallContext map[string]*core.ClientCallContext
-	clientCallMu      *sync.RWMutex
+	//
+	// state directory/db paths
+	//
 
-	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
-	endpoints  map[string]http.Handler
-	endpointMu *sync.RWMutex
+	rootDir           string
+	solverCacheDBPath string
 
-	services *core.Services
+	workerRootDir         string
+	snapshotterRootDir    string
+	contentStoreRootDir   string
+	containerdMetaDBPath  string
+	workerCacheMetaDBPath string
+	buildkitMountPoolDir  string
+	executorRootDir       string
 
-	pubsub    *enginetel.PubSub
-	analytics analytics.Tracker
+	//
+	// buildkit+containerd entities/DBs
+	//
 
-	doneCh    chan struct{}
-	closeOnce sync.Once
+	baseWorker          *base.Worker
+	worker              *buildkit.Worker
+	workerCacheMetaDB   *metadata.Store
+	workerCache         bkcache.Manager
+	workerSourceManager *source.Manager
 
-	mainClientCallerID        string
-	upstreamCacheExporterCfgs []bkgw.CacheOptionsEntry
-	upstreamCacheExporters    map[string]remotecache.ResolveCacheExporterFunc
+	bkSessionManager *bksession.Manager
+
+	solver        *solver.Solver
+	solverCacheDB *bboltcachestorage.Store
+	SolverCache   daggercache.Manager
+
+	containerdMetaBoltDB *bolt.DB
+	containerdMetaDB     *ctdmetadata.DB
+	localContentStore    content.Store
+	contentStore         *containerdsnapshot.Store
+
+	snapshotter     ctdsnapshot.Snapshotter
+	snapshotterName string
+	leaseManager    *leaseutil.Manager
+
+	frontends map[string]frontend.Frontend
+
+	cacheExporters map[string]remotecache.ResolveCacheExporterFunc
+	cacheImporters map[string]remotecache.ResolveCacheImporterFunc
+
+	//
+	// worker/executor-specific config+state
+	//
+
+	runc             *runc.Runc
+	cgroupParent     string
+	networkProviders map[pb.NetMode]network.Provider
+	processMode      oci.ProcessMode
+	dns              *oci.DNSConfig
+	apparmorProfile  string
+	selinux          bool
+	entitlements     entitlements.Set
+	parallelismSem   *semaphore.Weighted
+	enabledPlatforms []ocispecs.Platform
+	defaultPlatform  ocispecs.Platform
+	registryHosts    docker.RegistryHosts
+
+	//
+	// telemetry config+state
+	//
+
+	telemetryPubSub *enginetel.PubSub
+	buildkitLogSink io.Writer
+
+	//
+	// gc related
+	//
+	throttledGC func()
+	gcmu        sync.Mutex
+
+	//
+	// session+client state
+	//
+	daggerSessions   map[string]*daggerSession // session id -> session state
+	daggerSessionsMu sync.RWMutex
 }
 
-func (e *Engine) newDaggerServer(ctx context.Context, clientMetadata *engine.ClientMetadata) (*DaggerServer, error) {
-	s := &DaggerServer{
-		serverID: clientMetadata.ServerID,
+type NewServerOpts struct {
+	Config *config.Config
+	Name   string
 
-		clientIDToSecretToken: map[string]string{},
-		clientCallContext:     map[string]*core.ClientCallContext{},
-		clientCallMu:          &sync.RWMutex{},
-		endpoints:             map[string]http.Handler{},
-		endpointMu:            &sync.RWMutex{},
+	TelemetryPubSub *enginetel.PubSub
+}
 
-		doneCh: make(chan struct{}, 1),
+//nolint:gocyclo
+func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
+	cfg := opts.Config
+	ociCfg := cfg.Workers.OCI
 
-		pubsub: e.telemetryPubSub,
+	srv := &Server{
+		engineName: opts.Name,
 
-		services: core.NewServices(),
+		rootDir: cfg.Root,
 
-		mainClientCallerID:     clientMetadata.ClientID,
-		upstreamCacheExporters: e.cacheExporters,
-	}
+		frontends: map[string]frontend.Frontend{},
 
-	if traceID := trace.SpanContextFromContext(ctx).TraceID(); traceID.IsValid() {
-		s.traceID = traceID
-	} else {
-		slog.Warn("invalid traceID", "traceID", traceID.String())
-	}
-
-	labels := enginetel.Labels(clientMetadata.Labels).
-		WithEngineLabel(e.engineName).
-		WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
-			e.SolverCache.ID() != cache.LocalCacheID)
-
-	s.analytics = analytics.New(analytics.Config{
-		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
-		Labels:     labels,
-		CloudToken: clientMetadata.CloudToken,
-	})
-
-	getSessionCtx, getSessionCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer getSessionCancel()
-	sessionCaller, err := e.bkSessionManager.Get(getSessionCtx, clientMetadata.BuildkitSessionID(), false)
-	if err != nil {
-		return nil, fmt.Errorf("get session: %w", err)
-	}
-
-	secretStore := core.NewSecretStore()
-	authProvider := auth.NewRegistryAuthProvider()
-
-	cacheImporterCfgs := make([]bkgw.CacheOptionsEntry, 0, len(clientMetadata.UpstreamCacheImportConfig))
-	for _, cacheImportCfg := range clientMetadata.UpstreamCacheImportConfig {
-		_, ok := e.cacheImporters[cacheImportCfg.Type]
-		if !ok {
-			return nil, fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
-		}
-		cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
-			Type:  cacheImportCfg.Type,
-			Attrs: cacheImportCfg.Attrs,
-		})
-	}
-	for _, cacheExportCfg := range clientMetadata.UpstreamCacheExportConfig {
-		_, ok := e.cacheExporters[cacheExportCfg.Type]
-		if !ok {
-			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
-		}
-		s.upstreamCacheExporterCfgs = append(s.upstreamCacheExporterCfgs, bkgw.CacheOptionsEntry{
-			Type:  cacheExportCfg.Type,
-			Attrs: cacheExportCfg.Attrs,
-		})
-	}
-
-	root, err := core.NewRoot(ctx, core.QueryOpts{
-		BuildkitOpts: &buildkit.Opts{
-			ServerID: s.serverID,
-
-			Worker:         e.worker,
-			SessionManager: e.bkSessionManager,
-			GenericSolver:  e.solver,
-			CacheManager:   e.SolverCache,
-
-			Entitlements: e.entitlements,
-
-			SecretStore:  secretStore,
-			AuthProvider: authProvider,
-
-			UpstreamCacheImporters: e.cacheImporters,
-			UpstreamCacheImports:   cacheImporterCfgs,
-
-			MainClientCaller: sessionCaller,
-			DNSConfig:        e.dns,
-			Frontends:        e.frontends,
-			BuildkitLogSink:  e.buildkitLogSink,
+		cgroupParent:    ociCfg.DefaultCgroupParent,
+		processMode:     oci.ProcessSandbox,
+		apparmorProfile: ociCfg.ApparmorProfile,
+		selinux:         ociCfg.SELinux,
+		entitlements:    entitlements.Set{},
+		dns: &oci.DNSConfig{
+			Nameservers:   cfg.DNS.Nameservers,
+			Options:       cfg.DNS.Options,
+			SearchDomains: cfg.DNS.SearchDomains,
 		},
-		Services: s.services,
-		// TODO: double check the first platform is always right
-		// TODO: double check the first platform is always right
-		// TODO: double check the first platform is always right
-		// TODO: double check the first platform is always right
-		Platform:           core.Platform(e.enabledPlatforms[0]),
-		Secrets:            secretStore,
-		OCIStore:           e.contentStore,
-		LeaseManager:       e.leaseManager,
-		Auth:               authProvider,
-		ClientCallContext:  s.clientCallContext,
-		ClientCallMu:       s.clientCallMu,
-		MainClientCallerID: s.mainClientCallerID,
-		Endpoints:          s.endpoints,
-		EndpointMu:         s.endpointMu,
-	})
+
+		telemetryPubSub: opts.TelemetryPubSub,
+
+		daggerSessions: make(map[string]*daggerSession),
+	}
+
+	//
+	// setup directories and paths
+	//
+
+	var err error
+	srv.rootDir, err = filepath.Abs(srv.rootDir)
 	if err != nil {
 		return nil, err
 	}
-
-	dag := dagql.NewServer(root)
-
-	// stash away the cache so we can share it between other servers
-	root.Cache = dag.Cache
-
-	dag.Around(core.AroundFunc)
-
-	coreMod := &schema.CoreMod{Dag: dag}
-	root.DefaultDeps = core.NewModDeps(root, []core.Mod{coreMod})
-	if err := coreMod.Install(ctx, dag); err != nil {
-		return nil, err
-	}
-
-	// the main client caller starts out with the core API loaded
-	s.clientCallContext[s.mainClientCallerID] = &core.ClientCallContext{
-		Deps: root.DefaultDeps,
-		Root: root,
-	}
-
-	return s, nil
-}
-
-func (s *DaggerServer) ServeClientConn(
-	ctx context.Context,
-	clientMetadata *engine.ClientMetadata,
-	conn net.Conn,
-) error {
-	bklog.G(ctx).Trace("serve client conn")
-	defer bklog.G(ctx).Trace("done serving client conn")
-
-	s.clientIDMu.Lock()
-	s.connectedClients++
-	defer func() {
-		s.clientIDMu.Lock()
-		s.connectedClients--
-		s.clientIDMu.Unlock()
-	}()
-	s.clientIDMu.Unlock()
-
-	conn = newLogicalDeadlineConn(splitWriteConn{nopCloserConn{conn}, defaults.DefaultMaxSendMsgSize * 95 / 100})
-	l := &singleConnListener{conn: conn, closeCh: make(chan struct{})}
-	go func() {
-		<-ctx.Done()
-		l.Close()
-	}()
-
-	httpSrv := http.Server{
-		Handler:           s,
-		ReadHeaderTimeout: 30 * time.Second,
-		BaseContext: func(net.Listener) context.Context {
-			// FIXME(vito) not sure if this is right, being conservative and
-			// respecting original context.Background(). later things added to ctx
-			// might be redundant, or maybe we're OK with propagating cancellation
-			// too (seems less likely considering how delicate draining events is).
-			ctx := context.WithoutCancel(ctx)
-			ctx = bklog.WithLogger(ctx, bklog.G(ctx))
-			ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
-			ctx = analytics.WithContext(ctx, s.analytics)
-			return ctx
-		},
-	}
-	defer httpSrv.Close()
-	return httpSrv.Serve(l)
-}
-
-func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
-	// are checked by gqlgen's handler
-	bklog.G(ctx).WithFields(logrus.Fields{
-		"path":          r.URL.Path,
-		"method":        r.Method,
-		"upgradeHeader": r.Header.Get("Upgrade"),
-		"contentType":   r.Header.Get("Content-Type"),
-	}).Debug("handling http request")
-
-	// propagate span context from the client (i.e. for Dagger-in-Dagger)
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
-
-	errorOut := func(err error, code int) {
-		bklog.G(ctx).WithError(err).Error("failed to serve request")
-		http.Error(w, err.Error(), code)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		errorOut(err, http.StatusInternalServerError)
-		return
-	}
-
-	callContext, ok := s.ClientCallContext(clientMetadata.ClientID)
-	if !ok {
-		errorOut(fmt.Errorf("client call for %s not found", clientMetadata.ClientID), http.StatusInternalServerError)
-		return
-	}
-
-	s.clientCallMu.RLock()
-	schema, err := callContext.Deps.Schema(ctx)
-	if err != nil {
-		s.clientCallMu.RUnlock()
-		// TODO: technically this is not *always* bad request, should ideally be more specific and differentiate
-		errorOut(err, http.StatusBadRequest)
-		return
-	}
-	s.clientCallMu.RUnlock()
-
-	defer func() {
-		if v := recover(); v != nil {
-			bklog.G(context.TODO()).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			// check whether this is a hijacked connection, if so we can't write any http errors to it
-			_, err := w.Write(nil)
-			if err == http.ErrHijacked {
-				return
-			}
-			gqlErr := &gqlerror.Error{
-				Message: "Internal Server Error",
-			}
-			code := http.StatusInternalServerError
-			switch v := v.(type) {
-			case error:
-				gqlErr.Err = v
-				gqlErr.Message = v.Error()
-			case string:
-				gqlErr.Message = v
-			}
-			res := graphql.Response{
-				Errors: gqlerror.List{gqlErr},
-			}
-			bytes, err := json.Marshal(res)
-			if err != nil {
-				panic(err)
-			}
-			http.Error(w, string(bytes), code)
-		}
-	}()
-
-	srv := handler.NewDefaultServer(schema)
-	// NB: break glass when needed:
-	// srv.AroundResponses(func(ctx context.Context, next graphql.ResponseHandler) *graphql.Response {
-	// 	res := next(ctx)
-	// 	pl, err := json.Marshal(res)
-	// 	slog.Debug("graphql response", "response", string(pl), "error", err)
-	// 	return res
-	// })
-	mux := http.NewServeMux()
-
-	mux.Handle("/query", srv)
-
-	mux.Handle("/shutdown", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := req.Context()
-
-		immediate := req.URL.Query().Get("immediate") == "true"
-
-		slog := slog.With(
-			"isImmediate", immediate,
-			"isMainClient", clientMetadata.ClientID == s.mainClientCallerID,
-			"serverID", s.serverID,
-			"traceID", s.traceID,
-			"clientID", clientMetadata.ClientID,
-			"mainClientID", s.mainClientCallerID)
-
-		slog.Trace("shutting down server")
-		defer slog.Trace("done shutting down server")
-
-		if clientMetadata.ClientID == s.mainClientCallerID {
-			// Stop services, since the main client is going away, and we
-			// want the client to see them stop.
-			s.services.StopClientServices(ctx, s.serverID)
-
-			// Start draining telemetry
-			s.pubsub.Drain(s.mainClientCallerID, immediate)
-
-			if len(s.upstreamCacheExporterCfgs) > 0 {
-				bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)
-				cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(s.upstreamCacheExporterCfgs))
-				for i, cacheExportCfg := range s.upstreamCacheExporterCfgs {
-					cacheExportCfg := cacheExportCfg
-					cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
-						exporterFunc, ok := s.upstreamCacheExporters[cacheExportCfg.Type]
-						if !ok {
-							return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
-						}
-						return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
-					}
-				}
-				s.clientCallMu.RLock()
-				bk := s.clientCallContext[s.mainClientCallerID].Root.Buildkit
-				s.clientCallMu.RUnlock()
-				err := bk.UpstreamCacheExport(ctx, cacheExporterFuncs)
-				if err != nil {
-					bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", clientMetadata.ClientID)
-				}
-				bklog.G(ctx).Debugf("done running cache export for client %s", clientMetadata.ClientID)
-			}
-		}
-
-		telemetry.Flush(ctx)
-	}))
-
-	s.endpointMu.RLock()
-	for path, handler := range s.endpoints {
-		mux.Handle(path, handler)
-	}
-	s.endpointMu.RUnlock()
-
-	r = r.WithContext(ctx)
-
-	var handler http.Handler = mux
-	handler = flushAfterNBytes(buildkit.MaxFileContentsChunkSize)(handler)
-	handler.ServeHTTP(w, r)
-}
-
-func (s *DaggerServer) RegisterClient(clientID, clientHostname, secretToken string) error {
-	s.clientIDMu.Lock()
-	defer s.clientIDMu.Unlock()
-	existingToken, ok := s.clientIDToSecretToken[clientID]
-	if ok {
-		if existingToken != secretToken {
-			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
-		}
-		return nil
-	}
-	s.clientIDToSecretToken[clientID] = secretToken
-
-	return nil
-}
-
-func (s *DaggerServer) VerifyClient(clientID, secretToken string) error {
-	s.clientIDMu.RLock()
-	defer s.clientIDMu.RUnlock()
-	existingToken, ok := s.clientIDToSecretToken[clientID]
-	if !ok {
-		return fmt.Errorf("client ID %q not registered", clientID)
-	}
-	if existingToken != secretToken {
-		return fmt.Errorf("client ID %q registered with different secret token", clientID)
-	}
-	return nil
-}
-
-func (s *DaggerServer) ClientCallContext(clientID string) (*core.ClientCallContext, bool) {
-	s.clientCallMu.RLock()
-	defer s.clientCallMu.RUnlock()
-	ctx, ok := s.clientCallContext[clientID]
-	return ctx, ok
-}
-
-func (s *DaggerServer) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error) {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	srv.rootDir, err = filepath.EvalSymlinks(srv.rootDir)
 	if err != nil {
 		return nil, err
 	}
-	callCtx, ok := s.ClientCallContext(clientMetadata.ClientID)
-	if !ok {
-		return nil, fmt.Errorf("client call for %s not found", clientMetadata.ClientID)
+	srv.solverCacheDBPath = filepath.Join(srv.rootDir, "cache.db")
+
+	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
+	if err := os.MkdirAll(srv.workerRootDir, 0700); err != nil {
+		return nil, err
 	}
-	return callCtx.Deps, nil
-}
+	srv.snapshotterRootDir = filepath.Join(srv.workerRootDir, "snapshots")
+	srv.contentStoreRootDir = filepath.Join(srv.workerRootDir, "content")
+	srv.containerdMetaDBPath = filepath.Join(srv.workerRootDir, "containerdmeta.db")
+	srv.workerCacheMetaDBPath = filepath.Join(srv.workerRootDir, "metadata_v2.db")
+	srv.buildkitMountPoolDir = filepath.Join(srv.workerRootDir, "cachemounts")
 
-func (s *DaggerServer) LogMetrics(l *logrus.Entry) *logrus.Entry {
-	s.clientIDMu.RLock()
-	defer s.clientIDMu.RUnlock()
-	return l.WithField(fmt.Sprintf("server-%s-client-count", s.serverID), s.connectedClients)
-}
-
-func (s *DaggerServer) Close(ctx context.Context) error {
-	defer s.closeOnce.Do(func() {
-		close(s.doneCh)
-	})
-
-	var errs error
-
-	slog.ExtraDebug("server closing; stopping client services and flushing", "server", s.serverID, "trace", s.traceID)
-
-	if err := s.services.StopClientServices(ctx, s.serverID); err != nil {
-		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
+	srv.executorRootDir = filepath.Join(srv.workerRootDir, "executor")
+	if err := os.MkdirAll(srv.executorRootDir, 0o711); err != nil {
+		return nil, err
 	}
+	// clean up old hosts/resolv.conf file. ignore errors
+	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
+	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
 
-	s.clientCallMu.RLock()
-	for _, callCtx := range s.clientCallContext {
-		errs = errors.Join(errs, callCtx.Root.Buildkit.Close())
-	}
-	s.clientCallMu.RUnlock()
+	//
+	// setup config derived from engine config
+	//
 
-	// close the analytics recorder
-	errs = errors.Join(errs, s.analytics.Close())
-
-	telemetry.Flush(ctx)
-
-	return errs
-}
-
-func (s *DaggerServer) Wait(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-s.doneCh:
-		return nil
-	}
-}
-
-type splitWriteConn struct {
-	net.Conn
-	maxMsgSize int
-}
-
-func (r splitWriteConn) Write(b []byte) (n int, err error) {
-	for {
-		if len(b) == 0 {
-			return
-		}
-
-		var bnext []byte
-		if len(b) > r.maxMsgSize {
-			b, bnext = b[:r.maxMsgSize], b[r.maxMsgSize:]
-		}
-
-		n2, err := r.Conn.Write(b)
-		n += n2
+	for _, entStr := range cfg.Entitlements {
+		ent, err := entitlements.Parse(entStr)
 		if err != nil {
-			return n, err
+			return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
 		}
-
-		b = bnext
+		srv.entitlements[ent] = struct{}{}
 	}
+
+	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())
+	if platformsStr := ociCfg.Platforms; len(platformsStr) != 0 {
+		var err error
+		srv.enabledPlatforms, err = parsePlatforms(platformsStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid platforms: %w", err)
+		}
+	}
+	if len(srv.enabledPlatforms) == 0 {
+		srv.enabledPlatforms = []ocispecs.Platform{srv.defaultPlatform}
+	}
+
+	srv.registryHosts = resolver.NewRegistryConfig(cfg.Registries)
+
+	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
+		srv.buildkitLogSink = os.Stderr
+	}
+
+	//
+	// setup various buildkit/containerd entities and DBs
+	//
+
+	srv.bkSessionManager, err = bksession.NewManager()
+	if err != nil {
+		return nil, err
+	}
+
+	srv.snapshotter, srv.snapshotterName, err = newSnapshotter(srv.snapshotterRootDir, ociCfg, srv.bkSessionManager, srv.registryHosts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
+	}
+
+	srv.localContentStore, err = local.NewStore(srv.contentStoreRootDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create content store: %w", err)
+	}
+
+	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open metadata db: %w", err)
+	}
+
+	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
+		srv.snapshotterName: srv.snapshotter,
+	})
+	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
+		return nil, fmt.Errorf("failed to init metadata db: %w", err)
+	}
+
+	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
+	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metadata store: %w", err)
+	}
+
+	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "buildkit")
+
+	//
+	// setup worker+executor
+	//
+
+	srv.runc = &runc.Runc{
+		Command:      distconsts.RuncPath,
+		Log:          filepath.Join(srv.executorRootDir, "runc-log.json"),
+		LogFormat:    runc.JSON,
+		Setpgid:      true,
+		PdeathSignal: syscall.SIGKILL,
+	}
+
+	var npResolvedMode string
+	srv.networkProviders, npResolvedMode, err = netproviders.Providers(netproviders.Opt{
+		Mode: cfg.Workers.OCI.NetworkConfig.Mode,
+		CNI: cniprovider.Opt{
+			Root:       srv.rootDir,
+			ConfigPath: cfg.Workers.OCI.CNIConfigPath,
+			BinaryDir:  cfg.Workers.OCI.CNIBinaryPath,
+			PoolSize:   cfg.Workers.OCI.CNIPoolSize,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create network providers: %w", err)
+	}
+
+	if ociCfg.MaxParallelism > 0 {
+		srv.parallelismSem = semaphore.NewWeighted(int64(ociCfg.MaxParallelism))
+		ociCfg.Labels["maxParallelism"] = strconv.Itoa(ociCfg.MaxParallelism)
+	}
+
+	baseLabels := map[string]string{
+		wlabel.Executor:       "oci",
+		wlabel.Snapshotter:    srv.snapshotterName,
+		wlabel.Network:        npResolvedMode,
+		wlabel.OCIProcessMode: srv.processMode.String(),
+		wlabel.SELinuxEnabled: strconv.FormatBool(ociCfg.SELinux),
+	}
+	if ociCfg.ApparmorProfile != "" {
+		baseLabels[wlabel.ApparmorProfile] = ociCfg.ApparmorProfile
+	}
+	if hostname, err := os.Hostname(); err != nil {
+		baseLabels[wlabel.Hostname] = "unknown"
+	} else {
+		baseLabels[wlabel.Hostname] = hostname
+	}
+	for k, v := range ociCfg.Labels {
+		baseLabels[k] = v
+	}
+	workerID, err := base.ID(srv.workerRootDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get worker ID: %w", err)
+	}
+
+	srv.baseWorker, err = base.NewWorker(ctx, base.WorkerOpt{
+		ID:        workerID,
+		Labels:    baseLabels,
+		Platforms: srv.enabledPlatforms,
+		GCPolicy:  getGCPolicy(ociCfg.GCConfig, srv.rootDir),
+		BuildkitVersion: bkclient.BuildkitVersion{
+			Package:  version.Package,
+			Version:  version.Version,
+			Revision: version.Revision,
+		},
+		NetworkProviders: srv.networkProviders,
+		Executor:         nil, // not needed yet, set in clientWorker
+		Snapshotter: containerdsnapshot.NewSnapshotter(
+			srv.snapshotterName,
+			srv.containerdMetaDB.Snapshotter(srv.snapshotterName),
+			"buildkit",
+			nil, // no idmapping
+		),
+		ContentStore:    srv.contentStore,
+		Applier:         winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:          winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		ImageStore:      nil, // explicitly, because that's what upstream does too
+		RegistryHosts:   srv.registryHosts,
+		IdentityMapping: nil, // no idmapping
+		LeaseManager:    srv.leaseManager,
+		GarbageCollect:  srv.containerdMetaDB.GarbageCollect,
+		ParallelismSem:  srv.parallelismSem,
+		MetadataStore:   srv.workerCacheMetaDB,
+		MountPoolRoot:   srv.buildkitMountPoolDir,
+		ResourceMonitor: nil, // we don't use it
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create base worker: %w", err)
+	}
+	srv.workerCache = srv.baseWorker.CacheMgr
+	srv.workerSourceManager = srv.baseWorker.SourceManager
+
+	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
+	archutil.WarnIfUnsupported(srv.enabledPlatforms)
+
+	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
+	hs, err := httpdns.NewSource(httpdns.Opt{
+		Opt: srchttp.Opt{
+			CacheAccessor: srv.workerCache,
+		},
+		BaseDNSConfig: srv.dns,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(hs)
+
+	gs, err := gitdns.NewSource(gitdns.Opt{
+		Opt: srcgit.Opt{
+			CacheAccessor: srv.workerCache,
+		},
+		BaseDNSConfig: srv.dns,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(gs)
+
+	bs, err := blob.NewSource(blob.Opt{
+		CacheAccessor: srv.workerCache,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(bs)
+
+	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
+		WorkerRoot:       srv.workerRootDir,
+		ExecutorRoot:     srv.executorRootDir,
+		BaseWorker:       srv.baseWorker,
+		TelemetryPubSub:  srv.telemetryPubSub,
+		BKSessionManager: srv.bkSessionManager,
+		SessionHandler:   srv,
+
+		Runc:                srv.runc,
+		DefaultCgroupParent: srv.cgroupParent,
+		ProcessMode:         srv.processMode,
+		IDMapping:           nil, // no idmapping
+		DNSConfig:           srv.dns,
+		ApparmorProfile:     srv.apparmorProfile,
+		SELinux:             srv.selinux,
+		Entitlements:        srv.entitlements,
+		NetworkProviders:    srv.networkProviders,
+		ParallelismSem:      srv.parallelismSem,
+		WorkerCache:         srv.workerCache,
+	})
+
+	//
+	// setup solver
+	//
+
+	baseWorkerController, err := buildkit.AsWorkerController(srv.worker)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create worker controller: %w", err)
+	}
+	srv.frontends["dockerfile.v0"] = forwarder.NewGatewayForwarder(baseWorkerController.Infos(), dockerfile.Build)
+	frontendGateway, err := gateway.NewGatewayFrontend(baseWorkerController.Infos(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gateway frontend: %w", err)
+	}
+	srv.frontends["gateway.v0"] = frontendGateway
+
+	srv.solverCacheDB, err = bboltcachestorage.NewStore(srv.solverCacheDBPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
+	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
+	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
+	// TODO: deprecate in a future release
+	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
+		cacheServiceToken = v
+	}
+
+	if cacheServiceURL == "" {
+		cacheServiceURL = daggerCacheServiceURL
+	}
+	srv.SolverCache, err = daggercache.NewManager(ctx, daggercache.ManagerConfig{
+		KeyStore:     srv.solverCacheDB,
+		ResultStore:  bkworker.NewCacheResultStorage(baseWorkerController),
+		Worker:       srv.baseWorker,
+		MountManager: mounts.NewMountManager("dagger-cache", srv.workerCache, srv.bkSessionManager),
+		ServiceURL:   cacheServiceURL,
+		Token:        cacheServiceToken,
+		EngineID:     opts.Name,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	srv.cacheExporters = map[string]remotecache.ResolveCacheExporterFunc{
+		"registry": registryremotecache.ResolveCacheExporterFunc(srv.bkSessionManager, srv.registryHosts),
+		"local":    localremotecache.ResolveCacheExporterFunc(srv.bkSessionManager),
+		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
+		"gha":      gha.ResolveCacheExporterFunc(),
+		"s3":       s3remotecache.ResolveCacheExporterFunc(),
+		"azblob":   azblob.ResolveCacheExporterFunc(),
+	}
+	srv.cacheImporters = map[string]remotecache.ResolveCacheImporterFunc{
+		"registry": registryremotecache.ResolveCacheImporterFunc(srv.bkSessionManager, srv.contentStore, srv.registryHosts),
+		"local":    localremotecache.ResolveCacheImporterFunc(srv.bkSessionManager),
+		"gha":      gha.ResolveCacheImporterFunc(),
+		"s3":       s3remotecache.ResolveCacheImporterFunc(),
+		"azblob":   azblob.ResolveCacheImporterFunc(),
+	}
+
+	srv.solver = solver.NewSolver(solver.SolverOpt{
+		ResolveOpFunc: func(vtx solver.Vertex, builder solver.Builder) (solver.Op, error) {
+			// passing nil bridge since it's only needed for BuildOp, which is never used and
+			// never should be used (it's a legacy API)
+			return srv.worker.ResolveOp(vtx, nil, srv.bkSessionManager)
+		},
+		DefaultCache: srv.SolverCache,
+	})
+
+	srv.throttledGC = throttle.After(time.Minute, srv.gc)
+	defer func() {
+		time.AfterFunc(time.Second, srv.throttledGC)
+	}()
+
+	return srv, nil
+}
+
+func (srv *Server) Close() error {
+	err := srv.baseWorker.Close()
+
+	// note this *could* cause a panic in Session if it was still running, so
+	// the server should be shutdown first
+	srv.daggerSessionsMu.Lock()
+	daggerSessions := srv.daggerSessions
+	srv.daggerSessions = nil
+	srv.daggerSessionsMu.Unlock()
+
+	for _, s := range daggerSessions {
+		s.stateMu.Lock()
+		err = errors.Join(err, srv.removeDaggerSession(context.Background(), s))
+		s.stateMu.Unlock()
+	}
+	return err
+}
+
+func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
+	return &controlapi.InfoResponse{
+		BuildkitVersion: &apitypes.BuildkitVersion{
+			Package:  engine.Package,
+			Version:  engine.Version,
+			Revision: srv.engineName,
+		},
+	}, nil
+}
+
+func (srv *Server) ListWorkers(context.Context, *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
+	resp := &controlapi.ListWorkersResponse{
+		Record: []*apitypes.WorkerRecord{{
+			ID:        srv.worker.ID(),
+			Labels:    srv.worker.Labels(),
+			Platforms: pb.PlatformsFromSpec(srv.enabledPlatforms),
+		}},
+	}
+	return resp, nil
+}
+
+func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
+	srv.daggerSessionsMu.RLock()
+	defer srv.daggerSessionsMu.RUnlock()
+	l = l.WithField("dagger-session-count", len(srv.daggerSessions))
+	/* TODO: FIX
+	for _, s := range srv.daggerSessions {
+		l = s.LogMetrics(l)
+	}
+	*/
+	return l
+}
+
+func (srv *Server) Register(server *grpc.Server) {
+	controlapi.RegisterControlServer(server, srv)
+
+	traceSrv := &enginetel.TraceServer{PubSub: srv.telemetryPubSub}
+	tracev1.RegisterTraceServiceServer(server, traceSrv)
+	enginetel.RegisterTracesSourceServer(server, traceSrv)
+
+	logsSrv := &enginetel.LogsServer{PubSub: srv.telemetryPubSub}
+	logsv1.RegisterLogsServiceServer(server, logsSrv)
+	enginetel.RegisterLogsSourceServer(server, logsSrv)
+
+	metricsSrv := &enginetel.MetricsServer{PubSub: srv.telemetryPubSub}
+	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
+	enginetel.RegisterMetricsSourceServer(server, metricsSrv)
+}
+
+func (srv *Server) Session(controlapi.Control_SessionServer) error {
+	return fmt.Errorf("session not implemented")
+}
+
+func (srv *Server) Solve(context.Context, *controlapi.SolveRequest) (*controlapi.SolveResponse, error) {
+	return nil, fmt.Errorf("solve not implemented")
+}
+
+func (srv *Server) Status(*controlapi.StatusRequest, controlapi.Control_StatusServer) error {
+	return fmt.Errorf("status not implemented")
+}
+
+func (srv *Server) ListenBuildHistory(*controlapi.BuildHistoryRequest, controlapi.Control_ListenBuildHistoryServer) error {
+	return fmt.Errorf("listen build history not implemented")
+}
+
+func (srv *Server) UpdateBuildHistory(context.Context, *controlapi.UpdateBuildHistoryRequest) (*controlapi.UpdateBuildHistoryResponse, error) {
+	return nil, fmt.Errorf("update build history not implemented")
 }

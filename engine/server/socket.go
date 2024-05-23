@@ -1,10 +1,11 @@
-package buildkit
+package server
 
 import (
 	"context"
 	"fmt"
 	"net/url"
 
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
@@ -14,7 +15,8 @@ import (
 )
 
 type socketProxy struct {
-	c *Client
+	c                *daggerClient
+	bkSessionManager *bksession.Manager
 }
 
 func (p *socketProxy) Register(srv *grpc.Server) {
@@ -45,13 +47,18 @@ func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) err
 		}
 	}
 
-	caller := p.c.MainClientCaller
+	var caller bksession.Caller
+	var err error
 	if connURL != nil && connURL.Fragment != "" {
 		sessionID := connURL.Fragment
-		var err error
-		caller, err = p.c.SessionManager.Get(ctx, sessionID, true)
+		caller, err = p.bkSessionManager.Get(ctx, sessionID, true)
 		if err != nil {
 			return fmt.Errorf("failed to get session: %w", err)
+		}
+	} else {
+		caller, err = p.c.getMainClientCaller()
+		if err != nil {
+			return fmt.Errorf("failed to get main client caller: %w", err)
 		}
 	}
 

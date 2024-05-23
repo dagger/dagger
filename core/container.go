@@ -301,7 +301,7 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve image %s: %w", ref, err)
 	}
 
 	digested, err := reference.WithDigest(refName, digest)

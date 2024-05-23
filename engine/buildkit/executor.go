@@ -41,8 +41,15 @@ import (
 )
 
 type ExecutionMetadata struct {
-	ClientID string
-	ServerID string
+	ClientID    string
+	SessionID   string
+	SecretToken string
+	Hostname    string
+
+	EncodedModuleID     string
+	EncodedFunctionCall json.RawMessage
+
+	CachePerSession bool
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
@@ -54,8 +61,6 @@ type ExecutionMetadata struct {
 	SecretFilePaths []string
 
 	SystemEnvNames []string
-
-	OTelEnvs []string
 
 	EnabledGPUs []string
 
@@ -150,7 +155,7 @@ func (w *Worker) run(
 		w.mu.Unlock()
 
 		close(state.done)
-		if err := state.cleanups.run(); err != nil {
+		if err := state.cleanups.Run(); err != nil {
 			bklog.G(ctx).Errorf("executor run failed to cleanup: %v", err)
 			rerr = errors.Join(rerr, err)
 		}
@@ -231,7 +236,7 @@ type Namespaced interface {
 
 type networkNamespace struct {
 	id      string
-	cleanup *cleanups
+	cleanup *Cleanups
 }
 
 var _ Namespaced = (*networkNamespace)(nil)
@@ -241,7 +246,7 @@ func (n *networkNamespace) NamespaceID() string {
 }
 
 func (n *networkNamespace) Release(_ context.Context) error {
-	return n.cleanup.run()
+	return n.cleanup.Run()
 }
 
 func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNamespace, rerr error) {
@@ -250,10 +255,10 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		return nil, fmt.Errorf("no default network provider found")
 	}
 
-	cleanup := &cleanups{}
+	cleanup := &Cleanups{}
 	defer func() {
 		if rerr != nil {
-			rerr = errors.Join(rerr, cleanup.run())
+			rerr = errors.Join(rerr, cleanup.Run())
 		}
 	}()
 
@@ -261,7 +266,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network namespace: %w", err)
 	}
-	cleanup.add("close netns", netNS.Close)
+	cleanup.Add("close netns", netNS.Close)
 
 	state := &execState{
 		done:             make(chan struct{}),
@@ -269,9 +274,9 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		netNSJobs:        make(chan func()),
 		cleanups:         cleanup,
 	}
-	cleanup.addNoErr("mark run state done", func() {
+	cleanup.Add("mark run state done", Infallible(func() {
 		close(state.done)
-	})
+	}))
 
 	if err := w.runNetNSWorkers(ctx, state); err != nil {
 		return nil, fmt.Errorf("failed to handle namespace jobs: %w", err)
@@ -281,11 +286,11 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	w.mu.Lock()
 	w.running[id] = state
 	w.mu.Unlock()
-	cleanup.addNoErr("delete run state", func() {
+	cleanup.Add("delete run state", Infallible(func() {
 		w.mu.Lock()
 		delete(w.running, id)
 		w.mu.Unlock()
-	})
+	}))
 
 	return &networkNamespace{
 		id:      id,

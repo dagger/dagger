@@ -54,6 +54,11 @@ const (
 
 type Result = solverresult.Result[*ref]
 
+type Reference interface {
+	bkgw.Reference
+	Release(context.Context) error
+}
+
 func newRef(res bksolver.ResultProxy, c *Client) *ref {
 	return &ref{
 		resultProxy: res,
@@ -153,7 +158,7 @@ func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*o
 	// https://github.com/moby/buildkit/blob/c3c65787b5e2c2c9fcab1d0b9bd1884a37384c90/cache/manager.go#L231
 	leaseID := cacheRef.ID()
 
-	lm := r.c.worker.LeaseManager()
+	lm := r.c.Worker.LeaseManager()
 	for blobDigest := range blobs {
 		err := lm.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
 			ID:   blobDigest.String(),
@@ -224,6 +229,13 @@ func (r *ref) CacheRef(ctx context.Context) (bkcache.ImmutableRef, error) {
 		return nil, fmt.Errorf("invalid ref: %T", cacheRes.Sys())
 	}
 	return workerRef.ImmutableRef, nil
+}
+
+func (r *ref) Release(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	return r.resultProxy.Release(ctx)
 }
 
 func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*ref]) (*solverresult.Result[bkcache.ImmutableRef], error) {

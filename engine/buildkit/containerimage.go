@@ -42,7 +42,7 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 
-	exporter, err := c.worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (c *Client) ExportContainerImage(
 		exporterName = bkclient.ExporterOCI
 	}
 
-	exporter, err := c.worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (c *Client) ExportContainerImage(
 		IsFileStream: true,
 	}.AppendToOutgoingContext(ctx)
 
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.BuildkitSessionID())
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, nil, clientMetadata.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to export: %w", err)
 	}
@@ -144,7 +144,7 @@ func (c *Client) ContainerImageToTarball(
 		exporterName = bkclient.ExporterOCI
 	}
 
-	exporter, err := c.worker.Exporter(exporterName, c.SessionManager)
+	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
 	if err != nil {
 		return nil, err
 	}

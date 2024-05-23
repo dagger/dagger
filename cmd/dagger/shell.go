@@ -58,7 +58,7 @@ func (ts *terminalSession) Run() error {
 		NetDialContext: ts.Client.DialContext,
 	}
 
-	reqHeader := http.Header{}
+	reqHeader := ts.Client.AppendHTTPRequestHeaders(http.Header{})
 	if ts.Client.SecretToken != "" {
 		reqHeader["Authorization"] = []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(ts.Client.SecretToken+":"))}
 	}
