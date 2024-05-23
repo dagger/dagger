@@ -6,7 +6,7 @@ import (
 
 type MyModule struct{}
 
-// Build multi stage docker container and publish to registry
+// Build and publish Docker container
 func (m *MyModule) Build(
 	ctx context.Context,
 	// source code location
