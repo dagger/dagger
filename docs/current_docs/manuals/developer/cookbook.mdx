@@ -9,7 +9,7 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Add a local directory or remote repository to a container
+### Copy a local directory or remote repository to a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path and returns the modified container.
 
@@ -36,19 +36,19 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 
 Example usage:
 
-- Write the contents of the `/myapp` directory on the host to the `/src` directory in the container and return the modified container:
+- Copy the `/myapp` directory on the host to the `/src` directory in the container and return the modified container:
 
     ```shell
     dagger call write-directory --d=./myapp/
     ```
 
-- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the modified container:
+- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the modified container:
 
     ```shell
     dagger call write-directory --d=github.com/dagger/dagger#main
     ```
 
-- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the directory's contents as a string:
+- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and list the contents of the directory:
 
     ```shell
     dagger call \
@@ -57,7 +57,7 @@ Example usage:
       entries
     ```
 
-### Add a local directory or remote repository to a container and modify its contents
+### Copy a local directory or remote repository to a container and modify its contents
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It writes the specified directory to a container at the `/src` container path, adds a file to it, and then returns the modified container.
 
@@ -88,27 +88,20 @@ When using a local directory, modifications made to the directory's contents aft
 
 Example usage:
 
-- Write the contents of the `/myapp` directory on the host to the `/src` directory in the container, add a file to it, and return the modified container:
+- Copy the `/myapp` directory on the host to the `/src` directory in the container, add a file to it, and return the modified container:
 
     ```shell
     dagger call modify-directory --d=./myapp/
     ```
 
-dagger call modify-directory \
-    --d=https://github.com/dagger/dagger#main \
-  directory \
-    --path=/src \
-  entries
-```
-
-- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the modified container::
+- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the modified container:
 
     ```shell
     dagger call modify-directory \
         --d=github.com/dagger/dagger#main \
     ```
 
-- Write the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the directory's contents as a string:
+- Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and list the contents of the directory:
 
     ```shell
     dagger call modify-directory \
@@ -311,7 +304,7 @@ dagger call github-api \
 ### Expose services in Dagger Functions to each other and to the host
 
 The first Dagger Function below creates and returns an HTTP service. This service can be used:
-- from a different Dagger Function, via a service binding using an alias; or
+- from a different Dagger Function, via a service binding using an alias like `www`; or
 - from the host.
 
 <Tabs groupId="language">
@@ -457,7 +450,7 @@ The following Dagger Function demonstrates explicitly starting and stopping a se
 
 Example usage:
 
-- Start a Redis service, write and read data, and then stop it:
+- Start and stop a Redis service:
 
     ```shell
     dagger call redis-service
