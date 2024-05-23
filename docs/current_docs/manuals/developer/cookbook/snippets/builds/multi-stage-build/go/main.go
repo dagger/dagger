@@ -9,7 +9,8 @@ type MyModule struct{}
 // Build multi stage docker container and publish to registry
 func (m *MyModule) Build(
 	ctx context.Context,
-	// Source code Directory
+	// source code location
+	// can be local directory or remote Git repository
 	dir *Directory,
 ) string {
 	// build app
