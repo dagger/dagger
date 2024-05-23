@@ -6,7 +6,7 @@ class MyModule {
    * Returns a container with a specified directory and an additional file
    */
   @func()
-  modifyDirectory(d: Directory): Container {
+  copyAndModifyDirectory(d: Directory): Container {
     return dag
       .container()
       .from("alpine:latest")

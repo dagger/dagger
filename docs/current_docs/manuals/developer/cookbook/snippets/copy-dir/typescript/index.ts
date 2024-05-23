@@ -6,7 +6,7 @@ class MyModule {
    * Returns a container with a specified directory
    */
   @func()
-  writeDirectory(d: Directory): Container {
+  copyDirectory(d: Directory): Container {
     return dag.container().from("alpine:latest").withDirectory("/src", d)
   }
 }

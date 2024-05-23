@@ -16,19 +16,19 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/write-dir/go/main.go
+```go file=./cookbook/snippets/copy-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/write-dir/python/main.py
+```python file=./cookbook/snippets/copy-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/write-dir/typescript/index.ts
+```typescript file=./cookbook/snippets/copy-dir/typescript/index.ts
 ```
 
 </TabItem>
@@ -39,20 +39,20 @@ Example usage:
 - Copy the `/myapp` directory on the host to the `/src` directory in the container and return the modified container:
 
     ```shell
-    dagger call write-directory --d=./myapp/
+    dagger call copy-directory --d=./myapp/
     ```
 
 - Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and return the modified container:
 
     ```shell
-    dagger call write-directory --d=github.com/dagger/dagger#main
+    dagger call copy-directory --d=github.com/dagger/dagger#main
     ```
 
 - Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container and list the contents of the directory:
 
     ```shell
     dagger call \
-      write-directory --d=https://github.com/dagger/dagger#main \
+      copy-directory --d=https://github.com/dagger/dagger#main \
       directory --path=/src \
       entries
     ```
@@ -68,19 +68,19 @@ When using a local directory, modifications made to the directory's contents aft
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/modify-dir/go/main.go
+```go file=./cookbook/snippets/copy-modify-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/modify-dir/python/main.py
+```python file=./cookbook/snippets/copy-modify-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/modify-dir/typescript/index.ts
+```typescript file=./cookbook/snippets/copy-modify-dir/typescript/index.ts
 ```
 
 </TabItem>
@@ -91,23 +91,21 @@ Example usage:
 - Copy the `/myapp` directory on the host to the `/src` directory in the container, add a file to it, and return the modified container:
 
     ```shell
-    dagger call modify-directory --d=./myapp/
+    dagger call copy-and-modify-directory --d=./myapp/
     ```
 
 - Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and return the modified container:
 
     ```shell
-    dagger call modify-directory \
-        --d=github.com/dagger/dagger#main \
+    dagger call copy-and-modify-directory --d=github.com/dagger/dagger#main
     ```
 
 - Copy the contents of the `dagger/dagger` GitHub repository to the `/src` directory in the container, add a file to it, and list the contents of the directory:
 
     ```shell
-    dagger call modify-directory \
-        --d=https://github.com/dagger/dagger#main \
-      directory \
-        --path=/src \
+    dagger call \
+      copy-and modify-directory --d=https://github.com/dagger/dagger#main \
+      directory --path=/src \
       entries
     ```
 
@@ -286,17 +284,11 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 Example usage:
 
 ```shell
-dagger call github-api \
-    --endpoint=https://api.github.com/repos/dagger/dagger/issues \
-    --token=env:GITHUB_API_TOKEN
+dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=env:GITHUB_API_TOKEN
 
-dagger call github-api \
-    --endpoint=https://api.github.com/repos/dagger/dagger/issues
-    --token=file:./github.txt
+dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=file:./github.txt
 
-dagger call github-api \
-    --endpoint=https://api.github.com/repos/dagger/dagger/issues
-    --token=cmd:"gh auth token"
+dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=cmd:"gh auth token"
 ```
 
 ## Services
@@ -340,6 +332,7 @@ Example usage:
 
     ```shell
     dagger call http-service up
+
     # access the service from the host
     curl localhost:8080
     ```
@@ -347,7 +340,10 @@ Example usage:
 - Expose the HTTP service instantiated by a Dagger Function to the host on a different host port:
 
     ```shell
-    dagger call http-service up --ports 9000:8080
+    dagger call \
+      http-service \
+      up --ports 9000:8080
+
     # access the service from the host
     curl localhost:9000
     ```
