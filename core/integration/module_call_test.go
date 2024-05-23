@@ -1221,7 +1221,14 @@ func (m *Test) FnB(
     msg string,
     // +optional
     matrix [][]string,
-) string {
+) *Chain {
+    return new(Chain)
+}
+
+type Chain struct {}
+
+// Repeat message back
+func (m *Chain) Echo(msg string) string {
     return msg
 }
 `,
@@ -1247,6 +1254,12 @@ func (m *Test) FnB(
 
 		require.Contains(t, out, "--msg")
 		require.NotContains(t, out, "--matrix")
+	})
+
+	t.Run("in chain", func(t *testing.T) {
+		out, err := modGen.With(daggerCall("fn-b", "--msg", "", "echo", "--msg", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello")
 	})
 
 	t.Run("no sub-command", func(t *testing.T) {

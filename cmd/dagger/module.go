@@ -1137,6 +1137,16 @@ type modFunction struct {
 	Args        []*modFunctionArg
 }
 
+func (f *modFunction) SupportedArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if !arg.IsUnsupportedFlag() {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
 func (f *modFunction) IsUnsupported() bool {
 	for _, arg := range f.Args {
 		if arg.IsRequired() && arg.IsUnsupportedFlag() {
