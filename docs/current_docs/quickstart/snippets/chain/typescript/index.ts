@@ -1,4 +1,4 @@
-import { dag, Container, object, func } from "@dagger.io/dagger";
+import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
 class HelloDagger {
@@ -7,7 +7,7 @@ class HelloDagger {
    */
   @func()
   base(): Container {
-    return dag.container().from("cgr.dev/chainguard/wolfi-base");
+    return dag.container().from("cgr.dev/chainguard/wolfi-base")
   }
 
   /**
@@ -15,7 +15,7 @@ class HelloDagger {
    */
   @func()
   build(): Container {
-    return this.base().withExec(["apk", "add", "bash", "git"]);
+    return this.base().withExec(["apk", "add", "bash", "git"])
   }
 
   /**
@@ -23,6 +23,6 @@ class HelloDagger {
    */
   @func()
   async buildAndPublish(): Promise<string> {
-    return await this.build().publish("ttl.sh/bar");
+    return await this.build().publish("ttl.sh/bar")
   }
 }
