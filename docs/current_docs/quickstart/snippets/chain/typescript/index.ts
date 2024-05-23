@@ -1,20 +1,28 @@
-import { dag, Container, object, func } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger";
 
 @object()
 class HelloDagger {
   /**
-   * Returns a container
+   * Returns a base container
    */
   @func()
-  foo(): Container {
-    return dag.container().from("cgr.dev/chainguard/wolfi-base")
+  base(): Container {
+    return dag.container().from("cgr.dev/chainguard/wolfi-base");
   }
 
   /**
-   * Publishes a container
+   * Builds on top of base container and returns a new container
    */
   @func()
-  async bar(): Promise<string> {
-    return await this.foo().publish("ttl.sh/bar")
+  build(): Container {
+    return this.base().withExec(["apk", "add", "bash", "git"]);
+  }
+
+  /**
+   * Builds and publishes a container
+   */
+  @func()
+  async buildAndPublish(): Promise<string> {
+    return await this.build().publish("ttl.sh/bar");
   }
 }

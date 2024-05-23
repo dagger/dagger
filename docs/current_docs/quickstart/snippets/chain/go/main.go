@@ -6,12 +6,17 @@ import (
 
 type HelloDagger struct{}
 
-// Returns a container
-func (m *HelloDagger) Foo() *Container {
+// Returns a base container
+func (m *HelloDagger) Base() *Container {
 	return dag.Container().From("cgr.dev/chainguard/wolfi-base")
 }
 
-// Publishes a container
-func (m *HelloDagger) Bar(ctx context.Context) (string, error) {
-	return m.Foo().Publish(ctx, "ttl.sh/bar")
+// Builds on top of base container and returns a new container
+func (m *HelloDagger) Build() *Container {
+	return m.Base().WithExec([]string{"apk", "add", "bash", "git"})
+}
+
+// Builds and publishes a container
+func (m *HelloDagger) BuildAndPublish(ctx context.Context) (string, error) {
+	return m.Build().Publish(ctx, "ttl.sh/bar")
 }

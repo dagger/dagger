@@ -84,11 +84,10 @@ You can test the published container image by pulling and running it with `docke
 </TabItem>
 <TabItem value="Dagger CLI">
 ```shell
-dagger call foo --address="ttl.sh/bar"
-```
-
-```shell
-dagger call bar
+# all equivalent
+dagger call base with-exec --args apk,add,bash,git publish --address="ttl.sh/bar"
+dagger call build publish --address="ttl.sh/bar"
+dagger call build-and-publish
 ```
 </TabItem>
 </Tabs>
