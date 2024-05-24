@@ -13,10 +13,10 @@ class MyModule:
             .with_(
                 self.env_variables(
                     [
-					 ("ENV_VAR_1", "VALUE 1"),
-					 ("ENV_VAR_2", "VALUE 2"),
-					 ("ENV_VAR_3", "VALUE 3")
-					]
+                        ("ENV_VAR_1", "VALUE 1"),
+                        ("ENV_VAR_2", "VALUE 2"),
+                        ("ENV_VAR_3", "VALUE 3"),
+                    ]
                 )
             )
             .with_exec(["env"])

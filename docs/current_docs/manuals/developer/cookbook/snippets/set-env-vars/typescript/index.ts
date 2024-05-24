@@ -1,4 +1,4 @@
-import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -18,16 +18,15 @@ class MyModule {
         ]),
       )
       .withExec(["env"])
-      .stdout();
+      .stdout()
   }
 }
 
 function envVariables(envs: Array<[string, string]>) {
   return (c: Container): Container => {
     for (const [key, value] of envs) {
-      c = c.withEnvVariable(key, value);
+      c = c.withEnvVariable(key, value)
     }
-    return c;
-  };
+    return c
+  }
 }
-
