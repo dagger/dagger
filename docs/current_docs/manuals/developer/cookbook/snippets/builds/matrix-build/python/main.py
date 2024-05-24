@@ -1,6 +1,7 @@
 import dagger
 from dagger import dag, function, object_type
 
+
 @object_type
 class MyModule:
     @function
@@ -27,8 +28,7 @@ class MyModule:
 
                 # build artifact
                 build = (
-                    golang
-                    .with_env_variable("GOOS", goos)
+                    golang.with_env_variable("GOOS", goos)
                     .with_env_variable("GOARCH", goarch)
                     .with_exec(["go", "build", "-o", path])
                 )
