@@ -12,14 +12,17 @@ type MyModule struct {
 	Name string
 }
 
-func New(greeting string, name string) *MyModule {
+func New(
+	// The greeting to use
+	// +default="Hello"
+	greeting string,
+	// Who to greet
+	// +default="World"
+	name string,
+) *MyModule {
 	return &MyModule{
-		// The greeting to use
-		// +default="Hello"
 		Greeting: greeting,
-		// Who to greet
-		// +default="World"
-		Name: name,
+		Name:     name,
 	}
 }
 
