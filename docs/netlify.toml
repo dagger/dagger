@@ -99,6 +99,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific IDE pages to multi-language IDE page
+  from = "/manuals/developer/:language/:docid/ide-integration"
+  to = "/manuals/developer/ide-integration"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"
