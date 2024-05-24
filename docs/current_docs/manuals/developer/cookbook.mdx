@@ -125,12 +125,63 @@ Example usage:
 
 Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
 ```shell
-dagger call build --dir="https://github.com/golang/example#master:hello"
+dagger call build --src="https://github.com/golang/example#master:hello"
 ```
 
-{/* ### Perform matrix build 
+### Perform matrix build 
 
-### Build multi-arch image 
+The following code listing performs a matrix build. 
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/matrix-build/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/matrix-build/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/matrix-build/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
+```shell
+dagger call build \
+  --src="https://github.com/golang/example#master:hello" \
+  export --path /tmp/matrix-builds
+```
+
+Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
+
+```shell
+/tmp/matrix-builds
+└── build
+    ├── darwin
+    │   ├── amd64
+    │   │   └── hello
+    │   └── arm64
+    │       └── hello
+    └── linux
+        ├── amd64
+        │   └── hello
+        └── arm64
+            └── hello
+
+8 directories, 4 files
+```
+
+{/* ### Build multi-arch image 
 
 ### Build multi-arch image with cross-compliation 
 
