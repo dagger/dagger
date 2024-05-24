@@ -6,7 +6,7 @@ import (
 
 type MyModule struct{}
 
-// Returns a container with a specified directory
+// Return a container with a specified directory
 func (m *MyModule) CopyDirectory(ctx context.Context, d *Directory) *Container {
 	return dag.Container().
 		From("alpine:latest").

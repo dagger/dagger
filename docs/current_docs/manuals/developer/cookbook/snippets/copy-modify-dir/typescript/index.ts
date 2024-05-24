@@ -3,7 +3,7 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Returns a container with a specified directory and an additional file
+   * Return a container with a specified directory and an additional file
    */
   @func()
   copyAndModifyDirectory(d: Directory): Container {

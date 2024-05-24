@@ -6,7 +6,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     def copy_and_modify_directory(self, d: dagger.Directory) -> dagger.Container:
-        """Returns a container with a specified directory and an additional file"""
+        """Return a container with a specified directory and an additional file"""
         return (
             dag.container()
             .from_("alpine:latest")
