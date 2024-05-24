@@ -250,7 +250,7 @@ func (ctrFS *ContainerFS) LookPath(cmd string) (string, error) {
 
 func (ctrFS *ContainerFS) Exec(ctx context.Context, args ...string) error {
 	if ctrFS.executeContainer == nil {
-		return fmt.Errorf("no ExecuteContainerFunc provided")
+		return errors.New("no ExecuteContainerFunc provided")
 	}
 	return ctrFS.executeContainer(ctx, args...)
 }

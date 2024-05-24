@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -66,7 +67,7 @@ func (c *AWSClient) GetECRAuthorizationToken(ctx context.Context) (string, error
 	}
 
 	if len(out.AuthorizationData) < 1 {
-		return "", fmt.Errorf("GetECRAuthorizationToken returned empty AuthorizationData")
+		return "", errors.New("GetECRAuthorizationToken returned empty AuthorizationData")
 	}
 
 	authToken := *out.AuthorizationData[0].AuthorizationToken
@@ -87,7 +88,7 @@ func (c *AWSClient) GetECRUsernamePassword(ctx context.Context) (string, string,
 
 	split := strings.SplitN(string(decoded), ":", 2)
 	if len(split) < 1 {
-		return "", "", fmt.Errorf("invalid base64 decoded data")
+		return "", "", errors.New("invalid base64 decoded data")
 	}
 
 	return split[0], split[1], nil
