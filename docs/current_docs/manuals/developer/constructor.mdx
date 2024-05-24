@@ -13,6 +13,10 @@ The main object's constructor is exposed as the entrypoint function for a module
 
 This is a simple way to accept module-wide configuration, or just to set a few attributes without having to create setter functions for them.
 
+:::note
+Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
+:::
+
 Here is an example module with a constructor:
 
 <Tabs groupId="language">
@@ -55,14 +59,5 @@ Hello, Foo!
 ```
 
 :::note
-Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
-:::
-
-:::note
 If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
 :::
-
-Also see:
-
-- [Module constructors in Python](./python/constructor.mdx).
-- [Module constructors in TypeScript](./typescript/constructor.mdx).
