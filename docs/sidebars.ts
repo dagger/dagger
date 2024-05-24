@@ -456,6 +456,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manuals/developer/typescript/aliases"
+            },
+            {
+              "type": "doc",
               "label": "Reference",
               "id": "reference/typescript/modules"
             }
