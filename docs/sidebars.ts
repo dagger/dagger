@@ -342,6 +342,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/interfaces"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/error-handling"
         },
         {
@@ -363,10 +367,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/interfaces"
             },
             {
               "type": "doc",
