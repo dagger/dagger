@@ -79,7 +79,7 @@ func (t PythonSDK) Test(ctx context.Context) error {
 		eg.Go(func() error {
 			_, err := base.
 				WithExec([]string{"pip", "install", "pytest-timeout"}).
-				WithExec([]string{"pytest", "-Wd", "--exitfirst", "--timeout", "120"}).
+				WithExec([]string{"pytest", "-Wd", "--exitfirst", "--timeout", "120", "--tb=long"}).
 				Sync(ctx)
 			return err
 		})

@@ -37,6 +37,7 @@ def start_cli_session_sync(cfg: dagger.Config, path: str):
     try:
         with run(cfg, path) as proc:
             yield get_connect_params(proc)
+            proc.communicate()
     except (OSError, ValueError, TypeError) as e:
         raise dagger.SessionError(e) from e
 

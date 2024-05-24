@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -40,6 +41,21 @@ type connectParams struct {
 
 func EngineSession(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+
+	go func() {
+		time.Sleep(60 * time.Second)
+		buf := make([]byte, 1024)
+		for {
+			n := runtime.Stack(buf, true)
+			if n < len(buf) {
+				buf = buf[:n]
+				break
+			}
+			buf = make([]byte, 2*len(buf))
+		}
+		os.Stderr.Write(buf)
+		os.Exit(1)
+	}()
 
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {

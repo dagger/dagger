@@ -20,6 +20,8 @@ import dagger
 from dagger._engine import download
 from dagger._managers import asyncify
 
+import sys
+
 
 @pytest.fixture(autouse=True)
 async def _setup(
@@ -136,7 +138,7 @@ async def test_download_bin(cache_dir: anyio.Path):
         await start.wait()
         # NB: Don't use global connection here since we want to test
         # multiple concurrent connections.
-        async with dagger.Connection(dagger.Config(retry=None)) as client:
+        async with dagger.Connection(dagger.Config(retry=None, log_output=sys.stderr)) as client:
             assert await client.default_platform()
 
     async with anyio.create_task_group() as tg:
@@ -152,3 +154,5 @@ async def test_download_bin(cache_dir: anyio.Path):
 
     # assert the garbage was cleaned up
     assert not await garbage_path.exists()
+    
+    assert False
