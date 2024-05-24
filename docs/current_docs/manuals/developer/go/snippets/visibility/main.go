@@ -7,7 +7,9 @@ import (
 
 type Person struct {
 	Name string
-	Job  string
+
+	// +private
+	Job string
 
 	// +private
 	Age int
