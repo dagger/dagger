@@ -7,7 +7,8 @@ class MyModule {
    */
   @func()
   build(source: Directory): Container {
-    return dag.container()
+    return dag
+      .container()
       .from("node:21")
       .withDirectory("/src", source)
       .withWorkdir("/src")
@@ -15,9 +16,7 @@ class MyModule {
         "/src/node_modules",
         dag.cacheVolume("node-21-myapp-myenv"),
       )
-      .withMountedCache(
-        "/root/.npm", dag.cacheVolume("node-21")
-      )
+      .withMountedCache("/root/.npm", dag.cacheVolume("node-21"))
       .withExec(["npm", "install"])
   }
 }
