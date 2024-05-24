@@ -561,8 +561,11 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 	}
 
 	for _, arg := range fn.Args {
-		_, err := arg.AddFlag(cmd.Flags())
-		if err != nil {
+		if err := arg.AddFlag(cmd.Flags()); err != nil {
+			var e *UnsupportedFlagError
+			if errors.As(err, &e) {
+				continue
+			}
 			return err
 		}
 		if arg.IsRequired() {
@@ -609,7 +612,7 @@ func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, 
 func (fc *FuncCommand) selectFunc(ctx context.Context, selectName string, fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
 	fc.Select(selectName)
 
-	for _, arg := range fn.Args {
+	for _, arg := range fn.SupportedArgs() {
 		var val any
 
 		flag := cmd.Flags().Lookup(arg.FlagName())

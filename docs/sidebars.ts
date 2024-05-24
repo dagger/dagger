@@ -20,12 +20,12 @@ module.exports = {
       },
       "items": [
         "quickstart/cli",
-        "quickstart/hello",
-        "quickstart/directories",
-        "quickstart/containers",
         "quickstart/daggerize",
-        "quickstart/custom-function",
-        "quickstart/daggerverse",
+        "quickstart/env",
+        "quickstart/test",
+        "quickstart/build",
+        "quickstart/publish",
+        "quickstart/simplify",
         "quickstart/conclusion"
       ]
     },
@@ -342,6 +342,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/interfaces"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/error-handling"
         },
         {
@@ -363,10 +367,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/go/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/interfaces"
             },
             {
               "type": "doc",

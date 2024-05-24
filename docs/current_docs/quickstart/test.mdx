@@ -1,0 +1,53 @@
+---
+slug: /quickstart/test
+title: "Run unit tests"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Run unit tests
+
+The `test` stage of the pipeline runs the application's unit tests and depends on the `build-env` stage. Let's look at its Dagger Function next.
+
+### Inspect the Dagger Function
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/test/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/test/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/test/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+This Dagger Function works merely as a CLI wrapper. It starts with the `Container` result of the previous Dagger Function, executes the `npm run test:unit run` command in the container, and captures and returns the output as a string (refer to the code comments for details).
+
+### Call the Dagger Function
+
+Call the Dagger Function as below:
+
+```shell
+dagger call test --source=.
+```
+
+Here's what you should see:
+
+![Test](/img/current_docs/quickstart/test.gif)
+
+:::tip SANDBOXING
+All the Dagger Functions in this quickstart receive the location of the source code directory as a function argument, rather than reading it directly from the host filesystem. This is [by design](../manuals/developer/execution-environment.mdx): Dagger Functions are fully "sandboxed" and do not have direct access to the host system. Therefore, host resources such as directories, files, environment variables, network services and so on must be explicitly passed to Dagger Functions as arguments. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.
+:::

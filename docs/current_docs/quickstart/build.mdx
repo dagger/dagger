@@ -1,0 +1,84 @@
+---
+slug: /quickstart/build
+title: "Build the application"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Build the application
+
+The `build` stage of the pipeline creates a container image with a production build of the application. It also depends on the `build-env` stage. Let's look at its Dagger Function next.
+
+### Inspect the Dagger Function
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/build/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/build/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/build/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+
+This Dagger Function performs a multi-stage build, as follows:
+
+- It starts with the build environment `Container` and executes the `npm run build` command in the container. This creates a compressed, production-ready build of the application and places the result in a `dist/` directory in the container filesystem. This directory is stored and referenced as Dagger's special `Directory` type.
+- It initializes a new `nginx:1.25-alpine` image as a second `Container` and copies the directory to the NGINX Web server root directory in the container. It also exposes container port 80 (the default NGINX port).
+
+The result of this Dagger Function is a `Container` representing the final production build of the application. This is an `nginx:1.25-alpine` container image with an NGINX Web server ready to host and serve the built application.
+
+### Call the Dagger Function
+
+Call the Dagger Function as below:
+
+```shell
+dagger call build --source=.
+```
+
+Here's what you should see:
+
+![Final container](/img/current_docs/quickstart/build.gif)
+
+This output means that the build succeeded, and a `Container` type representing the built container image was returned. Since this is another just-in-time `Container`, you can use your knowledge of function chaining and just-in-time artifacts to inspect it "live" with the `terminal` function, as you did earlier. But this is a good place to explore another interesting built-in `Container` function: the `as-service` function.
+
+### Run a container as a local service
+
+The `as-service` function can be used to [start a just-in-time container as a local service](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
+
+To see this in action, chain additional function calls to `as-service` and `up` on the returned `Container`:
+
+```shell
+dagger call \
+  build --source=. \
+  as-service \
+  up --ports=8080:80
+```
+
+By default, Dagger will map each exposed container service port to the same port on the host. Since NGINX operates on port 80, which is often a privileged port on the host, the additional `--ports 8080:80` argument re-maps container port 80 to unprivileged host port 8080.
+
+Here's what you should see:
+
+![Final container as service](/img/current_docs/quickstart/build-service.gif)
+
+You should now be able to access the application by browsing to `http://localhost:8080` on the Dagger host (replace `localhost` with your Dagger host's network name or IP address if accessing it remotely). You should see a "Hello from Dagger!" welcome page, served by NGINX.
+
+![Test service](/img/current_docs/quickstart/curl.gif)
+
+:::tip CONTAINERS AS SERVICES
+The ability to start any container as a local service has many potential use cases, such as manually testing web applications directly from the host browser or host system, or running integration tests that depend on API or database services.
+:::

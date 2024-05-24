@@ -1094,7 +1094,7 @@ func TestModuleCallByName(t *testing.T) {
 
 			type ModA struct {}
 
-			func (m *ModA) Fn(ctx context.Context) string { 
+			func (m *ModA) Fn(ctx context.Context) string {
 				return "hi from mod-a"
 			}
 			`,
@@ -1108,7 +1108,7 @@ func TestModuleCallByName(t *testing.T) {
 
 			type ModB struct {}
 
-			func (m *ModB) Fn(ctx context.Context) string { 
+			func (m *ModB) Fn(ctx context.Context) string {
 				return "hi from mod-b"
 			}
 			`,
@@ -1196,4 +1196,79 @@ func TestModuleCallFindup(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "yo", strings.TrimSpace(out))
+}
+
+func TestModuleCallUnsupportedFunctions(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	modGen := modInit(t, c, "go", `package main
+
+type Test struct {}
+
+// Sanity check
+func (m *Test) Echo(msg string) string {
+    return msg
+}
+
+// Skips adding the function
+func (m *Test) FnA(msg string, matrix [][]string) string {
+    return msg
+}
+
+// Skips adding the optional flag
+func (m *Test) FnB(
+    msg string,
+    // +optional
+    matrix [][]string,
+) *Chain {
+    return new(Chain)
+}
+
+type Chain struct {}
+
+// Repeat message back
+func (m *Chain) Echo(msg string) string {
+    return msg
+}
+`,
+	)
+
+	t.Run("functions list", func(t *testing.T) {
+		out, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, out, "echo")
+		require.Contains(t, out, "Sanity check")
+
+		require.NotContains(t, out, "fn-a")
+		require.NotContains(t, out, "Skips adding the function")
+
+		require.Contains(t, out, "fn-b")
+		require.Contains(t, out, "Skips adding the optional flag")
+	})
+
+	t.Run("arguments list", func(t *testing.T) {
+		out, err := modGen.With(daggerCall("fn-b", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+
+		require.Contains(t, out, "--msg")
+		require.NotContains(t, out, "--matrix")
+	})
+
+	t.Run("in chain", func(t *testing.T) {
+		out, err := modGen.With(daggerCall("fn-b", "--msg", "", "echo", "--msg", "hello")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello")
+	})
+
+	t.Run("no sub-command", func(t *testing.T) {
+		_, err := modGen.With(daggerCall("fn-a")).Sync(ctx)
+		require.ErrorContains(t, err, `unknown command "fn-a"`)
+	})
+
+	t.Run("no flag", func(t *testing.T) {
+		_, err := modGen.With(daggerCall("fn-b", "--msg", "hello", "--matrix", "")).Sync(ctx)
+		require.ErrorContains(t, err, `unknown flag: --matrix`)
+	})
 }

@@ -1,0 +1,99 @@
+---
+slug: /quickstart/simplify
+title: "Simplify with the Daggerverse"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Simplify with the Daggerverse
+
+At this point, you have successfully built a pipeline for an application using the Dagger API. This is important knowledge to have, so that you understand the basics of using Dagger and can begin creating  pipelines for your own applications.
+
+That said, Dagger also lets you use Dagger Functions developed by others and published to the [Daggerverse](https://daggerverse.dev), Dagger's free and publicly-available index of Dagger modules.
+
+:::tip THE DAGGERVERSE
+Dagger's superpower is its community. All around the world, Daggernauts are encoding their expertise into Dagger Functions, and sharing them for anyone to reuse. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules, and lets you easily search and consume them. Using the Daggerverse, you can easily discover great modules being developed by the community, learn how they work, and start using them. Since modules are just source code, it's easy to contribute to them, too!
+
+Using the Daggerverse is optional, and does not change how you use Dagger. If you find a module you like, simply copy its URL, and use it the usual way.
+:::
+
+To understand how this works in practice, let's simplify the pipeline using the [Node module](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node) from the Daggerverse. This module contains tested, ready-to-use Dagger Functions for building, linting and testing Node.js applications.
+
+### Install a Daggerverse module
+
+Install the Node module as a dependency by running the `dagger install` command shown on its [Daggerverse page](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node):
+
+```shell
+dagger install github.com/dagger/dagger/sdk/typescript/dev/node@f1aa5e117e163449208519ce6c6b1dbdb8ef5d79
+```
+
+:::tip VERSION PINNING
+The exact Git commit for the module version is recorded in `dagger.json`. Dagger enforces version pinning, which guarantees that the module version you install is the one you'll be using.
+:::
+
+Once you've installed the Node module, start exploring it to see what you can do with it. There are various ways to do this:
+
+- Read the [module's auto-generated documentation](https://daggerverse.dev/mod/github.com/dagger/dagger/sdk/typescript/dev/node@9e59bae142f64975b7c9ad851e6bd4901d43513a) in the Daggerverse.
+- Inspect the [module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts).
+- Use the Dagger CLI to inspect the module with the command `dagger -m node functions` or `dagger -m node call --help`.
+
+### Simplify the pipeline
+
+Next, update the pipeline to use this module.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Update the `dagger/main.go` file with the following code:
+
+```go file=./snippets/simplify/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+Update the `dagger/src/main/__init__.py` file with the following code:
+
+```python file=./snippets/simplify/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+Update the `dagger/src/index.ts` file with the following code:
+
+```typescript file=./snippets/simplify/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+This code listing revises the Dagger Functions from earlier, replacing calls to the core Dagger API with calls to Dagger Functions from the Node module. This allows you to access pre-defined functionality for working with Node.js applications - for example, obtaining a base image with `npm` and cache volumes already configured, or executing common commands to lint, format, test, and build a Node.js codebase.
+
+If you backtrack a little further and inspect the [Node module's source code](https://github.com/dagger/dagger/blob/9e59bae142f64975b7c9ad851e6bd4901d43513a/sdk/typescript/dev/node/src/index.ts), you'll notice two important things:
+
+1. The Node module is written in TypeScript but is called from your Dagger module, which could be in Go, Python or TypeScript. Dagger takes care of the translation via its language-agnostic GraphQL layer.
+1. The Node module is a Dagger module very similar to the one you built in this quickstart. If you inspect its source code, you'll recognize the `dag` client and many of the core Dagger API methods you  used when building your own Dagger Functions.
+
+### Run the pipeline
+
+Run the pipeline:
+
+```shell
+dagger call publish --source=.
+```
+
+As before, you should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh).
+
+Using a Daggerverse module instead of writing your own Dagger Functions is often advantageous because:
+
+- It provides ready-to-use functionality encapsulating the community's knowledge. This allows you to get started quickly and confidently, without needing to "roll your own code" from scratch.
+- It is written in accordance with language standards and best practices. Plus, its source code is open, allowing anyone to inspect it and suggest improvements to it.
+- It can include useful optimizations. For example, the Node module used here automatically creates and uses cache volumes for application dependencies.
+
+:::tip UNLOCKING CROSS-LANGUAGE COLLABORATION
+Dagger Functions can call other functions, across languages. So, even though the Node module in this section is written in TypeScript, you can transparently call its functions from another Dagger module written in Go, Python or any other supported language. This means that you no longer need to care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
+
+Dagger is able to do this because it uses GraphQL as its low-level language-agnostic API query language.  Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
+:::
