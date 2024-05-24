@@ -293,11 +293,9 @@ dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/iss
 
 ## Services
 
-### Expose services in Dagger Functions to each other and to the host
+### Bind and use services in Dagger Functions
 
-The first Dagger Function below creates and returns an HTTP service. This service can be used:
-- from a different Dagger Function, via a service binding using an alias like `www`; or
-- from the host.
+The first Dagger Function below creates and returns an HTTP service. This service is bound and used from a different Dagger Function, via a service binding using an alias like `www`.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -327,6 +325,33 @@ Example usage:
     ```shell
     dagger call get
     ```
+
+### Expose services in Dagger Functions to the host
+
+The Dagger Function below creates and returns an HTTP service. This service can be used from the host.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/expose-dagger-services-to-host/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/expose-dagger-services-to-host/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/expose-dagger-services-to-host/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
 
 - Expose the HTTP service instantiated by a Dagger Function to the host on the default port:
 
@@ -421,7 +446,7 @@ Example usage:
 
 ### Start and stop services
 
-The following Dagger Function demonstrates explicitly starting and stopping a service. This example uses a Redis service.
+The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service. This example uses a Redis service.
 
 <Tabs groupId="language">
 <TabItem value="Go">
