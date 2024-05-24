@@ -105,6 +105,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific module structure page to multi-language page
+  from = "/manuals/developer/:language/:docid/module-structure"
+  to = "/manuals/developer/module-structure"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"

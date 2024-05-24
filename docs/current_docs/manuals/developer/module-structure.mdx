@@ -1,0 +1,459 @@
+---
+slug: /manuals/developer/module-structure
+displayed_sidebar: "current"
+hide_table_of_contents: false
+toc_max_heading_level: 2
+title: "Module Structure"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Module Structure
+
+It's essential to understand a few key concepts about Dagger modules, for a better fit with your normal development workflow.
+
+## Runtime container
+
+Dagger modules run in a runtime container that's bootstrapped by the Dagger Engine, with the necessary environment to run the Dagger module's code.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+The runtime container is currently hardcoded to run in Go 1.21  (although this may be configurable in future).
+
+</TabItem>
+<TabItem value="Python">
+
+The runtime container is currently hardcoded to run in Python 3.11.1 using the [python:3.11-slim](https://hub.docker.com/_/python/tags?name=3.11-slim) base image by default. This can be overridden in `pyproject.toml` since [Dagger v0.11][v11]:
+
+```toml
+[dagger.tool]
+base-image = "acme/python:3.11"
+```
+
+This can be useful to add a few requirements to the module's execution environment, such as system packages like `git`.
+
+:::warning
+Don't deviate from the default base image too much or it may break in a future version of Dagger. Override at own risk.
+:::
+
+The desired interpreter version can be pinned by creating a `.python-version` file next to your `pyproject.toml`:
+
+```console
+echo "3.11" > .python-version
+```
+
+This can be useful either to pin the version in case the default one gets an upgrade, or to choose a newer version.
+
+As an alternative, setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires) in `pyproject.toml` will also pin the version, but using a lower bound constraint (minimum version). For example, the following will use Python 3.11, even though Python 3.12 is available:
+
+```toml
+[project]
+requires-python = ">=3.11"
+```
+
+Each release of Dagger bundles the Python SDK inside the Dagger Engine container image. During the Dagger module's code generation phase, that directory is unpacked and installed automatically, including dependencies. That directory is the same one that is exported to the host as `./sdk` when running `dagger init --sdk=python` or `dagger develop --sdk=python`. Note that it is **not** the same as the directory obtained when installing from [dagger-io](https://pypi.org/project/dagger-io/).
+
+The runtime container installs the SDK as an editable install, similar to the following:
+
+```shell
+# executed by the runtime container
+uv pip install -e ./sdk
+```
+
+This is why the initial `pyproject.toml` file doesn't include any [dependencies](./language-dependencies.mdx).
+
+### UV installer
+
+[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./language-dependencies.mdx#lock-file) (starting with Dagger v0.11.0). It's possible to specify a newer version, if needed, in `pyproject.toml`:
+
+```toml
+[tool.dagger]
+uv-version = "0.1.30"
+```
+
+If `pip` is required instead, `uv` can be disabled:
+
+```toml
+[tool.dagger]
+use-uv = false
+```
+
+Note, however, that [pinning](./language-dependencies.mdx#lock-file) via `requirements.lock` is only supported with `uv`.
+</TabItem>
+<TabItem value="TypeScript">
+
+The runtime container is currently hardcoded to run in Node.js 21.3 (although this may be configurable in future).
+
+[Bun](https://bun.sh/) is experimentally supported and [work is in progress](https://github.com/dagger/dagger/issues/4368) to support [Deno](https://deno.com/).
+
+The TypeScript SDK is installed automatically, including dependencies, with a version that's tied to the currently running Dagger Engine container:
+
+```shell
+# executed by the runtime container
+yarn install
+npm pkg set "dependencies[@dagger.io/dagger]=./sdk"
+```
+
+The SDK files are mounted under `/sdk` in the Dagger Engine runtime container.
+
+This is why the initial `package.json` doesn't include any dependencies except a local link to the `sdk` generated directory.
+
+```json
+{
+  "dependencies": {
+    "typescript": "^5.3.2"
+    "@dagger.io/dagger": "./sdk"
+  }
+}
+```
+
+[^1]:
+</TabItem>
+</Tabs>
+
+## Module layout
+
+A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+
+Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in a directory named `dagger`, unless an alternative is specified with the `--source` argument.
+
+:::info
+At any point, running `dagger develop...` regenerates the module's code based on dependencies and the current state of the module.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+The template from `dagger develop` creates the following structure:
+
+```
+.
+├── LICENSE
+├── dagger
+│   ├── dagger.gen.go
+│   ├── go.mod
+│   ├── go.sum
+│   ├── internal
+│   │   ├── dagger
+│   │   ├── querybuilder
+│   │   └── telemetry
+│   └── main.go
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `go.mod`/`go.sum` manage the [Go module](#go-modules) and its dependencies.
+- `main.go` is where your Dagger module code goes.
+- `internal` contains automatically-generated types and helpers needed to configure and run the module:
+    - `dagger` contains definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
+    - `telemetry` has utilities for sending Dagger Engine telemetry.
+
+:::note
+While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
+:::
+
+### Multiple files
+
+You can split your Dagger module into multiple files, not just `main.go`. To do this, you can just create another file beside `main.go` (for example, `utils.go`):
+
+```
+.
+├── dagger
+│   ├── ...
+|   ├── internal
+│   └── ...
+│   ├── main.go
+│   └── utils.go
+└── dagger.json
+```
+
+This file should be inside the same package as `main.go`, and as such, can access any private variables/functions/types inside the package.
+
+Additionally, you can also split your Dagger module into Go subpackages (for example, `utils`):
+
+```
+.
+├── dagger
+│   ├── ...
+|   ├── internal
+│   └── ...
+│   ├── main.go
+|   └── utils
+│       └── utils.go
+└── dagger.json
+```
+
+Because this is a separate package, you can only use the variables/functions/types that are exported from this package in `main.go` (you can't access types from `main.go` in the `utils` package).
+
+:::note
+Only types and functions in the top-level package are part of the public-facing API for the module.
+:::
+
+You can access other Dagger types from a sub-package by importing the generated sub-package `dagger/<module>/internal/dagger`:
+
+```go
+// utils/utils.go
+
+import "dagger/<module>/internal/dagger"
+
+func DoThing(client *dagger.Client) *dagger.Directory {
+    // we need to pass *dagger.Client in here, since we don't have access to `dag`
+	...
+}
+```
+
+</TabItem>
+<TabItem value="Python">
+
+The default template from `dagger develop` creates the following structure:
+
+```
+.
+├── LICENSE
+├── dagger
+│   ├── pyproject.toml
+│   ├── requirements.lock
+│   ├── sdk
+│   └── src
+│       └── main
+│           └── __init__.py
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `pyproject.toml` manages the Python project configuration.
+- `requirements.lock` manages the module dependencies.
+- `src/main/` is where your Dagger module code goes.
+- `sdk/` contains the Python SDK.
+
+This structure hosts a `main` package inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+
+Tools like [build](https://build.pypa.io/en/latest/), [Hatch](https://hatch.pypa.io/latest/), and [Poetry](https://python-poetry.org/docs/) already detect this project layout by default, but it's not required and can be overridden as long as `main` is installed correctly in `site-packages`, or is at least importable with `import main`.
+
+Here is an example of moving the `main` package next to `pyproject.toml`, resulting in the following structure:
+
+```
+.
+├── main
+│  ├── __init__.py
+│  ├── lint.py
+│  └── test.py
+├── dagger.json
+├── pyproject.toml
+└── requirements.lock
+```
+
+In this case, it is necessary to explicitly tell Poetry where to find the package, as shown below (truncated for brevity):
+
+```toml
+[tool.poetry]
+name = "awesome-module"
+packages = [{ include = "main" }]
+```
+
+### Project name
+
+The default project name in `pyproject.toml` is also `main`:
+
+```toml
+[project]
+name = "main"
+```
+
+This is because most package managers use the name of the project to find the package to build, under `./src`. So, if you change the name of the project, you also need to make sure your chosen tool can find the package.
+
+Here is an example of using a different project name with Poetry (truncated for brevity):
+
+```toml
+[tool.poetry]
+name = "awesome-module"
+packages = [{ include = "main", from = "src" }]
+```
+
+### Alternative project template
+
+If a different project layout is needed, `dagger init` won't override existing `pyproject.toml` and `.py` files. For example, to create the initial files with [Rye](https://rye-up.com):
+
+```shell
+rye init --name=main acme
+cd acme
+dagger init --sdk=python --source=.
+```
+
+Rye will create an initial `src/main/__init__.py` but Dagger won't recognize any Dagger Functions in it. Either remove it and let Dagger create the default one, or adapt it to your needs before running `dagger call`.
+
+### Other tools
+
+[Poetry](https://python-poetry.org) is a very popular workflow tool for Python. It doesn't fully support the [PEP 621](https://peps.python.org/pep-0621/) yet, but [it's coming](https://github.com/python-poetry/poetry/pull/9135).
+
+It does support [PEP 517](https://peps.python.org/pep-0517/) however, which makes it possible to use with Dagger. Same as in [alternative project template](#alternative-project-template), the project can be initialized with:
+
+```console
+mkdir acme
+cd acme
+poetry init --name main --python "^3.11"
+```
+
+Remove the `"readme"` entry in `pyproject.toml` so Dagger doesn't fail with the unknown file. Here's an example of a minimal Poetry configuration:
+
+```toml
+[tool.poetry]
+name = "main"
+version = "0.1.0"
+description = ""
+authors = []
+
+[tool.poetry.dependencies]
+python = ">=3.11"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+```
+
+After `dagger init --sdk=python`, the `./sdk` can be added as a development dependency:
+
+```console
+poetry add -e --group=dev ./sdk
+```
+
+Which adds the following to `pyproject.toml`:
+
+```toml
+[tool.poetry.group.dev.dependencies]
+dagger-io = {path = "sdk", develop = true}
+```
+
+## Other workflow tools
+
+Dagger is agnostic to the tool used [in development](./ide-integration.mdx). Similarly to Rye and Poetry, as long as the right standards are supported, Dagger should be able to use it too.
+
+</TabItem>
+<TabItem value="TypeScript">
+
+The default template from `dagger develop` creates the following structure:
+
+```
+.
+├── LICENSE
+├── dagger
+│   ├── package.json
+│   ├── sdk
+│   ├── src
+│   │   └── index.ts
+│   └── tsconfig.json
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module config file.
+- `package.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes.
+- `sdk/` contains the TypeScript SDK.
+
+The TypeScript SDK expects to find the Dagger module's source code inside the `src/` directory.
+
+### Multiple files
+
+Due to TypeScript limitations, it is not possible to split your main class module (`index.ts`) into multiple files. However, it is possible to create sub-classes in different files and access them from your main class module:
+
+```typescript
+// src/index.ts
+import { func, object } from "@dagger.io/dagger"
+
+import { Test } from "./test" // in src/test.ts
+import { Lint } from "./lint" // in src/lint.ts
+
+@object()
+class MyModule {
+  @func()
+  test(): Test {
+    return new Test()
+  }
+
+  @func()
+  lint(): Lint {
+    return new Lint()
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Language-native packaging
+
+The structure of a Dagger module mimics that of each language's conventional packaging mechanisms and tools.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Dagger modules written for use with the Go SDK are automatically created as [Go modules](https://go.dev/ref/mod). At module creation time, a `go.mod` and `go.sum` file will automatically be created  that import the necessary dependencies. Dependencies can be installed and managed just as for any standard Go environment.
+
+After using new dependencies in your code, update your `go.mod`/`go.sum` with the newly imported dependencies by using [`go mod tidy`](https://go.dev/ref/mod#go-mod-tidy).
+
+### Go workspaces
+
+Since it's common to have a sub-directory inside your main project containing your Dagger module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
+
+When a new Dagger module is created, Dagger attempts to add it to a root `go.work` if it exists. If not, it can be added manually later with `go work use ./path/to/mymodule`.
+
+```go
+// go.work
+go 1.21.7
+
+use (
+	./path/to/mymodule
+)
+```
+
+### Go vendor
+
+[Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See [https://github.com/dagger/dagger/issues/6076](https://github.com/dagger/dagger/issues/6076) for more information.
+
+</TabItem>
+<TabItem value="Python">
+
+Dagger modules in Python are built to be installed, like libraries. The runtime container installs the module code with:
+
+```shell
+# executed by the runtime
+uv pip install -e .
+```
+
+Due to [PEP 517](https://peps.python.org/pep-0517/) and [`pip` supporting `pyproject.toml`](https://pip.pypa.io/en/stable/reference/build-system/pyproject-toml/), this means that all package managers that support the [build backend](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#declaring-the-build-backend) standard are automatically supported.
+
+For example, you can use [Hatch](https://hatch.pypa.io/latest/config/build/#build-system), [Poetry](https://python-poetry.org/docs/pyproject/#poetry-and-pep-517), or [PDM](https://pdm-project.org/latest/reference/build/), to manage a module's dependencies and configure how it's built and installed.
+
+Read more about this in the [Packaging Python Projects](https://packaging.python.org/en/latest/tutorials/packaging-projects/) tutorial.
+
+### Required `main` in `site-packages`
+
+The module's code isn't executed directly like a script, but it is rather imported under the hardcoded name `main` (although this may be configurable in future).
+
+This means that after `uv pip install -e .`, there should be a Python module (or package) called `main` in the virtual environment's `site-packages/` directory inside the runtime container (`/opt/venv/lib/python-3.11/site-packages/main` by default).
+
+This is the most important requirement. The other conventions are flexible, as long as the above is verified.
+
+</TabItem>
+<TabItem value="TypeScript">
+Dagger modules in Typescript are built to be installed, like libraries. The runtime container installs the module code with:
+
+```shell
+# executed by the runtime container
+yarn install --production
+```
+
+This means that so long as the project has a `package.json` file, it can be used as a library and it can be managed using any Node.js package manager such as [`npm`](https://www.npmjs.com/), [`pnpm`](https://pnpm.io/) or [`yarn`](https://yarnpkg.com/).
+
+Only production dependencies are installed, not packages defined in the `devDependencies` field.
+
+</TabItem>
+</Tabs>
