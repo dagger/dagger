@@ -175,7 +175,7 @@ func lintGoModule(ctx context.Context, all bool, src *Directory, pkgs []string) 
 
 		eg.Go(func() error {
 			return util.DiffDirectoryF(ctx, src.Directory(pkg), func(ctx context.Context) (*dagger.Directory, error) {
-				return util.GoBase(src).
+				return dag.Go(src).Env().
 					WithWorkdir(path.Join("/app", pkg)).
 					WithExec([]string{"go", "mod", "tidy"}).
 					Directory("."), nil

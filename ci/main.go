@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/ci/internal/dagger"
-	"github.com/dagger/dagger/ci/util"
 )
 
 // A dev environment for the Dagger Engine
@@ -40,9 +39,53 @@ func New(
 	}, nil
 }
 
+// Check that everything works. Use this as CI entrypoint.
+func (ci *Dagger) Check(ctx context.Context) error {
+	// FIXME: run concurrently
+	if err := ci.Docs().Lint(ctx); err != nil {
+		return err
+	}
+	if err := ci.Engine().Lint(ctx, false); err != nil {
+		return err
+	}
+	if err := ci.Test().All(
+		ctx,
+		// failfast
+		false,
+		// parallel
+		16,
+		// timeout
+		"",
+		// race
+		true,
+	); err != nil {
+		return err
+	}
+	if err := ci.CLI().TestPublish(ctx); err != nil {
+		return err
+	}
+	// FIXME: port all other function calls from Github Actions YAML
+	return nil
+}
+
 // Develop the Dagger CLI
 func (ci *Dagger) CLI() *CLI {
 	return &CLI{Dagger: ci}
+}
+
+// Dagger's Go toolchain
+func (ci *Dagger) Go() *GoToolchain {
+	// FIXME: ugly glue, use interface?
+	return &GoToolchain{Go: dag.Go(ci.Source)}
+}
+
+type GoToolchain struct {
+	// +private
+	*Go
+}
+
+func (gtc *GoToolchain) Env() *Container {
+	return gtc.Go.Env()
 }
 
 // Develop the Dagger engine container
@@ -111,7 +154,7 @@ func (ci *Dagger) Dev(
 		return nil, err
 	}
 
-	return util.GoBase(ci.Source).
+	return ci.Go().Env().
 		WithMountedDirectory("/mnt", target).
 		WithMountedFile("/usr/bin/dagger", client).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").

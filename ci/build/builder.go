@@ -278,8 +278,7 @@ func (build *Builder) dialstdioBinary() *dagger.File {
 }
 
 func (build *Builder) binary(pkg string, version bool) *dagger.File {
-	base := util.GoBase(build.source).With(build.goPlatformEnv)
-
+	base := dag.Go(build.source).Env().With(build.goPlatformEnv)
 	ldflags := []string{
 		"-s", "-w",
 	}

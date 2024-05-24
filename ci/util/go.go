@@ -1,9 +1,6 @@
 package util
 
 import (
-	"fmt"
-
-	"github.com/dagger/dagger/ci/consts"
 	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
@@ -39,27 +36,4 @@ func GoDirectory(dir *dagger.Directory) *dagger.Directory {
 			".git",
 		},
 	})
-}
-
-func GoBase(dir *dagger.Directory) *dagger.Container {
-	dir = GoDirectory(dir)
-	return dag.Container().
-		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
-		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-		WithExec([]string{"apk", "add", "build-base"}).
-		WithEnvVariable("CGO_ENABLED", "0").
-		// adding the git CLI to inject vcs info
-		// into the go binaries
-		WithExec([]string{"apk", "add", "git"}).
-		WithWorkdir("/app").
-		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
-		WithDirectory("/app", dir, dagger.ContainerWithDirectoryOpts{
-			Include: []string{"**/go.mod", "**/go.sum"},
-		}).
-		WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-		WithExec([]string{"go", "mod", "download"}).
-		// run `go build` with all source
-		WithMountedDirectory("/app", dir).
-		// include a cache for go build
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build"))
 }

@@ -24,7 +24,7 @@ func (t GoSDK) Lint(ctx context.Context) error {
 		return lintGoModule(ctx, false, t.Dagger.Source, []string{"sdk/go"})
 	})
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, util.GoDirectory(t.Dagger.Source), t.Generate, "sdk/go")
+		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, "sdk/go")
 	})
 	return eg.Wait()
 }
@@ -36,7 +36,7 @@ func (t GoSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	output, err := util.GoBase(t.Dagger.Source).
+	output, err := t.Dagger.Go().Env().
 		With(installer).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "test", "-v", "-skip=TestProvision", "./..."}).
@@ -54,7 +54,7 @@ func (t GoSDK) Generate(ctx context.Context) (*Directory, error) {
 		return nil, err
 	}
 
-	generated := util.GoBase(t.Dagger.Source).
+	generated := t.Dagger.Go().Env().
 		With(installer).
 		WithWorkdir("sdk/go").
 		WithExec([]string{"go", "generate", "-v", "./..."}).
@@ -85,8 +85,9 @@ func (t GoSDK) Publish(
 	githubToken *Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
-		source:       "https://github.com/dagger/dagger.git",
-		alpineBase:   util.GoBase(t.Dagger.Source),
+		source: "https://github.com/dagger/dagger.git",
+		// FIXME: the go env is not alpine-based anymore, is that a problem?
+		alpineBase:   t.Dagger.Go().Env(),
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
 		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
@@ -138,6 +139,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 		base = dag.Container().From(consts.AlpineImage)
 	}
 
+	// FIXME: move this into std modules
 	git := base.
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", opts.username}).
