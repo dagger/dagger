@@ -12,7 +12,6 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -28,9 +27,6 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.C
 	opts = append(opts, bkclient.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return connector.Connect(ctx)
 	}))
-
-	ctx, span := Tracer().Start(ctx, "starting engine")
-	defer telemetry.End(span, func() error { return rerr })
 
 	c, err := bkclient.New(ctx, remote.String(), opts...)
 	if err != nil {

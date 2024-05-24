@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from "assert"
 import * as fs from "fs"
 import { describe, it } from "mocha"
@@ -25,10 +26,6 @@ describe("scan static TypeScript", function () {
     {
       name: "Should correctly scan multiple arguments",
       directory: "multiArgs",
-    },
-    {
-      name: "Should ignore class that does not have the object decorator",
-      directory: "noDecorators",
     },
     {
       name: "Should supports multiple files and classes that returns classes",
@@ -93,4 +90,37 @@ describe("scan static TypeScript", function () {
       assert.deepEqual(JSON.parse(jsonResult), JSON.parse(expected))
     })
   }
+
+  describe("Should throw error on invalid module", function () {
+    it("Should throw an error when no files are provided", async function () {
+      try {
+        await scan([], "")
+        assert.fail("Should throw an error")
+      } catch (e: any) {
+        assert.equal(e.message, "no files to introspect found")
+      }
+    })
+
+    it("Should throw an error if the module is invalid", async function () {
+      try {
+        const files = await listFiles(`${rootDirectory}/invalid`)
+
+        scan(files, "invalid")
+        assert.fail("Should throw an error")
+      } catch (e: any) {
+        assert.equal(e.message, "no objects found in the module")
+      }
+    })
+
+    it("Should throw an error if the module class has no decorators", async function () {
+      try {
+        const files = await listFiles(`${rootDirectory}/noDecorators`)
+
+        scan(files, "noDecorators")
+        assert.fail("Should throw an error")
+      } catch (e: any) {
+        assert.equal(e.message, "no objects found in the module")
+      }
+    })
+  })
 })

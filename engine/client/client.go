@@ -63,10 +63,8 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineNameCallback func(string)
-	CloudURLCallback   func(string)
-	EngineTrace        sdktrace.SpanExporter
-	EngineLogs         sdklog.LogExporter
+	EngineTrace sdktrace.SpanExporter
+	EngineLogs  sdklog.LogExporter
 }
 
 type Client struct {
@@ -168,10 +166,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 
-	connectSpanOpts := []trace.SpanStartOption{
-		telemetry.Encapsulate(),
-	}
-
+	connectSpanOpts := []trace.SpanStartOption{}
 	if configuredServerID != "" {
 		// infer that this is not a main client caller, server ID is never set for those currently
 		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
@@ -226,14 +221,21 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 		cloudToken = v
 	}
 
-	connector, err := driver.Provision(ctx, remote, &drivers.DriverOpts{
+	provisionCtx, provisionSpan := Tracer().Start(ctx, "starting engine")
+	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
+	connector, err := driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
 		UserAgent:        c.UserAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 	})
+	provisionCancel()
+	telemetry.End(provisionSpan, func() error { return err })
 	if err != nil {
 		return err
 	}
+
+	ctx, span := Tracer().Start(ctx, "connecting to engine")
+	defer telemetry.End(span, func() error { return rerr })
 
 	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
 		// Open a separate connection for telemetry.
@@ -279,10 +281,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 
 	c.bkClient = bkClient
 
-	if c.EngineNameCallback != nil {
-		engineName := fmt.Sprintf("%s (version %s)", bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
-		c.EngineNameCallback(engineName)
-	}
+	slog.Info("Connected to engine", "name", bkInfo.BuildkitVersion.Revision, "version", bkInfo.BuildkitVersion.Version)
 
 	return nil
 }
@@ -291,7 +290,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	ctx, _, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -378,8 +377,6 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 			if elapsed > time.Second {
 				fmt.Fprintln(stderr, "Failed to connect; retrying...", err)
 			}
-		} else {
-			fmt.Fprintln(stdout, "OK!")
 		}
 		return err
 	}); err != nil {

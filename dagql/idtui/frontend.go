@@ -27,8 +27,6 @@ import (
 	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
-var consoleSink = os.Stderr
-
 type Frontend struct {
 	// Debug tells the frontend to show everything and do one big final render.
 	Debug bool
@@ -98,12 +96,14 @@ func New() *Frontend {
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) error {
+	ctx = telemetry.WithLogProfile(ctx, fe.profile)
+
 	// redirect slog to the logs pane
-	level := slog.LevelWarn
+	level := slog.LevelInfo
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
-	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, level))
+	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, fe.profile, level))
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
@@ -134,21 +134,6 @@ func (fe *Frontend) Run(ctx context.Context, run func(context.Context) error) er
 
 	// return original err
 	return runErr
-}
-
-// ConnectedToEngine is called when the CLI connects to an engine.
-func (fe *Frontend) ConnectedToEngine(name string) {
-	if !fe.Silent && fe.Plain {
-		fmt.Fprintln(consoleSink, "Connected to engine", name)
-	}
-}
-
-// ConnectedToCloud is called when the CLI has started emitting events to
-// The Cloud.
-func (fe *Frontend) ConnectedToCloud(cloudURL string) {
-	if !fe.Silent && fe.Plain {
-		fmt.Fprintln(consoleSink, "Dagger Cloud URL:", cloudURL)
-	}
 }
 
 // SetPrimary tells the frontend which span should be treated like the focal
@@ -243,6 +228,7 @@ func (fe *Frontend) renderMessages(out *termenv.Output, full bool) (bool, error)
 		fe.messagesView.SetHeight(10)
 	}
 	_, err := fmt.Fprint(out, fe.messagesView.View())
+	fmt.Fprintln(out)
 	return true, err
 }
 
@@ -251,12 +237,8 @@ func (fe *Frontend) renderPrimaryOutput() error {
 	if len(logs) == 0 {
 		return nil
 	}
-	var trailingLn bool
 	for _, l := range logs {
 		data := l.Body().AsString()
-		if strings.HasSuffix(data, "\n") {
-			trailingLn = true
-		}
 		var stream int
 		l.WalkAttributes(func(attr log.KeyValue) bool {
 			if attr.Key == telemetry.LogStreamAttr {
@@ -275,6 +257,11 @@ func (fe *Frontend) renderPrimaryOutput() error {
 				return err
 			}
 		}
+	}
+
+	trailingLn := false
+	if len(logs) > 0 {
+		trailingLn = strings.HasSuffix(logs[len(logs)-1].Body().AsString(), "\n")
 	}
 	if !trailingLn && term.IsTerminal(int(os.Stdout.Fd())) {
 		// NB: ensure there's a trailing newline if stdout is a TTY, so we don't
@@ -382,10 +369,10 @@ func (fe *Frontend) Background(cmd tea.ExecCommand) error {
 
 func (fe *Frontend) Render(out *termenv.Output) error {
 	fe.recalculateView()
-	if _, err := fe.renderProgress(out); err != nil {
+	if _, err := fe.renderMessages(out, false); err != nil {
 		return err
 	}
-	if _, err := fe.renderMessages(out, false); err != nil {
+	if _, err := fe.renderProgress(out); err != nil {
 		return err
 	}
 	return nil
