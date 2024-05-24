@@ -26,7 +26,7 @@ class MyModule:
         image_name: str,
     ) -> str:
         return await (
-            dag.container()
+            dag.container(platform=dagger.Platform("linux/amd64"))
             .from_("eclipse-temurin:17-alpine")
             .with_label("org.opencontainers.image.title", "Java with Dagger")
             .with_label("org.opencontainers.image.version", version)

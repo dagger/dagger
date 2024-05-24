@@ -18,7 +18,7 @@ func (m *MyModule) Build(ctx context.Context, source *Directory) *File {
 
 func (m *MyModule) Publish(ctx context.Context, source *Directory, version string, registryAddress string, registryUsername string, registryPassword *Secret, imageName string) (string, error) {
 
-	return dag.Container().
+	return dag.Container(ContainerOpts{Platform: "linux/amd64"}).
 		From("eclipse-temurin:17-alpine").
 		WithLabel("org.opencontainers.image.title", "Java with Dagger").
 		WithLabel("org.opencontainers.image.version", version).

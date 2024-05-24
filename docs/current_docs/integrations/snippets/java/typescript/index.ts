@@ -1,4 +1,12 @@
-import { dag, File, Directory, Secret, object, func } from "@dagger.io/dagger"
+import {
+  dag,
+  File,
+  Directory,
+  Secret,
+  object,
+  func,
+  ClientContainerOpts,
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -23,7 +31,7 @@ class MyModule {
     imageName: string,
   ): Promise<string> {
     return await dag
-      .container()
+      .container({ platform: "linux/amd64" } as ClientContainerOpts)
       .from("eclipse-temurin:17-alpine")
       .withLabel("org.opencontainers.image.title", "Java with Dagger")
       .withLabel("org.opencontainers.image.version", version)
