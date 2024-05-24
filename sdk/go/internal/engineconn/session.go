@@ -129,7 +129,6 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 			cmdCancel()
 			return nil, err
 		}
-		defer stdout.Close() // don't need it after we read the port
 
 		stderrPipe, err := proc.StderrPipe()
 		if err != nil {
@@ -205,8 +204,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	paramCh := make(chan error, 1)
 	var params ConnectParams
 	go func() {
-		defer close(paramCh)
-		paramBytes, err := bufio.NewReader(stdout).ReadBytes('\n')
+		stdout := bufio.NewReader(stdout)
+		paramBytes, err := stdout.ReadBytes('\n')
 		if err != nil {
 			paramCh <- err
 			return
@@ -214,6 +213,9 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		if err := json.Unmarshal(paramBytes, &params); err != nil {
 			paramCh <- err
 		}
+		close(paramCh)
+
+		io.Copy(io.Discard, stdout)
 	}()
 
 	select {
