@@ -146,6 +146,48 @@ dagger call build --dir="https://github.com/golang/example#master:hello"
 
 ### Invalidate cache */}
 
+### Copy a local file to a container
+
+The following Dagger Function accepts a `File` argument representing the host file to be copied. It writes the specified file to a container in the `/src/` directory and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/copy-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/copy-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/copy-file/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+-  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
+
+    ```shell
+    dagger call copy-file --f=/home/admin/archives.zip
+    ```
+
+-  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
+
+    ```shell
+    dagger call \
+      copy-file --f=/home/admin/archives.zip \
+      directory --path=/src \
+      entries
+    ```
+
 ## Secrets
 
 ### Use secrets
