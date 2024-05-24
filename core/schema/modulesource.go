@@ -29,7 +29,7 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
-	parsed := parseRefString(args.RefString)
+	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
 	modPath, modVersion, hasVersion, isRemote := parsed.modPath, parsed.modVersion, parsed.hasVersion, parsed.kind == core.ModuleSourceKindGit
 
 	if !hasVersion && isRemote && args.Stable {
@@ -216,13 +216,19 @@ type parsedRefString struct {
 	kind       core.ModuleSourceKind
 }
 
-func parseRefString(refString string) parsedRefString {
+func parseRefString(ctx context.Context, bk *buildkit.Client, refString string) parsedRefString {
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
-	// TODO(Guillaume): extend logic to handle local path with stat, at CLI level?
-	// Considers as local path refs starting with / or ./ or ., used in findup logic
-	if strings.HasPrefix(parsed.modPath, "/") || strings.HasPrefix(parsed.modPath, "./") || strings.HasPrefix(parsed.modPath, ".") {
+	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
+	if err == nil {
+		if !parsed.hasVersion && stat.IsDir() {
+			parsed.kind = core.ModuleSourceKindLocal
+			return parsed
+		}
+	}
+
+	if strings.HasPrefix(parsed.modPath, "/") || strings.HasPrefix(parsed.modPath, ".") {
 		parsed.kind = core.ModuleSourceKindLocal
 		return parsed
 	}
@@ -707,6 +713,8 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source root relative path: %w", err)
 	}
+	// force relative path format for parseRefString
+	sourceRootRelPath = "./" + sourceRootRelPath
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
 	if err := s.collectCallerLocalDeps(ctx, src.Query, contextAbsPath, sourceRootAbsPath, true, src, collectedDeps); err != nil {
@@ -1036,7 +1044,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 
 		for _, depCfg := range modCfg.Dependencies {
 			// check if it is a local module source
-			parsed := parseRefString(depCfg.Source)
+			parsed := parseRefString(ctx, query.Buildkit, depCfg.Source)
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
 			}
@@ -1058,7 +1066,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
 			// check if it's a local custom SDK
-			parsed := parseRefString(modCfg.SDK)
+			parsed := parseRefString(ctx, query.Buildkit, modCfg.SDK)
 			switch parsed.kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
