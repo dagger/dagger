@@ -1,4 +1,4 @@
-import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
 @object()
 class MyModule {
@@ -11,22 +11,23 @@ class MyModule {
       .container()
       .from("alpine")
       .with(
-        envVariables({
-          ENV_VAR_1: "VALUE 1",
-          ENV_VAR_2: "VALUE 2",
-          ENV_VAR_3: "VALUE 3",
-        }),
+        envVariables([
+          ["ENV_VAR_1", "VALUE 1"],
+          ["ENV_VAR_2", "VALUE 2"],
+          ["ENV_VAR_3", "VALUE_3"],
+        ]),
       )
       .withExec(["env"])
-      .stdout()
+      .stdout();
   }
 }
 
-function envVariables(envs: Record<string, string>) {
+function envVariables(envs: Array<[string, string]>) {
   return (c: Container): Container => {
-    Object.entries(envs).forEach(([key, value]) => {
-      c = c.withEnvVariable(key, value)
-    })
-    return c
-  }
+    for (const [key, value] of envs) {
+      c = c.withEnvVariable(key, value);
+    }
+    return c;
+  };
 }
+
