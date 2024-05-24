@@ -413,10 +413,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/constructor"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/name-overrides"
             },
             {
@@ -437,10 +433,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/constructor"
             },
             {
               "type": "doc",
