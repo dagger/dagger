@@ -65,7 +65,7 @@ This is why the initial `pyproject.toml` file doesn't include any [dependencies]
 
 ### UV installer
 
-[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./python/077133-python-dependencies.mdx#lock-file) (starting with Dagger v0.11.0). It's possible to specify a newer version, if needed, in `pyproject.toml`:
+[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./language-dependencies.mdx#lock-file) (starting with Dagger v0.11.0). It's possible to specify a newer version, if needed, in `pyproject.toml`:
 
 ```toml
 [tool.dagger]
