@@ -16,5 +16,4 @@ class MyModule {
       .withExposedPort(8080)
       .asService()
   }
-
 }
