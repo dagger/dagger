@@ -349,3 +349,36 @@ Example usage:
     ```shell
     dagger call build --source=.
     ```
+
+### Set environment variables in a container
+
+The following Dagger Function demonstrates how to set multiple environment variables in a container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/set-env-vars/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/set-env-vars/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/set-env-vars/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Example usage:
+
+- Set environment variables in a container using cached dependencies:
+
+    ```shell
+    dagger call set-env
+    ```
