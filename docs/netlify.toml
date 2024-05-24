@@ -129,6 +129,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual Go interfaces pages to multi-language page
+  from = "/manuals/developer/go/:docid/interfaces"
+  to = "/manuals/developer/interfaces"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"
