@@ -54,7 +54,7 @@
 [[redirects]]
   # redirect developer manual language-specific dependencies page to multi-language page
   from = "/manuals/developer/:language/:docid/dependencies"
-  to = "/manuals/developer/dependencies"
+  to = "/manuals/developer/module-dependencies"
 
 [[redirects]]
   # redirect developer manual language-specific chaining page to multi-language page
@@ -84,6 +84,18 @@
   # redirect developer manual Go interfaces pages to multi-language page
   from = "/manuals/developer/go/:docid/interfaces"
   to = "/manuals/developer/interfaces"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific dependencies page to multi-language page
+  from = "/manuals/developer/typescript/:docid/typescript-dependencies"
+  to = "/manuals/developer/language-dependencies"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific dependencies page to multi-language page
+  from = "/manuals/developer/python/:docid/python-dependencies"
+  to = "/manuals/developer/language-dependencies"
   status = 301
 
 [[redirects]]

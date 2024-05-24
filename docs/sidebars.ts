@@ -326,7 +326,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/dependencies"
+          "id": "manuals/developer/module-dependencies"
         },
         {
           "type": "doc",
@@ -343,6 +343,10 @@ module.exports = {
         {
           "type": "doc",
           "id": "manuals/developer/interfaces"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/language-dependencies"
         },
         {
           "type": "doc",
@@ -423,10 +427,7 @@ module.exports = {
               "type": "doc",
               "id": "manuals/developer/python/module-structure"
             },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/python-dependencies"
-            },
+
             {
               "type": "doc",
               "id": "manuals/developer/python/ide-integration"
@@ -477,10 +478,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/typescript-dependencies"
             },
             {
               "type": "doc",
