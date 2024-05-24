@@ -20,12 +20,12 @@ module.exports = {
       },
       "items": [
         "quickstart/cli",
-        "quickstart/hello",
-        "quickstart/directories",
-        "quickstart/containers",
         "quickstart/daggerize",
-        "quickstart/custom-function",
-        "quickstart/daggerverse",
+        "quickstart/env",
+        "quickstart/test",
+        "quickstart/build",
+        "quickstart/publish",
+        "quickstart/simplify",
         "quickstart/conclusion"
       ]
     },

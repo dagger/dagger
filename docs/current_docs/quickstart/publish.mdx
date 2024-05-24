@@ -1,0 +1,94 @@
+---
+slug: /quickstart/publish
+title: "Publish the container image"
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart
+
+## Publish the container image
+
+The end stage of the example pipeline is the `publish` stage, which publishes the container image to a registry.
+
+### Inspect the Dagger Function
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/publish/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/publish/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/publish/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Just as you can call Dagger Functions individually from the CLI, you can also call (and combine) them using a programming language. This Dagger Function is an example. It is a higher-level function which orchestrates the Dagger Functions in previous sections and the core Dagger API to:
+- run the application's tests and return the results;
+- build and return a container image of the final application;
+- publish the container image to a registry and return the image identifier.
+
+:::tip COMBINING DAGGER FUNCTIONS
+There are various reasons why you might want to write Dagger Functions that call other Dagger Functions. A common reason is that when developing locally, it's quicker and easier to trigger your pipeline using a single command (`dagger call publish ...`) instead of multiple commands (`dagger call test ... && dagger call build ... &&  ...`).
+:::
+
+### Call the Dagger Function
+
+Call the Dagger Function:
+
+```shell
+dagger call publish --source=.
+```
+
+You should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh):
+
+![Publish](/img/current_docs/quickstart/publish.gif)
+
+You can test the published container image by pulling and running it with `docker run`:
+
+![Docker run](/img/current_docs/quickstart/docker.gif)
+
+
+:::tip FUNCTION CHAINING
+[Function chaining](../manuals/user/functions/539201-chaining.mdx) works the same way, whether you're writing Dagger Function code using a Dagger SDK or invoking a Dagger Function using the Dagger CLI. The following are equivalent:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/chain/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/chain/python/__init__.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/chain/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+# all equivalent
+dagger call base with-exec --args apk,add,bash,git publish --address="ttl.sh/bar"
+dagger call build publish --address="ttl.sh/bar"
+dagger call build-and-publish
+```
+</TabItem>
+</Tabs>
+:::
