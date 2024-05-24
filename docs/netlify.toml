@@ -99,15 +99,15 @@
   status = 301
 
 [[redirects]]
-<<<<<<< HEAD
   # redirect developer manual language-specific IDE pages to multi-language IDE page
   from = "/manuals/developer/:language/:docid/ide-integration"
   to = "/manuals/developer/ide-integration"
-=======
+  status = 301
+
+[[redirects]]
   # redirect developer manual language-specific module structure page to multi-language page
   from = "/manuals/developer/:language/:docid/module-structure"
   to = "/manuals/developer/module-structure"
->>>>>>> d007a15c6 (docs: Convert module structure page)
   status = 301
 
 [[redirects]]
