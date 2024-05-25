@@ -350,6 +350,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/state-functions"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/runtimes"
         },
         {
@@ -386,10 +390,6 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/go/visibility"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/go/debugging"
             },
             {
@@ -418,10 +418,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/attribute-functions"
             },
             {
               "type": "doc",
@@ -465,10 +461,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/visibility"
             },
             {
               "type": "doc",

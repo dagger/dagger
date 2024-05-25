@@ -1,0 +1,65 @@
+---
+slug: /manuals/developer/state-functions
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "State as Functions"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# State as Functions
+
+Object state can be exposed as a Dagger Function, without having to create a getter function explicitly. Depending on the language used, this state is exposed using struct fields (Go), object attributes (Python) or object properties (TypeScript).
+
+<Tabs groupId="language">
+<TabItem value="Go">
+Dagger only exposes a struct's public fields; private fields will not be exposed.
+
+Here's an example where one struct field is exposed as a Dagger Function, while the other is not:
+
+```go file=./snippets/state-functions/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) descriptor is a wrapper of
+[`dataclasses.field`](https://docs.python.org/3/library/dataclasses.html#mutable-default-values). It creates a getter function for the attribute as well so that it's accessible from the Dagger API.
+
+Here's an example where one attribute is exposed as a Dagger Function, while the other is not:
+
+```python file=./snippets/state-functions/python/main.py
+```
+
+Notice that compared to [`dataclasses.field`](https://docs.python.org/3/library/dataclasses.html#mutable-default-values), the [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) wrapper only supports setting `init: bool`, and both `default` and `default_factory` in the same `default` parameter.
+
+:::note
+In a future version of the Python SDK, the `dagger.function` decorator will be used as a descriptor in place of `dagger.field` to make the distinction clearer.
+:::
+
+</TabItem>
+<TabItem value="TypeScript">
+TypeScript already offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those members of a Dagger module that are explicitly decorated with the `@field()` decorator. Others will remain private.
+
+Here's an example where one field is exposed as a Dagger Function, while the other is not:
+
+```typescript file=./snippets/state-functions/typescript/index.ts
+```
+
+:::note
+In a future version of the TypeScript SDK, the `@function()` decorator will be used as a descriptor in place of `@field()` to make the distinction clearer.
+:::
+
+</TabItem>
+</Tabs>
+
+Confirm with `dagger call --help` that only the `greeting` function was created, with `name` remaining only a constructor argument:
+
+```
+FUNCTIONS
+  greeting      The greeting to use
+  message       Return the greeting message
+
+ARGUMENTS
+      --greeting string   The greeting to use (default "Hello")
+      --name string       Who to greet (default "World")
+```
