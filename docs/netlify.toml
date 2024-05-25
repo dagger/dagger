@@ -52,7 +52,13 @@
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific dependencies page to multi-language page
+  # redirect developer manual language-specific documentation page to multi-language page
+  from = "/manuals/developer/:language/:docid/documentation"
+  to = "/manuals/developer/documentation"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific dependencies pages to multi-language page
   from = "/manuals/developer/:language/:docid/dependencies"
   to = "/manuals/developer/module-dependencies"
 
