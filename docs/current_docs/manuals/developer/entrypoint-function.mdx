@@ -1,36 +1,41 @@
 ---
-slug: /manuals/developer/constructor
+slug: /manuals/developer/entrypoint-function
 displayed_sidebar: "current"
 toc_max_heading_level: 2
-title: "Module Constructor"
+title: "Entrypoint Function"
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Module Constructor
+# Entrypoint Function
 
-The main object's constructor is exposed as the entrypoint function for a module. Its parameters are available as flags in the `dagger call` command directly.
+Every Dagger module has an entrypoint function. The default one is generated automatically and has no arguments.
+
+It's possible to write a custom entrypoint function. The mechanism to do this is SDK-specific.
 
 This is a simple way to accept module-wide configuration, or just to set a few attributes without having to create setter functions for them.
 
+
+## Simple entrypoint function
+
+The entrypoint function for a module can be overridden by registering a custom constructor. Its parameters are available as flags in the `dagger call` command directly.
+
 :::note
-Dagger modules have only one constructor. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
+Dagger modules have only one entrypoint function. Entrypoint function of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
 :::
 
-## Simple constructor
-
-Here is an example module with a constructor:
+Here is an example module with a custom constructor as entrypoint function:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/constructor/go/simple/main.go
+```go file=./snippets/entrypoint/go/simple/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/constructor/python/simple/main.py
+```python file=./snippets/entrypoint/python/simple/main.py
 ```
 
 :::info
@@ -42,7 +47,7 @@ The code listing above is an example of an object that has typed attributes.
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/constructor/typescript/simple/index.ts
+```typescript file=./snippets/entrypoint/typescript/simple/index.ts
 ```
 
 </TabItem>
@@ -73,7 +78,7 @@ The information in this section is only applicable to the Python SDK.
 Same as any [data class](https://docs.python.org/3/library/dataclasses.html), attributes can be excluded from the
 generated `__init__()` function, using [dataclasses.field(init=False)](https://docs.python.org/3/library/dataclasses.html#dataclasses.field):
 
-```python file=./snippets/constructor/python/exclude/main.py
+```python file=./snippets/entrypoint/python/exclude/main.py
 ```
 
 In this case, only the `name` flag was added and is visible in the output:
@@ -96,7 +101,7 @@ The opposite is also possible. To define an argument that only exists in
 the constructor, but not as a class attribute, define it as an
 [init-only variable](https://docs.python.org/3/library/dataclasses.html#init-only-variables):
 
-```python file=./snippets/constructor/python/initvar/main.py
+```python file=./snippets/entrypoint/python/initvar/main.py
 ```
 
 ## Complex or mutable defaults (Python)
@@ -109,7 +114,7 @@ For default values that are more complex, dynamic or just [mutable](https://docs
 use a [factory function](https://docs.python.org/3/library/dataclasses.html#default-factory-functions) without arguments in
 [dataclasses.field(default_factory=...)](https://docs.python.org/3/library/dataclasses.html#dataclasses.field):
 
-```python file=./snippets/constructor/python/factory/main.py
+```python file=./snippets/entrypoint/python/factory/main.py
 ```
 
 ## Asynchronous constructor (Python)
@@ -126,7 +131,7 @@ a factory class method named `create`, as in the following code listing:
 This factory class method must be named `create`.
 :::
 
-```python file=./snippets/constructor/python/async/main.py
+```python file=./snippets/entrypoint/python/async/main.py
 ```
 
 ## Default values for complex types (TypeScript)
@@ -139,12 +144,12 @@ If a Dagger module constructor expects a Dagger core type (such as `Container`, 
 
 Here's is an example of a Dagger module with a default constructor argument of type `Container`:
 
-```typescript file=./snippets/constructor/typescript/default-object-in-constructor/index.ts
+```typescript file=./snippets/entrypoint/typescript/default-object-in-constructor/index.ts
 ```
 
 This default value can also be assigned directly in the field:
 
-```typescript file=./snippets/constructor/typescript/default-object-in-field/index.ts
+```typescript file=./snippets/entrypoint/typescript/default-object-in-field/index.ts
 ```
 
 :::note

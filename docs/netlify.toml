@@ -69,9 +69,9 @@
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific constructor page to multi-language constructor page
+  # redirect developer manual language-specific constructor page to multi-language page
   from = "/manuals/developer/:language/:docid/constructor"
-  to = "/manuals/developer/constructor"
+  to = "/manuals/developer/entrypoint-function"
   status = 301
 
 [[redirects]]

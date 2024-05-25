@@ -354,7 +354,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/constructor"
+          "id": "manuals/developer/entrypoint-function"
         },
         {
           "type": "doc",
