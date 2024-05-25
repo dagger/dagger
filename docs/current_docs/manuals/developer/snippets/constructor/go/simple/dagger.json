@@ -1,4 +1,6 @@
 {
-  "name": "helloWorld",
-  "sdk": "go"
+  "name": "my-module",
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "v0.11.3"
 }
