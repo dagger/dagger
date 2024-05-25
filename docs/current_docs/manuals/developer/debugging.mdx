@@ -53,16 +53,14 @@ like `--progress=plain` or `--debug`, otherwise it won't show in the terminal.
 Using the command `dagger call --debug echo --msg="hello"`, you should see a large number of debug messages, eventually ending with output similar to the below:
 
 ```
-✔ connect 2.9s
-✔ initialize 39.4s
-✔ myModule: MyModule! 2.6s
-┃ [DEBUG] dagger.mod._module: output => '{}'
-┃ [DEBUG] dagger.client._session: Closing client session to GraphQL server
   ✔ connect 0.1s
-✔ MyModule.echo(msg: "hello"): String! 2.4s
+✔ Debug.echo(msg: "hello"): String! 0.9s
+┃ [DEBUG] dagger.mod._resolver: func => <Signature (msg: str) -> str>
+┃ [DEBUG] dagger.mod._resolver: input args => {'msg': 'hello'}
+┃ [DEBUG] dagger.mod._resolver: structured args => {'msg': 'hello'}
+┃ [DEBUG] dagger.mod._module: result => 'hello'
 ┃ [DEBUG] dagger.mod._module: output => '"hello"'
 ┃ [DEBUG] dagger.client._session: Closing client session to GraphQL server
-  ✔ connect 0.2s
 
 hello
 ```
@@ -74,5 +72,3 @@ The above gives a lot of useful information:
 - The user inputs before and after deserialization
 - The user inputs after being converted to more complex types (structuring)
 - The function's result before and after serialization
-
-Additionally, with `--debug`, the GraphQL query that the Dagger CLI produced is also shown.
