@@ -20,8 +20,8 @@ func New(
 	sdkSourceDir *Directory,
 ) *ElixirSdk {
 	if sdkSourceDir == nil {
-		sdkSourceDir = dag.Git("https://github.com/wingyplus/dagger.git").
-			Branch("elixir-module").
+		sdkSourceDir = dag.Git("https://github.com/dagger/dagger.git").
+			Branch("main").
 			Tree().
 			Directory("sdk/elixir")
 	}
