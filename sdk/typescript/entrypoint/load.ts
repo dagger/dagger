@@ -62,7 +62,11 @@ export async function loadArgs(
       throw new Error(`could not find argument ${argName}`)
     }
 
-    const loadedArg = await loadValue(registry, ctx.fnArgs[argName], argument.type)
+    const loadedArg = await loadValue(
+      registry,
+      ctx.fnArgs[argName],
+      argument.type,
+    )
 
     // If the argument is variadic, we need to load each args independently
     // so it's correctly propagated when it's sent to the function.
@@ -136,7 +140,11 @@ export async function loadValue(
       return Promise.all(
         value.map(
           async (v: any) =>
-            await loadValue(registry, v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
+            await loadValue(
+              registry,
+              v,
+              (type as TypeDef<TypeDefKind.ListKind>).typeDef,
+            ),
         ),
       )
     case TypeDefKind.ObjectKind: {

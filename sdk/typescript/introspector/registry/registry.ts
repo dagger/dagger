@@ -84,13 +84,10 @@ export class Registry {
   /**
    * Build a class that is part of the module itself so you can
    * access its sub functions.
-   * 
+   *
    * If there's no class associated, return the object itself.
    */
-  buildClass(
-    object: string,
-    state: State,
-  ): any{
+  buildClass(object: string, state: State): any {
     const resolver = Reflect.getMetadata(object, this) as RegistryClass
     if (!resolver) {
       return object
