@@ -10,8 +10,7 @@ type MyModule struct{}
 // Build and return directory of go binaries
 func (m *MyModule) Build(
 	ctx context.Context,
-	// source code location
-	// can be local directory or remote Git repository
+	// Source code location
 	src *Directory,
 ) *Directory {
 	// define build matrix

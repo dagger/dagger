@@ -6,11 +6,16 @@ class MyModule {
    * Return a container with a specified directory and an additional file
    */
   @func()
-  copyAndModifyDirectory(d: Directory): Container {
+  copyAndModifyDirectory(
+    /**
+     * Source directory
+     */
+    source: Directory
+  ): Container {
     return dag
       .container()
       .from("alpine:latest")
-      .withDirectory("/src", d)
+      .withDirectory("/src", source)
       .withExec(["/bin/sh", "-c", "`echo foo > /src/foo`"])
   }
 }

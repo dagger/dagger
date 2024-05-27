@@ -1,11 +1,16 @@
+from typing import Annotated
+
 import dagger
-from dagger import dag, function, object_type
+from dagger import Doc, dag, function, object_type
 
 
 @object_type
 class MyModule:
     @function
-    def build(self, source: dagger.Directory) -> dagger.Container:
+    def build(
+        self,
+        source: Annotated[dagger.Directory, Doc("Source code location")]
+        ) -> dagger.Container:
         """Build an application using cached dependencies"""
         return (
             dag.container()

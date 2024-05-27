@@ -9,7 +9,7 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Copy a local directory or remote repository to a container
+### Copy a directory or remote repository to a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container and returns the modified container.
 
@@ -39,25 +39,25 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 - Copy the `/myapp` host directory to `/src` in the container and return the modified container:
 
     ```shell
-    dagger call copy-directory --d=./myapp/
+    dagger call copy-directory --source=./myapp/
     ```
 
 - Copy the `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
 
     ```shell
-    dagger call copy-directory --d=github.com/dagger/dagger#main
+    dagger call copy-directory --source=github.com/dagger/dagger#main
     ```
 
 - Copy the `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
 
     ```shell
     dagger call \
-      copy-directory --d=https://github.com/dagger/dagger#main \
+      copy-directory --source=https://github.com/dagger/dagger#main \
       directory --path=/src \
       entries
     ```
 
-### Copy a local directory or remote repository to a container and modify its contents
+### Modify a copied directory or remote repository in a container
 
 The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
 
@@ -91,20 +91,20 @@ Modifications made to a directory's contents after it is written to a container 
 - Copy the `/myapp` host directory to `/src` in the container, add a file to it, and return the modified container:
 
     ```shell
-    dagger call copy-and-modify-directory --d=./myapp/
+    dagger call copy-and-modify-directory --source=./myapp/
     ```
 
 - Copy the `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
 
     ```shell
-    dagger call copy-and-modify-directory --d=github.com/dagger/dagger#main
+    dagger call copy-and-modify-directory --source=github.com/dagger/dagger#main
     ```
 
 - Copy the `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and list the contents of the directory:
 
     ```shell
     dagger call \
-      copy-and-modify-directory --d=https://github.com/dagger/dagger#main \
+      copy-and-modify-directory --source=https://github.com/dagger/dagger#main \
       directory --path=/src \
       entries
     ```
@@ -281,7 +281,7 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
 ```shell
 dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=env:GITHUB_API_TOKEN
@@ -504,13 +504,13 @@ The following Dagger Function uses a cache volume for application dependencies. 
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Build an application using cached dependencies:
+Build an application using cached dependencies:
 
-    ```shell
-    dagger call build --source=.
-    ```
+```shell
+dagger call build --source=.
+```
 
 ### Set environment variables in a container
 
@@ -537,10 +537,10 @@ The following Dagger Function demonstrates how to set multiple environment varia
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Set environment variables in a container:
+Set environment variables in a container:
 
-    ```shell
-    dagger call set-env
-    ```
+```shell
+dagger call set-env
+```

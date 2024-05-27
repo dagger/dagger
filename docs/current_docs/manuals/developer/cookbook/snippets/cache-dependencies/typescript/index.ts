@@ -6,7 +6,12 @@ class MyModule {
    * Build an application using cached dependencies
    */
   @func()
-  build(source: Directory): Container {
+  build(
+    /**
+     * Source code location
+     */
+    source: Directory,
+  ): Container {
     return dag
       .container()
       .from("node:21")

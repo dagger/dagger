@@ -3,7 +3,10 @@ package main
 type MyModule struct{}
 
 // Build an application using cached dependencies
-func (m *MyModule) Build(source *Directory) *Container {
+func (m *MyModule) Build(
+	// Source code location
+	source *Directory,
+) *Container {
 	return dag.Container().
 		From("golang:1.21").
 		WithDirectory("/src", source).
