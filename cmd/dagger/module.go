@@ -1015,6 +1015,7 @@ type modTypeDef struct {
 type functionProvider interface {
 	ProviderName() string
 	GetFunctions() []*modFunction
+	IsCore() bool
 }
 
 func GetFunction(o functionProvider, name string) (*modFunction, error) {
@@ -1061,10 +1062,13 @@ func (o *modObject) ProviderName() string {
 	return o.Name
 }
 
-// GetFunctions returns the object's function definitions as well as the fields,
-// which are treated as functions with no arguments.
-func (o *modObject) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Functions)+len(o.Fields))
+func (o *modObject) IsCore() bool {
+	return o.SourceModuleName == ""
+}
+
+// GetStateFunctions returns the object's fields as function definitions.
+func (o *modObject) GetStateFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields))
 	for _, f := range o.Fields {
 		fns = append(fns, &modFunction{
 			Name:        f.Name,
@@ -1072,17 +1076,21 @@ func (o *modObject) GetFunctions() []*modFunction {
 			ReturnType:  f.TypeDef,
 		})
 	}
-	for _, f := range o.Functions {
-		if !f.IsUnsupported() {
-			fns = append(fns, f)
-		}
-	}
 	return fns
 }
 
+// GetFunctions returns the object's function definitions including the fields,
+// which are treated as functions with no arguments.
+func (o *modObject) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
+	fns = append(fns, o.GetStateFunctions()...)
+	return append(fns, o.Functions...)
+}
+
 type modInterface struct {
-	Name      string
-	Functions []*modFunction
+	Name             string
+	Functions        []*modFunction
+	SourceModuleName string
 }
 
 var _ functionProvider = (*modInterface)(nil)
@@ -1091,14 +1099,12 @@ func (o *modInterface) ProviderName() string {
 	return o.Name
 }
 
+func (o *modInterface) IsCore() bool {
+	return o.SourceModuleName == ""
+}
+
 func (o *modInterface) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Functions))
-	for _, f := range o.Functions {
-		if !f.IsUnsupported() {
-			fns = append(fns, f)
-		}
-	}
-	return fns
+	return o.Functions
 }
 
 type modScalar struct {
@@ -1153,6 +1159,18 @@ func (f *modFunction) IsUnsupported() bool {
 		if arg.IsRequired() && arg.IsUnsupportedFlag() {
 			return true
 		}
+	}
+	return false
+}
+
+func (f *modFunction) ReturnsCoreObject() bool {
+	t := f.ReturnType
+	if t.AsList != nil {
+		t = t.AsList.ElementTypeDef
+	}
+	fp := t.AsFunctionProvider()
+	if fp != nil {
+		return fp.IsCore()
 	}
 	return false
 }

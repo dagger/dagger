@@ -33,6 +33,11 @@ const (
 	Platform     string = "Platform"
 )
 
+var (
+	skippedCmdsAnnotation = "help:skippedCmds"
+	skippedOptsAnnotation = "help:skippedOpts"
+)
+
 var funcGroup = &cobra.Group{
 	ID:    "functions",
 	Title: "Functions",
@@ -69,6 +74,9 @@ available functions.
 				return err
 			}
 			nextType := nextFunc.ReturnType
+			if nextType.AsList != nil {
+				nextType = nextType.AsList.ElementTypeDef
+			}
 			if nextType.AsFunctionProvider() != nil {
 				// sipsma explains why 'nextType.AsObject' is not enough:
 				// > when we're returning the hierarchies of TypeDefs from the API,
@@ -83,7 +91,6 @@ available functions.
 				o = fc.mod.GetFunctionProvider(nextType.Name())
 				continue
 			}
-			// FIXME: handle arrays of objects
 			return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 		}
 		// List functions on the final object
@@ -91,7 +98,12 @@ available functions.
 		sort.Slice(fns, func(i, j int) bool {
 			return fns[i].Name < fns[j].Name
 		})
+		skipped := make([]string, 0)
 		for _, fn := range fns {
+			if fn.IsUnsupported() {
+				skipped = append(skipped, cliName(fn.Name))
+				continue
+			}
 			desc := strings.SplitN(fn.Description, "\n", 2)[0]
 			if desc == "" {
 				desc = "-"
@@ -99,6 +111,12 @@ available functions.
 			fmt.Fprintf(tw, "%s\t%s\n",
 				cliName(fn.Name),
 				desc,
+			)
+		}
+		if len(skipped) > 0 {
+			msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s", len(skipped), strings.Join(skipped, ", "))
+			fmt.Fprintf(tw, "\n%s\n",
+				termenv.String(msg).Faint().String(),
 			)
 		}
 		return tw.Flush()
@@ -185,6 +203,10 @@ type FuncCommand struct {
 	// showUsage flags whether to show a one-line usage message after error.
 	showUsage bool
 
+	// warnSkipped flags whether to show a warning for skipped functions and
+	// arguments rather than a debug level log.
+	warnSkipped bool
+
 	q   *querybuilder.Selection
 	c   *client.Client
 	ctx context.Context
@@ -193,12 +215,13 @@ type FuncCommand struct {
 func (fc *FuncCommand) Command() *cobra.Command {
 	if fc.cmd == nil {
 		fc.cmd = &cobra.Command{
-			Use:     fc.Name,
-			Aliases: fc.Aliases,
-			Short:   fc.Short,
-			Long:    fc.Long,
-			Example: fc.Example,
-			GroupID: moduleGroup.ID,
+			Use:         fc.Name,
+			Aliases:     fc.Aliases,
+			Short:       fc.Short,
+			Long:        fc.Long,
+			Example:     fc.Example,
+			GroupID:     moduleGroup.ID,
+			Annotations: map[string]string{},
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
@@ -282,6 +305,29 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
+func (fc *FuncCommand) Help(cmd *cobra.Command) error {
+	var args []any
+	// We need to store these in annotations because during traversal all
+	// sub-commands are created, not just the one selected. At the end of
+	// traversal we'll get the final command, but without the associated
+	// function or object type definitions.
+	if skipped, ok := cmd.Annotations[skippedOptsAnnotation]; ok {
+		args = append(args, "arguments", strings.Split(skipped, ", "))
+	}
+	if skipped, ok := cmd.Annotations[skippedCmdsAnnotation]; ok {
+		args = append(args, "functions", strings.Split(skipped, ", "))
+	}
+	if len(args) > 0 {
+		msg := "Skipped unsupported types"
+		if fc.warnSkipped {
+			slog.Warn(msg, args...)
+		} else {
+			slog.Debug(msg, args...)
+		}
+	}
+	return cmd.Help()
+}
+
 // execute runs the main logic for the top level command's RunE function.
 func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
@@ -302,7 +348,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 				// This handles the case of `dagger call --help` run on a broken module; in that case
 				// we want to error out since we can't actually load the module and show all subcommands
 				// and flags in the help output, but we still want to show the user *something*
-				cmd.Help()
+				fc.Help(cmd)
 				return
 			}
 
@@ -326,7 +372,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	}
 
 	if fc.needsHelp {
-		return cmd.Help()
+		return fc.Help(cmd)
 	}
 
 	if fc.Execute != nil {
@@ -335,7 +381,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	// No args to the parent command, default to showing help.
 	if cmd == c {
-		return cmd.Help()
+		return fc.Help(cmd)
 	}
 
 	return cmd.RunE(cmd, flags)
@@ -451,6 +497,11 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		fc.addSubCommands(ctx, c, dag, fn.ReturnType)
 
 		if fc.needsHelp {
+			// May be too noisy to always show a warning for skipped functions
+			// and arguments when they're from the core API. In modules, however,
+			// users can do something about it. Even if it's a reusable module
+			// from someone else, hopefully the author notices the warning first.
+			fc.warnSkipped = !fn.ReturnsCoreObject()
 			return nil
 		}
 
@@ -469,13 +520,15 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 
 // addFlagsForFunction creates the flags for a function's arguments.
 func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
+	var skipped []string
+
 	for _, arg := range fn.Args {
 		fc.mod.LoadTypeDef(arg.TypeDef)
 
 		if err := arg.AddFlag(cmd.Flags()); err != nil {
 			var e *UnsupportedFlagError
 			if errors.As(err, &e) {
-				// TODO: report to user
+				skipped = append(skipped, arg.FlagName())
 				continue
 			}
 		}
@@ -489,8 +542,12 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 		)
 	}
 
-	if len(fn.Args) > 0 {
+	if cmd.HasAvailableLocalFlags() {
 		cmd.Use += " [arguments]"
+	}
+
+	if len(skipped) > 0 {
+		cmd.Annotations[skippedOptsAnnotation] = strings.Join(skipped, ", ")
 	}
 
 	return nil
@@ -506,16 +563,29 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, d
 		fnProvider = typeDef.AsList.ElementTypeDef.AsFunctionProvider()
 	}
 
-	if fnProvider != nil {
-		cmd.AddGroup(funcGroup)
-		// TODO: report skipped functions to user
-		for _, fn := range fnProvider.GetFunctions() {
-			subCmd := fc.makeSubCmd(ctx, dag, fn)
-			cmd.AddCommand(subCmd)
+	if fnProvider == nil {
+		return
+	}
+
+	cmd.AddGroup(funcGroup)
+
+	skipped := make([]string, 0)
+
+	for _, fn := range fnProvider.GetFunctions() {
+		if fn.IsUnsupported() {
+			skipped = append(skipped, cliName(fn.Name))
+			continue
 		}
-		if cmd.HasAvailableSubCommands() {
-			cmd.Use += " <function>"
-		}
+		subCmd := fc.makeSubCmd(ctx, dag, fn)
+		cmd.AddCommand(subCmd)
+	}
+
+	if cmd.HasAvailableSubCommands() {
+		cmd.Use += " <function>"
+	}
+
+	if len(skipped) > 0 {
+		cmd.Annotations[skippedCmdsAnnotation] = strings.Join(skipped, ", ")
 	}
 }
 
