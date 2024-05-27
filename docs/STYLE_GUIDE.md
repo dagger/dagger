@@ -38,7 +38,7 @@
 - Dagger Functions and arguments in code listings should be documented inline "wherever possible", except for Cookbook recipes where this is "mandatory" since these are intended to be best-practice examples. This inline documentation includes at minimum
   - a one-line comment for the function;
   - a description for each argument apart from `ctx` (Go) and `self` (Python).
-- The minimal set of files to be included for a code listings are:
+- The minimal set of files to be included for a code listing are:
   - `dagger.json`
   - `.gitignore`
   - `.gitattributes` (optional)
