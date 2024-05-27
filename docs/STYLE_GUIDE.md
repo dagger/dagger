@@ -33,11 +33,16 @@
   </Tabs>
   ```
 
-  - Always capitalize Dagger core types such as `Container`, `Secret`, etc.
-  - Omit the `()` for readability since a lot of the time it's either not necessary, or implies no args are needed, and sometimes you just want to refer to a method call and ignore its required args e.g. `Container.asService`.
-  - Dagger Functions and arguments in code listings should be documented inline "as far as possible", except for Cookbook recipes where this is "mandatory" since these are intended to be best-practice examples. This inline documentation includes at minimum
-    - a one-line comment for the function;
-    - a description for each argument apart from `ctx` (Go) and `self` (Python).
+- Always capitalize Dagger core types such as `Container`, `Secret`, etc.
+- Omit the `()` for readability since a lot of the time it's either not necessary, or implies no args are needed, and sometimes you just want to refer to a method call and ignore its required args e.g. `Container.asService`.
+- Dagger Functions and arguments in code listings should be documented inline "wherever possible", except for Cookbook recipes where this is "mandatory" since these are intended to be best-practice examples. This inline documentation includes at minimum
+  - a one-line comment for the function;
+  - a description for each argument apart from `ctx` (Go) and `self` (Python).
+- The minimal set of files to be included for a code listings are:
+  - `dagger.json`
+  - `.gitignore`
+  - `.gitattributes` (optional)
+  - (Go) `main.go`, `go.mod` and `go.sum`
 
 ## Images
 
@@ -68,8 +73,9 @@ Each recipe requires only:
 
 ### Code listings
 
-- Code listing can come from two sources:
+- Code listings can come from two sources:
   - Snippets used in an existing guide
   - Snippets created specifically for the cookbook (usually stored in `./manuals/developer/cookbook/snippets/RECIPE/LANGUAGE/FILE`)
 - Code listings must be presented for each language SDK unless not relevant/not technically feasible for that language (e.g. a recipe for "using a magefile" would only be relevant for Go).
 - Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `Python` and `TypeScript`.
+- The minimal set of files for
