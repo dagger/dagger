@@ -41,10 +41,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		if filepath.IsAbs(parsed.modPath) {
-			return nil, fmt.Errorf("local module source root path is absolute: %s", parsed.modPath)
-		}
-
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
 			RootSubpath: parsed.modPath,
 		})
