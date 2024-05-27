@@ -34,7 +34,7 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Examples
 
 - Copy the `/myapp` host directory to `/src` in the container and return the modified container:
 
@@ -86,7 +86,7 @@ Modifications made to a directory's contents after it is written to a container 
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Examples
 
 - Copy the `/myapp` host directory to `/src` in the container, add a file to it, and return the modified container:
 
@@ -136,13 +136,13 @@ The following code listing performs a multi-stage build.
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
+Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
 
-    ```shell
-    dagger call build --src="https://github.com/golang/example#master:hello"
-    ```
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello"
+```
 
 ### Perform matrix build
 
@@ -169,34 +169,34 @@ The following code listing performs a matrix build.
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
+Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
 
-    ```shell
-    dagger call build \
-      --src="https://github.com/golang/example#master:hello" \
-      export --path /tmp/matrix-builds
-    ```
+```shell
+dagger call build \
+  --src="https://github.com/golang/example#master:hello" \
+  export --path /tmp/matrix-builds
+```
 
-    Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
+Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
 
-    ```shell
-    /tmp/matrix-builds
-    └── build
-        ├── darwin
-        │   ├── amd64
-        │   │   └── hello
-        │   └── arm64
-        │       └── hello
-        └── linux
-            ├── amd64
-            │   └── hello
-            └── arm64
-                └── hello
+```shell
+/tmp/matrix-builds
+└── build
+    ├── darwin
+    │   ├── amd64
+    │   │   └── hello
+    │   └── arm64
+    │       └── hello
+    └── linux
+        ├── amd64
+        │   └── hello
+        └── arm64
+            └── hello
 
-    8 directories, 4 files
-    ```
+8 directories, 4 files
+```
 
 {/* ### Build multi-arch image
 
@@ -239,7 +239,7 @@ The following Dagger Function accepts a `File` argument representing the host fi
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
 -  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
 
@@ -318,13 +318,13 @@ The first Dagger Function below creates and returns an HTTP service. This servic
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Send a request from one Dagger Function to a bound HTTP service instantiated by a different Dagger Function:
+Send a request from one Dagger Function to a bound HTTP service instantiated by a different Dagger Function:
 
-    ```shell
-    dagger call get
-    ```
+```shell
+dagger call get
+```
 
 ### Expose services in Dagger Functions to the host
 
@@ -351,7 +351,7 @@ The Dagger Function below creates and returns an HTTP service. This service can 
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Examples
 
 - Expose the HTTP service instantiated by a Dagger Function to the host on the default port:
 
@@ -402,14 +402,14 @@ This implies that a service is already listening on a port on the host, out-of-b
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Send a query to the database service listening on host port 3306 and return the result as a string:
+Send a query to the database service listening on host port 3306 and return the result as a string:
 
-    ```shell
-    # assumes a service is listening on host port 3306
-    dagger call user-list --svc=tcp://localhost:3306
-    ```
+```shell
+# assumes a service is listening on host port 3306
+dagger call user-list --svc=tcp://localhost:3306
+```
 
 ### Create a transient service for unit tests
 
@@ -436,13 +436,13 @@ The following Dagger Function creates a service and binds it to an application c
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Run Drupal's unit tests, instantiating a database service during the process:
+Run Drupal's unit tests, instantiating a database service during the process:
 
-    ```shell
-    dagger call test
-    ```
+```shell
+dagger call test
+```
 
 ### Start and stop services
 
@@ -469,9 +469,9 @@ The following Dagger Function demonstrates how to control a service's lifecycle 
 </TabItem>
 </Tabs>
 
-Example usage:
+#### Example
 
-- Start and stop a Redis service:
+Start and stop a Redis service:
 
     ```shell
     dagger call redis-service
