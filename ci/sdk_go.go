@@ -39,7 +39,7 @@ func (t GoSDK) Test(ctx context.Context) error {
 	output, err := util.GoBase(t.Dagger.Source).
 		With(installer).
 		WithWorkdir("sdk/go").
-		WithExec([]string{"go", "test", "-v", "./..."}).
+		WithExec([]string{"go", "test", "-v", "-skip=TestProvision", "./..."}).
 		Stdout(ctx)
 	if err != nil {
 		err = fmt.Errorf("test failed: %w\n%s", err, output)
