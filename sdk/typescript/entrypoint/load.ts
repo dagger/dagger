@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { dag, TypeDefKind } from "../api/client.gen.js"
-import { Args } from "../introspector/registry/registry.js"
+import { Args, Registry } from "../introspector/registry/registry.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
 import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
@@ -49,6 +49,7 @@ export function loadInvokedMethod(
  * @param ctx The context of the invocation.
  */
 export async function loadArgs(
+  registry: Registry,
   method: Method | Constructor,
   ctx: InvokeCtx,
 ): Promise<Args> {
@@ -61,7 +62,7 @@ export async function loadArgs(
       throw new Error(`could not find argument ${argName}`)
     }
 
-    const loadedArg = await loadValue(ctx.fnArgs[argName], argument.type)
+    const loadedArg = await loadValue(registry, ctx.fnArgs[argName], argument.type)
 
     // If the argument is variadic, we need to load each args independently
     // so it's correctly propagated when it's sent to the function.
@@ -97,6 +98,7 @@ export async function loadArgs(
  * @param ctx The context of the invocation.
  */
 export async function loadParentState(
+  registry: Registry,
   object: DaggerObject,
   ctx: InvokeCtx,
 ): Promise<Args> {
@@ -108,7 +110,7 @@ export async function loadParentState(
       throw new Error(`could not find parent property ${key}`)
     }
 
-    parentState[property.name] = await loadValue(value, property.type)
+    parentState[property.name] = await loadValue(registry, value, property.type)
   }
 
   return parentState
@@ -120,6 +122,7 @@ export async function loadParentState(
  * Note: The JSON.parse() is required to remove extra quotes
  */
 export async function loadValue(
+  registry: Registry,
   value: any,
   type: TypeDef<TypeDefKind>,
 ): Promise<any> {
@@ -133,7 +136,7 @@ export async function loadValue(
       return Promise.all(
         value.map(
           async (v: any) =>
-            await loadValue(v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
+            await loadValue(registry, v, (type as TypeDef<TypeDefKind.ListKind>).typeDef),
         ),
       )
     case TypeDefKind.ObjectKind: {
@@ -149,7 +152,7 @@ export async function loadValue(
       }
 
       // TODO(supports subfields serialization)
-      return value
+      return registry.buildClass(objectType, value)
     }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
