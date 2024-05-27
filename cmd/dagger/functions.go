@@ -185,8 +185,9 @@ type FuncCommand struct {
 	// showUsage flags whether to show a one-line usage message after error.
 	showUsage bool
 
-	q *querybuilder.Selection
-	c *client.Client
+	q   *querybuilder.Selection
+	c   *client.Client
+	ctx context.Context
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -382,17 +383,20 @@ func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 }
 
 // loadCommand finds the leaf command to run.
-func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (*cobra.Command, []string, error) {
+func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Command, rargs []string, rerr error) {
 	// If a command implements Execute, it doesn't need to build and
 	// traverse the command tree.
 	if fc.Execute != nil {
 		return c, nil, nil
 	}
 
-	builder := fc.cobraBuilder(
-		c.Context(),
-		fc.mod.MainObject.AsObject.Constructor,
-	)
+	ctx := c.Context()
+
+	spanCtx, span := Tracer().Start(ctx, "prepare", telemetry.Encapsulate())
+	defer telemetry.End(span, func() error { return rerr })
+	fc.ctx = spanCtx
+
+	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
 
 	cmd, args, err := fc.traverse(c, a, builder)
 	if err != nil {
@@ -459,7 +463,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.
-		return fc.selectFunc(ctx, fn, c, dag)
+		return fc.selectFunc(fn, c, dag)
 	}
 }
 
@@ -599,7 +603,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 }
 
 // selectFunc adds the function selection to the query.
-func (fc *FuncCommand) selectFunc(ctx context.Context, fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
+func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
 	fc.Select(fn.Name)
 
 	for _, arg := range fn.SupportedArgs() {
@@ -619,7 +623,7 @@ func (fc *FuncCommand) selectFunc(ctx context.Context, fn *modFunction, cmd *cob
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj, err := v.Get(ctx, dag, fc.mod.Source)
+			obj, err := v.Get(fc.ctx, dag, fc.mod.Source)
 			if err != nil {
 				return fmt.Errorf("failed to get value for argument %q: %w", arg.FlagName(), err)
 			}
