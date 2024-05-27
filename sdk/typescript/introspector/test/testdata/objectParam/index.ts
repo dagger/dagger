@@ -8,6 +8,10 @@ class Message {
   constructor(content: string) {
     this.content = content
   }
+
+  toUpperCase() {
+    return this.content.toUpperCase()
+  }
 }
 
 @object()
@@ -19,7 +23,7 @@ class ObjectParam {
 
   @func()
   upper(msg: Message): Message {
-    msg.content = msg.content.toUpperCase()
+    msg.content = msg.toUpperCase()
     return msg
   }
 
