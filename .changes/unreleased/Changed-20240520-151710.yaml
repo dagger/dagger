@@ -1,6 +1,0 @@
-kind: Changed
-body: "cli: don't show functions that can't be called"
-time: 2024-05-20T15:17:10.696904Z
-custom:
-  Author: helderco
-  PR: "7418"
