@@ -78,4 +78,3 @@ Each recipe requires only:
   - Snippets created specifically for the cookbook (usually stored in `./manuals/developer/cookbook/snippets/RECIPE/LANGUAGE/FILE`)
 - Code listings must be presented for each language SDK unless not relevant/not technically feasible for that language (e.g. a recipe for "using a magefile" would only be relevant for Go).
 - Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `Python` and `TypeScript`.
-- The minimal set of files for
