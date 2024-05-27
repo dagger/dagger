@@ -2974,7 +2974,7 @@ class Test {
 	toPlatforms(platform: string[]): Platform[] {
 		return platform.map(p => p as Platform)
 	}
-}		
+}
 `,
 		},
 	} {
@@ -4545,7 +4545,7 @@ func TestModuleLotsOfFunctions(t *testing.T) {
 			}
 			eg.Go(func() error {
 				_, err := modGen.
-					With(daggerCall(fmt.Sprintf("potato%d", i))).
+					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
 			})
@@ -4580,7 +4580,7 @@ def potato_%d() -> str:
 			}
 			eg.Go(func() error {
 				_, err := modGen.
-					With(daggerCall(fmt.Sprintf("potato%d", i))).
+					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
 			})
@@ -4628,7 +4628,7 @@ class PotatoSack {
 			}
 			eg.Go(func() error {
 				_, err := modGen.
-					With(daggerCall(fmt.Sprintf("potato%d", i))).
+					With(daggerCall(fmt.Sprintf("potato-%d", i))).
 					Sync(ctx)
 				return err
 			})
@@ -5904,7 +5904,7 @@ func TestModuleStartServices(t *testing.T) {
 	}
 	`,
 			}).
-			With(daggerCall("fnA", "fnB")).
+			With(daggerCall("fn-a", "fn-b")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hey there", strings.TrimSpace(out))

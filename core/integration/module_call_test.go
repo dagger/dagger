@@ -12,6 +12,47 @@ import (
 	"dagger.io/dagger"
 )
 
+func TestModuleDaggerCallHelp(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	modGen := modInit(t, c, "go", `package main
+
+func New(source *Directory) *Test {
+    return &Test{
+        Source: source,
+    }
+}
+
+type Test struct {
+    Source *Directory
+}
+
+func (m *Test) Container() *Container {
+    return dag.
+        Container().
+        From("`+alpineImage+`").
+        WithDirectory("/src", m.Source)
+}
+`,
+	)
+
+	t.Run("no required arg validation", func(t *testing.T) {
+		out, err := modGen.With(daggerCall("container", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "USAGE")
+		require.Contains(t, out, "dagger call container <function>")
+	})
+
+	t.Run("globally parsed", func(t *testing.T) {
+		out, err := modGen.With(daggerCall("container", "--help", "directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "USAGE")
+		require.Contains(t, out, "dagger call container directory [arguments] <function>")
+	})
+}
+
 func TestModuleDaggerCallArgTypes(t *testing.T) {
 	t.Parallel()
 
