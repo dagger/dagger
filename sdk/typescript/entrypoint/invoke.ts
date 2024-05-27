@@ -61,7 +61,7 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
     result = await loadResult(result, module, object)
   }
 
-  console.log("loaderesult", result)
+  console.log("loaded result", result)
 
   return result
 }
