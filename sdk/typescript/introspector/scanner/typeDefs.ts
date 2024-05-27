@@ -15,6 +15,11 @@ export type ObjectTypeDef = BaseTypeDef & {
   name: string
 }
 
+export type InterfaceTypeDef = BaseTypeDef & {
+  kind: TypeDefKind.InterfaceKind
+  name: string
+}
+
 /**
  * Extends the base typedef if it's a scalar to add its name and real type.
  */
@@ -46,7 +51,9 @@ export type TypeDef<T extends BaseTypeDef["kind"]> =
       ? ObjectTypeDef
       : T extends TypeDefKind.ListKind
         ? ListTypeDef
-        : BaseTypeDef
+        : T extends TypeDefKind.InterfaceKind
+          ? InterfaceTypeDef
+          : BaseTypeDef
 
 /**
  * The type of field in a class

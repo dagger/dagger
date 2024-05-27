@@ -7,6 +7,8 @@ import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
 
 export type Class = { new (...args: any[]): any }
 
+export type AbstractClass = abstract new (...args: any[]) => any
+
 export type State = { [property: string]: any }
 
 export type Args = Record<string, unknown>
@@ -43,6 +45,19 @@ export class Registry {
     return <T extends Class>(constructor: T): T => {
       Reflect.defineMetadata(constructor.name, { class_: constructor }, this)
 
+      return constructor
+    }
+  }
+
+  /**
+   * The definition of the @daggerInterface decorator that should be on top of any
+   * interface module that must be exposed to the Dagger API.
+   *
+   * Because `interface` is a reserved keyword so we use `daggerInterface` instead.
+   * All class decorated by this decorator must be abstract.
+   */
+  daggerInterface = (): (<T extends AbstractClass>(constructor: T) => T) => {
+    return <T extends AbstractClass>(constructor: T): T => {
       return constructor
     }
   }

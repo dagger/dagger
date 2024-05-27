@@ -11,6 +11,7 @@ import {
   ConstructorTypeDef,
   FunctionArgTypeDef,
   FunctionTypedef,
+  InterfaceTypeDef,
   ListTypeDef,
   ObjectTypeDef,
   ScalarTypeDef,
@@ -65,6 +66,21 @@ export async function register(
 
     // Add it to the module object
     mod = mod.withObject(typeDef)
+  })
+
+  // Register interfaces in the module
+  Object.values(module.interfaces).forEach((interface_) => {
+    let typeDef = dag.typeDef().withInterface(interface_.name, {
+      description: interface_.description,
+    })
+
+    // Register all functions (methods) to this object
+    Object.values(interface_.methods).forEach((method) => {
+      typeDef = typeDef.withFunction(addFunction(method.typeDef))
+    })
+
+    // Add it to the module object
+    mod = mod.withInterface(typeDef)
   })
 
   // Call ID to actually execute the registration
@@ -139,6 +155,8 @@ function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
       return dag.typeDef().withListOf(addTypeDef((type as ListTypeDef).typeDef))
     case TypeDefKind.VoidKind:
       return dag.typeDef().withKind(type.kind).withOptional(true)
+    case TypeDefKind.InterfaceKind:
+      return dag.typeDef().withInterface((type as InterfaceTypeDef).name)
     default:
       return dag.typeDef().withKind(type.kind)
   }

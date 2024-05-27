@@ -75,6 +75,10 @@ describe("scan static TypeScript", function () {
       name: "Should correctly scan list of objects",
       directory: "list",
     },
+    {
+      name: "Should correctly scan interfaces",
+      directory: "interfaces",
+    }
   ]
 
   for (const test of testCases) {

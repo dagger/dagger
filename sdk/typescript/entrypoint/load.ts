@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { dag, TypeDefKind } from "../api/client.gen.js"
 import { Args } from "../introspector/registry/registry.js"
+import { DaggerClass } from "../introspector/scanner/abtractions/class.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
 import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
@@ -32,7 +33,7 @@ export function loadInvokedObject(
 }
 
 export function loadInvokedMethod(
-  object: DaggerObject,
+  object: DaggerClass,
   ctx: InvokeCtx,
 ): (Method | Constructor) | undefined {
   if (ctx.fnName === "") {
@@ -97,7 +98,7 @@ export async function loadArgs(
  * @param ctx The context of the invocation.
  */
 export async function loadParentState(
-  object: DaggerObject,
+  object: DaggerClass,
   ctx: InvokeCtx,
 ): Promise<Args> {
   const parentState: Args = {}
@@ -148,9 +149,21 @@ export async function loadValue(
         return dag[`load${objectType}FromID`](value)
       }
 
-      // TODO(supports subfields serialization)
       return value
     }
+    case TypeDefKind.InterfaceKind:
+      const interfaceType = (type as TypeDef<TypeDefKind.InterfaceKind>).name
+
+      // Workaround to call get any object that has an id
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      if (dag[`load${interfaceType}FromID`]) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        return dag[`load${interfaceType}FromID`](value)
+      }
+
+      return value
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
@@ -174,10 +187,12 @@ export async function loadValue(
  */
 export function loadObjectReturnType(
   module: DaggerModule,
-  object: DaggerObject,
+  object: DaggerClass,
   method: Method,
-): DaggerObject {
+): DaggerClass {
   const retType = method.returnType
+
+  console.log("returnTypeKind", retType.kind)
 
   switch (retType.kind) {
     case TypeDefKind.ListKind: {
@@ -192,6 +207,8 @@ export function loadObjectReturnType(
     }
     case TypeDefKind.ObjectKind:
       return module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
+    case TypeDefKind.InterfaceKind:
+      return module.interfaces[(retType as TypeDef<TypeDefKind.InterfaceKind>).name]
     default:
       return object
   }
@@ -200,8 +217,10 @@ export function loadObjectReturnType(
 export async function loadResult(
   result: any,
   module: DaggerModule,
-  object: DaggerObject,
+  object: DaggerClass,
 ): Promise<any> {
+  console.log(result, result?.id)
+
   // Handle IDable objects
   if (result && typeof result?.id === "function") {
     result = await result.id()
@@ -228,7 +247,7 @@ export async function loadResult(
         throw new Error(`could not find result property ${key}`)
       }
 
-      let referencedObject: DaggerObject | undefined = undefined
+      let referencedObject: DaggerClass | undefined = undefined
 
       // Handle nested objects
       if (property.type.kind === TypeDefKind.ObjectKind) {

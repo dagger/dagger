@@ -1,7 +1,8 @@
 import ts from "typescript"
 
-import { isObject, toPascalCase } from "../utils.js"
+import { isInterface, isObject, toPascalCase } from "../utils.js"
 import { DaggerObject, DaggerObjects } from "./object.js"
+import { DaggerInterface, DaggerInterfaces } from "./interfaces.js"
 
 export class DaggerModule {
   private checker: ts.TypeChecker
@@ -34,6 +35,22 @@ export class DaggerModule {
     }
 
     return objects
+  }
+
+  get interfaces(): DaggerInterfaces {
+    const interfaces: DaggerInterfaces = {}
+
+    for (const file of this.files) {
+      ts.forEachChild(file, (node) => {
+        if (ts.isClassDeclaration(node) && isInterface(node)) {
+          const object = new DaggerInterface(this.checker, file, node)
+
+          interfaces[object.name] = object
+        }
+      })
+    }
+
+    return interfaces
   }
 
   get description(): string | undefined {
@@ -82,6 +99,14 @@ export class DaggerModule {
         },
         {},
       ),
+      interfaces: Object.entries(this.interfaces).reduce(
+        (acc: { [name: string]: DaggerInterface }, [name, iface]) => {
+          acc[name] = iface
+
+          return acc
+        },
+        {},
+      )
     }
   }
 }

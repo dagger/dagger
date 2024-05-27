@@ -1,0 +1,60 @@
+{
+  "name": "Interfaces",
+  "objects": {
+    "PNG": {
+      "name": "PNG",
+      "description": "",
+      "methods": {},
+      "properties": {}
+    },
+    "JPEG": {
+      "name": "JPEG",
+      "description": "",
+      "methods": {},
+      "properties": {}
+    },
+    "Interfaces": {
+      "name": "Interfaces",
+      "description": "HelloWorld class",
+      "methods": {
+        "createImage": {
+          "name": "createImage",
+          "description": "",
+          "arguments": {
+            "type": {
+              "name": "type",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "INTERFACE_KIND",
+            "name": "Image"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "interfaces": {
+    "Image": {
+      "name": "Image",
+      "description": "Image interface",
+      "methods": {
+        "type": {
+          "name": "type",
+          "description": "Return the type of the image.",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      }
+    }
+  }
+}

@@ -4,15 +4,53 @@ import { TypeDefKind } from "../../api/client.gen.js"
 import { TypeDef } from "./typeDefs.js"
 
 /**
+ * Return true if the given class declaration
+ */
+export function isClassAbstract(
+  classDeclaration: ts.ClassDeclaration,
+): boolean {
+  return (
+    classDeclaration.modifiers?.find(
+      (m) => m.kind === ts.SyntaxKind.AbstractKeyword,
+    ) !== undefined
+  )
+}
+
+/**
+ * Return true if the given method declaration is abstract.
+ */
+export function isMethodAbstract(method: ts.MethodDeclaration): boolean {
+  return (
+    method.modifiers?.find((m) => m.kind === ts.SyntaxKind.AbstractKeyword) !==
+    undefined
+  )
+}
+
+/**
  * Return true if the given class declaration has the decorator @obj() on
  * top of its declaration.
- * @param object
  */
 export function isObject(object: ts.ClassDeclaration): boolean {
   return (
     ts.getDecorators(object)?.find((d) => {
       if (ts.isCallExpression(d.expression)) {
         return d.expression.expression.getText() === "object"
+      }
+
+      return false
+    }) !== undefined
+  )
+}
+
+/**
+ * Return true if the given class declaration has the decorator @daggerInterface()
+ * on top of its declaration. 
+ */
+export function isInterface(object: ts.ClassDeclaration): boolean {
+  return (
+    ts.getDecorators(object)?.find((d) => {
+      if (ts.isCallExpression(d.expression)) {
+        return d.expression.expression.getText() === "daggerInterface"
       }
 
       return false
@@ -86,6 +124,17 @@ export function typeToTypedef(
   }
 
   if (type.symbol?.name && type.isClassOrInterface()) {
+    if (
+      type.symbol.valueDeclaration &&
+      ts.isClassDeclaration(type.symbol.valueDeclaration) &&
+      isClassAbstract(type.symbol.valueDeclaration)
+    ) {
+      return {
+        kind: TypeDefKind.InterfaceKind,
+        name: type.symbol.name,
+      }
+    }
+
     return {
       kind: TypeDefKind.ObjectKind,
       name: type.symbol.name,

@@ -1,16 +1,15 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { ClassTypeDef, FieldTypeDef, FunctionTypedef } from "../typeDefs.js"
-import { isFunction } from "../utils.js"
-import { Constructor } from "./constructor.js"
+import { isClassAbstract, isMethodAbstract } from "../utils.js"
 import { Method, Methods } from "./method.js"
-import { Properties, Property } from "./property.js"
+import { Constructor } from "./constructor.js"
+import { Properties } from "./property.js"
 import { DaggerClass } from "./class.js"
 
-export type DaggerObjects = { [name: string]: DaggerObject }
+export type DaggerInterfaces = { [name: string]: DaggerInterface }
 
-export class DaggerObject implements DaggerClass{
+export class DaggerInterface implements DaggerClass {
   private checker: ts.TypeChecker
 
   private class: ts.ClassDeclaration
@@ -43,6 +42,13 @@ export class DaggerObject implements DaggerClass{
       )
     }
 
+    if (!isClassAbstract(classDeclaration)) {
+      throw new UnknownDaggerError(
+        `interface must be abstract: ${classDeclaration.name.getText()}`,
+        {},
+      )
+    }
+
     const classSymbol = checker.getSymbolAtLocation(classDeclaration.name)
     if (!classSymbol) {
       throw new UnknownDaggerError(
@@ -58,51 +64,30 @@ export class DaggerObject implements DaggerClass{
     return this.symbol.getName()
   }
 
+  get _constructor(): Constructor | undefined {
+    return undefined
+  }
+
+  get properties(): Properties {
+    return {}
+  }
+
   get description(): string {
     return ts.displayPartsToString(
       this.symbol.getDocumentationComment(this.checker),
     )
   }
 
-  get _constructor(): Constructor | undefined {
-    const constructor = this.class.members.find((member) => {
-      if (ts.isConstructorDeclaration(member)) {
-        return true
-      }
-    })
-
-    if (!constructor) {
-      return undefined
-    }
-
-    return new Constructor(
-      this.checker,
-      constructor as ts.ConstructorDeclaration,
-    )
-  }
-
   get methods(): Methods {
     return this.class.members
-      .filter((member) => ts.isMethodDeclaration(member) && isFunction(member))
+      .filter(
+        (member) => ts.isMethodDeclaration(member) && isMethodAbstract(member),
+      )
       .reduce((acc: Methods, member) => {
         const method = new Method(this.checker, member as ts.MethodDeclaration)
 
-        acc[method.alias ?? method.name] = method
+        acc[method.name] = method
 
-        return acc
-      }, {})
-  }
-
-  get properties(): Properties {
-    return this.class.members
-      .filter((member) => ts.isPropertyDeclaration(member))
-      .reduce((acc: Properties, member) => {
-        const property = new Property(
-          this.checker,
-          member as ts.PropertyDeclaration,
-        )
-
-        acc[property.alias ?? property.name] = property
         return acc
       }, {})
   }
@@ -111,9 +96,7 @@ export class DaggerObject implements DaggerClass{
     return {
       name: this.name,
       description: this.description,
-      constructor: this._constructor,
       methods: this.methods,
-      properties: this.properties,
     }
   }
 }
