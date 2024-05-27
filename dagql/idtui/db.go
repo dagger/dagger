@@ -256,7 +256,7 @@ func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
-	return db.MostInterestingSpan(db.Simplify(call).Digest)
+	return db.MostInterestingSpan(db.Simplify(call, false).Digest)
 }
 
 func (db *DB) MostInterestingSpan(dig string) *Span {
@@ -365,18 +365,24 @@ func (db *DB) idSize(id *callpbv1.Call) int {
 	return size
 }
 
-func (db *DB) Simplify(call *callpbv1.Call) (smallest *callpbv1.Call) {
+func (db *DB) Simplify(call *callpbv1.Call, require bool) (smallest *callpbv1.Call) {
 	smallest = call
 	creators, ok := db.OutputOf[call.Digest]
 	if !ok {
 		return
 	}
-	var smallestSize = db.idSize(smallest)
+	smallestSize := -1
+	if !require {
+		smallestSize = db.idSize(smallest)
+	}
 	var simplified bool
 	for creatorDig := range creators {
+		if creatorDig == call.Digest {
+			continue
+		}
 		creator, ok := db.Calls[creatorDig]
 		if ok {
-			if size := db.idSize(creator); size < smallestSize {
+			if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
 				smallest = creator
 				smallestSize = size
 				simplified = true
@@ -384,7 +390,7 @@ func (db *DB) Simplify(call *callpbv1.Call) (smallest *callpbv1.Call) {
 		}
 	}
 	if simplified {
-		return db.Simplify(smallest)
+		return db.Simplify(smallest, false)
 	}
 	return
 }
