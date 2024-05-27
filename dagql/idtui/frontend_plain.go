@@ -87,11 +87,13 @@ type logLine struct {
 }
 
 func NewPlain() Frontend {
+	db := NewDB()
 	return &frontendPlain{
-		db:   NewDB(),
+		db:   db,
 		data: make(map[trace.SpanID]*spanData),
 
 		spanFilter: spanFilter{
+			db:               db,
 			tooFastThreshold: 100 * time.Millisecond,
 		},
 

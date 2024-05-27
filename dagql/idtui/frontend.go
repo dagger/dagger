@@ -319,6 +319,7 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // }
 
 type spanFilter struct {
+	db               *DB
 	gcThreshold      time.Duration
 	tooFastThreshold time.Duration
 }
@@ -338,8 +339,10 @@ func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
 		return true
 	}
 	if sf.tooFastThreshold > 0 && span.Duration() < sf.tooFastThreshold && opts.Verbosity < 3 {
-		// ignore fast steps; signal:noise is too poor
-		return false
+		// ignore fast leaf steps; signal:noise is too poor
+		if row.Parent != nil && row.Parent.Span.SpanContext().SpanID() != sf.db.PrimarySpan {
+			return false
+		}
 	}
 	if row.IsRunning {
 		// show running steps

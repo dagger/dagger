@@ -59,15 +59,18 @@ type frontendPretty struct {
 }
 
 func New() Frontend {
+	db := NewDB()
+
 	profile := ColorProfile()
 	logsView := NewVterm()
 	logsOut := new(strings.Builder)
 
 	return &frontendPretty{
-		db:   NewDB(),
+		db:   db,
 		logs: newPrettyLogs(),
 
 		spanFilter: spanFilter{
+			db:               db,
 			tooFastThreshold: 100 * time.Millisecond,
 			gcThreshold:      1 * time.Second,
 		},
