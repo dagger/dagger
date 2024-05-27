@@ -6,7 +6,7 @@ import (
 
 type MyModule struct{}
 
-// starts and returns an HTTP service
+// Start and return an HTTP service
 func (m *MyModule) HttpService() *Service {
 	return dag.Container().
 		From("python").
@@ -19,7 +19,7 @@ func (m *MyModule) HttpService() *Service {
 		AsService()
 }
 
-// sends a request to an HTTP service and returns the response
+// Send a request to an HTTP service and return the response
 func (m *MyModule) Get(ctx context.Context) (string, error) {
 	return dag.Container().
 		From("alpine").

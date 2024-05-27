@@ -6,8 +6,12 @@ import (
 
 type MyModule struct{}
 
-// sends a query to a MariaDB service received as input and returns the response
-func (m *MyModule) UserList(ctx context.Context, svc *Service) (string, error) {
+// Send a query to a MariaDB service and return the response
+func (m *MyModule) UserList(
+	ctx context.Context,
+	// Host service
+	svc *Service,
+) (string, error) {
 	return dag.Container().
 		From("mariadb:10.11.2").
 		WithServiceBinding("db", svc).

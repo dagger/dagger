@@ -6,7 +6,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     def http_service(self) -> dagger.Service:
-        """Starts and returns an HTTP service."""
+        """Start and return an HTTP service."""
         return (
             dag.container()
             .from_("python")

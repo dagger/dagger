@@ -2,7 +2,7 @@ package main
 
 type MyModule struct{}
 
-// starts and returns an HTTP service
+// Start and return an HTTP service
 func (m *MyModule) HttpService() *Service {
 	return dag.Container().
 		From("python").
