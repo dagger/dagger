@@ -10,7 +10,7 @@ class MyModule {
     /**
      * Source directory
      */
-    source: Directory
+    source: Directory,
   ): Container {
     return dag
       .container()

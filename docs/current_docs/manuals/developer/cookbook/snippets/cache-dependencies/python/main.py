@@ -8,9 +8,8 @@ from dagger import Doc, dag, function, object_type
 class MyModule:
     @function
     def build(
-        self,
-        source: Annotated[dagger.Directory, Doc("Source code location")]
-        ) -> dagger.Container:
+        self, source: Annotated[dagger.Directory, Doc("Source code location")]
+    ) -> dagger.Container:
         """Build an application using cached dependencies"""
         return (
             dag.container()
