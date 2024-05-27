@@ -10,7 +10,7 @@ class MyModule {
     /**
      * Host service
      */
-    svc: Service
+    svc: Service,
   ): Promise<string> {
     return await dag
       .container()
