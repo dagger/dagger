@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/goproxy/goproxy"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -23,8 +23,8 @@ import (
 
 type proxyTest struct {
 	name         string
-	run          func(*testing.T, *dagger.Client, proxyTestFixtures)
-	proxyLogTest func(*testing.T, *dagger.Client, getProxyLogsFunc)
+	run          func(*testctx.T, *dagger.Client, proxyTestFixtures)
+	proxyLogTest func(*testctx.T, *dagger.Client, getProxyLogsFunc)
 }
 
 type getProxyLogsFunc func(context.Context) (string, error)
@@ -43,7 +43,7 @@ type proxyTestFixtures struct {
 
 func customProxyTests(
 	ctx context.Context,
-	t *testing.T,
+	t *testctx.T,
 	c *dagger.Client,
 	netID uint8,
 	useAuth bool,
@@ -184,8 +184,9 @@ http_access allow localhost
 	if os.Getenv(executeTestEnvName) == "" {
 		squidSvc, err := squidSvc.Start(ctx)
 		require.NoError(t, err)
+		stopCtx := context.WithoutCancel(ctx)
 		t.Cleanup(func() {
-			squidSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+			squidSvc.Stop(stopCtx, dagger.ServiceStopOpts{Kill: true})
 		})
 
 		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
@@ -215,7 +216,8 @@ http_access allow localhost
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable(executeTestEnvName, "ya").
-			WithExec([]string{"go", "test",
+			WithExec([]string{
+				"go", "test",
 				"-v",
 				"-timeout", "20m",
 				"-count", "1",
@@ -228,8 +230,7 @@ http_access allow localhost
 		for _, test := range tests {
 			test := test
 			if test.proxyLogTest != nil {
-				t.Run(test.name+"-proxy-logs", func(t *testing.T) {
-					t.Parallel()
+				t.Run(test.name+"-proxy-logs", func(ctx context.Context, t *testctx.T) {
 					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
 						return c.Container().From(alpineImage).
 							WithMountedCache("/var/log/squidaccess", squidLogsVolume).
@@ -248,8 +249,7 @@ http_access allow localhost
 
 	for _, test := range tests {
 		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(t, c, proxyTestFixtures{
 				caCert: c.Host().File("/ca.pem"),
 
@@ -265,15 +265,12 @@ http_access allow localhost
 	}
 }
 
-func TestContainerSystemProxies(t *testing.T) {
-	t.Parallel()
-
-	t.Run("basic", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		customProxyTests(ctx, t, c, 101, false,
-			proxyTest{name: "http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
 					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
@@ -283,7 +280,7 @@ func TestContainerSystemProxies(t *testing.T) {
 				require.Regexp(t, `.*< Via: .* \(squid/.*\).*`, out)
 			}},
 
-			proxyTest{name: "https", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "https", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
@@ -295,7 +292,7 @@ func TestContainerSystemProxies(t *testing.T) {
 				require.Regexp(t, fmt.Sprintf(`.*Establish HTTP proxy tunnel to %s.*`, f.httpsServerURL.Host), out)
 			}},
 
-			proxyTest{name: "noproxy http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "noproxy http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
 					WithExec([]string{"curl", "-v", f.noproxyHTTPServerURL.String()}).
@@ -307,12 +304,11 @@ func TestContainerSystemProxies(t *testing.T) {
 		)
 	})
 
-	t.Run("auth", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("auth", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		customProxyTests(ctx, t, c, 102, true,
-			proxyTest{name: "http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				base := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"})
 
@@ -335,7 +331,7 @@ func TestContainerSystemProxies(t *testing.T) {
 				require.Contains(t, out, "< HTTP/1.1 407 Proxy Authentication Required")
 			}},
 
-			proxyTest{name: "https", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "https", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				base := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
@@ -361,17 +357,16 @@ func TestContainerSystemProxies(t *testing.T) {
 		)
 	})
 
-	t.Run("git uses proxy", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("git uses proxy", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		customProxyTests(ctx, t, c, 104, false,
 			proxyTest{name: "git",
-				run: func(t *testing.T, c *dagger.Client, _ proxyTestFixtures) {
+				run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
 					_, err := c.Git("https://" + gitTestRepoURL).Ref(gitTestRepoCommit).Tree().Sync(ctx)
 					require.NoError(t, err)
 				},
-				proxyLogTest: func(t *testing.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
+				proxyLogTest: func(t *testctx.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
 					// retry a few times in case logs haven't been flushed yet
 					var proxyLogs string
 					for i := 0; i < 5; i++ {
@@ -390,9 +385,8 @@ func TestContainerSystemProxies(t *testing.T) {
 	})
 }
 
-func TestContainerSystemGoProxy(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// just a subset of modules we expect to be downloaded since trying to go one to one would
 	// be too fragile whenever the SDK changes
@@ -462,7 +456,8 @@ func TestContainerSystemGoProxy(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable(executeTestEnvName, "ya").
-			WithExec([]string{"go", "test",
+			WithExec([]string{
+				"go", "test",
 				"-v",
 				"-timeout", "20m",
 				"-count", "1",

@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,12 +17,14 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
 var testCtx = context.Background()
@@ -35,44 +36,42 @@ func TestMain(m *testing.M) {
 	os.Exit(res)
 }
 
+const InstrumentationLibrary = "dagger.io/integration"
+
 func Tracer() trace.Tracer {
-	return otel.Tracer("dagger.io/integration")
+	return otel.Tracer(InstrumentationLibrary)
 }
 
-func connect(t testing.TB, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
-	ctx, cancel := context.WithCancel(testCtx)
-	t.Cleanup(cancel)
+func Logger() log.Logger {
+	return telemetry.Logger(InstrumentationLibrary)
+}
 
-	ctx, span := Tracer().Start(ctx, t.Name(), telemetry.Encapsulate())
-	t.Cleanup(func() {
-		telemetry.End(span, func() error {
-			if t.Failed() {
-				return fmt.Errorf("test failed")
-			} else {
-				return nil
-			}
-		})
-	})
+func Middleware() []testctx.Middleware {
+	return []testctx.Middleware{
+		testctx.WithParallel,
+		testctx.WithOTelLogging(Logger()),
+		testctx.WithOTelTracing(Tracer()),
+	}
+}
 
+func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
 	opts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(newTWriter(t)),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
 	}, opts...)
-
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)
 	t.Cleanup(func() { client.Close() })
-
-	return client, ctx
+	return client
 }
 
-func newCache(t testing.TB) core.CacheVolumeID {
+func newCache(t *testctx.T) core.CacheVolumeID {
 	var res struct {
 		CacheVolume struct {
 			ID core.CacheVolumeID
 		}
 	}
 
-	err := testutil.Query(`
+	err := testutil.Query(t, `
 		query CreateCache($key: String!) {
 			cacheVolume(key: $key) {
 				id
@@ -86,7 +85,7 @@ func newCache(t testing.TB) core.CacheVolumeID {
 	return res.CacheVolume.ID
 }
 
-func newDirWithFile(t testing.TB, path, contents string) core.DirectoryID {
+func newDirWithFile(t *testctx.T, path, contents string) core.DirectoryID {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -95,7 +94,7 @@ func newDirWithFile(t testing.TB, path, contents string) core.DirectoryID {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`query Test($path: String!, $contents: String!) {
 			directory {
 				withNewFile(path: $path, contents: $contents) {
@@ -111,7 +110,7 @@ func newDirWithFile(t testing.TB, path, contents string) core.DirectoryID {
 	return dirRes.Directory.WithNewFile.ID
 }
 
-func newFile(t testing.TB, path, contents string) core.FileID {
+func newFile(t *testctx.T, path, contents string) core.FileID {
 	var secretRes struct {
 		Directory struct {
 			WithNewFile struct {
@@ -122,7 +121,7 @@ func newFile(t testing.TB, path, contents string) core.FileID {
 		}
 	}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`query Test($path: String!, $contents: String!) {
 			directory {
 				withNewFile(path: $path, contents: $contents) {
@@ -260,53 +259,6 @@ func goCache(c *dagger.Client) dagger.WithContainerFunc {
 			WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
 			WithEnvVariable("GOCACHE", "/go/build-cache")
 	}
-}
-
-// tWriter is a writer that writes to testing.T
-type tWriter struct {
-	t   testing.TB
-	buf bytes.Buffer
-	mu  sync.Mutex
-}
-
-// newTWriter creates a new TWriter
-func newTWriter(t testing.TB) *tWriter {
-	tw := &tWriter{t: t}
-	t.Cleanup(tw.flush)
-	return tw
-}
-
-// Write writes data to the testing.T
-func (tw *tWriter) Write(p []byte) (n int, err error) {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-
-	tw.t.Helper()
-
-	if n, err = tw.buf.Write(p); err != nil {
-		return n, err
-	}
-
-	for {
-		line, err := tw.buf.ReadBytes('\n')
-		if err == io.EOF {
-			// If we've reached the end of the buffer, write it back, because it doesn't have a newline
-			tw.buf.Write(line)
-			break
-		}
-		if err != nil {
-			return n, err
-		}
-
-		tw.t.Log(strings.TrimSuffix(string(line), "\n"))
-	}
-	return n, nil
-}
-
-func (tw *tWriter) flush() {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-	tw.t.Log(tw.buf.String())
 }
 
 type safeBuffer struct {

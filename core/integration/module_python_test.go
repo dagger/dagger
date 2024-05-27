@@ -1,12 +1,14 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -15,13 +17,9 @@ import (
 
 const pythonSourcePath = "src/main/__init__.py"
 
-func TestModulePythonInit(t *testing.T) {
-	t.Parallel()
-
-	t.Run("from scratch", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ModuleSuite) TestPythonInit(ctx context.Context, t *testctx.T) {
+	t.Run("from scratch", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPython()).
@@ -32,10 +30,8 @@ func TestModulePythonInit(t *testing.T) {
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("with different root", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("with different root", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPythonAt("child")).
@@ -46,10 +42,8 @@ func TestModulePythonInit(t *testing.T) {
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("on develop", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("on develop", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(daggerExec("init")).
@@ -61,10 +55,8 @@ func TestModulePythonInit(t *testing.T) {
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("doesn't create files in develop with existing pyproject.toml", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("doesn't create files in develop with existing pyproject.toml", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
 			With(daggerExec("init")).
@@ -80,10 +72,8 @@ version = "0.0.0"
 		require.ErrorContains(t, err, "no python files found")
 	})
 
-	t.Run("uses expected field casing", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("uses expected field casing", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPython("--name=hello-world")).
@@ -106,10 +96,8 @@ version = "0.0.0"
 	})
 }
 
-func TestModulePythonProjectLayout(t *testing.T) {
-	t.Parallel()
-
-	var testCases = []struct {
+func (ModuleSuite) TestPythonProjectLayout(ctx context.Context, t *testctx.T) {
+	testCases := []struct {
 		name string
 		path string
 		conf string
@@ -284,10 +272,8 @@ build-backend = "poetry.core.masonry.api"
 	for _, tc := range testCases {
 		tc := tc
 
-		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(t *testing.T) {
-			t.Parallel()
-
-			c, ctx := connect(t)
+		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
 				With(fileContents("pyproject.toml", tc.conf)).
@@ -309,9 +295,7 @@ def hello() -> str:
 	}
 }
 
-func TestModulePythonVersion(t *testing.T) {
-	t.Parallel()
-
+func (ModuleSuite) TestPythonVersion(ctx context.Context, t *testctx.T) {
 	source := pythonSource(`
 import sys
 from dagger import function
@@ -328,10 +312,8 @@ def relaxed() -> str:
 `,
 	)
 
-	t.Run("relaxed requires-python", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("relaxed requires-python", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`requires-python = ">=3.10"`)).
@@ -344,10 +326,8 @@ def relaxed() -> str:
 		require.Equal(t, "3.10", out)
 	})
 
-	t.Run("pinned requires-python", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("pinned requires-python", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			// NB: This is **not** the latest version.
@@ -362,10 +342,8 @@ def relaxed() -> str:
 		require.Equal(t, "3.10.10", out)
 	})
 
-	t.Run("relaxed .python-version", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("relaxed .python-version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(fileContents(".python-version", "3.12")).
@@ -378,10 +356,8 @@ def relaxed() -> str:
 		require.Equal(t, "3.12", out)
 	})
 
-	t.Run("pinned .python-version", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("pinned .python-version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(fileContents(".python-version", "3.12.1")).
@@ -394,10 +370,8 @@ def relaxed() -> str:
 		require.Equal(t, "3.12.1", out)
 	})
 
-	t.Run(".python-version takes precedence", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run(".python-version takes precedence", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`requires-python = ">=3.10"`)).
@@ -411,10 +385,8 @@ def relaxed() -> str:
 		require.Equal(t, "3.12", out)
 	})
 
-	t.Run("pinned base image", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("pinned base image", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			// base image takes precedence over .python-version
@@ -432,10 +404,8 @@ def relaxed() -> str:
 		require.Equal(t, "3.10.13", out)
 	})
 
-	t.Run("default", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("default", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(source).
@@ -448,10 +418,8 @@ def relaxed() -> str:
 	})
 }
 
-func TestModulePythonAltRuntime(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonAltRuntime(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	runtimeSrcPath, err := filepath.Abs("../../sdk/python/runtime")
 	require.NoError(t, err)
@@ -467,8 +435,7 @@ func TestModulePythonAltRuntime(t *testing.T) {
 		WithMountedDirectory("/work/extended", c.Host().Directory(extSrcPath)).
 		WithExec([]string{"sed", "-i", "s#../../../../../sdk/python/##", "/work/extended/dagger.json"})
 
-	t.Run("git dependency", func(t *testing.T) {
-		t.Parallel()
+	t.Run("git dependency", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			WithMountedDirectory("/work/git-dep", c.Host().Directory(moduleSrcPath)).
 			WithWorkdir("/work/git-dep").
@@ -479,8 +446,7 @@ func TestModulePythonAltRuntime(t *testing.T) {
 		require.Contains(t, out, "git version")
 	})
 
-	t.Run("disabled custom config", func(t *testing.T) {
-		t.Parallel()
+	t.Run("disabled custom config", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			WithWorkdir("/work/test").
 			With(fileContents(".python-version", "3.12")).
@@ -503,9 +469,7 @@ def version() -> str:
 	})
 }
 
-func TestModulePythonUv(t *testing.T) {
-	t.Parallel()
-
+func (ModuleSuite) TestPythonUv(ctx context.Context, t *testctx.T) {
 	source := pythonSource(`
 import anyio
 from dagger import function
@@ -523,10 +487,8 @@ async def version() -> str:
 `,
 	)
 
-	t.Run("disable", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("disable", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`
@@ -542,10 +504,8 @@ async def version() -> str:
 		require.Equal(t, "n/d", out)
 	})
 
-	t.Run("pinned version", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("pinned version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`
@@ -561,10 +521,8 @@ async def version() -> str:
 		require.Equal(t, "0.1.25", out)
 	})
 
-	t.Run("upper bound", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("upper bound", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`
@@ -581,10 +539,8 @@ async def version() -> str:
 	})
 }
 
-func TestModulePythonLock(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	base := daggerCliBase(t, c).With(pythonSource(`
 from importlib import metadata
@@ -637,10 +593,8 @@ def version(name: str) -> str:
 	require.Equal(t, "4.1.0", out)
 }
 
-func TestModulePythonLockHashes(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonLockHashes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	base := daggerCliBase(t, c).With(daggerInitPython())
 
@@ -686,8 +640,7 @@ func TestModulePythonLockHashes(t *testing.T) {
 	requirements := lock.String()
 	t.Logf("requirements.lock:\n%s", requirements)
 
-	t.Run("uv", func(t *testing.T) {
-		t.Parallel()
+	t.Run("uv", func(ctx context.Context, t *testctx.T) {
 		_, err := base.
 			With(fileContents("requirements.lock", requirements)).
 			With(daggerExec("develop")).
@@ -698,8 +651,7 @@ func TestModulePythonLockHashes(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("pip", func(t *testing.T) {
-		t.Parallel()
+	t.Run("pip", func(ctx context.Context, t *testctx.T) {
 		_, err := base.
 			With(fileContents("requirements.lock", requirements)).
 			With(pyprojectExtra(`
@@ -714,9 +666,7 @@ func TestModulePythonLockHashes(t *testing.T) {
 	})
 }
 
-func TestModulePythonLockAddedDep(t *testing.T) {
-	t.Parallel()
-
+func (ModuleSuite) TestPythonLockAddedDep(ctx context.Context, t *testctx.T) {
 	source := pythonSource(`
 from importlib import metadata
 from dagger import function
@@ -727,10 +677,8 @@ def version() -> str:
 `,
 	)
 
-	t.Run("new module", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("new module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`dependencies = ["packaging<24.0"]`)).
@@ -744,10 +692,8 @@ def version() -> str:
 		require.Equal(t, "23.2", out)
 	})
 
-	t.Run("existing module", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("existing module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPython()).
@@ -763,10 +709,8 @@ def version() -> str:
 		require.Equal(t, "23.2", out)
 	})
 
-	t.Run("sdk overrides local changes", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("sdk overrides local changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
 			With(daggerInitPython()).
@@ -780,10 +724,8 @@ def version() -> str:
 	})
 }
 
-func TestModulePythonSignatures(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonSignatures(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
         from collections.abc import Sequence
@@ -910,7 +852,7 @@ func TestModulePythonSignatures(t *testing.T) {
 		},
 	} {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, out)
@@ -918,10 +860,8 @@ func TestModulePythonSignatures(t *testing.T) {
 	}
 }
 
-func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
         import dagger
@@ -973,8 +913,7 @@ func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
 		},
 	} {
 		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, out)
@@ -982,13 +921,9 @@ func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
 	}
 }
 
-func TestModulePythonDocs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("basic", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ModuleSuite) TestPythonDocs(ctx context.Context, t *testctx.T) {
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := pythonModInit(t, c, `
             from typing import Annotated
@@ -1043,10 +978,8 @@ func TestModulePythonDocs(t *testing.T) {
 		require.Equal(t, "overridden description", over.Get("description").String())
 	})
 
-	t.Run("autogenerated constructor", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("autogenerated constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := pythonModInit(t, c, `
             from dataclasses import field as datafield
@@ -1088,10 +1021,8 @@ func TestModulePythonDocs(t *testing.T) {
 		require.True(t, obj.Get("constructor.args.#(name=onlyInit).defaultValue").Bool())
 	})
 
-	t.Run("alternative constructor", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("alternative constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
@@ -1116,10 +1047,8 @@ func TestModulePythonDocs(t *testing.T) {
 		require.Equal(t, "factory constructor", cns.Get("description").String())
 	})
 
-	t.Run("external constructor", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("external constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
@@ -1156,10 +1085,8 @@ func TestModulePythonDocs(t *testing.T) {
 		})
 	})
 
-	t.Run("external alternative constructor", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("external alternative constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
@@ -1185,10 +1112,8 @@ func TestModulePythonDocs(t *testing.T) {
 		require.Equal(t, "factory constructor", obj.Get("functions.#(name=external).description").String())
 	})
 
-	t.Run("inheritance", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("inheritance", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := pythonModInit(t, c, `
             from typing import Annotated, Self
@@ -1214,10 +1139,8 @@ func TestModulePythonDocs(t *testing.T) {
 	})
 }
 
-func TestModulePythonNameOverrides(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonNameOverrides(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
         from typing import Annotated
@@ -1241,10 +1164,8 @@ func TestModulePythonNameOverrides(t *testing.T) {
 	require.Equal(t, "field", obj.Get("constructor.args.0.name").String())
 }
 
-func TestModulePythonReturnSelf(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonReturnSelf(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	out, err := pythonModInit(t, c, `
         from typing import Self
@@ -1267,10 +1188,8 @@ func TestModulePythonReturnSelf(t *testing.T) {
 	require.JSONEq(t, `{"test":{"foo":{"message":"bar"}}}`, out)
 }
 
-func TestModulePythonWithOtherModuleTypes(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestPythonWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
@@ -1292,10 +1211,8 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		With(daggerInitPython()).
 		With(daggerExec("install", "../dep"))
 
-	t.Run("return as other module object", func(t *testing.T) {
-		t.Parallel()
-		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
+	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger
@@ -1315,8 +1232,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 			))
 		})
 
-		t.Run("list", func(t *testing.T) {
-			t.Parallel()
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger
@@ -1337,10 +1253,8 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		})
 	})
 
-	t.Run("arg as other module object", func(t *testing.T) {
-		t.Parallel()
-		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
+	t.Run("arg as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(pythonSource(`
                 import dagger
 
@@ -1359,8 +1273,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 			))
 		})
 
-		t.Run("list", func(t *testing.T) {
-			t.Parallel()
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(pythonSource(`
                 import dagger
 
@@ -1380,10 +1293,8 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		})
 	})
 
-	t.Run("field as other module object", func(t *testing.T) {
-		t.Parallel()
-		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
+	t.Run("field as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger
@@ -1407,8 +1318,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 			))
 		})
 
-		t.Run("list", func(t *testing.T) {
-			t.Parallel()
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger

@@ -1,16 +1,15 @@
 package core
 
 import (
-	"testing"
+	"context"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestDIND(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestDIND(ctx context.Context, t *testctx.T) {
 	var res struct {
 		Container struct {
 			From struct {
@@ -23,7 +22,7 @@ func TestDIND(t *testing.T) {
 		}
 	}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`
 {
   container {

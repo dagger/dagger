@@ -18,11 +18,16 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestGit(t *testing.T) {
-	t.Parallel()
+type GitSuite struct{}
 
+func TestGit(t *testing.T) {
+	testctx.Run(testCtx, t, GitSuite{}, Middleware()...)
+}
+
+func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	type result struct {
 		Commit string
 		Tree   struct {
@@ -42,7 +47,7 @@ func TestGit(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			git(url: "github.com/dagger/dagger", keepGitDir: true) {
 				head {
@@ -111,10 +116,8 @@ func TestGit(t *testing.T) {
 	require.Contains(t, res.Git.Tag.Tree.File.Contents, "Dagger")
 }
 
-func TestGitSSHAuthSock(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	gitSSH := c.Container().
 		From(alpineImage).
@@ -234,13 +237,11 @@ sleep infinity
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
-func TestGitAuth(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))
 
-	t.Run("no auth", func(t *testing.T) {
+	t.Run("no auth", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("main").
 			Tree().
@@ -250,7 +251,7 @@ func TestGitAuth(t *testing.T) {
 		require.ErrorContains(t, err, "failed to fetch remote")
 	})
 
-	t.Run("incorrect auth", func(t *testing.T) {
+	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			WithAuthToken(c.SetSecret("token-wrong", "wrong")).
 			Branch("main").
@@ -261,7 +262,7 @@ func TestGitAuth(t *testing.T) {
 		require.ErrorContains(t, err, "failed to fetch remote")
 	})
 
-	t.Run("token auth", func(t *testing.T) {
+	t.Run("token auth", func(ctx context.Context, t *testctx.T) {
 		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			WithAuthToken(c.SetSecret("token", "foobar")).
 			Branch("main").
@@ -272,7 +273,7 @@ func TestGitAuth(t *testing.T) {
 		require.Equal(t, "Hello, world!", dt)
 	})
 
-	t.Run("header auth", func(t *testing.T) {
+	t.Run("header auth", func(ctx context.Context, t *testctx.T) {
 		dt, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			WithAuthHeader(c.SetSecret("header", "basic "+base64.StdEncoding.EncodeToString([]byte("x-access-token:foobar")))).
 			Branch("main").
@@ -284,29 +285,25 @@ func TestGitAuth(t *testing.T) {
 	})
 }
 
-func TestGitKeepGitDir(t *testing.T) {
-	t.Parallel()
+func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	c, ctx := connect(t)
-
-	t.Run("git dir is present", func(t *testing.T) {
+	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
 		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
 		ent, _ := dir.Entries(ctx)
 		require.Contains(t, ent, ".git")
 	})
 
-	t.Run("git dir is not present", func(t *testing.T) {
+	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
 		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
 		ent, _ := dir.Entries(ctx)
 		require.NotContains(t, ent, ".git")
 	})
 }
 
-func TestGitServiceStableDigest(t *testing.T) {
-	t.Parallel()
-
+func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
-	hostname := func(ctx context.Context, c *dagger.Client) string {
+	hostname := func(c *dagger.Client) string {
 		svc, url := gitService(ctx, t, c,
 			c.Directory().WithNewFile("content", content))
 
@@ -321,7 +318,7 @@ func TestGitServiceStableDigest(t *testing.T) {
 		return hn
 	}
 
-	c1, ctx1 := connect(t)
-	c2, ctx2 := connect(t)
-	require.Equal(t, hostname(ctx1, c1), hostname(ctx2, c2))
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+	require.Equal(t, hostname(c1), hostname(c2))
 }

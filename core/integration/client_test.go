@@ -11,26 +11,31 @@ import (
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestClientClose(t *testing.T) {
-	t.Parallel()
-	c, _ := connect(t)
+type ClientSuite struct{}
 
+func TestClient(t *testing.T) {
+	testctx.Run(testCtx, t, ClientSuite{}, Middleware()...)
+}
+
+func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	err := c.Close()
 	require.NoError(t, err)
 }
 
-func TestClientMultiSameTrace(t *testing.T) {
-	t.Parallel()
-
-	rootCtx, span := Tracer().Start(testCtx, "root")
+func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
+	rootCtx, span := Tracer().Start(ctx, "root")
 	defer span.End()
 
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
 		out := new(safeBuffer)
 		c, err := dagger.Connect(ctx,
-			dagger.WithLogOutput(io.MultiWriter(prefixw.New(newTWriter(t), name+": "), out)))
+			dagger.WithLogOutput(io.MultiWriter(prefixw.New(testutil.NewTWriter(t), name+": "), out)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c.Close() })
 		return c, out

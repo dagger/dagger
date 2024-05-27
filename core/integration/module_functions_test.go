@@ -1,18 +1,17 @@
 package core
 
 import (
+	"context"
 	"strings"
-	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
 
-func TestModuleDaggerCLIFunctions(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestDaggerCLIFunctions(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -88,8 +87,7 @@ func (m *OtherObj) FnE() *Container {
 `,
 		})
 
-	t.Run("top-level", func(t *testing.T) {
-		t.Parallel()
+	t.Run("top-level", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions()).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -99,8 +97,7 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
-	t.Run("top-level from subdir", func(t *testing.T) {
-		t.Parallel()
+	t.Run("top-level from subdir", func(ctx context.Context, t *testctx.T) {
 		// find-up should kick in
 		out, err := ctr.
 			WithWorkdir("/work/some/subdir").
@@ -114,8 +111,7 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
-	t.Run("return core object", func(t *testing.T) {
-		t.Parallel()
+	t.Run("return core object", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fn-a")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -124,14 +120,12 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "as-tarball                    Returns a File representing the container serialized to a tarball.")
 	})
 
-	t.Run("return primitive", func(t *testing.T) {
-		t.Parallel()
+	t.Run("return primitive", func(ctx context.Context, t *testctx.T) {
 		_, err := ctr.With(daggerFunctions("prim")).Stdout(ctx)
 		require.ErrorContains(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
 	})
 
-	t.Run("alt casing", func(t *testing.T) {
-		t.Parallel()
+	t.Run("alt casing", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fnA")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -140,16 +134,14 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "as-tarball                    Returns a File representing the container serialized to a tarball.")
 	})
 
-	t.Run("return user interface", func(t *testing.T) {
-		t.Parallel()
+	t.Run("return user interface", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fn-b")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		require.Contains(t, lines, "quack   quack that thang")
 	})
 
-	t.Run("return user object", func(t *testing.T) {
-		t.Parallel()
+	t.Run("return user object", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fn-c")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -161,8 +153,7 @@ func (m *OtherObj) FnE() *Container {
 		require.Contains(t, lines, "fn-d      doc for FnD")
 	})
 
-	t.Run("return user object nested", func(t *testing.T) {
-		t.Parallel()
+	t.Run("return user object nested", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("fn-c", "field-d")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")

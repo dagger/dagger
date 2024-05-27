@@ -1,23 +1,22 @@
 package core
 
 import (
+	"context"
 	"strings"
-	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
-func TestRefIntegration(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// This test handles a very edgy case:
 	// goGitBase inits a /work directory with a git context
 	// we then create a local dir with the same structure as a git remote: `/work/github.com/dagger/dagger`
 	// It should be resolved as a local ref, not a remote one
-	t.Run("local module with same format as remote: github.com/dagger/dagger", func(t *testing.T) {
-		t.Parallel()
+	t.Run("local module with same format as remote: github.com/dagger/dagger", func(ctx context.Context, t *testctx.T) {
 		out, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/github.com/dagger/dagger").

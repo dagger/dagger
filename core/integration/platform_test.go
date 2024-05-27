@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +14,12 @@ import (
 
 	"dagger.io/dagger"
 )
+
+type PlatformSuite struct{}
+
+func TestPlatform(t *testing.T) {
+	testctx.Run(testCtx, t, PlatformSuite{}, Middleware()...)
+}
 
 var platformToUname = map[dagger.Platform]string{
 	"linux/amd64": "x86_64",
@@ -25,9 +33,8 @@ var platformToFileArch = map[dagger.Platform]string{
 	"linux/s390x": "IBM S/390",
 }
 
-func TestPlatformEmulatedExecAndPush(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (PlatformSuite) TestEmulatedExecAndPush(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -63,10 +70,8 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	}
 }
 
-func TestPlatformCrossCompile(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t, dagger.WithWorkdir("../.."))
+func (PlatformSuite) TestCrossCompile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t, dagger.WithWorkdir("../.."))
 
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
@@ -151,10 +156,8 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPlatformCacheMounts(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	randomID := identity.NewID()
 
@@ -183,19 +186,15 @@ func TestPlatformCacheMounts(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestPlatformInvalid(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (PlatformSuite) TestInvalid(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	_, err := c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
 	require.ErrorContains(t, err, "unknown operating system or architecture")
 }
 
-func TestPlatformWindows(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (PlatformSuite) TestWindows(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// It's not possible to exec, but we can pull and read files
 	ents, err := c.Container(dagger.ContainerOpts{Platform: "windows/amd64"}).

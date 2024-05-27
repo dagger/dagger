@@ -51,6 +51,15 @@ func WithConn(conn engineconn.EngineConn) ClientOpt {
 	})
 }
 
+// WithRunnerHost sets the runner host URL for provisioning and connecting to
+// an engine. This only has effect when connecting via the CLI, and is only
+// exposed for testing purposes.
+func WithRunnerHost(runnerHost string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.RunnerHost = runnerHost
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 	cfg := &engineconn.Config{}

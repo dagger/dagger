@@ -1,13 +1,14 @@
 package core
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"io"
 	"net"
 	"path/filepath"
-	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
@@ -16,9 +17,8 @@ import (
 //go:embed testdata/socket-echo.go
 var echoSocketSrc string
 
-func TestContainerWithUnixSocket(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithUnixSocket(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
@@ -67,7 +67,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello\n", stdout)
 
-	t.Run("socket can be removed", func(t *testing.T) {
+	t.Run("socket can be removed", func(ctx context.Context, t *testctx.T) {
 		without := ctr.WithoutUnixSocket("/tmp/test.sock").
 			WithExec([]string{"ls", "/tmp"})
 
@@ -76,7 +76,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 		require.Empty(t, stdout)
 	})
 
-	t.Run("replaces existing socket at same path", func(t *testing.T) {
+	t.Run("replaces existing socket at same path", func(ctx context.Context, t *testctx.T) {
 		repeated := ctr.WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock))
 
 		stdout, err := repeated.Stdout(ctx)
@@ -92,8 +92,8 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	})
 }
 
-func TestContainerWithUnixSocketOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithUnixSocketOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
@@ -105,7 +105,7 @@ func TestContainerWithUnixSocketOwner(t *testing.T) {
 
 	socket := c.Host().UnixSocket(sock)
 
-	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithUnixSocket(name, socket, dagger.ContainerWithUnixSocketOpts{
 			Owner: owner,
 		})

@@ -37,11 +37,16 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestServiceHostnamesAreStable(t *testing.T) {
-	t.Parallel()
+type ServiceSuite struct{}
 
+func TestService(t *testing.T) {
+	testctx.Run(testCtx, t, ServiceSuite{}, Middleware()...)
+}
+
+func (ServiceSuite) TestHostnamesAreStable(ctx context.Context, t *testctx.T) {
 	hostname := func(ctx context.Context, c *dagger.Client) string {
 		www := c.Directory().WithNewFile("index.html", "Hello, world!")
 
@@ -68,8 +73,8 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 		return hostname
 	}
 
-	t.Run("hostnames are different for different services", func(t *testing.T) {
-		c, ctx := connect(t)
+	t.Run("hostnames are different for different services", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		srv1 := c.Container().
 			From("python").
@@ -91,8 +96,8 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 		require.NotEqual(t, hn1, hn2)
 	})
 
-	t.Run("hostnames are stable within a session", func(t *testing.T) {
-		c, ctx := connect(t)
+	t.Run("hostnames are stable within a session", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		hosts := map[string]int{}
 		for i := 0; i < 10; i++ {
@@ -102,11 +107,11 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 		require.Len(t, hosts, 1)
 	})
 
-	t.Run("hostnames are stable across sessions", func(t *testing.T) {
+	t.Run("hostnames are stable across sessions", func(ctx context.Context, t *testctx.T) {
 		hosts := map[string]int{}
 
 		for i := 0; i < 5; i++ {
-			c, ctx := connect(t)
+			c := connect(ctx, t)
 			hosts[hostname(ctx, c)]++
 		}
 
@@ -114,12 +119,10 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 	})
 }
 
-func TestServiceHostnameEndpoint(t *testing.T) {
-	t.Parallel()
+func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	c, ctx := connect(t)
-
-	t.Run("hostname is same as endpoint", func(t *testing.T) {
+	t.Run("hostname is same as endpoint", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithExposedPort(8000).
@@ -135,7 +138,7 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 		require.Equal(t, hn+":8000", ep)
 	})
 
-	t.Run("endpoint can specify arbitrary port", func(t *testing.T) {
+	t.Run("endpoint can specify arbitrary port", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithExec([]string{"python", "-m", "http.server"}).
@@ -152,7 +155,7 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 		require.Equal(t, hn+":1234", ep)
 	})
 
-	t.Run("endpoint with no port errors if no exposed port", func(t *testing.T) {
+	t.Run("endpoint with no port errors if no exposed port", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithExec([]string{"python", "-m", "http.server"}).
@@ -163,10 +166,8 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 	})
 }
 
-func TestServicePorts(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv := c.Container().
 		From("python").
@@ -206,11 +207,9 @@ func TestServicePorts(t *testing.T) {
 	}
 }
 
-func TestServicePortsSkipHealthCheck(t *testing.T) {
-	t.Parallel()
-
-	t.Run("Healthchecks pass when all ports are skipped", func(t *testing.T) {
-		c, ctx := connect(t)
+func (ServiceSuite) TestPortsSkipHealthCheck(ctx context.Context, t *testctx.T) {
+	t.Run("Healthchecks pass when all ports are skipped", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		srv := c.Container().
 			From("python").
@@ -227,8 +226,8 @@ func TestServicePortsSkipHealthCheck(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("Healthchecks pass when some ports are skipped", func(t *testing.T) {
-		c, ctx := connect(t)
+	t.Run("Healthchecks pass when some ports are skipped", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		srv := c.Container().
 			From("python").
@@ -247,10 +246,8 @@ func TestServicePortsSkipHealthCheck(t *testing.T) {
 	})
 }
 
-func TestContainerPortLifecycle(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestPortLifecycle(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	withPorts := c.Container().
 		From("python").
@@ -286,7 +283,7 @@ func TestContainerPortLifecycle(t *testing.T) {
 		}
 	}`
 
-	err = testutil.Query(getPorts, &res, &testutil.QueryOptions{
+	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -316,7 +313,7 @@ func TestContainerPortLifecycle(t *testing.T) {
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
 	require.NoError(t, err)
-	err = testutil.Query(getPorts, &res, &testutil.QueryOptions{
+	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -343,7 +340,7 @@ func TestContainerPortLifecycle(t *testing.T) {
 	})
 	cid, err = withoutUDP.ID(ctx)
 	require.NoError(t, err)
-	err = testutil.Query(getPorts, &res, &testutil.QueryOptions{
+	err = testutil.Query(t, getPorts, &res, &testutil.QueryOptions{
 		Variables: map[string]interface{}{
 			"id": cid,
 		},
@@ -367,10 +364,8 @@ func TestContainerPortLifecycle(t *testing.T) {
 	require.Nil(t, desc)
 }
 
-func TestContainerPortOCIConfig(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestPortOCIConfig(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	withPorts := c.Container().
 		From("python").
@@ -427,9 +422,8 @@ func TestContainerPortOCIConfig(t *testing.T) {
 	require.ElementsMatch(t, []string{"8000/tcp", "5432/udp"}, ports)
 }
 
-func TestContainerExecServicesSimple(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesSimple(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -454,10 +448,8 @@ func TestContainerExecServicesSimple(t *testing.T) {
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
-func TestContainerExecServicesError(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv := c.Container().
 		From(alpineImage).
@@ -478,10 +470,8 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
 
-func TestContainerServiceNoExec(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv := c.Container().
 		From(alpineImage).
@@ -506,10 +496,8 @@ func TestContainerServiceNoExec(t *testing.T) {
 //go:embed testdata/udp-service.go
 var udpSrc string
 
-func TestContainerExecUDPServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecUDPServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv := c.Container().
 		From(golangImage).
@@ -540,10 +528,8 @@ func TestContainerExecUDPServices(t *testing.T) {
 	require.Equal(t, "Hello, world!", stdout)
 }
 
-func TestContainerExecServiceAlias(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServiceAlias(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv, _ := httpService(ctx, t, c, "Hello, world!")
 
@@ -568,10 +554,8 @@ func TestContainerExecServiceAlias(t *testing.T) {
 //go:embed testdata/pipe.go
 var pipeSrc string
 
-func TestContainerExecServicesDeduping(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesDeduping(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv := c.Container().
 		From(golangImage).
@@ -604,10 +588,8 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 	require.NoError(t, eg.Wait())
 }
 
-func TestContainerExecServicesChained(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesChained(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	srv, _ := httpService(ctx, t, c, "0\n")
 
@@ -642,10 +624,8 @@ func TestContainerExecServicesChained(t *testing.T) {
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
-func TestContainerExecServicesNestedExec(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesNestedExec(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
@@ -676,10 +656,8 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerExecServicesNestedHTTP(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesNestedHTTP(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
@@ -713,10 +691,8 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerExecServicesNestedGit(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecServicesNestedGit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	nestingLimit := calculateNestingLimit(ctx, c, t)
 
@@ -750,10 +726,8 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerExportServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExportServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, content)
@@ -769,10 +743,8 @@ func TestContainerExportServices(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestContainerMultiPlatformExportServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestMultiPlatformExportServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
@@ -795,10 +767,8 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 	require.True(t, ok)
 }
 
-func TestServicesContainerPublish(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -819,10 +789,8 @@ func TestServicesContainerPublish(t *testing.T) {
 	require.Equal(t, fileContent, content)
 }
 
-func TestContainerRootFSServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -840,10 +808,8 @@ func TestContainerRootFSServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerWithRootFSServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithRootFSServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -873,10 +839,8 @@ func TestContainerWithRootFSServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerDirectoryServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -887,25 +851,25 @@ func TestContainerDirectoryServices(t *testing.T) {
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url})
 
-	t.Run("runs services for Container.Directory.Entries", func(t *testing.T) {
+	t.Run("runs services for Container.Directory.Entries", func(ctx context.Context, t *testctx.T) {
 		entries, err := wget.Directory(".").Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"index.html"}, entries)
 	})
 
-	t.Run("runs services for Container.Directory.Directory.Entries", func(t *testing.T) {
+	t.Run("runs services for Container.Directory.Directory.Entries", func(ctx context.Context, t *testctx.T) {
 		entries, err := wget.Directory("/sub").Directory("out").Entries(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"index.html"}, entries)
 	})
 
-	t.Run("runs services for Container.Directory.File.Contents", func(t *testing.T) {
+	t.Run("runs services for Container.Directory.File.Contents", func(ctx context.Context, t *testctx.T) {
 		fileContent, err := wget.Directory(".").File("index.html").Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)
 	})
 
-	t.Run("runs services for Container.Directory.Export", func(t *testing.T) {
+	t.Run("runs services for Container.Directory.Export", func(ctx context.Context, t *testctx.T) {
 		dest := t.TempDir()
 
 		ok, err := wget.Directory(".").Export(ctx, dest)
@@ -918,10 +882,8 @@ func TestContainerDirectoryServices(t *testing.T) {
 	})
 }
 
-func TestContainerFileServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestFileServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
@@ -937,10 +899,8 @@ func TestContainerFileServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerWithServiceFileDirectory(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithServiceFileDirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	response := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, response)
@@ -953,7 +913,7 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 		Branch("main").
 		Tree()
 
-	t.Run("mounting", func(t *testing.T) {
+	t.Run("mounting", func(ctx context.Context, t *testctx.T) {
 		useBoth := c.Container().
 			From(alpineImage).
 			WithMountedDirectory("/mnt/repo", gitDir).
@@ -968,7 +928,7 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 		require.Equal(t, response, gitContent)
 	})
 
-	t.Run("copying", func(t *testing.T) {
+	t.Run("copying", func(ctx context.Context, t *testctx.T) {
 		useBoth := c.Container().
 			From(alpineImage).
 			WithDirectory("/mnt/repo", gitDir).
@@ -984,10 +944,8 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 	})
 }
 
-func TestDirectoryServiceEntries(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestDirectoryEntries(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1001,13 +959,9 @@ func TestDirectoryServiceEntries(t *testing.T) {
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
-func TestDirectoryServiceSync(t *testing.T) {
-	t.Parallel()
-
-	t.Run("triggers error", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
+	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		content := identity.NewID()
 		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
@@ -1018,10 +972,8 @@ func TestDirectoryServiceSync(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("with chaining", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("with chaining", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		content := identity.NewID()
 		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
@@ -1037,10 +989,8 @@ func TestDirectoryServiceSync(t *testing.T) {
 	})
 }
 
-func TestDirectoryServiceTimestamp(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestDirectoryTimestamp(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
@@ -1059,10 +1009,8 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 	require.Contains(t, stdout, "1991-06-03")
 }
 
-func TestDirectoryWithDirectoryFileServices(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1083,10 +1031,8 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestDirectoryServiceExport(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestDirectoryExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1106,10 +1052,8 @@ func TestDirectoryServiceExport(t *testing.T) {
 	require.Equal(t, content, string(exportedContent))
 }
 
-func TestFileServiceContents(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (FileSuite) TestServiceContents(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1124,13 +1068,9 @@ func TestFileServiceContents(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestFileServiceSync(t *testing.T) {
-	t.Parallel()
-
-	t.Run("triggers error", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
+	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		content := identity.NewID()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
@@ -1143,10 +1083,8 @@ func TestFileServiceSync(t *testing.T) {
 		require.Contains(t, err.Error(), "status 404")
 	})
 
-	t.Run("with chaining", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("with chaining", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		content := identity.NewID()
 		httpSrv, httpURL := httpService(ctx, t, c, content)
@@ -1162,10 +1100,8 @@ func TestFileServiceSync(t *testing.T) {
 	})
 }
 
-func TestFileServiceExport(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (FileSuite) TestServiceExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1187,10 +1123,8 @@ func TestFileServiceExport(t *testing.T) {
 	require.Equal(t, content, string(exportedContent))
 }
 
-func TestFileServiceTimestamp(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (FileSuite) TestServiceTimestamp(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1212,10 +1146,8 @@ func TestFileServiceTimestamp(t *testing.T) {
 // started it can be reached by containers that do not explicitly bind it.
 //
 // TODO(vito): test that the service stops when the client closes... somehow
-func TestServiceStartStop(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestStartStop(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
@@ -1251,10 +1183,8 @@ func TestServiceStartStop(t *testing.T) {
 // TestServiceStartStopKill tests that we send SIGTERM by default, instead of SIGKILL.
 // Additionally, we check that we can attempt to SIGKILL a process that is not
 // responding to SIGTERM.
-func TestServiceStartStopKill(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestStartStopKill(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	httpSrv, httpURL := signalService(ctx, t, c)
 
@@ -1309,20 +1239,18 @@ func TestServiceStartStopKill(t *testing.T) {
 
 // TestServiceNoCrossTalk shows that services spawned in one client cannot be
 // reached by another client.
-func TestServiceNoCrossTalk(t *testing.T) {
-	t.Parallel()
-
-	c1, ctx1 := connect(t)
+func (ServiceSuite) TestNoCrossTalk(ctx context.Context, t *testctx.T) {
+	c1 := connect(ctx, t)
 	defer c1.Close()
 
-	c2, ctx2 := connect(t)
+	c2 := connect(ctx, t)
 	defer c2.Close()
 
 	content1 := identity.NewID()
 
-	httpSrv1, httpURL1 := httpService(ctx1, t, c1, content1)
+	httpSrv1, httpURL1 := httpService(ctx, t, c1, content1)
 
-	fetch := func(ctx context.Context, c *dagger.Client) (string, error) {
+	fetch := func(c *dagger.Client) (string, error) {
 		return c.Container().
 			From(alpineImage).
 			WithEnvVariable("BUST", identity.NewID()).
@@ -1330,28 +1258,24 @@ func TestServiceNoCrossTalk(t *testing.T) {
 			Stdout(ctx)
 	}
 
-	_, err := httpSrv1.Start(ctx1)
+	_, err := httpSrv1.Start(ctx)
 	require.NoError(t, err)
 
-	out, err := fetch(ctx1, c1)
+	out, err := fetch(c1)
 	require.NoError(t, err)
 	require.Equal(t, out, content1)
 
-	out, err = fetch(ctx2, c2)
+	out, err = fetch(c2)
 	require.Error(t, err)
 	require.Empty(t, out)
 }
 
-func TestServiceHostToContainer(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestHostToContainer(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	content := identity.NewID()
 
-	t.Run("no options means bind to random", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("no options means bind to random", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory(
@@ -1386,16 +1310,15 @@ func TestServiceHostToContainer(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple ports", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("multiple ports", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory("/srv/www1",
 				c.Directory().WithNewFile("index.html", content+"-1")).
 			WithMountedDirectory("/srv/www2",
 				c.Directory().WithNewFile("index.html", content+"-2")).
-			WithExec([]string{"sh", "-c",
+			WithExec([]string{
+				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 8000 ) &
 				 ( cd /srv/www2 && python -m http.server 9000 ) &
 				 wait`,
@@ -1433,16 +1356,15 @@ func TestServiceHostToContainer(t *testing.T) {
 		}
 	})
 
-	t.Run("native mapping", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("native mapping", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory("/srv/www1",
 				c.Directory().WithNewFile("index.html", content+"-1")).
 			WithMountedDirectory("/srv/www2",
 				c.Directory().WithNewFile("index.html", content+"-2")).
-			WithExec([]string{"sh", "-c",
+			WithExec([]string{
+				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 32767 ) &
 				 ( cd /srv/www2 && python -m http.server 32766 ) &
 				 wait`,
@@ -1484,16 +1406,15 @@ func TestServiceHostToContainer(t *testing.T) {
 		}
 	})
 
-	t.Run("native mapping + extra ports", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("native mapping + extra ports", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory("/srv/www1",
 				c.Directory().WithNewFile("index.html", content+"-1")).
 			WithMountedDirectory("/srv/www2",
 				c.Directory().WithNewFile("index.html", content+"-2")).
-			WithExec([]string{"sh", "-c",
+			WithExec([]string{
+				"sh", "-c",
 				`( cd /srv/www1 && python -m http.server 32765 ) &
 				 ( cd /srv/www2 && python -m http.server 32764 ) &
 				 wait`,
@@ -1537,9 +1458,7 @@ func TestServiceHostToContainer(t *testing.T) {
 		}
 	})
 
-	t.Run("no ports to forward", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("no ports to forward", func(ctx context.Context, t *testctx.T) {
 		srv := c.Container().
 			From("python").
 			WithMountedDirectory(
@@ -1556,10 +1475,8 @@ func TestServiceHostToContainer(t *testing.T) {
 	})
 }
 
-func TestServiceContainerToHost(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ServiceSuite) TestContainerToHost(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -1575,9 +1492,7 @@ func TestServiceContainerToHost(t *testing.T) {
 	port, err := strconv.Atoi(portStr)
 	require.NoError(t, err)
 
-	t.Run("simple", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("simple", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
@@ -1593,9 +1508,7 @@ func TestServiceContainerToHost(t *testing.T) {
 		}
 	})
 
-	t.Run("using hostname", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("using hostname", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
@@ -1612,9 +1525,7 @@ func TestServiceContainerToHost(t *testing.T) {
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("using endpoint", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("using endpoint", func(ctx context.Context, t *testctx.T) {
 		host := c.Host().Service([]dagger.PortForward{
 			{Frontend: 80, Backend: port},
 		})
@@ -1633,9 +1544,7 @@ func TestServiceContainerToHost(t *testing.T) {
 		require.Equal(t, "hello\n", out)
 	})
 
-	t.Run("multiple ports", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("multiple ports", func(ctx context.Context, t *testctx.T) {
 		l2, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
 
@@ -1668,27 +1577,17 @@ func TestServiceContainerToHost(t *testing.T) {
 		require.Equal(t, "hey hey-2", out)
 	})
 
-	t.Run("no ports given", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("no ports given", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Host().Service(nil).ID(ctx)
 		require.Error(t, err)
 	})
 }
 
-func TestServiceSearchDomainAlwaysSet(t *testing.T) {
+func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T) {
 	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
 	// set search domains in those execs
 
-	// NOT parallel since this requires setting env vars unfortunately
-	// t.Parallel()
-
-	// FIXME: This test seems particularly prone to telemetry flushing hanging, so use
-	// a timeout for now until that is fixed.
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	t.Cleanup(cancel)
-
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(newTWriter(t)))
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -1727,8 +1626,9 @@ func TestServiceSearchDomainAlwaysSet(t *testing.T) {
 		hostSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
 	})
 
-	t.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://127.0.0.1:32132")
-	c2, err := dagger.Connect(ctx, dagger.WithLogOutput(newTWriter(t)))
+	c2, err := dagger.Connect(ctx,
+		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
+		dagger.WithLogOutput(testutil.NewTWriter(t)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
@@ -1746,7 +1646,7 @@ func TestServiceSearchDomainAlwaysSet(t *testing.T) {
 	require.True(t, found)
 }
 
-func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Service, string) {
+func httpService(ctx context.Context, t *testctx.T, c *dagger.Client, content string) (*dagger.Service, string) {
 	t.Helper()
 
 	srv := c.Container().
@@ -1768,12 +1668,12 @@ func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content st
 	return srv, httpURL
 }
 
-func gitService(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
+func gitService(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	t.Helper()
 	return gitServiceWithBranch(ctx, t, c, content, "main")
 }
 
-func gitServiceWithBranch(ctx context.Context, t testing.TB, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Service, string) {
+func gitServiceWithBranch(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory, branchName string) (*dagger.Service, string) {
 	t.Helper()
 
 	const gitPort = 9418
@@ -1887,7 +1787,7 @@ cd ..
 
 // signalService is a little helper service that writes assorted signals that
 // it receives to /signals.txt.
-func signalService(ctx context.Context, t *testing.T, c *dagger.Client) (*dagger.Service, string) {
+func signalService(ctx context.Context, t *testctx.T, c *dagger.Client) (*dagger.Service, string) {
 	t.Helper()
 
 	srv := c.Container().
@@ -1923,13 +1823,15 @@ with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as
 	return srv, httpURL
 }
 
-var nestingLimitOnce = &sync.Once{}
-var calculatedNestingLimit int
+var (
+	nestingLimitOnce       = &sync.Once{}
+	calculatedNestingLimit int
+)
 
 // search domains cap out at 256 chars, and these tests have to run in
 // environments that may have some pre-configured (k8s) or may already be
 // nested (dagger-in-dagger), so we need to calculate how deeply we can nest.
-func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testing.T) int {
+func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testctx.T) int {
 	nestingLimitOnce.Do(func() {
 		baseSearch, err := c.Container().
 			From(alpineImage).

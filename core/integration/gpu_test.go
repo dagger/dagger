@@ -9,10 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
+
+type GPUSuite struct{}
+
+func TestGPU(t *testing.T) {
+	testctx.Run(testCtx, t, GPUSuite{}, Middleware()...)
+}
 
 const (
 	// imageName defines the name of Nvidia's CUDA contaimer image:
@@ -59,15 +66,13 @@ print(f'Result: y = {a.item()} + {b.item()} x + {c.item()} x^2 + {d.item()} x^3'
 	gpuTestsEnabledEnvName = "DAGGER_GPU_TESTS_ENABLED"
 )
 
-var (
-	// cudaImageMatrix establishes an image name matrix so that tests can
-	// run in a combination of versions and distro flavors:
-	cudaImageMatrix = []string{
-		cudaImageName("11.7.1", "ubuntu20.04"),
-		cudaImageName("11.7.1", "ubi8"),
-		cudaImageName("11.7.1", "centos7"),
-	}
-)
+// cudaImageMatrix establishes an image name matrix so that tests can
+// run in a combination of versions and distro flavors:
+var cudaImageMatrix = []string{
+	cudaImageName("11.7.1", "ubuntu20.04"),
+	cudaImageName("11.7.1", "ubi8"),
+	cudaImageName("11.7.1", "centos7"),
+}
 
 // cudaImageName is a helper that returns the CUDA image name
 // cudaImageName("11.7.1", "centos7") results in "nvidia/cuda:11.7.1-base-centos7":
@@ -82,16 +87,13 @@ func cudaImageName(version string, distroFlavor string) string {
 	return imageName
 }
 
-var (
-	// uuidRegex is used to match GPU UUID in nvidia-smi output:
-	uuidRegex = regexp.MustCompile(`GPU-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}`)
-)
+// uuidRegex is used to match GPU UUID in nvidia-smi output:
+var uuidRegex = regexp.MustCompile(`GPU-\w{8}-\w{4}-\w{4}-\w{4}-\w{12}`)
 
-func TestGPUAccess(t *testing.T) {
+func (GPUSuite) TestGPUAccess(ctx context.Context, t *testctx.T) {
 	if gpuTestsEnabled := os.Getenv(gpuTestsEnabledEnvName); gpuTestsEnabled == "" {
 		t.Skip("Skipping GPU Tests")
 	}
-	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
@@ -105,7 +107,7 @@ func TestGPUAccess(t *testing.T) {
 
 	// Iterate through the image matrix:
 	for _, cudaImage := range cudaImageMatrix {
-		t.Run(cudaImage, func(t *testing.T) {
+		t.Run(cudaImage, func(ctx context.Context, t *testctx.T) {
 			// Query the same on the Dagger container and compare output:
 			ctr := c.Container().From(cudaImage)
 			contents, err := ctr.
@@ -116,7 +118,7 @@ func TestGPUAccess(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, hostNvidiaOutputStr, contents)
 
-			t.Run("use specific GPU", func(t *testing.T) {
+			t.Run("use specific GPU", func(ctx context.Context, t *testctx.T) {
 				var gpus []string
 
 				// Take host output and get GPU IDs:
@@ -151,16 +153,15 @@ func TestGPUAccess(t *testing.T) {
 	}
 }
 
-func TestGPUAccessWithPython(t *testing.T) {
+func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 	if gpuTestsEnabled := os.Getenv(gpuTestsEnabledEnvName); gpuTestsEnabled == "" {
 		t.Skip("Skipping GPU Tests")
 	}
-	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
 
-	t.Run("pytorch CUDA availability check", func(t *testing.T) {
+	t.Run("pytorch CUDA availability check", func(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			ExperimentalWithAllGPUs().
@@ -170,7 +171,7 @@ func TestGPUAccessWithPython(t *testing.T) {
 		require.Contains(t, contents, "True")
 	})
 
-	t.Run("pytorch tensors sample", func(t *testing.T) {
+	t.Run("pytorch tensors sample", func(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			ExperimentalWithAllGPUs().

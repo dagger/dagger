@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"io"
 	"testing"
@@ -10,12 +11,17 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestSecretEnvFromFile(t *testing.T) {
-	t.Parallel()
+type SecretSuite struct{}
 
-	err := testutil.Query(
+func TestSecret(t *testing.T) {
+	testctx.Run(testCtx, t, SecretSuite{}, Middleware()...)
+}
+
+func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
+	err := testutil.Query(t,
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -32,10 +38,8 @@ func TestSecretEnvFromFile(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSecretMountFromFile(t *testing.T) {
-	t.Parallel()
-
-	err := testutil.Query(
+func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
+	err := testutil.Query(t,
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -52,9 +56,7 @@ func TestSecretMountFromFile(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
-	t.Parallel()
-
+func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *testctx.T) {
 	plaintext := "some-secret"
 	fileID := newFile(t, "some-file", "some-content")
 
@@ -72,7 +74,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 		}
 	}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`query Test($secret: SecretID!, $file: FileID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -101,10 +103,8 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }
 
-func TestSecretSet(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (SecretSuite) TestSet(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	secretName := "aws_key"
 	secretValue := "very-secret-text"
@@ -135,10 +135,8 @@ func TestSecretSet(t *testing.T) {
 	require.Equal(t, secretName, name)
 }
 
-func TestSecretUnsetVariable(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	s := c.SetSecret("aws_key", "very-secret-text")
 
@@ -153,9 +151,8 @@ func TestSecretUnsetVariable(t *testing.T) {
 	require.NotContains(t, out, "AWS_KEY")
 }
 
-func TestSecretWhitespaceScrubbed(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (SecretSuite) TestWhitespaceScrubbed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	secretValue := "very\nsecret\ntext\n"
 
@@ -170,9 +167,8 @@ func TestSecretWhitespaceScrubbed(t *testing.T) {
 	require.Equal(t, "***", stdout)
 }
 
-func TestSecretBigScrubbed(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (SecretSuite) TestBigScrubbed(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	secretKeyReader := bytes.NewReader(secretKeyBytes)
 	secretValue, err := io.ReadAll(secretKeyReader)
 	require.NoError(t, err)

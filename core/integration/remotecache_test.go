@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -28,9 +29,14 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 	return devEngineSvc, endpoint, err
 }
 
-func TestRemoteCacheRegistry(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+type RemoteCacheSuite struct{}
+
+func TestRemoteCache(t *testing.T) {
+	testctx.Run(testCtx, t, RemoteCacheSuite{}, Middleware()...)
+}
+
+func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
@@ -108,9 +114,8 @@ Idea is to:
 4. Make sure that works and there's no errors about lazy blobs missing
 The linked PR description above has more details.
 */
-func TestRemoteCacheLazyBlobs(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (RemoteCacheSuite) TestLazyBlobs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
@@ -170,10 +175,9 @@ func TestRemoteCacheLazyBlobs(t *testing.T) {
 	require.NoErrorf(t, err, "outputB: %s", outputB)
 }
 
-func TestRemoteCacheS3(t *testing.T) {
-	t.Parallel()
-	t.Run("buildkit s3 caching", func(t *testing.T) {
-		c, ctx := connect(t)
+func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
+	t.Run("buildkit s3 caching", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 
@@ -256,9 +260,8 @@ func TestRemoteCacheS3(t *testing.T) {
 	})
 }
 
-func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	defer c.Close()
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
@@ -358,9 +361,8 @@ func TestRemoteCacheRegistryMultipleConfigs(t *testing.T) {
 	require.Equal(t, shaA, shaC)
 }
 
-func TestRemoteCacheRegistrySeparateImportExport(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	defer c.Close()
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
@@ -491,9 +493,8 @@ func TestRemoteCacheRegistrySeparateImportExport(t *testing.T) {
 }
 
 // integration test for dagger/dagger#6163
-func TestRemoteCacheRegistryFastCacheBlobSource(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	defer c.Close()
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
