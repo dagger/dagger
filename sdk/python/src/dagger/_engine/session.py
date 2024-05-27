@@ -35,10 +35,22 @@ def start_cli_session_sync(cfg: dagger.Config, path: str):
     """Start an engine session with a provided CLI path."""
     logger.debug("Starting session using %s", path)
     try:
-        with run(cfg, path) as proc:
-            yield get_connect_params(proc)
+        proc = run(cfg, path)
+        yield get_connect_params(proc)
+        proc.stdin.close()
+        proc.wait()
+        if proc.returncode != 0:
+            msg = make_process_error_msg(proc, None, None)
+            raise dagger.SessionError(msg)
     except (OSError, ValueError, TypeError) as e:
         raise dagger.SessionError(e) from e
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.stderr:
+            proc.stderr.close()
 
 
 def run(cfg: dagger.Config, path: str) -> subprocess.Popen[str]:
@@ -93,7 +105,8 @@ def get_connect_params(proc: subprocess.Popen[str]) -> ConnectParams:
     # Check if subprocess exited with an error
     if proc.poll():
         stdout = conn + proc.stdout.read()
-        msg = make_process_error_msg(proc, stdout)
+        stderr = proc.stderr.read() if proc.stderr and proc.stderr.readable() else None
+        msg = make_process_error_msg(proc, stdout, stderr)
         raise dagger.SessionError(msg)
 
     if not conn:
@@ -107,15 +120,16 @@ def get_connect_params(proc: subprocess.Popen[str]) -> ConnectParams:
         raise dagger.SessionError(msg) from e
 
 
-def make_process_error_msg(proc: subprocess.Popen[str], out: str) -> str:
-    err = proc.stderr.read() if proc.stderr and proc.stderr.readable() else None
+def make_process_error_msg(
+    proc: subprocess.Popen[str], stdout: str | None, stderr: str | None
+) -> str:
     args = cast(list[str], proc.args)
 
     # Reuse error message from CalledProcessError
     exc = subprocess.CalledProcessError(proc.returncode, " ".join(args))
 
     msg = str(exc)
-    detail = err or out
+    detail = stderr or stdout
     if detail and detail.strip():
         # `msg` ends in a period, just append
         msg = f"{msg} {detail.strip()}"
