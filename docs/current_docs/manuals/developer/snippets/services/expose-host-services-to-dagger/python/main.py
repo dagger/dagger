@@ -1,12 +1,16 @@
+from typing import Annotated
+
 import dagger
-from dagger import dag, function, object_type
+from dagger import Doc, dag, function, object_type
 
 
 @object_type
 class MyModule:
     @function
-    async def user_list(self, svc: dagger.Service) -> str:
-        """Sends a query to a MariaDB service received as input and returns the response."""
+    async def user_list(
+        self, svc: Annotated[dagger.Service, Doc("Host service")]
+    ) -> str:
+        """Send a query to a MariaDB service and return the response."""
         return await (
             dag.container()
             .from_("mariadb:10.11.2")

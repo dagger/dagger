@@ -5,7 +5,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     async def redis_service(self) -> str:
-        """Creates Redis service and client."""
+        """Create Redis service and client."""
         redis_srv = (
             dag.container()
             .from_("redis")

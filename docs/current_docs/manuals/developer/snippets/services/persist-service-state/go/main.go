@@ -6,7 +6,7 @@ import (
 
 type MyModule struct{}
 
-// creates Redis service and client
+// Create Redis service and client
 func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	redisSrv := dag.Container().
 		From("redis").

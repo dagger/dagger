@@ -16,17 +16,4 @@ class MyModule {
       .withExposedPort(8080)
       .asService()
   }
-
-  /**
-   * Send a request to an HTTP service and return the response
-   */
-  @func()
-  async get(): Promise<string> {
-    return await dag
-      .container()
-      .from("alpine")
-      .withServiceBinding("www", this.httpService())
-      .withExec(["wget", "-O-", "http://www:8080"])
-      .stdout()
-  }
 }

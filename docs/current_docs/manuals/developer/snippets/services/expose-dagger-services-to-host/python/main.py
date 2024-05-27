@@ -16,14 +16,3 @@ class MyModule:
             .with_exposed_port(8080)
             .as_service()
         )
-
-    @function
-    async def get(self) -> str:
-        """Send a request to an HTTP service and return the response."""
-        return await (
-            dag.container()
-            .from_("alpine")
-            .with_service_binding("www", self.http_service())
-            .with_exec(["wget", "-O-", "http://www:8080"])
-            .stdout()
-        )

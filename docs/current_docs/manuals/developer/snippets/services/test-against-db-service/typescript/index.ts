@@ -3,7 +3,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Runs unit tests against a database service
+   * Run unit tests against a database service
    */
   @func()
   async test(): Promise<string> {
