@@ -1,0 +1,6 @@
+{
+  "name": "my-module",
+  "sdk": "python",
+  "source": "dagger",
+  "engineVersion": "v0.11.4"
+}
