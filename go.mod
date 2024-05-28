@@ -3,8 +3,8 @@ module github.com/dagger/dagger
 go 1.21.7
 
 require (
-	dagger.io/dagger v0.11.4
-	github.com/dagger/dagger/engine/distconsts v0.11.4
+	dagger.io/dagger v0.11.5
+	github.com/dagger/dagger/engine/distconsts v0.11.5
 )
 
 replace (
@@ -72,7 +72,7 @@ require (
 	github.com/opencontainers/runc v1.1.12
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/pelletier/go-toml v1.9.5
-	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
+	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/procfs v0.12.0
 	github.com/psanford/memfs v0.0.0-20230130182539-4dbf7e3e865e
@@ -263,7 +263,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.26.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240227224415-6ceb2ff114de // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
