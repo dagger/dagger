@@ -56,14 +56,13 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		// TODO(guillaume): handle refs with scheme for auth -> ssh://user@gitlab.com/owner/repo.git/subpath
 		// Potentially extend Git schema to support refs with scheme + SSH keys
 
-		// Currently expects a ref without scheme github.com/owner/repo / gitlab.com/owner/subgroup/repo
-		repoRoot, err := vcs.RepoRootForImportPath(modPath, false)
-		if err != nil || repoRoot == nil {
-			return nil, fmt.Errorf("failed to extract root of repo from ref. For private repos, add `.git` %s: %w", modPath, err)
+		// // Currently expects a ref without scheme github.com/owner/repo / gitlab.com/owner/subgroup/repo
+		if parsed.repoRoot == nil {
+			return nil, fmt.Errorf("failed to extract root of repo from ref. For private repos, add `.git` %s", modPath)
 		}
 
-		if repoRoot.VCS == nil || repoRoot.VCS.Name != "Git" {
-			return nil, fmt.Errorf("dagger only supports Git based VCS %s: %w", modPath, err)
+		if parsed.repoRoot.VCS == nil || parsed.repoRoot.VCS.Name != "Git" {
+			return nil, fmt.Errorf("dagger only supports Git based VCS %s", modPath)
 		}
 
 		// Resolve the input module path to a git URL
@@ -73,9 +72,9 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		}
 
 		// Resolve the extracted repo root URL to a git URL
-		repoRootURL, err := resolveGitURL(repoRoot.Repo)
+		repoRootURL, err := resolveGitURL(parsed.repoRoot.Repo)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve git ref %s: %w", repoRoot.Repo, err)
+			return nil, fmt.Errorf("failed to resolve git ref %s: %w", parsed.repoRoot.Repo, err)
 		}
 
 		// split the root and subdir from the repo root URL and the module path
@@ -214,12 +213,15 @@ type parsedRefString struct {
 	modVersion string
 	hasVersion bool
 	kind       core.ModuleSourceKind
+	repoRoot   *vcs.RepoRoot
 }
 
+// reverse logic to fallback to local ref if not git one
 func parseRefString(ctx context.Context, bk *buildkit.Client, refString string) parsedRefString {
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
+	// Is present locally
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
 	if err == nil {
 		if !parsed.hasVersion && stat.IsDir() {
@@ -228,12 +230,18 @@ func parseRefString(ctx context.Context, bk *buildkit.Client, refString string) 
 		}
 	}
 
-	if strings.HasPrefix(parsed.modPath, "/") || strings.HasPrefix(parsed.modPath, ".") {
-		parsed.kind = core.ModuleSourceKindLocal
+	// TODO(guillaume): accept ref with scheme, for auth
+	// drawback -> network call
+	// advantage -> sure to correctly parse the string
+	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
+	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
+		parsed.kind = core.ModuleSourceKindGit
+		parsed.repoRoot = repoRoot
 		return parsed
 	}
 
-	parsed.kind = core.ModuleSourceKindGit
+	// when in doubt, fallback as local kind
+	parsed.kind = core.ModuleSourceKindLocal
 	return parsed
 }
 
