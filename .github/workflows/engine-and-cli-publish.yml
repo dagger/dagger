@@ -67,24 +67,21 @@ jobs:
           delete-branch: true
           branch: bump-engine
           draft: true
-
-  notify:
-    if: github.ref_type == 'tag'
-    needs: publish
-    uses: ./.github/workflows/_new_release_notification.yml
-    secrets: inherit
-    with:
-      message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+      - name: "Notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
   scan-engine:
-    name: "Scan Engine Image for Vulnerabilities"
-    needs: publish
-    # only run this on push events, not in PRs (since we only publish images during pushes)
-    if: github.event_name == 'push' && github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: engine scan
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "scan"
+        uses: ./.github/actions/call
+        with:
+          function: "engine scan"
 
   test-provision-macos:
     name: "Test SDK Provision / macos"

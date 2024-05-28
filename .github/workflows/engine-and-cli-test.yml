@@ -1,0 +1,80 @@
+name: Engine & CLI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  # Enable manual trigger for easy debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "engine lint"
+        uses: ./.github/actions/call
+        with:
+          function: "engine lint"
+
+  test:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-16c-nvme' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test all --race=true --parallel=16"
+
+  # Run Engine tests in dev Engine so that we can spot integration failures early
+  # Only run a subset of important test cases since we just need to verify basic
+  # functionality rather than repeat every test already run in the other targets.
+  testdev:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test important --race=true --parallel=16"
+          dev-engine: true
+
+  test-publish:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test publish cli"
+        uses: ./.github/actions/call
+        with:
+          function: "cli test-publish"
+      - name: "test publish engine"
+        uses: ./.github/actions/call
+        with:
+          function: "engine test-publish"
+      - name: "test publish engine (gpu)"
+        uses: ./.github/actions/call
+        with:
+          function: "engine with-base --image=ubuntu --gpu-support=true test-publish"
+
+  scan-engine:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "scan"
+        uses: ./.github/actions/call
+        with:
+          function: "engine scan"

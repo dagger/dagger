@@ -1,0 +1,96 @@
+name: "dagger call"
+description: ""
+
+inputs:
+  function:
+    description: "The Dagger function to call"
+    required: true
+
+  module:
+    description: "The Dagger module to call"
+    default: "."
+    required: false
+
+  version:
+    description: "Dagger version to run against"
+    default: "v0.11.6"
+    required: false
+
+  dev-engine:
+    description: "Whether to run against a dev Engine"
+    default: "false"
+    required: false
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install dagger
+      shell: bash
+      env:
+        DAGGER_VERSION: "${{ inputs.version }}"
+      run: |
+        if [[ -x "$(command -v dagger)" ]]; then
+          echo "::group::Checking dagger"
+          version="$(dagger --silent version | cut --fields 2 --delimiter ' ')"
+          if [[ "$version" != "$DAGGER_VERSION" ]]; then
+            echo "dagger ${version} is installed, but needed ${DAGGER_VERSION}"
+            exit 1
+          fi
+          echo "::endgroup::"
+        else
+          echo "::group::Installing dagger"
+          curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin/ sudo -E sh
+          echo "::endgroup::"
+        fi
+
+    - name: Install go
+      uses: actions/setup-go@v5
+      if: inputs.dev-engine == 'true'
+      with:
+        go-version: "1.22"
+        cache-dependency-path: "ci/go.sum"
+
+    - name: Wait for dagger to be ready
+      shell: bash
+      run: |
+        if [[ "${{ inputs.dev-engine }}" == "true" ]]; then
+          echo "::group::Starting dev engine"
+          if ! [[ -x "$(command -v docker)" ]]; then
+            echo "docker is not installed"
+            exit 1
+          fi
+          ./hack/dev
+
+          export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+          echo "_EXPERIMENTAL_DAGGER_CLI_BIN=${_EXPERIMENTAL_DAGGER_CLI_BIN}" >> "$GITHUB_ENV"
+          export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${_EXPERIMENTAL_DAGGER_RUNNER_HOST}" >> "$GITHUB_ENV"
+
+          chmod +x $_EXPERIMENTAL_DAGGER_CLI_BIN
+          echo "::endgroup::"
+        fi
+
+        echo "::group::Dagger client version"
+        dagger --silent version
+        echo "::endgroup::"
+
+        echo "::group::Dagger server version"
+        echo "{version}" | dagger --silent query
+        echo "::endgroup::"
+
+    - name: ${{ inputs.function }}
+      shell: bash
+      run: |
+        set -x
+        if [[ "${{ inputs.module }}" == "." ]]; then
+          # set some sane defaults for the current module
+          if [[ -f $HOME/.docker/config.json ]]; then
+            dagger call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+          else
+            dagger call --source=".:default" ${{ inputs.function }}
+          fi
+        else
+          dagger call ${{ inputs.function }}
+        fi
+      env:
+        DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"

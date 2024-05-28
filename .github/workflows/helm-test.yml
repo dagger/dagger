@@ -1,4 +1,4 @@
-name: Docs
+name: Helm
 
 on:
   push:
@@ -9,21 +9,26 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-  # Enable manual trigger for easy debugging
+    paths-ignore:
+      - docs/**
+  # Enable manual trigger for easier debugging
   workflow_dispatch:
 
 permissions:
   contents: read
-  # Optional: allow read access to pull request. Use with `only-new-issues` option.
-  # pull-requests: read
+  pull-requests: write
 
 jobs:
-  lint:
+  test:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: "docs lint"
+      - name: "helm test"
         uses: ./.github/actions/call
         with:
-          function: "docs lint"
+          function: "helm test"
+      - name: "helm test publish"
+        uses: ./.github/actions/call
+        with:
+          function: "helm publish --dry-run=true --tag=main"

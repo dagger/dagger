@@ -1,0 +1,22 @@
+name: "Publish Python SDK"
+on:
+  push:
+    tags: ["sdk/python/v**"]
+jobs:
+  publish:
+    if: github.repository == 'dagger/dagger'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "go publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
+          RELEASE_PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
+        with:
+          function: sdk python publish --tag="${{ github.ref_name }}" --pypi-repo="$RELEASE_PYPI_REPO" --pypi-token=env:RELEASE_PYPI_TOKEN
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "🐍 Python SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}

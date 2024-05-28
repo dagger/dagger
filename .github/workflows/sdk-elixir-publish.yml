@@ -1,0 +1,21 @@
+name: "Publish Elixir SDK"
+on:
+  push:
+    tags: ["sdk/elixir/v**"]
+jobs:
+  publish:
+    if: github.repository == 'dagger/dagger'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "elixir publish"
+        uses: ./.github/actions/call
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        with:
+          function: sdk elixir publish --tag="${{ github.ref_name }}" --hex-apikey=env:HEX_API_KEY
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "🧪 Elixir SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
