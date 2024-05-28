@@ -13,10 +13,10 @@ import (
 
 const (
 	bunVersion  = "1.0.27"
-	nodeVersion = "21.3"
+	nodeVersion = "22.2.0-alpine"
 
 	nodeImageDigest = "sha256:3dab5cc219983a5f1904d285081cceffc9d181e64bed2a4a18855d2d62c64ccb"
-	bunImageDigest  = "sha256:82d3d3b8ad96c4eea45c88167ce46e7e24afc726897d48e48cc6d6bf230c061c"
+	bunImageDigest  = "sha256:94567107148ac59f1eb2ad9b7c1db03f1a1a12d28717b29eda0535aa3bd2f71e"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
