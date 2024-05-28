@@ -8,7 +8,7 @@ jobs:
     uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      function: sdk python publish --tag="${{ github.ref_name }}" --npm-token=env:RELEASE_NPM_TOKEN
+      function: sdk typescript publish --tag="${{ github.ref_name }}" --npm-token=env:RELEASE_NPM_TOKEN
 
   notify:
     needs: publish
