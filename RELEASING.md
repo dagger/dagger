@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2009,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2028,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -85,12 +85,17 @@ flowchart TB
 
 Before you go ahead and produce a new release, remember that it's a team
 effort. The first step is to let the team know what is going to happen,
-preferably a few days in advance so that they can react. To do this:
+preferably a few days in advance so that they can react. We do our release
+threads in public wherever possible, to give the community more visibility, and
+to help external contributors to more easily keep in sync with the release
+cadence.
+
+To let the team know:
 
 - [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
-      e.g. [`v0.10.1 Milestone`](https://github.com/dagger/dagger/milestone/39)
-- [ ] Create a new post in [Discord #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
-      e.g. [`v0.10.1 release - 5th March 2024`](https://discord.com/channels/707636530424053791/1214152722136301589/1214152722136301589)
+      e.g. [`v0.11.5 Milestone`](https://github.com/dagger/dagger/milestone/47)
+- [ ] Create a new post in [Discord #engine-dev](https://discord.com/channels/707636530424053791/1003718839739105300),
+      e.g. [`v0.11.5 release - 28th May 2024`](https://discord.com/channels/707636530424053791/1240714480275689574)
 
 This allows others to weigh in whether:
 
@@ -150,7 +155,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.4.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.11.5.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -158,9 +163,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.4.md`
+      `.changes/v0.11.5.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.4-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.5-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -289,8 +294,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 # Commit & push
 
 # Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.4 sh
-# mv ~/.local/bin/dagger{,-0.11.4}
+# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.5 sh
+# mv ~/.local/bin/dagger{,-0.11.5}
 dagger version | grep ${ENGINE_VERSION:?must be set}
 dagger run ./hack/make engine:test
 ```
