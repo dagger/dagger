@@ -1,6 +1,0 @@
-kind: Changed
-body: "cli: don't show inherited flags in function commands"
-time: 2024-05-20T15:25:02.833118Z
-custom:
-  Author: helderco
-  PR: "7419"
