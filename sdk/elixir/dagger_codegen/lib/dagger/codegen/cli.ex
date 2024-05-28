@@ -40,7 +40,7 @@ defmodule Dagger.Codegen.CLI do
 
     Dagger.Codegen.generate(
       Dagger.Codegen.ElixirGenerator,
-      Nestru.decode_from_map!(schema, Dagger.Codegen.Introspection.Types.Schema)
+      Dagger.Codegen.Introspection.Types.Schema.from_map(schema)
     )
     |> Enum.flat_map(& &1)
     |> Enum.each(fn {file, code} ->

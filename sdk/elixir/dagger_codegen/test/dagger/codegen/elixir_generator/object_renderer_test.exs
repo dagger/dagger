@@ -129,7 +129,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
     path
     |> File.read!()
     |> Jason.decode!()
-    |> Nestru.decode_from_map!(Dagger.Codegen.Introspection.Types.Type)
+    |> Dagger.Codegen.Introspection.Types.Type.from_map()
   end
 
   defp render(type, renderer) do
