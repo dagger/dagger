@@ -84,7 +84,6 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introsp
 	ctr = ctr.WithMountedDirectory("/codegen", sdk.SourceDir).
 		WithoutEntrypoint().
 		WithWorkdir("/codegen").
-		WithExec([]string{"chmod", "+x", "./install-composer.sh"}).
 		WithExec([]string{
 			"./install-composer.sh",
 		}).
@@ -95,8 +94,10 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introsp
 			Contents: introspectionJSON,
 		}).
 		WithExec([]string{
-			"codegen", "--schema-file=/codegen/schema.json",
+			"/codegen/codegen", "dagger:codegen", "--schema-file", "/codegen/schema.json",
 		})
+
+	ctr.Stdout(ctx)
 
 	ctr = ctr.WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(filepath.Join(ModSourceDirPath, subPath)).
