@@ -1,6 +1,0 @@
-kind: Fixed
-body: Throw an error on invalid module registration
-time: 2024-05-22T00:13:42.153205+02:00
-custom:
-  Author: TomChv
-  PR: "7434"
