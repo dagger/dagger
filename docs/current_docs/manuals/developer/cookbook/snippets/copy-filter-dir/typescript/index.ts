@@ -30,8 +30,9 @@ class MyModule {
       filteredSource = filteredSource.withoutFile(excludeFile)
     }
 
-    return dag.container().
-      from("alpine:latest").
-      withDirectory("/src", filteredSource)
+    return dag
+      .container()
+      .from("alpine:latest")
+      .withDirectory("/src", filteredSource)
   }
 }
