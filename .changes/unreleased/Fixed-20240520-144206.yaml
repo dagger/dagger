@@ -1,0 +1,6 @@
+kind: Fixed
+body: "cli: don't validate flags when requesting `--help`"
+time: 2024-05-20T14:42:06.270495Z
+custom:
+  Author: helderco
+  PR: "7417"

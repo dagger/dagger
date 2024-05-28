@@ -26,11 +26,12 @@ type Span struct {
 	Canceled bool
 	Inputs   []string
 
-	Primary     bool
-	Encapsulate bool
-	Mask        bool
-	Passthrough bool
-	Ignore      bool
+	Primary      bool
+	Encapsulate  bool
+	Encapsulated bool
+	Mask         bool
+	Passthrough  bool
+	Ignore       bool
 
 	db    *DB
 	trace *Trace
@@ -53,10 +54,6 @@ func (span *Span) Base() (*callpbv1.Call, bool) {
 func (span *Span) IsRunning() bool {
 	inner := span.ReadOnlySpan
 	return inner.EndTime().Before(inner.StartTime())
-}
-
-func (span *Span) Logs() *Vterm {
-	return span.db.Logs[span.SpanContext().SpanID()]
 }
 
 func (span *Span) Name() string {

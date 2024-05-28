@@ -54,9 +54,9 @@ var (
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
-	autoTTY = stdoutIsTTY || stderrIsTTY
+	hasTTY = stdoutIsTTY || stderrIsTTY
 
-	Frontend = idtui.New()
+	Frontend idtui.Frontend
 )
 
 func init() {
@@ -87,6 +87,7 @@ func init() {
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
+	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)
 	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
@@ -103,8 +104,9 @@ func init() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "dagger",
-	Short: "The Dagger CLI provides a command-line interface to Dagger.",
+	Use:           "dagger",
+	Short:         "The Dagger CLI provides a command-line interface to Dagger.",
+	SilenceErrors: true, // handled in func main() instead
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
@@ -214,19 +216,58 @@ func Resource() *resource.Resource {
 	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
 }
 
+// ExitError is an error that indicates a command should exit with a specific
+// status code, without printing an error message, assuming a human readable
+// message has been printed already.
+//
+// It is basically a shortcut for `os.Exit` while giving the TUI a chance to
+// exit gracefully and flush output.
+type ExitError struct {
+	Code int
+}
+
+var Fail = ExitError{Code: 1}
+
+func (e ExitError) Error() string {
+	// Not actually printed anywhere.
+	return fmt.Sprintf("exit code %d", e.Code)
+}
+
 func main() {
 	parseGlobalFlags()
 
-	Frontend.Debug = debug
-	Frontend.Plain = progress == "plain"
-	Frontend.Silent = silent
-	Frontend.Verbosity = verbosity
+	opts := idtui.FrontendOpts{
+		Debug:     debug,
+		Silent:    silent,
+		Verbosity: verbosity,
+	}
+
+	if progress == "auto" {
+		if hasTTY {
+			progress = "tty"
+		} else {
+			progress = "plain"
+		}
+	}
+	switch progress {
+	case "plain":
+		Frontend = idtui.NewPlain()
+	case "tty":
+		if !hasTTY {
+			fmt.Fprintf(os.Stderr, "no tty available for progress %q\n", progress)
+			os.Exit(1)
+		}
+		Frontend = idtui.New()
+	default:
+		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
+		os.Exit(1)
+	}
 
 	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx := context.Background()
 
-	if err := Frontend.Run(ctx, func(ctx context.Context) (rerr error) {
+	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx = telemetry.Init(ctx, telemetry.Config{
@@ -255,7 +296,13 @@ func main() {
 
 		return rootCmd.ExecuteContext(ctx)
 	}); err != nil {
-		os.Exit(1)
+		var exit ExitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.Code)
+		} else {
+			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -299,6 +346,13 @@ func isExperimental(cmd *cobra.Command) bool {
 		}
 	})
 	return experimental
+}
+
+func hasInheritedFlags(cmd *cobra.Command) bool {
+	if val, ok := cmd.Annotations["help:hideInherited"]; ok && val == "true" {
+		return false
+	}
+	return cmd.HasAvailableInheritedFlags()
 }
 
 // getViewWidth returns the width of the terminal, or 80 if it cannot be determined.
@@ -478,7 +532,7 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 
 {{- end}}
 
-{{- if .HasAvailableInheritedFlags}}
+{{- if hasInheritedFlags . }}
 
 {{ "Inherited Options" | toUpperBold }}
 {{ flagUsagesWrapped .InheritedFlags | trimTrailingWhitespaces }}

@@ -33,6 +33,11 @@ const (
 	Platform     string = "Platform"
 )
 
+var (
+	skippedCmdsAnnotation = "help:skippedCmds"
+	skippedOptsAnnotation = "help:skippedOpts"
+)
+
 var funcGroup = &cobra.Group{
 	ID:    "functions",
 	Title: "Functions",
@@ -56,7 +61,7 @@ available functions.
 	),
 	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
 		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-		var o functionProvider = fc.mod.GetMainObject()
+		var o functionProvider = fc.mod.MainObject.AsFunctionProvider()
 		fmt.Fprintf(tw, "%s\t%s\n",
 			termenv.String("Name").Bold(),
 			termenv.String("Description").Bold(),
@@ -64,11 +69,14 @@ available functions.
 		// Walk the hypothetical function pipeline specified by the args
 		for _, field := range cmd.Flags().Args() {
 			// Lookup the next function in the specified pipeline
-			nextFunc, err := o.GetFunction(field)
+			nextFunc, err := GetFunction(o, field)
 			if err != nil {
 				return err
 			}
 			nextType := nextFunc.ReturnType
+			if nextType.AsList != nil {
+				nextType = nextType.AsList.ElementTypeDef
+			}
 			if nextType.AsFunctionProvider() != nil {
 				// sipsma explains why 'nextType.AsObject' is not enough:
 				// > when we're returning the hierarchies of TypeDefs from the API,
@@ -83,7 +91,6 @@ available functions.
 				o = fc.mod.GetFunctionProvider(nextType.Name())
 				continue
 			}
-			// FIXME: handle arrays of objects
 			return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 		}
 		// List functions on the final object
@@ -91,7 +98,12 @@ available functions.
 		sort.Slice(fns, func(i, j int) bool {
 			return fns[i].Name < fns[j].Name
 		})
+		skipped := make([]string, 0)
 		for _, fn := range fns {
+			if fn.IsUnsupported() {
+				skipped = append(skipped, cliName(fn.Name))
+				continue
+			}
 			desc := strings.SplitN(fn.Description, "\n", 2)[0]
 			if desc == "" {
 				desc = "-"
@@ -99,6 +111,12 @@ available functions.
 			fmt.Fprintf(tw, "%s\t%s\n",
 				cliName(fn.Name),
 				desc,
+			)
+		}
+		if len(skipped) > 0 {
+			msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s", len(skipped), strings.Join(skipped, ", "))
+			fmt.Fprintf(tw, "\n%s\n",
+				termenv.String(msg).Faint().String(),
 			)
 		}
 		return tw.Flush()
@@ -154,11 +172,6 @@ type FuncCommand struct {
 	// the module.
 	Execute func(*FuncCommand, *cobra.Command) error
 
-	// BeforeParse is called before parsing the flags for a subcommand.
-	//
-	// It can be useful to add any additional flags for a subcommand here.
-	BeforeParse func(*FuncCommand, *cobra.Command, *modFunction) error
-
 	// OnSelectObjectLeaf is called when a user provided command ends in a
 	// object and no more sub-commands are provided.
 	//
@@ -183,30 +196,32 @@ type FuncCommand struct {
 	// mod is the loaded module definition.
 	mod *moduleDef
 
-	// the ModuleSource definition for the module, needed by some arg types
-	// applying module-specific configs to the arg value.
-	modSource *dagger.ModuleSource
-
-	// showHelp is set in the loader vertex to flag whether to show the help
+	// needsHelp is set in the loader vertex to flag whether to show the help
 	// in the execution vertex.
-	showHelp bool
+	needsHelp bool
 
 	// showUsage flags whether to show a one-line usage message after error.
 	showUsage bool
 
-	q *querybuilder.Selection
-	c *client.Client
+	// warnSkipped flags whether to show a warning for skipped functions and
+	// arguments rather than a debug level log.
+	warnSkipped bool
+
+	q   *querybuilder.Selection
+	c   *client.Client
+	ctx context.Context
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
 	if fc.cmd == nil {
 		fc.cmd = &cobra.Command{
-			Use:     fc.Name,
-			Aliases: fc.Aliases,
-			Short:   fc.Short,
-			Long:    fc.Long,
-			Example: fc.Example,
-			GroupID: moduleGroup.ID,
+			Use:         fc.Name,
+			Aliases:     fc.Aliases,
+			Short:       fc.Short,
+			Long:        fc.Long,
+			Example:     fc.Example,
+			GroupID:     moduleGroup.ID,
+			Annotations: map[string]string{},
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
@@ -220,31 +235,34 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				// args validation, but not flag validation which we want.
 				c.DisableFlagParsing = false
 
-				// Since we disabled flag parsing, we'll get all args,
-				// not just flags. We want to stop parsing at the first
-				// possible dynamic sub-command since they've not been
-				// added yet.
-				c.Flags().SetInterspersed(false)
+				// Do a first pass with interspersed=true to look for any
+				// --help flag in the arguments. This is needed to skip
+				// some validations while building the command tree, before
+				// parsing the command where the --help flag is.
+				help := pflag.NewFlagSet("help", pflag.ContinueOnError)
+				help.AddFlag(c.Flags().Lookup("help"))
 
-				// Allow using flags with the name that was reported
-				// by the SDK. This avoids confusion as users are editing
-				// a module and trying to test its functions.
-				c.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
-					return pflag.NormalizedName(cliName(name))
+				help.ParseErrorsWhitelist.UnknownFlags = true
+				help.ParseAll(a, func(flag *pflag.Flag, value string) error {
+					fc.needsHelp = value == flag.NoOptDefVal
+					return nil
 				})
 
-				// temporarily allow unknown flags so we can parse any global flags before starting
-				// the engine+TUI while not erroring out on module constructor flags (which can't be
-				// added until the engine has started)
+				// Stop parsing at the first possible dynamic sub-command
+				// since they've not been added yet.
+				c.Flags().SetInterspersed(false)
+
+				// Global flags that affect the engine+TUI have already been
+				// parsed by the root command, but there's module specific
+				// flags (-m) that need to be parsed before initializing the
+				// module.
+				// Temporarily allow unknown flags so we can parse without
+				// erroring on flags that haven't been able to load yet.
 				c.FParseErrWhitelist.UnknownFlags = true
 				if err := c.ParseFlags(a); err != nil {
-					// This gives a chance for FuncCommand implementations to
-					// handle errors from parsing flags.
 					return c.FlagErrorFunc()(c, err)
 				}
 				c.FParseErrWhitelist.UnknownFlags = false
-
-				fc.showHelp, _ = c.Flags().GetBool("help")
 
 				return nil
 			},
@@ -254,18 +272,31 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 
-					// withEngineAndTUI changes the context.
+					// withEngine changes the context.
 					c.SetContext(ctx)
 
-					// We need to print the errors ourselves because the root command
-					// will print the command path for this one (parent), not any
-					// sub-command.
-					c.SilenceErrors = true
+					if err := fc.execute(c, a); err != nil {
+						// We've already handled printing the error in `fc.execute`
+						// because we want to show the usage for the right sub-command.
+						// Returning Fail here will prevent the error from being printed
+						// twice on main().
+						return Fail
+					}
 
-					return fc.execute(c, a)
+					return nil
 				})
 			},
 		}
+
+		// Allow using flags with the name that was reported by the SDK.
+		// This avoids confusion as users are editing a module and trying
+		// to test its functions. For example, if a function argument is
+		// `dockerConfig` in code, the user can type `--dockerConfig` or even
+		// `--DockerConfig` as this normalization function rewrites to the
+		// equivalent `--docker-config` in kebab-case.
+		fc.cmd.SetGlobalNormalizationFunc(func(f *pflag.FlagSet, name string) pflag.NormalizedName {
+			return pflag.NormalizedName(cliName(name))
+		})
 
 		if fc.Init != nil {
 			fc.Init(fc.cmd)
@@ -274,6 +305,30 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
+func (fc *FuncCommand) Help(cmd *cobra.Command) error {
+	var args []any
+	// We need to store these in annotations because during traversal all
+	// sub-commands are created, not just the one selected. At the end of
+	// traversal we'll get the final command, but without the associated
+	// function or object type definitions.
+	if skipped, ok := cmd.Annotations[skippedOptsAnnotation]; ok {
+		args = append(args, "arguments", strings.Split(skipped, ", "))
+	}
+	if skipped, ok := cmd.Annotations[skippedCmdsAnnotation]; ok {
+		args = append(args, "functions", strings.Split(skipped, ", "))
+	}
+	if len(args) > 0 {
+		msg := "Skipped unsupported types"
+		if fc.warnSkipped {
+			slog.Warn(msg, args...)
+		} else {
+			slog.Debug(msg, args...)
+		}
+	}
+	return cmd.Help()
+}
+
+// execute runs the main logic for the top level command's RunE function.
 func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	ctx := c.Context()
 
@@ -285,14 +340,16 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		if ctx.Err() != nil {
 			cmd.PrintErrln("Canceled.")
 		} else if rerr != nil {
-			cmd.PrintErrln("Error:", rerr.Error())
+			cmd.PrintErrln(cmd.ErrPrefix(), rerr.Error())
 
-			if fc.showHelp {
+			if fc.needsHelp {
+				cmd.Println()
 				// Explicitly show the help here while still returning the error.
 				// This handles the case of `dagger call --help` run on a broken module; in that case
 				// we want to error out since we can't actually load the module and show all subcommands
 				// and flags in the help output, but we still want to show the user *something*
-				cmd.Help()
+				fc.Help(cmd)
+				return
 			}
 
 			if fc.showUsage {
@@ -301,24 +358,21 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		}
 	}()
 
-	// Load the command, which may fail if modules are broken.
-	cmd, flags, err := fc.load(c, a)
+	if err := fc.initializeModule(ctx); err != nil {
+		return err
+	}
+
+	// Now that the module is loaded, show usage by default since errors
+	// are more likely to be from wrong CLI usage.
+	fc.showUsage = true
+
+	cmd, flags, err := fc.loadCommand(c, a)
 	if err != nil {
 		return err
 	}
 
-	if fc.showHelp {
-		// Hide aliases for sub-commands. They just allow using the SDK's
-		// casing for functions but there's no need to advertise.
-		if cmd != c {
-			cmd.Aliases = nil
-		}
-		return cmd.Help()
-	}
-
-	// There should be no args left, if there are it's an unknown command.
-	if err := cobra.NoArgs(cmd, flags); err != nil {
-		return err
+	if fc.needsHelp {
+		return fc.Help(cmd)
 	}
 
 	if fc.Execute != nil {
@@ -327,14 +381,14 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	// No args to the parent command, default to showing help.
 	if cmd == c {
-		return cmd.Help()
+		return fc.Help(cmd)
 	}
 
 	return cmd.RunE(cmd, flags)
 }
 
-func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _ []string, rerr error) {
-	ctx := c.Context()
+// initializeModule loads the module's type definitions.
+func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 	dag := fc.c.Dagger()
 
 	ctx, span := Tracer().Start(ctx, "initialize", telemetry.Encapsulate())
@@ -342,79 +396,75 @@ func (fc *FuncCommand) load(c *cobra.Command, a []string) (cmd *cobra.Command, _
 
 	modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get configured module: %w", err)
+		return fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !modConf.FullyInitialized() {
-		return nil, nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
+		return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
 	}
 	mod := modConf.Source.AsModule().Initialize()
 	_, err = mod.Serve(ctx)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
-	fc.modSource = modConf.Source
 
-	modDef, err := loadModTypeDefs(ctx, dag, mod)
+	name, err := mod.Name(ctx)
 	if err != nil {
-		return nil, nil, err
+		return fmt.Errorf("get module name: %w", err)
 	}
 
-	obj := modDef.GetMainObject()
-	if obj == nil {
-		return nil, nil, fmt.Errorf("main object not found")
+	fc.mod = &moduleDef{
+		Name:   name,
+		Source: modConf.Source,
 	}
 
-	fc.mod = modDef
-
-	if fc.Execute != nil {
-		// If `Execute` is set, there's no need for sub-commands,
-		// but recover interspersed flag parsing in case there's flags
-		// mixed with the command's positional arguments.
-		c.Flags().SetInterspersed(true)
-
-		if err := c.ParseFlags(a); err != nil {
-			// This gives a chance for FuncCommand implementations to
-			// handle errors from parsing flags.
-			return nil, nil, c.FlagErrorFunc()(c, err)
-		}
-
-		fc.showHelp, _ = c.Flags().GetBool("help")
-
-		return c, nil, nil
+	if err := fc.mod.loadTypeDefs(ctx, dag); err != nil {
+		return err
 	}
 
-	if obj.Constructor != nil {
-		// add constructor args as top-level flags
-		if err := fc.addArgsForFunction(c, a, obj.Constructor); err != nil {
-			return nil, nil, err
-		}
-		fc.selectFunc(ctx, obj.Name, obj.Constructor, c, dag)
-	} else {
-		fc.Select(obj.Name)
+	if fc.mod.MainObject == nil {
+		return fmt.Errorf("main object not found")
 	}
 
-	// Add main object's functions as subcommands
-	fc.addSubCommands(ctx, c, dag, obj)
-
-	if fc.showHelp {
-		return c, nil, nil
-	}
-
-	cmd, flags, err := fc.traverse(c)
-	if err != nil {
-		if errors.Is(err, pflag.ErrHelp) {
-			fc.showHelp = true
-			return cmd, flags, nil
-		}
-		fc.showUsage = true
-		return cmd, flags, err
-	}
-
-	return cmd, flags, nil
+	return nil
 }
 
-// traverse the arguments to build the command tree and return the leaf command.
-func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, error) {
+// loadCommand finds the leaf command to run.
+func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Command, rargs []string, rerr error) {
+	// If a command implements Execute, it doesn't need to build and
+	// traverse the command tree.
+	if fc.Execute != nil {
+		return c, nil, nil
+	}
+
+	ctx := c.Context()
+
+	spanCtx, span := Tracer().Start(ctx, "prepare", telemetry.Encapsulate())
+	defer telemetry.End(span, func() error { return rerr })
+	fc.ctx = spanCtx
+
+	builder := fc.cobraBuilder(ctx, fc.mod.MainObject.AsObject.Constructor)
+
+	cmd, args, err := fc.traverse(c, a, builder)
+	if err != nil {
+		return cmd, args, err
+	}
+
+	// There should be no args left, if there are it's an unknown command.
+	if err := cobra.NoArgs(cmd, args); err != nil {
+		return cmd, args, err
+	}
+
+	return cmd, args, nil
+}
+
+// traverse recursively builds the command tree, until the leaf command is found.
+func (fc *FuncCommand) traverse(c *cobra.Command, a []string, build func(*cobra.Command, []string) error) (*cobra.Command, []string, error) {
+	// Build the flags and subcommands
+	err := build(c, a)
+	if err != nil {
+		return c, a, err
+	}
+
 	cmd, args, err := c.Find(c.Flags().Args())
 	if err != nil {
 		return cmd, args, err
@@ -425,32 +475,121 @@ func (fc *FuncCommand) traverse(c *cobra.Command) (*cobra.Command, []string, err
 		return cmd, args, nil
 	}
 
-	cmd.SetContext(c.Context())
-	cmd.InitDefaultHelpFlag()
-
-	// Load and ParseFlags
-	err = cmd.PreRunE(cmd, args)
-	if err != nil {
-		return cmd, args, err
-	}
-
-	return fc.traverse(cmd)
+	return fc.traverse(cmd, args, cmd.PreRunE)
 }
 
-func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, fnProvider functionProvider) {
-	if fnProvider != nil {
-		cmd.AddGroup(funcGroup)
-		for _, fn := range fnProvider.GetFunctions() {
-			subCmd := fc.makeSubCmd(ctx, dag, fn)
-			cmd.AddCommand(subCmd)
+// cobraBuilder returns a PreRunE compatible function to add the next set of
+// flags and sub-commands to the command tree, based on a function definition.
+func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
+	dag := fc.c.Dagger()
+
+	return func(c *cobra.Command, a []string) error {
+		if err := fc.addFlagsForFunction(c, fn); err != nil {
+			return err
 		}
 
-		if cmd.HasAvailableSubCommands() {
-			cmd.Use += " <function>"
+		// Even if just for --help, parsing flags is needed to clean up the
+		// args while traversing sub-commands.
+		if err := c.ParseFlags(a); err != nil {
+			return c.FlagErrorFunc()(c, err)
 		}
+
+		fc.addSubCommands(ctx, c, dag, fn.ReturnType)
+
+		if fc.needsHelp {
+			// May be too noisy to always show a warning for skipped functions
+			// and arguments when they're from the core API. In modules, however,
+			// users can do something about it. Even if it's a reusable module
+			// from someone else, hopefully the author notices the warning first.
+			fc.warnSkipped = !fn.ReturnsCoreObject()
+			return nil
+		}
+
+		// Validate before accessing values for select.
+		if err := c.ValidateRequiredFlags(); err != nil {
+			return err
+		}
+		if err := c.ValidateFlagGroups(); err != nil {
+			return err
+		}
+
+		// Easier to add query builder selections as we traverse the command tree.
+		return fc.selectFunc(fn, c, dag)
 	}
 }
 
+// addFlagsForFunction creates the flags for a function's arguments.
+func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
+	var skipped []string
+
+	for _, arg := range fn.Args {
+		fc.mod.LoadTypeDef(arg.TypeDef)
+
+		if err := arg.AddFlag(cmd.Flags()); err != nil {
+			var e *UnsupportedFlagError
+			if errors.As(err, &e) {
+				skipped = append(skipped, arg.FlagName())
+				continue
+			}
+		}
+		if arg.IsRequired() {
+			cmd.MarkFlagRequired(arg.FlagName())
+		}
+		cmd.Flags().SetAnnotation(
+			arg.FlagName(),
+			"help:group",
+			[]string{"Arguments"},
+		)
+	}
+
+	if cmd.HasAvailableLocalFlags() {
+		cmd.Use += " [arguments]"
+	}
+
+	if len(skipped) > 0 {
+		cmd.Annotations[skippedOptsAnnotation] = strings.Join(skipped, ", ")
+	}
+
+	return nil
+}
+
+// addSubCommands creates sub-commands for the functions in an object or
+// interface type definition.
+func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, typeDef *modTypeDef) {
+	fc.mod.LoadTypeDef(typeDef)
+
+	fnProvider := typeDef.AsFunctionProvider()
+	if fnProvider == nil && typeDef.AsList != nil {
+		fnProvider = typeDef.AsList.ElementTypeDef.AsFunctionProvider()
+	}
+
+	if fnProvider == nil {
+		return
+	}
+
+	cmd.AddGroup(funcGroup)
+
+	skipped := make([]string, 0)
+
+	for _, fn := range fnProvider.GetFunctions() {
+		if fn.IsUnsupported() {
+			skipped = append(skipped, cliName(fn.Name))
+			continue
+		}
+		subCmd := fc.makeSubCmd(ctx, dag, fn)
+		cmd.AddCommand(subCmd)
+	}
+
+	if cmd.HasAvailableSubCommands() {
+		cmd.Use += " <function>"
+	}
+
+	if len(skipped) > 0 {
+		cmd.Annotations[skippedCmdsAnnotation] = strings.Join(skipped, ", ")
+	}
+}
+
+// makeSubCmd creates a sub-command for a function definition.
 func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:                   cliName(fn.Name),
@@ -458,27 +597,15 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 		Long:                  fn.Description,
 		GroupID:               funcGroup.ID,
 		DisableFlagsInUseLine: true,
-		PreRunE: func(cmd *cobra.Command, args []string) (err error) {
-			if err := fc.addArgsForFunction(cmd, args, fn); err != nil {
-				return err
-			}
-
-			fnProvider := fn.ReturnType.AsFunctionProvider()
-			if fnProvider == nil && fn.ReturnType.AsList != nil {
-				fnProvider = fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
-			}
-			fc.addSubCommands(ctx, cmd, dag, fnProvider)
-
-			// Show help for first command that has the --help flag.
-			help, _ := cmd.Flags().GetBool("help")
-			if help {
-				return pflag.ErrHelp
-			}
-
-			// Need to make the query selection before chaining off.
-			return fc.selectFunc(ctx, fn.Name, fn, cmd, dag)
+		// FIXME: Persistent flags should be marked as hidden for sub-commands
+		// but it's not working, so setting an annotation to circumvent it.
+		Annotations: map[string]string{
+			"help:hideInherited": "true",
 		},
-
+		// Using PreRunE to build the next set of flags and sub-commands.
+		// This allows us to attach a function definition to a cobra.Command,
+		// which simplifies the command tree traversal and building process.
+		PreRunE: fc.cobraBuilder(ctx, fn),
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
@@ -486,14 +613,12 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 			case dagger.ObjectKind, dagger.InterfaceKind:
 				if fc.OnSelectObjectLeaf == nil {
 					// there is no handling of this object and no further selections, error out
-					fc.showUsage = true
 					return fmt.Errorf("%q requires a sub-command", cmd.Name())
 				}
 
 				// the top-level command may handle this via OnSelectObjectLeaf
 				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.Name())
 				if err != nil {
-					fc.showUsage = true
 					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
 				}
 
@@ -501,10 +626,13 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
 				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
 					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
-					fc.showUsage = true
 					return fmt.Errorf("%q requires a sub-command", cmd.Name())
 				}
 			}
+
+			// Silence usage from this point on as errors don't likely come
+			// from wrong CLI usage.
+			fc.showUsage = false
 
 			if fc.BeforeRequest != nil {
 				if err = fc.BeforeRequest(fc, cmd, fn.ReturnType); err != nil {
@@ -524,85 +652,31 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 				return fmt.Errorf("response from query: %w", err)
 			}
 
+			if fn.ReturnType.Kind == dagger.VoidKind {
+				return nil
+			}
+
 			if fc.AfterResponse != nil {
 				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
 			}
 
-			if fn.ReturnType.Kind != dagger.VoidKind {
-				cmd.Println(response)
-			}
+			cmd.Println(response)
 
 			return nil
 		},
 	}
 
-	// Allow using the function name from the SDK as an alias for the command.
-	if fn.Name != newCmd.Name() {
-		newCmd.Aliases = append(newCmd.Aliases, fn.Name)
-	}
-
 	newCmd.Flags().SetInterspersed(false)
+	newCmd.SetContext(ctx)
 
 	return newCmd
 }
 
-func (fc *FuncCommand) addArgsForFunction(cmd *cobra.Command, cmdArgs []string, fn *modFunction) error {
-	fc.mod.LoadTypeDef(fn.ReturnType)
-
-	for _, arg := range fn.Args {
-		fc.mod.LoadTypeDef(arg.TypeDef)
-	}
-
-	for _, arg := range fn.Args {
-		_, err := arg.AddFlag(cmd.Flags())
-		if err != nil {
-			return err
-		}
-		if arg.IsRequired() {
-			cmd.MarkFlagRequired(arg.FlagName())
-		}
-		cmd.Flags().SetAnnotation(
-			arg.FlagName(),
-			"help:group",
-			[]string{"Arguments"},
-		)
-	}
-
-	if len(fn.Args) > 0 {
-		cmd.Use += " [arguments]"
-	}
-
-	if fc.BeforeParse != nil {
-		if err := fc.BeforeParse(fc, cmd, fn); err != nil {
-			return err
-		}
-	}
-
-	if err := cmd.ParseFlags(cmdArgs); err != nil {
-		// This gives a chance for FuncCommand implementations to
-		// handle errors from parsing flags.
-		return cmd.FlagErrorFunc()(cmd, err)
-	}
-
-	help, _ := cmd.Flags().GetBool("help")
-	if !help {
-		if err := cmd.ValidateRequiredFlags(); err != nil {
-			return err
-		}
-		if err := cmd.ValidateFlagGroups(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // selectFunc adds the function selection to the query.
-// Note that the type can change if there's an extra selection for supported types.
-func (fc *FuncCommand) selectFunc(ctx context.Context, selectName string, fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
-	fc.Select(selectName)
+func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
+	fc.Select(fn.Name)
 
-	for _, arg := range fn.Args {
+	for _, arg := range fn.SupportedArgs() {
 		var val any
 
 		flag := cmd.Flags().Lookup(arg.FlagName())
@@ -619,12 +693,12 @@ func (fc *FuncCommand) selectFunc(ctx context.Context, selectName string, fn *mo
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj, err := v.Get(ctx, dag, fc.modSource)
+			obj, err := v.Get(fc.ctx, dag, fc.mod.Source)
 			if err != nil {
-				return fmt.Errorf("failed to get value for argument %q: %w", arg.Name, err)
+				return fmt.Errorf("failed to get value for argument %q: %w", arg.FlagName(), err)
 			}
 			if obj == nil {
-				return fmt.Errorf("no value for argument: %s", arg.Name)
+				return fmt.Errorf("no value for argument: %s", arg.FlagName())
 			}
 			val = obj
 		case pflag.SliceValue:
@@ -641,9 +715,9 @@ func (fc *FuncCommand) Select(name string) {
 	if fc.q == nil {
 		fc.q = querybuilder.Query()
 	}
-	fc.q = fc.q.Select(gqlFieldName(name))
+	fc.q = fc.q.Select(name)
 }
 
 func (fc *FuncCommand) Arg(name string, value any) {
-	fc.q = fc.q.Arg(gqlArgName(name), value)
+	fc.q = fc.q.Arg(name, value)
 }

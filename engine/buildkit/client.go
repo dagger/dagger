@@ -120,7 +120,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		cancel:     cancel,
 	}
 
-	client.worker = opts.BaseWorker.WithServerID(opts.ServerID)
+	client.worker = opts.BaseWorker
 	wc, err := client.worker.AsWorkerController()
 	if err != nil {
 		return nil, err
@@ -403,7 +403,26 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	return c.llbBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
-func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {
+type NewContainerRequest struct {
+	Mounts   []bkgw.Mount
+	Platform *bksolverpb.Platform
+	Hostname string
+	ExecutionMetadata
+}
+
+type Container struct {
+	bkgw.Container
+	id string
+}
+
+var _ Namespaced = (*Container)(nil)
+
+func (ctr *Container) NamespaceID() string {
+	return ctr.id
+}
+
+func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Container, error) {
+	containerID := identity.NewID()
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -411,17 +430,10 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
-		ContainerID: identity.NewID(),
-		NetMode:     req.NetMode,
+		ContainerID: containerID,
 		Hostname:    req.Hostname,
 		Mounts:      make([]bkcontainer.Mount, len(req.Mounts)),
 	}
-
-	extraHosts, err := bkcontainer.ParseExtraHosts(req.ExtraHosts)
-	if err != nil {
-		return nil, err
-	}
-	ctrReq.ExtraHosts = extraHosts
 
 	// get the input mounts in parallel in case they need to be evaluated, which can be expensive
 	eg, egctx := errgroup.WithContext(ctx)
@@ -467,9 +479,9 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 
 	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
-		context.Background(),
+		context.WithoutCancel(ctx),
 		c.worker.CacheManager(),
-		c.worker, // also implements Executor
+		c.worker.withExecMD(req.ExecutionMetadata), // also implements Executor
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
@@ -481,13 +493,45 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	c.containersMu.Lock()
 	defer c.containersMu.Unlock()
 	if c.containers == nil {
-		if err := ctr.Release(context.Background()); err != nil {
+		if err := ctr.Release(context.WithoutCancel(ctx)); err != nil {
 			return nil, fmt.Errorf("release after close: %w", err)
 		}
 		return nil, errors.New("client closed")
 	}
 	c.containers[ctr] = struct{}{}
-	return ctr, nil
+
+	return &Container{
+		Container: ctr,
+		id:        containerID,
+	}, nil
+}
+
+func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
+	return c.worker.newNetNS(ctx, hostname)
+}
+
+func RunInNetNS[T any](
+	ctx context.Context,
+	c *Client,
+	ns Namespaced,
+	fn func() (T, error),
+) (T, error) {
+	var zero T
+	if c == nil {
+		return zero, errors.New("client is nil")
+	}
+	if ns == nil {
+		return zero, errors.New("namespace is nil")
+	}
+
+	c.worker.mu.RLock()
+	runState, ok := c.worker.running[ns.NamespaceID()]
+	c.worker.mu.RUnlock()
+	if !ok {
+		return zero, fmt.Errorf("namespace for %s not found in running state", ns.NamespaceID())
+	}
+
+	return runInNetNS(ctx, runState, fn)
 }
 
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.

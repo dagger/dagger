@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -293,7 +294,7 @@ var moduleDevelopCmd = &cobra.Command{
 	Short: "Setup or update all the resources needed to develop on a module locally",
 	Long: `Setup or update all the resources needed to develop on a module locally.
 
-This command re-regerates the module's generated code based on dependencies
+This command regenerates the module's code based on dependencies
 and the current state of the module's source code.
 
 If --sdk is set, the config file and generated code will be updated with those values reflected. It currently can only be used to set the SDK of a module that does not have one already.
@@ -733,8 +734,21 @@ func optionalModCmdWrapper(
 	}
 }
 
+// moduleDef is a representation of a dagger module.
+type moduleDef struct {
+	Name       string
+	MainObject *modTypeDef
+	Objects    []*modTypeDef
+	Interfaces []*modTypeDef
+	Inputs     []*modTypeDef
+
+	// the ModuleSource definition for the module, needed by some arg types
+	// applying module-specific configs to the arg value.
+	Source *dagger.ModuleSource
+}
+
 // loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func loadModTypeDefs(ctx context.Context, dag *dagger.Client, mod *dagger.Module) (*moduleDef, error) {
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error {
 	var res struct {
 		TypeDefs []*modTypeDef
 	}
@@ -841,34 +855,37 @@ query TypeDefs {
 		Data: &res,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("query module objects: %w", err)
+		return fmt.Errorf("query module objects: %w", err)
 	}
 
-	name, err := mod.Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get module name: %w", err)
-	}
+	name := gqlObjectName(m.Name)
 
-	modDef := &moduleDef{Name: name}
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
 		case dagger.ObjectKind:
-			modDef.Objects = append(modDef.Objects, typeDef)
+			obj := typeDef.AsObject
+			if name == gqlObjectName(obj.Name) {
+				m.MainObject = typeDef
+
+				// There's always a constructor, even if the SDK didn't define one.
+				// Make sure one always exists to make it easier to reuse code while
+				// building out Cobra.
+				if obj.Constructor == nil {
+					obj.Constructor = &modFunction{ReturnType: typeDef}
+				}
+
+				// Constructors have an empty function name in ObjectTypeDef.
+				obj.Constructor.Name = gqlFieldName(obj.Name)
+			}
+			m.Objects = append(m.Objects, typeDef)
 		case dagger.InterfaceKind:
-			modDef.Interfaces = append(modDef.Interfaces, typeDef)
+			m.Interfaces = append(m.Interfaces, typeDef)
 		case dagger.InputKind:
-			modDef.Inputs = append(modDef.Inputs, typeDef)
+			m.Inputs = append(m.Inputs, typeDef)
 		}
 	}
-	return modDef, nil
-}
 
-// moduleDef is a representation of dagger.Module.
-type moduleDef struct {
-	Name       string
-	Objects    []*modTypeDef
-	Interfaces []*modTypeDef
-	Inputs     []*modTypeDef
+	return nil
 }
 
 func (m *moduleDef) AsFunctionProviders() []functionProvider {
@@ -946,7 +963,7 @@ func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
 	return nil
 }
 
-// GetInput retrieves a saved interface type definition from the module.
+// GetInput retrieves a saved input type definition from the module.
 func (m *moduleDef) GetInput(name string) *modInput {
 	for _, input := range m.AsInputs() {
 		// Normalize name in case an SDK uses a different convention for input names.
@@ -955,10 +972,6 @@ func (m *moduleDef) GetInput(name string) *modInput {
 		}
 	}
 	return nil
-}
-
-func (m *moduleDef) GetMainObject() *modObject {
-	return m.GetObject(m.Name)
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
@@ -1002,7 +1015,16 @@ type modTypeDef struct {
 type functionProvider interface {
 	ProviderName() string
 	GetFunctions() []*modFunction
-	GetFunction(name string) (*modFunction, error)
+	IsCore() bool
+}
+
+func GetFunction(o functionProvider, name string) (*modFunction, error) {
+	for _, fn := range o.GetFunctions() {
+		if fn.Name == name || fn.CmdName() == name {
+			return fn, nil
+		}
+	}
+	return nil, fmt.Errorf("no function %q in type %q", name, o.ProviderName())
 }
 
 func (t *modTypeDef) Name() string {
@@ -1040,10 +1062,13 @@ func (o *modObject) ProviderName() string {
 	return o.Name
 }
 
-// GetFunctions returns the object's function definitions as well as the fields,
-// which are treated as functions with no arguments.
-func (o *modObject) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Functions)+len(o.Fields))
+func (o *modObject) IsCore() bool {
+	return o.SourceModuleName == ""
+}
+
+// GetStateFunctions returns the object's fields as function definitions.
+func (o *modObject) GetStateFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields))
 	for _, f := range o.Fields {
 		fns = append(fns, &modFunction{
 			Name:        f.Name,
@@ -1051,31 +1076,21 @@ func (o *modObject) GetFunctions() []*modFunction {
 			ReturnType:  f.TypeDef,
 		})
 	}
-	fns = append(fns, o.Functions...)
 	return fns
 }
 
-func (o *modObject) GetFunction(name string) (*modFunction, error) {
-	for _, fn := range o.Functions {
-		if fn.Name == name || cliName(fn.Name) == name {
-			return fn, nil
-		}
-	}
-	for _, f := range o.Fields {
-		if f.Name == name || cliName(f.Name) == name {
-			return &modFunction{
-				Name:        f.Name,
-				Description: f.Description,
-				ReturnType:  f.TypeDef,
-			}, nil
-		}
-	}
-	return nil, fmt.Errorf("no function '%s' in object type '%s'", name, o.Name)
+// GetFunctions returns the object's function definitions including the fields,
+// which are treated as functions with no arguments.
+func (o *modObject) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
+	fns = append(fns, o.GetStateFunctions()...)
+	return append(fns, o.Functions...)
 }
 
 type modInterface struct {
-	Name      string
-	Functions []*modFunction
+	Name             string
+	Functions        []*modFunction
+	SourceModuleName string
 }
 
 var _ functionProvider = (*modInterface)(nil)
@@ -1084,19 +1099,12 @@ func (o *modInterface) ProviderName() string {
 	return o.Name
 }
 
-func (o *modInterface) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Functions))
-	fns = append(fns, o.Functions...)
-	return fns
+func (o *modInterface) IsCore() bool {
+	return o.SourceModuleName == ""
 }
 
-func (o *modInterface) GetFunction(name string) (*modFunction, error) {
-	for _, fn := range o.Functions {
-		if fn.Name == name || cliName(fn.Name) == name {
-			return fn, nil
-		}
-	}
-	return nil, fmt.Errorf("no function '%s' in interface type '%s'", name, o.Name)
+func (o *modInterface) GetFunctions() []*modFunction {
+	return o.Functions
 }
 
 type modScalar struct {
@@ -1126,6 +1134,45 @@ type modFunction struct {
 	Description string
 	ReturnType  *modTypeDef
 	Args        []*modFunctionArg
+	cmdName     string
+}
+
+func (f *modFunction) CmdName() string {
+	if f.cmdName == "" {
+		f.cmdName = cliName(f.Name)
+	}
+	return f.cmdName
+}
+
+func (f *modFunction) SupportedArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if !arg.IsUnsupportedFlag() {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
+func (f *modFunction) IsUnsupported() bool {
+	for _, arg := range f.Args {
+		if arg.IsRequired() && arg.IsUnsupportedFlag() {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *modFunction) ReturnsCoreObject() bool {
+	t := f.ReturnType
+	if t.AsList != nil {
+		t = t.AsList.ElementTypeDef
+	}
+	fp := t.AsFunctionProvider()
+	if fp != nil {
+		return fp.IsCore()
+	}
+	return false
 }
 
 // modFunctionArg is a representation of dagger.FunctionArg.
@@ -1149,6 +1196,13 @@ func (r *modFunctionArg) IsRequired() bool {
 	return !r.TypeDef.Optional && r.DefaultValue == ""
 }
 
+func (r *modFunctionArg) IsUnsupportedFlag() bool {
+	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	err := r.AddFlag(flags)
+	var e *UnsupportedFlagError
+	return errors.As(err, &e)
+}
+
 func getDefaultValue[T any](r *modFunctionArg) (T, error) {
 	var val T
 	err := json.Unmarshal([]byte(r.DefaultValue), &val)
@@ -1162,11 +1216,6 @@ func gqlObjectName(name string) string {
 
 // gqlFieldName converts casing to a GraphQL object field name
 func gqlFieldName(name string) string {
-	return strcase.ToLowerCamel(name)
-}
-
-// gqlArgName converts casing to a GraphQL field argument name
-func gqlArgName(name string) string {
 	return strcase.ToLowerCamel(name)
 }
 

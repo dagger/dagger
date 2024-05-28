@@ -2,134 +2,103 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
-	"syscall"
-	"time"
-
-	"github.com/moby/buildkit/client/llb"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
+	"io"
+	"net"
 
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/telemetry"
+	"github.com/moby/buildkit/session/sshforward"
+	"github.com/sourcegraph/conc/pool"
+	"google.golang.org/grpc/metadata"
 )
 
 type c2hTunnel struct {
 	bk                 *buildkit.Client
+	ns                 buildkit.Namespaced
 	upstreamHost       string
 	tunnelServiceHost  string
 	tunnelServicePorts []PortForward
 	sessionID          string
+	logWriter          io.Writer
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
-	scratchDef, err := llb.Scratch().Marshal(ctx)
+	hostCaller, err := d.bk.SessionManager.Get(ctx, d.sessionID, true)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get buildkit session caller %s: %w", d.sessionID, err)
 	}
 
-	scratchRes, err := d.bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: scratchDef.ToPB(),
-	})
-	if err != nil {
-		return err
-	}
-
-	mounts := []bkgw.Mount{
-		{
-			Dest:      "/",
-			MountType: pb.MountType_BIND,
-			Ref:       scratchRes.Ref,
-		},
-	}
-
-	args := []string{"tunnel"}
-
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	listenerPool := pool.New().WithContext(ctx)
+	proxyConnPool := pool.New().WithContext(ctx)
 	for _, port := range d.tunnelServicePorts {
-		var frontend int
-		if port.Frontend != nil {
-			frontend = *port.Frontend
-		} else {
-			frontend = port.Backend
-		}
+		port := port
+		listenerPool.Go(func(ctx context.Context) error {
+			defer cancel() // if one exits, all should exit
+			upstreamSock := NewHostIPSocket(
+				port.Protocol.Network(),
+				fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
+				d.sessionID,
+			)
 
-		upstream := NewHostIPSocket(
-			port.Protocol.Network(),
-			fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
-			d.sessionID,
-		)
+			frontend := port.FrontendOrBackendPort()
+			listener, err := buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (net.Listener, error) {
+				return net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", frontend))
+			})
+			if err != nil {
+				fmt.Fprintf(d.logWriter, "failed to listen on %s:%d : %v\n", port.Protocol.Network(), frontend, err)
+				return fmt.Errorf("failed to listen on network namespace: %w", err)
+			}
+			fmt.Fprintf(d.logWriter, "listening on %s:%d\n", port.Protocol.Network(), frontend)
 
-		sockPath := fmt.Sprintf("/upstream.%d.sock", frontend)
+			go func() {
+				<-ctx.Done()
+				listener.Close()
+			}()
 
-		mounts = append(mounts, bkgw.Mount{
-			Dest:      sockPath,
-			MountType: pb.MountType_SSH,
-			SSHOpt: &pb.SSHOpt{
-				ID: upstream.SSHID(),
-			},
+			for {
+				downstreamConn, err := listener.Accept()
+				if err != nil {
+					if errors.Is(err, net.ErrClosed) {
+						fmt.Fprintf(d.logWriter, "listener closed\n")
+						return nil
+					}
+					return fmt.Errorf("fatal accept error: %w", err)
+				}
+
+				fmt.Fprintf(d.logWriter, "handling %s\n", downstreamConn.RemoteAddr())
+
+				upstreamClient, err := sshforward.NewSSHClient(hostCaller.Conn()).ForwardAgent(
+					metadata.NewOutgoingContext(ctx, map[string][]string{
+						sshforward.KeySSHID: {upstreamSock.SSHID()},
+					}),
+				)
+				if err != nil {
+					fmt.Fprintf(d.logWriter, "failed to create upstream client %s: %v\n", upstreamSock.SSHID(), err)
+					return fmt.Errorf("failed to create upstream client %s: %w", upstreamSock.SSHID(), err)
+				}
+
+				proxyConnPool.Go(func(ctx context.Context) error {
+					err := sshforward.Copy(ctx, downstreamConn, upstreamClient, upstreamClient.CloseSend)
+					if err != nil {
+						fmt.Fprintf(d.logWriter, "failed to copy: %v\n", err)
+					}
+					return err
+				})
+			}
 		})
-
-		args = append(args, fmt.Sprintf(
-			"%s:%d/%s",
-			sockPath,
-			frontend,
-			port.Protocol.Network(),
-		))
 	}
 
-	ctx, span := Tracer().Start(ctx, strings.Join(args, " "))
-	defer telemetry.End(span, func() error { return rerr })
-	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
-
-	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
-		Hostname: d.tunnelServiceHost,
-		Mounts:   mounts,
-	})
-	if err != nil {
-		return err
+	if err := listenerPool.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("listener pool failed: %w", err))
 	}
-
-	// NB: use a different ctx than the one that'll be interrupted for anything
-	// that needs to run as part of post-interruption cleanup
-	//
-	// set a reasonable timeout on this since there have been funky hangs in the
-	// past
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cleanupCancel()
-
-	defer container.Release(cleanupCtx)
-
-	proc, err := container.Start(ctx, bkgw.StartRequest{
-		Args:   args,
-		Env:    append(telemetry.PropagationEnv(ctx), "_DAGGER_INTERNAL_COMMAND="),
-		Stdout: nopCloser{stdout},
-		Stderr: nopCloser{stderr},
-	})
-	if err != nil {
-		return err
+	if err := proxyConnPool.Wait(); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("proxy conn pool failed: %w", err))
 	}
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- proc.Wait()
-	}()
-
-	select {
-	case err := <-exited:
-		if err != nil {
-			return err
-		}
-
-		return nil
-	case <-ctx.Done():
-		err := proc.Signal(cleanupCtx, syscall.SIGKILL)
-		if err != nil {
-			return fmt.Errorf("interrupt check: %w", err)
-		}
-
-		<-exited
-
-		return ctx.Err()
+	if rerr != nil {
+		fmt.Fprintf(d.logWriter, "tunnel failed: %v\n", rerr)
 	}
+	return rerr
 }

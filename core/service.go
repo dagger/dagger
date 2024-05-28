@@ -241,6 +241,16 @@ func (svc *Service) startContainer(
 		return nil, fmt.Errorf("service container must be result of withExec (expected exec op, got %T)", dag.GetOp())
 	}
 
+	execMD, ok, err := buildkit.ExecutionMetadataFromDescription(execOp.Metadata.Description)
+	if err != nil {
+		return nil, fmt.Errorf("parse execution metadata: %w", err)
+	}
+	if !ok {
+		execMD = &buildkit.ExecutionMetadata{
+			ServerID: clientMetadata.ServerID,
+		}
+	}
+
 	detachDeps, _, err := svc.Query.Services.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
@@ -265,8 +275,6 @@ func (svc *Service) startContainer(
 	fullHost := host + "." + network.ClientDomain(clientMetadata.ServerID)
 
 	bk := svc.Query.Buildkit
-
-	health := newHealth(bk, fullHost, ctr.Ports)
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
@@ -305,10 +313,11 @@ func (svc *Service) startContainer(
 		mounts[i] = mount
 	}
 
-	gc, err := bk.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts:   mounts,
-		Hostname: fullHost,
-		Platform: &pbPlatform,
+	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{
+		Mounts:            mounts,
+		Hostname:          fullHost,
+		Platform:          &pbPlatform,
+		ExecutionMetadata: *execMD,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("new container: %w", err)
@@ -322,14 +331,11 @@ func (svc *Service) startContainer(
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- health.Check(ctx)
+		checked <- newHealth(bk, gc, fullHost, ctr.Ports, stderr).Check(ctx)
 	}()
 
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
-	if interactive {
-		env = append(env, ShimEnableTTYEnvVar+"=1")
-	}
 
 	outBuf := new(bytes.Buffer)
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
@@ -548,7 +554,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 	}, nil
 }
 
-func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (running *RunningService, err error) {
+func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
 	dig := id.Digest()
 
 	host, err := svc.Hostname(ctx, id)
@@ -565,17 +571,17 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	bk := svc.Query.Buildkit
 
-	tunnel := &c2hTunnel{
-		bk:                 bk,
-		upstreamHost:       svc.HostUpstream,
-		tunnelServiceHost:  fullHost,
-		tunnelServicePorts: svc.HostPorts,
-		sessionID:          svc.HostSessionID,
+	// we don't need a full container, just a CNI provisioned network namespace to listen in
+	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)
+	if err != nil {
+		return nil, fmt.Errorf("new network namespace: %w", err)
 	}
 
 	checkPorts := []Port{}
+	descs := make([]string, 0, len(svc.HostPorts))
 	for _, p := range svc.HostPorts {
 		desc := fmt.Sprintf("tunnel %s %d -> %d", p.Protocol, p.FrontendOrBackendPort(), p.Backend)
+		descs = append(descs, desc)
 		checkPorts = append(checkPorts, Port{
 			Port:        p.FrontendOrBackendPort(),
 			Protocol:    p.Protocol,
@@ -583,7 +589,25 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		})
 	}
 
-	check := newHealth(bk, fullHost, checkPorts)
+	ctx, span := Tracer().Start(ctx, strings.Join(descs, ", "))
+	ctx, _, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	defer func() {
+		if rerr != nil {
+			// NB: this is intentionally conditional; we only complete if there was
+			// an error starting. span.End is called when the service exits.
+			telemetry.End(span, func() error { return rerr })
+		}
+	}()
+
+	tunnel := &c2hTunnel{
+		bk:                 bk,
+		ns:                 netNS,
+		upstreamHost:       svc.HostUpstream,
+		tunnelServiceHost:  fullHost,
+		tunnelServicePorts: svc.HostPorts,
+		sessionID:          svc.HostSessionID,
+		logWriter:          stderr,
+	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
 	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
@@ -595,12 +619,13 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- check.Check(svcCtx)
+		checked <- newHealth(bk, netNS, fullHost, checkPorts, stderr).Check(svcCtx)
 	}()
 
 	select {
 	case err := <-checked:
 		if err != nil {
+			netNS.Release(svcCtx)
 			stop()
 			return nil, fmt.Errorf("health check errored: %w", err)
 		}
@@ -614,11 +639,14 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			Host:  fullHost,
 			Ports: checkPorts,
 			Stop: func(context.Context, bool) error {
+				netNS.Release(svcCtx)
 				stop()
+				span.End()
 				return nil
 			},
 		}, nil
 	case err := <-exited:
+		netNS.Release(svcCtx)
 		stop()
 		return nil, fmt.Errorf("proxy exited: %w", err)
 	}

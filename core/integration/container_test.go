@@ -4201,3 +4201,31 @@ func TestContainerWithMountedSecretMode(t *testing.T) {
 	require.Contains(t, perms, "0666/-rw-rw-rw-")
 	require.NoError(t, err)
 }
+
+func TestContainerNestedExec(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	_, err := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ defaultPlatform }`,
+		}). // arbitrary valid query
+		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
+func TestContainerEmptyExecDiff(t *testing.T) {
+	// if an exec makes no changes, the diff should be empty, including of files
+	// mounted in by the engine like the init/resolv.conf/etc.
+	t.Parallel()
+	c, ctx := connect(t)
+
+	base := c.Container().From(alpineImage)
+	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)
+	require.NoError(t, err)
+	require.Len(t, ents, 0)
+}

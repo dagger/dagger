@@ -40,24 +40,30 @@
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific secrets pages to multi-language secrets page
+  # redirect developer manual language-specific secrets page to multi-language page
   from = "/manuals/developer/:language/:docid/secrets"
   to = "/manuals/developer/secrets"
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific services pages to multi-language services page
+  # redirect developer manual language-specific services page to multi-language page
   from = "/manuals/developer/:language/:docid/services"
   to = "/manuals/developer/services"
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific dependencies pages to multi-language dependencies page
-  from = "/manuals/developer/:language/:docid/dependencies"
-  to = "/manuals/developer/dependencies"
+  # redirect developer manual language-specific documentation page to multi-language page
+  from = "/manuals/developer/:language/:docid/documentation"
+  to = "/manuals/developer/documentation"
+  status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific chaining pages to multi-language chaining page
+  # redirect developer manual language-specific dependencies pages to multi-language page
+  from = "/manuals/developer/:language/:docid/dependencies"
+  to = "/manuals/developer/module-dependencies"
+
+[[redirects]]
+  # redirect developer manual language-specific chaining page to multi-language page
   from = "/manuals/developer/:language/:docid/chaining"
   to = "/manuals/developer/chaining"
   status = 301
@@ -66,6 +72,78 @@
   # redirect developer manual language-specific error handling page to multi-language page
   from = "/manuals/developer/:language/:docid/error-handling"
   to = "/manuals/developer/error-handling"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific custom types page to multi-language page
+  from = "/manuals/developer/:language/:docid/custom-types"
+  to = "/manuals/developer/custom-types"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Go visibility page to multi-language page
+  from = "/manuals/developer/go/:docid/visibility"
+  to = "/manuals/developer/state-functions"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Python attributes as functions page to multi-language page
+  from = "/manuals/developer/python/:docid/attribute-functions"
+  to = "/manuals/developer/state-functions"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual TypeScript runtimes page to multi-language page
+  from = "/manuals/developer/typescript/:docid/runtime"
+  to = "/manuals/developer/runtimes"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Go interfaces pages to multi-language page
+  from = "/manuals/developer/go/:docid/interfaces"
+  to = "/manuals/developer/interfaces"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific dependencies page to multi-language page
+  from = "/manuals/developer/typescript/:docid/typescript-dependencies"
+  to = "/manuals/developer/language-dependencies"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific dependencies page to multi-language page
+  from = "/manuals/developer/python/:docid/python-dependencies"
+  to = "/manuals/developer/language-dependencies"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific IDE pages to multi-language IDE page
+  from = "/manuals/developer/:language/:docid/ide-integration"
+  to = "/manuals/developer/ide-integration"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific module structure page to multi-language page
+  from = "/manuals/developer/:language/:docid/module-structure"
+  to = "/manuals/developer/module-structure"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual TypeScript visibility page to multi-language page
+  from = "/manuals/developer/typescript/:docid/visibility"
+  to = "/manuals/developer/state-functions"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual Go interfaces pages to multi-language page
+  from = "/manuals/developer/go/:docid/interfaces"
+  to = "/manuals/developer/interfaces"
+  status = 301
+
+[[redirects]]
+  # redirect developer manual language-specific debugging page to multi-language page
+  from = "/manuals/developer/:language/:docid/debugging"
+  to = "/manuals/developer/debugging"
   status = 301
 
 [[redirects]]

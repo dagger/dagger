@@ -795,6 +795,8 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		return nil, nil, err
 	}
 
+	ctrler.Worker.Controller = ctrler
+
 	return ctrler, cacheManager, nil
 }
 

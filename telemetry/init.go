@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/telemetry/inflight"
 	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/dagger/dagger/telemetry/sdklog/otlploggrpc"
@@ -30,12 +32,35 @@ import (
 
 var configuredCloudSpanExporter sdktrace.SpanExporter
 var configuredCloudLogsExporter sdklog.LogExporter
+var configuredCloudTelemetry bool
 var ocnfiguredCloudExportersOnce sync.Once
 
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.LogExporter, bool) {
 	ocnfiguredCloudExportersOnce.Do(func() {
-		cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN")
-		if cloudToken == "" {
+		var (
+			authHeader string
+			org        *auth.Org
+		)
+
+		// Try token auth first
+		if cloudToken := os.Getenv("DAGGER_CLOUD_TOKEN"); cloudToken != "" {
+			authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(cloudToken+":"))
+		}
+		// Try OAuth next
+		if authHeader == "" {
+			token, err := auth.Token(ctx)
+			if err != nil {
+				return
+			}
+			authHeader = token.Type() + " " + token.AccessToken
+			org, err = auth.CurrentOrg()
+			if err != nil {
+				return
+			}
+		}
+
+		// No auth provided, abort
+		if authHeader == "" {
 			return
 		}
 
@@ -54,7 +79,10 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 		logsURL := cloudEndpoint.JoinPath("v1", "logs")
 
 		headers := map[string]string{
-			"Authorization": "Bearer " + cloudToken,
+			"Authorization": authHeader,
+		}
+		if org != nil {
+			headers["X-Dagger-Org"] = org.ID
 		}
 
 		configuredCloudSpanExporter, err = otlptracehttp.New(ctx,
@@ -72,10 +100,11 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			Headers:  headers,
 		}
 		configuredCloudLogsExporter = otlploghttp.NewClient(cfg)
+
+		configuredCloudTelemetry = true
 	})
 
-	return configuredCloudSpanExporter, configuredCloudLogsExporter,
-		configuredCloudSpanExporter != nil
+	return configuredCloudSpanExporter, configuredCloudLogsExporter, configuredCloudTelemetry
 }
 
 func OtelConfigured() bool {
@@ -320,7 +349,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 
 	// Log to slog.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
-		slog.Error("OpenTelemetry error", "error", err)
+		slog.Error("failed to emit telemetry", "error", err)
 	}))
 
 	if cfg.Resource == nil {

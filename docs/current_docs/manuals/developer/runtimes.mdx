@@ -1,0 +1,54 @@
+---
+slug: /manuals/developer/typescript/356352/runtime
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Alternative Runtimes"
+---
+
+# Alternative Runtimes
+
+:::important
+The information on this page is only applicable to the TypeScript SDK. Alternative runtimes are not currently supported in the Python and Go SDKs.
+:::
+
+TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via `tsx`), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively). However, the Dagger TypeScript SDK only supports Node.js (stable) and Bun (experimental).
+
+By default, the TypeScript SDK executes functions using the Node.js runtime, but you can configure an alternative runtime in your Dagger module's `package.json` file.
+
+To change the TypeScript SDK runtime, set the field `dagger.runtime` in your Dagger module's `package.json` file.
+
+## Node.js
+
+Set the field to `node` to use the Node.js runtime. Node.js is also the default runtime used if this field is omitted.
+
+```json
+  "dagger": {
+    "runtime": "node"
+  }
+```
+
+## Bun
+
+Set the field to `bun` to use the Bun runtime.
+
+```json
+  "dagger": {
+    "runtime": "bun"
+  }
+```
+
+:::warning
+Bun runtime support is still experimental. Unexpected results may occur in some cases.
+:::
+
+## Automatic Detection
+
+When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's lock files inside the project's `dagger` directory.
+
+- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
+- In the absence of the lock files mentioned above, if a `bun.lockb` file is present, Dagger will choose `bun` as the runtime.
+- If no or only unknown lock files are present, `node` is chosen.
+
+:::warning
+This behavior however should be seen as a sensible fallback and not as an explicit configuration.
+:::

@@ -3,6 +3,7 @@ package buildkit
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,6 +44,8 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -60,13 +63,17 @@ here). For simplicity, this Worker struct also implements that Executor interfac
 */
 type Worker struct {
 	*sharedWorkerState
-	serverID string
-	vtx      solver.Vertex
+	execMD *ExecutionMetadata
+}
+
+type Controller interface {
+	HandleConn(context.Context, net.Conn, *engine.ClientMetadata, map[string][]string) error
 }
 
 type sharedWorkerState struct {
 	*base.Worker
-	root string
+	Controller Controller
+	root       string
 
 	// executor specific
 	runc             *runc.Runc
@@ -76,8 +83,8 @@ type sharedWorkerState struct {
 	processMode      oci.ProcessMode
 	idmap            *idtools.IdentityMapping
 	dns              *oci.DNSConfig
-	running          map[string]chan error
-	mu               sync.Mutex
+	running          map[string]*execState
+	mu               sync.RWMutex
 	apparmorProfile  string
 	selinux          bool
 	tracingSocket    string
@@ -120,7 +127,7 @@ func NewWorker(ctx context.Context, opts *NewWorkerOpts) (*Worker, error) {
 		processMode:     opts.ProcessMode,
 		idmap:           opts.IDMapping,
 		dns:             opts.DNSConfig,
-		running:         make(map[string]chan error),
+		running:         make(map[string]*execState),
 		apparmorProfile: opts.ApparmorProfile,
 		selinux:         opts.SELinux,
 		tracingSocket:   opts.TraceSocket,
@@ -149,7 +156,7 @@ func NewWorker(ctx context.Context, opts *NewWorkerOpts) (*Worker, error) {
 	os.RemoveAll(filepath.Join(w.executorRoot, "resolv.conf"))
 
 	w.runc = &runc.Runc{
-		Command:      "/usr/local/bin/dagger-shim",
+		Command:      distconsts.RuncPath,
 		Log:          filepath.Join(w.executorRoot, "runc-log.json"),
 		LogFormat:    runc.JSON,
 		Setpgid:      true,
@@ -298,22 +305,6 @@ func (w *Worker) registerDaggerCustomSources() error {
 	return nil
 }
 
-func (w *Worker) WithServerID(serverID string) *Worker {
-	return &Worker{
-		sharedWorkerState: w.sharedWorkerState,
-		serverID:          serverID,
-		vtx:               w.vtx,
-	}
-}
-
-func (w *Worker) WithVertex(vtx solver.Vertex) *Worker {
-	return &Worker{
-		sharedWorkerState: w.sharedWorkerState,
-		serverID:          w.serverID,
-		vtx:               vtx,
-	}
-}
-
 /*
 Buildkit's worker.Controller is a bit odd; it exists to manage multiple workers because that was
 a planned feature years ago, but it never got implemented. So it exists to manage a single worker,
@@ -335,11 +326,16 @@ func (w *Worker) Executor() executor.Executor {
 }
 
 func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *session.Manager) (solver.Op, error) {
-	w = w.WithVertex(vtx)
-
 	// if this is an ExecOp, pass in ourself as executor
 	if baseOp, ok := vtx.Sys().(*pb.Op); ok {
 		if execOp, ok := baseOp.Op.(*pb.Op_Exec); ok {
+			execMD, ok, err := executionMetadataFromVtx(vtx)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				w = w.withExecMD(*execMD)
+			}
 			return ops.NewExecOp(
 				vtx,
 				execOp,
@@ -355,4 +351,8 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 
 	// otherwise, just use the default base.Worker's ResolveOp
 	return w.Worker.ResolveOp(vtx, s, sm)
+}
+
+func (w *Worker) withExecMD(execMD ExecutionMetadata) *Worker {
+	return &Worker{sharedWorkerState: w.sharedWorkerState, execMD: &execMD}
 }

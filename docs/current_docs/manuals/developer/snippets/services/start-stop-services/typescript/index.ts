@@ -3,7 +3,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Explicitly starts and stops Redis service
+   * Explicitly start and stop a Redis service
    */
   @func()
   async redisService(): Promise<string> {

@@ -20,12 +20,12 @@ module.exports = {
       },
       "items": [
         "quickstart/cli",
-        "quickstart/hello",
-        "quickstart/directories",
-        "quickstart/containers",
         "quickstart/daggerize",
-        "quickstart/custom-function",
-        "quickstart/daggerverse",
+        "quickstart/env",
+        "quickstart/test",
+        "quickstart/build",
+        "quickstart/publish",
+        "quickstart/simplify",
         "quickstart/conclusion"
       ]
     },
@@ -66,6 +66,10 @@ module.exports = {
         {
           "type": "doc",
           "id": "integrations/gitlab"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/java"
         },
         {
           "type": "doc",
@@ -314,6 +318,22 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/functions"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/ide-integration"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/module-structure"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/documentation"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/secrets"
         },
         {
@@ -322,7 +342,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/dependencies"
+          "id": "manuals/developer/module-dependencies"
         },
         {
           "type": "doc",
@@ -330,7 +350,31 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/custom-types"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/state-functions"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/runtimes"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/interfaces"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/language-dependencies"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/error-handling"
+        },
+        {
+          "type": "doc",
+          "id": "manuals/developer/debugging"
         },
         {
           "type": "category",
@@ -346,39 +390,7 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/go/functions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/documentation"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/go/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/interfaces"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/debugging"
             },
             {
               "type": "link",
@@ -401,43 +413,11 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/functions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/documentation"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/constructor"
             },
             {
               "type": "doc",
-              "id": "manuals/developer/python/attribute-functions"
-            },
-              {
-              "type": "doc",
-              "id": "manuals/developer/python/custom-types"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/python/name-overrides"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/python-dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/debugging"
             },
             {
               "type": "link",
@@ -460,19 +440,7 @@ module.exports = {
             },
             {
               "type": "doc",
-              "id": "manuals/developer/typescript/functions"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/documentation"
-            },
-            {
-              "type": "doc",
               "id": "manuals/developer/typescript/constructor"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/custom-types"
             },
             {
               "type": "doc",
@@ -481,30 +449,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/visibility"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/module-structure"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/typescript-dependencies"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/ide-integration"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/debugging"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/runtime"
             },
             {
               "type": "doc",

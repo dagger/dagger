@@ -6,7 +6,8 @@
 package distconsts
 
 const (
-	EngineShimPath = "/usr/local/bin/dagger-shim"
+	RuncPath     = "/usr/local/bin/runc"
+	DumbInitPath = "/usr/local/bin/dumb-init"
 
 	EngineDefaultStateDir = "/var/lib/dagger"
 

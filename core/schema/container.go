@@ -16,6 +16,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -600,11 +601,11 @@ func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, 
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.MetaFileContents(ctx, "stdout")
+	return parent.MetaFileContents(ctx, buildkit.MetaMountStdoutPath)
 }
 
 func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.MetaFileContents(ctx, "stderr")
+	return parent.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
 }
 
 type containerGpuArgs struct {

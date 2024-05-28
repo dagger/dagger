@@ -6,19 +6,10 @@ on:
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-      - name: Install dagger
-        run: |
-          curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${{ inputs.dagger-version }} BIN_DIR=/usr/local/bin/ sudo -E sh
-      - run: ./hack/make sdk:go:publish ${{ github.ref_name }}
-        env:
-          GITHUB_PAT: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+    uses: ./.github/workflows/_dagger_call.yml
+    secrets: inherit
+    with:
+      function: sdk go publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
 
   notify:
     if: github.ref_type == 'tag'

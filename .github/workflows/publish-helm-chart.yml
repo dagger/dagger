@@ -5,25 +5,12 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
     # only run this on push events, not in PRs
     if: github.event_name == 'push' && github.repository == 'dagger/dagger'
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.22"
-
-      - name: Helm test
-        uses: dagger/dagger-for-github@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
-        with:
-          version: '0.11.4'
-          args: --source=. helm publish --tag=${{ github.ref_name }} --github-token=env:GITHUB_TOKEN
-
+    uses: ./.github/workflows/_dagger_call.yml
+    secrets: inherit
+    with:
+      function: helm publish --tag=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN
 
   notify:
     needs: publish

@@ -1,0 +1,74 @@
+---
+slug: /manuals/developer/custom-types
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Custom Types"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Custom Types
+
+A Dagger module can have multiple object types defined. It's important to understand that they are only accessible through [chaining](./chaining.mdx), starting from a function in the main object.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+Here is an example of a `github` Dagger module, with a function named `DaggerOrganization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
+
+```go file=./snippets/custom-types/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+Here is an example of a `github` Dagger module, with a function named `dagger_organization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
+
+```python file=./snippets/custom-types/python/main.py
+```
+
+The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) descriptors expose getter functions without arguments, for their [attributes](./state-functions.mdx).
+
+</TabItem>
+<TabItem value="TypeScript">
+
+Here is an example of a `github` Dagger module, with a function named `daggerOrganization`
+that returns a custom `Organization` type, itself containing a collection of
+`Account` types:
+
+```typescript file=./snippets/custom-types/typescript/index.ts
+```
+
+TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords do not allows decorators.
+</TabItem>
+</Tabs>
+
+
+:::note
+When the Dagger Engine extends the Dagger API schema with these types, it prefixes
+their names with the name of the main object:
+- Github
+- GithubAccount
+- GithubOrganization
+
+This is to prevent possible naming conflicts when loading multiple modules,
+which is reflected in code generation (for example, when using this module in
+another one as a dependency).
+:::
+
+Here's an example of calling a Dagger Function from this module to get all member URLs:
+
+```shell
+dagger call dagger-organization members url
+```
+
+The result will be:
+
+```
+https://github.com/jane
+https://github.com/john
+```

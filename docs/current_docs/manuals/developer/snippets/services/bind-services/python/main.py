@@ -6,7 +6,7 @@ from dagger import dag, function, object_type
 class MyModule:
     @function
     def http_service(self) -> dagger.Service:
-        """Starts and returns an HTTP service."""
+        """Start and return an HTTP service."""
         return (
             dag.container()
             .from_("python")
@@ -19,7 +19,7 @@ class MyModule:
 
     @function
     async def get(self) -> str:
-        """Sends a request to an HTTP service and returns the response."""
+        """Send a request to an HTTP service and return the response."""
         return await (
             dag.container()
             .from_("alpine")

@@ -689,5 +689,5 @@ ssl_dhparam /etc/ssl/certs/dhparam.pem;
 		WithExec([]string{"nginx", "-t"}).
 		WithExposedPort(80).
 		WithExposedPort(443).
-		WithExec([]string{"nginx"})
+		WithExec([]string{"nginx", "-g", "daemon off;"})
 }

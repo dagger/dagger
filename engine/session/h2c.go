@@ -15,13 +15,24 @@ import (
 )
 
 type TunnelListenerAttachable struct {
-	rootCtx context.Context
+	rootCtx     context.Context
+	getListener func(network, addr string) (net.Listener, error)
 
 	UnimplementedTunnelListenerServer
 }
 
-func NewTunnelListenerAttachable(rootCtx context.Context) TunnelListenerAttachable {
-	return TunnelListenerAttachable{rootCtx: rootCtx}
+func NewTunnelListenerAttachable(
+	rootCtx context.Context,
+	// getListener is optional, if nil then net.Listen will be used
+	getListener func(network, addr string) (net.Listener, error),
+) TunnelListenerAttachable {
+	if getListener == nil {
+		getListener = net.Listen
+	}
+	return TunnelListenerAttachable{
+		rootCtx:     rootCtx,
+		getListener: getListener,
+	}
 }
 
 func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
@@ -36,7 +47,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		return err
 	}
 
-	l, err := net.Listen(req.GetProtocol(), req.GetAddr())
+	l, err := s.getListener(req.GetProtocol(), req.GetAddr())
 	if err != nil {
 		return err
 	}

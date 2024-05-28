@@ -77,7 +77,8 @@ func (t PythonSDK) Test(ctx context.Context) error {
 
 		eg.Go(func() error {
 			_, err := base.
-				WithExec([]string{"pytest", "-Wd", "--exitfirst"}).
+				WithEnvVariable("PYTHONUNBUFFERED", "1").
+				WithExec([]string{"pytest", "-Wd", "--exitfirst", "-m", "not provision"}).
 				Sync(ctx)
 			return err
 		})

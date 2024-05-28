@@ -12,8 +12,8 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
 	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/ci/mage/sdk"
 	"github.com/dagger/dagger/ci/mage/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
@@ -23,22 +23,16 @@ type Engine mg.Namespace
 var (
 	publishedEnginePlatforms    = []string{"linux/amd64", "linux/arm64"}
 	publishedGPUEnginePlatforms = []string{"linux/amd64"}
+
+	publishedSDKs = []string{
+		"go",
+		"python",
+		"typescript",
+		"elixir",
+		"rust",
+		"php",
+	}
 )
-
-// Connect tests a connection to a Dagger Engine
-func (t Engine) Connect(ctx context.Context) error {
-	return util.DaggerCall(ctx, "--help")
-}
-
-// Lint lints the engine
-func (t Engine) Lint(ctx context.Context) error {
-	return util.DaggerCall(ctx, "engine", "lint")
-}
-
-// Lint lints the engine
-func (t Engine) Scan(ctx context.Context) error {
-	return util.DaggerCall(ctx, "engine", "scan")
-}
 
 // Publish builds and pushes Engine OCI image to a container registry
 func (t Engine) Publish(ctx context.Context, version string) error {
@@ -77,8 +71,14 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	}
 
 	if semver.IsValid(version) {
-		sdks := sdk.All{}
-		if err := sdks.Bump(ctx, version); err != nil {
+		eg, gctx := errgroup.WithContext(ctx)
+		for _, sdk := range publishedSDKs {
+			sdk := sdk
+			eg.Go(func() error {
+				return util.DaggerCall(gctx, "sdk", sdk, "bump", "--version="+version, "export", "--path=.")
+			})
+		}
+		if err := eg.Wait(); err != nil {
 			return err
 		}
 	} else {
@@ -86,45 +86,6 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	}
 
 	return nil
-}
-
-// Verify that all arches for the Engine can be built. Just do a local export to avoid setting up
-// a registry
-func (t Engine) TestPublish(ctx context.Context) error {
-	err := util.DaggerCall(ctx, "engine", "test-publish")
-	if err != nil {
-		return err
-	}
-	err = util.DaggerCall(ctx, "engine", "with-base", "--image=ubuntu", "--gpu-support=true", "test-publish")
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// Test runs Engine tests
-func (t Engine) Test(ctx context.Context) error {
-	return t.test(ctx, "all")
-}
-
-// TestRace runs Engine tests with go race detector enabled
-func (t Engine) TestRace(ctx context.Context) error {
-	return t.test(ctx, "all", "--race=true")
-}
-
-// TestImportant runs Engine Container+Module tests, which give good basic coverage
-// of functionality w/out having to run everything
-func (t Engine) TestImportant(ctx context.Context) error {
-	return t.test(ctx, "important", "--race=true")
-}
-
-func (t Engine) test(ctx context.Context, additional ...string) error {
-	args := []string{"test"}
-	if cfg, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG"); ok {
-		args = append(args, "with-cache", "--config="+cfg)
-	}
-	args = append(args, additional...)
-	return util.DaggerCall(ctx, args...)
 }
 
 // Dev builds and starts an Engine & CLI from local source code

@@ -6,7 +6,7 @@ import (
 
 type MyModule struct{}
 
-// explicitly starts and stops Redis service
+// Explicitly start and stop a Redis service
 func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	redisSrv := dag.Container().
 		From("redis").

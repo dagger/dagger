@@ -1,0 +1,397 @@
+---
+slug: /manuals/developer/functions
+displayed_sidebar: "current"
+toc_max_heading_level: 3
+title: "Functions"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Functions
+
+Dagger Functions are regular code, written in a supported programming language, and running in containers. Dagger Functions let you encapsulate common operations or workflows into discrete units with clear inputs and outputs.
+
+Here's an example of a simple Dagger Function:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/functions-simple/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/functions-simple/python/main.py
+```
+
+:::note 
+
+**Type annotations**
+
+Even though the Python runtime doesn’t enforce [type annotations][typing] at runtime,
+it’s important to define them with Dagger Functions. The Python SDK needs the
+typing information at runtime to correctly report to the API. It can’t rely on
+[type inference][inference], which is only possible for external [static type
+checkers][type-checker].
+
+If a function doesn’t have a return type annotation, it’ll be declared as `None`,
+which translates to the [dagger.Void][void] type in the API:
+
+```python
+@function
+def hello(self):
+    return "Hello world!"
+
+# Error: cannot convert string to Void
+```
+
+It’s fine however, when no value actually needs to be returned:
+
+```python
+@function
+def hello(self):
+    ...
+    # no return
+```
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
+[typing]: https://docs.python.org/3/library/typing.html
+[inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
+[type-checker]: https://realpython.com/python-type-checking/#static-type-checking
+[void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
+:::
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/functions-simple/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call hello
+```
+
+The result will be:
+
+```shell
+Hello, world
+```
+
+Here's an example of a more complex Dagger Function, which calls a remote API method:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/functions-complex/go/main.go
+```
+
+:::note
+Notice that this function now includes context as input and error as return in the module's function signature.
+:::
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/functions-complex/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/functions-complex/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+:::note
+When using dagger call, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+:::
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get-user
+```
+
+The result will look something like this:
+
+```shell
+{
+  "title": "Mrs",
+  "first": "Beatrice",
+  "last": "Lavigne"
+}
+```
+
+#### Class methods
+
+Dagger Functions are implemented as [@dagger.function][@function] decorated
+methods, of a [@dagger.object_type][@object_type] decorated class.
+
+It's possible for a module to implement multiple classes (*object types*), but
+**the first one needs to have a name that matches the module's name**, in
+*PascalCase*. This object is sometimes referred to as the *main object*.
+
+For example, for a module initialized with `dagger init --name=my-module`,
+the main object needs to be named `MyModule`.
+
+
+## Arguments 
+
+Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
+
+Here's an example of modifying the previous Dagger Function to accept a string argument:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-string/go/main.go
+```
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-string/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-string/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get-user --gender=male
+```
+
+The result will look something like this:
+
+```shell
+{
+  "title": "Mr",
+  "first": "Hans-Werner",
+  "last": "Thielen"
+}
+```
+
+Here's an example of a Dagger Function that accepts a `Directory` as argument:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-directory/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-directory/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call tree --src=. --depth=1
+```
+
+The result will look like this:
+
+```shell
+.
+├── LICENSE
+├── dagger
+└── dagger.json
+
+2 directories, 2 files
+```
+
+You can also pass a remote Git reference, and the Dagger CLI will convert it to a `Directory` referencing the contents of that repository. Here is an example call that lists the source code for the Dagger CLI, from the `main` branch of the Dagger GitHub repository:
+
+```shell
+dagger call tree --src=https://github.com/dagger/dagger#main:sdk --depth=1
+```
+
+The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/sdk):
+
+```shell
+.
+├── CONTRIBUTING.md
+├── cue
+├── dotnet
+├── elixir
+├── go
+├── java
+├── php
+├── python
+├── rust
+└── typescript
+
+10 directories, 1 file
+```
+
+:::info
+When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
+:::
+
+### Optional arguments
+
+Function arguments can be marked as optional. In this case, the Dagger CLI will not display an error if the argument is omitted in the function call.
+
+Here's an example of a Dagger Function with an optional argument:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-optional/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-optional/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function, with the optional argument:
+
+```shell
+dagger call hello --name=John
+```
+
+The result will look like this:
+
+```shell
+Hello, John
+```
+
+Here is an example call for this Dagger Function, without the optional argument:
+
+```shell
+dagger call hello
+```
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+
+## Default values
+
+Function arguments can define a default value if no value is supplied for them.
+
+Here's an example of a Dagger Function with a default value for an argument:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-default/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-default/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-default/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function, without the required argument:
+
+```shell
+dagger call hello
+```
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+## Return values
+
+Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
+
+This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory with the source code as argument and return another directory containing just binaries or a container image with the binaries included.
+
+:::note 
+If a function doesn’t have a return type annotation, it’ll be translated to the [dagger.Void][void-type] type in the API.
+
+[void-type]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
+:::
+
+https://docs.dagger.io/api/reference/#definition-Void 
+
+Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/return-values-container/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/return-values-container/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/return-values-container/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call build --src=https://github.com/golang/example/#master:hello --os=linux --arch=amd64 terminal
+```
+
+This example chains two functions calls:
+- a call to `Build()`, which builds a Go application from a remote GitHub repository and returns a `Container` with the compiled binary;
+- a call to `Terminal()`, which opens an interactive terminal session with the `Container` returned by the previous function.
+
+The result will be an interactive terminal session with the built container, which you can use to validate the compiled Go binary:
+
+```
+/ # cd /usr/local/bin
+/usr/local/bin # ls
+hello
+/usr/local/bin # ./hello
+Hello, world!
+/usr/local/bin #
+```
+

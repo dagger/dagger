@@ -1,0 +1,6 @@
+{
+  "name": "hello-dagger",
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "v0.11.3"
+}

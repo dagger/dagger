@@ -17,14 +17,12 @@ import (
 )
 
 type DB struct {
+	PrimarySpan trace.SpanID
+	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
+
 	Traces   map[trace.TraceID]*Trace
 	Spans    map[trace.SpanID]*Span
 	Children map[trace.SpanID]map[trace.SpanID]struct{}
-
-	Logs        map[trace.SpanID]*Vterm
-	LogWidth    int
-	PrimarySpan trace.SpanID
-	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
 
 	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
@@ -34,13 +32,11 @@ type DB struct {
 
 func NewDB() *DB {
 	return &DB{
+		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
+
 		Traces:   make(map[trace.TraceID]*Trace),
 		Spans:    make(map[trace.SpanID]*Span),
 		Children: make(map[trace.SpanID]map[trace.SpanID]struct{}),
-
-		Logs:        make(map[trace.SpanID]*Vterm),
-		LogWidth:    -1,
-		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
 
 		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
@@ -58,13 +54,6 @@ func (db *DB) AllTraces() []*Trace {
 		return traces[i].Epoch.After(traces[j].Epoch)
 	})
 	return traces
-}
-
-func (db *DB) SetWidth(width int) {
-	db.LogWidth = width
-	for _, vt := range db.Logs {
-		vt.SetWidth(width)
-	}
 }
 
 var _ sdktrace.SpanExporter = (*DB)(nil)
@@ -103,15 +92,10 @@ func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) er
 	return nil
 }
 
-var _ sdklog.LogExporter = (*DB)(nil)
+var _ sdklog.LogExporter = (*prettyLogs)(nil)
 
 func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 	for _, log := range logs {
-		slog.Debug("exporting log", "span", log.SpanID, "body", log.Body().AsString())
-
-		// render vterm for TUI
-		_, _ = fmt.Fprint(db.spanLogs(log.SpanID), log.Body().AsString())
-
 		if log.SpanID == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[log.SpanID] = append(db.PrimaryLogs[log.SpanID], log)
@@ -122,18 +106,6 @@ func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
 
 func (db *DB) Shutdown(ctx context.Context) error {
 	return nil // noop
-}
-
-func (db *DB) spanLogs(id trace.SpanID) *Vterm {
-	term, found := db.Logs[id]
-	if !found {
-		term = NewVterm()
-		if db.LogWidth > -1 {
-			term.SetWidth(db.LogWidth)
-		}
-		db.Logs[id] = term
-	}
-	return term
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular
@@ -231,6 +203,9 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 		case telemetry.UIEncapsulateAttr:
 			spanData.Encapsulate = attr.Value.AsBool()
+
+		case telemetry.UIEncapsulatedAttr:
+			spanData.Encapsulated = attr.Value.AsBool()
 
 		case telemetry.UIInternalAttr:
 			spanData.Internal = attr.Value.AsBool()

@@ -3,7 +3,7 @@ import { dag, object, func, Service } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Starts and returns an HTTP service
+   * Start and return an HTTP service
    */
   @func()
   httpService(): Service {
@@ -18,7 +18,7 @@ class MyModule {
   }
 
   /**
-   * Sends a request to an HTTP service and returns the response
+   * Send a request to an HTTP service and return the response
    */
   @func()
   async get(): Promise<string> {

@@ -6,26 +6,31 @@ import (
 	"time"
 
 	"github.com/lmittmann/tint"
+	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type OtelWriter struct {
-	Ctx    context.Context
-	Logger log.Logger
-	Stream int
+type logProfileKey struct{}
+
+func WithLogProfile(ctx context.Context, profile termenv.Profile) context.Context {
+	return context.WithValue(ctx, logProfileKey{}, profile)
 }
 
 func ContextLogger(ctx context.Context, level slog.Level) *slog.Logger {
-	return PrettyLogger(ioctx.Stderr(ctx), level)
+	profile := termenv.Ascii
+	if v := ctx.Value(logProfileKey{}); v != nil {
+		profile = v.(termenv.Profile)
+	}
+	return PrettyLogger(ioctx.Stderr(ctx), profile, level)
 }
 
-func PrettyLogger(dest io.Writer, level slog.Level) *slog.Logger {
+func PrettyLogger(dest io.Writer, profile termenv.Profile, level slog.Level) *slog.Logger {
 	slogOpts := &tint.Options{
 		TimeFormat: time.TimeOnly,
-		NoColor:    false,
+		NoColor:    profile == termenv.Ascii,
 		Level:      level,
 	}
 	return slog.New(tint.NewHandler(dest, slogOpts))
@@ -38,12 +43,22 @@ const (
 )
 
 func GlobalLogger(ctx context.Context) *slog.Logger {
+	profile := termenv.Ascii
+	if v := ctx.Value(logProfileKey{}); v != nil {
+		profile = v.(termenv.Profile)
+	}
 	logW := &OtelWriter{
 		Ctx:    ctx,
 		Logger: Logger(GlobalLogs),
 		Stream: 2,
 	}
-	return PrettyLogger(logW, slog.LevelDebug)
+	return PrettyLogger(logW, profile, slog.LevelDebug)
+}
+
+type OtelWriter struct {
+	Ctx    context.Context
+	Logger log.Logger
+	Stream int
 }
 
 func WithStdioToOtel(ctx context.Context, name string) (context.Context, io.Writer, io.Writer) {

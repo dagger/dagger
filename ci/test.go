@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"runtime"
 
 	"github.com/moby/buildkit/identity"
 
@@ -26,19 +28,31 @@ func (t *Test) WithCache(config string) *Test {
 func (t *Test) All(
 	ctx context.Context,
 	// +optional
+	failfast bool,
+	// +optional
+	parallel int,
+	// +optional
+	timeout string,
+	// +optional
 	race bool,
 ) error {
-	return t.test(ctx, race, "", "./...")
+	return t.test(ctx, "", "./...", failfast, parallel, timeout, race)
 }
 
 // Run "important" engine tests
 func (t *Test) Important(
 	ctx context.Context,
 	// +optional
+	failfast bool,
+	// +optional
+	parallel int,
+	// +optional
+	timeout string,
+	// +optional
 	race bool,
 ) error {
 	// These tests give good basic coverage of functionality w/out having to run everything
-	return t.test(ctx, race, `^(TestModule|TestContainer)`, "./...")
+	return t.test(ctx, `^(TestModule|TestContainer)`, "./...", failfast, parallel, timeout, race)
 }
 
 // Run custom engine tests
@@ -49,16 +63,25 @@ func (t *Test) Custom(
 	// +default="./..."
 	pkg string,
 	// +optional
+	failfast bool,
+	// +optional
+	parallel int,
+	// +optional
+	timeout string,
+	// +optional
 	race bool,
 ) error {
-	return t.test(ctx, race, run, pkg)
+	return t.test(ctx, run, pkg, failfast, parallel, timeout, race)
 }
 
 func (t *Test) test(
 	ctx context.Context,
-	race bool,
 	testRegex string,
 	pkg string,
+	failfast bool,
+	parallel int,
+	timeout string,
+	race bool,
 ) error {
 	cgoEnabledEnv := "0"
 	args := []string{
@@ -66,17 +89,35 @@ func (t *Test) test(
 		"--format", "testname",
 		"--no-color=false",
 		"--jsonfile=./tests.log",
-		"--",
-		// go test flags
-		"-parallel=16",
-		"-count=1",
-		"-timeout=30m",
 	}
 
+	if failfast {
+		args = append(args, "--max-fails=1")
+	}
+
+	// All following are go test flags
+	args = append(args, "--")
+
+	// Default parallel to number of CPUs
+	if parallel == 0 {
+		parallel = runtime.NumCPU()
+	}
+	args = append(args, fmt.Sprintf("-parallel=%d", parallel))
+
+	// Default timeout to 30m
+	// No test suite should take more than 30 minutes to run
+	if timeout == "" {
+		timeout = "30m"
+	}
+	args = append(args, fmt.Sprintf("-timeout=%s", timeout))
+
 	if race {
-		args = append(args, "-race", "-timeout=1h")
+		args = append(args, "-race")
 		cgoEnabledEnv = "1"
 	}
+
+	// Disable test caching
+	args = append(args, "-count=1")
 
 	if testRegex != "" {
 		args = append(args, "-run", testRegex)

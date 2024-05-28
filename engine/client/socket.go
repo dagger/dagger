@@ -2,7 +2,7 @@ package client
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"net"
 	"net/url"
 
@@ -15,6 +15,8 @@ import (
 
 type SocketProvider struct {
 	EnableHostNetworkAccess bool
+	// optional, defaults to net.Dial if not set
+	Dialer func(network, addr string) (net.Conn, error)
 }
 
 func (p SocketProvider) Register(server *grpc.Server) {
@@ -67,15 +69,22 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid id: unsupported scheme %q", connURL.Scheme)
 	}
+
+	dialer := p.Dialer
+	if dialer == nil {
+		dialer = net.Dial
+	}
+
 	return (&socketProxy{
-		dial: func() (io.ReadWriteCloser, error) {
-			return net.Dial(network, addr)
-		},
+		network: network,
+		addr:    addr,
+		dialer:  dialer,
 	}).ForwardAgent(stream)
 }
 
 type socketProxy struct {
-	dial func() (io.ReadWriteCloser, error)
+	network, addr string
+	dialer        func(network, addr string) (net.Conn, error)
 }
 
 var _ sshforward.SSHServer = &socketProxy{}
@@ -85,10 +94,14 @@ func (p *socketProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgent
 }
 
 func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
-	conn, err := p.dial()
+	conn, err := p.dialer(p.network, p.addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("dialer failed: %w", err)
 	}
 
-	return sshforward.Copy(context.TODO(), conn, stream, nil)
+	err = sshforward.Copy(context.TODO(), conn, stream, nil)
+	if err != nil {
+		return fmt.Errorf("copy failed: %w", err)
+	}
+	return nil
 }
