@@ -21,7 +21,7 @@ class MyModule {
     excludeFile?: string,
   ): Container {
     let filteredSource = source
-    if (excludeDirectory != null) {
+    if (!excludeDirectory) {
       filteredSource = filteredSource.withoutDirectory(excludeDirectory)
     }
     if (excludeFile != null) {
