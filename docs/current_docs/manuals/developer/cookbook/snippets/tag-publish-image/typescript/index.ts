@@ -30,9 +30,10 @@ class MyModule {
       })
       .withRegistryAuth(registry, username, password)
 
-    for (var tag in tags) {
-      let a = await container
-        .publish(`${registry}/${username}/my-nginx:${tags[tag]}`)
+    for (let tag in tags) {
+      const a = await container.publish(
+        `${registry}/${username}/my-nginx:${tags[tag]}`,
+      )
       addr.push(a)
     }
     return addr
