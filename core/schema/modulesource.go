@@ -221,7 +221,7 @@ func parseRefString(ctx context.Context, bk *buildkit.Client, refString string) 
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
-	// Is present locally
+	// We do a stat in case the mod path github.com/username is a local directory
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
 	if err == nil {
 		if !parsed.hasVersion && stat.IsDir() {

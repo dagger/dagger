@@ -10,7 +10,7 @@ import (
 
 func TestOriginToPath(t *testing.T) {
 	// Define test cases for each parameter
-	schemes := []string{"ssh://git", "git@", "https://", ""}
+	schemes := []string{"ssh://git@", "git@", "https://", ""}
 	rootURLs := []string{"github.com/shykes/daggerverse", "github.com/shykes/daggerverse.git"}
 	paths := []string{"/foo/bar", ""}
 	versions := []string{"@v0.9.1", ""}
