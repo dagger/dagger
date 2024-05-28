@@ -24,7 +24,8 @@ class MyModule {
 
     const addr: string[] = []
 
-    const container = dag.container()
+    const container = dag
+      .container()
       .from("nginx:1.23-alpine")
       .withNewFile("/usr/share/nginx/html/index.html", {
         contents: "Hello from Dagger!",
@@ -32,7 +33,7 @@ class MyModule {
       })
       .withRegistryAuth(registry, username, password)
 
-    for (let tag in tags) {
+    for (const tag in tags) {
       const a = await container.publish(
         `${registry}/${username}/my-nginx:${tags[tag]}`,
       )
