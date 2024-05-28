@@ -32,8 +32,10 @@ func New(
 	sdkSourceDir *Directory,
 ) *PhpSdk {
 	if sdkSourceDir == nil {
-		sdkSourceDir = dag.
-			Directory()
+		sdkSourceDir = dag.Git("https://github.com/dagger/dagger.git").
+			Branch("main").
+			Tree().
+			Directory("sdk/php")
 	}
 
 	return &PhpSdk{
@@ -77,10 +79,12 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource /*, intr
 	print(name)
 	print(subPath)
 
-	ctr = ctr.WithMountedDirectory("/codegen", modSource.ContextDirectory()).
+	ctr = ctr.WithMountedDirectory("/codegen", sdk.SourceDir).
+		//WithEntrypoint([]string{"/bin/sh", "-c"}).
+		WithoutEntrypoint().
 		//WithWorkdir("/codegen/sdk/php").
 		WithExec([]string{
-			"ls -al /codegen",
+			"ls", "-al", "/codegen",
 		})
 	ctr.Stdout(ctx)
 	//WithNewFile("/codegen/schema.json", ContainerWithNewFileOpts{
