@@ -21,12 +21,15 @@ class MyModule {
     excludeFile?: string,
   ): Container {
     let filteredSource = source
+
     if (!excludeDirectory) {
       filteredSource = filteredSource.withoutDirectory(excludeDirectory)
     }
+
     if (!excludeFile) {
       filteredSource = filteredSource.withoutFile(excludeFile)
     }
+
     return dag.container().
       from("alpine:latest").
       withDirectory("/src", filteredSource)
