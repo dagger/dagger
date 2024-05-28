@@ -148,12 +148,56 @@ The following Dagger Function accepts a `File` argument representing the host fi
     dagger call \
       copy-file --f=/home/admin/archives.zip \
       directory --path=/src \
+      entries
+    ```
+
+### Copy a subset of a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container, using wildcard patterns to exclude specified sub-directories and files, and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/copy-filter-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/copy-filter-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/copy-filter-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Copy the current host directory to `/src` in the container, excluding the `dagger` sub-directory and the `dagger.json` file, and return the modified container:
+
+    ```shell
+    dagger call copy-directory-with-exclusions --source=. --exclude-directory=dagger --exclude-file=dagger.json
+    ```
+
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container, excluding all `*.md` files, and list the contents of the directory:
+
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude-file=*.md \
+      directory --path=/src \
+      entries
+    ```
 
 ## Builds
 
 ### Perform multi-stage build
 
-The following code listing performs a multi-stage build.
+The following Dagger Function performs a multi-stage build.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -186,7 +230,7 @@ dagger call build --src="https://github.com/golang/example#master:hello"
 
 ### Perform matrix build
 
-The following code listing performs a matrix build.
+The following Dagger Function performs a matrix build.
 
 <Tabs groupId="language">
 <TabItem value="Go">
