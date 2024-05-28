@@ -33,6 +33,20 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Repo: "https://github.com/golang/groupcache",
 			},
 		},
+		{
+			"github.com/dagger/dagger-test-modules/../..",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://github.com/dagger/dagger-test-modules",
+			},
+		},
+		{
+			"github.com/dagger/dagger-test-modules/../../",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://github.com/dagger/dagger-test-modules",
+			},
+		},
 		// Unicode letters are allowed in import paths.
 		// issue https://github.com/golang/go/issues/18660
 		{
@@ -93,6 +107,20 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.sr.ht/~jacqueline/tangara-fw",
+			},
+		},
+		{
+			"bitbucket.org/workspace/pkgname/../..",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname",
+			},
+		},
+		{
+			"bitbucket.org/workspace/pkgname/../../",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname",
 			},
 		},
 		{
