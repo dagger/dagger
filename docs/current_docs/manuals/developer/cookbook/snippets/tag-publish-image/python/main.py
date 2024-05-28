@@ -1,4 +1,4 @@
-from typing import Annotated, List
+from typing import Annotated
 
 import dagger
 from dagger import Doc, dag, function, object_type
@@ -8,10 +8,11 @@ from dagger import Doc, dag, function, object_type
 class MyModule:
     @function
     async def publish(
+        self,
         registry: Annotated[str, Doc("Registry address")],
         username: Annotated[str, Doc("Registry username")],
         password: Annotated[dagger.Secret, Doc("Registry password")],
-    ) -> List[str]:
+    ) -> list[str]:
         """Tag a container image multiple times and publish it to a private registry"""
         tags = ["latest", "1.0-alpine", "1.0", "1.0.0"]
         addr = []

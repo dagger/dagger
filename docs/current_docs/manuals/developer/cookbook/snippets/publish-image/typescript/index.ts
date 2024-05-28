@@ -20,7 +20,8 @@ class MyModule {
      */
     password: Secret,
   ): Promise<string> {
-    return await dag.container()
+    return await dag
+      .container()
       .from("nginx:1.23-alpine")
       .withNewFile("/usr/share/nginx/html/index.html", {
         contents: "Hello from Dagger!",

@@ -21,7 +21,7 @@ class MyModule {
     password: Secret,
   ): Promise<string[]> {
     const tags = ["latest", "1.0-alpine", "1.0", "1.0.0"]
-    let addr: string[] = [];
+    const addr: string[] = []
     const container = dag.container()
       .from("nginx:1.23-alpine")
       .withNewFile("/usr/share/nginx/html/index.html", {
