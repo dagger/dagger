@@ -8,7 +8,7 @@ jobs:
     uses: ./.github/workflows/_dagger_call.yml
     secrets: inherit
     with:
-      function: sdk python publish --tag="${{ github.ref_name }}" --pypi-repo=env:RELEASE_PYPI_REPO --pypi-token=env:RELEASE_PYPI_TOKEN
+      function: sdk python publish --tag="${{ github.ref_name }}" --pypi-repo="$RELEASE_PYPI_REPO" --pypi-token=env:RELEASE_PYPI_TOKEN
 
   notify:
     needs: publish
