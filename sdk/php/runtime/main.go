@@ -1,100 +1,144 @@
 // Runtime module for the PHP SDK
+// when done add php to core/schema/sdk.go:L93
 
 package main
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 )
 
 const (
 	DefaultImage          = "php:8.3-cli-alpine"
-	// TODO: figure out issue with Directory.Diff() "/" != "/src"
-	ModSourceDirPath      = "/"
-	RuntimeExecutablePath = "/"
+	ModSourceDirPath      = "/src"
+	RuntimeExecutablePath = "dagger"
 	GenDir                = "sdk"
-	GenPath               = "../generated"
-	SchemaPath            = "/schema.json"
-	LockFilePath          = "requirements.lock"
 )
 
 type PhpSdk struct {
-	SourceDir  *Directory
+	SourceDir     *Directory
 	RequiredPaths []string
-	Container *Container
+	Container     *Container
 }
 
 func New(
 	// Directory with the PHP SDK source code.
 	// +optional
-	sourceDir *Directory,
+	sdkSourceDir *Directory,
 ) *PhpSdk {
-	if sourceDir == nil {
-		sourceDir = dag.
-			Directory().
-			WithNewFile("index.php", "<?php\n echo 'hi';")
+	if sdkSourceDir == nil {
+		sdkSourceDir = dag.Git("https://github.com/carnage/dagger.git").
+			Branch("add-php-runtime").
+			Tree().
+			Directory("sdk/php")
 	}
-	
+
 	return &PhpSdk{
-		SourceDir:  sourceDir,
-
+		SourceDir:     sdkSourceDir,
 		RequiredPaths: []string{},
-
-		/**
-		 *  dag is a *Client Object
-		 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Client
-		 * dag.Container() creates a "scratch container" (Container Object)
-		 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Client.Container
-		 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Container
-		 * Container.From() initialises the Container from a pulled base image
-		 */
-		Container: dag.Container().From(DefaultImage),
+		Container:     dag.Container().From(DefaultImage),
 	}
 }
 
-func (sdk *PhpSdk) Codegen() (*GeneratedCode, error) {
-
-	/**
-	 * returns the container with a directory mounted at the given path
-	 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Container.WithMountedDirectory
-	 */ 
-	ctr := sdk.Container.WithMountedDirectory(ModSourceDirPath, sdk.SourceDir)
-	//		WithMountedDirectory(RuntimeExecutablePath, dag.CurrentModule().Source()).
-	//	WithMountedDirectory(GenDir, dag.CurrentModule().Source().Directory(GenPath))
-	
-
-	// ctr = ctr.WithMountedDirectory("/codegen", sdk.SourceDir.Directory("src")).
-	//	WithMountedFile("/")
+func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
+	ctr, err := sdk.CodegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 
 	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
-			WithVCSGeneratedPaths([]string{GenDir + "/**"}).
-			WithVCSIgnoredPaths([]string{GenDir}),
+			WithVCSGeneratedPaths([]string{"/codegen/generated" + "/**"}).
+			WithVCSIgnoredPaths([]string{"/codegen/generated"}),
 		nil
 }
 
-// Container for executing the PHP module runtime
-func (sdk *PhpSdk) ModuleRuntime(
-	ctx context.Context,
-	modSource *ModuleSource,
-	introspectionJSON string,
-) (*Container, error) {
+func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
 	ctr := sdk.Container
 
-	return ctr.WithEntrypoint([]string{RuntimeExecutablePath}), nil
+	subPath, err := modSource.SourceSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %w", err)
+	}
+
+	/**
+	 * Mounts the PHP SDK code,
+	 * Installs composer into the container
+	 * Runs composer install in the codegen directory
+	 * Runs codegen using the schema json provided by the dagger engine
+	 */
+	ctr = ctr.
+		WithMountedDirectory("/codegen", sdk.SourceDir).
+		WithoutEntrypoint().
+		WithWorkdir("/codegen").
+		WithExec([]string{
+			"./install-composer.sh",
+		}).
+		WithExec([]string{
+			"php", "composer.phar", "install",
+		}).
+		WithNewFile("schema.json", ContainerWithNewFileOpts{
+			Contents: introspectionJSON,
+		}).
+		WithExec([]string{
+			"./codegen", "dagger:codegen", "--schema-file", "schema.json",
+		})
+
+	/**
+	 * Mounts the directory for the module we are generating for
+	 * Copies the generated code and rest of the sdk into the module directory under the sdk path
+	 * Runs the init template script for initialising a new module (this is a no-op if a composer.json already exists)
+	 */
+	ctr = ctr.
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(filepath.Join(ModSourceDirPath, subPath)).
+		WithDirectory(GenDir, ctr.Directory("/codegen"), ContainerWithDirectoryOpts{
+			Exclude: []string{
+				"codegen",
+				"runtime",
+				"docker",
+				"docker-compose.yml",
+				".changes",
+				".changie.yaml",
+				"vendor",
+				"tests",
+				"phpunit.xml.dist",
+				"psalm.xml",
+				".php-cs-fixer.dist.php",
+				"install-composer.sh",
+				"composer.phar",
+				"composer.lock",
+				"schema.json",
+			},
+		}).
+		WithExec([]string{
+			"/codegen/init-template.sh", filepath.Join(ModSourceDirPath, subPath),
+		}).
+		WithFile("./install-composer.sh", ctr.File("/codegen/install-composer.sh"))
+
+	return ctr, nil
 }
 
+func (sdk *PhpSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+	subPath, err := modSource.SourceSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %w", err)
+	}
 
+	ctr, err := sdk.CodegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
 
-// // Returns a container that echoes whatever string argument is provided
-// func (m *PhpSdk) ContainerEcho(stringArg string) *Container {
-//	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
-// }
-//
-// // Returns lines that match a pattern in the files of the provided Directory
-// func (m *PhpSdk) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
-//	return dag.Container().
-//		From("alpine:latest").
-//		WithMountedDirectory("/mnt", directoryArg).
-//		WithWorkdir("/mnt").
-//		WithExec([]string{"grep", "-R", pattern, "."}).
-//		Stdout(ctx)
-// }
+	ctr = ctr.
+		WithExec([]string{
+			"./install-composer.sh",
+		}).
+		WithExec([]string{
+			"php", "composer.phar", "install",
+		})
+
+	filepath.Join(ModSourceDirPath, subPath, RuntimeExecutablePath)
+
+	return ctr.WithEntrypoint([]string{filepath.Join(ModSourceDirPath, subPath, "dagger")}), nil
+}
