@@ -8,9 +8,7 @@ class MyModule {
     return dir
           .dockerBuild({
             dockerfile: "Dockerfile",
-            buildArgs: [
-              {name: "gh-secret", value: secretName}
-            ],
+            buildArgs: [{ name: "gh-secret", value: secretName }],
             secrets: [secret],
           })
   }
