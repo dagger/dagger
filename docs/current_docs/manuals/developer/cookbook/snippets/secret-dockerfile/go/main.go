@@ -7,13 +7,13 @@ import (
 
 type MyModule struct{}
 
-func (m *MyModule) Build(ctx context.Context, dir *Directory, secret *Secret) (*Container, error) {
+func (m *MyModule) Build(ctx context.Context, source *Directory, secret *Secret) (*Container, error) {
 	secretName, err := secret.Name(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return dir.
+	return source.
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Dockerfile: "Dockerfile",
 			BuildArgs: []BuildArg{
