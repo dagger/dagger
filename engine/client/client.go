@@ -240,6 +240,12 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "connecting to engine")
 	defer telemetry.End(span, func() error { return rerr })
 
+	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
+	if err != nil {
+		return fmt.Errorf("new client: %w", err)
+	}
+	c.bkClient = bkClient
+
 	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
 		// Open a separate connection for telemetry.
 		telemetryConn, err := grpc.DialContext(c.internalCtx, remote.String(),
@@ -276,13 +282,6 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	}); err != nil {
 		return fmt.Errorf("attach to telemetry: %w", err)
 	}
-
-	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
-	if err != nil {
-		return fmt.Errorf("new client: %w", err)
-	}
-
-	c.bkClient = bkClient
 
 	if c.EngineCallback != nil {
 		c.EngineCallback(bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
