@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -1075,6 +1076,62 @@ type functionProvider interface {
 	IsCore() bool
 }
 
+func HasAvailableFunctions(o functionProvider) bool {
+	if o == nil {
+		return false
+	}
+	for _, fn := range o.GetFunctions() {
+		if !fn.IsUnsupported() {
+			return true
+		}
+	}
+	return false
+}
+
+// skipLeaves is a map of provider names to function names that should be skipped
+// when looking for leaf functions.
+var skipLeaves = map[string][]string{
+	"Container": {
+		// imageRef should only be requested right after a `from`, and that's
+		// hard to check for here.
+		"imageRef",
+	},
+}
+
+// GetLeafFunctions returns the leaf functions of a function provider, which are
+// functions that have no arguments and return a scalar or list of scalars.
+//
+// Functions that return an ID are excluded since the CLI can't handle them
+// as input arguments yet, so they'd add noise when listing an object's leaves.
+func GetLeafFunctions(fp functionProvider) []*modFunction {
+	fns := fp.GetFunctions()
+	r := make([]*modFunction, 0, len(fns))
+
+	for _, fn := range fns {
+		kind := fn.ReturnType.Kind
+		if kind == dagger.ListKind {
+			kind = fn.ReturnType.AsList.ElementTypeDef.Kind
+		}
+		switch kind {
+		case dagger.ObjectKind, dagger.InterfaceKind, dagger.VoidKind:
+			continue
+		case dagger.ScalarKind:
+			// FIXME: ID types are coming from TypeDef with the wrong case ("Id")
+			if fn.ReturnType.AsScalar.Name == fmt.Sprintf("%sId", fp.ProviderName()) {
+				continue
+			}
+		}
+		if names, ok := skipLeaves[fp.ProviderName()]; ok && slices.Contains(names, fn.Name) {
+			continue
+		}
+		if fn.HasRequiredArgs() {
+			continue
+		}
+		r = append(r, fn)
+	}
+	return r
+}
+
 func GetFunction(o functionProvider, name string) (*modFunction, error) {
 	for _, fn := range o.GetFunctions() {
 		if fn.Name == name || fn.CmdName() == name {
@@ -1123,9 +1180,10 @@ func (o *modObject) IsCore() bool {
 	return o.SourceModuleName == ""
 }
 
-// GetStateFunctions returns the object's fields as function definitions.
-func (o *modObject) GetStateFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Fields))
+// GetFunctions returns the object's function definitions including the fields,
+// which are treated as functions with no arguments.
+func (o *modObject) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
 	for _, f := range o.Fields {
 		fns = append(fns, &modFunction{
 			Name:        f.Name,
@@ -1133,14 +1191,6 @@ func (o *modObject) GetStateFunctions() []*modFunction {
 			ReturnType:  f.TypeDef,
 		})
 	}
-	return fns
-}
-
-// GetFunctions returns the object's function definitions including the fields,
-// which are treated as functions with no arguments.
-func (o *modObject) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
-	fns = append(fns, o.GetStateFunctions()...)
 	return append(fns, o.Functions...)
 }
 
@@ -1208,6 +1258,15 @@ func (f *modFunction) CmdName() string {
 		f.cmdName = cliName(f.Name)
 	}
 	return f.cmdName
+}
+
+func (f *modFunction) HasRequiredArgs() bool {
+	for _, arg := range f.Args {
+		if arg.IsRequired() {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *modFunction) SupportedArgs() []*modFunctionArg {
