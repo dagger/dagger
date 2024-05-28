@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	//"path/filepath"
 )
 
@@ -32,8 +33,8 @@ func New(
 	sdkSourceDir *Directory,
 ) *PhpSdk {
 	if sdkSourceDir == nil {
-		sdkSourceDir = dag.Git("https://github.com/dagger/dagger.git").
-			Branch("main").
+		sdkSourceDir = dag.Git("https://github.com/carnage/dagger.git").
+			Branch("add-php-runtime").
 			Tree().
 			Directory("sdk/php")
 	}
@@ -55,7 +56,8 @@ func New(
 	}
 }
 
-func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource /*, introspectionJSON string*/) (*GeneratedCode, error) {
+// func (sdk *PhpSdk) Codegen(ctx context.Context) (string, error) { /*modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {*/
+func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
 
 	/**
 	 * returns the container with a directory mounted at the given path
@@ -80,28 +82,34 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource /*, intr
 	print(subPath)
 
 	ctr = ctr.WithMountedDirectory("/codegen", sdk.SourceDir).
-		//WithEntrypoint([]string{"/bin/sh", "-c"}).
 		WithoutEntrypoint().
-		//WithWorkdir("/codegen/sdk/php").
+		WithWorkdir("/codegen").
+		WithExec([]string{"chmod", "+x", "./install-composer.sh"}).
 		WithExec([]string{
-			"ls", "-al", "/codegen",
+			"./install-composer.sh",
+		}).
+		WithExec([]string{
+			"php", "composer.phar", "install",
+		}).
+		WithNewFile("/codegen/schema.json", ContainerWithNewFileOpts{
+			Contents: introspectionJSON,
+		}).
+		WithExec([]string{
+			"codegen", "--schema-file=/codegen/schema.json",
 		})
-	ctr.Stdout(ctx)
-	//WithNewFile("/codegen/schema.json", ContainerWithNewFileOpts{
-	//	Contents: introspectionJSON,
-	//}).
-	//WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-	//WithWorkdir(filepath.Join(ModSourceDirPath, subPath))).
-	//WithDirectory(GenDir, sdk.SourceDir, ContainerWithDirectoryOpts{
-	//	Exclude: []string{"codegen", "runtime"},
-	//})
-	//	WithMountedFile("/")
 
+	ctr = ctr.WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(filepath.Join(ModSourceDirPath, subPath)).
+		WithDirectory(GenDir, ctr.Directory("/codegen"), ContainerWithDirectoryOpts{
+			Exclude: []string{"codegen", "runtime", "docker", "docker-compose.yml", ".changes", ".changie.yaml"},
+		})
+	//	WithMountedFile("/")
+	//return ctr.Stdout(ctx)
 	//ctr := sdk.Container.WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory("."))
 
 	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
-			WithVCSGeneratedPaths([]string{GenDir + "/**"}).
-			WithVCSIgnoredPaths([]string{GenDir}),
+			WithVCSGeneratedPaths([]string{"/codegen/generated" + "/**"}).
+			WithVCSIgnoredPaths([]string{"/codegen/generated"}),
 		nil
 }
 
