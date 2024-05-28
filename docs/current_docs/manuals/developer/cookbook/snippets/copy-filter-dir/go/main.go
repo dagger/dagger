@@ -6,10 +6,22 @@ import (
 
 type MyModule struct{}
 
-// Returns a container with a specified directory and an additional file
-func (m *MyModule) ModifyDirectory(ctx context.Context, d *Directory) *Container {
+// Return a container with a filtered directory
+func (m *MyModule) CopyDirectoryWithExclusions(
+	ctx context.Context,
+	// Source directory
+	source *Directory,
+	// Directory exclusion pattern
+	// +optional
+	excludeDirectoryPattern string,
+	// +optional
+	// File exclusion pattern
+	excludeFilePattern string,
+) *Container {
+	filteredSource := source.
+		WithoutDirectory(excludeDirectoryPattern).
+		WithoutFile(excludeFilePattern)
 	return dag.Container().
 		From("alpine:latest").
-		WithDirectory("/src", d).
-		WithExec([]string{"/bin/sh", "-c", `echo foo > /src/foo`})
+		WithDirectory("/src", filteredSource)
 }

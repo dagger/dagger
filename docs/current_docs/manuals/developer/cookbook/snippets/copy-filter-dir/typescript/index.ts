@@ -3,14 +3,32 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Returns a container with a specified directory and an additional file
+   * Return a container with a filtered directory
    */
   @func()
-  modifyDirectory(d: Directory): Container {
-    return dag
-      .container()
-      .from("alpine:latest")
-      .withDirectory("/src", d)
-      .withExec(["/bin/sh", "-c", "`echo foo > /src/foo`"])
+  copyDirectoryWithExclusions(
+    /**
+     * Source directory
+     */
+    source: Directory,
+    /**
+     * Directory exclusion pattern
+     */
+    excludeDirectory?: string,
+    /**
+     * File exclusion pattern
+     */
+    excludeFile?: string,
+  ): Container {
+    let filteredSource = source
+    if (excludeDirectory != null) {
+      filteredSource = filteredSource.withoutDirectory(excludeDirectory)
+    }
+    if (excludeFile != null) {
+      filteredSource = filteredSource.withoutFile(excludeFile)
+    }
+    return dag.container().
+      from("alpine:latest").
+      withDirectory("/src", filteredSource)
   }
 }
