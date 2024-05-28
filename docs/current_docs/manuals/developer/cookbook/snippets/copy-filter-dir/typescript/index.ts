@@ -24,7 +24,7 @@ class MyModule {
     if (!excludeDirectory) {
       filteredSource = filteredSource.withoutDirectory(excludeDirectory)
     }
-    if (excludeFile != null) {
+    if (!excludeFile) {
       filteredSource = filteredSource.withoutFile(excludeFile)
     }
     return dag.container().
