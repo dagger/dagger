@@ -7,18 +7,13 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	//"path/filepath"
 )
 
 const (
-	DefaultImage = "php:8.3-cli-alpine"
-	// TODO: figure out issue with Directory.Diff() "/" != "/src"
+	DefaultImage          = "php:8.3-cli-alpine"
 	ModSourceDirPath      = "/src"
-	RuntimeExecutablePath = "/"
+	RuntimeExecutablePath = "dagger"
 	GenDir                = "sdk"
-	GenPath               = "../generated"
-	SchemaPath            = "/schema.json"
-	LockFilePath          = "requirements.lock"
 )
 
 type PhpSdk struct {
@@ -40,48 +35,40 @@ func New(
 	}
 
 	return &PhpSdk{
-		SourceDir: sdkSourceDir,
-
+		SourceDir:     sdkSourceDir,
 		RequiredPaths: []string{},
-
-		/**
-		 *  dag is a *Client Object
-		 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Client
-		 * dag.Container() creates a "scratch container" (Container Object)
-		 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Client.Container
-		 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Container
-		 * Container.From() initialises the Container from a pulled base image
-		 */
-		Container: dag.Container().From(DefaultImage),
+		Container:     dag.Container().From(DefaultImage),
 	}
 }
 
-// func (sdk *PhpSdk) Codegen(ctx context.Context) (string, error) { /*modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {*/
 func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
-
-	/**
-	 * returns the container with a directory mounted at the given path
-	 * https://pkg.go.dev/dagger.io/dagger@v0.11.4#Container.WithMountedDirectory
-	 */
-	ctr := sdk.Container
-	//.WithMountedDirectory(ModSourceDirPath, sdk.SourceDir)
-	//WithMountedDirectory(RuntimeExecutablePath, dag.CurrentModule().Source()).
-	//WithMountedDirectory(GenDir, dag.CurrentModule().Source().Directory(GenPath))
-
-	name, err := modSource.ModuleOriginalName(ctx)
+	ctr, err := sdk.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %w", err)
+		return nil, err
 	}
+
+	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
+			WithVCSGeneratedPaths([]string{"/codegen/generated" + "/**"}).
+			WithVCSIgnoredPaths([]string{"/codegen/generated"}),
+		nil
+}
+
+func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+	ctr := sdk.Container
 
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
-	print(name)
-	print(subPath)
-
-	ctr = ctr.WithMountedDirectory("/codegen", sdk.SourceDir).
+	/**
+	 * Mounts the PHP SDK code,
+	 * Installs composer into the container
+	 * Runs composer install in the codegen directory
+	 * Runs codegen using the schema json provided by the dagger engine
+	 */
+	ctr = ctr.
+		WithMountedDirectory("/codegen", sdk.SourceDir).
 		WithoutEntrypoint().
 		WithWorkdir("/codegen").
 		WithExec([]string{
@@ -96,9 +83,14 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introsp
 		WithExec([]string{
 			"./codegen", "dagger:codegen", "--schema-file", "schema.json",
 		})
-	ctr.Stdout(ctx)
 
-	ctr = ctr.WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+	/**
+	 * Mounts the directory for the module we are generating for
+	 * Copies the generated code and rest of the sdk into the module directory under the sdk path
+	 * Runs the init template script for initialising a new module (this is a no-op if a composer.json already exists)
+	 */
+	ctr = ctr.
+		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(filepath.Join(ModSourceDirPath, subPath)).
 		WithDirectory(GenDir, ctr.Directory("/codegen"), ContainerWithDirectoryOpts{
 			Exclude: []string{
@@ -121,36 +113,32 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introsp
 		}).
 		WithExec([]string{
 			"/codegen/init-template.sh", filepath.Join(ModSourceDirPath, subPath),
+		}).
+		WithFile("./install-composer.sh", ctr.File("/codegen/install-composer.sh"))
+
+	return ctr, nil
+}
+
+func (sdk *PhpSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+	subPath, err := modSource.SourceSubpath(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %w", err)
+	}
+
+	ctr, err := sdk.CodegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr = ctr.
+		WithExec([]string{
+			"./install-composer.sh",
+		}).
+		WithExec([]string{
+			"php", "composer.phar", "install",
 		})
 
-	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
-			WithVCSGeneratedPaths([]string{"/codegen/generated" + "/**"}).
-			WithVCSIgnoredPaths([]string{"/codegen/generated"}),
-		nil
+	filepath.Join(ModSourceDirPath, subPath, RuntimeExecutablePath)
+
+	return ctr.WithEntrypoint([]string{filepath.Join(ModSourceDirPath, subPath, "dagger")}), nil
 }
-
-// Container for executing the PHP module runtime
-func (sdk *PhpSdk) ModuleRuntime(
-	ctx context.Context,
-	modSource *ModuleSource,
-	introspectionJSON string,
-) (*Container, error) {
-	ctr := sdk.Container
-
-	return ctr.WithEntrypoint([]string{RuntimeExecutablePath}), nil
-}
-
-// // Returns a container that echoes whatever string argument is provided
-// func (m *PhpSdk) ContainerEcho(stringArg string) *Container {
-//	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
-// }
-//
-// // Returns lines that match a pattern in the files of the provided Directory
-// func (m *PhpSdk) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
-//	return dag.Container().
-//		From("alpine:latest").
-//		WithMountedDirectory("/mnt", directoryArg).
-//		WithWorkdir("/mnt").
-//		WithExec([]string{"grep", "-R", pattern, "."}).
-//		Stdout(ctx)
-// }
