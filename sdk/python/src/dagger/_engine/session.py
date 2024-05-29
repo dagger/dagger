@@ -44,8 +44,12 @@ class Pclose(contextlib.AbstractContextManager):
     def __exit__(self, exc_type, exc_value, traceback):
         # Kill the child process by closing stdin, not via SIGKILL, so it has
         # a chance to drain logs.
-        assert self.proc.stdin
-        self.proc.stdin.close()
+        try:
+            if self.proc.stdin:
+                self.proc.stdin.close()
+        except AttributeError:
+            # FakeProcess doesn't have a stdin attribute (tests)
+            self.proc.terminate()
 
         try:
             self._wait()
