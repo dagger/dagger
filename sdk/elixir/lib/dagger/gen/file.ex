@@ -21,7 +21,7 @@ defmodule Dagger.File do
 
   @doc "Writes the file to a file path on the host."
   @spec export(t(), String.t(), [{:allow_parent_dir_path, boolean() | nil}]) ::
-          {:ok, boolean()} | {:error, term()}
+          {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = file, path, optional_args \\ []) do
     selection =
       file.selection

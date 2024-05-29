@@ -364,7 +364,6 @@ func (s *containerSchema) Install() {
 		dagql.Func("export", s.export).
 			Impure("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
-				`Return true on success.`,
 				`It can also export platform variants.`).
 			ArgDoc("path",
 				`Host's destination path (e.g., "./tarball").`,
@@ -1207,22 +1206,27 @@ type containerExportArgs struct {
 	MediaTypes        core.ImageMediaTypes `default:"OCIMediaTypes"`
 }
 
-func (s *containerSchema) export(ctx context.Context, parent *core.Container, args containerExportArgs) (dagql.Boolean, error) {
+func (s *containerSchema) export(ctx context.Context, parent *core.Container, args containerExportArgs) (dagql.String, error) {
 	variants, err := dagql.LoadIDs(ctx, s.srv, args.PlatformVariants)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	if err := parent.Export(
+	err = parent.Export(
 		ctx,
 		args.Path,
 		variants,
 		args.ForcedCompression.Value,
 		args.MediaTypes,
-	); err != nil {
-		return false, err
+	)
+	if err != nil {
+		return "", err
 	}
-
-	return true, nil
+	bk := parent.Query.Buildkit
+	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(stat.Path), err
 }
 
 type containerAsTarballArgs struct {

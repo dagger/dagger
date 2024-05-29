@@ -600,11 +600,9 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
-    ) -> bool:
+    ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
         the host.
-
-        Return true on success.
 
         It can also export platform variants.
 
@@ -632,8 +630,10 @@ class Container(Type):
 
         Returns
         -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
 
         Raises
         ------
@@ -652,7 +652,7 @@ class Container(Type):
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(bool)
+        return await _ctx.execute(str)
 
     async def exposed_ports(self) -> list["Port"]:
         """Retrieves the list of exposed ports.
@@ -2206,7 +2206,7 @@ class Directory(Type):
         path: str,
         *,
         wipe: bool | None = False,
-    ) -> bool:
+    ) -> str:
         """Writes the contents of the directory to a path on the host.
 
         Parameters
@@ -2224,8 +2224,10 @@ class Directory(Type):
 
         Returns
         -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
 
         Raises
         ------
@@ -2239,7 +2241,7 @@ class Directory(Type):
             Arg("wipe", wipe, False),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(bool)
+        return await _ctx.execute(str)
 
     def file(self, path: str) -> "File":
         """Retrieves a file at the given path.
@@ -2948,7 +2950,7 @@ class File(Type):
         path: str,
         *,
         allow_parent_dir_path: bool | None = False,
-    ) -> bool:
+    ) -> str:
         """Writes the file to a file path on the host.
 
         Parameters
@@ -2962,8 +2964,10 @@ class File(Type):
 
         Returns
         -------
-        bool
-            The `Boolean` scalar type represents `true` or `false`.
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
 
         Raises
         ------
@@ -2977,7 +2981,7 @@ class File(Type):
             Arg("allowParentDirPath", allow_parent_dir_path, False),
         ]
         _ctx = self._select("export", _args)
-        return await _ctx.execute(bool)
+        return await _ctx.execute(str)
 
     async def id(self) -> FileID:
         """A unique identifier for this File.

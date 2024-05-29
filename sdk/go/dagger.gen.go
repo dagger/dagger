@@ -312,7 +312,7 @@ type Container struct {
 	query *querybuilder.Selection
 
 	envVariable *string
-	export      *bool
+	export      *string
 	id          *ContainerID
 	imageRef    *string
 	label       *string
@@ -558,10 +558,8 @@ type ContainerExportOpts struct {
 
 // Writes the container as an OCI tarball to the destination file path on the host.
 //
-// Return true on success.
-//
 // It can also export platform variants.
-func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
+func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -582,7 +580,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	}
 	q = q.Arg("path", path)
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1849,7 +1847,7 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 type Directory struct {
 	query *querybuilder.Selection
 
-	export *bool
+	export *string
 	id     *DirectoryID
 	sync   *DirectoryID
 }
@@ -1990,7 +1988,7 @@ type DirectoryExportOpts struct {
 }
 
 // Writes the contents of the directory to a path on the host.
-func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (bool, error) {
+func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -2003,7 +2001,7 @@ func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryEx
 	}
 	q = q.Arg("path", path)
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2685,7 +2683,7 @@ type File struct {
 	query *querybuilder.Selection
 
 	contents *string
-	export   *bool
+	export   *string
 	id       *FileID
 	name     *string
 	size     *int
@@ -2726,7 +2724,7 @@ type FileExportOpts struct {
 }
 
 // Writes the file to a file path on the host.
-func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (bool, error) {
+func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -2739,7 +2737,7 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	}
 	q = q.Arg("path", path)
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
