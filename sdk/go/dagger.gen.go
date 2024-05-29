@@ -2565,6 +2565,16 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 	return r, q.Execute(ctx)
 }
 
+// Retrieves this file with its name set to the given name.
+func (r *File) WithName(name string) *File {
+	q := r.query.Select("withName")
+	q = q.Arg("name", name)
+
+	return &File{
+		query: q,
+	}
+}
+
 // Retrieves this file with its created/modified timestamps set to the given time.
 func (r *File) WithTimestamps(timestamp int) *File {
 	q := r.query.Select("withTimestamps")

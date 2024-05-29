@@ -72,6 +72,16 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this file with its name set to the given name.
+     */
+    public function withName(string $name): File
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withName');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this file with its created/modified timestamps set to the given time.
      */
     public function withTimestamps(int $timestamp): File

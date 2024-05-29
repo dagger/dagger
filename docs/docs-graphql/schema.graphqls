@@ -1228,6 +1228,12 @@ type File {
   """Force evaluation in the engine."""
   sync: FileID!
 
+  """Retrieves this file with its name set to the given name."""
+  withName(
+    """Name to set file to."""
+    name: String!
+  ): File!
+
   """
   Retrieves this file with its created/modified timestamps set to the given time.
   """

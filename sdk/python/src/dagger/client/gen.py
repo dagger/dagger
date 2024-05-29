@@ -2827,6 +2827,20 @@ class File(Type):
     def __await__(self):
         return self.sync().__await__()
 
+    def with_name(self, name: str) -> Self:
+        """Retrieves this file with its name set to the given name.
+
+        Parameters
+        ----------
+        name:
+            Name to set file to.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return File(_ctx)
+
     def with_timestamps(self, timestamp: int) -> Self:
         """Retrieves this file with its created/modified timestamps set to the
         given time.
