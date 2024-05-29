@@ -18,7 +18,6 @@ linters:
     - misspell
     - nakedret
     - nolintlint
-    - prealloc
     - revive
     - rowserrcheck
     - staticcheck
