@@ -1676,6 +1676,76 @@ func TestServiceContainerToHost(t *testing.T) {
 	})
 }
 
+func TestServiceSearchDomainAlwaysSet(t *testing.T) {
+	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
+	// set search domains in those execs
+
+	// NOT parallel since this requires setting env vars unfortunately
+	// t.Parallel()
+
+	// FIXME: This test seems particularly prone to telemetry flushing hanging, so use
+	// a timeout for now until that is fixed.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	t.Cleanup(cancel)
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(newTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+
+	resolvContents, err := c.Container().From("alpine").
+		WithExec([]string{"cat", "/etc/resolv.conf"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	var newResolvContents string
+	for _, line := range strings.Split(resolvContents, "\n") {
+		if strings.HasPrefix(line, "search") {
+			continue
+		}
+		newResolvContents += line + "\n"
+	}
+
+	newResolvConf := c.Directory().
+		WithNewFile("resolv.conf", newResolvContents, dagger.DirectoryWithNewFileOpts{Permissions: 0644}).
+		File("resolv.conf")
+
+	devEngine := devEngineContainer(c, 120, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithMountedFile("/etc/resolv.conf", newResolvConf)
+	}).AsService()
+	t.Cleanup(func() {
+		devEngine.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+	})
+
+	hostSvc, err := c.Host().Tunnel(devEngine, dagger.HostTunnelOpts{
+		Ports: []dagger.PortForward{{
+			Backend:  1234,
+			Frontend: 32132,
+		}},
+	}).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		hostSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+	})
+
+	t.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://127.0.0.1:32132")
+	c2, err := dagger.Connect(ctx, dagger.WithLogOutput(newTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { c2.Close() })
+
+	resolvContents2, err := c2.Container().From("alpine").
+		WithExec([]string{"cat", "/etc/resolv.conf"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	var found bool
+	for _, line := range strings.Split(resolvContents2, "\n") {
+		if strings.HasPrefix(line, "search") {
+			found = true
+			require.Regexp(t, `search [a-z0-9]+\.dagger\.local`, line)
+		}
+	}
+	require.True(t, found)
+}
+
 func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Service, string) {
 	t.Helper()
 

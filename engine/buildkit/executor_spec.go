@@ -192,6 +192,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 
 	scanner := bufio.NewScanner(baseResolvFile)
+	var replaced bool
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "search") {
@@ -205,9 +206,15 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		if _, err := fmt.Fprintln(ctrResolvFile, "search", strings.Join(domains, " ")); err != nil {
 			return fmt.Errorf("write resolv.conf: %w", err)
 		}
+		replaced = true
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read resolv.conf: %w", err)
+	}
+	if !replaced {
+		if _, err := fmt.Fprintln(ctrResolvFile, "search", extraSearchDomain); err != nil {
+			return fmt.Errorf("write resolv.conf: %w", err)
+		}
 	}
 
 	if len(w.execMD.HostAliases) == 0 {
