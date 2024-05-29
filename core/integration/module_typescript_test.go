@@ -945,7 +945,7 @@ import { field, func, object } from "@dagger.io/dagger"
 @object()
 class Test {
   @func() 
-	test() {
+  test() {
     return new PModule(new PCheck(4))
   }
 }
@@ -953,7 +953,7 @@ class Test {
 @object()
 class PCheck {
   @field() 
-	value: number
+  value: number
 
   constructor(value: number) {
     this.value = value
@@ -967,13 +967,13 @@ class PCheck {
 @object()
 class PModule {
   @field() 
-	value: PCheck
+  value: PCheck
   
-	constructor(value: PCheck) {
+  constructor(value: PCheck) {
     this.value = value
   }
   @func() 
-	print() {
+  print() {
     return this.value.doubled ?? 0
   }
 }
