@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/util/progress/logs"
 	"github.com/pkg/errors"
@@ -109,6 +110,15 @@ func (cli *gitCLI) run(ctx context.Context, args ...string) (_ *bytes.Buffer, er
 			"HOME=/dev/null",        // Disable reading from user gitconfig.
 			"LC_ALL=C",              // Ensure consistent output.
 		}
+
+		// propagate proxy settings from the engine container to the git command if
+		// they are set
+		for _, proxyEnvName := range engine.ProxyEnvNames {
+			if proxyVal, ok := os.LookupEnv(proxyEnvName); ok {
+				cmd.Env = append(cmd.Env, proxyEnvName+"="+proxyVal)
+			}
+		}
+
 		if cli.sshAuthSock != "" {
 			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+cli.sshAuthSock)
 		}

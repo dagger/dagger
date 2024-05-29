@@ -807,13 +807,7 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 }
 
 func (w *Worker) setProxyEnvs(_ context.Context, state *execState) error {
-	for _, upperProxyEnvName := range []string{
-		"HTTP_PROXY",
-		"HTTPS_PROXY",
-		"FTP_PROXY",
-		"NO_PROXY",
-		"ALL_PROXY",
-	} {
+	for _, upperProxyEnvName := range engine.ProxyEnvNames {
 		upperProxyVal, upperSet := state.origEnvMap[upperProxyEnvName]
 
 		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
