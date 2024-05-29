@@ -13,9 +13,10 @@ import (
 
 const (
 	bunVersion  = "1.0.27"
-	nodeVersion = "22.2.0-alpine"
+	// 20.14.0 is the latest LTS version of node as of 2023-10-24, it ends on 2026-04-30
+	nodeVersion = "iron-alpine3.19"
 
-	nodeImageDigest = "sha256:94567107148ac59f1eb2ad9b7c1db03f1a1a12d28717b29eda0535aa3bd2f71e"
+	nodeImageDigest = "sha256:2d0ce60a5c7bfa2bcdcfa7d463d8f8b7b16cab55051562606a9dc32c8a8169a9"
 	bunImageDigest  = "sha256:82d3d3b8ad96c4eea45c88167ce46e7e24afc726897d48e48cc6d6bf230c061c"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
