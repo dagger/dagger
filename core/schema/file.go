@@ -29,6 +29,9 @@ func (s *fileSchema) Install() {
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
 			Doc(`Retrieves the name of the file.`),
+		dagql.Func("withName", s.withName).
+			Doc(`Retrieves this file with its name set to the given name.`).
+			ArgDoc("name", `Name to set file to.`),
 		dagql.Func("export", s.export).
 			Impure("Writes to the local host.").
 			Doc(`Writes the file to a file path on the host.`).
@@ -75,6 +78,14 @@ func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (
 
 func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
 	return dagql.NewString(filepath.Base(file.File)), nil
+}
+
+type fileWithNameArgs struct {
+	Name string
+}
+
+func (s *fileSchema) withName(ctx context.Context, parent *core.File, args fileWithNameArgs) (*core.File, error) {
+	return parent.WithName(ctx, args.Name)
 }
 
 type fileExportArgs struct {
