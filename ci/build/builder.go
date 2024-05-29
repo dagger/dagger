@@ -191,15 +191,43 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
 	}
 
-	ctr := base.
-		WithFile(consts.EngineServerPath, build.engineBinary()).
-		WithFile("/usr/bin/dial-stdio", build.dialstdioBinary()).
+	type binAndPath struct {
+		path string
+		file *dagger.File
+	}
+	bins := []binAndPath{
+		{path: consts.EngineServerPath, file: build.engineBinary()},
+		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
+		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
+		{path: consts.RuncPath, file: build.runcBin()},
+		{path: consts.DumbInitPath, file: build.dumbInit()},
+	}
+	for _, bin := range build.qemuBins(ctx) {
+		name, err := bin.Name(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get name of binary: %w", err)
+		}
+		bins = append(bins, binAndPath{path: filepath.Join("/usr/local/bin", name), file: bin})
+	}
+	for _, bin := range build.cniPlugins() {
+		name, err := bin.Name(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get name of binary: %w", err)
+		}
+		bins = append(bins, binAndPath{path: filepath.Join("/opt/cni/bin", name), file: bin})
+	}
+
+	ctr := base
+	for _, bin := range bins {
+		bin := bin
+		ctr = ctr.WithFile(bin.path, bin.file)
+		eg.Go(func() error {
+			return build.verifyPlatform(ctx, bin.file)
+		})
+	}
+
+	ctr = ctr.
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
-		WithFile("/opt/cni/bin/dnsname", build.dnsnameBinary()).
-		WithFile(consts.RuncPath, build.runcBin(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
-		WithFile(consts.DumbInitPath, build.dumbInit(), dagger.ContainerWithFileOpts{Permissions: 0o700}).
-		WithDirectory("/usr/local/bin", build.qemuBins()).
-		WithDirectory("/", build.cniPlugins()).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
 
 	if build.gpuSupport {
@@ -305,14 +333,25 @@ func (build *Builder) runcBin() *dagger.File {
 		File("runc")
 }
 
-func (build *Builder) qemuBins() *dagger.Directory {
-	return dag.
+func (build *Builder) qemuBins(ctx context.Context) []*dagger.File {
+	dir := dag.
 		Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.QemuBinImage).
 		Rootfs()
+
+	binNames, err := dir.Entries(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	var bins []*dagger.File
+	for _, binName := range binNames {
+		bins = append(bins, dir.File(binName))
+	}
+	return bins
 }
 
-func (build *Builder) cniPlugins() *dagger.Directory {
+func (build *Builder) cniPlugins() []*dagger.File {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	// If GPU support is enabled use a Debian image:
@@ -337,7 +376,7 @@ func (build *Builder) cniPlugins() *dagger.Directory {
 		WithWorkdir("/src").
 		With(build.goPlatformEnv)
 
-	pluginDir := dag.Directory()
+	var bins []*dagger.File
 	for _, pluginPath := range []string{
 		"plugins/main/bridge",
 		"plugins/main/loopback",
@@ -345,18 +384,20 @@ func (build *Builder) cniPlugins() *dagger.Directory {
 		"plugins/ipam/host-local",
 	} {
 		pluginName := filepath.Base(pluginPath)
-		pluginDir = pluginDir.WithFile(filepath.Join("/opt/cni/bin", pluginName), ctr.
+		bins = append(bins, ctr.
 			WithWorkdir(pluginPath).
 			WithExec([]string{"go", "build", "-o", pluginName, "-ldflags", "-s -w", "."}).
 			File(pluginName))
 	}
 
-	return pluginDir
+	return bins
 }
 
 func (build *Builder) dumbInit() *dagger.File {
 	// dumb init is static, so we can use it on any base image
-	return dag.Container().From(consts.AlpineImage).
+	return dag.
+		Container(dagger.ContainerOpts{Platform: build.platform}).
+		From(consts.AlpineImage).
 		WithExec([]string{"apk", "add", "build-base", "bash"}).
 		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
 		WithWorkdir("/src").
@@ -376,4 +417,31 @@ func (build *Builder) goPlatformEnv(ctr *dagger.Container) *dagger.Container {
 		}
 	}
 	return ctr
+}
+
+// this makes 100% sure that we built the binary for the right platform and didn't, e.g., forget
+// to deal with mismatches between the engine host platform and the desired target platform
+func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) error {
+	name, err := bin.Name(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get name of binary: %w", err)
+	}
+	mntPath := filepath.Join("/mnt", name)
+	out, err := dag.Container().From(consts.AlpineImage).
+		WithExec([]string{"apk", "add", "file"}).
+		WithMountedFile(mntPath, bin).
+		WithExec([]string{"file", mntPath}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to call file on binary %s: %w", name, err)
+	}
+	if !strings.Contains(out, platformToFileArch[build.platformSpec.Architecture]) {
+		return fmt.Errorf("binary %s is not for %s", name, build.platformSpec.Architecture)
+	}
+	return nil
+}
+
+var platformToFileArch = map[string]string{
+	"amd64": "x86-64",
+	"arm64": "aarch64",
 }
