@@ -345,9 +345,6 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = typeDef.AsInput.Value.ToInputObjectSpec()
 	case TypeDefKindEnum:
 		typed = &EnumObject{TypeDef: typeDef.AsEnum.Value}
-		// TODO: implement enum type
-		// I don't understand what to do there
-		// typed = dagql.NewEnum() doesn't seem valids
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}

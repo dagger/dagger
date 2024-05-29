@@ -859,10 +859,50 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr[i-1], nil
 }
 
+type DynamicEnumValue interface {
+	ScalarType
+	Input
+}
+
+type dynamicEnumValue struct {
+	enumType Typed
+	value string
+}
+
+func NewDynamicEnumValue(enum Typed, val string) DynamicEnumValue {
+	return &dynamicEnumValue{enumType: enum, value: val}
+}
+
+func (d *dynamicEnumValue) Type() *ast.Type {
+	return d.enumType.Type()
+}
+
+func (d *dynamicEnumValue) TypeName() string {
+	return d.Type().Name()
+}
+
+func (d *dynamicEnumValue) Decoder() InputDecoder {
+	return NewDynamicEnumValue(d.enumType, "")
+}
+
+func (d *dynamicEnumValue) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case string:
+		return NewDynamicEnumValue(d.enumType, x), nil
+	default:
+		return nil, fmt.Errorf("cannot create Enum from %T", x)
+	}
+}
+
+func (d *dynamicEnumValue) ToLiteral() call.Literal {
+	return call.NewLiteralEnum(d.value)
+}
+
 type EnumValue interface {
 	Input
 	~string
 }
+
 
 // EnumValues is a list of possible values for an Enum.
 type EnumValues[T EnumValue] struct {
