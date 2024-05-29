@@ -579,7 +579,7 @@ var vcsPaths = []*vcsPath{
 	// Github
 	{
 		prefix: "github.com/",
-		re:     `^(?P<root>github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*$`,
+		re:     `^(?P<root>github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 	},
@@ -587,7 +587,7 @@ var vcsPaths = []*vcsPath{
 	// Codeberg
 	{
 		prefix: "codeberg.org/",
-		re:     `^(?P<root>codeberg\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*$`,
+		re:     `^(?P<root>codeberg\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 	},
@@ -595,7 +595,7 @@ var vcsPaths = []*vcsPath{
 	// Bitbucket
 	{
 		prefix: "bitbucket.org/",
-		re:     `^(?P<root>bitbucket\.org/(?P<bitname>[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*$`,
+		re:     `^(?P<root>bitbucket\.org/(?P<bitname>[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		repo:   "https://{root}",
 		vcs:    "git",
 	},
@@ -603,7 +603,7 @@ var vcsPaths = []*vcsPath{
 	// IBM DevOps Services (JazzHub)
 	{
 		prefix: "hub.jazz.net/git",
-		re:     `^(?P<root>hub\.jazz\.net/git/[a-z0-9]+/[A-Za-z0-9_.\-]+)(/[A-Za-z0-9_.\-]+)*$`,
+		re:     `^(?P<root>hub\.jazz\.net/git/[a-z0-9]+/[A-Za-z0-9_.\-]+)(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 	},
@@ -611,7 +611,7 @@ var vcsPaths = []*vcsPath{
 	// Git at Apache
 	{
 		prefix: "git.apache.org",
-		re:     `^(?P<root>git\.apache\.org/[a-z0-9_.\-]+\.git)(/[A-Za-z0-9_.\-]+)*$`,
+		re:     `^(?P<root>git\.apache\.org/[a-z0-9_.\-]+\.git)(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 	},
@@ -619,7 +619,7 @@ var vcsPaths = []*vcsPath{
 	// Git at OpenStack
 	{
 		prefix: "git.openstack.org",
-		re:     `^(?P<root>git\.openstack\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(\.git)?(/[A-Za-z0-9_.\-]+)*$`,
+		re:     `^(?P<root>git\.openstack\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(\.git)?(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 	},
@@ -627,7 +627,7 @@ var vcsPaths = []*vcsPath{
 	// Launchpad
 	{
 		prefix: "launchpad.net/",
-		re:     `^(?P<root>launchpad\.net/((?P<project>[A-Za-z0-9_.\-]+)(?P<series>/[A-Za-z0-9_.\-]+)?|~[A-Za-z0-9_.\-]+/(\+junk|[A-Za-z0-9_.\-]+)/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*$`,
+		re:     `^(?P<root>launchpad\.net/((?P<project>[A-Za-z0-9_.\-]+)(?P<series>/[A-Za-z0-9_.\-]+)?|~[A-Za-z0-9_.\-]+/(\+junk|[A-Za-z0-9_.\-]+)/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		vcs:    "bzr",
 		repo:   "https://{root}",
 		check:  launchpadVCS,
@@ -636,14 +636,14 @@ var vcsPaths = []*vcsPath{
 	// Git at OpenStack
 	{
 		prefix: "git.openstack.org",
-		re:     `^(?P<root>git\.openstack\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(\.git)?(/[A-Za-z0-9_.\-]+)*$`,
+		re:     `^(?P<root>git\.openstack\.org/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(\.git)?(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
 	},
 
 	// General syntax for any server.
 	{
-		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*$`,
+		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		ping: true,
 	},
 }
