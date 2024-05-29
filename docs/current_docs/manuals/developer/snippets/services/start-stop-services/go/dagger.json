@@ -1,5 +1,5 @@
 {
   "name": "my-module",
   "sdk": "go",
-  "engineVersion": "v0.11.4"
+  "engineVersion": "v0.11.5"
 }

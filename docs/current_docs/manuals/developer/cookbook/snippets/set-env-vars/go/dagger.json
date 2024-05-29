@@ -2,5 +2,5 @@
   "name": "my-module",
   "sdk": "go",
   "source": "dagger",
-  "engineVersion": "v0.11.4"
+  "engineVersion": "v0.11.5"
 }
