@@ -1,4 +1,11 @@
-import { dag, Directory, Container, File, object, func } from "@dagger.io/dagger"
+import {
+  dag,
+  Directory,
+  Container,
+  File,
+  object,
+  func,
+} from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -23,7 +30,8 @@ class MyModule {
    */
   @func()
   base(): Container {
-    return dag.container()
+    return dag
+      .container()
       .from("alpine:latest")
       .withExec(["mkdir", "/src"])
       .withExec(["touch", "/src/foo", "/src/bar"])
