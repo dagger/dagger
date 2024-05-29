@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'api: return absolute path on export instead of boolean'
+time: 2024-05-29T18:19:06.709015Z
+custom:
+  Author: helderco
+  PR: "7500"
