@@ -521,6 +521,86 @@ Start and stop a Redis service:
     dagger call redis-service
     ```
 
+## Outputs
+
+### Publish image to private registry
+
+The following Dagger Function publishes a container image to a private registry.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/publish-image/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/publish-image/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/publish-image/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Publish a container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
+    ```
+
+- Publish a container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
+    ```
+
+### Publish image to private registry with multiple tags
+
+The following Dagger Function tags a container image multiple times and publishes it to a private registry.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/tag-publish-image/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/tag-publish-image/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/tag-publish-image/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Tag and publish a container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
+    ```
+
+- Tag and publish a container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
+    ```
+
 ## Optimizations
 
 ### Cache application dependencies
