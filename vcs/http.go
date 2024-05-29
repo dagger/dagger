@@ -28,7 +28,7 @@ func httpGET(url string) ([]byte, error) {
 	}
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %v", url, err)
+		return nil, fmt.Errorf("%s: %w", url, err)
 	}
 	return b, nil
 }
@@ -64,6 +64,7 @@ func httpsOrHTTP(importPath string) (urlStr string, body io.ReadCloser, err erro
 			}
 		}
 		closeBody(res)
+		//nolint:bodyclose
 		urlStr, res, err = fetch("http")
 	}
 	if err != nil {

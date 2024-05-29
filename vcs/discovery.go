@@ -42,12 +42,15 @@ func parseMetaGoImports(r io.Reader) (imports []metaImport, err error) {
 			if err == io.EOF || len(imports) > 0 {
 				err = nil
 			}
+			//nolint:nakedret
 			return
 		}
 		if e, ok := t.(xml.StartElement); ok && strings.EqualFold(e.Name.Local, "body") {
+			//nolint:nakedret
 			return
 		}
 		if e, ok := t.(xml.EndElement); ok && strings.EqualFold(e.Name.Local, "head") {
+			//nolint:nakedret
 			return
 		}
 		e, ok := t.(xml.StartElement)

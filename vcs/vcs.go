@@ -140,7 +140,7 @@ func (v *Cmd) run1(dir string, cmdline string, keyval []string, verbose bool) ([
 		return nil, err
 	}
 
-	cmd := exec.Command(v.Cmd, args...)
+	cmd := exec.Command(v.Cmd, args...) //nolint:gosec
 	cmd.Dir = dir
 	cmd.Env = envForDir(cmd.Dir)
 	if ShowCmd {
@@ -450,17 +450,17 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 	}
 	urlStr, body, err := httpsOrHTTP(importPath)
 	if err != nil {
-		return nil, fmt.Errorf("http/https fetch: %v", err)
+		return nil, fmt.Errorf("http/https fetch: %w", err)
 	}
 	defer body.Close()
 	imports, err := parseMetaGoImports(body)
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %v", importPath, err)
+		return nil, fmt.Errorf("parsing %s: %w", importPath, err)
 	}
 	metaImport, err := matchGoImport(imports, importPath)
 	if err != nil {
 		if err != errNoMatch {
-			return nil, fmt.Errorf("parse %s: %v", urlStr, err)
+			return nil, fmt.Errorf("parse %s: %w", urlStr, err)
 		}
 		return nil, fmt.Errorf("parse %s: no go-import meta tags", urlStr)
 	}
@@ -480,11 +480,11 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		urlStr0 := urlStr
 		urlStr, body, err = httpsOrHTTP(metaImport.Prefix)
 		if err != nil {
-			return nil, fmt.Errorf("fetch %s: %v", urlStr, err)
+			return nil, fmt.Errorf("fetch %s: %w", urlStr, err)
 		}
 		imports, err := parseMetaGoImports(body)
 		if err != nil {
-			return nil, fmt.Errorf("parsing %s: %v", importPath, err)
+			return nil, fmt.Errorf("parsing %s: %w", importPath, err)
 		}
 		if len(imports) == 0 {
 			return nil, fmt.Errorf("fetch %s: no go-import meta tag", urlStr)
@@ -496,7 +496,7 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 	}
 
 	if err := validateRepoRoot(metaImport.RepoRoot); err != nil {
-		return nil, fmt.Errorf("%s: invalid repo root %q: %v", urlStr, metaImport.RepoRoot, err)
+		return nil, fmt.Errorf("%s: invalid repo root %q: %w", urlStr, metaImport.RepoRoot, err)
 	}
 	rr := &RepoRoot{
 		VCS:  ByCmd(metaImport.VCS),
@@ -569,7 +569,7 @@ func matchGoImport(imports []metaImport, importPath string) (_ metaImport, err e
 // expand rewrites s to replace {k} with match[k] for each key k in match.
 func expand(match map[string]string, s string) string {
 	for k, v := range match {
-		s = strings.Replace(s, "{"+k+"}", v, -1)
+		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
 }
