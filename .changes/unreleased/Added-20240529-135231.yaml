@@ -1,0 +1,6 @@
+kind: Added
+body: 'Add `withName` method to File '
+time: 2024-05-29T13:52:31.52121+02:00
+custom:
+  Author: TomChv
+  PR: "7491"
