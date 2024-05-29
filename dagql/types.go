@@ -882,7 +882,7 @@ func (d *dynamicEnumValue) TypeName() string {
 }
 
 func (d *dynamicEnumValue) Decoder() InputDecoder {
-	return NewDynamicEnumValue(d.enumType, "")
+	return d
 }
 
 func (d *dynamicEnumValue) DecodeInput(val any) (Input, error) {
