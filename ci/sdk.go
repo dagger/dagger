@@ -20,10 +20,36 @@ type SDK struct {
 	Elixir *ElixirSDK
 	// Develop the Dagger Rust SDK (experimental)
 	Rust *RustSDK
-	// Develop the Dagger Java SDK (experimental)
-	Java *JavaSDK
 	// Develop the Dagger PHP SDK (experimental)
 	PHP *PHPSDK
+	// Develop the Dagger Java SDK (experimental)
+	Java *JavaSDK
+}
+
+func (sdk *SDK) All() *AllSDK {
+	return &AllSDK{
+		SDK: sdk,
+	}
+}
+
+type sdkBase interface {
+	Lint(ctx context.Context) error
+	Test(ctx context.Context) error
+	Generate(ctx context.Context) (*Directory, error)
+	Bump(ctx context.Context, version string) (*Directory, error)
+}
+
+func (sdk *SDK) allSDKs() []sdkBase {
+	return []sdkBase{
+		sdk.Go,
+		sdk.Python,
+		sdk.Typescript,
+		sdk.Elixir,
+		sdk.Rust,
+		sdk.PHP,
+		// java isn't properly integrated to our release process yet
+		// sdk.Java,
+	}
 }
 
 func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
