@@ -926,3 +926,61 @@ class Alias {
 		require.JSONEq(t, `{"alias": {"bar": {"hello": "a", "foo": {"zoo": 4, "hey": [true, false, true], "far": {"farFarNested": true} }}}}`, out)
 	})
 }
+
+func TestModuleTypeScriptPrototype(t *testing.T) {
+	t.Parallel()
+
+	t.Run("keep class prototype inside module", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { field, func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func() 
+  test() {
+    return new PModule(new PCheck(4))
+  }
+}
+
+@object()
+class PCheck {
+  @field() 
+  value: number
+
+  constructor(value: number) {
+    this.value = value
+  }
+
+  get doubled() {
+    return this.value * 2
+  }
+}
+
+@object()
+class PModule {
+  @field() 
+  value: PCheck
+  
+  constructor(value: PCheck) {
+    this.value = value
+  }
+  @func() 
+  print() {
+    return this.value.doubled ?? 0
+  }
+}
+`))
+
+		out, err := modGen.With(daggerQuery(`{test{test{print}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"test": {"print": 8 }}}`, out)
+	})
+}
