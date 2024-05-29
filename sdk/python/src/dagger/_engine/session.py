@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import json
 import logging
 import subprocess
@@ -30,27 +31,49 @@ def start_cli_session(cfg: dagger.Config, path: str):
     return SyncResource(start_cli_session_sync(cfg, path))
 
 
+@dataclasses.dataclass(slots=True)
+class Pclose(contextlib.AbstractContextManager):
+    """Close process by closing stdin and waiting for it to exit."""
+
+    proc: subprocess.Popen[str]
+
+    # Set a long timeout to give time for any cache exports to pack layers up
+    # which currently has to happen synchronously with the session.
+    timeout: int = 300
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Kill the child process by closing stdin, not via SIGKILL, so it has
+        # a chance to drain logs.
+        assert self.proc.stdin
+        self.proc.stdin.close()
+
+        try:
+            self._wait()
+        except Exception:  # Including KeyboardInterrupt, wait handled that.
+            self.proc.kill()
+            # We don't call proc.wait() again as proc.__exit__ does that for us.
+            raise
+
+    def _wait(self):
+        # avoids raise-within-try (TRY301)
+        if self.proc.wait(self.timeout):
+            # non-zero exit code
+            msg = make_process_error_msg(self.proc, None, None)
+            raise dagger.SessionError(msg)
+
+
 @contextlib.contextmanager
 def start_cli_session_sync(cfg: dagger.Config, path: str):
     """Start an engine session with a provided CLI path."""
     logger.debug("Starting session using %s", path)
     try:
-        proc = run(cfg, path)
-        yield get_connect_params(proc)
-        proc.stdin.close()
-        proc.wait()
-        if proc.returncode != 0:
-            msg = make_process_error_msg(proc, None, None)
-            raise dagger.SessionError(msg)
+        with contextlib.ExitStack() as stack:
+            proc = stack.enter_context(run(cfg, path))
+            params = get_connect_params(proc)
+            stack.push(Pclose(proc))
+            yield params
     except (OSError, ValueError, TypeError) as e:
         raise dagger.SessionError(e) from e
-    finally:
-        if proc.stdin:
-            proc.stdin.close()
-        if proc.stdout:
-            proc.stdout.close()
-        if proc.stderr:
-            proc.stderr.close()
 
 
 def run(cfg: dagger.Config, path: str) -> subprocess.Popen[str]:
@@ -121,7 +144,9 @@ def get_connect_params(proc: subprocess.Popen[str]) -> ConnectParams:
 
 
 def make_process_error_msg(
-    proc: subprocess.Popen[str], stdout: str | None, stderr: str | None
+    proc: subprocess.Popen[str],
+    stdout: str | None,
+    stderr: str | None,
 ) -> str:
     args = cast(list[str], proc.args)
 
