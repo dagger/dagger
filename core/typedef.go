@@ -285,6 +285,7 @@ type TypeDef struct {
 	AsInterface dagql.Nullable[*InterfaceTypeDef] `field:"true" doc:"If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."`
 	AsInput     dagql.Nullable[*InputTypeDef]     `field:"true" doc:"If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."`
 	AsScalar    dagql.Nullable[*ScalarTypeDef]    `field:"true" doc:"If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."`
+	AsEnum      dagql.Nullable[*EnumTypeDef]      `field:"true" doc:"If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."`
 }
 
 func (typeDef TypeDef) Clone() *TypeDef {
@@ -303,6 +304,9 @@ func (typeDef TypeDef) Clone() *TypeDef {
 	}
 	if typeDef.AsScalar.Valid {
 		cp.AsScalar.Value = typeDef.AsScalar.Value.Clone()
+	}
+	if typeDef.AsEnum.Valid {
+		cp.AsEnum.Value = typeDef.AsEnum.Value.Clone()
 	}
 	return &cp
 }
@@ -339,6 +343,11 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = Void{}
 	case TypeDefKindInput:
 		typed = typeDef.AsInput.Value.ToInputObjectSpec()
+	case TypeDefKindEnum:
+		typed = &EnumObject{TypeDef: typeDef.AsEnum.Value}
+		// TODO: implement enum type
+		// I don't understand what to do there
+		// typed = dagql.NewEnum() doesn't seem valids
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -369,6 +378,8 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 		typed = DynamicID{typeName: typeDef.AsInterface.Value.Name}
 	case TypeDefKindVoid:
 		typed = Void{}
+	case TypeDefKindEnum:
+		typed = DynamicID{typeName: typeDef.AsEnum.Value.Name}
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -469,6 +480,23 @@ func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
 	fn = fn.Clone()
 	fn.ParentOriginalName = typeDef.AsObject.Value.OriginalName
 	typeDef.AsObject.Value.Constructor = dagql.NonNull(fn)
+	return typeDef, nil
+}
+
+func (typeDef *TypeDef) WithEnum(name, desc string) *TypeDef {
+	typeDef = typeDef.WithKind(TypeDefKindEnum)
+	typeDef.AsEnum = dagql.NonNull(NewEnumTypeDef(name, desc))
+	return typeDef
+}
+
+func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
+	if !typeDef.AsEnum.Valid {
+		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
+	}
+
+	typeDef = typeDef.Clone()
+	typeDef.AsEnum.Value.Values = append(typeDef.AsEnum.Value.Values, NewEnumValueTypeDef(name, desc))
+
 	return typeDef, nil
 }
 
@@ -836,6 +864,87 @@ func (typeDef *InputTypeDef) ToInputObjectSpec() dagql.InputObjectSpec {
 	return spec
 }
 
+type EnumTypeDef struct {
+	// Name is the standardized name of the enum (CamelCase), as used for the enum in the graphql schema
+	Name        string              `field:"true" doc:"The name of the enum."`
+	Description string              `field:"true" doc:"A doc string for the enum, if any."`
+	Values      []*EnumValueTypeDef `field:"true" doc:"The values of the enum."`
+
+	// SourceModuleName is currently only set when returning the TypeDef from the Enum field on Module
+	SourceModuleName string `field:"true" doc:"If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."`
+
+	// Below are not in public API
+
+	// The original name of the enum as provided by the SDK that defined it, used
+	// when invoking the SDK so it doesn't need to think as hard about case conversions
+	OriginalName string
+}
+
+func (*EnumTypeDef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "EnumTypeDef",
+		NonNull:   true,
+	}
+}
+
+func (*EnumTypeDef) TypeDescription() string {
+	return "A definition of a custom enum defined in a Module."
+}
+
+func NewEnumTypeDef(name, description string) *EnumTypeDef {
+	return &EnumTypeDef{
+		Name:         strcase.ToCamel(name),
+		OriginalName: name,
+		Description:  description,
+	}
+}
+
+func (enum EnumTypeDef) Clone() *EnumTypeDef {
+	cp := enum
+
+	cp.Values = make([]*EnumValueTypeDef, len(enum.Values))
+	for i, value := range enum.Values {
+		cp.Values[i] = value.Clone()
+	}
+
+	return &cp
+}
+
+type EnumValueTypeDef struct {
+	Name        string `field:"true" doc:"The name of the enum value."`
+	Description string `field:"true" doc:"A doc string for the enum value, if any."`
+
+	// Below are not in public API
+
+	// The original name of the enum value as provided by the SDK that defined it, used
+	OriginalName string
+}
+
+func (*EnumValueTypeDef) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "EnumValueTypeDef",
+		NonNull:   true,
+	}
+}
+
+func (*EnumValueTypeDef) TypeDescription() string {
+	return "A definition of a value in a custom enum defined in a Module."
+}
+
+func NewEnumValueTypeDef(name, description string) *EnumValueTypeDef {
+	return &EnumValueTypeDef{
+		Name:         strcase.ToCamel(name),
+		OriginalName: name,
+		Description:  description,
+	}
+}
+
+func (enumValue EnumValueTypeDef) Clone() *EnumValueTypeDef {
+	cp := enumValue
+
+	return &cp
+}
+
 type TypeDefKind string
 
 func (k TypeDefKind) String() string {
@@ -871,6 +980,10 @@ var (
 		`This is used for functions that have no return value. The outer TypeDef
 		specifying this Kind is always Optional, as the Void is never actually
 		represented.`,
+	)
+	TypeDefKindEnum = TypeDefKinds.Register("ENUM_KIND",
+		"A GraphQL enum type and its values",
+		"Always paired with an EnumTypeDef.",
 	)
 )
 
@@ -922,7 +1035,7 @@ func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
 		ctx,
 		bytes.NewReader(val),
 		filepath.Join(modMetaDirPath, modMetaOutputPath),
-		0600,
+		0o600,
 	)
 }
 

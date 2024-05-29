@@ -58,6 +58,9 @@ type Module struct {
 	// The module's interfaces
 	InterfaceDefs []*TypeDef `field:"true" name:"interfaces" doc:"Interfaces served by this module."`
 
+	// The module's enumerations
+	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
+
 	// InstanceID is the ID of the initialized module.
 	InstanceID *call.ID
 }
@@ -213,6 +216,21 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 		}
 
 		if err := iface.Install(ctx, dag); err != nil {
+			return err
+		}
+	}
+
+	for _, def := range mod.EnumDefs {
+		enumDef := def.AsEnum.Value
+
+		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name)
+
+		enum := &EnumObject{
+			Module:  mod,
+			TypeDef: enumDef,
+		}
+
+		if err := enum.Install(ctx, dag); err != nil {
 			return err
 		}
 	}
@@ -702,6 +720,32 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 	}
 
 	mod.InterfaceDefs = append(mod.InterfaceDefs, def)
+	return mod, nil
+}
+
+func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) {
+	mod = mod.Clone()
+	if !def.AsEnum.Valid {
+		return nil, fmt.Errorf("expected enum type def, got %s: %+v", def.Kind, def)
+	}
+
+	// skip validation+namespacing for module objects being constructed by SDK with* calls
+	// they will be validated when merged into the real final module
+
+	if mod.Deps != nil {
+		if err := mod.validateTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to validate type def: %w", err)
+		}
+	}
+	if mod.NameField != "" {
+		def = def.Clone()
+		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to namespace type def: %w", err)
+		}
+	}
+
+	mod.EnumDefs = append(mod.EnumDefs, def)
+
 	return mod, nil
 }
 

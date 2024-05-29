@@ -201,6 +201,11 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
 
+		// TODO: I'm not sure but I think I'm suppose to add a way to register
+		// a new enum inside the module?
+		dagql.Func("withEnum", s.moduleWithEnum).
+			Doc(`This module plus the given Enum type and associated values`),
+
 		dagql.NodeFunc("serve", s.moduleServe).
 			Impure(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
@@ -277,6 +282,18 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withConstructor", s.typeDefWithObjectConstructor).
 			Doc(`Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.`),
+
+		dagql.Func("withEnum", s.typeDefWithEnum).
+			Doc(`Returns a TypeDef of kind Enum with the provided name.`,
+				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
+				This is how functions are able to return their own, or any other circular reference.`).
+			ArgDoc("name", `The name of the enum`).
+			ArgDoc("description", `A doc string for the enum, if any`),
+
+		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
+			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			ArgDoc("value", `The name of the value in the enum`).
+			ArgDoc("description", `A doc string for the value, if any`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
@@ -285,6 +302,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -300,20 +319,23 @@ func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}
 
 func (s *moduleSchema) typeDefWithOptional(ctx context.Context, def *core.TypeDef, args struct {
 	Optional bool
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	return def.WithOptional(args.Optional), nil
 }
 
 func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, args struct {
 	Kind core.TypeDefKind
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	return def.WithKind(args.Kind), nil
 }
 
 func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("scalar type def must have a name")
 	}
@@ -322,7 +344,8 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	elemType, err := args.ElementType.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -333,7 +356,8 @@ func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
 	}
@@ -343,7 +367,8 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	return def.WithInterface(args.Name, args.Description), nil
 }
 
@@ -351,7 +376,8 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	Name        string
 	TypeDef     core.TypeDefID
 	Description string `default:""`
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	fieldType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -361,7 +387,8 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	fn, err := args.Function.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -371,7 +398,8 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
-}) (*core.TypeDef, error) {
+},
+) (*core.TypeDef, error) {
 	inst, err := args.Function.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -384,9 +412,34 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	return def.WithObjectConstructor(fn)
 }
 
+func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Description string `default:""`
+},
+) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("enum type def must have a name")
+	}
+
+	return def.WithEnum(args.Name, args.Description), nil
+}
+
+func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
+	Value       string
+	Description string `default:""`
+},
+) (*core.TypeDef, error) {
+	if args.Value == "" {
+		return nil, fmt.Errorf("enum value must have a name")
+	}
+
+	return def.WithEnumValue(args.Value, args.Description)
+}
+
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	dir, err := args.Code.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
@@ -396,13 +449,15 @@ func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args st
 
 func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
 func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-}) (*core.GeneratedCode, error) {
+},
+) (*core.GeneratedCode, error) {
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
@@ -413,7 +468,8 @@ func (s *moduleSchema) module(ctx context.Context, query *core.Query, _ struct{}
 func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
 	Name       string
 	ReturnType core.TypeDefID
-}) (*core.Function, error) {
+},
+) (*core.Function, error) {
 	returnType, err := args.ReturnType.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
@@ -423,7 +479,8 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 
 func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Function, args struct {
 	Description string
-}) (*core.Function, error) {
+},
+) (*core.Function, error) {
 	return fn.WithDescription(args.Description), nil
 }
 
@@ -432,7 +489,8 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	TypeDef      core.TypeDefID
 	Description  string    `default:""`
 	DefaultValue core.JSON `default:""`
-}) (*core.Function, error) {
+},
+) (*core.Function, error) {
 	argType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
@@ -489,20 +547,23 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
 	Value core.JSON
-}) (dagql.Nullable[core.Void], error) {
+},
+) (dagql.Nullable[core.Void], error) {
 	// TODO: error out if caller is not coming from a module
 	return dagql.Null[core.Void](), fnCall.ReturnValue(ctx, args.Value)
 }
 
 func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Module, args struct {
 	Description string
-}) (*core.Module, error) {
+},
+) (*core.Module, error) {
 	return mod.WithDescription(args.Description), nil
 }
 
 func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, args struct {
 	Object core.TypeDefID
-}) (_ *core.Module, rerr error) {
+},
+) (_ *core.Module, rerr error) {
 	def, err := args.Object.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
@@ -512,12 +573,24 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
 	Iface core.TypeDefID
-}) (_ *core.Module, rerr error) {
+},
+) (_ *core.Module, rerr error) {
 	def, err := args.Iface.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
 	}
 	return mod.WithInterface(ctx, def.Self)
+}
+
+func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
+	Enum core.TypeDefID
+},
+) (_ *core.Module, rerr error) {
+	def, err := args.Enum.Load(ctx, s.dag)
+	if err != nil {
+		return nil, err
+	}
+	return mod.WithEnum(ctx, def.Self)
 }
 
 func (s *moduleSchema) currentModuleName(
@@ -652,7 +725,8 @@ func (s *moduleSchema) moduleInitialize(
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
 	Source core.ModuleSourceID
-}) (*core.Module, error) {
+},
+) (*core.Module, error) {
 	src, err := args.Source.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
@@ -865,7 +939,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(gitAttrsPath)},
 					{Name: "contents", Value: dagql.String(gitAttrsContents)},
-					{Name: "permissions", Value: dagql.Int(0600)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
 				},
 			},
 		)
@@ -913,7 +987,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(gitIgnorePath)},
 					{Name: "contents", Value: dagql.String(gitIgnoreContents)},
-					{Name: "permissions", Value: dagql.Int(0600)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
 				},
 			},
 		)
@@ -1038,7 +1112,7 @@ func (s *moduleSchema) updateDaggerConfig(
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(modCfgPath)},
 				{Name: "contents", Value: dagql.String(updatedModCfgBytes)},
-				{Name: "permissions", Value: dagql.Int(0644)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
 			},
 		},
 	)
