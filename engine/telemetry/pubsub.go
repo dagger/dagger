@@ -648,72 +648,72 @@ type activeClient struct {
 	cond             *sync.Cond
 }
 
-func (trace *activeClient) startSpan(span sdktrace.ReadOnlySpan) {
-	trace.cond.L.Lock()
-	trace.spans[span.SpanContext().SpanID()] = span
-	trace.cond.L.Unlock()
+func (c *activeClient) startSpan(span sdktrace.ReadOnlySpan) {
+	c.cond.L.Lock()
+	c.spans[span.SpanContext().SpanID()] = span
+	c.cond.L.Unlock()
 }
 
-func (trace *activeClient) finishSpan(span sdktrace.ReadOnlySpan) {
-	trace.cond.L.Lock()
-	delete(trace.spans, span.SpanContext().SpanID())
-	trace.cond.L.Unlock()
+func (c *activeClient) finishSpan(span sdktrace.ReadOnlySpan) {
+	c.cond.L.Lock()
+	delete(c.spans, span.SpanContext().SpanID())
+	c.cond.L.Unlock()
 }
 
-func (client *activeClient) spanNames() []string {
+func (c *activeClient) spanNames() []string {
 	var names []string
-	for _, span := range client.spans {
+	for _, span := range c.spans {
 		names = append(names, span.Name())
 	}
 	return names
 }
 
-func (client *activeClient) spanIDs() []string {
+func (c *activeClient) spanIDs() []string {
 	var ids []string
-	for _, span := range client.spans {
+	for _, span := range c.spans {
 		ids = append(ids, span.SpanContext().SpanID().String())
 	}
 	return ids
 }
 
-func (client *activeClient) wait(ctx context.Context) {
-	slog := slog.With("client", client.id)
+func (c *activeClient) wait(ctx context.Context) {
+	slog := slog.With("client", c.id)
 
 	go func() {
 		// wake up the loop below if ctx context is interrupted
 		<-ctx.Done()
-		client.cond.Broadcast()
+		c.cond.Broadcast()
 	}()
 
-	client.cond.L.Lock()
-	defer client.cond.L.Unlock()
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
 
-	for !client.draining || len(client.spans) > 0 {
-		slog = client.slogAttrs(slog)
+	for !c.draining || len(c.spans) > 0 {
+		slog = c.slogAttrs(slog)
 		if ctx.Err() != nil {
 			slog.ExtraDebug("wait interrupted")
 			break
 		}
-		if client.drainImmediately {
+		if c.drainImmediately {
 			slog.ExtraDebug("draining immediately")
 			break
 		}
-		if client.draining {
+		if c.draining {
 			slog.Debug("waiting for spans")
 		}
-		client.cond.Wait()
+		c.cond.Wait()
 	}
 
-	slog = client.slogAttrs(slog)
+	slog = c.slogAttrs(slog)
 	slog.Debug("done waiting", "ctxErr", ctx.Err())
 }
 
-func (client *activeClient) slogAttrs(slog *slog.Logger) *slog.Logger {
+func (c *activeClient) slogAttrs(slog *slog.Logger) *slog.Logger {
 	return slog.With(
-		"draining", client.draining,
-		"immediate", client.drainImmediately,
-		"activeSpans", len(client.spans),
-		"spanNames", client.spanNames(),
-		"spanIDs", client.spanIDs(),
+		"draining", c.draining,
+		"immediate", c.drainImmediately,
+		"activeSpans", len(c.spans),
+		"spanNames", c.spanNames(),
+		"spanIDs", c.spanIDs(),
 	)
 }
