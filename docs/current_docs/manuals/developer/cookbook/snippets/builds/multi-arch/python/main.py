@@ -12,7 +12,7 @@ class MyModule:
             dagger.Directory, 
             Doc("Source code location can be local directory or remote Git repository")]
     ) -> str:
-        """Build an publish multi-platform image"""
+        """Build and publish multi-platform image"""
         # platforms to build for and push in a multi-platform image
         platforms = [
             dagger.Platform("linux/amd64"), # a.k.a. x86_64
