@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -39,6 +40,10 @@ type connectParams struct {
 }
 
 func EngineSession(cmd *cobra.Command, args []string) error {
+	// discard SIGPIPE, which can happen when stdout or stderr are closed
+	// (possibly from the spawning process going away)
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
+
 	ctx := cmd.Context()
 
 	sessionToken, err := uuid.NewRandom()
@@ -92,7 +97,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		paramBytes = append(paramBytes, '\n')
 		go func() {
 			if _, err := os.Stdout.Write(paramBytes); err != nil {
-				panic(err)
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
 			}
 		}()
 
