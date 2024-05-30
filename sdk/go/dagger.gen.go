@@ -121,6 +121,12 @@ type CurrentModuleID string
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
 
+// The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+type EnumTypeDefID string
+
+// The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+type EnumValueTypeDefID string
+
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
 
@@ -2292,6 +2298,215 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
+// A definition of a custom enum defined in a Module.
+type EnumTypeDef struct {
+	query *querybuilder.Selection
+
+	description      *string
+	id               *EnumTypeDefID
+	name             *string
+	sourceModuleName *string
+}
+
+func (r *EnumTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumTypeDef {
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// A doc string for the enum, if any.
+func (r *EnumTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EnumTypeDef.
+func (r *EnumTypeDef) ID(ctx context.Context) (EnumTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnumTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnumTypeDef) XXX_GraphQLType() string {
+	return "EnumTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnumTypeDef) XXX_GraphQLIDType() string {
+	return "EnumTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnumTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnumTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the enum.
+func (r *EnumTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The values of the enum.
+func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id EnumValueTypeDefID
+	}
+
+	convert := func(fields []values) []EnumValueTypeDef {
+		out := []EnumValueTypeDef{}
+
+		for i := range fields {
+			val := EnumValueTypeDef{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A definition of a value in a custom enum defined in a Module.
+type EnumValueTypeDef struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *EnumValueTypeDefID
+	name        *string
+}
+
+func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValueTypeDef {
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// A doc string for the enum value, if any.
+func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EnumValueTypeDef.
+func (r *EnumValueTypeDef) ID(ctx context.Context) (EnumValueTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnumValueTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnumValueTypeDef) XXX_GraphQLType() string {
+	return "EnumValueTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnumValueTypeDef) XXX_GraphQLIDType() string {
+	return "EnumValueTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnumValueTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnumValueTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the enum value.
+func (r *EnumValueTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
@@ -2601,6 +2816,16 @@ func (r *File) Sync(ctx context.Context) (*File, error) {
 	q := r.query.Select("sync")
 
 	return r, q.Execute(ctx)
+}
+
+// Retrieves this file with its name set to the given name.
+func (r *File) WithName(name string) *File {
+	q := r.query.Select("withName")
+	q = q.Arg("name", name)
+
+	return &File{
+		query: q,
+	}
 }
 
 // Retrieves this file with its created/modified timestamps set to the given time.
@@ -4325,6 +4550,39 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Enumerations served by this module.
+func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
+	q := r.query.Select("enums")
+
+	q = q.Select("id")
+
+	type enums struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []enums) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []enums
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *Module) GeneratedContextDiff() *Directory {
 	q := r.query.Select("generatedContextDiff")
@@ -4521,6 +4779,17 @@ func (r *Module) Source() *ModuleSource {
 func (r *Module) WithDescription(description string) *Module {
 	q := r.query.Select("withDescription")
 	q = q.Arg("description", description)
+
+	return &Module{
+		query: q,
+	}
+}
+
+// This module plus the given Enum type and associated values
+func (r *Module) WithEnum(enum *TypeDef) *Module {
+	assertNotNil("enum", enum)
+	q := r.query.Select("withEnum")
+	q = q.Arg("enum", enum)
 
 	return &Module{
 		query: q,
@@ -5708,6 +5977,26 @@ func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 	}
 }
 
+// Load a EnumTypeDef from its ID.
+func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
+	q := r.query.Select("loadEnumTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Load a EnumValueTypeDef from its ID.
+func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
+	q := r.query.Select("loadEnumValueTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
 // Load a EnvVariable from its ID.
 func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q := r.query.Select("loadEnvVariableFromID")
@@ -6588,6 +6877,15 @@ func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	}
 }
 
+// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+func (r *TypeDef) AsEnum() *EnumTypeDef {
+	q := r.query.Select("asEnum")
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
 // If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
 func (r *TypeDef) AsInput() *InputTypeDef {
 	q := r.query.Select("asInput")
@@ -6704,6 +7002,52 @@ func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	assertNotNil("function", function)
 	q := r.query.Select("withConstructor")
 	q = q.Arg("function", function)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// TypeDefWithEnumOpts contains options for TypeDef.WithEnum
+type TypeDefWithEnumOpts struct {
+	// A doc string for the enum, if any
+	Description string
+}
+
+// Returns a TypeDef of kind Enum with the provided name.
+//
+// Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+func (r *TypeDef) WithEnum(name string, opts ...TypeDefWithEnumOpts) *TypeDef {
+	q := r.query.Select("withEnum")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// TypeDefWithEnumValueOpts contains options for TypeDef.WithEnumValue
+type TypeDefWithEnumValueOpts struct {
+	// A doc string for the value, if any
+	Description string
+}
+
+// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+func (r *TypeDef) WithEnumValue(value string, opts ...TypeDefWithEnumValueOpts) *TypeDef {
+	q := r.query.Select("withEnumValue")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("value", value)
 
 	return &TypeDef{
 		query: q,
@@ -6907,6 +7251,11 @@ func (TypeDefKind) IsEnum() {}
 const (
 	// A boolean value.
 	BooleanKind TypeDefKind = "BOOLEAN_KIND"
+
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	EnumKind TypeDefKind = "ENUM_KIND"
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	InputKind TypeDefKind = "INPUT_KIND"

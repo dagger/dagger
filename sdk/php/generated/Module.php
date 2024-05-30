@@ -41,6 +41,15 @@ class Module extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Enumerations served by this module.
+     */
+    public function enums(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('enums');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'enums');
+    }
+
+    /**
      * The generated files and directories made on top of the module source's context directory.
      */
     public function generatedContextDiff(): Directory
@@ -148,6 +157,16 @@ class Module extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
         $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * This module plus the given Enum type and associated values
+     */
+    public function withEnum(TypeDefId|TypeDef $enum): Module
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
+        $innerQueryBuilder->setArgument('enum', $enum);
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

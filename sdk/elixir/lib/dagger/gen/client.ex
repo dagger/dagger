@@ -288,6 +288,31 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a EnumTypeDef from its ID."
+  @spec load_enum_type_def_from_id(t(), Dagger.EnumTypeDefID.t()) :: Dagger.EnumTypeDef.t()
+  def load_enum_type_def_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadEnumTypeDefFromID") |> put_arg("id", id)
+
+    %Dagger.EnumTypeDef{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a EnumValueTypeDef from its ID."
+  @spec load_enum_value_type_def_from_id(t(), Dagger.EnumValueTypeDefID.t()) ::
+          Dagger.EnumValueTypeDef.t()
+  def load_enum_value_type_def_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadEnumValueTypeDefFromID") |> put_arg("id", id)
+
+    %Dagger.EnumValueTypeDef{
+      selection: selection,
+      client: client.client
+    }
+  end
+
   @doc "Load a EnvVariable from its ID."
   @spec load_env_variable_from_id(t(), Dagger.EnvVariableID.t()) :: Dagger.EnvVariable.t()
   def load_env_variable_from_id(%__MODULE__{} = client, id) do

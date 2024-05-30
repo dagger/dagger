@@ -31,6 +31,16 @@ class DirectoryID(Scalar):
     object of type Directory."""
 
 
+class EnumTypeDefID(Scalar):
+    """The `EnumTypeDefID` scalar type represents an identifier for an
+    object of type EnumTypeDef."""
+
+
+class EnumValueTypeDefID(Scalar):
+    """The `EnumValueTypeDefID` scalar type represents an identifier for
+    an object of type EnumValueTypeDef."""
+
+
 class EnvVariableID(Scalar):
     """The `EnvVariableID` scalar type represents an identifier for an
     object of type EnvVariable."""
@@ -240,6 +250,12 @@ class TypeDefKind(Enum):
 
     BOOLEAN_KIND = "BOOLEAN_KIND"
     """A boolean value."""
+
+    ENUM_KIND = "ENUM_KIND"
+    """A GraphQL enum type and its values
+
+    Always paired with an EnumTypeDef.
+    """
 
     INPUT_KIND = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
@@ -2567,6 +2583,191 @@ class Directory(Type):
 
 
 @typecheck
+class EnumTypeDef(Type):
+    """A definition of a custom enum defined in a Module."""
+
+    async def description(self) -> str:
+        """A doc string for the enum, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> EnumTypeDefID:
+        """A unique identifier for this EnumTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        EnumTypeDefID
+            The `EnumTypeDefID` scalar type represents an identifier for an
+            object of type EnumTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnumTypeDefID)
+
+    async def name(self) -> str:
+        """The name of the enum.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    async def source_module_name(self) -> str:
+        """If this EnumTypeDef is associated with a Module, the name of the
+        module. Unset otherwise.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sourceModuleName", _args)
+        return await _ctx.execute(str)
+
+    async def values(self) -> list["EnumValueTypeDef"]:
+        """The values of the enum."""
+        _args: list[Arg] = []
+        _ctx = self._select("values", _args)
+        _ctx = EnumValueTypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: EnumValueTypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            EnumValueTypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadEnumValueTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
+
+
+@typecheck
+class EnumValueTypeDef(Type):
+    """A definition of a value in a custom enum defined in a Module."""
+
+    async def description(self) -> str:
+        """A doc string for the enum value, if any.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> EnumValueTypeDefID:
+        """A unique identifier for this EnumValueTypeDef.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        EnumValueTypeDefID
+            The `EnumValueTypeDefID` scalar type represents an identifier for
+            an object of type EnumValueTypeDef.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnumValueTypeDefID)
+
+    async def name(self) -> str:
+        """The name of the enum value.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class EnvVariable(Type):
     """An environment variable name and value."""
 
@@ -4422,6 +4623,27 @@ class Module(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
+    async def enums(self) -> list["TypeDef"]:
+        """Enumerations served by this module."""
+        _args: list[Arg] = []
+        _ctx = self._select("enums", _args)
+        _ctx = TypeDef(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: TypeDefID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            TypeDef(
+                Client.from_context(_ctx)._select(
+                    "loadTypeDefFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
+
     def generated_context_diff(self) -> Directory:
         """The generated files and directories made on top of the module source's
         context directory.
@@ -4602,6 +4824,14 @@ class Module(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withDescription", _args)
+        return Module(_ctx)
+
+    def with_enum(self, enum: "TypeDef") -> Self:
+        """This module plus the given Enum type and associated values"""
+        _args = [
+            Arg("enum", enum),
+        ]
+        _ctx = self._select("withEnum", _args)
         return Module(_ctx)
 
     def with_interface(self, iface: "TypeDef") -> Self:
@@ -5798,6 +6028,24 @@ class Client(Root):
         _ctx = self._select("loadDirectoryFromID", _args)
         return Directory(_ctx)
 
+    def load_enum_type_def_from_id(self, id: EnumTypeDefID) -> EnumTypeDef:
+        """Load a EnumTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnumTypeDefFromID", _args)
+        return EnumTypeDef(_ctx)
+
+    def load_enum_value_type_def_from_id(
+        self, id: EnumValueTypeDefID
+    ) -> EnumValueTypeDef:
+        """Load a EnumValueTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
+        return EnumValueTypeDef(_ctx)
+
     def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
         """Load a EnvVariable from its ID."""
         _args = [
@@ -6589,6 +6837,14 @@ class Socket(Type):
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
+    def as_enum(self) -> EnumTypeDef:
+        """If kind is ENUM, the enum-specific type definition. If kind is not
+        ENUM, this will be null.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("asEnum", _args)
+        return EnumTypeDef(_ctx)
+
     def as_input(self) -> InputTypeDef:
         """If kind is INPUT, the input-specific type definition. If kind is not
         INPUT, this will be null.
@@ -6699,6 +6955,55 @@ class TypeDef(Type):
             Arg("function", function),
         ]
         _ctx = self._select("withConstructor", _args)
+        return TypeDef(_ctx)
+
+    def with_enum(
+        self,
+        name: str,
+        *,
+        description: str | None = "",
+    ) -> Self:
+        """Returns a TypeDef of kind Enum with the provided name.
+
+        Note that an enum's values may be omitted if the intent is only to
+        refer to an enum. This is how functions are able to return their own,
+        or any other circular reference.
+
+        Parameters
+        ----------
+        name:
+            The name of the enum
+        description:
+            A doc string for the enum, if any
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description, ""),
+        ]
+        _ctx = self._select("withEnum", _args)
+        return TypeDef(_ctx)
+
+    def with_enum_value(
+        self,
+        value: str,
+        *,
+        description: str | None = "",
+    ) -> Self:
+        """Adds a static value for an Enum TypeDef, failing if the type is not an
+        enum.
+
+        Parameters
+        ----------
+        value:
+            The name of the value in the enum
+        description:
+            A doc string for the value, if any
+        """
+        _args = [
+            Arg("value", value),
+            Arg("description", description, ""),
+        ]
+        _ctx = self._select("withEnumValue", _args)
         return TypeDef(_ctx)
 
     def with_field(
@@ -6834,6 +7139,10 @@ __all__ = [
     "CurrentModuleID",
     "Directory",
     "DirectoryID",
+    "EnumTypeDef",
+    "EnumTypeDefID",
+    "EnumValueTypeDef",
+    "EnumValueTypeDefID",
     "EnvVariable",
     "EnvVariableID",
     "FieldTypeDef",

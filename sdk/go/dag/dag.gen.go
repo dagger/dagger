@@ -164,6 +164,18 @@ func LoadDirectoryFromID(id dagger.DirectoryID) *dagger.Directory {
 	return client.LoadDirectoryFromID(id)
 }
 
+// Load a EnumTypeDef from its ID.
+func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
+	client := initClient()
+	return client.LoadEnumTypeDefFromID(id)
+}
+
+// Load a EnumValueTypeDef from its ID.
+func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
+	client := initClient()
+	return client.LoadEnumValueTypeDefFromID(id)
+}
+
 // Load a EnvVariable from its ID.
 func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 	client := initClient()
