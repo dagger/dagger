@@ -350,8 +350,11 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 	case introspection.TypeKindEnum:
 		return &core.TypeDef{
 			// just call it a string for now
-			Kind:     core.TypeDefKindString,
+			Kind:     core.TypeDefKindEnum,
 			Optional: !nonNull,
+			AsEnum: dagql.NonNull(&core.EnumTypeDef{
+				Name: introspectionType.Name,
+			}),
 		}, true, nil
 
 	case introspection.TypeKindList:

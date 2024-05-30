@@ -778,6 +778,9 @@ fragment TypeDefRefParts on TypeDef {
 	asScalar {
 		name
 	}
+	asEnum {
+		name
+	}
 	asList {
 		elementTypeDef {
 			kind
@@ -791,6 +794,9 @@ fragment TypeDefRefParts on TypeDef {
 				name
 			}
 			asScalar {
+				name
+			}
+			asEnum {
 				name
 			}
 		}
@@ -1019,6 +1025,7 @@ type modTypeDef struct {
 	AsInput     *modInput
 	AsList      *modList
 	AsScalar    *modScalar
+	AsEnum      *modEnum
 }
 
 type functionProvider interface {
@@ -1117,6 +1124,10 @@ func (o *modInterface) GetFunctions() []*modFunction {
 }
 
 type modScalar struct {
+	Name string
+}
+
+type modEnum struct {
 	Name string
 }
 

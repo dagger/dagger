@@ -511,6 +511,8 @@ func (typeDef *TypeDef) IsSubtypeOf(otherDef *TypeDef) bool {
 		return typeDef.Kind == otherDef.Kind
 	case TypeDefKindScalar:
 		return typeDef.AsScalar.Value.Name == otherDef.AsScalar.Value.Name
+	case TypeDefKindEnum:
+		return typeDef.AsEnum.Value.Name == otherDef.AsEnum.Value.Name
 	case TypeDefKindList:
 		if otherDef.Kind != TypeDefKindList {
 			return false
