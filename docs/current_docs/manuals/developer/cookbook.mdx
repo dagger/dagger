@@ -282,9 +282,39 @@ Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, t
 8 directories, 4 files
 ```
 
-{/* ### Build multi-arch image
+### Build multi-arch image
 
-### Build multi-arch image with cross-compliation
+The following Dagger Function builds a single image for different CPU architectures using native emulation.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/multi-arch/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/multi-arch/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/multi-arch/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish a multi-platform image:
+
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello" 
+```
+
+{/* ### Build multi-arch image with cross-compliation
 
 ### Build image from Dockerfile
 
