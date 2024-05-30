@@ -41,7 +41,7 @@ class MyModule:
                 .with_exec(["go", "build", "-o", "/output/hello"])
             )
 
-            # selelct output directory
+            # select output directory
             output_dir = ctr.directory("/output")
 
             # wrap output directory in a new empty container marked 
