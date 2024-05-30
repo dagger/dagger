@@ -1,14 +1,14 @@
-import { dag, Container, Directory, ClientContainerOpts, object, func, ContainerPublishOpts } from "@dagger.io/dagger"
+import { dag, Container, Directory, Platform, object, func, ContainerPublishOpts } from "@dagger.io/dagger"
 
 @object()
 class Ts {
   @func()
   async build(src: Directory): Promise<string> {
     // platforms to build for and push in a multi-platform image
-    const platforms = [
-        "linux/amd64)", // a.k.a. x86_64
-        "linux/arm64", // a.k.a. aarch64
-        "linux/s390x", // a.k.a. IBM S/390 
+    const platforms: Platform[] = [
+        "linux/amd64" as Platform, // a.k.a. x86_64
+        "linux/arm64" as Platform, // a.k.a. aarch64
+        "linux/s390x" as Platform, // a.k.a. IBM S/390 
     ]
 
     // container registry for multi-platform image
@@ -17,12 +17,12 @@ class Ts {
     let platformVariants: Array<Container> = []
     for (const platform of platforms) {
       const ctr = dag
-        .container({platform: platform} as ClientContainerOpts)
-        .from("golang:1.20-alpoine")
+        .container({platform: platform})
+        .from("golang:1.21-alpine")
         // mount source 
         .withDirectory("/src", src)
         // mount empty dir where built binary will live 
-        .withDirectory("/output", new Directory())
+        .withDirectory("/output", dag.directory())
         // ensure binary will be statically linked and thus executable
         // in the final image 
         .withEnvVariable("CGO_ENABLED", "0")
@@ -34,17 +34,17 @@ class Ts {
 
       // wrap output directory in a new empty container marked 
       // with the same platform
-      const binaryCtr = dag
-        .container({platform: platform} as ClientContainerOpts)
+      const binaryCtr = await dag
+        .container({platform: platform})
         .withRootfs(outputDir)
 
       platformVariants.push(binaryCtr)
     }
     // publish to registry 
-    const imageDigest = dag
+    const imageDigest = await dag
       .container()
-      .publish(imageRepo, {platformVariants:platformVariants} as ContainerPublishOpts)
+      .publish(imageRepo, {platformVariants:platformVariants})
 
-    return await imageDigest
+    return imageDigest
   }
 }
