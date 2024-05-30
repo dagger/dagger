@@ -17,43 +17,39 @@ import (
 
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
 )
 
 var testCtx = context.Background()
 
-func TestMain(m *testing.M) {
-	testCtx = telemetry.InitEmbedded(testCtx, nil)
-	res := m.Run()
-	telemetry.Close()
-	os.Exit(res)
-}
-
-func Tracer() trace.Tracer {
-	return otel.Tracer("dagger.io/integration")
-}
-
+//	func TestMain(m *testing.M) {
+//		testCtx = telemetry.InitEmbedded(testCtx, nil)
+//		res := m.Run()
+//		telemetry.Close()
+//		os.Exit(res)
+//	}
+//
+//	func Tracer() trace.Tracer {
+//		return otel.Tracer("dagger.io/integration")
+//	}
 func connect(t testing.TB, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
 	ctx, cancel := context.WithCancel(testCtx)
 	t.Cleanup(cancel)
 
-	ctx, span := Tracer().Start(ctx, t.Name(), telemetry.Encapsulate())
-	t.Cleanup(func() {
-		telemetry.End(span, func() error {
-			if t.Failed() {
-				return fmt.Errorf("test failed")
-			} else {
-				return nil
-			}
-		})
-	})
-
+	// ctx, span := Tracer().Start(ctx, t.Name(), telemetry.Encapsulate())
+	// t.Cleanup(func() {
+	// 	telemetry.End(span, func() error {
+	// 		if t.Failed() {
+	// 			return fmt.Errorf("test failed")
+	// 		} else {
+	// 			return nil
+	// 		}
+	// 	})
+	// })
+	//
 	opts = append([]dagger.ClientOpt{
 		dagger.WithLogOutput(newTWriter(t)),
 	}, opts...)
