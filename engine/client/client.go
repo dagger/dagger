@@ -248,6 +248,8 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "connecting to engine")
 	defer telemetry.End(span, func() error { return rerr })
 
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+
 	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
@@ -282,12 +284,14 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 
 		if c.EngineTrace != nil {
 			if err := c.exportTraces(enginetel.NewTracesSourceClient(telemetryConn)); err != nil {
+				slog.Error("failed to subscribe to traces", "error", err, "elapsed", elapsed)
 				return fmt.Errorf("export traces: %w", err)
 			}
 		}
 
 		if c.EngineLogs != nil {
 			if err := c.exportLogs(enginetel.NewLogsSourceClient(telemetryConn)); err != nil {
+				slog.Error("failed to subscribe to logs", "error", err, "elapsed", elapsed)
 				return fmt.Errorf("export logs: %w", err)
 			}
 		}
