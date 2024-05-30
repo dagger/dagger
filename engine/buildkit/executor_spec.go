@@ -192,6 +192,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 
 	scanner := bufio.NewScanner(baseResolvFile)
+	var replaced bool
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "search") {
@@ -205,9 +206,15 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		if _, err := fmt.Fprintln(ctrResolvFile, "search", strings.Join(domains, " ")); err != nil {
 			return fmt.Errorf("write resolv.conf: %w", err)
 		}
+		replaced = true
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read resolv.conf: %w", err)
+	}
+	if !replaced {
+		if _, err := fmt.Fprintln(ctrResolvFile, "search", extraSearchDomain); err != nil {
+			return fmt.Errorf("write resolv.conf: %w", err)
+		}
 	}
 
 	if len(w.execMD.HostAliases) == 0 {
@@ -800,13 +807,7 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 }
 
 func (w *Worker) setProxyEnvs(_ context.Context, state *execState) error {
-	for _, upperProxyEnvName := range []string{
-		"HTTP_PROXY",
-		"HTTPS_PROXY",
-		"FTP_PROXY",
-		"NO_PROXY",
-		"ALL_PROXY",
-	} {
+	for _, upperProxyEnvName := range engine.ProxyEnvNames {
 		upperProxyVal, upperSet := state.origEnvMap[upperProxyEnvName]
 
 		lowerProxyEnvName := strings.ToLower(upperProxyEnvName)
