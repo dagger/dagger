@@ -17,6 +17,9 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/vcs"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/moby/buildkit/util/gitutil"
 )
 
 type moduleSourceArgs struct {
@@ -27,10 +30,10 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
-	parsed := parseRefString(args.RefString)
-	modPath, modVersion, hasVersion, isGitHub := parsed.modPath, parsed.modVersion, parsed.hasVersion, parsed.isGitHub
+	parsed, err := parseRefString(ctx, query.Buildkit, args.RefString)
+	refWithoutVersion, modVersion, hasVersion, isRemote := parsed.modPath, parsed.modVersion, parsed.hasVersion, parsed.kind == core.ModuleSourceKindGit
 
-	if !hasVersion && isGitHub && args.Stable {
+	if !hasVersion && isRemote && args.Stable {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
 
@@ -41,27 +44,41 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		if filepath.IsAbs(modPath) {
-			return nil, fmt.Errorf("local module source root path is absolute: %s", modPath)
+		if filepath.IsAbs(refWithoutVersion) {
+			return nil, fmt.Errorf("local module source root path is absolute: %s", refWithoutVersion)
 		}
+
+		// parseRefString fallbacked to as we did not manage to localKind
+		// log error in case we wrongfully parsed the remote ref
+		if err != nil {
+			logger := telemetry.GlobalLogger(ctx)
+			logger.Info("ref %s has not been parsed as a git remote: %v", args.RefString, err)
+		}
+
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
-			RootSubpath: modPath,
+			RootSubpath: refWithoutVersion,
 		})
 
 	case core.ModuleSourceKindGit:
-		if !isGitHub {
-			return nil, fmt.Errorf("for now, only github.com/ paths are supported: %q", args.RefString)
-		}
-
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
-		segments := strings.SplitN(modPath, "/", 4)
-		if len(segments) < 3 {
-			return nil, fmt.Errorf("invalid github.com path: %s", modPath)
+		// resolve the user input ref without version to a git URL
+		userRefWithoutVersion, err := resolveGitURL(refWithoutVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve git ref %s: %w", refWithoutVersion, err)
 		}
 
-		src.AsGitSource.Value.URLParent = segments[0] + "/" + segments[1] + "/" + segments[2]
+		// resolve the extracted repo root to a git URL
+		computedRepoRoot, err := resolveGitURL(parsed.repoRoot.Repo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve git ref %s: %w", parsed.repoRoot.Repo, err)
+		}
 
+		// splits the root and subdir from the repo root path and the ref without version path
+		root, subdir := splitRootAndSubdir(refWithoutVersion, computedRepoRoot.Path, userRefWithoutVersion.Path)
+		root = computedRepoRoot.Host + "/" + root
+
+		src.AsGitSource.Value.URLParent = root
 		cloneURL := src.AsGitSource.Value.CloneURL()
 
 		if !hasVersion {
@@ -77,8 +94,8 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource.Value.Version = modVersion
 
 		var subPath string
-		if len(segments) == 4 {
-			subPath = segments[3]
+		if subdir != "" {
+			subPath = subdir
 		} else {
 			subPath = "/"
 		}
@@ -98,7 +115,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]
-		err := s.dag.Select(ctx, s.dag.Root(), &gitRef,
+		err = s.dag.Select(ctx, s.dag.Root(), &gitRef,
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
@@ -145,25 +162,125 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	return src, nil
 }
 
+// shared logic with originToPath, copy-pasted
+// to avoid dependency on Buildkit
+func resolveGitURL(ref string) (*gitutil.GitURL, error) {
+	u, err := gitutil.ParseURL(ref)
+	if err != nil {
+		if err == gitutil.ErrUnknownProtocol {
+			u, err = gitutil.ParseURL("https://" + ref)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse URL: %w", err)
+		}
+	}
+	return u, nil
+}
+
 type parsedRefString struct {
 	modPath    string
 	modVersion string
 	hasVersion bool
-	isGitHub   bool
 	kind       core.ModuleSourceKind
+	repoRoot   *vcs.RepoRoot
 }
 
-func parseRefString(refString string) parsedRefString {
+// parseRefString parses a ref string into its components
+// New heuristic:
+// - stat folder to see if dir is present
+// - if not, try to isolate root of git repo from the ref
+// - if nothing worked, fallback as local ref, as before
+func parseRefString(ctx context.Context, bk *buildkit.Client, refString string) (parsedRefString, error) {
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
-	parsed.isGitHub = strings.HasPrefix(parsed.modPath, "github.com/")
 
-	if !parsed.hasVersion && !parsed.isGitHub {
-		parsed.kind = core.ModuleSourceKindLocal
-		return parsed
+	// We do a stat in case the mod path github.com/username is a local directory
+	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
+	if err == nil {
+		if !parsed.hasVersion && stat.IsDir() {
+			parsed.kind = core.ModuleSourceKindLocal
+			return parsed, nil
+		}
 	}
-	parsed.kind = core.ModuleSourceKindGit
-	return parsed
+
+	// we try to isolate the root of the git repo
+	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
+	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
+		parsed.kind = core.ModuleSourceKindGit
+		parsed.repoRoot = repoRoot
+		return parsed, nil
+	}
+
+	parsed.kind = core.ModuleSourceKindLocal
+	return parsed, err
+}
+
+// extract root and subdir for vanity URLs when one element of the root URL path is a prefix of the module path
+func extractSubdirVanityURL(rootURLPath, userRefPath string) (string, string) {
+	rootComponents := strings.Split(strings.Trim(rootURLPath, "/"), "/")
+	modulePathComponents := strings.Split(strings.Trim(userRefPath, "/"), "/")
+
+	modIndexMap := make(map[string]int)
+	for i, component := range modulePathComponents {
+		modIndexMap[component] = i
+	}
+
+	// Iterate over the root components in reverse order to find the deepest match first,
+	// ensuring we get the most specific subdirectory.
+	for i := len(rootComponents) - 1; i >= 0; i-- {
+		if j, found := modIndexMap[rootComponents[i]]; found {
+			subdir := strings.Join(modulePathComponents[j+1:], "/")
+			return rootURLPath, subdir
+		}
+	}
+
+	return strings.TrimSuffix(rootURLPath, "/"), ""
+}
+
+// splitRootAndSubdir splits the root URL path and module path into root and subdir components
+func splitRootAndSubdir(moduleRefWithoutVersion, repoRootPath, userRefPath string) (string, string) {
+	trimmedRepoRootPath := trimLeadingSlashes(repoRootPath)
+	trimmedUserRefPath := trimLeadingSlashes(userRefPath)
+
+	cleanedRootURLPath := removeGitSuffix(trimmedRepoRootPath)
+	cleanedUserRefPath := removeGitSuffix(trimmedUserRefPath)
+
+	if !isPrefix(cleanedUserRefPath, cleanedRootURLPath) {
+		return extractSubdirVanityURL(cleanedRootURLPath, cleanedUserRefPath)
+	}
+
+	subdir := extractSubdir(cleanedRootURLPath, cleanedUserRefPath)
+	root := appendGitSuffixIfNeeded(moduleRefWithoutVersion, cleanedRootURLPath)
+
+	return root, subdir
+}
+
+func trimLeadingSlashes(path string) string {
+	return strings.TrimPrefix(path, "/")
+}
+
+func removeGitSuffix(path string) string {
+	return strings.ReplaceAll(path, ".git", "")
+}
+
+func isPrefix(path, prefix string) bool {
+	return strings.HasPrefix(path, prefix)
+}
+
+func extractSubdir(rootPath, modulePath string) string {
+	return strings.TrimPrefix(modulePath[len(rootPath):], "/")
+}
+
+func appendGitSuffixIfNeeded(ref, root string) string {
+	refContainsGit := strings.Contains(ref, ".git")
+	rootContainsGit := strings.Contains(root, ".git")
+
+	if refContainsGit && !rootContainsGit {
+		return root + ".git"
+	} else if !refContainsGit && rootContainsGit {
+		return removeGitSuffix(root)
+	}
+	return root
 }
 
 func (s *moduleSchema) moduleSourceAsModule(
@@ -970,7 +1087,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		for _, depCfg := range modCfg.Dependencies {
-			parsed := parseRefString(depCfg.Source)
+			parsed, _ := parseRefString(ctx, query.Buildkit, depCfg.Source)
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
 			}
@@ -991,7 +1108,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(modCfg.SDK)
+			parsed, _ := parseRefString(ctx, query.Buildkit, modCfg.SDK)
 			switch parsed.kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
