@@ -271,8 +271,11 @@ func main() {
 
 	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
 		telemetryCfg := telemetry.Config{
-			Detect:             true,
-			Resource:           Resource(),
+			Detect:   true,
+			Resource: Resource(),
+			SpanProcessors: []sdktrace.SpanProcessor{ClientAnnotator{
+				ClientID: ClientID,
+			}},
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
 			LiveLogExporters:   []sdklog.Exporter{Frontend.LogExporter()},
 		}
@@ -312,6 +315,22 @@ func main() {
 		}
 	}
 }
+
+// ClientAnnotator sets the client ID for all spans.
+//
+// Probably not load bearing as PubSub will look deeply through parent spans to
+// find all clients, just feels more complete.
+type ClientAnnotator struct {
+	ClientID string
+}
+
+func (ca ClientAnnotator) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
+	span.SetAttributes(attribute.String(telemetry.ClientIDAttr, ca.ClientID))
+}
+
+func (ClientAnnotator) OnEnd(sdktrace.ReadOnlySpan)      {}
+func (ClientAnnotator) Shutdown(context.Context) error   { return nil }
+func (ClientAnnotator) ForceFlush(context.Context) error { return nil }
 
 func NormalizeWorkdir(workdir string) (string, error) {
 	if workdir == "" {

@@ -8,7 +8,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -48,8 +47,6 @@ func init() {
 }
 
 func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
-	pubsub := enginetel.NewPubSub()
-
 	otelResource := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String("dagger-engine"),
@@ -75,6 +72,7 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 		})
 	}
 
+	pubsub := enginetel.NewPubSub()
 	ctx = telemetry.Init(ctx, telemetry.Config{
 		Resource: otelResource,
 
@@ -85,7 +83,7 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 		SpanProcessors: []sdktrace.SpanProcessor{
 			// Install a span processor that annotates each span with the client ID
 			// that it came from.
-			ClientAnnotator{},
+			pubsub.Processor(),
 		},
 
 		// Send everything to the pub/sub, which distributes telemetry to
@@ -96,29 +94,6 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 
 	return ctx, pubsub
 }
-
-type ClientAnnotator struct {
-}
-
-var _ sdktrace.SpanProcessor = ClientAnnotator{}
-
-func (c ClientAnnotator) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
-	for _, attr := range span.Attributes() {
-		if attr.Key == telemetry.ClientIDAttr {
-			// has client ID already, so don't clobber it
-			return
-		}
-	}
-
-	metadata, err := engine.ClientMetadataFromContext(ctx)
-	if err == nil {
-		span.SetAttributes(attribute.String(telemetry.ClientIDAttr, metadata.ClientID))
-	}
-}
-
-func (c ClientAnnotator) OnEnd(span sdktrace.ReadOnlySpan)     {}
-func (c ClientAnnotator) Shutdown(ctx context.Context) error   { return nil }
-func (c ClientAnnotator) ForceFlush(ctx context.Context) error { return nil }
 
 func CloseTelemetry() {
 	telemetry.Close()

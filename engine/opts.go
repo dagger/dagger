@@ -21,7 +21,7 @@ import (
 const (
 	EngineVersionMetaKey = "x-dagger-engine"
 
-	clientMetadataMetaKey  = "x-dagger-client-metadata"
+	clientMetadataMetaKey  = enginetel.ClientMetadataMetaKey
 	localImportOptsMetaKey = "x-dagger-local-import-opts"
 	localExportOptsMetaKey = "x-dagger-local-export-opts"
 

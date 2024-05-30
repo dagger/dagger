@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -34,7 +35,7 @@ func (e *TraceServer) Export(ctx context.Context, req *colltracev1.ExportTraceSe
 }
 
 func (e *TraceServer) Subscribe(req *SubscribeRequest, srv TracesSource_SubscribeServer) error {
-	exp, err := otlptrace.New(srv.Context(), &traceStreamExporter{stream: srv})
+	exp, err := otlptrace.New(srv.Context(), &traceStreamExporter{stream: srv, clientID: req.GetClientId()})
 	if err != nil {
 		return err
 	}
@@ -45,7 +46,9 @@ func (e *TraceServer) Subscribe(req *SubscribeRequest, srv TracesSource_Subscrib
 }
 
 type traceStreamExporter struct {
-	stream TracesSource_SubscribeServer
+	stream   TracesSource_SubscribeServer
+	clientID string
+	mu       sync.Mutex
 }
 
 var _ otlptrace.Client = (*traceStreamExporter)(nil)
@@ -59,6 +62,8 @@ func (s *traceStreamExporter) Stop(ctx context.Context) error {
 }
 
 func (s *traceStreamExporter) UploadTraces(ctx context.Context, spans []*otlptracev1.ResourceSpans) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.stream.Send(&otlptracev1.TracesData{
 		ResourceSpans: spans,
 	})
@@ -90,11 +95,14 @@ func (e *LogsServer) Subscribe(req *SubscribeRequest, stream LogsSource_Subscrib
 
 type logStreamExporter struct {
 	stream LogsSource_SubscribeServer
+	mu     sync.Mutex
 }
 
 var _ sdklog.Exporter = (*logStreamExporter)(nil)
 
 func (s *logStreamExporter) Export(ctx context.Context, logs []sdklog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.stream.Send(&otlplogsv1.LogsData{
 		ResourceLogs: telemetry.LogsToPB(logs),
 	})
