@@ -228,6 +228,7 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 
 	for exp, spans := range byExporter {
 		exp := exp
+		spans := spans
 		eg.Go(func() error {
 			slog.ExtraDebug("exporting spans to subscriber", "spans", len(spans))
 			return exp.ExportSpans(ctx, spans)
