@@ -314,13 +314,6 @@ Build and publish a multi-platform image:
 dagger call build --src="https://github.com/golang/example#master:hello" 
 ```
 
-Run the published container by selecting the image tag, the output should look similar to this:
-
-```shell
-docker run ttl.sh/myapp:latest@sha256:387edb5d38bdda3257d5283d8cab992f7cf696888c294e247bc7ab5ea1e45f0a /hello
-Hello, world!
-```
-
 {/* ### Build multi-arch image with cross-compliation
 
 ### Build image from Dockerfile
