@@ -109,7 +109,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 
 	exportFn, ok := fileObj.FunctionByName("export")
 	require.True(t, ok)
-	require.Equal(t, core.TypeDefKindBoolean, exportFn.ReturnType.Kind)
+	require.Equal(t, core.TypeDefKindString, exportFn.ReturnType.Kind)
 	require.Len(t, exportFn.Args, 2)
 
 	exportFnPathArg := exportFn.Args[0]

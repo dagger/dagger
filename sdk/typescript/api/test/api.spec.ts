@@ -353,14 +353,14 @@ describe("TypeScript SDK api", function () {
           seededPlatformVariants.push(ctr)
         }
 
-        const exportID = `./export-${randomUUID()}`
+        const exportID = `export-${randomUUID()}`
 
-        const isSuccess = await client.container().export(exportID, {
+        const success = await client.container().export(`./${exportID}`, {
           platformVariants: seededPlatformVariants,
         })
 
         await fs.unlinkSync(exportID)
-        assert.strictEqual(isSuccess, true)
+        assert.ok(success.endsWith(exportID))
       },
       { LogOutput: process.stderr },
     )
