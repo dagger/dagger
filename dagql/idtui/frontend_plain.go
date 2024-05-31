@@ -359,6 +359,11 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 	r := renderer{db: fe.db, width: -1, debug: fe.Debug}
 
 	prefix := fe.output.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
+
+	if r.debug {
+		prefix += fe.output.String(fmt.Sprintf("%s: ", span.SpanContext().SpanID().String())).Foreground(termenv.ANSIBrightBlack).String()
+	}
+
 	if span.Call != nil {
 		call := &callpbv1.Call{
 			Field:          span.Call.Field,
