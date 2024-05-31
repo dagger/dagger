@@ -759,6 +759,10 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source root relative path: %w", err)
 	}
+	// ensure sourceRootRelPath has a local path structure
+	// even when subdir relative to git source has ref structure
+	// (cf. test TestRefFormat)
+	sourceRootRelPath = "./" + sourceRootRelPath
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
 	if err := s.collectCallerLocalDeps(ctx, src.Query, contextAbsPath, sourceRootAbsPath, true, src, collectedDeps); err != nil {
