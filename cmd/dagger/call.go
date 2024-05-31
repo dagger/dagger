@@ -15,6 +15,7 @@ import (
 var outputFormat string
 var outputPath string
 var jsonOutput bool
+var responsePayload map[string]any
 
 var callCmd = &FuncCommand{
 	Name:  "call [options]",
@@ -25,12 +26,30 @@ var callCmd = &FuncCommand{
 		cmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Present result as JSON")
 	},
 	OnSelectObjectLeaf: func(fc *FuncCommand, obj functionProvider) error {
+		typeName := obj.ProviderName()
+		switch typeName {
+		case Container, Directory, File:
+			if outputPath != "" {
+				fc.Select("export")
+				fc.Arg("path", outputPath)
+				if typeName == File {
+					fc.Arg("allowParentDirPath", true)
+				}
+				return nil
+			}
+		}
+
+		// Add the object's name so we always have something to show.
+		responsePayload = make(map[string]any)
+		responsePayload["_type"] = typeName
+
 		names := make([]string, 0)
 		for _, f := range GetLeafFunctions(obj) {
 			names = append(names, f.Name)
 		}
+
 		if len(names) > 0 {
-			// FIXME: Consider adding a method to the query builder specifically
+			// FIXME: Consider adding a method to the query builder speficically
 			// for multiple selections to avoid this workaround. Even if there's
 			// just one field it helps to show the field's name, not just the
 			// value, and multiple selection allows it because it binds to the
@@ -38,12 +57,35 @@ var callCmd = &FuncCommand{
 			if len(names) == 1 {
 				names = append(names, "")
 			}
+
 			fc.Select(names...)
-			outputFormat = "yaml"
 		}
+
 		return nil
 	},
 	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, modType *modTypeDef, response any) error {
+		switch modType.Name() {
+		case Container, Directory, File:
+			if outputPath != "" {
+				logOutputSuccess(cmd, outputPath)
+				return nil
+			}
+		}
+
+		if responsePayload != nil {
+			r, err := addPayload(response, responsePayload)
+			if err != nil {
+				return err
+			}
+			response = r
+
+			// Use yaml when printing scalars because it's more human-readable
+			// and handles lists and multiline strings well.
+			if outputFormat == "" {
+				outputFormat = "yaml"
+			}
+		}
+
 		if jsonOutput {
 			outputFormat = "json"
 		}
@@ -67,10 +109,12 @@ var callCmd = &FuncCommand{
 			if _, err := buf.Write(out); err != nil {
 				return err
 			}
-		default:
+		case "":
 			if err := printFunctionResult(buf, response); err != nil {
 				return err
 			}
+		default:
+			return fmt.Errorf("wrong output format %q", outputFormat)
 		}
 
 		if outputPath != "" {
@@ -93,6 +137,36 @@ var callCmd = &FuncCommand{
 
 		return nil
 	},
+}
+
+// addPayload merges a map into a response from getting an object's values.
+func addPayload(response any, payload map[string]any) (any, error) {
+	switch t := response.(type) {
+	case []any:
+		r := make([]any, 0, len(t))
+		for _, v := range t {
+			p, err := addPayload(v, payload)
+			if err != nil {
+				return nil, err
+			}
+			r = append(r, p)
+		}
+		return r, nil
+	case map[string]any:
+		if len(t) == 0 {
+			return payload, nil
+		}
+		r := make(map[string]any, len(t)+len(payload))
+		for k, v := range t {
+			r[k] = v
+		}
+		for k, v := range responsePayload {
+			r[k] = v
+		}
+		return r, nil
+	default:
+		return nil, fmt.Errorf("unexpected response %T for object values: %+v", response, response)
+	}
 }
 
 // writeOutputFile writes the buffer to a file, creating the parent directories
@@ -118,7 +192,6 @@ func logOutputSuccess(cmd *cobra.Command, path string) {
 func printFunctionResult(w io.Writer, r any) error {
 	switch t := r.(type) {
 	case []any:
-		// TODO: group in progrock
 		for _, v := range t {
 			if err := printFunctionResult(w, v); err != nil {
 				return err

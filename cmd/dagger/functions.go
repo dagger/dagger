@@ -304,30 +304,6 @@ func (fc *FuncCommand) Command() *cobra.Command {
 	return fc.cmd
 }
 
-// printCommands prints the available functions for the current command.
-func (fc *FuncCommand) Suggestions(cmd *cobra.Command) string {
-	var buf strings.Builder
-	if cmd.HasAvailableSubCommands() {
-		fmt.Fprintln(&buf, toUpperBold("Available functions"))
-		for _, c := range cmd.Commands() {
-			if c.IsAvailableCommand() {
-				fmt.Fprintln(&buf, cmdShortWrapped(c))
-			}
-		}
-		if skipped, ok := cmd.Annotations[skippedCmdsAnnotation]; ok {
-			fmt.Fprintln(&buf)
-			msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s",
-				len(strings.Split(skipped, ", ")),
-				skipped,
-			)
-			fmt.Fprintln(&buf, termenv.String(msg).Faint().String())
-		}
-		fmt.Fprintln(&buf)
-		fmt.Fprintf(&buf, "Use '%v [function] --help' for more information.\n", cmd.CommandPath())
-	}
-	return buf.String()
-}
-
 func (fc *FuncCommand) Help(cmd *cobra.Command) error {
 	var args []any
 	// We need to store these in annotations because during traversal all
@@ -708,15 +684,15 @@ func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobr
 				}
 			}
 
+			// If the selection didn't change, it means OnSelectObjectLeaf
+			// didn't handle it. Rather than error, just simulate an empty
+			// response for AfterResponse.
 			if origSel == fc.q {
-				if cmd.HasAvailableSubCommands() {
-					cmd.Print(fc.Suggestions(cmd))
-					return nil
+				if fc.AfterResponse == nil {
+					return fmt.Errorf("%q requires a sub-command", cmd.Name())
 				}
-				// TODO: give more details to help out
-				// bar has no available functions
-				// x are unsupported
-				return fmt.Errorf("there's no available functions to print or chain")
+				response := map[string]any{}
+				return fc.AfterResponse(fc, cmd, typeDef, response)
 			}
 		}
 
