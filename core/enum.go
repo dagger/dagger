@@ -48,6 +48,7 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 		return nil, nil
 	}
 
+	// TODO: refactor to not use DynamicID since Enum are not
 	switch x := value.(type) {
 	case DynamicID:
 		deps, err := m.mod.Query.IDDeps(ctx, x.ID())

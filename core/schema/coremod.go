@@ -85,7 +85,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		}
 		modType = &CoreModObject{coreMod: m, name: typeDef.AsObject.Value.Name}
 	case core.TypeDefKindEnum:
-		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
+		_, ok := m.Dag.TypeDef(typeDef.AsEnum.Value.Name)
 		if !ok {
 			return nil, false, nil
 		}

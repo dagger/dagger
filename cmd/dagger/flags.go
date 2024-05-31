@@ -689,6 +689,18 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		flags.String(name, val, usage)
 		return nil
 
+	case dagger.EnumKind:
+		enumName := r.TypeDef.AsEnum.Name
+
+		if val := GetCustomFlagValue(enumName); val != nil {
+			flags.Var(val, name, usage)
+			return nil
+		}
+
+		val, _ := getDefaultValue[string](r)
+		flags.String(name, val, usage)
+
+		return nil
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 

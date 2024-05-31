@@ -376,7 +376,7 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindEnum:
-		typed = DynamicID{typeName: typeDef.AsEnum.Value.Name}
+		typed = dagql.NewScalar[dagql.String](typeDef.AsEnum.Value.Name, dagql.String(""))
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}

@@ -167,6 +167,13 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 			return nil, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
 		}
 	}
+	for _, enum := range inst.Self.EnumDefs {
+		newMod, err = newMod.WithEnum(ctx, enum)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
+		}
+	}
+	newMod.InstanceID = newID
 
 	return newMod, nil
 }
