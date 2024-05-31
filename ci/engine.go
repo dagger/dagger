@@ -22,6 +22,8 @@ type Engine struct {
 
 	Trace bool // +private
 
+	Race bool // +private
+
 	GPUSupport bool   // +private
 	ImageBase  string // +private
 }
@@ -33,6 +35,11 @@ func (e *Engine) WithConfig(key, value string) *Engine {
 
 func (e *Engine) WithArg(key, value string) *Engine {
 	e.Args = append(e.Args, key+"="+value)
+	return e
+}
+
+func (e *Engine) WithRace() *Engine {
+	e.Race = true
 	return e
 }
 
@@ -76,7 +83,9 @@ func (e *Engine) Container(
 	if err != nil {
 		return nil, err
 	}
-	builder = builder.WithVersion(e.Dagger.Version.String())
+	builder = builder.
+		WithVersion(e.Dagger.Version.String()).
+		WithRace(e.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}

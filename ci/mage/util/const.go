@@ -7,4 +7,5 @@ const (
 	GPUSupportEnvName  = "_EXPERIMENTAL_DAGGER_GPU_SUPPORT"
 
 	TraceEnvName = "TRACE"
+	RaceEnvName  = "RACE"
 )

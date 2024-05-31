@@ -92,6 +92,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 func (t Engine) Dev(ctx context.Context) error {
 	gpuSupport := os.Getenv(util.GPUSupportEnvName) != ""
 	trace := os.Getenv(util.TraceEnvName) != ""
+	race := os.Getenv(util.RaceEnvName) != ""
 
 	args := []string{"engine"}
 	if gpuSupport {
@@ -99,6 +100,9 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 	if trace {
 		args = append(args, "with-trace")
+	}
+	if race {
+		args = append(args, "with-race")
 	}
 	tarPath := "./bin/engine.tar"
 	args = append(args, "container", "export", "--path="+tarPath)
