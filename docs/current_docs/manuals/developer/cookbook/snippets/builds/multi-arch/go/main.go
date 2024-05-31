@@ -12,7 +12,7 @@ func (m *MyModule) Build(
 	// Source code location
 	// can be local directory or remote Git repository
 	src *Directory,
-) string {
+) (string, error) {
 	// platforms to build for and push in a multi-platform image
 	var platforms = []Platform{
 		"linux/amd64", // a.k.a. x86_64
@@ -57,9 +57,9 @@ func (m *MyModule) Build(
 		})
 
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
 	// return build directory
-	return imageDigest
+	return imageDigest, nil
 }

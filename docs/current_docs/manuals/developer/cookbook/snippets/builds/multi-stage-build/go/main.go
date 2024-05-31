@@ -12,7 +12,7 @@ func (m *MyModule) Build(
 	// source code location
 	// can be local directory or remote Git repository
 	src *Directory,
-) string {
+) (string, error) {
 	// build app
 	builder := dag.Container().
 		From("golang:latest").
@@ -30,8 +30,8 @@ func (m *MyModule) Build(
 	// publish to ttl.sh registry
 	addr, err := prodImage.Publish(ctx, "ttl.sh/myapp:latest")
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
-	return addr
+	return addr, nil
 }
