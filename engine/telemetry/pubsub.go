@@ -411,18 +411,6 @@ func (ps *PubSub) Spans() sdktrace.SpanExporter {
 	return SpansPubSub{ps}
 }
 
-func (ps SpansPubSub) allSubscribersForTrace(traceID trace.TraceID) []sdktrace.SpanExporter {
-	var exps []sdktrace.SpanExporter
-	ps.traceSubsL.Lock()
-	for t, subs := range ps.traceSubs {
-		if t.TraceID == traceID {
-			exps = append(exps, subs...)
-		}
-	}
-	ps.traceSubsL.Unlock()
-	return exps
-}
-
 func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	ps.trackSpans(spans)
 
@@ -479,9 +467,12 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 
 			slog.ExtraDebug("publishing span to affected clients", "clients", affectedClients, "subs", len(subs))
 		} else {
-			// no clients in particular; send to all client subscribers
-			subs = ps.allSubscribersForTrace(s.SpanContext().TraceID())
-			slog.ExtraDebug("publishing span to all clients", "subs", len(subs))
+			// NOTE: this can happen when a client goes away, but also happens for a
+			// few "boring" spans (internal gRPC plumbing etc). because of the first
+			// case, we handle this by not emitting it to anyone. at one point we
+			// emitted to all clients for the trace, but that led to strange
+			// cross-talk with partial data.
+			slog.ExtraDebug("no clients interested in span")
 		}
 
 		for _, exp := range subs {
