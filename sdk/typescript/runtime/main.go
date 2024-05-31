@@ -90,7 +90,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Node:
 		return ctr.
 			// Install dependencies
-			WithExec([]string{"npm", "install", "--omit=dev"}).
+			WithExec([]string{"yarn", "install", "--production"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -177,8 +177,6 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 		return dag.Container().
 			From(nodeImageRef).
 			WithoutEntrypoint().
-			// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
-			WithExec([]string{"corepack", "enable"}).
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
 			WithExec([]string{"apk", "add", "ca-certificates"}).
@@ -263,6 +261,8 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 		return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
 	case Node:
 		return ctr.
+			// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
+			WithExec([]string{"corepack", "enable"}).
 			WithExec([]string{"yarn", "set", "version", "stable"}).
 			WithExec([]string{"yarn", "workspaces", "focus", "--production"}).Directory(ModSourceDirPath)
 	default:
