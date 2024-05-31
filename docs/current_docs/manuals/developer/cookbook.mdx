@@ -383,9 +383,41 @@ Build and publish an image from an existing Dockerfile
 dagger call build --src https://github.com/dockersamples/python-flask-redis
 ```
 
-{/* ### Build image from Dockerfile using different build context
+### Build image from Dockerfile using different build context
 
-### Add OCI annotations to image
+The following function builds an image from a Dockerfile with a build context that is differen than the current working directory.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/dockerfile-context/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/dockerfile-context/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/dockerfile-context/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build image using different build context
+
+```shell
+dagger call build \
+  --src "https://github.com/dockersamples/python-flask-redis" \
+  --dockerfile https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+```
+
+{/* ### Add OCI annotations to image
 
 ### Define build-time variables
 
