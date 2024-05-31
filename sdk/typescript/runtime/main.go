@@ -90,7 +90,6 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 	case Node:
 		return ctr.
 			// Install dependencies
-			//WithExec([]string{"yarn", "set", "version", "stable"}).
 			WithExec([]string{"npm", "install", "--omit=dev"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
