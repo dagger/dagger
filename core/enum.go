@@ -5,8 +5,76 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+type ModuleEnumType struct {
+	typeDef *EnumTypeDef
+	mod *Module
+}
+
+func (m *ModuleEnumType) SourceMod() Mod {
+	if m.mod == nil {
+		return nil
+	}
+
+	return m.mod
+}
+
+func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+	if value == nil {
+		slog.Warn("ModuleEnumType.ConvertFromSDKResult: got nil value")
+		return nil, nil
+	}
+
+	switch value := value.(type) {
+	case string:
+		return dagql.NewDynamicEnumValue(&EnumObject{Module: m.mod, TypeDef: m.typeDef}, value), nil
+	default:
+		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
+	}
+}
+
+func (m *ModuleEnumType) TypeDef() *TypeDef {
+	return &TypeDef{
+		Kind: TypeDefKindEnum,
+		AsEnum: dagql.NonNull(m.typeDef),
+	}
+}
+
+func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
+	if value == nil {
+		return nil, nil
+	}
+
+	switch x := value.(type) {
+	case DynamicID:
+		deps, err := m.mod.Query.IDDeps(ctx, x.ID())
+		if err != nil {
+			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to get deps for DynamicID: %w", err)
+		}
+
+		dag, err := deps.Schema(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to get schema for DynamicID: %w", err)
+		}
+
+		val, err := dag.Load(ctx, x.ID())
+		if err != nil {
+			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to load DynamicID: %w", err)
+		}
+
+		switch x := val.(type) {
+		case dagql.DynamicEnumValue:
+			return x.DecodeInput(x)
+		default:
+			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: unexpected value type %T", x)
+		}
+	default:
+		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle type %T", m, x)
+	}
+}
 
 type EnumObject struct {
 	Module  *Module
@@ -64,7 +132,7 @@ func (enum *EnumObject) Install(ctx context.Context, dag *dagql.Server) error {
 		return fmt.Errorf("installing object %q too early", enum.TypeName())
 	}
 
-	dag.InstallScalar(enum)
+	dag.InstallTypeDef(enum)
 
 	return nil
 }

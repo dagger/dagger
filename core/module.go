@@ -349,6 +349,37 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
 		return nil, false, nil
 
+	case TypeDefKindEnum:
+		if checkDirectDeps {
+			// check to see if this is from a *direct* dependency
+			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get type from dependency: %w", err)
+			}
+
+			if ok {
+				return depType, true, nil
+			}
+		}
+
+		// otherwise it must be from this module
+		var found bool
+		for _, enum := range mod.EnumDefs {
+			if enum.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
+				modType = &ModuleEnumType{
+					mod:     mod,
+					typeDef: enum.AsEnum.Value,
+				}
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			slog.ExtraDebug("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
+			return nil, false, nil
+		}
+
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
