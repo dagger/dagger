@@ -51,6 +51,7 @@ type PubSub struct {
 	// updated via span processor
 	spanClients map[spanKey]string
 	spanParents map[spanKey]trace.SpanID
+	spanDone    map[spanKey]bool
 	spansL      sync.Mutex
 }
 
@@ -70,6 +71,7 @@ func NewPubSub() *PubSub {
 
 		spanClients: map[spanKey]string{},
 		spanParents: map[spanKey]trace.SpanID{},
+		spanDone:    map[spanKey]bool{},
 	}
 	mux.HandleFunc("/v1/traces", ps.TracesHandler)
 	mux.HandleFunc("/v1/logs", ps.LogsHandler)
@@ -100,7 +102,14 @@ func (p clientTracker) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan)
 
 // OnEnd does nothing. Span client state must be cleaned up when the client
 // goes away, not when a span completes.
-func (clientTracker) OnEnd(span sdktrace.ReadOnlySpan) {}
+func (p clientTracker) OnEnd(span sdktrace.ReadOnlySpan) {
+	p.spansL.Lock()
+	p.spanDone[spanKey{
+		TraceID: span.SpanContext().TraceID(),
+		SpanID:  span.SpanContext().SpanID(),
+	}] = true
+	p.spansL.Unlock()
+}
 
 // Shutdown does nothing.
 func (clientTracker) Shutdown(context.Context) error { return nil }
@@ -172,6 +181,38 @@ func (ps *PubSub) trackSpans(spans []sdktrace.ReadOnlySpan) {
 	defer ps.spansL.Unlock()
 	for _, span := range spans {
 		ps.trackSpan(span)
+	}
+}
+
+func (ps *PubSub) filterAbandonedSpans(spans map[trace.SpanID]sdktrace.ReadOnlySpan) []sdktrace.ReadOnlySpan {
+	ps.spansL.Lock()
+	defer ps.spansL.Unlock()
+	var kept []sdktrace.ReadOnlySpan
+	for _, span := range spans {
+		if ps.isAbandonedL(span) {
+			slog.ExtraDebug("dropping abandoned span", "span", span.Name(), "spanID", span.SpanContext().SpanID())
+			continue
+		}
+		kept = append(kept, span)
+	}
+	return kept
+}
+
+// isAbandonedL returns true if the span or any of its parents are done.
+func (ps *PubSub) isAbandonedL(span sdktrace.ReadOnlySpan) bool {
+	key := spanKey{
+		TraceID: span.SpanContext().TraceID(),
+		SpanID:  span.SpanContext().SpanID(),
+	}
+	for {
+		if ps.spanDone[key] {
+			return true
+		}
+		if parent, ok := ps.spanParents[key]; ok && parent.IsValid() {
+			key.SpanID = parent
+		} else {
+			return false
+		}
 	}
 }
 
@@ -314,15 +355,17 @@ func (ps *PubSub) Drain(client string, immediate bool) {
 func (ps *PubSub) initClient(id string) *activeClient {
 	ps.clientsL.Lock()
 	defer ps.clientsL.Unlock()
-	if c, ok := ps.clients[id]; ok {
-		return c
+	c, ok := ps.clients[id]
+	if !ok {
+		c = &activeClient{
+			ps:    ps,
+			id:    id,
+			cond:  sync.NewCond(&sync.Mutex{}),
+			spans: map[trace.SpanID]sdktrace.ReadOnlySpan{},
+		}
+		ps.clients[id] = c
 	}
-	c := &activeClient{
-		id:    id,
-		cond:  sync.NewCond(&sync.Mutex{}),
-		spans: map[trace.SpanID]sdktrace.ReadOnlySpan{},
-	}
-	ps.clients[id] = c
+	c.subscribers++
 	return c
 }
 
@@ -335,7 +378,17 @@ func (ps *PubSub) lookupClient(id string) (*activeClient, bool) {
 
 func (ps *PubSub) deinitClient(id string) {
 	ps.clientsL.Lock()
-	delete(ps.clients, id)
+	c, ok := ps.clients[id]
+	if ok {
+		c.subscribers--
+		if c.subscribers == 0 {
+			delete(ps.clients, id)
+		} else {
+			// still an active subscriber for this client; keep it around
+			ps.clientsL.Unlock()
+			return
+		}
+	}
 	ps.clientsL.Unlock()
 
 	// free up span parent/client state
@@ -344,6 +397,7 @@ func (ps *PubSub) deinitClient(id string) {
 		if client == id {
 			delete(ps.spanParents, key)
 			delete(ps.spanClients, key)
+			delete(ps.spanDone, key)
 		}
 	}
 	ps.spansL.Unlock()
@@ -639,6 +693,11 @@ func (ps *PubSub) unsubLogs(topic Topic, exp sdklog.Exporter) {
 // all to complete, ensuring we don't drop the last few spans, which ruins
 // an entire trace.
 type activeClient struct {
+	ps *PubSub
+
+	// keep track of parallel logs/traces/metrics subscriptions
+	subscribers int
+
 	id string
 
 	spans map[trace.SpanID]sdktrace.ReadOnlySpan
@@ -699,7 +758,13 @@ func (c *activeClient) wait(ctx context.Context) {
 			break
 		}
 		if c.draining {
-			slog.Debug("waiting for spans")
+			kept := c.ps.filterAbandonedSpans(c.spans)
+			if len(kept) > 0 {
+				slog.Debug("waiting for spans")
+			} else {
+				slog.Debug("remaining spans all abandoned")
+				break
+			}
 		}
 		c.cond.Wait()
 	}
