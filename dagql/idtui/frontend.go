@@ -81,6 +81,7 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 type renderer struct {
 	db *DB
 
+	debug bool
 	width int
 }
 
@@ -265,6 +266,12 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 	symbol = out.String(symbol).Foreground(color).String()
 
 	fmt.Fprintf(out, "%s ", symbol)
+
+	if r.debug {
+		fmt.Fprintf(out, "%s ", out.String(
+			span.SpanContext().SpanID().String(),
+		).Foreground(termenv.ANSIBrightBlack))
+	}
 }
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {

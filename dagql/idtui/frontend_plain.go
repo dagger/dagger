@@ -356,7 +356,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := renderer{db: fe.db, width: -1}
+	r := renderer{db: fe.db, width: -1, debug: fe.Debug}
 
 	prefix := fe.output.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
 	if span.Call != nil {
@@ -401,7 +401,7 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 
 	spanDt := fe.data[span.SpanContext().SpanID()]
 
-	r := renderer{db: fe.db, width: -1}
+	r := renderer{db: fe.db, width: -1, debug: fe.Debug}
 
 	for _, logLine := range spanDt.logs {
 		fmt.Fprint(out, out.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta))
