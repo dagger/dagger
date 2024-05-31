@@ -311,7 +311,7 @@ The following Dagger Function builds a single image for different CPU architectu
 Build and publish a multi-platform image:
 
 ```shell
-dagger call build --src="https://github.com/golang/example#master:hello" 
+dagger call build --src="https://github.com/golang/example#master:hello"
 ```
 
 ### Build multi-arch image with cross-compliation
@@ -795,3 +795,30 @@ Set environment variables in a container:
 ```shell
 dagger call set-env
 ```
+
+## Error handling
+
+### Terminate gracefully
+
+The following Dagger Function demonstrates how to handle errors in a pipeline.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/error-handling/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/error-handling/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/error-handling/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
