@@ -6,11 +6,12 @@ import {
   TypeDef,
   TypeDefKind,
 } from "../api/client.gen.js"
+import { Arguments } from "../introspector/scanner/abtractions/argument.js"
+import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
+import { Method } from "../introspector/scanner/abtractions/method.js"
 import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
 import {
-  ConstructorTypeDef,
-  FunctionArgTypeDef,
-  FunctionTypedef,
+  EnumTypeDef,
   ListTypeDef,
   ObjectTypeDef,
   ScalarTypeDef,
@@ -41,7 +42,7 @@ export async function register(
 
     // Register all functions (methods) to this object
     Object.values(object.methods).forEach((method) => {
-      typeDef = typeDef.withFunction(addFunction(method.typeDef))
+      typeDef = typeDef.withFunction(addFunction(method))
     })
 
     // Register all fields that belong to this object
@@ -49,7 +50,7 @@ export async function register(
       if (field.isExposed) {
         typeDef = typeDef.withField(
           field.alias ?? field.name,
-          addTypeDef(field.typeDef.typeDef),
+          addTypeDef(field.type),
           {
             description: field.description,
           },
@@ -59,12 +60,27 @@ export async function register(
 
     if (object._constructor) {
       typeDef = typeDef.withConstructor(
-        addConstructor(object._constructor.typeDef, typeDef),
+        addConstructor(object._constructor, typeDef),
       )
     }
 
     // Add it to the module object
     mod = mod.withObject(typeDef)
+  })
+
+  // Register all enums defined by this modules
+  Object.values(module.enums).forEach((enum_) => {
+    let typeDef = dag.typeDef().withEnum(enum_.name, {
+      description: enum_.description,
+    })
+
+    Object.values(enum_.values).forEach((value) => {
+      typeDef = typeDef.withEnumValue(value.name, {
+        description: value.description,
+      })
+    })
+
+    mod = mod.withEnum(typeDef)
   })
 
   // Call ID to actually execute the registration
@@ -74,29 +90,24 @@ export async function register(
 /**
  * Bind a constructor to the given object.
  */
-function addConstructor(
-  constructor: ConstructorTypeDef,
-  owner: TypeDef,
-): Function_ {
-  return dag.function_("", owner).with(addArg(constructor.args))
+function addConstructor(constructor: Constructor, owner: TypeDef): Function_ {
+  return dag.function_("", owner).with(addArg(constructor.arguments))
 }
 
 /**
  * Create a function in the Dagger API.
  */
-function addFunction(fct: FunctionTypedef): Function_ {
+function addFunction(fct: Method): Function_ {
   return dag
     .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType))
     .withDescription(fct.description)
-    .with(addArg(fct.args))
+    .with(addArg(fct.arguments))
 }
 
 /**
  * Register all arguments in the function.
  */
-function addArg(args: {
-  [name: string]: FunctionArgTypeDef
-}): (fct: Function_) => Function_ {
+function addArg(args: Arguments): (fct: Function_) => Function_ {
   return function (fct: Function_): Function_ {
     Object.values(args).forEach((arg) => {
       const opts: FunctionWithArgOpts = {
@@ -107,8 +118,8 @@ function addArg(args: {
         opts.defaultValue = arg.defaultValue as string & { __JSON: never }
       }
 
-      let typeDef = addTypeDef(arg.typeDef)
-      if (arg.optional) {
+      let typeDef = addTypeDef(arg.type)
+      if (arg.isOptional) {
         typeDef = typeDef.withOptional(true)
       }
 
@@ -139,6 +150,8 @@ function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
       return dag.typeDef().withListOf(addTypeDef((type as ListTypeDef).typeDef))
     case TypeDefKind.VoidKind:
       return dag.typeDef().withKind(type.kind).withOptional(true)
+    case TypeDefKind.EnumKind:
+      return dag.typeDef().withEnum((type as EnumTypeDef).name)
     default:
       return dag.typeDef().withKind(type.kind)
   }

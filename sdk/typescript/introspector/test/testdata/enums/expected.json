@@ -1,0 +1,67 @@
+{
+  "name": "Enums",
+  "objects": {
+    "Enums": {
+      "name": "Enums",
+      "description": "",
+      "methods": {
+        "setStatus": {
+          "name": "setStatus",
+          "description": "",
+          "arguments": {
+            "status": {
+              "name": "status",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "Status"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "VOID_KIND"
+          }
+        },
+        "getStatus": {
+          "name": "getStatus",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "Status"
+          }
+        }
+      },
+      "properties": {
+        "status": {
+          "name": "status",
+          "description": "",
+          "type": {
+            "kind": "ENUM_KIND",
+            "name": "Status"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  },
+  "enums": {
+    "Status": {
+      "name": "Status",
+      "description": "Enum for Status",
+      "values": {
+        "ACTIVE": {
+          "name": "ACTIVE",
+          "description": "Active status"
+        },
+        "INACTIVE": {
+          "name": "INACTIVE",
+          "description": "Inactive status"
+        }
+      }
+    }
+  }
+}

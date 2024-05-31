@@ -2,6 +2,7 @@
 import { dag, TypeDefKind } from "../api/client.gen.js"
 import { Args, Registry } from "../introspector/registry/registry.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
+import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
 import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
 import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
@@ -162,6 +163,20 @@ export async function loadValue(
       // TODO(supports subfields serialization)
       return registry.buildClass(objectType, value)
     }
+    case TypeDefKind.EnumKind: {
+      const enumType = (type as TypeDef<TypeDefKind.EnumKind>).name
+
+      // Workaround to call to get the enum that has an id
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      if (dag[`load${enumType}FromID`]) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        return dag[`load${enumType}FromID`](value)
+      }
+
+      return value
+    }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
@@ -187,7 +202,7 @@ export function loadObjectReturnType(
   module: DaggerModule,
   object: DaggerObject,
   method: Method,
-): DaggerObject {
+): DaggerObject | DaggerEnum {
   const retType = method.returnType
 
   switch (retType.kind) {
@@ -203,6 +218,8 @@ export function loadObjectReturnType(
     }
     case TypeDefKind.ObjectKind:
       return module.objects[(retType as TypeDef<TypeDefKind.ObjectKind>).name]
+    case TypeDefKind.EnumKind:
+      return module.enums[(retType as TypeDef<TypeDefKind.EnumKind>).name]
     default:
       return object
   }
@@ -211,7 +228,7 @@ export function loadObjectReturnType(
 export async function loadResult(
   result: any,
   module: DaggerModule,
-  object: DaggerObject,
+  object: DaggerObject | DaggerEnum,
 ): Promise<any> {
   // Handle IDable objects
   if (result && typeof result?.id === "function") {
@@ -228,7 +245,7 @@ export async function loadResult(
   }
 
   // Handle objects
-  if (typeof result === "object") {
+  if (typeof result === "object" && object instanceof DaggerObject) {
     const state: any = {}
 
     for (const [key, value] of Object.entries(result)) {
@@ -278,6 +295,10 @@ export async function loadResult(
     }
 
     return state
+  }
+
+  if (typeof result === "object" && object instanceof DaggerEnum) {
+    return result
   }
 
   // Handle primitive types
