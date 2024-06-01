@@ -42,4 +42,5 @@ class MyModule:
             # DaggerError is the base class for all errors raised by Dagger
             return "Unexpected Dagger error"
 
+
 # ruff: noqa: RET505
