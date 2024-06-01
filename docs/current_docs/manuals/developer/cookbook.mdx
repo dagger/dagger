@@ -773,7 +773,7 @@ The following Dagger Functions return a just-in-time directory and file. These o
 
 ### Export a container image to the host
 
-The following Dagger Function returns a just-in-time container. This can be exported to the host with `dagger call ... export ...`.
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball with `dagger call ... export ...`.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -798,7 +798,7 @@ The following Dagger Function returns a just-in-time container. This can be expo
 
 #### Example
 
-Export the container image returned by the Dagger Function as an OCI tarball to the `/home/admin/mycontainer.tgz` path on the host:
+Export the container image returned by the Dagger Function as an OCI tarball to the `/home/admin/mycontainer.tgz` path on the host. This OCI tarball can then be loaded into Docker with `docker load ...`.
 
 ```shell
 dagger call \
