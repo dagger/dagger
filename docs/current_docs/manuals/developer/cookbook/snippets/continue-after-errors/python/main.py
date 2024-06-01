@@ -1,4 +1,6 @@
-from dagger import dag, DaggerError, function, object_type
+import dagger
+
+from dagger import dag, function, object_type
 
 
 SCRIPT = """#!/bin/sh
@@ -37,8 +39,7 @@ class MyModule:
 
             if exit_code != "0":
                 return "Tests failed!"
-            else:
-                return "Tests passed!"
-        except DaggerError:
+            return "Tests passed!"
+        except dagger.DaggerError:
             # DaggerError is the base class for all errors raised by Dagger
             return "Unexpected Dagger error"
