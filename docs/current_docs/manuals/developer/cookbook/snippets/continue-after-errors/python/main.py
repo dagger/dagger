@@ -1,5 +1,6 @@
 from dagger import dag, function, object_type, DaggerError
 
+
 SCRIPT = """#!/bin/sh
 echo "Test Suite"
 echo "=========="
