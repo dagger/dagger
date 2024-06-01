@@ -40,5 +40,5 @@ class MyModule:
             else:
                 return "Tests passed!"
         except DaggerError:
-            # DaggerError is the base class for all errors raised by dagger.
+            # DaggerError is the base class for all errors raised by Dagger
             return "Unexpected Dagger error"
