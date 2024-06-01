@@ -1,4 +1,4 @@
-from dagger import dag, function, object_type
+from dagger import DaggerError, dag, function, object_type
 
 
 @object_type
@@ -16,6 +16,6 @@ class MyModule:
                     .stdout()
                 )
             )
-        except Exception as e:
+        except DaggerError as e:
             # DaggerError is the base class for all errors raised by dagger.
             return "Test pipeline failure: " + e.stderr
