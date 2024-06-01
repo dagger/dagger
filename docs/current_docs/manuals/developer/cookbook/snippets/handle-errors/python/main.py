@@ -17,5 +17,5 @@ class MyModule:
                 )
             )
         except DaggerError as e:
-            # DaggerError is the base class for all errors raised by dagger.
+            # DaggerError is the base class for all errors raised by Dagger
             return "Test pipeline failure: " + e.stderr
