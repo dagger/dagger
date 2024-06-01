@@ -805,19 +805,48 @@ The following Dagger Function demonstrates how to handle errors in a pipeline.
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/error-handling/go/main.go
+```go file=./cookbook/snippets/handle-errors/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/error-handling/python/main.py
+```python file=./cookbook/snippets/handle-errors/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/error-handling/typescript/index.ts
+```typescript file=./cookbook/snippets/handle-errors/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+### Continue using a container after command execution fails
+
+The following Dagger Function demonstrates how to continue using a container after a command executed within it fails. A common use case for this is to export a report that a test suite tool generates.
+
+:::note
+The caveat with this approach is that forcing a zero exit code on a failure caches the failure. This may not be desired depending on the use case.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/continue-after-errors/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/continue-after-errors/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/continue-after-errors/typescript/index.ts
 ```
 
 </TabItem>
