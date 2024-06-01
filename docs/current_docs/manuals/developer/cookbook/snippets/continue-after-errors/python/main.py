@@ -36,7 +36,8 @@ class MyModule:
 
             if exit_code != "0":
                 return "Tests failed!"
-            return "Tests passed!"
+            else:
+                return "Tests passed!"
         except DaggerError:
             # DaggerError is the base class for all errors raised by Dagger
             return "Unexpected Dagger error"
