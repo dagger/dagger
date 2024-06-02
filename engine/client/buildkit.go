@@ -21,12 +21,11 @@ const (
 
 func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.Connector) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
 	opts := []bkclient.ClientOpt{
-		// TODO verify?
-		bkclient.WithTracerProvider(otel.GetTracerProvider()),
+		bkclient.WithTracerProvider(otel.GetTracerProvider()), // TODO verify?
+		bkclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return connector.Connect(ctx)
+		}),
 	}
-	opts = append(opts, bkclient.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-		return connector.Connect(ctx)
-	}))
 
 	c, err := bkclient.New(ctx, remote.String(), opts...)
 	if err != nil {
