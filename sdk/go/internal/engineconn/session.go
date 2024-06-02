@@ -23,6 +23,7 @@ type cliSessionConn struct {
 	*http.Client
 	childCancel func()
 	childProc   *exec.Cmd
+	stderrBuf   *safeBuffer
 }
 
 func (c *cliSessionConn) Host() string {
@@ -39,7 +40,7 @@ func (c *cliSessionConn) Close() error {
 				return nil
 			}
 
-			return err
+			return fmt.Errorf("close: %w\nstderr:\n%s", err, c.stderrBuf.String())
 		}
 	}
 	return nil
@@ -237,6 +238,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		Client:      defaultHTTPClient(&params),
 		childCancel: cmdCancel,
 		childProc:   proc,
+		stderrBuf:   stderrBuf,
 	}, nil
 }
 
