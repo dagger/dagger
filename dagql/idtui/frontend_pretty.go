@@ -81,7 +81,7 @@ func New() Frontend {
 	}
 }
 
-func (fe *frontendPretty) ConnectedToEngine(name string, version string) {
+func (fe *frontendPretty) ConnectedToEngine(name, version, clientID string) {
 	// noisy, so suppress this for now
 }
 

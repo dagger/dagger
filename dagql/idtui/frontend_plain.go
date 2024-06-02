@@ -103,9 +103,9 @@ func NewPlain() Frontend {
 	}
 }
 
-func (fe *frontendPlain) ConnectedToEngine(name string, version string) {
+func (fe *frontendPlain) ConnectedToEngine(name, version, clientID string) {
 	if !fe.Silent {
-		slog.Info("Connected to engine", "name", name, "version", version)
+		slog.Info("Connected to engine", "name", name, "version", version, "client", clientID)
 	}
 }
 
