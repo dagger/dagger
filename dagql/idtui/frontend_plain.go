@@ -278,9 +278,7 @@ func (fe *frontendPlain) render() {
 }
 
 func (fe *frontendPlain) finalRender() {
-	if fe.Debug || fe.Verbosity > 0 {
-		fe.render()
-	}
+	fe.render()
 
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
