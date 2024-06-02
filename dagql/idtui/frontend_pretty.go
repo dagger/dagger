@@ -322,7 +322,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 		return false, nil
 	}
 	for _, row := range fe.logsView.Body {
-		if fe.Debug || fe.shouldShow(fe.FrontendOpts, row) {
+		if fe.shouldShow(fe.FrontendOpts, row) {
 			if err := fe.renderRow(out, row, 0); err != nil {
 				return renderedAny, err
 			}
@@ -457,7 +457,7 @@ func (fe *frontendPretty) View() string {
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
-	if !fe.shouldShow(fe.FrontendOpts, row) && !fe.Debug {
+	if !fe.shouldShow(fe.FrontendOpts, row) {
 		return nil
 	}
 	if !row.Span.Passthrough {
@@ -474,7 +474,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth in
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
-	r := renderer{db: fe.db, width: fe.window.Width, debug: fe.Debug}
+	r := renderer{db: fe.db, width: fe.window.Width, FrontendOpts: fe.FrontendOpts}
 
 	id := span.Call
 	if id != nil {

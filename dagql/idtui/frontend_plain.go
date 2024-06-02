@@ -288,7 +288,7 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderRow(row *TraceRow) {
-	if !fe.shouldShow(fe.FrontendOpts, row) && !fe.Debug {
+	if !fe.shouldShow(fe.FrontendOpts, row) {
 		return
 	}
 
@@ -356,11 +356,11 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := renderer{db: fe.db, width: -1, debug: fe.Debug}
+	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
 	prefix := fe.output.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
 
-	if r.debug {
+	if r.Debug {
 		prefix += fe.output.String(fmt.Sprintf("%s: ", span.SpanContext().SpanID().String())).Foreground(termenv.ANSIBrightBlack).String()
 	}
 
@@ -406,7 +406,7 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 
 	spanDt := fe.data[span.SpanContext().SpanID()]
 
-	r := renderer{db: fe.db, width: -1, debug: fe.Debug}
+	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
 	for _, logLine := range spanDt.logs {
 		fmt.Fprint(out, out.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta))
