@@ -314,13 +314,110 @@ Build and publish a multi-platform image:
 dagger call build --src="https://github.com/golang/example#master:hello" 
 ```
 
-{/* ### Build multi-arch image with cross-compliation
+### Build multi-arch image with cross-compliation
+
+The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
+
+:::info 
+This function uses the containerd utility module, to run these example locally 
+be sure to install it first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/multi-arch-cc/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/multi-arch-cc/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/multi-arch-cc/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish a multi-platform image with cross compliation:
+
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello" 
+```
 
 ### Build image from Dockerfile
 
+The following function builds an image from a Dockerfile. 
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/dockerfile/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/dockerfile/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/dockerfile/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish an image from an existing Dockerfile
+
+```shell
+dagger call build --src https://github.com/dockersamples/python-flask-redis
+```
+
 ### Build image from Dockerfile using different build context
 
-### Add OCI annotations to image
+The following function builds an image from a Dockerfile with a build context that is differen than the current working directory.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/dockerfile-context/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/dockerfile-context/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/dockerfile-context/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build image using different build context
+
+```shell
+dagger call build \
+  --src "https://github.com/dockersamples/python-flask-redis" \
+  --dockerfile https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+```
+
+{/* ### Add OCI annotations to image
 
 ### Define build-time variables
 
