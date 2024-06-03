@@ -450,9 +450,44 @@ dagger call build
 ```
 
 
-### Access private Git repository
-
 ### Invalidate cache
+
+The following function demonstrates how to invalidate the Dagger pipeline 
+operations cache and force execution of subsequent pipeline steps, by 
+introducing a volatile time variable at a specific point in the Dagger pipeline.
+
+:::note
+* This is a temporary workaround until cache invalidation support is officially added to Dagger.
+* Changes in mounted cache volumes or secrets do not invalidate the Dagger pipeline operations cache.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/cache/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/cache/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/cache/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Execute a build with cache invalidation
+
+```shell
+dagger call build
+```
 
 ## Secrets
 
