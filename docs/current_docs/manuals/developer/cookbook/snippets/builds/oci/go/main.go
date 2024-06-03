@@ -7,7 +7,7 @@ import (
 
 type MyModule struct{}
 
-// Build and publish image with oci annotations
+// Build and publish image with oci labels
 func (m *MyModule) Build(
 	ctx context.Context,
 ) (string, error) {

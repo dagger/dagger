@@ -3,7 +3,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 @object()
 class MyModule {
   /**
-   * Build and publish image with oci annotations
+   * Build and publish image with oci labels
    */
   @func()
   async build(): Promise<string> {

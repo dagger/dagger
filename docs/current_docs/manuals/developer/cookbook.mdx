@@ -417,9 +417,9 @@ dagger call build \
   --dockerfile https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
 ```
 
-### Add OCI annotations to image
+### Add OCI labels to image
 
-The following function adds [OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/v1.0/annotations.md) to an image.
+The following function adds OpenContainer Initiative (OCI) labels to an image.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -443,7 +443,7 @@ The following function adds [OpenContainer Initiative (OCI) annotations](https:/
 </Tabs>
 
 #### Example
-Build and publish image with OCI annotations
+Build and publish image with OCI labels
 
 ```shell
 dagger call build
