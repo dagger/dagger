@@ -417,13 +417,42 @@ dagger call build \
   --dockerfile https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
 ```
 
-{/* ### Add OCI annotations to image
+### Add OCI annotations to image
 
-### Define build-time variables
+The following function adds [OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/v1.0/annotations.md) to an image.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/builds/oci/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/builds/oci/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/builds/oci/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish image with OCI annotations
+
+```shell
+dagger call build
+```
+
 
 ### Access private Git repository
 
-### Invalidate cache */}
+### Invalidate cache
 
 ## Secrets
 
