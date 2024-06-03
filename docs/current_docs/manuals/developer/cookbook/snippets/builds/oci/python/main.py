@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 
-import dagger
 from dagger import dag, function, object_type
 
 
