@@ -19,6 +19,10 @@ import (
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
+func SnapshotSpan(span sdktrace.ReadOnlySpan) sdktrace.ReadOnlySpan {
+	return SpansFromPB(SpansToPB([]sdktrace.ReadOnlySpan{span}))[0]
+}
+
 func LogsToPB(sdl []sdklog.Record) []*otlplogsv1.ResourceLogs {
 	if len(sdl) == 0 {
 		return nil

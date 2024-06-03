@@ -44,7 +44,7 @@ func NewLiveSpanProcessor(exp sdktrace.SpanExporter) *LiveSpanProcessor {
 }
 
 func (p *LiveSpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
-	live := liveSpan{span}
+	live := liveSpan{SnapshotSpan(span)}
 	p.SpanProcessor.OnEnd(live)
 	p.activeSpansL.Lock()
 	p.activeSpans[spanKey{
