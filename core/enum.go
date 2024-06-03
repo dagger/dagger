@@ -11,7 +11,7 @@ import (
 
 type ModuleEnumType struct {
 	typeDef *EnumTypeDef
-	mod *Module
+	mod     *Module
 }
 
 func (m *ModuleEnumType) SourceMod() Mod {
@@ -30,7 +30,15 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 
 	switch value := value.(type) {
 	case string:
-		return dagql.NewDynamicEnumValue(&EnumObject{Module: m.mod, TypeDef: m.typeDef}, value), nil
+		for _, v := range m.typeDef.Values {
+			slog.ExtraDebug("ModuleEnumType.ConvertToSDKInput: checking value", "ref", v.OriginalName, "value", value)
+
+			if v.OriginalName == value {
+				return dagql.NewScalar(m.TypeDef().AsEnum.Value.Name, dagql.NewString(value)), nil
+			}
+		}
+
+		return nil, fmt.Errorf("ModuleEnumType.ConvertFromSDKResult: invalid enum value %q for %q", value, m.typeDef.Name)
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for enum %q", value, m.typeDef.Name)
 	}
@@ -38,7 +46,7 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 
 func (m *ModuleEnumType) TypeDef() *TypeDef {
 	return &TypeDef{
-		Kind: TypeDefKindEnum,
+		Kind:   TypeDefKindEnum,
 		AsEnum: dagql.NonNull(m.typeDef),
 	}
 }
@@ -48,30 +56,17 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 		return nil, nil
 	}
 
-	// TODO: refactor to not use DynamicID since Enum are not
 	switch x := value.(type) {
-	case DynamicID:
-		deps, err := m.mod.Query.IDDeps(ctx, x.ID())
-		if err != nil {
-			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to get deps for DynamicID: %w", err)
+	case dagql.Scalar[dagql.String]:
+		for _, v := range m.typeDef.Values {
+			slog.ExtraDebug("ModuleEnumType.ConvertToSDKInput: checking value", "ref", v.OriginalName, "value", x.Value)
+
+			if v.OriginalName == string(x.Value) {
+				return string(x.Value), nil
+			}
 		}
 
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to get schema for DynamicID: %w", err)
-		}
-
-		val, err := dag.Load(ctx, x.ID())
-		if err != nil {
-			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to load DynamicID: %w", err)
-		}
-
-		switch x := val.(type) {
-		case dagql.DynamicEnumValue:
-			return x.DecodeInput(x)
-		default:
-			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: unexpected value type %T", x)
-		}
+		return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: invalid enum value %q for %q", x.Value, m.typeDef.Name)
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle type %T", m, x)
 	}
@@ -108,9 +103,9 @@ func (enum *EnumObject) PossibleValues() ast.EnumValueList {
 
 func (enum *EnumObject) TypeDefinition() *ast.Definition {
 	return &ast.Definition{
-		Kind: ast.Enum,
-		Name: enum.TypeName(),
-		EnumValues: enum.PossibleValues(),
+		Kind:        ast.Enum,
+		Name:        enum.TypeName(),
+		EnumValues:  enum.PossibleValues(),
 		Description: enum.TypeDescription(),
 	}
 }
@@ -118,7 +113,7 @@ func (enum *EnumObject) TypeDefinition() *ast.Definition {
 func (enum *EnumObject) DecodeInput(val any) (dagql.Input, error) {
 	switch val := val.(type) {
 	case string:
-		return dagql.NewDynamicEnumValue(enum, val), nil	
+		return dagql.NewDynamicEnumValue(enum, val), nil
 	default:
 		return nil, fmt.Errorf("invalid enum value: %v", val)
 	}

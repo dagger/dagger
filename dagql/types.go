@@ -888,7 +888,7 @@ func (d *dynamicEnumValue) Decoder() InputDecoder {
 func (d *dynamicEnumValue) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case string:
-		return NewDynamicEnumValue(d.enumType, x), nil
+		return NewScalar(d.TypeName(), String(x)), nil
 	default:
 		return nil, fmt.Errorf("cannot create Enum from %T", x)
 	}

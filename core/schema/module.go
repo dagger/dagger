@@ -201,8 +201,6 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
 
-		// TODO: I'm not sure but I think I'm suppose to add a way to register
-		// a new enum inside the module?
 		dagql.Func("withEnum", s.moduleWithEnum).
 			Doc(`This module plus the given Enum type and associated values`),
 
@@ -590,6 +588,7 @@ func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, arg
 	if err != nil {
 		return nil, err
 	}
+
 	return mod.WithEnum(ctx, def.Self)
 }
 
