@@ -59,7 +59,11 @@ class MyModule:
 
             # wrap output directory in a new empty container marked
             # with the same platform
-            binary_ctr = dag.container(platform=platform).with_rootfs(output_dir)
+            binary_ctr = (
+                dag.container(platform=platform)
+                .with_rootfs(output_dir)
+                .with_entrypoint(["/hello"])
+            )
 
             platform_variants.append(binary_ctr)
 

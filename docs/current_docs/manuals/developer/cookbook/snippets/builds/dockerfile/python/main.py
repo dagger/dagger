@@ -20,7 +20,7 @@ class MyModule:
             .with_directory("/src", src)
             .with_workdir("/src")
             .directory("/src")
-            .docker_build()
+            .docker_build() # build from Dockerfile
             .publish("ttl.sh/hello-dagger")
         )
         return await ref

@@ -56,6 +56,7 @@ class MyModule {
       const binaryCtr = await dag
         .container({ platform: platform })
         .withRootfs(outputDir)
+        .withEntrypoint(["/hello"])
 
       platformVariants.push(binaryCtr)
     }

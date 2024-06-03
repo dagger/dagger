@@ -13,7 +13,7 @@ class MyModule {
       .withDirectory("/src", src)
       .withWorkdir("/src")
       .directory("/src")
-      .dockerBuild()
+      .dockerBuild() // build from Dockerfile
       .publish("ttl.sh/hello-dagger")
 
     return ref

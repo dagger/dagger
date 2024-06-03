@@ -57,7 +57,8 @@ func (m *MyModule) Build(
 		// wrap the output directory in the new empty container marked
 		// with the same platform
 		binaryCtr := dag.Container(ContainerOpts{Platform: platform}).
-			WithRootfs(outputDir)
+			WithRootfs(outputDir).
+			WithEntrypoint([]string{"/hello"})
 
 		platformVariants = append(platformVariants, binaryCtr)
 	}

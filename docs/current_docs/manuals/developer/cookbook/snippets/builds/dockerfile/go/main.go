@@ -16,7 +16,7 @@ func (m *MyModule) Build(
 		WithDirectory("/src", src).
 		WithWorkdir("/src").
 		Directory("/src").
-		DockerBuild().
+		DockerBuild(). // build from Dockerfile
 		Publish(ctx, "ttl.sh/hello-dagger")
 
 	if err != nil {
