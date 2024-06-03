@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/moby/buildkit/util/gitutil"
+	"github.com/tonistiigi/fsutil/types"
 )
 
 type moduleSourceArgs struct {
@@ -185,12 +186,17 @@ type parsedRefString struct {
 	repoRoot   *vcs.RepoRoot
 }
 
+// interface used for host interaction mocking
+type BuildkitClient interface {
+	StatCallerHostPath(ctx context.Context, path string, followLinks bool) (*types.Stat, error)
+}
+
 // parseRefString parses a ref string into its components
 // New heuristic:
 // - stat folder to see if dir is present
 // - if not, try to isolate root of git repo from the ref
 // - if nothing worked, fallback as local ref, as before
-func parseRefString(ctx context.Context, bk *buildkit.Client, refString string) (parsedRefString, error) {
+func parseRefString(ctx context.Context, bk BuildkitClient, refString string) (parsedRefString, error) {
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 

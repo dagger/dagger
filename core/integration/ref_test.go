@@ -8,13 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRefFormat(t *testing.T) {
+func TestRefIntegration(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
 	// This test handles a very edgy case:
 	// goGitBase inits a /work directory with a git context
-	// we create a local dir with the same structure as a git remote
+	// we then create a local dir with the same structure as a git remote: `/work/github.com/dagger/dagger`
+	// It should be resolved as a local ref, not a remote one
 	t.Run("local module with same format as remote: github.com/dagger/dagger", func(t *testing.T) {
 		t.Parallel()
 		out, err := goGitBase(t, c).
