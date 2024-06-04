@@ -1,11 +1,14 @@
-from dagger import dag, function, object_type
+from typing import Annotated
+
+import dagger
+from dagger import Doc, dag, function, object_type
 
 
 @object_type
 class MyModule:
     @function
-    async def redis_service(self) -> str:
-        """Create Redis service and client."""
+    def redis(self) -> dagger.Container:
+        """Create Redis service and client"""
         redis_srv = (
             dag.container()
             .from_("redis")
@@ -23,8 +26,21 @@ class MyModule:
             .with_entrypoint(["redis-cli", "-h", "redis-srv"])
         )
 
-        # set and save value
-        await redis_cli.with_exec(["set", "foo", "abc"]).with_exec(["save"]).sync()
+        return redis_cli
 
-        # get value
-        return await redis_cli.with_exec(["get", "foo"]).stdout()
+    @function
+    async def set(
+        self,
+        key: Annotated[str, Doc("The cache key to set")],
+        value: Annotated[str, Doc("The cache value to set")],
+    ) -> str:
+        """Set key and value in Redis service"""
+        return await self.redis().with_exec(["set", key, value]).with_exec(["save"]).stdout()
+
+    @function
+    async def get(
+        self,
+        key: Annotated[str, Doc("The cache key to get")],
+    ) -> str:
+        """Get value from Redis service"""
+        return await self.redis().with_exec(["get", key]).stdout()

@@ -311,15 +311,15 @@ The following Dagger Function builds a single image for different CPU architectu
 Build and publish a multi-platform image:
 
 ```shell
-dagger call build --src="https://github.com/golang/example#master:hello" 
+dagger call build --src="https://github.com/golang/example#master:hello"
 ```
 
 ### Build multi-arch image with cross-compliation
 
 The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
 
-:::info 
-This function uses the containerd utility module, to run these example locally 
+:::info
+This function uses the containerd utility module, to run these example locally
 be sure to install it first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
 :::
 
@@ -348,12 +348,12 @@ be sure to install it first with `dagger install github.com/levlaz/daggerverse/c
 Build and publish a multi-platform image with cross compliation:
 
 ```shell
-dagger call build --src="https://github.com/golang/example#master:hello" 
+dagger call build --src="https://github.com/golang/example#master:hello"
 ```
 
 ### Build image from Dockerfile
 
-The following function builds an image from a Dockerfile. 
+The following function builds an image from a Dockerfile.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -878,7 +878,6 @@ dagger call set-env
 
 The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
 
-
 <Tabs groupId="language">
 <TabItem value="Go">
 
@@ -902,8 +901,14 @@ The following Dagger Function uses a cache volume to persist a Redis service's d
 
 #### Example
 
-Create a Redis service with a cache volume to persist its data:
+Save data to a Redis service which uses a cache volume to persist its data:
 
 ```shell
-dagger call redis-service
+dagger call set --key=foo --value=123
+```
+
+Retrieve the data after recreating the service state from the cache volume:
+
+```shell
+dagger call get --key=foo
 ```

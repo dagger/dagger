@@ -1,4 +1,4 @@
-import { dag, object, func } from "@dagger.io/dagger"
+import { dag, object, func, Container } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -6,7 +6,7 @@ class MyModule {
    * Create Redis service and client
    */
   @func()
-  async redisService(): Promise<string> {
+  redis(): Container {
     const redisSrv = dag
       .container()
       .from("redis")
@@ -15,17 +15,43 @@ class MyModule {
       .withWorkdir("/data")
       .asService()
 
-    // create Redis client container
     const redisCLI = dag
       .container()
       .from("redis")
       .withServiceBinding("redis-srv", redisSrv)
       .withEntrypoint(["redis-cli", "-h", "redis-srv"])
 
-    // set and save value
-    await redisCLI.withExec(["set", "foo", "abc"]).withExec(["save"]).sync()
+    return redisCLI
+  }
 
-    // get value
-    return await redisCLI.withExec(["get", "foo"]).stdout()
+  /**
+   * Set key and value in Redis service
+   */
+  @func()
+  async set(
+    /**
+     * The cache key to set
+     */
+    key: string,
+    /**
+     * The cache value to set
+     */
+    value: string,
+  ): Promise<string> {
+    return await this.redis().withExec(["set", key, value]).withExec(["save"]).stdout()
+  }
+
+  /**
+   * Get value from Redis service
+   */
+  @func()
+  async get(
+    /**
+     * The cache key to get
+     */
+    key: string,
+  ): Promise<string> {
+    // set and save value
+    return await this.redis().withExec(["get", key]).stdout()
   }
 }
