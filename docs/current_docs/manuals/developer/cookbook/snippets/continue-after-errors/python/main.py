@@ -42,9 +42,9 @@ class MyModule:
             exit_code = await ctr.file("exit_code").contents()
 
             return TestResult(report=report, exit_code=exit_code)
-        except DaggerError:
+        except DaggerError as e:
             # DaggerError is the base class for all errors raised by Dagger
-            raise "Unexpected Dagger error"
+            raise RuntimeError("Unexpected Dagger error") from e
 
 
 # ruff: noqa: RET505
