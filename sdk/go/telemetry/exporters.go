@@ -10,32 +10,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type MultiSpanExporter []sdktrace.SpanExporter
-
-var _ sdktrace.SpanExporter = MultiSpanExporter{}
-
-func (m MultiSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	eg := new(errgroup.Group)
-	for _, e := range m {
-		e := e
-		eg.Go(func() error {
-			return e.ExportSpans(ctx, spans)
-		})
-	}
-	return eg.Wait()
-}
-
-func (m MultiSpanExporter) Shutdown(ctx context.Context) error {
-	eg := new(errgroup.Group)
-	for _, e := range m {
-		e := e
-		eg.Go(func() error {
-			return e.Shutdown(ctx)
-		})
-	}
-	return eg.Wait()
-}
-
 type SpanForwarder struct {
 	Processors []sdktrace.SpanProcessor
 }
