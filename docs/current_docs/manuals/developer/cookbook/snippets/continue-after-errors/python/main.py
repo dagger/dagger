@@ -44,7 +44,8 @@ class MyModule:
             return TestResult(report=report, exit_code=exit_code)
         except DaggerError as e:
             # DaggerError is the base class for all errors raised by Dagger
-            raise RuntimeError("Unexpected Dagger error") from e
+            msg = "Unexpected Dagger error"
+            raise RuntimeError(msg) from e
 
 
 # ruff: noqa: RET505
