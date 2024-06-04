@@ -42,7 +42,7 @@ updates:
       timezone: "UTC"
     labels:
       - "kind/dependencies"
-      - "sdk/typescript"
+      - "area/sdk/typescript"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
@@ -61,7 +61,7 @@ updates:
       timezone: "UTC"
     labels:
       - "kind/dependencies"
-      - "area/docs"
+      - "area/documentation"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
@@ -80,7 +80,7 @@ updates:
       timezone: "UTC"
     labels:
       - "kind/dependencies"
-      - "sdk/go"
+      - "area/sdk/go"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
@@ -99,7 +99,7 @@ updates:
       timezone: "UTC"
     labels:
       - "kind/dependencies"
-      - "sdk/python"
+      - "area/sdk/python"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
@@ -118,7 +118,7 @@ updates:
       timezone: "UTC"
     labels:
       - "kind/dependencies"
-      - "sdk/java"
+      - "area/sdk/java"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
