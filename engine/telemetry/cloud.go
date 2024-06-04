@@ -89,7 +89,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 		configuredCloudTelemetry = true
 	})
 
-	return configuredCloudSpanExporter,
+	return NewSpanHeartbeater(configuredCloudSpanExporter),
 		configuredCloudLogsExporter,
 		configuredCloudTelemetry
 }
