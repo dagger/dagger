@@ -195,7 +195,7 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 
 ## Builds
 
-### Perform multi-stage build
+### Perform a multi-stage build
 
 The following Dagger Function performs a multi-stage build.
 
@@ -228,7 +228,7 @@ Perform a multi-stage build of the source code in the `golang/example/hello` rep
 dagger call build --src="https://github.com/golang/example#master:hello"
 ```
 
-### Perform matrix build
+### Perform a matrix build
 
 The following Dagger Function performs a matrix build.
 
@@ -707,15 +707,15 @@ The following Dagger Function demonstrates how to control a service's lifecycle 
 
 Start and stop a Redis service:
 
-    ```shell
-    dagger call redis-service
-    ```
+```shell
+dagger call redis-service
+```
 
-## Outputs
+## Just-in-time artifacts
 
-### Publish image to private registry
+### Publish a container image to a private registry
 
-The following Dagger Function publishes a container image to a private registry.
+The following Dagger Function publishes a just-in-time container image to a private registry.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -740,21 +740,21 @@ The following Dagger Function publishes a container image to a private registry.
 
 #### Examples
 
-- Publish a container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+- Publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
 
     ```shell
     dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
     ```
 
-- Publish a container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+- Publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
 
     ```shell
     dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
     ```
 
-### Publish image to private registry with multiple tags
+### Publish a container image to a private registry with multiple tags
 
-The following Dagger Function tags a container image multiple times and publishes it to a private registry.
+The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -779,17 +779,95 @@ The following Dagger Function tags a container image multiple times and publishe
 
 #### Examples
 
-- Tag and publish a container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+- Tag and publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
 
     ```shell
     dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
     ```
 
-- Tag and publish a container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+- Tag and publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
 
     ```shell
     dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
     ```
+
+### Export a directory or file to the host
+
+The following Dagger Functions return a just-in-time directory and file. These outputs can be exported to the host with `dagger call ... export ...`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/export-file-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/export-file-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/export-file-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Export the directory returned by the Dagger Function to the `/home/admin/export` path on the host:
+
+    ```shell
+    dagger call \
+      get-dir \
+      export --path=/home/admin/export
+    ```
+
+- Export the file returned by the Dagger Function to the `/home/admin/myfile` path on the host:
+
+    ```shell
+    dagger call \
+      get-file \
+      export --path=/home/admin/myfile
+    ```
+
+### Export a container image to the host
+
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball with `dagger call ... export ...`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/export-container/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/export-container/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./cookbook/snippets/export-container/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Export the container image returned by the Dagger Function as an OCI tarball to the `/home/admin/mycontainer.tgz` path on the host. This OCI tarball can then be loaded into Docker with `docker load ...`.
+
+```shell
+dagger call \
+  base \
+  export --path=/home/admin/mycontainer.tgz
+```
 
 ## Optimizations
 
@@ -865,6 +943,7 @@ dagger call set-env
 
 The following Dagger Function demonstrates how to handle errors in a pipeline.
 
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
@@ -934,3 +1013,42 @@ dagger call test exit-code
 # get test report:
 dagger call test report contents
 ```
+
+### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+  
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/persist-service-state/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/persist-service-state/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/persist-service-state/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Save data to a Redis service which uses a cache volume to persist its data:
+
+```shell
+dagger call set --key=foo --value=123
+```
+
+Retrieve the data after recreating the service state from the cache volume:
+
+```shell
+dagger call get --key=foo
