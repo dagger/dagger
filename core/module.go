@@ -276,12 +276,24 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindObject:
 		modType, ok, err = mod.modTypeForObject(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
+		}
 	case TypeDefKindInterface:
 		modType, ok, err = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
+		}
 	case TypeDefKindScalar:
 		modType, ok, err = mod.modTypeForScalar(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
+		}
 	case TypeDefKindEnum:
 		modType, ok, err = mod.modTypeForEnum(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
+		}
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
