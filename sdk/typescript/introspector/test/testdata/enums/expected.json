@@ -22,7 +22,8 @@
             }
           },
           "returnType": {
-            "kind": "VOID_KIND"
+            "kind": "OBJECT_KIND",
+            "name": "Enums"
           }
         },
         "getStatus": {
