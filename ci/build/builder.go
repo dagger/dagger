@@ -324,7 +324,7 @@ func (build *Builder) runcBin() *dagger.File {
 	// We upgrade it here to avoid that showing up in our image scans. This can be removed
 	// once runc has released a new minor version and we upgrade to it (the go.mod in runc
 	// main branch already has the updated version).
-	buildCtr = buildCtr.WithExec([]string{"go", "get", "golang.org/x/net"}).
+	buildCtr = buildCtr.WithExec([]string{"go", "get", "golang.org/x/net@v0.25.0"}).
 		WithExec([]string{"go", "mod", "tidy"}).
 		WithExec([]string{"go", "mod", "vendor"})
 

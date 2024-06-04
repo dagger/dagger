@@ -69,6 +69,12 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual language-specific constructor page to multi-language page
+  from = "/manuals/developer/:language/:docid/constructor"
+  to = "/manuals/developer/entrypoint-function"
+  status = 301
+
+[[redirects]]
   # redirect developer manual language-specific error handling page to multi-language page
   from = "/manuals/developer/:language/:docid/error-handling"
   to = "/manuals/developer/error-handling"
