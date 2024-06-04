@@ -1,13 +1,18 @@
 package main
 
-import "context"
+import (
+	"context"
+)
 
 func New(
-	// +default=dag.Container().From("alpine:3.14.0")
-	ctr Container,
+	// +optional
+	ctr *Container,
 ) *MyModule {
+	if ctr == nil {
+		ctr = dag.Container().From("alpine:3.14.0")
+	}
 	return &MyModule{
-		Ctr: ctr,
+		Ctr: *ctr,
 	}
 }
 
@@ -15,8 +20,9 @@ type MyModule struct {
 	Ctr Container
 }
 
-func (m *MyModule) Version(ctx context.Context) string {
-	return m.Ctr.
+func (m *MyModule) Version(ctx context.Context) (string, error) {
+	c := m.Ctr
+	return c.
 		WithExec([]string{"/bin/sh", "-c", "cat /etc/os-release | grep VERSION_ID"}).
 		Stdout(ctx)
 }
