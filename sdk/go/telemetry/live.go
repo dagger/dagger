@@ -4,16 +4,10 @@ import (
 	"context"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type LiveSpanProcessor struct {
 	sdktrace.SpanProcessor
-}
-
-type spanKey struct {
-	traceID trace.TraceID
-	spanID  trace.SpanID
 }
 
 func NewLiveSpanProcessor(exp sdktrace.SpanExporter) *LiveSpanProcessor {
