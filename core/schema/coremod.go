@@ -212,7 +212,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 			})
 		case introspection.TypeKindEnum:
 			typedef := &core.EnumTypeDef{
-				Name: introspectionType.Name,
+				Name:        introspectionType.Name,
 				Description: introspectionType.Description,
 			}
 
@@ -224,7 +224,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 			}
 
 			typeDefs = append(typeDefs, &core.TypeDef{
-				Kind: core.TypeDefKindEnum,
+				Kind:   core.TypeDefKindEnum,
 				AsEnum: dagql.NonNull(typedef),
 			})
 
@@ -337,7 +337,7 @@ func (obj *CoreModObject) TypeDef() *core.TypeDef {
 
 type CoreModEnum struct {
 	coreMod *CoreMod
-	name string
+	name    string
 }
 
 var _ core.ModType = (*CoreModEnum)(nil)

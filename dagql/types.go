@@ -866,7 +866,7 @@ type DynamicEnumValue interface {
 
 type dynamicEnumValue struct {
 	enumType Typed
-	value string
+	value    string
 }
 
 func NewDynamicEnumValue(enum Typed, val string) DynamicEnumValue {
@@ -902,7 +902,6 @@ type EnumValue interface {
 	Input
 	~string
 }
-
 
 // EnumValues is a list of possible values for an Enum.
 type EnumValues[T EnumValue] struct {
