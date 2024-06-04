@@ -3,7 +3,7 @@ package main
 import "context"
 
 func New(
-	// +default=dag.container().from("alpine:3.14.0")
+	// +default=dag.Container().From("alpine:3.14.0")
 	ctr Container,
 ) *MyModule {
 	return &MyModule{
