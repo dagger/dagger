@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 
@@ -328,8 +329,14 @@ func dispatch(ctx context.Context) error {
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
 func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 	// each `case` statement for every object name, which makes up the body of the invoke func
+	objNames := []string{}
+	for objName := range objFunctionCases {
+		objNames = append(objNames, objName)
+	}
+	slices.Sort(objNames)
 	objCases := []Code{}
-	for objName, functionCases := range objFunctionCases {
+	for _, objName := range objNames {
+		functionCases := objFunctionCases[objName]
 		objCases = append(objCases, Case(Lit(objName)).Block(Switch(Id(fnNameVar)).Block(functionCases...)))
 	}
 	// when the object name is empty, return the module definition
