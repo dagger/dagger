@@ -29,7 +29,7 @@ on:
 
       dagger-version:
         type: string
-        default: "0.11.5"
+        default: "0.11.6"
         required: false
 
 jobs:
