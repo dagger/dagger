@@ -18,6 +18,7 @@ pub fn format_struct_name(s: &str) -> String {
     let s = s.to_case(Case::Snake);
     match s.as_ref() {
         "ref" => "r#ref".to_string(),
+        "enum" => "r#enum".to_string(),
         _ => s,
     }
 }
