@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Netflix/go-expect"
+	"github.com/containerd/continuity/fs"
 	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 )
@@ -225,6 +226,93 @@ type Test struct {
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit()")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
+	t.Run("nested client", func(t *testing.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import "context"
+func New(ctx context.Context, nestedSrc *Directory) *Test {
+	return &Test{
+		Ctr: dag.Container().
+			From("`+golangImage+`").
+			WithMountedDirectory("/src", nestedSrc).
+			WithWorkdir("/src").
+			WithDefaultTerminalCmd([]string{"go", "run", "."}),
+	}
+}
+type Test struct {
+	Ctr *Container
+}
+ `), 0644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		// cache the module load itself so there's less to wait for in the shell invocation below
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		require.NoError(t, err)
+
+		thisRepoPath, err := filepath.Abs("../..")
+		require.NoError(t, err)
+
+		nestedSrcDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(nestedSrcDir, "sdk/go"), 0755))
+		require.NoError(t, fs.CopyDir(
+			filepath.Join(nestedSrcDir, "sdk/go"),
+			filepath.Join(thisRepoPath, "sdk/go"),
+		))
+		require.NoError(t, fs.CopyFile(
+			filepath.Join(nestedSrcDir, "go.mod"),
+			filepath.Join(thisRepoPath, "go.mod"),
+		))
+		require.NoError(t, fs.CopyFile(
+			filepath.Join(nestedSrcDir, "go.sum"),
+			filepath.Join(thisRepoPath, "go.sum"),
+		))
+		require.NoError(t, os.WriteFile(filepath.Join(nestedSrcDir, "main.go"), []byte(`package main
+import (
+	"context"
+	"fmt"
+
+	"dagger.io/dagger"
+)
+
+func main() {
+	_, err := dagger.Connect(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("it worked?")
+}
+`), 0644))
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 41})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("it worked?")
 		require.NoError(t, err)
 
 		go console.ExpectEOF()
