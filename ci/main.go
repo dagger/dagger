@@ -75,7 +75,6 @@ func (ci *Dagger) CLI() *CLI {
 
 // Dagger's Go toolchain
 func (ci *Dagger) Go() *GoToolchain {
-	// FIXME: ugly glue, use interface?
 	return &GoToolchain{Go: dag.Go(ci.Source)}
 }
 
@@ -84,8 +83,26 @@ type GoToolchain struct {
 	*Go
 }
 
+// Run codegen (equivalent to `dagger develop`) in the specified subdirectories
+func (gtc *GoToolchain) WithCodegen(subdirs []string) *GoToolchain {
+	src := gtc.Source()
+	for _, subdir := range subdirs {
+		codegen := src.
+			Directory(subdir).
+			AsModule().
+			GeneratedContextDirectory()
+		src = src.WithDirectory(subdir, codegen)
+	}
+	return &GoToolchain{Go: dag.Go(src)}
+}
+
 func (gtc *GoToolchain) Env() *Container {
 	return gtc.Go.Env()
+}
+
+func (gtc *GoToolchain) Lint(ctx context.Context, packages []string, all bool) error {
+	_, err := gtc.Go.Lint(ctx, packages, all)
+	return err
 }
 
 // Develop the Dagger engine container

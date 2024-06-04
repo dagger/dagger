@@ -1,5 +1,11 @@
 package main
 
+import (
+	"context"
+
+	"golang.org/x/sync/errgroup"
+)
+
 func New(
 	// Project source directory
 	source *Directory,
@@ -59,4 +65,35 @@ func (p *Go) Env() *Container {
 		WithExec([]string{"go", "mod", "download"}).
 		// run `go build` with all source
 		WithMountedDirectory("/app", p.Source)
+}
+
+// Lint the project
+func (p *Go) Lint(ctx context.Context, pkgs []string, all bool) error {
+	eg, ctx := errgroup.WithContext(ctx)
+
+	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
+	if all {
+		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
+	}
+	// FIXME: consider using the same base container in Lint() and Env()
+	base := dag.
+		Container().
+		From("golangci/golangci-lint:v1.57-alpine").
+		WithMountedDirectory("/app", p.Source).
+		WithWorkdir("/app")
+	for _, pkg := range pkgs {
+		golangci := base.WithWorkdir(pkg).WithExec(cmd)
+		eg.Go(func() error {
+			_, err := golangci.Sync(ctx)
+			return err
+		})
+		eg.Go(func() error {
+			beforeTidy := p.Source.Directory(pkg)
+			afterTidy := p.Env().WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
+			// FIXME: the client binding for AssertEqual should return only an error.
+			_, err := dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
+			return err
+		})
+	}
+	return eg.Wait()
 }

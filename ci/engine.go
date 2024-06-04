@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
@@ -12,9 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/build"
-	"github.com/dagger/dagger/ci/consts"
 	"github.com/dagger/dagger/ci/internal/dagger"
-	"github.com/dagger/dagger/ci/util"
 )
 
 type Engine struct {
@@ -149,41 +146,7 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
-	return lintGoModule(ctx, all, daggerDevelop(util.GoDirectory(e.Dagger.Source), ""), []string{
-		"",
-		"ci",
-	})
-}
-
-func lintGoModule(ctx context.Context, all bool, src *Directory, pkgs []string) error {
-	eg, ctx := errgroup.WithContext(ctx)
-
-	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
-	if all {
-		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
-	}
-	for _, pkg := range pkgs {
-		golangci := dag.Container().
-			From(consts.GolangLintImage).
-			WithMountedDirectory("/app", src).
-			WithWorkdir(path.Join("/app", pkg)).
-			WithExec(cmd)
-		eg.Go(func() error {
-			_, err := golangci.Sync(ctx)
-			return err
-		})
-
-		eg.Go(func() error {
-			return util.DiffDirectoryF(ctx, src.Directory(pkg), func(ctx context.Context) (*dagger.Directory, error) {
-				return dag.Go(src).Env().
-					WithWorkdir(path.Join("/app", pkg)).
-					WithExec([]string{"go", "mod", "tidy"}).
-					Directory("."), nil
-			}, "go.mod", "go.sum")
-		})
-	}
-
-	return eg.Wait()
+	return e.Dagger.Go().WithCodegen([]string{""}).Lint(ctx, []string{"", "ci"}, all)
 }
 
 func daggerDevelop(dir *Directory, path string) *Directory {
