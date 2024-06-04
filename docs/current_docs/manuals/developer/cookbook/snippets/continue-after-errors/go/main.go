@@ -16,13 +16,18 @@ echo "Test 3: PASS" >> report.txt
 exit 1
 `
 
+type TestResult struct {
+	Report   *File
+	ExitCode string
+}
+
 // Handle errors
-func (m *MyModule) Test(ctx context.Context) (string, error) {
+func (m *MyModule) Test(ctx context.Context) (*TestResult, error) {
 	ctr, err := dag.
 		Container().
 		From("alpine").
 		// add script with execution permission to simulate a testing tool
-		WithNewFile("run-tests", dagger.ContainerWithNewFileOpts{
+		WithNewFile("run-tests", ContainerWithNewFileOpts{
 			Contents:    script,
 			Permissions: 0o750,
 		}).
@@ -32,28 +37,21 @@ func (m *MyModule) Test(ctx context.Context) (string, error) {
 		Sync(ctx)
 	if err != nil {
 		// unexpected error, could be network failure.
-		return "", fmt.Errorf("run tests: %w", err)
+		return nil, fmt.Errorf("run tests: %w", err)
 	}
-	// save report locally for inspection.
-	_, err = ctr.
-		File("report.txt").
-		Export(ctx, "report.txt")
-	if err != nil {
-		// test suite ran but there's no report file.
-		return "", fmt.Errorf("get report: %w", err)
-	}
+	// save report for inspection.
+	report := ctr.File("report.txt")
 
 	// use the saved exit code to determine if the tests passed.
 	exitCode, err := ctr.File("/exit_code").Contents(ctx)
 	if err != nil {
 		// exit code not found
-		return "", fmt.Errorf("get exit code: %w", err)
+		return nil, fmt.Errorf("get exit code: %w", err)
 	}
 
-	if exitCode != "0" {
-		return "Tests failed!", nil
-	} else {
-		return "Tests passed!", nil
-	}
-
+	// Return custom type
+	return &TestResult{
+		Report:   report,
+		ExitCode: exitCode,
+	}, nil
 }

@@ -1,4 +1,4 @@
-import { dag, object, func } from "@dagger.io/dagger"
+import { dag, object, field, func, File } from "@dagger.io/dagger"
 
 const SCRIPT = `#!/bin/sh
 echo "Test Suite"
@@ -10,12 +10,21 @@ exit 1
 `
 
 @object()
+class TestResult {
+  @field()
+  report: File
+
+  @field()
+  exitCode: string
+}
+
+@object()
 class MyModule {
   /**
    * Handle errors
    */
   @func()
-  async test(): Promise<string> {
+  async test(): Promise<TestResult> {
     try {
       const ctr = await dag
         .container()
@@ -27,17 +36,14 @@ class MyModule {
         // the result of `sync` is the container, which allows continued chaining
         .sync()
 
-      // save report locally for inspection.
-      await ctr.file("report.txt").export("report.txt")
+      const result = new TestResult()
+      // save report for inspection.
+      result.report = ctr.file("report.txt")
 
       // use the saved exit code to determine if the tests passed
-      const exitCode = await ctr.file("exit_code").contents()
+      result.exitCode = await ctr.file("exit_code").contents()
 
-      if (exitCode !== "0") {
-        return "Tests failed!"
-      } else {
-        return "Tests passed!"
-      }
+      return result
     } catch (e) {
       console.error(e)
     }

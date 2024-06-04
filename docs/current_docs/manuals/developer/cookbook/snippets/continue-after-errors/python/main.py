@@ -1,4 +1,5 @@
-from dagger import DaggerError, dag, function, object_type
+import dagger
+from dagger import DaggerError, dag, field, function, object_type
 
 SCRIPT = """#!/bin/sh
 echo "Test Suite"
@@ -11,9 +12,15 @@ exit 1
 
 
 @object_type
+class TestResult:
+    report: dagger.File = field()
+    exit_code: str = field()
+
+
+@object_type
 class MyModule:
     @function
-    async def test(self) -> str:
+    async def test(self) -> TestResult:
         """Handle errors"""
         try:
             ctr = (
@@ -28,19 +35,16 @@ class MyModule:
                 )
             )
 
-            # save report locally for inspection.
-            await ctr.file("report.txt").export("report.txt")
+            # save report for inspection.
+            report = ctr.file("report.txt")
 
             # use the saved exit code to determine if the tests passed.
             exit_code = await ctr.file("exit_code").contents()
 
-            if exit_code != "0":
-                return "Tests failed!"
-            else:
-                return "Tests passed!"
+            return TestResult(report=report, exit_code=exit_code)
         except DaggerError:
             # DaggerError is the base class for all errors raised by Dagger
-            return "Unexpected Dagger error"
+            raise "Unexpected Dagger error"
 
 
 # ruff: noqa: RET505
