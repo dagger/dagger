@@ -261,32 +261,44 @@ uname_arch() {
 }
 
 latest_version() {
-    curl -sfL "${base}/${name}/latest_version"
+  curl -sfL "${base}/${name}/latest_version"
 }
 
 base_url() {
-    os="$(uname_os)"
-    arch="$(uname_arch)"
-    version="${DAGGER_VERSION:-$(latest_version)}"
-    url="${base}/${name}/releases/${version}"
-    echo "$url"
+  os="$(uname_os)"
+  arch="$(uname_arch)"
+  if [[ ! -z "$DAGGER_VERSION" ]]; then
+    path="releases/${DAGGER_VERSION}"
+  elif [[ ! -z "$DAGGER_COMMIT" ]]; then
+    path="main/${DAGGER_COMMIT}"
+  else
+    path="releases/$(latest_version)"
+  fi
+  url="${base}/${name}/${path}"
+  echo "$url"
 }
 
 tarball() {
-    os="$(uname_os)"
-    arch="$(uname_arch)"
-    version="${DAGGER_VERSION:-$(latest_version)}"
-    name="${name}_v${version}_${os}_${arch}"
-    if [ "$os" = "windows" ]; then
-        name="${name}.zip"
-    else
-        name="${name}.tar.gz"
-    fi
-    echo "$name"
+  os="$(uname_os)"
+  arch="$(uname_arch)"
+  if [[ ! -z "$DAGGER_VERSION" ]]; then
+    version="v${DAGGER_VERSION}"
+  elif [[ ! -z "$DAGGER_COMMIT" ]]; then
+    version="${DAGGER_COMMIT}"
+  else
+    version="v$(latest_version)"
+  fi
+  name="${name}_${version}_${os}_${arch}"
+  if [ "$os" = "windows" ]; then
+    name="${name}.zip"
+  else
+    name="${name}.tar.gz"
+  fi
+  echo "$name"
 }
 
 install_shell_completion() {
-    echo "
+  echo "
 ${binexe} has built-in shell completion. This is how you can install it for:
 
   BASH:
@@ -316,36 +328,36 @@ ${binexe} has built-in shell completion. This is how you can install it for:
     1. Generate a dagger.fish completion script and write it to a file within fish completions, e.g.:
 
       ${binexe} completion fish > ~/.config/fish/completions/dagger.fish
-    "
+  "
 }
 
 clean_install_version() {
-    DAGGER_VERSION=$(echo $DAGGER_VERSION | sed -E 's/^v+//g')
+  DAGGER_VERSION=$(echo $DAGGER_VERSION | sed -E 's/^v+//g')
 }
 
 execute() {
-    clean_install_version
-    base_url="$(base_url)"
-    tarball="$(tarball)"
-    tarball_url="${base_url}/${tarball}"
-    checksum="checksums.txt"
-    checksum_url="${base_url}/${checksum}"
-    bin_dir="${BIN_DIR:-./bin}"
-    binexe="dagger"
+  clean_install_version
+  base_url="$(base_url)"
+  tarball="$(tarball)"
+  tarball_url="${base_url}/${tarball}"
+  checksum="checksums.txt"
+  checksum_url="${base_url}/${checksum}"
+  bin_dir="${BIN_DIR:-./bin}"
+  binexe="dagger"
 
-    tmpdir=$(mktemp -d)
-    log_debug "downloading files into ${tmpdir}"
-    http_download "${tmpdir}/${tarball}" "${tarball_url}"
-    http_download "${tmpdir}/${checksum}" "${checksum_url}"
-    hash_sha256_verify "${tmpdir}/${tarball}" "${tmpdir}/${checksum}"
-    srcdir="${tmpdir}"
-    (cd "${tmpdir}" && untar "${tarball}")
-    test ! -d "${bin_dir}" && install -d "${bin_dir}"
-    install "${srcdir}/${binexe}" "${bin_dir}"
-    log_debug "display shell completion instructions"
-    install_shell_completion
-    log_info "installed ${bin_dir}/${binexe}"
-    rm -rf "${tmpdir}"
+  tmpdir=$(mktemp -d)
+  log_debug "downloading files into ${tmpdir}"
+  http_download "${tmpdir}/${tarball}" "${tarball_url}"
+  http_download "${tmpdir}/${checksum}" "${checksum_url}"
+  hash_sha256_verify "${tmpdir}/${tarball}" "${tmpdir}/${checksum}"
+  srcdir="${tmpdir}"
+  (cd "${tmpdir}" && untar "${tarball}")
+  test ! -d "${bin_dir}" && install -d "${bin_dir}"
+  install "${srcdir}/${binexe}" "${bin_dir}"
+  log_debug "display shell completion instructions"
+  install_shell_completion
+  log_info "installed ${bin_dir}/${binexe}"
+  rm -rf "${tmpdir}"
 }
 
 execute
