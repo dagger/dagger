@@ -52,7 +52,7 @@ The code listing above is an example of an object that has typed attributes.
 </TabItem>
 </Tabs>
 
-Here is an example call for this module:
+Here is an example call for this Dagger Function:
 
 ```shell
 dagger call --name=Foo message
@@ -68,7 +68,62 @@ Hello, Foo!
 If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
 :::
 
-## Exclude argument in constructor (Python)
+## Default values for complex types
+
+Entrypoint functions can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
+
+Here's is an example of a Dagger module with an entrypoint function expecting an argument of type `Container` and with a default value assigned:
+
+
+If a Dagger module constructor expects a Dagger core type (such as `Container`, `Directory`, `Service` etc.) as argument and you wish to assign a default value for this argument, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
+
+Here is an example of a Dagger module with a default constructor argument of type `Container`:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/entrypoint/go/default-object-in-constructor/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/entrypoint/python/default-object/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/entrypoint/typescript/default-object/index.ts
+```
+
+This default value can also be assigned directly in the field:
+
+```typescript file=./snippets/entrypoint/typescript/default-object/index.ts
+```
+
+:::note
+When assigning default values to complex types in TypeScript, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
+:::
+
+</TabItem>
+</Tabs>
+
+It is necessary to explicitly declare the type even when a default value is assigned, so that the Dagger SDK can extend the GraphQL schema correctly.
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call version
+```
+
+The result will be:
+
+```shell
+VERSION_ID=3.14.0
+```
+
+## Exclude argument in entrypoint function
 
 :::important
 The information in this section is only applicable to the Python SDK.
@@ -90,7 +145,7 @@ ARGUMENTS
       --name string   Who to greet (default "World")
 ```
 
-## Constructor-only arguments (Python)
+## Constructor-only arguments
 
 :::important
 The information in this section is only applicable to the Python SDK.
@@ -103,7 +158,7 @@ the constructor, but not as a class attribute, define it as an
 ```python file=./snippets/entrypoint/python/initvar/main.py
 ```
 
-## Complex or mutable defaults (Python)
+## Complex or mutable defaults
 
 :::important
 The information in this section is only applicable to the Python SDK.
@@ -116,7 +171,7 @@ use a [factory function](https://docs.python.org/3/library/dataclasses.html#defa
 ```python file=./snippets/entrypoint/python/factory/main.py
 ```
 
-## Asynchronous constructor (Python)
+## Asynchronous constructor
 
 :::important
 The information in this section is only applicable to the Python SDK.
@@ -131,38 +186,4 @@ This factory class method must be named `create`.
 :::
 
 ```python file=./snippets/entrypoint/python/async/main.py
-```
-
-## Default values for complex types (TypeScript)
-
-:::important
-The information in this section is only applicable to the TypeScript SDK.
-:::
-
-If a Dagger module constructor expects a Dagger core type (such as `Container`, `Directory`, `Service` etc.) as argument and you wish to assign a default value for this argument, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
-
-Here's is an example of a Dagger module with a default constructor argument of type `Container`:
-
-```typescript file=./snippets/entrypoint/typescript/default-object-in-constructor/index.ts
-```
-
-This default value can also be assigned directly in the field:
-
-```typescript file=./snippets/entrypoint/typescript/default-object-in-field/index.ts
-```
-
-:::note
-It is necessary to explicitly declare the type even when a default value is assigned, as the TypeScript SDK needs this information to extend the GraphQL schema correctly.
-:::
-
-Here is an example call for this module:
-
-```shell
-dagger call version
-```
-
-The result will be:
-
-```shell
-VERSION_ID=3.14.0
 ```

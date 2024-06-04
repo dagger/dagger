@@ -1,30 +1,22 @@
-// A Dagger module for saying hello world!
-
 package main
 
-import (
-	"fmt"
-)
+import "context"
 
 func New(
-	// +optional
-	// +default="Hello"
-	greeting string,
-	// +optional
-	// +default="World"
-	name string,
+	// +default=dag.container().from("alpine:3.14.0")
+	ctr Container,
 ) *MyModule {
 	return &MyModule{
-		Greeting: greeting,
-		Name:     name,
+		Ctr: ctr,
 	}
 }
 
 type MyModule struct {
-	Greeting string
-	Name     string
+	Ctr Container
 }
 
-func (hello *MyModule) Message() string {
-	return fmt.Sprintf("%s, %s!", hello.Greeting, hello.Name)
+func (m *MyModule) Version(ctx context.Context) string {
+	return m.Ctr.
+		WithExec([]string{"/bin/sh", "-c", "cat /etc/os-release | grep VERSION_ID"}).
+		Stdout(ctx)
 }
