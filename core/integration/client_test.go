@@ -61,20 +61,20 @@ func TestClientMultiSameTrace(t *testing.T) {
 	c1msg := identity.NewID()
 	echo(c1, c1msg)
 
-	ctx2, span := Tracer().Start(rootCtx, "client2")
+	ctx2, span := Tracer().Start(rootCtx, "client 2")
 	defer span.End()
 	timeoutCtx2, cancelTimeout := context.WithTimeout(ctx2, 10*time.Second)
 	defer cancelTimeout()
-	c2, out2 := newClient(timeoutCtx2, "client 1")
+	c2, out2 := newClient(timeoutCtx2, "client 2")
 
 	c2msg := identity.NewID()
 	echo(c2, c2msg)
 
-	ctx3, span := Tracer().Start(rootCtx, "client3")
+	ctx3, span := Tracer().Start(rootCtx, "client 3")
 	defer span.End()
 	timeoutCtx3, cancelTimeout := context.WithTimeout(ctx3, 10*time.Second)
 	defer cancelTimeout()
-	c3, out3 := newClient(timeoutCtx3, "client 1")
+	c3, out3 := newClient(timeoutCtx3, "client 3")
 
 	c3msg := identity.NewID()
 	echo(c3, c3msg)

@@ -6,6 +6,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
+// LiveSpanProcessor is a SpanProcessor whose OnStart calls OnEnd on the
+// underlying SpanProcessor in order to send live telemetry.
 type LiveSpanProcessor struct {
 	sdktrace.SpanProcessor
 }
@@ -13,9 +15,7 @@ type LiveSpanProcessor struct {
 func NewLiveSpanProcessor(exp sdktrace.SpanExporter) *LiveSpanProcessor {
 	return &LiveSpanProcessor{
 		SpanProcessor: sdktrace.NewBatchSpanProcessor(
-			// NOTE: intentionally doesn't inject SpanHeartbeater; that is handled at
-			// a higher level (in the engine and in the CLI) so that SDKs don't have
-			// to implement it.
+			// NOTE: span heartbeating is handled by the Cloud exporter
 			exp,
 			sdktrace.WithBatchTimeout(NearlyImmediate),
 		),
