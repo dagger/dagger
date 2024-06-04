@@ -38,7 +38,10 @@ class MyModule {
      */
     value: string,
   ): Promise<string> {
-    return await this.redis().withExec(["set", key, value]).withExec(["save"]).stdout()
+    return await this.redis()
+      .withExec(["set", key, value])
+      .withExec(["save"])
+      .stdout()
   }
 
   /**

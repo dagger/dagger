@@ -35,7 +35,12 @@ class MyModule:
         value: Annotated[str, Doc("The cache value to set")],
     ) -> str:
         """Set key and value in Redis service"""
-        return await self.redis().with_exec(["set", key, value]).with_exec(["save"]).stdout()
+        return (
+            await self.redis()
+            .with_exec(["set", key, value])
+            .with_exec(["save"])
+            .stdout()
+        )
 
     @function
     async def get(
