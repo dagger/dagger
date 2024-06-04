@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func TestClientMultiSameTrace(t *testing.T) {
 			From(fqRef).
 			// NOTE: have to echo slowly enough that the frontend doesn't consider it
 			// "boring"
-			WithExec([]string{"sh", "-c", "sleep 0.5; echo $0", msg}).Sync(ctx1)
+			WithExec([]string{"sh", "-c", "sleep 0.5; echo echoed: $0", msg}).Sync(ctx1)
 		require.NoError(t, err)
 	}
 
@@ -69,12 +70,27 @@ func TestClientMultiSameTrace(t *testing.T) {
 	c2msg := identity.NewID()
 	echo(c2, c2msg)
 
+	ctx3, span := Tracer().Start(rootCtx, "client3")
+	defer span.End()
+	timeoutCtx3, cancelTimeout := context.WithTimeout(ctx3, 10*time.Second)
+	defer cancelTimeout()
+	c3, out3 := newClient(timeoutCtx3, "client 1")
+
+	c3msg := identity.NewID()
+	echo(c3, c3msg)
+
 	t.Logf("closing c2 (which has timeout)")
 	require.NoError(t, c2.Close())
+
+	t.Logf("closing c3 (which has timeout)")
+	require.NoError(t, c3.Close())
 
 	t.Logf("closing c1")
 	require.NoError(t, c1.Close())
 
+	// FIXME: unfortunately we have to wait a bit because logs are decoupled from
+	// spans and there's no EOF event to signify the end of logs. but this will
+	// surely flake in CI someday. sorry.
 	t.Logf("waiting")
 	time.Sleep(time.Second)
 
@@ -82,5 +98,10 @@ func TestClientMultiSameTrace(t *testing.T) {
 	require.Regexp(t, `exec.*echo.*`+c1msg+`.*DONE`, out1.String())
 	require.NotContains(t, out1.String(), c2msg)
 	require.Regexp(t, `exec.*echo.*`+c2msg+`.*DONE`, out2.String())
+	require.Equal(t, 1, strings.Count(out1.String(), "echoed: "+c1msg))
 	require.NotContains(t, out2.String(), c1msg)
+	require.Equal(t, 1, strings.Count(out2.String(), "echoed: "+c2msg))
+	require.Regexp(t, `exec.*echo.*`+c3msg+`.*DONE`, out3.String())
+	require.Equal(t, 1, strings.Count(out3.String(), "echoed: "+c3msg))
+	require.NotContains(t, out3.String(), c1msg)
 }
