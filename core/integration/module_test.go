@@ -3170,6 +3170,73 @@ class Test {
 	}
 }
 
+func TestCustomModuleEnumType(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "typescript",
+			source: `import { func, object, field, daggerEnum } from "@dagger.io/dagger"
+
+/**
+ * Enum for Status
+ */
+@daggerEnum()
+class Status {
+  /**
+   * Active status
+   */
+  static readonly ACTIVE: string = "ACTIVE"
+
+  /**
+   * Inactive status
+   */
+  static readonly INACTIVE: string = "INACTIVE"
+}
+
+@object()
+export class Enums {
+  @func()
+  fromStatus(status: Status): string {
+    return status as string
+  }
+
+  @func()
+  toStatus(status: string): Status {
+    return status as Status
+  }
+}
+`,
+		},
+	}{
+		tc := tc
+
+		t.Run(tc.sdk, func(t *testing.T) {
+			t.Parallel()
+			c, ctx := connect(t)
+			modGen := modInit(t, c, tc.sdk, tc.source)
+
+			out, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+
+			_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+
+			out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
+
+			_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+		})		
+	}
+}
+
 func TestModuleConflictingSameNameDeps(t *testing.T) {
 	// A -> B -> Dint
 	// A -> C -> Dstr
