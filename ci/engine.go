@@ -146,7 +146,16 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
-	return e.Dagger.Go().WithCodegen([]string{""}).Lint(ctx, []string{"", "ci"}, all)
+	// Packages to lint
+	packages := []string{
+		"",
+		// FIXME: should the CI lint itself?
+		"ci",
+		"ci/std/go",
+		"ci/std/graphql",
+		"ci/dirdiff",
+	}
+	return e.Dagger.Go().WithCodegen([]string{""}).Lint(ctx, packages, all)
 }
 
 func daggerDevelop(dir *Directory, path string) *Directory {
