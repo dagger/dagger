@@ -16,6 +16,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Dagger\Dagger;
 use Dagger\Client as DaggerClient;
+use Dagger\ScalarTypeDef;
+use Dagger\TypeDefKind;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
@@ -56,10 +58,23 @@ class EntrypointCommand extends Command
         $classes = $this->getDaggerObjects($dir);
         $io->info(var_export($classes, true));
 
-        // Find functions tagged with [DaggerFunction]
+        // Find classes tagged with [DaggerFunction]
         foreach($classes as $class) {
 
             $io->info('FOUND CLASS WITH DaggerFunction annotation: ' . $class);
+
+            $daggerModule = $this->daggerConnection->module();
+
+continue;
+
+            
+
+            // @todo - need to take the RETURN type of the method, and map that to the correct dagger TypeDefKind
+            // See: https://github.com/dagger/dagger/blob/main/sdk/typescript/introspector/scanner/utils.ts#L95-L117
+            $stringType = $this->daggerConnection
+                ->typeDef()
+                ->withKind(TypeDefKind::STRING_KIND);
+        
 
             // Loop thru all the functions in this class
             $reflectedClass = new ReflectionClass($class);
@@ -69,6 +84,19 @@ class EntrypointCommand extends Command
             foreach($reflectedMethods as $method) {
                 $methodName = $method->getName();
                 $io->info('FOUND METHOD: ' . $methodName);
+
+                $methodReturnType = $method->getReturnType();
+
+                $func = $this->daggerConnection->function($methodName, $stringType);
+                $obj = $this->daggerConnection->typeDef()
+                    ->withObject($daggerModule->name())
+                    ->withFunction($func);
+
+                $daggerModule = $daggerModule->withObject($obj);
+
+                // Premarurely end the loop here...
+                continue;
+
                 $methodAttributes = $method->getAttributes();
 
                 foreach($methodAttributes as $methodAttribute) {
@@ -81,19 +109,17 @@ class EntrypointCommand extends Command
 
                     $methodArgs = $method->getParameters();
 
+                    // Perhaps Dagger mandates a return type, and if we don't find one,
+                    // then we flag up an error/notice/exception/warning
+                    
+                    $clientFunction = $client->typeDef()->withFunction();
+
                     foreach($methodArgs as $arg) {
                         $argType = $arg->getType()->getName();
                         $argName = $arg->getName();
                         $io->info('METHOD: ' . $method->getName() . ' - ARG: ' . $arg->getName());
-                        $io->info('ARG : ' . $argName . ' - OF TYPE: ' . $argType);
+                        $io->info('ARG :   ' . $argName . ' - OF TYPE: ' . $argType);
                     }
-
-                    // create a ->withFunction entry
-                    // Find the args on the function, and do ->withArg() on it
-
-                    // create a ->withFunction entry
-                    // Find the args on the function, and do ->withArg() on it
-
 
                     /*$client->module()->withObject(
                         $client->typeDef()->withFunction(
@@ -102,6 +128,8 @@ class EntrypointCommand extends Command
                         )
                     );*/
 
+                    // create a ->withFunction entry
+                    // Find the args on the function, and do ->withArg() on it
                 }
                 // $io->info(var_export($methodAttributes, true));
             }
