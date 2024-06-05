@@ -2,6 +2,7 @@
 
 namespace Dagger\Command;
 
+use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
 use Dagger\Client;
 use Dagger\Connection;
@@ -15,8 +16,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Dagger\Dagger;
 use Dagger\Client as DaggerClient;
+use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
+use ReflectionAttribute;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
@@ -68,7 +71,12 @@ class EntrypointCommand extends Command
                 $io->info('FOUND METHOD: ' . $methodName);
                 $methodAttributes = $method->getAttributes();
                 foreach($methodAttributes as $methodAttribute) {
-                    $io->info('FOUND METHOD ATTRIBUTE: ' . $methodAttribute->getName());
+                    if(!$this->hasDaggerFunctionAttribute($methodAttribute)) {
+                        continue;
+                    }
+
+                    // We found a method with a DaggerFunction attribute! yay!
+                    $io->info('FOUND METHOD with DaggerFunction attribute! yay');
                 }
                 // $io->info(var_export($methodAttributes, true));
             }
@@ -138,4 +146,10 @@ class EntrypointCommand extends Command
     {
         return $parentName === 'null';
     }
+
+    private function hasDaggerFunctionAttribute(ReflectionAttribute $attribute): bool
+    {
+        return $attribute->getName() === DaggerFunction::class;
+    }
+
 }
