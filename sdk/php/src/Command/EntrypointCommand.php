@@ -65,10 +65,6 @@ class EntrypointCommand extends Command
 
             $daggerModule = $this->daggerConnection->module();
 
-continue;
-
-            
-
             // @todo - need to take the RETURN type of the method, and map that to the correct dagger TypeDefKind
             // See: https://github.com/dagger/dagger/blob/main/sdk/typescript/introspector/scanner/utils.ts#L95-L117
             $stringType = $this->daggerConnection
@@ -112,8 +108,6 @@ continue;
                     // Perhaps Dagger mandates a return type, and if we don't find one,
                     // then we flag up an error/notice/exception/warning
                     
-                    $clientFunction = $client->typeDef()->withFunction();
-
                     foreach($methodArgs as $arg) {
                         $argType = $arg->getType()->getName();
                         $argName = $arg->getName();
@@ -134,11 +128,6 @@ continue;
                 // $io->info(var_export($methodAttributes, true));
             }
 
-
-
-            
-            
-           
 
 
             // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
@@ -187,7 +176,7 @@ continue;
 
     private function hasParentName(string $parentName): bool
     {
-        return $parentName === 'null';
+        return $parentName !== 'null';
     }
 
     private function hasDaggerFunctionAttribute(ReflectionAttribute $attribute): bool
