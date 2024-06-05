@@ -618,6 +618,8 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	return nil
 }
 
+const InstrumentationLibrary = "dagger.io/engine.buildkit"
+
 func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	if state.procInfo.Meta.NetMode != pb.NetMode_UNSET {
 		// align with setupNetwork; otherwise we hang waiting for a netNS worker
@@ -629,7 +631,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTelEnvs...)
 		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
 	}
-	logs := telemetry.Logs(ctx, "dagger.io/executor", logAttrs...)
+	logs := telemetry.Logs(ctx, InstrumentationLibrary, logAttrs...)
 
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(logs.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(logs.Stderr, state.procInfo.Stderr)}
