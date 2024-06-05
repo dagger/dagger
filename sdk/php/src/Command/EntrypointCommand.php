@@ -66,8 +66,8 @@ class EntrypointCommand extends Command
             foreach($reflectedMethods as $method) {
                 $methodName = $method->getName();
                 $io->info('FOUND METHOD: ' . $methodName);
-                $io->info('FOUND METHOD ATTRIBUTES: ' . $methodName);
                 $methodAttributes = $method->getAttributes();
+                $io->info('FOUND METHOD ATTRIBUTES: ' . $methodAttributes);
                 $io->info(var_export($methodAttributes, true));
             }
 
