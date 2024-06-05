@@ -40,12 +40,10 @@ type frontendPretty struct {
 	logs         *prettyLogs
 	eof          bool
 	backgrounded bool
-	logsView     *LogsView
+	rowsView     *RowsView
 
-	// global logs
-	messagesView *Vterm
-	messagesBuf  *strings.Builder
-	messagesW    *termenv.Output
+	// panels
+	logsPanel *panel
 
 	// TUI state/config
 	restore func()  // restore terminal
@@ -58,12 +56,26 @@ type frontendPretty struct {
 	mu sync.Mutex
 }
 
+type panel struct {
+	*termenv.Output
+	vterm *Vterm
+	buf   *strings.Builder
+}
+
+func newPanel(profile termenv.Profile) *panel {
+	vterm := NewVterm()
+	buf := new(strings.Builder)
+	return &panel{
+		Output: NewOutput(io.MultiWriter(vterm, buf), termenv.WithProfile(profile)),
+		vterm:  vterm,
+		buf:    buf,
+	}
+}
+
 func New() Frontend {
 	db := NewDB()
 
 	profile := ColorProfile()
-	logsView := NewVterm()
-	logsOut := new(strings.Builder)
 
 	return &frontendPretty{
 		db:   db,
@@ -75,13 +87,12 @@ func New() Frontend {
 			gcThreshold:      1 * time.Second,
 		},
 
-		fps:          30, // sane default, fine-tune if needed
-		profile:      profile,
-		window:       tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:         new(strings.Builder),
-		messagesView: logsView,
-		messagesBuf:  logsOut,
-		messagesW:    NewOutput(io.MultiWriter(logsView, logsOut), termenv.WithProfile(profile)),
+		fps:     30, // sane default, fine-tune if needed
+		profile: profile,
+		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		view:    new(strings.Builder),
+
+		logsPanel: newPanel(profile),
 	}
 }
 
@@ -106,7 +117,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
-	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, fe.profile, level))
+	slog.SetDefault(telemetry.PrettyLogger(fe.logsPanel, fe.profile, level))
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
@@ -199,8 +210,8 @@ func (fe *frontendPretty) finalRender() error {
 
 	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 
-	if fe.messagesBuf.Len() > 0 {
-		fmt.Fprintln(out, fe.messagesBuf.String())
+	if fe.logsPanel.buf.Len() > 0 {
+		fmt.Fprintln(out, fe.logsPanel.buf.String())
 	}
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
@@ -215,15 +226,15 @@ func (fe *frontendPretty) finalRender() error {
 }
 
 func (fe *frontendPretty) renderMessages(out *termenv.Output, full bool) (bool, error) {
-	if fe.messagesView.UsedHeight() == 0 {
+	if fe.logsPanel.vterm.UsedHeight() == 0 {
 		return false, nil
 	}
 	if full {
-		fe.messagesView.SetHeight(fe.messagesView.UsedHeight())
+		fe.logsPanel.vterm.SetHeight(fe.logsPanel.vterm.UsedHeight())
 	} else {
-		fe.messagesView.SetHeight(10)
+		fe.logsPanel.vterm.SetHeight(10)
 	}
-	_, err := fmt.Fprintln(out, fe.messagesView.View())
+	_, err := fmt.Fprintln(out, fe.logsPanel.vterm.View())
 	return true, err
 }
 
@@ -298,15 +309,15 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 func (fe *frontendPretty) recalculateView() {
 	steps := CollectSpans(fe.db, trace.TraceID{})
 	rows := CollectRows(steps)
-	fe.logsView = CollectLogsView(rows)
+	fe.rowsView = CollectRowsView(rows)
 }
 
 func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 	var renderedAny bool
-	if fe.logsView == nil {
+	if fe.rowsView == nil {
 		return false, nil
 	}
-	for _, row := range fe.logsView.Body {
+	for _, row := range fe.rowsView.Body {
 		if fe.Debug || fe.shouldShow(fe.FrontendOpts, row) {
 			if err := fe.renderRow(out, row, 0); err != nil {
 				return renderedAny, err
@@ -314,11 +325,11 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 			renderedAny = true
 		}
 	}
-	if fe.logsView.Primary != nil && !fe.done {
+	if fe.rowsView.Primary != nil && !fe.done {
 		if renderedAny {
 			fmt.Fprintln(out)
 		}
-		fe.renderLogs(out, fe.logsView.Primary, -1)
+		fe.renderLogs(out, fe.rowsView.Primary, -1)
 		renderedAny = true
 	}
 	return renderedAny, nil
@@ -415,7 +426,7 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (fe *frontendPretty) SetWindowSize(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
-	fe.messagesView.SetWidth(msg.Width)
+	fe.logsPanel.vterm.SetWidth(msg.Width)
 }
 
 func (fe *frontendPretty) render() {

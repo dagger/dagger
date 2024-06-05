@@ -247,7 +247,7 @@ func (fe *frontendPlain) finalRender() {
 func (fe *frontendPlain) renderProgress() {
 	steps := CollectSpans(fe.db, trace.TraceID{})
 	rows := CollectRows(steps)
-	logsView := CollectLogsView(rows)
+	logsView := CollectRowsView(rows)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear
