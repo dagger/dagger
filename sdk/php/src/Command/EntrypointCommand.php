@@ -69,18 +69,44 @@ class EntrypointCommand extends Command
             foreach($reflectedMethods as $method) {
                 $methodName = $method->getName();
                 $io->info('FOUND METHOD: ' . $methodName);
-                $methodAttributes = $method->getAttributes();
+                $methodAttributes = $method->getAttributes(DaggerFunction::class);
+
+                $io->info('METHOD ATTRIBUTES');
+                $io->info(var_export($methodAttributes, true));
+
+
+                continue;
+
                 foreach($methodAttributes as $methodAttribute) {
-                    if(!$this->hasDaggerFunctionAttribute($methodAttribute)) {
-                        continue;
-                    }
 
                     // We found a method with a DaggerFunction attribute! yay!
                     $io->info('FOUND METHOD with DaggerFunction attribute! yay');
+
+                    
+
+                    // create a ->withFunction entry
+                    // Find the args on the function, and do ->withArg() on it
+
+                    // create a ->withFunction entry
+                    // Find the args on the function, and do ->withArg() on it
+
+
+                    /*$client->module()->withObject(
+                        $client->typeDef()->withFunction(
+                            $client->function()
+                                ->withArg()
+                        )
+                    );*/
+
                 }
                 // $io->info(var_export($methodAttributes, true));
             }
 
+
+
+            
+            
+           
 
 
             // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
@@ -91,17 +117,7 @@ class EntrypointCommand extends Command
             //     echo 'Attribute class: ' . $attribute->getName() . PHP_EOL;
             //     echo 'Attribute value: ' . $attributeInstance->value . PHP_EOL;
             // }
-            
-            
-            // create a ->withFunction entry
-            // Find the args on the function, and do ->withArg() on it
 
-            /*$client->module()->withObject(
-                $client->typeDef()->withFunction(
-                    $client->function()
-                        ->withArg()
-                )
-            );*/
         }
 
         return Command::SUCCESS;
@@ -142,9 +158,6 @@ class EntrypointCommand extends Command
         return $parentName === 'null';
     }
 
-    private function hasDaggerFunctionAttribute(ReflectionAttribute $attribute): bool
-    {
-        return $attribute->getName() === DaggerFunction::class;
-    }
+
 
 }
