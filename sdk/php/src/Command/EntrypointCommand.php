@@ -88,7 +88,7 @@ class EntrypointCommand extends Command
                     ->withObject($daggerModule->name())
                     ->withFunction($func);
 
-                $daggerModule = $daggerModule->withObject($obj);
+                // $daggerModule = $daggerModule->withObject($obj);
 
                 // Premarurely end the loop here...
                 continue;
