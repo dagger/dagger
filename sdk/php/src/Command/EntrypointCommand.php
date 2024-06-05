@@ -19,7 +19,6 @@ use Dagger\Client as DaggerClient;
 use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionMethod;
-use ReflectionAttribute;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
@@ -57,6 +56,7 @@ class EntrypointCommand extends Command
         $classes = $this->getDaggerObjects($dir);
         $io->info(var_export($classes, true));
 
+        // Find functions tagged with [DaggerFunction]
         foreach($classes as $class) {
 
             $io->info('FOUND CLASS WITH DaggerFunction annotation: ' . $class);
@@ -81,23 +81,18 @@ class EntrypointCommand extends Command
                 // $io->info(var_export($methodAttributes, true));
             }
 
-            // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
 
+
+            // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
             // // Get the attributes of the method
             // $attributes = $reflectionMethod->getAttributes();
-            
             // foreach ($attributes as $attribute) {
             //     $attributeInstance = $attribute->newInstance();
             //     echo 'Attribute class: ' . $attribute->getName() . PHP_EOL;
             //     echo 'Attribute value: ' . $attributeInstance->value . PHP_EOL;
             // }
-
             
-
-
-
             
-            // Find functions tagged with [DaggerFunction]
             // create a ->withFunction entry
             // Find the args on the function, and do ->withArg() on it
 
