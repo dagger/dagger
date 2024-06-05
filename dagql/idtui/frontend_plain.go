@@ -357,6 +357,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		}
 		if done {
 			call.Args = nil
+			call.Type = nil
 		}
 		r.renderCall(fe.output, nil, call, prefix, depth, false)
 	} else {

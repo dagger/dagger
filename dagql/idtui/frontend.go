@@ -174,8 +174,10 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 		fmt.Fprint(out, ")")
 	}
 
-	typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
-	fmt.Fprint(out, typeStr)
+	if id.Type != nil {
+		typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
+		fmt.Fprint(out, typeStr)
+	}
 
 	if span != nil {
 		r.renderDuration(out, span)
