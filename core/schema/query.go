@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/blang/semver"
+	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -78,11 +80,12 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (dagql.Boolean, error) {
-	logger := slog.GlobalLogger(ctx)
+	_, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn,
+		log.Bool(telemetry.LogsGlobalAttr, true))
 
 	// Skip development version
 	if _, err := semver.Parse(engine.Version); err != nil {
-		logger.Debug("Using development engine; skipping version compatibility check.")
+		slog.Debug("Using development engine; skipping version compatibility check.")
 		return true, nil
 	}
 
@@ -101,7 +104,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	// If the Engine is a major version above the SDK version, fails
 	// TODO: throw an error and abort the session
 	if engineVersion.Major > sdkVersion.Major {
-		logger.Warn(fmt.Sprintf("Dagger engine version (%s) is significantly newer than the SDK's required version (%s). Please update your SDK.", engineVersion, sdkVersion))
+		slog.Warn(fmt.Sprintf("Dagger engine version (%s) is significantly newer than the SDK's required version (%s). Please update your SDK.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("Dagger engine version (%s) is not compatible with the SDK (%s)", engineVersion, sdkVersion)
 		return false, nil
@@ -110,7 +113,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 	// If the Engine is older than the SDK, fails
 	// TODO: throw an error and abort the session
 	if engineVersion.LT(sdkVersion) {
-		logger.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK's required version (%s). Please update your Dagger CLI.", engineVersion, sdkVersion))
+		slog.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK's required version (%s). Please update your Dagger CLI.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("API version is older than the SDK, please update your Dagger CLI")
 		return false, nil
@@ -118,7 +121,7 @@ func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Que
 
 	// If the Engine is a minor version newer, warn
 	if engineVersion.Minor > sdkVersion.Minor {
-		logger.Warn(fmt.Sprintf("Dagger engine version (%s) is newer than the SDK's required version (%s). Consider updating your SDK.", engineVersion, sdkVersion))
+		slog.Warn(fmt.Sprintf("Dagger engine version (%s) is newer than the SDK's required version (%s). Consider updating your SDK.", engineVersion, sdkVersion))
 	}
 
 	return true, nil

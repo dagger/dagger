@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"runtime/debug"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/ioctx"
 )
 
 type serviceSchema struct {
@@ -118,6 +118,8 @@ type upArgs struct {
 	Random bool                                  `default:"false"`
 }
 
+const InstrumentationLibrary = "dagger.io/engine.schema"
+
 func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service], args upArgs) (dagql.Nullable[core.Void], error) {
 	void := dagql.Null[core.Void]()
 
@@ -145,7 +147,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 		return void, fmt.Errorf("failed to start host service: %w", err)
 	}
 
-	ioctxOut := ioctx.Stdout(ctx)
+	logs := telemetry.Logs(ctx, InstrumentationLibrary)
 
 	for _, port := range runningSvc.Ports {
 		portStr := fmt.Sprintf("%d/%s", port.Port, port.Protocol)
@@ -153,7 +155,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 			portStr += ": " + *port.Description
 		}
 		portStr += "\n"
-		ioctxOut.Write([]byte(portStr))
+		logs.Stdout.Write([]byte(portStr))
 	}
 
 	// wait for the request to be canceled

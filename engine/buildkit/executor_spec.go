@@ -624,30 +624,16 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	otelLogger := telemetry.Logger("dagger.io/executor")
-	stdout := &telemetry.OTelWriter{
-		Ctx:    ctx,
-		Logger: otelLogger,
-		Stream: 1,
-	}
-	stderr := &telemetry.OTelWriter{
-		Ctx:    ctx,
-		Logger: otelLogger,
-		Stream: 2,
-	}
-
+	logAttrs := []log.KeyValue{}
 	if w.execMD != nil {
 		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTelEnvs...)
-
-		logAttrs := []log.KeyValue{
-			log.String(telemetry.ClientIDAttr, w.execMD.ClientID),
-		}
-		stdout.Attributes = logAttrs
-		stderr.Attributes = logAttrs
+		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
 	}
+	logs := telemetry.Logs(ctx, "dagger.io/executor", logAttrs...)
 
-	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdout, state.procInfo.Stdout)}
-	state.procInfo.Stderr = nopCloser{io.MultiWriter(stderr, state.procInfo.Stderr)}
+	state.procInfo.Stdout = nopCloser{io.MultiWriter(logs.Stdout, state.procInfo.Stdout)}
+	state.procInfo.Stderr = nopCloser{io.MultiWriter(logs.Stderr, state.procInfo.Stderr)}
+	state.cleanups.add("close logs", logs.Close)
 
 	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")

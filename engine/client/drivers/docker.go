@@ -54,13 +54,18 @@ const (
 	containerNamePrefix = "dagger-engine-"
 )
 
+const InstrumentationLibrary = "dagger.io/client.drivers"
+
 // Pull the image and run it with a unique name tied to the pinned
 // sha of the image. Remove any other containers leftover from
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
 func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
-	log := slog.ContextLogger(ctx, slog.LevelWarn)
+	ctx, span := otel.Tracer("").Start(ctx, "create")
+	defer telemetry.End(span, func() error { return rerr })
+	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn)
+	defer logs.Close()
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
@@ -77,9 +82,9 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent)); err != nil {
-			log.Warn("failed to resolve image; falling back to leftover engine", "error", err)
+			slog.Warn("failed to resolve image; falling back to leftover engine", "error", err)
 			if strings.Contains(err.Error(), "DENIED") {
-				log.Warn("check your docker registry auth; it might be incorrect or expired")
+				slog.Warn("check your docker registry auth; it might be incorrect or expired")
 			}
 			fallbackToLeftoverEngine = true
 		} else {
@@ -91,7 +96,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	// And check if we are in a fallback case then perform fallback to most recent engine
 	leftoverEngines, err := collectLeftoverEngines(ctx)
 	if err != nil {
-		log.Warn("failed to list containers", "error", err)
+		slog.Warn("failed to list containers", "error", err)
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
@@ -106,7 +111,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 			return nil, errors.Wrapf(err, "failed to start container: %s", output)
 		}
 
-		garbageCollectEngines(ctx, log, leftoverEngines[1:])
+		garbageCollectEngines(ctx, slog, leftoverEngines[1:])
 
 		return connhDocker.Helper(&url.URL{
 			Scheme: "docker-container",
@@ -130,7 +135,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 			if output, err := traceExec(ctx, cmd); err != nil {
 				return nil, errors.Wrapf(err, "failed to start container: %s", output)
 			}
-			garbageCollectEngines(ctx, log, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
+			garbageCollectEngines(ctx, slog, append(leftoverEngines[:i], leftoverEngines[i+1:]...))
 			return connhDocker.Helper(&url.URL{
 				Scheme: "docker-container",
 				Host:   containerName,
@@ -177,7 +182,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	garbageCollectEngines(ctx, log, leftoverEngines)
+	garbageCollectEngines(ctx, slog, leftoverEngines)
 
 	return connhDocker.Helper(&url.URL{
 		Scheme: "docker-container",
@@ -203,10 +208,11 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
 	defer telemetry.End(span, func() error { return rerr })
-	_, stdout, stderr := slog.WithStdioToOTel(ctx, "")
+	logs := telemetry.Logs(ctx, "")
+	defer logs.Close()
 	outBuf := new(bytes.Buffer)
-	cmd.Stdout = io.MultiWriter(stdout, outBuf)
-	cmd.Stderr = io.MultiWriter(stderr, outBuf)
+	cmd.Stdout = io.MultiWriter(logs.Stdout, outBuf)
+	cmd.Stderr = io.MultiWriter(logs.Stderr, outBuf)
 	if err := cmd.Run(); err != nil {
 		return outBuf.String(), errors.Wrap(err, "failed to run command")
 	}

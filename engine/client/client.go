@@ -248,7 +248,8 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "connecting to engine")
 	defer telemetry.End(span, func() error { return rerr })
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	defer logs.Close()
 
 	slog.Info("connecting", "runner", c.RunnerHost, "client", c.ID)
 
@@ -321,7 +322,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	defer logs.Close()
 
 	hostname, err := os.Hostname()
 	if err != nil {

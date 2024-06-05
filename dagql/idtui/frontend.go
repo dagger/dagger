@@ -381,7 +381,7 @@ func renderPrimaryOutput(db *DB) error {
 		data := l.Body().AsString()
 		var stream int
 		l.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetry.LogStreamAttr {
+			if attr.Key == telemetry.StdioStreamAttr {
 				stream = int(attr.Value.AsInt64())
 				return false
 			}

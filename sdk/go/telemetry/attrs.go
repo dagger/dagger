@@ -76,4 +76,13 @@ const (
 
 	// The client ID that generated this telemetry.
 	ClientIDAttr = "dagger.io/client.id"
+
+	// The stdio stream a log corresponds to (1 for stdout, 2 for stderr).
+	StdioStreamAttr = "stdio.stream"
+
+	// Indicates whether the log stream has ended.
+	StdioEOFAttr = "stdio.eof"
+
+	// Indicates whether the log should be shown globally.
+	LogsGlobalAttr = "dagger.io/logs.global"
 )

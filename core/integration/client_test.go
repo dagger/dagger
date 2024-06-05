@@ -49,17 +49,17 @@ func TestClientMultiSameTrace(t *testing.T) {
 	fqRef, err := c1.Container().From(alpineImage).ImageRef(ctx1)
 	require.NoError(t, err)
 
-	echo := func(c *dagger.Client, msg string) {
+	echo := func(ctx context.Context, c *dagger.Client, msg string) {
 		_, err := c.Container().
 			From(fqRef).
 			// NOTE: have to echo slowly enough that the frontend doesn't consider it
 			// "boring"
-			WithExec([]string{"sh", "-c", "sleep 0.5; echo echoed: $0", msg}).Sync(ctx1)
+			WithExec([]string{"sh", "-c", "sleep 0.5; echo echoed: $0", msg}).Sync(ctx)
 		require.NoError(t, err)
 	}
 
 	c1msg := identity.NewID()
-	echo(c1, c1msg)
+	echo(ctx1, c1, c1msg)
 
 	ctx2, span := Tracer().Start(rootCtx, "client 2")
 	defer span.End()
@@ -68,7 +68,7 @@ func TestClientMultiSameTrace(t *testing.T) {
 	c2, out2 := newClient(timeoutCtx2, "client 2")
 
 	c2msg := identity.NewID()
-	echo(c2, c2msg)
+	echo(ctx2, c2, c2msg)
 
 	ctx3, span := Tracer().Start(rootCtx, "client 3")
 	defer span.End()
@@ -77,7 +77,7 @@ func TestClientMultiSameTrace(t *testing.T) {
 	c3, out3 := newClient(timeoutCtx3, "client 3")
 
 	c3msg := identity.NewID()
-	echo(c3, c3msg)
+	echo(ctx3, c3, c3msg)
 
 	t.Logf("closing c2 (which has timeout)")
 	require.NoError(t, c2.Close())
@@ -87,12 +87,6 @@ func TestClientMultiSameTrace(t *testing.T) {
 
 	t.Logf("closing c1")
 	require.NoError(t, c1.Close())
-
-	// FIXME: unfortunately we have to wait a bit because logs are decoupled from
-	// spans and there's no EOF event to signify the end of logs. but this will
-	// surely flake in CI someday. sorry.
-	t.Logf("waiting")
-	time.Sleep(time.Second)
 
 	t.Logf("asserting")
 	require.Regexp(t, `exec.*echo.*`+c1msg+`.*DONE`, out1.String())

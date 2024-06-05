@@ -32,7 +32,6 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -235,6 +234,8 @@ func (e ExitError) Error() string {
 	return fmt.Sprintf("exit code %d", e.Code)
 }
 
+const InstrumentationLibrary = "dagger.io/cli"
+
 func main() {
 	parseGlobalFlags()
 
@@ -300,9 +301,10 @@ func main() {
 		Frontend.SetPrimary(span.SpanContext().SpanID())
 
 		// Direct command stdout/stderr to span logs via OpenTelemetry.
-		ctx, stdout, stderr := slog.WithStdioToOTel(ctx, "dagger.io/cli")
-		rootCmd.SetOut(stdout)
-		rootCmd.SetErr(stderr)
+		logs := telemetry.Logs(ctx, InstrumentationLibrary)
+		defer logs.Close()
+		rootCmd.SetOut(logs.Stdout)
+		rootCmd.SetErr(logs.Stderr)
 
 		return rootCmd.ExecuteContext(ctx)
 	}); err != nil {

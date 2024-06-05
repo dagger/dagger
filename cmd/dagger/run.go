@@ -15,7 +15,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/dagql/ioctx"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -134,16 +133,18 @@ func run(ctx context.Context, args []string) error {
 
 		go srv.Serve(sessionL)
 
+		logs := telemetry.Logs(ctx, InstrumentationLibrary)
+
 		var cmdErr error
 		if !silent {
 			if stdoutIsTTY {
-				subCmd.Stdout = ioctx.Stdout(ctx)
+				subCmd.Stdout = logs.Stdout
 			} else {
 				subCmd.Stdout = os.Stdout
 			}
 
 			if stderrIsTTY {
-				subCmd.Stderr = ioctx.Stderr(ctx)
+				subCmd.Stderr = logs.Stderr
 			} else {
 				subCmd.Stderr = os.Stderr
 			}

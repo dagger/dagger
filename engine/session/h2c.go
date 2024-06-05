@@ -38,8 +38,10 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 	RegisterTunnelListenerServer(srv, &s)
 }
 
+const InstrumentationLibrary = "dagger.io/engine.session"
+
 func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
-	log := slog.GlobalLogger(s.rootCtx)
+	_, slog := slog.SpanLogger(s.rootCtx, InstrumentationLibrary, slog.LevelWarn)
 
 	req, err := srv.Recv()
 	if err != nil {
@@ -76,7 +78,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 			conn, err := l.Accept()
 			if err != nil {
 				if !errors.Is(err, net.ErrClosed) {
-					log.Warn("accept error", "error", err)
+					slog.Warn("accept error", "error", err)
 				}
 				return
 			}
@@ -93,7 +95,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 			})
 			sendL.Unlock()
 			if err != nil {
-				log.Warn("send connID error", "error", err)
+				slog.Warn("send connID error", "error", err)
 				return
 			}
 
@@ -108,7 +110,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 							return
 						}
 
-						log.Warn("conn read error", "error", err)
+						slog.Warn("conn read error", "error", err)
 						return
 					}
 
@@ -119,7 +121,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 					})
 					sendL.Unlock()
 					if err != nil {
-						log.Warn("listener send response error", "error", err)
+						slog.Warn("listener send response error", "error", err)
 						return
 					}
 				}
@@ -145,13 +147,13 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 				return nil
 			}
 
-			log.Error("listener receive request error", "error", err)
+			slog.Error("listener receive request error", "error", err)
 			return err
 		}
 
 		connID := req.GetConnId()
 		if req.GetConnId() == "" {
-			log.Warn("listener request with no connID")
+			slog.Warn("listener request with no connID")
 			continue
 		}
 
@@ -159,14 +161,14 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 		conn, ok := conns[connID]
 		connsL.Unlock()
 		if !ok {
-			log.Warn("listener request for unknown connID", "connID", connID)
+			slog.Warn("listener request for unknown connID", "connID", connID)
 			continue
 		}
 
 		switch {
 		case req.GetClose():
 			if err := conn.Close(); err != nil {
-				log.Warn("conn close error", "error", err)
+				slog.Warn("conn close error", "error", err)
 				continue
 			}
 			connsL.Lock()
@@ -180,7 +182,7 @@ func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error 
 					return nil
 				}
 
-				log.Warn("conn write error", "error", err)
+				slog.Warn("conn write error", "error", err)
 				continue
 			}
 		}

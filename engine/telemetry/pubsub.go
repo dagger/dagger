@@ -358,10 +358,11 @@ func (ps *PubSub) initClient(id string) *activeClient {
 	c, ok := ps.clients[id]
 	if !ok {
 		c = &activeClient{
-			ps:    ps,
-			id:    id,
-			cond:  sync.NewCond(&sync.Mutex{}),
-			spans: map[trace.SpanID]sdktrace.ReadOnlySpan{},
+			ps:         ps,
+			id:         id,
+			cond:       sync.NewCond(&sync.Mutex{}),
+			spans:      map[trace.SpanID]sdktrace.ReadOnlySpan{},
+			logStreams: map[logStream]struct{}{},
 		}
 		ps.clients[id] = c
 	}
@@ -547,6 +548,11 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 				TraceID:  rec.TraceID(),
 				ClientID: clientID,
 			}] = struct{}{}
+
+			client, found := ps.lookupClient(clientID)
+			if found {
+				client.trackLogStream(rec)
+			}
 		}
 
 		rec.WalkAttributes(func(kv log.KeyValue) bool {
@@ -680,6 +686,15 @@ func (ps *PubSub) unsubLogs(topic Topic, exp sdklog.Exporter) {
 	ps.logSubsL.Unlock()
 }
 
+type logStream struct {
+	span   trace.SpanID
+	stream int64
+}
+
+func (s logStream) String() string {
+	return fmt.Sprintf("logStream{span=%s, stream=%d}", s.span, s.stream)
+}
+
 // activeClient keeps track of in-flight spans so that we can wait for them
 // all to complete, ensuring we don't drop the last few spans, which ruins
 // an entire trace.
@@ -691,7 +706,8 @@ type activeClient struct {
 
 	id string
 
-	spans map[trace.SpanID]sdktrace.ReadOnlySpan
+	spans      map[trace.SpanID]sdktrace.ReadOnlySpan
+	logStreams map[logStream]struct{}
 
 	draining         bool
 	drainImmediately bool
@@ -726,6 +742,38 @@ func (c *activeClient) spanIDs() []string {
 	return ids
 }
 
+func (c *activeClient) trackLogStream(rec sdklog.Record) {
+	stream := logStream{
+		span:   rec.SpanID(),
+		stream: -1,
+	}
+	var eof bool
+	rec.WalkAttributes(func(kv log.KeyValue) bool {
+		switch kv.Key {
+		case telemetry.StdioStreamAttr:
+			stream.stream = kv.Value.AsInt64()
+		case telemetry.StdioEOFAttr:
+			eof = kv.Value.AsBool()
+		}
+		return true
+	})
+	if stream.stream == -1 {
+		// log record doesn't conform to this stream/EOF pattern, so just ignore it
+		return
+	}
+	c.cond.L.Lock()
+	if eof {
+		// slog.Warn("!!! STREAM EOF", "stream", stream)
+		delete(c.logStreams, stream)
+		c.cond.Broadcast()
+	} else if _, active := c.logStreams[stream]; !active {
+		// slog.Warn("!!! STREAM ACTIVE", "stream", stream, "log", rec.Body().AsString())
+		c.logStreams[stream] = struct{}{}
+		c.cond.Broadcast()
+	}
+	c.cond.L.Unlock()
+}
+
 func (c *activeClient) wait(ctx context.Context) {
 	slog := slog.With("client", c.id)
 
@@ -738,7 +786,7 @@ func (c *activeClient) wait(ctx context.Context) {
 	c.cond.L.Lock()
 	defer c.cond.L.Unlock()
 
-	for !c.draining || len(c.spans) > 0 {
+	for !c.draining || len(c.spans) > 0 || len(c.logStreams) > 0 {
 		slog = c.slogAttrs(slog)
 		if ctx.Err() != nil {
 			slog.ExtraDebug("wait interrupted")
@@ -752,6 +800,8 @@ func (c *activeClient) wait(ctx context.Context) {
 			kept := c.ps.filterAbandonedSpans(c.spans)
 			if len(kept) > 0 {
 				slog.Debug("waiting for spans")
+			} else if len(c.logStreams) > 0 {
+				slog.Debug("waiting for logs")
 			} else {
 				slog.Debug("remaining spans all abandoned")
 				break
@@ -769,6 +819,7 @@ func (c *activeClient) slogAttrs(slog *slog.Logger) *slog.Logger {
 		"draining", c.draining,
 		"immediate", c.drainImmediately,
 		"activeSpans", len(c.spans),
+		"activeLogs", c.logStreams,
 		"spanNames", c.spanNames(),
 		"spanIDs", c.spanIDs(),
 	)
