@@ -39,12 +39,12 @@ class EntrypointCommand extends Command
         // $io->info('MODULE NAME: ' . $moduleName);
 
         $parentName = $this->daggerConnection->currentFunctionCall()->parent()->getValue();
-        $io->info('TYPE IS: ' . gettype($parentName));
-        $io->info('PARENT NAME: ' . $parentName);
 
-        if ($parentName === "") {
+        if (!$this->hasParentName($parentName)) {
+            $io->info('NO PARENT NAME FOUND: ' . $parentName);
             // register module with dagger
         } else {
+            $io->info('!!!!! FOUND A PARENT NAME: ' . $parentName);
             // invocation, run module code.
         }
 
@@ -90,5 +90,10 @@ class EntrypointCommand extends Command
         }
 
         return $classes;
+    }
+
+    private function hasParentName(string $parentName): bool
+    {
+        return $parentName === 'null';
     }
 }
