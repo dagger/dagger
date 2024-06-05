@@ -8,7 +8,6 @@ import (
 
 	"github.com/moby/buildkit/identity"
 
-	"github.com/dagger/dagger/ci/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -188,12 +187,10 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
-	tests := util.GoBase(t.Dagger.Source).
+	tests := t.Dagger.Go().Env().
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.10.0"}).
-		WithMountedDirectory("/app", t.Dagger.Source). // need all the source for extension tests
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
-		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngineSvc).
 		WithServiceBinding("registry", registrySvc)
 

@@ -67,7 +67,10 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return lintGoModule(ctx, false, daggerDevelop(t.Dagger.Source, typescriptRuntimeSubdir), []string{typescriptRuntimeSubdir})
+		return t.Dagger.
+			Go().
+			WithCodegen([]string{typescriptRuntimeSubdir}).
+			Lint(ctx, []string{typescriptRuntimeSubdir}, false)
 	})
 
 	return eg.Wait()
@@ -161,7 +164,7 @@ always-auth=true`, plaintext)
 }
 
 // Bump the Typescript SDK's Engine dependency
-func (t TypescriptSDK) Bump(version string) (*Directory, error) {
+func (t TypescriptSDK) Bump(ctx context.Context, version string) (*Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 

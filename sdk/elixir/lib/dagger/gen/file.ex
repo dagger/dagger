@@ -68,6 +68,18 @@ defmodule Dagger.File do
     execute(selection, file.client)
   end
 
+  @doc "Retrieves this file with its name set to the given name."
+  @spec with_name(t(), String.t()) :: Dagger.File.t()
+  def with_name(%__MODULE__{} = file, name) do
+    selection =
+      file.selection |> select("withName") |> put_arg("name", name)
+
+    %Dagger.File{
+      selection: selection,
+      client: file.client
+    }
+  end
+
   @doc "Retrieves this file with its created/modified timestamps set to the given time."
   @spec with_timestamps(t(), integer()) :: Dagger.File.t()
   def with_timestamps(%__MODULE__{} = file, timestamp) do

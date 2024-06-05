@@ -5,10 +5,18 @@
     {
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@72ec19206da7dbe2815da94c62e491b54935b633"
+    },
+    {
+      "name": "go",
+      "source": "ci/std/go"
+    },
+    {
+      "name": "graphql",
+      "source": "ci/std/graphql"
     }
   ],
   "source": "ci",
-  "engineVersion": "v0.11.4",
+  "engineVersion": "v0.11.6",
   "views": [
     {
       "name": "default",

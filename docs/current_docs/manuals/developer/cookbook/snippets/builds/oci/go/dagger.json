@@ -1,0 +1,12 @@
+{
+  "name": "my-module",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "containerd",
+      "source": "github.com/levlaz/daggerverse/containerd@abcd1a95cef14ad336ca21a9ab836869582617bb"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.11.5"
+}

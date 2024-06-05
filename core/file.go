@@ -207,6 +207,29 @@ func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
 	})
 }
 
+func (file *File) WithName(ctx context.Context, filename string) (*File, error) {
+	// Clone the file
+	file = file.Clone()
+
+	st, err := file.State()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new file with the new name
+	newFile := llb.Scratch().File(llb.Copy(st, file.File, path.Base(filename)))
+
+	def, err := newFile.Marshal(ctx, llb.Platform(file.Platform.Spec()))
+	if err != nil {
+		return nil, err
+	}
+
+	file.LLB = def.ToPB()
+	file.File = path.Base(filename)
+
+	return file, nil
+}
+
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	file = file.Clone()
 

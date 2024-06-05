@@ -175,6 +175,42 @@ func TestFileName(t *testing.T) {
 	})
 }
 
+func TestFileWithName(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	t.Run("new file with new name", func(t *testing.T) {
+		t.Parallel()
+
+		file := c.Directory().WithNewFile("/foo/bar", "content").File("foo/bar")
+
+		newFile := file.WithName("baz")
+
+		name, err := newFile.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "baz", name)
+	})
+
+	t.Run("mounted file with new name", func(t *testing.T) {
+		t.Parallel()
+
+		file := c.Directory().WithNewFile("/foo/bar", "content").File("foo/bar")
+
+		newFile := file.WithName("baz")
+
+		mountedFile := c.Directory().WithFile("", newFile).File("baz")
+
+		mountedFileName, err := mountedFile.Name(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "baz", mountedFileName)
+
+		mountedFileNameContent, err := mountedFile.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "content", mountedFileNameContent)
+	})
+}
+
 func TestFileExport(t *testing.T) {
 	t.Parallel()
 

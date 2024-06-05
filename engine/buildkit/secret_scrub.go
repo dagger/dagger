@@ -41,7 +41,7 @@ func NewSecretScrubReader(
 
 	trie := &Trie{}
 	for _, s := range secretAsBytes {
-		trie.Insert([]byte(s), scrubString)
+		trie.Insert(s, scrubString)
 	}
 	transformer := &censor{
 		trie:     trie,

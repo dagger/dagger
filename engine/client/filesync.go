@@ -281,6 +281,7 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 }
 
 func (f Filesyncer) fullRootPathAndBaseName(reqPath string) (rootPath string, baseName string, err error) {
+	// NOTE: filepath.Clean also handles calling FromSlash (relevant when this is a Windows client)
 	reqPath = filepath.Clean(reqPath)
 
 	if f.rootDir == "" {

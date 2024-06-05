@@ -184,18 +184,19 @@ Dagger cancels each service run after a 10 second grace period to avoid frequent
 </Tabs>
 
 
-This function uses Redis's SAVE command to ensure data is synced. By default, Redis flushes data to disk periodically.
+This example uses Redis's `SAVE` command to save the service's data to a cache volume. When a new instance of the service is created, it uses the same cache volume to recreate the original state.
 
-Here is an example call for this Dagger Function:
+Here is an example of using these Dagger Functions:
 
 ```shell
-dagger call redis-service
+dagger call set --key=foo --value=123
+dagger call get --key=foo
 ```
 
 The result will be:
 
 ```shell
-abc
+123
 ```
 
 ## Start and stop services

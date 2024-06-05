@@ -3976,6 +3976,20 @@ impl File {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Retrieves this file with its name set to the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name to set file to.
+    pub fn with_name(&self, name: impl Into<String>) -> File {
+        let mut query = self.selection.select("withName");
+        query = query.arg("name", name.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this file with its created/modified timestamps set to the given time.
     ///
     /// # Arguments

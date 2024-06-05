@@ -30,6 +30,7 @@ func (c *Client) PublishContainerImage(
 	inputByPlatform map[string]ContainerExport,
 	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
 ) (map[string]string, error) {
+	ctx = buildkitTelemetryContext(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -67,6 +68,7 @@ func (c *Client) ExportContainerImage(
 	destPath string,
 	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
 ) (map[string]string, error) {
+	ctx = buildkitTelemetryContext(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
@@ -125,6 +127,7 @@ func (c *Client) ContainerImageToTarball(
 	inputByPlatform map[string]ContainerExport,
 	opts map[string]string,
 ) (*bksolverpb.Definition, error) {
+	ctx = buildkitTelemetryContext(ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err

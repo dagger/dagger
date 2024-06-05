@@ -20,18 +20,40 @@ type SDK struct {
 	Elixir *ElixirSDK
 	// Develop the Dagger Rust SDK (experimental)
 	Rust *RustSDK
-	// Develop the Dagger Java SDK (experimental)
-	Java *JavaSDK
 	// Develop the Dagger PHP SDK (experimental)
 	PHP *PHPSDK
+	// Develop the Dagger Java SDK (experimental)
+	Java *JavaSDK
+}
+
+func (sdk *SDK) All() *AllSDK {
+	return &AllSDK{
+		SDK: sdk,
+	}
+}
+
+type sdkBase interface {
+	Lint(ctx context.Context) error
+	Test(ctx context.Context) error
+	Generate(ctx context.Context) (*Directory, error)
+	Bump(ctx context.Context, version string) (*Directory, error)
+}
+
+func (sdk *SDK) allSDKs() []sdkBase {
+	return []sdkBase{
+		sdk.Go,
+		sdk.Python,
+		sdk.Typescript,
+		sdk.Elixir,
+		sdk.Rust,
+		sdk.PHP,
+		// java isn't properly integrated to our release process yet
+		// sdk.Java,
+	}
 }
 
 func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
 	engineSvc, err := ci.Engine().Service(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-	engineEndpoint, err := engineSvc.Endpoint(ctx, ServiceEndpointOpts{Scheme: "tcp"})
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +67,7 @@ func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) 
 	return func(ctr *Container) *Container {
 		ctr = ctr.
 			WithServiceBinding("dagger-engine", engineSvc).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engineEndpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
 			WithMountedFile(cliBinaryPath, cliBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
 			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})

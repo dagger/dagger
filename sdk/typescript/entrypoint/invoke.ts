@@ -36,8 +36,8 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
     throw new Error(`could not find method ${ctx.fnName}`)
   }
 
-  const args = await loadArgs(method, ctx)
-  const parentState = await loadParentState(object, ctx)
+  const args = await loadArgs(registry, method, ctx)
+  const parentState = await loadParentState(registry, object, ctx)
 
   let result = await registry.getResult(
     object.name,

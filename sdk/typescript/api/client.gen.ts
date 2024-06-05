@@ -3613,6 +3613,23 @@ export class File extends BaseClient {
   }
 
   /**
+   * Retrieves this file with its name set to the given name.
+   * @param name Name to set file to.
+   */
+  withName = (name: string): File => {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Retrieves this file with its created/modified timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
    *

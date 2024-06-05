@@ -119,27 +119,22 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Regenerate the API schema
 func (d Docs) GenerateSdl() *Directory {
-	introspectionJSON :=
-		util.GoBase(d.Dagger.Source).
-			WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
-				RedirectStdout: "introspection.json",
-			}).
-			File("introspection.json")
-
-	generated := dag.Container().
-		From("node:16-alpine").
-		WithExec([]string{"npm", "install", "-g", "graphql-json-to-sdl"}).
-		WithMountedFile("/src/schema.json", introspectionJSON).
-		WithExec([]string{"graphql-json-to-sdl", "/src/schema.json", "/src/schema.graphql"}).
-		File("/src/schema.graphql")
-
-	return dag.Directory().WithFile(generatedSchemaPath, generated)
+	introspectionJSON := dag.
+		Go(d.Dagger.Source).
+		Env().
+		WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "introspection.json",
+		}).
+		File("introspection.json")
+	return dag.
+		Directory().
+		WithFile(generatedSchemaPath, dag.Graphql().FromJSON(introspectionJSON).File())
 }
 
 // Regenerate the CLI reference docs
 func (d Docs) GenerateCli() *Directory {
 	// Should we keep `--include-experimental`?
-	generated := util.GoBase(d.Dagger.Source).
+	generated := d.Dagger.Go().Env().
 		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
 		File("cli.mdx")
 	return dag.Directory().WithFile(generatedCliZenPath, generated)

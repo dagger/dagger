@@ -354,6 +354,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/entrypoint-function"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/state-functions"
         },
         {
@@ -389,10 +393,6 @@ module.exports = {
               "id": "manuals/developer/go/first-module"
             },
             {
-              "type": "doc",
-              "id": "manuals/developer/go/constructor"
-            },
-            {
               "type": "link",
               "label": "Go SDK Reference",
               "href": "https://pkg.go.dev/dagger.io/dagger"
@@ -410,10 +410,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/python/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/constructor"
             },
             {
               "type": "doc",
@@ -437,10 +433,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manuals/developer/typescript/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/constructor"
             },
             {
               "type": "doc",
