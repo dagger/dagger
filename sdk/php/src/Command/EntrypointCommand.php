@@ -15,6 +15,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Dagger\Dagger;
 use Dagger\Client as DaggerClient;
+use ReflectionClass;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
