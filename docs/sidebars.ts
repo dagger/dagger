@@ -406,14 +406,14 @@ module.exports = {
 //          "id": "manuals/developer/cookbook"
 //        },
         {
-          "type": "doc",
-          "id": "guides",
-          "label": "Guides"
-        },
-        {
           "type": "link",
           "label": "API Reference",
           "href": "https://docs.dagger.io/api/reference"
+        },
+        {
+          "type": "doc",
+          "id": "guides",
+          "label": "Guides"
         },
         {
           "type": "doc",
