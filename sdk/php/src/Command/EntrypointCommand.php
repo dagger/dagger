@@ -85,10 +85,10 @@ class EntrypointCommand extends Command
 
                 $func = $this->daggerConnection->function($methodName, $stringType);
                 $obj = $this->daggerConnection->typeDef()
-                    ->withObject($daggerModule->name())
+                    ->withObject('PaulTestModule')
                     ->withFunction($func);
 
-                // $daggerModule = $daggerModule->withObject($obj);
+                $daggerModule = $daggerModule->withObject($obj);
 
                 // Premarurely end the loop here...
                 continue;
