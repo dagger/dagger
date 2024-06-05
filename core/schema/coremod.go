@@ -104,7 +104,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, m.Dag)
+	introspectionJSON, err := SchemaIntrospectionJSON(ctx, m.Dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON: %w", err)
 	}
