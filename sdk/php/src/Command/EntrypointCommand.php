@@ -37,14 +37,16 @@ class EntrypointCommand extends Command
         // $moduleName = $this->daggerConnection->module()->id();
         // $moduleName = $this->daggerConnection->module()->name();
         // $io->info('MODULE NAME: ' . $moduleName);
+
         $parentName = $this->daggerConnection->currentFunctionCall()->parent()->getValue();
+        $io->info('TYPE IS: ' . gettype($parentName));
         $io->info('PARENT NAME: ' . $parentName);
 
-        //if ($parentName === "") {
+        if ($parentName === "") {
             // register module with dagger
-        //} else {
+        } else {
             // invocation, run module code.
-        //}
+        }
 
         /*$client->module()->withObject(
             $client->typeDef()->withFunction(
