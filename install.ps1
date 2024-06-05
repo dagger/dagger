@@ -2,7 +2,7 @@
 
 param (
     [Parameter(Mandatory = $false)] [System.Management.Automation.SemanticVersion]$DaggerVersion,
-    [Parameter(Mandatory = $false)] [System.Management.Automation.SemanticVersion]$DaggerCommit,
+    [Parameter(Mandatory = $false)] [string]$DaggerCommit,
     [Parameter(Mandatory = $false)] [string]$InstallPath = $env:HOMEPATH + '\dagger',
 
     [Parameter(Mandatory = $false)] [System.Boolean]$InteractiveInstall = $false
@@ -73,10 +73,10 @@ run the script and if it still fail please open an issue on the Dagger repo.
 function base_url {
     if ($DaggerVersion) {
         $path = "releases/" + $DaggerVersion
-    } else if ($DaggerCommit) {
+    } elseif ($DaggerCommit) {
         $path = "main/" + $DaggerCommit
     } else {
-        $path = "releases/" + latest_version
+        $path = "releases/" + (latest_version)
     }
     $url = $base + "/" + $name + "/" + $path
     return $url
@@ -85,10 +85,10 @@ function base_url {
 function tarball {
     if ($DaggerVersion) {
         $version = "v" + $DaggerVersion
-    } else if ($DaggerCommit) {
-        $url = $DaggerCommit
+    } elseif ($DaggerCommit) {
+        $version = $DaggerCommit
     } else {
-        $version = "v" + latest_version
+        $version = "v" + (latest_version)
     }
     $fileName="dagger_" + $version + "_windows_amd64"
     $filename = $filename + ".zip"
