@@ -52,9 +52,14 @@ func TestClientMultiSameTrace(t *testing.T) {
 	echo := func(ctx context.Context, c *dagger.Client, msg string) {
 		_, err := c.Container().
 			From(fqRef).
+			// FIXME: have to echo first, then wait, then echo again, because we only
+			// wait for logs once we see them the first time, and we only show spans
+			// that are slow enough. this could be made more foolproof by adding a
+			// span attribute like "hey wait until you see EOF for my logs on these
+			// streams" but we don't control the span.
 			// NOTE: have to echo slowly enough that the frontend doesn't consider it
 			// "boring"
-			WithExec([]string{"sh", "-c", "sleep 0.5; echo echoed: $0", msg}).Sync(ctx)
+			WithExec([]string{"sh", "-c", "echo hey; sleep 0.5; echo echoed: $0", msg}).Sync(ctx)
 		require.NoError(t, err)
 	}
 
