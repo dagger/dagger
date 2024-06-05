@@ -3,8 +3,10 @@ package buildkit
 import (
 	"context"
 	"fmt"
+	"io/fs"
 
 	cacheconfig "github.com/moby/buildkit/cache/config"
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/compression"
@@ -93,4 +95,19 @@ func (c *Client) DefToBlob(
 	}
 
 	return blobPB, desc, nil
+}
+
+func (c *Client) BytesToBlob(
+	ctx context.Context,
+	fileName string,
+	perms fs.FileMode,
+	bs []byte,
+) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
+	def, err := llb.Scratch().
+		File(llb.Mkfile(fileName, perms, bs)).
+		Marshal(ctx)
+	if err != nil {
+		return nil, desc, fmt.Errorf("failed to create llb definition: %w", err)
+	}
+	return c.DefToBlob(ctx, def.ToPB())
 }

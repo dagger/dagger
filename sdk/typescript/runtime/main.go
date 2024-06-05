@@ -60,7 +60,7 @@ const (
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
-func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
@@ -102,7 +102,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
+func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
 	// Get base container
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
@@ -125,7 +125,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	// Load module name for the template class
 	name, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
@@ -272,14 +272,12 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *Container, name, introspectionJSON, subPath string) *Directory {
+func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectionJSON *File, subPath string) *Directory {
 	return ctr.
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
-		// Write the introspection file.
-		WithNewFile(schemaPath, ContainerWithNewFileOpts{
-			Contents: introspectionJSON,
-		}).
+		// Mount the introspection file.
+		WithMountedFile(schemaPath, introspectionJSON).
 		// Execute the code generator using the given introspection file.
 		WithExec([]string{
 			codegenBinPath,

@@ -998,11 +998,11 @@ func (m *Test) Fn() *Directory {
 
 type Coolsdk struct {}
 
-func (m *Coolsdk) ModuleRuntime(modSource *ModuleSource, introspectionJson string) *Container {
+func (m *Coolsdk) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
 }
 
-func (m *Coolsdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
+func (m *Coolsdk) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 
@@ -1113,12 +1113,12 @@ func TestModuleContextDefaultsToSourceRoot(t *testing.T) {
 
 type CoolSdk struct {}
 
-func (m *CoolSdk) ModuleRuntime(modSource *ModuleSource, introspectionJson string) *Container {
+func (m *CoolSdk) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
 	return modSource.WithSDK("go").AsModule().Runtime().
 		WithMountedDirectory("/da-context", modSource.ContextDirectory())
 }
 
-func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson string) *GeneratedCode {
+func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 

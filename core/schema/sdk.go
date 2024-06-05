@@ -144,7 +144,7 @@ func (s *moduleSchema) newModuleSDK(
 
 // Codegen calls the Codegen function on the SDK Module
 func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
-	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
@@ -159,7 +159,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 			},
 			{
 				Name:  "introspectionJson",
-				Value: dagql.String(introspectionJSON),
+				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
 			},
 		},
 	})
@@ -171,7 +171,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 
 // Runtime calls the Runtime function on the SDK Module
 func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
-	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
@@ -187,7 +187,7 @@ func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source da
 				},
 				{
 					Name:  "introspectionJson",
-					Value: dagql.String(introspectionJSON),
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
 				},
 			},
 		},
@@ -413,7 +413,7 @@ func (sdk *goSDK) baseWithCodegen(
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
-	introspectionJSON, err := deps.SchemaIntrospectionJSON(ctx, true)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, true)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
@@ -469,19 +469,15 @@ func (sdk *goSDK) baseWithCodegen(
 	}
 
 	if err := sdk.dag.Select(ctx, ctr, &ctr, dagql.Selector{
-		Field: "withNewFile",
+		Field: "withMountedFile",
 		Args: []dagql.NamedInput{
 			{
 				Name:  "path",
 				Value: dagql.NewString(goSDKIntrospectionJSONPath),
 			},
 			{
-				Name:  "contents",
-				Value: dagql.NewString(introspectionJSON),
-			},
-			{
-				Name:  "permissions",
-				Value: dagql.NewInt(0444),
+				Name:  "source",
+				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
 			},
 		},
 	}, dagql.Selector{

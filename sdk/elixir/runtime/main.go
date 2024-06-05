@@ -44,7 +44,7 @@ type ElixirSdk struct {
 func (m *ElixirSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *ModuleSource,
-	introspectionJson string,
+	introspectionJson *File,
 ) (*Container, error) {
 	modName, err := modSource.ModuleName(ctx)
 	if err != nil {
@@ -71,7 +71,7 @@ func (m *ElixirSdk) ModuleRuntime(
 func (m *ElixirSdk) Codegen(
 	ctx context.Context,
 	modSource *ModuleSource,
-	introspectionJson string,
+	introspectionJson *File,
 ) (*GeneratedCode, error) {
 	ctr, err := m.Common(ctx, modSource, introspectionJson)
 	if err != nil {
@@ -85,7 +85,7 @@ func (m *ElixirSdk) Codegen(
 
 func (m *ElixirSdk) Common(ctx context.Context,
 	modSource *ModuleSource,
-	introspectionJson string,
+	introspectionJson *File,
 ) (*Container, error) {
 	modName, err := modSource.ModuleName(ctx)
 	if err != nil {
@@ -142,7 +142,7 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 }
 
 // Generate the SDK into the container.
-func (m *ElixirSdk) WithSDK(introspectionJson string) *ElixirSdk {
+func (m *ElixirSdk) WithSDK(introspectionJson *File) *ElixirSdk {
 	if m.err != nil {
 		return m
 	}
@@ -172,11 +172,9 @@ func (m *ElixirSdk) WithDaggerCodegen() *Container {
 		WithExec([]string{"mix", "escript.install", "--force"})
 }
 
-func (m *ElixirSdk) GenerateCode(introspectionJson string) *Directory {
+func (m *ElixirSdk) GenerateCode(introspectionJson *File) *Directory {
 	return m.WithDaggerCodegen().
-		WithNewFile(schemaPath, ContainerWithNewFileOpts{
-			Contents: introspectionJson,
-		}).
+		WithMountedFile(schemaPath, introspectionJson).
 		WithExec([]string{
 			"dagger_codegen", "generate",
 			"--outdir", "/gen",

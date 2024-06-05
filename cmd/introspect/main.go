@@ -15,14 +15,13 @@ func main() {
 	root := &core.Query{}
 	dag := dagql.NewServer(root)
 	coreMod := &schema.CoreMod{Dag: dag}
-	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
 	if err := coreMod.Install(ctx, dag); err != nil {
 		panic(err)
 	}
 
-	res, err := coreModDeps.SchemaIntrospectionJSON(ctx, false)
+	res, err := schema.SchemaIntrospectionJSON(ctx, dag)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(res)
+	fmt.Println(string(res))
 }
