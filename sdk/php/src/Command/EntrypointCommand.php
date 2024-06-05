@@ -82,7 +82,10 @@ class EntrypointCommand extends Command
                     $methodArgs = $method->getParameters();
 
                     foreach($methodArgs as $arg) {
+                        $argType = $arg->getType()->getName();
+                        $argName = $arg->getName();
                         $io->info('METHOD: ' . $method->getName() . ' - ARG: ' . $arg->getName());
+                        $io->info('ARG : ' . $argName . ' - OF TYPE: ' . $argType);
                     }
 
                     // create a ->withFunction entry
