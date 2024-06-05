@@ -109,7 +109,6 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
-	
 	return dag.GeneratedCode(
 		ctr.
 			Directory(ModSourceDirPath).
