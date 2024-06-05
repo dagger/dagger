@@ -108,11 +108,12 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
+
+	
 	return dag.GeneratedCode(
-		dag.Directory().WithDirectory(
-			".",
-			ctr.Directory(ModSourceDirPath),
-			DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules/**"}}),
+		ctr.
+			Directory(ModSourceDirPath).
+			WithoutDirectory("**/node_modules/**"),
 	).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",
