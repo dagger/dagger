@@ -126,6 +126,7 @@ func newExecState(
 
 type executorSetupFunc func(context.Context, *execState) error
 
+//nolint:gocyclo
 func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	provider, ok := w.networkProviders[state.procInfo.Meta.NetMode]
 	if !ok {
@@ -202,7 +203,8 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 			continue
 		}
 
-		domains := append(strings.Fields(line)[1:], extraSearchDomain)
+		domains := strings.Fields(line)[1:]
+		domains = append(domains, extraSearchDomain)
 		if _, err := fmt.Fprintln(ctrResolvFile, "search", strings.Join(domains, " ")); err != nil {
 			return fmt.Errorf("write resolv.conf: %w", err)
 		}
@@ -865,6 +867,7 @@ func (w *Worker) enableGPU(_ context.Context, state *execState) error {
 	if state.spec.Hooks == nil {
 		state.spec.Hooks = &specs.Hooks{}
 	}
+	//nolint:staticcheck
 	state.spec.Hooks.Prestart = append(state.spec.Hooks.Prestart, specs.Hook{
 		Args: []string{
 			"nvidia-container-runtime-hook",
