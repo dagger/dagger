@@ -15,32 +15,20 @@ class Example
 {
     public Client $client;
 
-    // #[DaggerFunction]
-    // public function echo(string $value): Container
-    // {
-    //     return $this->client->container()->from('alpine:latest')
-    //         ->withExec(['echo', $value]);
-    // }
+     #[DaggerFunction]
+     public function echo(string $value): Container
+     {
+         return $this->client->container()->from('alpine:latest')
+             ->withExec(['echo', $value]);
+     }
 
     #[DaggerFunction]
-    public function paul(): string
-    {
-        return $this->client->container()->from('alpine:latest')
-            ->withExec(["ls"])
-            ->stdout();
-    }
-
-    // public function grepDir(Directory $directory, string $pattern): string
-    // {
-    //     return $this->client->container()->from('alpine:latest')
-    //         ->withMountedDirectory('/mnt', $directory)
-    //         ->withWorkdir('/mnt')
-    //         ->withExec(["grep", '-R', $pattern, '.'])
-    //         ->stdout();
-    // }
-
-    private function should_not_be_here()
-    {
-        return '';
-    }
+     public function grepDir(Directory $directory, string $pattern): string
+     {
+         return $this->client->container()->from('alpine:latest')
+             ->withMountedDirectory('/mnt', $directory)
+             ->withWorkdir('/mnt')
+             ->withExec(["grep", '-R', $pattern, '.'])
+             ->stdout();
+     }
 }

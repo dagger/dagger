@@ -29,7 +29,7 @@ func New(
 ) *PhpSdk {
 	if sdkSourceDir == nil {
 		sdkSourceDir = dag.Git("https://github.com/carnage/dagger.git").
-			Branch("paul-php-runtime").
+			Branch("add-php-runtime").
 			Tree().
 			Directory("sdk/php")
 	}
@@ -55,6 +55,11 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introsp
 
 func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
 	ctr := sdk.Container
+
+	name, err := modSource.ModuleOriginalName(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config: %w", err)
+	}
 
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
@@ -112,7 +117,7 @@ func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, int
 			},
 		}).
 		WithExec([]string{
-			"/codegen/init-template.sh", filepath.Join(ModSourceDirPath, subPath),
+			"/codegen/init-template.sh", filepath.Join(ModSourceDirPath, subPath), name,
 		}).
 		WithFile("./install-composer.sh", ctr.File("/codegen/install-composer.sh"))
 
