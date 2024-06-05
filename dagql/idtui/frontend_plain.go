@@ -347,7 +347,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 
 	r := renderer{db: fe.db, width: -1}
 
-	prefix := fe.output.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
+	prefix := fe.stepPrefix(spanDt)
 	if span.Call != nil {
 		call := &callpbv1.Call{
 			Field:          span.Call.Field,
@@ -393,15 +393,21 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 
 	r := renderer{db: fe.db, width: -1}
 
+	prefix := fe.stepPrefix(spanDt)
 	for _, logLine := range spanDt.logs {
-		fmt.Fprint(out, out.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta))
+		fmt.Fprint(out, prefix)
 		r.indent(fe.output, depth)
+
 		duration := fmtDuration(logLine.time.Sub(span.StartTime()))
 		fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
 		pipe := out.String("|").Foreground(termenv.ANSIBrightBlack)
 		fmt.Fprintln(out, pipe, logLine.line)
 	}
 	spanDt.logs = nil
+}
+
+func (fe *frontendPlain) stepPrefix(dt *spanData) string {
+	return fe.output.String(fmt.Sprintf("%-4d: ", dt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
 }
 
 func (fe *frontendPlain) renderContext(row *TraceRow) (int, bool) {
