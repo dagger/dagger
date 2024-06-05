@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/containerd/containerd/mount"
 	ctdoci "github.com/containerd/containerd/oci"
@@ -365,12 +366,9 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 		if !ok {
 			continue
 		}
-		switch k {
-		default:
-			if _, ok := removeEnvs[k]; !ok {
-				state.origEnvMap[k] = v
-				filteredEnvs = append(filteredEnvs, env)
-			}
+		if _, ok := removeEnvs[k]; !ok {
+			state.origEnvMap[k] = v
+			filteredEnvs = append(filteredEnvs, env)
 		}
 	}
 	state.spec.Process.Env = filteredEnvs
@@ -652,6 +650,8 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	otelEndpoint := "http://" + listener.Addr().String()
 	otelSrv := &http.Server{
 		Handler: w.telemetryPubSub,
+
+		ReadHeaderTimeout: 10 * time.Second, // for gocritic
 	}
 
 	listenerPool.Go(func(ctx context.Context) error {
