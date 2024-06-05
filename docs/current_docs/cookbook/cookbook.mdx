@@ -1,5 +1,5 @@
 ---
-slug: /manuals/developer/cookbook
+slug: /cookbook
 ---
 
 import Tabs from "@theme/Tabs";
@@ -16,19 +16,19 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/copy-dir/go/main.go
+```go file=./snippets/copy-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/copy-dir/python/main.py
+```python file=./snippets/copy-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/copy-dir/typescript/index.ts
+```typescript file=./snippets/copy-dir/typescript/index.ts
 ```
 
 </TabItem>
@@ -68,19 +68,19 @@ Modifications made to a directory's contents after it is written to a container 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/copy-modify-dir/go/main.go
+```go file=./snippets/copy-modify-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/copy-modify-dir/python/main.py
+```python file=./snippets/copy-modify-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/copy-modify-dir/typescript/index.ts
+```typescript file=./snippets/copy-modify-dir/typescript/index.ts
 ```
 
 </TabItem>
@@ -116,19 +116,19 @@ The following Dagger Function accepts a `File` argument representing the host fi
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/copy-file/go/main.go
+```go file=./snippets/copy-file/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/copy-file/python/main.py
+```python file=./snippets/copy-file/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/copy-file/typescript/index.ts
+```typescript file=./snippets/copy-file/typescript/index.ts
 ```
 
 </TabItem>
@@ -158,19 +158,19 @@ The following Dagger Function accepts a `Directory` argument, which could refere
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/copy-filter-dir/go/main.go
+```go file=./snippets/copy-filter-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/copy-filter-dir/python/main.py
+```python file=./snippets/copy-filter-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/copy-filter-dir/typescript/index.ts
+```typescript file=./snippets/copy-filter-dir/typescript/index.ts
 ```
 
 </TabItem>
@@ -202,19 +202,19 @@ The following Dagger Function performs a multi-stage build.
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/multi-stage-build/go/main.go
+```go file=./snippets/builds/multi-stage-build/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/multi-stage-build/python/main.py
+```python file=./snippets/builds/multi-stage-build/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/multi-stage-build/typescript/index.ts
+```typescript file=./snippets/builds/multi-stage-build/typescript/index.ts
 ```
 
 </TabItem>
@@ -235,19 +235,19 @@ The following Dagger Function performs a matrix build.
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/matrix-build/go/main.go
+```go file=./snippets/builds/matrix-build/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/matrix-build/python/main.py
+```python file=./snippets/builds/matrix-build/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/matrix-build/typescript/index.ts
+```typescript file=./snippets/builds/matrix-build/typescript/index.ts
 ```
 
 </TabItem>
@@ -263,7 +263,7 @@ dagger call build \
   export --path /tmp/matrix-builds
 ```
 
-Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
+Inspect the contents of the exported directory with `tree /tmp/matrix-builds`. The output should look like this:
 
 ```shell
 /tmp/matrix-builds
@@ -289,19 +289,19 @@ The following Dagger Function builds a single image for different CPU architectu
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/multi-arch/go/main.go
+```go file=./snippets/builds/multi-arch/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/multi-arch/python/main.py
+```python file=./snippets/builds/multi-arch/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/multi-arch/typescript/index.ts
+```typescript file=./snippets/builds/multi-arch/typescript/index.ts
 ```
 
 </TabItem>
@@ -319,26 +319,26 @@ dagger call build --src="https://github.com/golang/example#master:hello"
 The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
 
 :::info
-This function uses the containerd utility module, to run these example locally
-be sure to install it first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
+This Dagger Function uses the `containerd` utility module. To run it locally
+install the module first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
 :::
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/multi-arch-cc/go/main.go
+```go file=./snippets/builds/multi-arch-cc/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/multi-arch-cc/python/main.py
+```python file=./snippets/builds/multi-arch-cc/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/multi-arch-cc/typescript/index.ts
+```typescript file=./snippets/builds/multi-arch-cc/typescript/index.ts
 ```
 
 </TabItem>
@@ -353,24 +353,24 @@ dagger call build --src="https://github.com/golang/example#master:hello"
 
 ### Build image from Dockerfile
 
-The following function builds an image from a Dockerfile.
+The following Dagger Function builds an image from a Dockerfile.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/dockerfile/go/main.go
+```go file=./snippets/builds/dockerfile/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/dockerfile/python/main.py
+```python file=./snippets/builds/dockerfile/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/dockerfile/typescript/index.ts
+```typescript file=./snippets/builds/dockerfile/typescript/index.ts
 ```
 
 </TabItem>
@@ -385,31 +385,32 @@ dagger call build --src https://github.com/dockersamples/python-flask-redis
 
 ### Build image from Dockerfile using different build context
 
-The following function builds an image from a Dockerfile with a build context that is differen than the current working directory.
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/dockerfile-context/go/main.go
+```go file=./snippets/builds/dockerfile-context/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/dockerfile-context/python/main.py
+```python file=./snippets/builds/dockerfile-context/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/dockerfile-context/typescript/index.ts
+```typescript file=./snippets/builds/dockerfile-context/typescript/index.ts
 ```
 
 </TabItem>
 </Tabs>
 
 #### Example
-Build image using different build context
+
+Build an image from the source code in `https://github.com/dockersamples/python-flask-redis` using the Dockerfile from a different build context, at `https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile`:
 
 ```shell
 dagger call build \
@@ -419,31 +420,32 @@ dagger call build \
 
 ### Add OCI labels to image
 
-The following function adds OpenContainer Initiative (OCI) labels to an image.
+The following Dagger Function adds OpenContainer Initiative (OCI) labels to an image.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/oci/go/main.go
+```go file=./snippets/builds/oci/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/oci/python/main.py
+```python file=./snippets/builds/oci/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/oci/typescript/index.ts
+```typescript file=./snippets/builds/oci/typescript/index.ts
 ```
 
 </TabItem>
 </Tabs>
 
 #### Example
-Build and publish image with OCI labels
+
+Build and publish an image with OCI labels:
 
 ```shell
 dagger call build
@@ -451,8 +453,8 @@ dagger call build
 
 ### Invalidate cache
 
-The following function demonstrates how to invalidate the Dagger pipeline 
-operations cache and force execution of subsequent pipeline steps, by 
+The following function demonstrates how to invalidate the Dagger pipeline
+operations cache and force execution of subsequent pipeline steps, by
 introducing a volatile time variable at a specific point in the Dagger pipeline.
 
 :::note
@@ -463,66 +465,30 @@ introducing a volatile time variable at a specific point in the Dagger pipeline.
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/builds/cache/go/main.go
+```go file=./snippets/builds/cache/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/builds/cache/python/main.py
+```python file=./snippets/builds/cache/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/builds/cache/typescript/index.ts
+```typescript file=./snippets/builds/cache/typescript/index.ts
 ```
 
 </TabItem>
 </Tabs>
 
 #### Example
-Execute a build with cache invalidation
+
+Execute a build, invalidating the cache on each run:
 
 ```shell
 dagger call build
-```
-
-## Secrets
-
-### Use secrets
-
-The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/secrets/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/secrets/python/main.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=./snippets/secrets/typescript/index.ts
-```
-
-</TabItem>
-</Tabs>
-
-#### Example
-
-```shell
-dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=env:GITHUB_API_TOKEN
-
-dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=file:./github.txt
-
-dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=cmd:"gh auth token"
 ```
 
 ## Services
@@ -534,19 +500,19 @@ The first Dagger Function below creates and returns an HTTP service. This servic
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/services/bind-services/go/main.go
+```go file=../manuals/developer/snippets/services/bind-services/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/services/bind-services/python/main.py
+```python file=../manuals/developer/snippets/services/bind-services/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/services/bind-services/typescript/index.ts
+```typescript file=../manuals/developer/snippets/services/bind-services/typescript/index.ts
 ```
 
 </TabItem>
@@ -567,19 +533,19 @@ The Dagger Function below creates and returns an HTTP service. This service can 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/services/expose-dagger-services-to-host/go/main.go
+```go file=../manuals/developer/snippets/services/expose-dagger-services-to-host/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/services/expose-dagger-services-to-host/python/main.py
+```python file=../manuals/developer/snippets/services/expose-dagger-services-to-host/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/services/expose-dagger-services-to-host/typescript/index.ts
+```typescript file=../manuals/developer/snippets/services/expose-dagger-services-to-host/typescript/index.ts
 ```
 
 </TabItem>
@@ -618,19 +584,19 @@ This implies that a service is already listening on a port on the host, out-of-b
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/services/expose-host-services-to-dagger/go/main.go
+```go file=../manuals/developer/snippets/services/expose-host-services-to-dagger/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/services/expose-host-services-to-dagger/python/main.py
+```python file=../manuals/developer/snippets/services/expose-host-services-to-dagger/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```typescript file=../manuals/developer/snippets/services/expose-host-services-to-dagger/typescript/index.ts
 ```
 
 </TabItem>
@@ -652,19 +618,19 @@ The following Dagger Function creates a service and binds it to an application c
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/services/test-against-db-service/go/main.go
+```go file=../manuals/developer/snippets/services/test-against-db-service/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/services/test-against-db-service/python/main.py
+```python file=../manuals/developer/snippets/services/test-against-db-service/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/services/test-against-db-service/typescript/index.ts
+```typescript file=../manuals/developer/snippets/services/test-against-db-service/typescript/index.ts
 ```
 
 </TabItem>
@@ -685,19 +651,19 @@ The following Dagger Function demonstrates how to control a service's lifecycle 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/services/start-stop-services/go/main.go
+```go file=../manuals/developer/snippets/services/start-stop-services/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/services/start-stop-services/python/main.py
+```python file=../manuals/developer/snippets/services/start-stop-services/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/services/start-stop-services/typescript/index.ts
+```typescript file=../manuals/developer/snippets/services/start-stop-services/typescript/index.ts
 ```
 
 </TabItem>
@@ -720,19 +686,19 @@ The following Dagger Function publishes a just-in-time container image to a priv
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/publish-image/go/main.go
+```go file=./snippets/publish-image/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/publish-image/python/main.py
+```python file=./snippets/publish-image/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/publish-image/typescript/index.ts
+```typescript file=./snippets/publish-image/typescript/index.ts
 ```
 
 </TabItem>
@@ -759,19 +725,19 @@ The following Dagger Function tags a just-in-time container image multiple times
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/tag-publish-image/go/main.go
+```go file=./snippets/tag-publish-image/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/tag-publish-image/python/main.py
+```python file=./snippets/tag-publish-image/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/tag-publish-image/typescript/index.ts
+```typescript file=./snippets/tag-publish-image/typescript/index.ts
 ```
 
 </TabItem>
@@ -798,19 +764,19 @@ The following Dagger Functions return a just-in-time directory and file. These o
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/export-file-dir/go/main.go
+```go file=./snippets/export-file-dir/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/export-file-dir/python/main.py
+```python file=./snippets/export-file-dir/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/export-file-dir/typescript/index.ts
+```typescript file=./snippets/export-file-dir/typescript/index.ts
 ```
 
 </TabItem>
@@ -841,19 +807,19 @@ The following Dagger Function returns a just-in-time container. This can be expo
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/export-container/go/main.go
+```go file=./snippets/export-container/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/export-container/python/main.py
+```python file=./snippets/export-container/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/export-container/typescript/index.ts
+```typescript file=./snippets/export-container/typescript/index.ts
 ```
 
 </TabItem>
@@ -878,19 +844,19 @@ The following Dagger Function uses a cache volume for application dependencies. 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/cache-dependencies/go/main.go
+```go file=./snippets/cache-dependencies/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/cache-dependencies/python/main.py
+```python file=./snippets/cache-dependencies/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/cache-dependencies/typescript/index.ts
+```typescript file=./snippets/cache-dependencies/typescript/index.ts
 ```
 
 </TabItem>
@@ -911,19 +877,19 @@ The following Dagger Function demonstrates how to set multiple environment varia
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/set-env-vars/go/main.go
+```go file=./snippets/set-env-vars/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/set-env-vars/python/main.py
+```python file=./snippets/set-env-vars/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/set-env-vars/typescript/index.ts
+```typescript file=./snippets/set-env-vars/typescript/index.ts
 ```
 
 </TabItem>
@@ -937,6 +903,47 @@ Set environment variables in a container:
 dagger call set-env
 ```
 
+### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/persist-service-state/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/persist-service-state/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/persist-service-state/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Save data to a Redis service which uses a cache volume to persist a key named `foo` with value `123:
+
+```shell
+dagger call set --key=foo --value=123
+```
+
+Retrieve the value of the key `foo` after recreating the service state from the cache volume:
+
+```shell
+# returns "123"
+dagger call get --key=foo
+```
+
 ## Error handling
 
 ### Terminate gracefully
@@ -947,19 +954,19 @@ The following Dagger Function demonstrates how to handle errors in a pipeline.
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/handle-errors/go/main.go
+```go file=./snippets/handle-errors/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/handle-errors/python/main.py
+```python file=./snippets/handle-errors/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/handle-errors/typescript/index.ts
+```typescript file=./snippets/handle-errors/typescript/index.ts
 ```
 
 </TabItem>
@@ -984,19 +991,19 @@ The caveat with this approach is that forcing a zero exit code on a failure cach
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/continue-after-errors/go/main.go
+```go file=./snippets/continue-after-errors/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/continue-after-errors/python/main.py
+```python file=./snippets/continue-after-errors/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/continue-after-errors/typescript/index.ts
+```typescript file=./snippets/continue-after-errors/typescript/index.ts
 ```
 
 </TabItem>
@@ -1010,45 +1017,6 @@ Continue executing a Dagger Function even after a command within it fails. The D
 # get exit code
 dagger call test exit-code
 
-# get test report:
+# get test report
 dagger call test report contents
 ```
-
-### Persist service state across runs
-
-The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
-  
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/services/persist-service-state/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/services/persist-service-state/python/main.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=./snippets/services/persist-service-state/typescript/index.ts
-```
-
-</TabItem>
-</Tabs>
-
-#### Example
-
-Save data to a Redis service which uses a cache volume to persist its data:
-
-```shell
-dagger call set --key=foo --value=123
-```
-
-Retrieve the data after recreating the service state from the cache volume:
-
-```shell
-dagger call get --key=foo

@@ -98,6 +98,11 @@ module.exports = {
       ]
     },
     {
+      "type": "doc",
+      "label": "Cookbook",
+      "id": "cookbook/cookbook"
+    },
+    {
       "type": "category",
       "label": "User Manual",
       "link": {
@@ -400,11 +405,6 @@ module.exports = {
           "label": "Reference",
           "id": "reference/typescript/modules"
         },
-//        {
-//          "type": "doc",
-//          "label": "Cookbook",
-//          "id": "manuals/developer/cookbook"
-//        },
         {
           "type": "link",
           "label": "API Reference",
