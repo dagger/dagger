@@ -1,27 +1,12 @@
 {
   "name": "python-sdk-dev",
-  "root": "..",
   "sdk": "python",
-  "include": [
-    "**/*.py",
-    "**/*.typed",
-    "**/pyproject.toml",
-    "**/*ruff.toml",
-    "LICENSE",
-    "README.md",
-    "hatch.toml",
-    "requirements/*.txt",
-    "docs/**/*.rst",
-    "dev/dagger.json"
-  ],
-  "exclude": [
-    "docs/_build",
-    "**/.envrc",
-    "**/.direnv",
-    "**/.venv",
-    "*/sdk"
-  ],
   "dependencies": [
-    "github.com/kpenfound/dagger-modules/dockerd@ec3133891c9cea4ec964c6fb597e62567dfecc7e"
-  ]
+    {
+      "name": "dockerd",
+      "source": "github.com/kpenfound/dagger-modules/dockerd@fd1a6e75721454d8ee3bcb0bd1a94d6bb4be1737"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.11.6"
 }

@@ -1,0 +1,24 @@
+{
+  "views": [
+    {
+      "name": "dev",
+      "patterns": [
+        "**/*.py",
+        "**/*.typed",
+        "**/pyproject.toml",
+        "**/*ruff.toml",
+        "LICENSE",
+        "README.md",
+        "hatch.toml",
+        "requirements/*.txt",
+        "docs/**/*.rst",
+        "dev/dagger.json",
+        "!docs/_build",
+        "!**/.envrc",
+        "!**/.direnv",
+        "!**/.venv",
+        "!*/sdk"
+      ]
+    }
+  ]
+}
