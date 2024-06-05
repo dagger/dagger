@@ -263,7 +263,7 @@ dagger call build \
   export --path /tmp/matrix-builds
 ```
 
-Inspect the contents of the exported directory with `tree /tmp/matrix-builds`, the output should look like this:
+Inspect the contents of the exported directory with `tree /tmp/matrix-builds`. The output should look like this:
 
 ```shell
 /tmp/matrix-builds
@@ -319,8 +319,8 @@ dagger call build --src="https://github.com/golang/example#master:hello"
 The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
 
 :::info
-This function uses the containerd utility module, to run these example locally
-be sure to install it first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
+This Dagger Function uses the `containerd` utility module. To run it locally
+install the module first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
 :::
 
 <Tabs groupId="language">
@@ -353,7 +353,7 @@ dagger call build --src="https://github.com/golang/example#master:hello"
 
 ### Build image from Dockerfile
 
-The following function builds an image from a Dockerfile.
+The following Dagger Function builds an image from a Dockerfile.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -385,7 +385,7 @@ dagger call build --src https://github.com/dockersamples/python-flask-redis
 
 ### Build image from Dockerfile using different build context
 
-The following function builds an image from a Dockerfile with a build context that is differen than the current working directory.
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -409,7 +409,8 @@ The following function builds an image from a Dockerfile with a build context th
 </Tabs>
 
 #### Example
-Build image using different build context
+
+Build an image from the source code in `https://github.com/dockersamples/python-flask-redis` using the Dockerfile from a different build context, at `https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile`:
 
 ```shell
 dagger call build \
@@ -419,7 +420,7 @@ dagger call build \
 
 ### Add OCI labels to image
 
-The following function adds OpenContainer Initiative (OCI) labels to an image.
+The following Dagger Function adds OpenContainer Initiative (OCI) labels to an image.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -443,7 +444,8 @@ The following function adds OpenContainer Initiative (OCI) labels to an image.
 </Tabs>
 
 #### Example
-Build and publish image with OCI labels
+
+Build and publish an image with OCI labels:
 
 ```shell
 dagger call build
@@ -482,47 +484,11 @@ introducing a volatile time variable at a specific point in the Dagger pipeline.
 </Tabs>
 
 #### Example
-Execute a build with cache invalidation
+
+Execute a build, invalidating the cache on each run:
 
 ```shell
 dagger call build
-```
-
-## Secrets
-
-### Use secrets
-
-The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=../manuals/developer/snippets/secrets/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=../manuals/developer/snippets/secrets/python/main.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=../manuals/developer/snippets/secrets/typescript/index.ts
-```
-
-</TabItem>
-</Tabs>
-
-#### Example
-
-```shell
-dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=env:GITHUB_API_TOKEN
-
-dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=file:./github.txt
-
-dagger call github-api --endpoint=https://api.github.com/repos/dagger/dagger/issues --token=cmd:"gh auth token"
 ```
 
 ## Services
@@ -937,6 +903,47 @@ Set environment variables in a container:
 dagger call set-env
 ```
 
+### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/persist-service-state/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/persist-service-state/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/persist-service-state/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Save data to a Redis service which uses a cache volume to persist a key named `foo` with value `123:
+
+```shell
+dagger call set --key=foo --value=123
+```
+
+Retrieve the value of the key `foo` after recreating the service state from the cache volume:
+
+```shell
+# returns "123"
+dagger call get --key=foo
+```
+
 ## Error handling
 
 ### Terminate gracefully
@@ -1013,42 +1020,3 @@ dagger call test exit-code
 # get test report:
 dagger call test report contents
 ```
-
-### Persist service state across runs
-
-The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
-
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=../manuals/developer/snippets/services/persist-service-state/go/main.go
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=../manuals/developer/snippets/services/persist-service-state/python/main.py
-```
-
-</TabItem>
-<TabItem value="TypeScript">
-
-```typescript file=../manuals/developer/snippets/services/persist-service-state/typescript/index.ts
-```
-
-</TabItem>
-</Tabs>
-
-#### Example
-
-Save data to a Redis service which uses a cache volume to persist its data:
-
-```shell
-dagger call set --key=foo --value=123
-```
-
-Retrieve the data after recreating the service state from the cache volume:
-
-```shell
-dagger call get --key=foo
