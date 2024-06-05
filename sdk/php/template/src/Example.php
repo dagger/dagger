@@ -1,21 +1,34 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace DaggerModule;
 
+use Dagger\Attribute\DaggerFunction;
+use Dagger\Attribute\DaggerObject;
+use Dagger\Client;
+use Dagger\Container;
+use Dagger\Directory;
+
+#[DaggerObject]
 class Example
 {
-// // Returns a container that echoes whatever string argument is provided
-// func (m *PhpSdk) ContainerEcho(stringArg string) *Container {
-//	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
-// }
-//
-// // Returns lines that match a pattern in the files of the provided Directory
-// func (m *PhpSdk) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
-//	return dag.Container().
-//		From("alpine:latest").
-//		WithMountedDirectory("/mnt", directoryArg).
-//		WithWorkdir("/mnt").
-//		WithExec([]string{"grep", "-R", pattern, "."}).
-//		Stdout(ctx)
-// }
+    public Client $client;
+
+    #[DaggerFunction]
+    public function echo(string $value): Container
+    {
+        return $this->client->container()->from('alpine:latest')
+            ->withExec(['echo', $value]);
+    }
+
+    #[DaggerFunction]
+    public function grepDir(Directory $directory, string $pattern): string
+    {
+        return $this->client->container()->from('alpine:latest')
+            ->withMountedDirectory('/mnt', $directory)
+            ->withWorkdir('/mnt')
+            ->withExec(["grep", '-R', $pattern, '.'])
+            ->stdout();
+    }
 }

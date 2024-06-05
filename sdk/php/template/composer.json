@@ -13,7 +13,7 @@
   ],
   "require": {
     "php": "^8.1",
-    "dagger/dagger": "*"
+    "dagger/dagger": "*@dev"
   },
   "autoload": {
     "psr-4": {

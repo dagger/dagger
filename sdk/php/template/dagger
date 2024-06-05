@@ -7,7 +7,7 @@
  */
 
 use Symfony\Component\Console\Application;
-use Dagger\Command\EntryPointCommand;
+use Dagger\Command\EntrypointCommand;
 
 if (file_exists(__DIR__.'/../../autoload.php')) {
     // The usual location, since this file will reside in vendor/bin
@@ -19,7 +19,7 @@ if (file_exists(__DIR__.'/../../autoload.php')) {
 
 $console = new Application();
 
-$console->add(new EntryPointCommand());
+$console->add(new EntrypointCommand());
 $console->setDefaultCommand('dagger:entrypoint');
 
 $console->run();
