@@ -62,8 +62,8 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 		// FIXME: this goes away when we spin out each SDK pipeline into its own module
 		return t.Dagger.
 			Go().
-			WithCodegen([]string{"sdk/python"}).
-			Lint(ctx, []string{"sdk/python"}, false)
+			WithCodegen([]string{pythonRuntimeSubdir}).
+			Lint(ctx, []string{pythonRuntimeSubdir}, false)
 	})
 
 	return eg.Wait()

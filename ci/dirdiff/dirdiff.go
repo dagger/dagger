@@ -16,7 +16,8 @@ func (dd *Dirdiff) AssertEqual(
 	// The second directory to compare
 	b *Directory,
 	// The paths to include in the comparison.
-	paths []string) error {
+	paths []string,
+) error {
 	ctr := dag.
 		Wolfi().
 		Container().

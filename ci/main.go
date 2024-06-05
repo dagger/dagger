@@ -88,10 +88,11 @@ func (gtc *GoToolchain) WithCodegen(subdirs []string) *GoToolchain {
 	src := gtc.Source()
 	for _, subdir := range subdirs {
 		codegen := src.
-			Directory(subdir).
-			AsModule().
+			AsModule(dagger.DirectoryAsModuleOpts{
+				SourceRootPath: subdir,
+			}).
 			GeneratedContextDirectory()
-		src = src.WithDirectory(subdir, codegen)
+		src = src.WithDirectory("", codegen)
 	}
 	return &GoToolchain{Go: dag.Go(src)}
 }
