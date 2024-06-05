@@ -33,13 +33,16 @@ class EntrypointCommand extends Command
 
         $io->info('==----=-==-=-=-= CUSTOM CODEEEE ==----=-==-=-=-=');
 
-        //$moduleName = $client->currentModule()->name();
-        //$parentName = $client->currentFunctionCall()->parent()->getValue();
+        $moduleName = $client->currentModule()->name();
+        $parentName = $client->currentFunctionCall()->parent()->getValue();
+
+        $io->info('MODULE NAME: ' . $moduleName);
+        $io->info('PARENT NAME: ' . $parentName);
 
         //if ($parentName === "") {
-            //register module with dagger
+            // register module with dagger
         //} else {
-            //invocation, run module code.
+            // invocation, run module code.
         //}
 
         /*$client->module()->withObject(
