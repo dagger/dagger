@@ -41,23 +41,32 @@ class EntrypointCommand extends Command
         $parentName = $this->daggerConnection->currentFunctionCall()->parent()->getValue();
 
         if (!$this->hasParentName($parentName)) {
-            $io->info('NO PARENT NAME FOUND: ' . $parentName);
+            $io->info('NO PARENT NAME FOUND');
             // register module with dagger
         } else {
             $io->info('!!!!! FOUND A PARENT NAME: ' . $parentName);
             // invocation, run module code.
         }
 
-        /*$client->module()->withObject(
-            $client->typeDef()->withFunction(
-                $client->function()
-                    ->withArg()
-            )
-        );*/
-
         $dir = $this->findSrcDirectory();
         $classes = $this->getDaggerObjects($dir);
         $io->info(var_export($classes, true));
+
+        foreach($classes as $class) {
+
+            $io->info('FOUND CLASS WITH DaggerFunction annotation: ' . $class);
+            // Loop thru all the functions in this class
+            // Find functions tagged with [DaggerFunction]
+            // create a ->withFunction entry
+            // Find the args on the function, and do ->withArg() on it
+
+            /*$client->module()->withObject(
+                $client->typeDef()->withFunction(
+                    $client->function()
+                        ->withArg()
+                )
+            );*/
+        }
 
         return Command::SUCCESS;
     }
