@@ -34,12 +34,11 @@ class EntrypointCommand extends Command
 
         $io->info('==----=-==-=-=-= CUSTOM CODEEEE ==----=-==-=-=-=');
 
-        $moduleName = $this->daggerConnection->module()->name();
-        $io->info('MODULE NAME: ' . $moduleName);
-        // $parentName = $client->currentFunctionCall()->parent()->getValue();
-
-        
-        // $io->info('PARENT NAME: ' . $parentName);
+        // $moduleName = $this->daggerConnection->module()->id();
+        // $moduleName = $this->daggerConnection->module()->name();
+        // $io->info('MODULE NAME: ' . $moduleName);
+        $parentName = $this->daggerConnection->currentFunctionCall()->parent()->getValue();
+        $io->info('PARENT NAME: ' . $parentName);
 
         //if ($parentName === "") {
             // register module with dagger
