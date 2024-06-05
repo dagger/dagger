@@ -2,14 +2,14 @@
 
 namespace Dagger\Command;
 
+use Dagger\Attribute\DaggerObject;
 use Dagger\Client;
-use Dagger\Codegen\Codegen;
-use Dagger\Codegen\SchemaGenerator;
 use Dagger\Connection;
-use GraphQL\Utils\BuildClientSchema;
+use Roave\BetterReflection\BetterReflection;
+use Roave\BetterReflection\Reflector\DefaultReflector;
+use Roave\BetterReflection\SourceLocator\Type\DirectoriesSourceLocator;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -29,7 +29,7 @@ class EntrypointCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         /** @var Client $client */
-        //$client = $this->daggerConnection->connect();
+        $client = $this->daggerConnection->connect();
 
         //$moduleName = $client->currentModule()->name();
         //$parentName = $client->currentFunctionCall()->parent()->getValue();
@@ -40,7 +40,16 @@ class EntrypointCommand extends Command
             //invocation, run module code.
         //}
 
-        $io->info($this->findSrcDirectory());
+        /*$client->module()->withObject(
+            $client->typeDef()->withFunction(
+                $client->function()
+                    ->withArg()
+            )
+        );*/
+
+        $dir = $this->findSrcDirectory();
+        $classes = $this->getDaggerObjects($dir);
+        $io->info(var_export($classes, true));
 
         return Command::SUCCESS;
     }
@@ -57,5 +66,21 @@ class EntrypointCommand extends Command
         }
 
         return $dir . '/src';
+    }
+
+    private function getDaggerObjects(string $dir): array
+    {
+        $astLocator = (new BetterReflection())->astLocator();
+        $directoriesSourceLocator = new DirectoriesSourceLocator([$dir], $astLocator);
+        $reflector = new DefaultReflector($directoriesSourceLocator);
+        $classes = [];
+
+        foreach($reflector->reflectAllClasses() as $class) {
+            if (count($class->getAttributesByName(DaggerObject::class))) {
+                $classes[] = $class->getName();
+            }
+        }
+
+        return $classes;
     }
 }
