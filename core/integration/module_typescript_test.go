@@ -984,3 +984,22 @@ class PModule {
 		require.JSONEq(t, `{"test": {"test": {"print": 8 }}}`, out)
 	})
 }
+
+func TestModuleTypeScriptSubPathLoading(t *testing.T) {
+	t.Parallel()
+
+	t.Run("load from subpath", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/sub").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			WithWorkdir("/work")
+
+		_, err := modGen.With(daggerQuery(`{host{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+	})
+}
