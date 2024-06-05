@@ -1,0 +1,6 @@
+kind: Breaking
+body: SDK module interface accepts schema as File instead of string for improved performance
+time: 2024-06-05T11:24:36.09669896-07:00
+custom:
+  Author: sipsma
+  PR: "7549"
