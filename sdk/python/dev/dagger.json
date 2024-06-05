@@ -3,6 +3,10 @@
   "sdk": "python",
   "dependencies": [
     {
+      "name": "apko",
+      "source": "github.com/vito/daggerverse/apko@09c1b5b172e58a8fd58ee790d81018cd478590fc"
+    },
+    {
       "name": "dockerd",
       "source": "github.com/kpenfound/dagger-modules/dockerd@fd1a6e75721454d8ee3bcb0bd1a94d6bb4be1737"
     }

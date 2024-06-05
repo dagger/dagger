@@ -1,0 +1,8 @@
+Metadata-Version: 2.1
+Name: main
+Version: 0.0.0
+Summary: Dagger module for developing the Dagger Python SDK
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# Dagger module for the development of the Python SDK

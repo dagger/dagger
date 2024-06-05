@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/main/__init__.py
+src/main/consts.py
+src/main/debug.py
+src/main/docs.py
+src/main/rye.py
+src/main/test.py
+src/main/utils.py
+src/main.egg-info/PKG-INFO
+src/main.egg-info/SOURCES.txt
+src/main.egg-info/dependency_links.txt
+src/main.egg-info/top_level.txt
