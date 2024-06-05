@@ -381,84 +381,30 @@ module.exports = {
           "id": "manuals/developer/debugging"
         },
         {
-          "type": "category",
-          "label": "Develop with Go",
-          "link": {
-            "type": "doc",
-            "id": "manuals/developer/go/index"
-          },
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/developer/go/first-module"
-            },
-            {
-              "type": "link",
-              "label": "Go SDK Reference",
-              "href": "https://pkg.go.dev/dagger.io/dagger"
-            }
-          ]
+          "type": "doc",
+          "label": "Publish Modules",
+          "id": "guides/publish-modules"
         },
         {
-          "type": "category",
-          "label": "Develop with Python",
-          "link": {
-            "type": "doc",
-            "id": "manuals/developer/python/index"
-          },
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/python/name-overrides"
-            },
-            {
-              "type": "link",
-              "label": "Python SDK Reference",
-              "href": "https://dagger-io.readthedocs.org/"
-            }
-          ]
+          "type": "link",
+          "label": "Go SDK Reference",
+          "href": "https://pkg.go.dev/dagger.io/dagger"
         },
         {
-          "type": "category",
-          "label": "Develop with TypeScript",
-          "link": {
-            "type": "doc",
-            "id": "manuals/developer/typescript/index"
-          },
-          "items": [
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/first-module"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/decorators"
-            },
-            {
-              "type": "doc",
-              "id": "manuals/developer/typescript/aliases"
-            },
-            {
-              "type": "doc",
-              "label": "Reference",
-              "id": "reference/typescript/modules"
-            }
-          ]
+          "type": "link",
+          "label": "Python SDK Reference",
+          "href": "https://dagger-io.readthedocs.org/"
+        },
+        {
+          "type": "doc",
+          "label": "Reference",
+          "id": "reference/typescript/modules"
         },
 //        {
 //          "type": "doc",
 //          "label": "Cookbook",
 //          "id": "manuals/developer/cookbook"
 //        },
-        {
-          "type": "doc",
-          "label": "Publish Modules",
-          "id": "guides/publish-modules"
-        },
         {
           "type": "doc",
           "id": "guides",
