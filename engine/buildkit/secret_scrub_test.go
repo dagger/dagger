@@ -17,11 +17,9 @@ import (
 )
 
 var (
-	//nolint:typecheck
 	//go:embed testdata/id_ed25519
 	sshSecretKey string
 
-	//nolint:typecheck
 	//go:embed testdata/id_ed25519.pub
 	sshPublicKey string
 )
@@ -72,7 +70,6 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 		want := "I love to share my secret value to my close ones. But I keep my secret file to myself."
 		require.Equal(t, want, string(out))
 	})
-
 }
 
 func TestLoadSecretsToScrubFromEnv(t *testing.T) {
@@ -187,7 +184,6 @@ func TestScrubSecretWrite(t *testing.T) {
 		}
 		require.Equal(t, len(outputLines), i)
 	})
-
 }
 
 func TestScrubSecretLogLatency(t *testing.T) {

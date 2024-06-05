@@ -67,7 +67,10 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return lintGoModule(ctx, false, daggerDevelop(t.Dagger.Source, typescriptRuntimeSubdir), []string{typescriptRuntimeSubdir})
+		return t.Dagger.
+			Go().
+			WithCodegen([]string{typescriptRuntimeSubdir}).
+			Lint(ctx, []string{typescriptRuntimeSubdir}, false)
 	})
 
 	return eg.Wait()

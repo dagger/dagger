@@ -58,7 +58,12 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return lintGoModule(ctx, false, daggerDevelop(t.Dagger.Source, pythonRuntimeSubdir), []string{pythonRuntimeSubdir})
+		// Call `dagger develop` on the python sdk module
+		// FIXME: this goes away when we spin out each SDK pipeline into its own module
+		return t.Dagger.
+			Go().
+			WithCodegen([]string{pythonRuntimeSubdir}).
+			Lint(ctx, []string{pythonRuntimeSubdir}, false)
 	})
 
 	return eg.Wait()

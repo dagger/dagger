@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/ci/internal/dagger"
-	"github.com/dagger/dagger/ci/util"
 )
 
 // A dev environment for the Dagger Engine
@@ -40,9 +39,78 @@ func New(
 	}, nil
 }
 
+// Check that everything works. Use this as CI entrypoint.
+func (ci *Dagger) Check(ctx context.Context) error {
+	// FIXME: run concurrently
+	if err := ci.Docs().Lint(ctx); err != nil {
+		return err
+	}
+	if err := ci.Engine().Lint(ctx, false); err != nil {
+		return err
+	}
+	if err := ci.Test().All(
+		ctx,
+		// failfast
+		false,
+		// parallel
+		16,
+		// timeout
+		"",
+		// race
+		true,
+	); err != nil {
+		return err
+	}
+	if err := ci.CLI().TestPublish(ctx); err != nil {
+		return err
+	}
+	// FIXME: port all other function calls from Github Actions YAML
+	return nil
+}
+
 // Develop the Dagger CLI
 func (ci *Dagger) CLI() *CLI {
 	return &CLI{Dagger: ci}
+}
+
+// Dagger's Go toolchain
+func (ci *Dagger) Go() *GoToolchain {
+	return &GoToolchain{Go: dag.Go(ci.Source)}
+}
+
+type GoToolchain struct {
+	// +private
+	*Go
+}
+
+// Run codegen (equivalent to `dagger develop`) in the specified subdirectories
+func (gtc *GoToolchain) WithCodegen(subdirs []string) *GoToolchain {
+	src := gtc.Source()
+	for _, subdir := range subdirs {
+		codegen := src.
+			AsModule(dagger.DirectoryAsModuleOpts{
+				SourceRootPath: subdir,
+			}).
+			GeneratedContextDirectory()
+		src = src.WithDirectory("", codegen)
+	}
+	return &GoToolchain{Go: dag.Go(src)}
+}
+
+func (gtc *GoToolchain) Env() *Container {
+	return gtc.Go.Env()
+}
+
+func (gtc *GoToolchain) Lint(
+	ctx context.Context,
+	packages []string,
+	// +optional
+	all bool,
+) error {
+	_, err := gtc.Go.Lint(ctx, packages, dagger.GoLintOpts{
+		All: all,
+	})
+	return err
 }
 
 // Develop the Dagger engine container
@@ -111,7 +179,7 @@ func (ci *Dagger) Dev(
 		return nil, err
 	}
 
-	return util.GoBase(ci.Source).
+	return ci.Go().Env().
 		WithMountedDirectory("/mnt", target).
 		WithMountedFile("/usr/bin/dagger", client).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").
