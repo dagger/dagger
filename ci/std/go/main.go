@@ -68,7 +68,12 @@ func (p *Go) Env() *Container {
 }
 
 // Lint the project
-func (p *Go) Lint(ctx context.Context, pkgs []string, all bool) error {
+func (p *Go) Lint(
+	ctx context.Context,
+
+	pkgs []string,
+	all bool, // +optional
+) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
@@ -82,6 +87,7 @@ func (p *Go) Lint(ctx context.Context, pkgs []string, all bool) error {
 		WithMountedDirectory("/app", p.Source).
 		WithWorkdir("/app")
 	for _, pkg := range pkgs {
+		pkg := pkg
 		golangci := base.WithWorkdir(pkg).WithExec(cmd)
 		eg.Go(func() error {
 			_, err := golangci.Sync(ctx)

@@ -85,12 +85,11 @@ func (t GoSDK) Publish(
 	githubToken *Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
-		source: "https://github.com/dagger/dagger.git",
-		// FIXME: the go env is not alpine-based anymore, is that a problem?
-		alpineBase:   t.Dagger.Go().Env(),
+		source:       "https://github.com/dagger/dagger.git",
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
 		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
+		sourceEnv:    t.Dagger.Go().Env(),
 		dest:         gitRepo,
 		destTag:      strings.TrimPrefix(tag, "sdk/go/"),
 		username:     gitUserName,
@@ -123,18 +122,17 @@ type gitPublishOpts struct {
 	sourceTag, destTag string
 	sourcePath         string
 	sourceFilter       string
+	sourceEnv          *Container
 
 	username    string
 	email       string
 	githubToken *Secret
 
-	alpineBase *Container
-
 	dryRun bool
 }
 
 func gitPublish(ctx context.Context, opts gitPublishOpts) error {
-	base := opts.alpineBase
+	base := opts.sourceEnv
 	if base == nil {
 		base = dag.Container().From(consts.AlpineImage)
 	}

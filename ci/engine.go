@@ -151,15 +151,21 @@ func (e *Engine) Lint(
 		"",
 		// FIXME: should the CI lint itself?
 		"ci",
+		"ci/dirdiff",
 		"ci/std/go",
 		"ci/std/graphql",
-		"ci/dirdiff",
 	}
-	return e.Dagger.Go().WithCodegen([]string{""}).Lint(ctx, packages, all)
-}
+	// Packages that need codegen
+	codegen := []string{
+		"",
+		"ci/dirdiff",
+		"ci/std/go",
+		"ci/std/graphql",
+	}
 
-func daggerDevelop(dir *Directory, path string) *Directory {
-	return dir.WithDirectory(path, dir.Directory(path).AsModule().GeneratedContextDirectory())
+	return e.Dagger.Go().
+		WithCodegen(codegen).
+		Lint(ctx, packages, all)
 }
 
 // Publish all engine images to a registry

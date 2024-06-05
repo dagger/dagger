@@ -100,8 +100,15 @@ func (gtc *GoToolchain) Env() *Container {
 	return gtc.Go.Env()
 }
 
-func (gtc *GoToolchain) Lint(ctx context.Context, packages []string, all bool) error {
-	_, err := gtc.Go.Lint(ctx, packages, all)
+func (gtc *GoToolchain) Lint(
+	ctx context.Context,
+	packages []string,
+	// +optional
+	all bool,
+) error {
+	_, err := gtc.Go.Lint(ctx, packages, dagger.GoLintOpts{
+		All: all,
+	})
 	return err
 }
 
