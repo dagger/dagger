@@ -31,6 +31,8 @@ class EntrypointCommand extends Command
         /** @var Client $client */
         $client = $this->daggerConnection->connect();
 
+        $io->info('==----=-==-=-=-= CUSTOM CODEEEE ==----=-==-=-=-=');
+
         //$moduleName = $client->currentModule()->name();
         //$parentName = $client->currentFunctionCall()->parent()->getValue();
 
