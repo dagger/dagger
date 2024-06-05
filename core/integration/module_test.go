@@ -3212,7 +3212,7 @@ export class Enums {
 }
 `,
 		},
-	}{
+	} {
 		tc := tc
 
 		t.Run(tc.sdk, func(t *testing.T) {
@@ -3233,7 +3233,7 @@ export class Enums {
 
 			_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
 			require.ErrorContains(t, err, "invalid enum value")
-		})		
+		})
 	}
 }
 
