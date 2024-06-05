@@ -67,7 +67,7 @@ class EntrypointCommand extends Command
                 $methodName = $method->getName();
                 $io->info('FOUND METHOD: ' . $methodName);
                 $methodAttributes = $method->getAttributes();
-                $io->info('FOUND METHOD ATTRIBUTES: ' . $methodAttributes);
+                $io->info('FOUND METHOD ATTRIBUTES');
                 $io->info(var_export($methodAttributes, true));
             }
 
