@@ -129,7 +129,7 @@ class EntrypointCommand extends Command
             }
 
             $io->info('DAGGER MODULE NAME' . $daggerModule->name());
-            $io->info('DAGGER MODULE ID' . $daggerModule->id());
+            $io->info('DAGGER MODULE ID' . substr($daggerModule->id(), 0, 10));
 
             
 
