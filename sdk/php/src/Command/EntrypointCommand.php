@@ -14,11 +14,12 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Dagger\Dagger;
+use Dagger\Client as DaggerClient;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
 {
-    private Connection $daggerConnection;
+    private DaggerClient $daggerConnection;
 
     public function __construct()
     {
