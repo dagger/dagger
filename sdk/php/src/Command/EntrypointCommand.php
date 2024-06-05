@@ -128,10 +128,8 @@ class EntrypointCommand extends Command
                 // $io->info(var_export($methodAttributes, true));
             }
 
-            $io->info('DAGGER MODULE NAME' . $daggerModule->name());
+            // SUCCESS - WE HAVE DAGGER ID
             $io->info('DAGGER MODULE ID' . substr($daggerModule->id(), 0, 10));
-
-            
 
             // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
             // // Get the attributes of the method
