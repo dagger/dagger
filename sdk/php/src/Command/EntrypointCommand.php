@@ -61,7 +61,28 @@ class EntrypointCommand extends Command
             // Loop thru all the functions in this class
             $reflectedClass = new ReflectionClass($class);
             $reflectedMethods = $reflectedClass->getMethods(ReflectionMethod::IS_PUBLIC);
-            $io->info(var_export($reflectedMethods, true));
+            // $io->info(var_export($reflectedMethods, true));
+
+            foreach($reflectedMethods as $method) {
+                $methodName = $method->getName();
+                $io->info('FOUND METHOD: ' . $methodName);
+                $io->info('FOUND METHOD ATTRIBUTES: ' . $methodName);
+                $methodAttributes = $method->getAttributes();
+                $io->info(var_export($methodAttributes, true));
+            }
+
+            // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
+
+            // // Get the attributes of the method
+            // $attributes = $reflectionMethod->getAttributes();
+            
+            // foreach ($attributes as $attribute) {
+            //     $attributeInstance = $attribute->newInstance();
+            //     echo 'Attribute class: ' . $attribute->getName() . PHP_EOL;
+            //     echo 'Attribute value: ' . $attributeInstance->value . PHP_EOL;
+            // }
+
+            
 
 
 
