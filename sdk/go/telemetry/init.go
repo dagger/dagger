@@ -258,9 +258,8 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		propagation.Baggage{},
 	))
 
-	if p, ok := os.LookupEnv("TRACEPARENT"); ok {
-		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{"traceparent": p})
-	}
+	// Inherit trace context from env if present.
+	ctx = otel.GetTextMapPropagator().Extract(ctx, NewEnvCarrier(true))
 
 	// Log to slog.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
