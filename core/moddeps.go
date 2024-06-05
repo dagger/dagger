@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/telemetry"
+	"github.com/moby/buildkit/util/compression"
 )
 
 const (
@@ -36,10 +37,10 @@ type ModDeps struct {
 	Mods []Mod // TODO hide
 
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
-	lazilyLoadedSchema            *dagql.Server
-	lazilyLoadedIntrospectionJSON string
-	loadSchemaErr                 error
-	loadSchemaLock                sync.Mutex
+	lazilyLoadedSchema         *dagql.Server
+	lazilyLoadedSchemaJSONFile dagql.Instance[*File]
+	loadSchemaErr              error
+	loadSchemaLock             sync.Mutex
 }
 
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
@@ -70,31 +71,14 @@ func (d *ModDeps) Schema(ctx context.Context) (*dagql.Server, error) {
 	return schema, nil
 }
 
-// The introspection json for combined schema exposed by each mod in this set of dependencies
-func (d *ModDeps) SchemaIntrospectionJSON(ctx context.Context, forModule bool) (string, error) {
-	_, introspectionJSON, err := d.lazilyLoadSchema(ctx)
+// The introspection json for combined schema exposed by each mod in this set of dependencies, as a file.
+// It is meant for consumption from modules, which have some APIs hidden from their codegen.
+func (d *ModDeps) SchemaIntrospectionJSONFile(ctx context.Context) (inst dagql.Instance[*File], _ error) {
+	_, schemaJSONFile, err := d.lazilyLoadSchema(ctx)
 	if err != nil {
-		return "", err
+		return inst, err
 	}
-
-	if !forModule {
-		return introspectionJSON, nil
-	}
-
-	var introspection introspection.Response
-	if err := json.Unmarshal([]byte(introspectionJSON), &introspection); err != nil {
-		return "", fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
-	}
-
-	for _, typed := range typesHiddenFromModuleSDKs {
-		introspection.Schema.ScrubType(typed.Type().Name())
-		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
-	}
-	bs, err := json.Marshal(introspection)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal introspection JSON: %w", err)
-	}
-	return string(bs), nil
+	return schemaJSONFile, nil
 }
 
 // All the TypeDefs exposed by this set of dependencies
@@ -122,18 +106,22 @@ func schemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMe
 	return json.RawMessage(jsonBytes), nil
 }
 
-func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Server, loadedIntrospectionJSON string, rerr error) {
+func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
+	loadedSchema *dagql.Server,
+	loadedSchemaJSONFile dagql.Instance[*File],
+	rerr error,
+) {
 	d.loadSchemaLock.Lock()
 	defer d.loadSchemaLock.Unlock()
 	if d.lazilyLoadedSchema != nil {
-		return d.lazilyLoadedSchema, d.lazilyLoadedIntrospectionJSON, nil
+		return d.lazilyLoadedSchema, d.lazilyLoadedSchemaJSONFile, nil
 	}
 	if d.loadSchemaErr != nil {
-		return nil, "", d.loadSchemaErr
+		return nil, loadedSchemaJSONFile, d.loadSchemaErr
 	}
 	defer func() {
 		d.lazilyLoadedSchema = loadedSchema
-		d.lazilyLoadedIntrospectionJSON = loadedIntrospectionJSON
+		d.lazilyLoadedSchemaJSONFile = loadedSchemaJSONFile
 		d.loadSchemaErr = rerr
 	}()
 
@@ -151,14 +139,14 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Ser
 	for _, mod := range d.Mods {
 		err := mod.Install(ctx, dag)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
+			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}
 
 		// TODO support core interfaces types
 		if userMod, ok := mod.(*Module); ok {
 			defs, err := mod.TypeDefs(ctx)
 			if err != nil {
-				return nil, "", fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
+				return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get type defs for module %q: %w", mod.Name(), err)
 			}
 			for _, def := range defs {
 				switch def.Kind {
@@ -182,7 +170,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Ser
 		obj := objType.typeDef
 		class, found := dag.ObjectType(obj.Name)
 		if !found {
-			return nil, "", fmt.Errorf("failed to find object %q in schema", obj.Name)
+			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to find object %q in schema", obj.Name)
 		}
 		for _, ifaceType := range ifaces {
 			iface := ifaceType.typeDef
@@ -215,12 +203,52 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (loadedSchema *dagql.Ser
 		}
 	}
 
-	introspectionJSON, err := schemaIntrospectionJSON(ctx, dag)
+	schemaJSON, err := schemaIntrospectionJSON(ctx, dag)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get schema introspection JSON: %w", err)
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema introspection JSON: %w", err)
+	}
+	var introspection introspection.Response
+	if err := json.Unmarshal([]byte(schemaJSON), &introspection); err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)
+	}
+	for _, typed := range typesHiddenFromModuleSDKs {
+		introspection.Schema.ScrubType(typed.Type().Name())
+		introspection.Schema.ScrubType(dagql.IDTypeNameFor(typed))
+	}
+	moduleSchemaJSON, err := json.Marshal(introspection)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to marshal introspection JSON: %w", err)
 	}
 
-	return dag, string(introspectionJSON), nil
+	const schemaJSONFilename = "schema.json"
+
+	_, schemaJSONDesc, err := d.root.Buildkit.BytesToBlob(ctx,
+		schemaJSONFilename,
+		0644,
+		moduleSchemaJSON,
+		// don't bother compressing these in the content store, they aren't quite *that* big that we
+		// need to save on disk space in exchange for CPU time
+		compression.Uncompressed,
+	)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to create blob for introspection JSON: %w", err)
+	}
+	dirInst, err := LoadBlob(ctx, dag, schemaJSONDesc)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to load introspection JSON blob: %w", err)
+	}
+	if err := dag.Select(ctx, dirInst, &loadedSchemaJSONFile,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(schemaJSONFilename)},
+			},
+		},
+	); err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to select introspection JSON file: %w", err)
+	}
+
+	return dag, loadedSchemaJSONFile, nil
 }
 
 // Search the deps for the given type def, returning the ModType if found. This does not recurse

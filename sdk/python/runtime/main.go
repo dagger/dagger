@@ -92,7 +92,7 @@ type PythonSdk struct {
 }
 
 // Generated code for the Python module
-func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
+func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
 	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 func (m *PythonSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *ModuleSource,
-	introspectionJSON string,
+	introspectionJSON *File,
 ) (*Container, error) {
 	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
@@ -120,7 +120,7 @@ func (m *PythonSdk) ModuleRuntime(
 }
 
 // Common steps for the ModuleRuntime and Codegen functions.
-func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	// The following functions were built to be composable in a granular way,
 	// to allow a custom SDK to depend on this one and hook into before or
 	// after major steps in the process. For example, you can get the base
@@ -258,21 +258,19 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // Add the SDK package to the source directory
 //
 // This includes regenerating the client for the current API schema.
-func (m *PythonSdk) WithSDK(introspectionJSON string) *PythonSdk {
+func (m *PythonSdk) WithSDK(introspectionJSON *File) *PythonSdk {
 	// "codegen" dir included in the exported sdk directory to support
 	// extending the runtime module in a custom SDK.
 	m.Discovery.AddDirectory(GenDir, m.SDKSourceDir)
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
-	if introspectionJSON != "" {
+	if introspectionJSON != nil {
 		genFile := m.Container.
 			WithMountedDirectory("/codegen", m.SDKSourceDir.Directory("codegen")).
 			WithWorkdir("/codegen").
 			With(m.install("-r", LockFilePath)).
-			WithNewFile(SchemaPath, ContainerWithNewFileOpts{
-				Contents: introspectionJSON,
-			}).
+			WithMountedFile(SchemaPath, introspectionJSON).
 			WithExec([]string{
 				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
 			}).

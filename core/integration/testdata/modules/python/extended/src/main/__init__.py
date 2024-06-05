@@ -7,7 +7,7 @@ class ExtPythonSdk:
     required_paths: list[str] = field(default=list)
 
     @function
-    def codegen(self, mod_source: dagger.ModuleSource, introspection_json: str) -> dagger.GeneratedCode:
+    def codegen(self, mod_source: dagger.ModuleSource, introspection_json: dagger.File) -> dagger.GeneratedCode:
         return (
             dag
             .generated_code(
@@ -20,14 +20,14 @@ class ExtPythonSdk:
         )
 
     @function
-    def module_runtime(self, mod_source: dagger.ModuleSource, introspection_json: str) -> dagger.Container:
+    def module_runtime(self, mod_source: dagger.ModuleSource, introspection_json: dagger.File) -> dagger.Container:
         return (
             self.common(mod_source, introspection_json)
             .container()
             .with_entrypoint(["/runtime"])
         )
 
-    def common(self, mod_source: dagger.ModuleSource, introspection_json: str) -> dagger.PythonSdk:
+    def common(self, mod_source: dagger.ModuleSource, introspection_json: dagger.File) -> dagger.PythonSdk:
         base = (
             dag
             .python_sdk(sdk_source_dir=dag.current_module().source().directory("sdk"))
