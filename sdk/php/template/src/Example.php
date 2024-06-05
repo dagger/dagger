@@ -31,4 +31,9 @@ class Example
             ->withExec(["grep", '-R', $pattern, '.'])
             ->stdout();
     }
+
+    private function should_not_be_here()
+    {
+        return '';
+    }
 }

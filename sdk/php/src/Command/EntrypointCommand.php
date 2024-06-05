@@ -16,6 +16,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Dagger\Dagger;
 use Dagger\Client as DaggerClient;
 use ReflectionClass;
+use ReflectionMethod;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
@@ -59,8 +60,10 @@ class EntrypointCommand extends Command
 
             // Loop thru all the functions in this class
             $reflectedClass = new ReflectionClass($class);
-            $reflectedMethods = $reflectedClass->getMethods();
+            $reflectedMethods = $reflectedClass->getMethods(ReflectionMethod::IS_PUBLIC);
             $io->info(var_export($reflectedMethods, true));
+
+
 
             
             // Find functions tagged with [DaggerFunction]
