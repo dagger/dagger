@@ -317,23 +317,20 @@ func (s *moduleSchema) typeDef(ctx context.Context, _ *core.Query, args struct{}
 
 func (s *moduleSchema) typeDefWithOptional(ctx context.Context, def *core.TypeDef, args struct {
 	Optional bool
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	return def.WithOptional(args.Optional), nil
 }
 
 func (s *moduleSchema) typeDefWithKind(ctx context.Context, def *core.TypeDef, args struct {
 	Kind core.TypeDefKind
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	return def.WithKind(args.Kind), nil
 }
 
 func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("scalar type def must have a name")
 	}
@@ -342,8 +339,7 @@ func (s *moduleSchema) typeDefWithScalar(ctx context.Context, def *core.TypeDef,
 
 func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef, args struct {
 	ElementType core.TypeDefID
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	elemType, err := args.ElementType.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -354,8 +350,7 @@ func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
 	}
@@ -365,8 +360,7 @@ func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	return def.WithInterface(args.Name, args.Description), nil
 }
 
@@ -374,8 +368,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 	Name        string
 	TypeDef     core.TypeDefID
 	Description string `default:""`
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	fieldType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -385,8 +378,7 @@ func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.Typ
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	fn, err := args.Function.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -396,8 +388,7 @@ func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDe
 
 func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *core.TypeDef, args struct {
 	Function core.FunctionID
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	inst, err := args.Function.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
@@ -413,8 +404,7 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("enum type def must have a name")
 	}
@@ -425,8 +415,7 @@ func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, a
 func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
 	Value       string
 	Description string `default:""`
-},
-) (*core.TypeDef, error) {
+}) (*core.TypeDef, error) {
 	if args.Value == "" {
 		return nil, fmt.Errorf("enum value must have a name")
 	}
@@ -436,8 +425,7 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
 	Code core.DirectoryID
-},
-) (*core.GeneratedCode, error) {
+}) (*core.GeneratedCode, error) {
 	dir, err := args.Code.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
@@ -447,15 +435,13 @@ func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args st
 
 func (s *moduleSchema) generatedCodeWithVCSGeneratedPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-},
-) (*core.GeneratedCode, error) {
+}) (*core.GeneratedCode, error) {
 	return code.WithVCSGeneratedPaths(args.Paths), nil
 }
 
 func (s *moduleSchema) generatedCodeWithVCSIgnoredPaths(ctx context.Context, code *core.GeneratedCode, args struct {
 	Paths []string
-},
-) (*core.GeneratedCode, error) {
+}) (*core.GeneratedCode, error) {
 	return code.WithVCSIgnoredPaths(args.Paths), nil
 }
 
@@ -466,8 +452,7 @@ func (s *moduleSchema) module(ctx context.Context, query *core.Query, _ struct{}
 func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct {
 	Name       string
 	ReturnType core.TypeDefID
-},
-) (*core.Function, error) {
+}) (*core.Function, error) {
 	returnType, err := args.ReturnType.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode return type: %w", err)
@@ -477,8 +462,7 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 
 func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Function, args struct {
 	Description string
-},
-) (*core.Function, error) {
+}) (*core.Function, error) {
 	return fn.WithDescription(args.Description), nil
 }
 
@@ -487,8 +471,7 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	TypeDef      core.TypeDefID
 	Description  string    `default:""`
 	DefaultValue core.JSON `default:""`
-},
-) (*core.Function, error) {
+}) (*core.Function, error) {
 	argType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
@@ -553,15 +536,13 @@ func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core
 
 func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Module, args struct {
 	Description string
-},
-) (*core.Module, error) {
+}) (*core.Module, error) {
 	return mod.WithDescription(args.Description), nil
 }
 
 func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, args struct {
 	Object core.TypeDefID
-},
-) (_ *core.Module, rerr error) {
+}) (_ *core.Module, rerr error) {
 	def, err := args.Object.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
@@ -571,8 +552,7 @@ func (s *moduleSchema) moduleWithObject(ctx context.Context, mod *core.Module, a
 
 func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module, args struct {
 	Iface core.TypeDefID
-},
-) (_ *core.Module, rerr error) {
+}) (_ *core.Module, rerr error) {
 	def, err := args.Iface.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
@@ -582,8 +562,7 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 
 func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
 	Enum core.TypeDefID
-},
-) (_ *core.Module, rerr error) {
+}) (_ *core.Module, rerr error) {
 	def, err := args.Enum.Load(ctx, s.dag)
 	if err != nil {
 		return nil, err
