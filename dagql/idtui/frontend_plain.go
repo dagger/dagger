@@ -227,8 +227,24 @@ func (fe *frontendPlain) ExportLogs(ctx context.Context, logs []*sdklog.LogData)
 
 func (fe *frontendPlain) render() {
 	fe.mu.Lock()
-	defer fe.mu.Unlock()
+	fe.renderProgress()
+	fe.mu.Unlock()
+}
 
+func (fe *frontendPlain) finalRender() {
+	fe.mu.Lock()
+	if fe.Debug || fe.Verbosity > 0 {
+		fe.renderProgress()
+	}
+	if fe.idx > 0 {
+		// if we rendered anything, leave a newline
+		fmt.Fprintln(os.Stderr)
+	}
+	renderPrimaryOutput(fe.db)
+	fe.mu.Unlock()
+}
+
+func (fe *frontendPlain) renderProgress() {
 	steps := CollectSpans(fe.db, trace.TraceID{})
 	rows := CollectRows(steps)
 	logsView := CollectLogsView(rows)
@@ -258,16 +274,6 @@ func (fe *frontendPlain) render() {
 	for _, row := range logsView.Body {
 		fe.renderRow(row)
 	}
-}
-
-func (fe *frontendPlain) finalRender() {
-	if fe.Debug || fe.Verbosity > 0 {
-		fe.render()
-	}
-
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	renderPrimaryOutput(fe.db)
 }
 
 func (fe *frontendPlain) renderRow(row *TraceRow) {
