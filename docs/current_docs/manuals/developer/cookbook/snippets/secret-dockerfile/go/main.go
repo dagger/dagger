@@ -2,12 +2,20 @@ package main
 
 import (
 	"context"
-	"fmt"
+
+	"dagger.io/dagger"
 )
 
 type MyModule struct{}
 
-func (m *MyModule) Build(ctx context.Context, source *Directory, secret *Secret) (*Container, error) {
+// Build a Container from a Dockerfile
+func (m *MyModule) Build(
+	ctx context.Context,
+	// The source code to build
+	source *Directory,
+	// The secret to use in the Dockerfile
+	secret *Secret,
+) (*Container, error) {
 	secretName, err := secret.Name(ctx)
 	if err != nil {
 		return nil, err

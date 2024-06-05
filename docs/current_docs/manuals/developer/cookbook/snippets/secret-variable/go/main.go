@@ -6,7 +6,12 @@ import (
 
 type MyModule struct{}
 
-func (m *MyModule) GithubApi(ctx context.Context, token *Secret) (string, error) {
+// Query the GitHub API
+func (m *MyModule) GithubApi(
+	ctx context.Context,
+	// GitHub API token
+	token *Secret,
+) (string, error) {
 	return dag.Container().
 		From("alpine:3.17").
 		WithSecretVariable("GITHUB_API_TOKEN", token).

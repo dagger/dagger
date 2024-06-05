@@ -1,11 +1,17 @@
+from typing import Annotated
+
 import dagger
-from dagger import dag, function, object_type
+from dagger import Doc, dag, function, object_type
 
 
 @object_type
 class MyModule:
     @function
-    async def github_api(self, file: dagger.Secret) -> str:
+    async def github_api(
+        self,
+        file: Annotated[dagger.Secret, Doc("GitHub Hosts configuration file")],
+    ) -> str:
+        """Query the GitHub API"""
         return await (
             dag.container()
             .from_("alpine:3.17")

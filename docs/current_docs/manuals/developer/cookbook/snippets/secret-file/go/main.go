@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 )
 
 type MyModule struct{}
 
-func (m *MyModule) GithubApi(ctx context.Context, file *Secret) (string, error) {
+// Query the GitHub API
+func (m *MyModule) GithubApi(
+	ctx context.Context,
+	// GitHub Hosts configuration file
+	file *Secret,
+) (string, error) {
 	return dag.Container().
 		From("alpine:3.17").
 		WithExec([]string{"apk", "add", "github-cli"}).

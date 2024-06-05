@@ -2,8 +2,16 @@ import { dag, object, func, Secret } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
+  /**
+   * Query the GitHub API
+   */
   @func()
-  async githubApi(file: Secret): Promise<string> {
+  async githubApi(
+    /**
+     * GitHub Hosts configuration File
+     */
+    file: Secret,
+  ): Promise<string> {
     return await dag
       .container()
       .from("alpine:3.17")
