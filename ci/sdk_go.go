@@ -134,12 +134,13 @@ type gitPublishOpts struct {
 func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
-		base = dag.Container().From(consts.AlpineImage)
+		base = dag.Container().
+			From(consts.AlpineImage).
+			WithExec([]string{"apk", "add", "-U", "--no-cache", "git"})
 	}
 
 	// FIXME: move this into std modules
 	git := base.
-		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
 		WithExec([]string{"git", "config", "--global", "user.name", opts.username}).
 		WithExec([]string{"git", "config", "--global", "user.email", opts.email})
 	if !opts.dryRun {
