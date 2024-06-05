@@ -55,7 +55,13 @@ class EntrypointCommand extends Command
         foreach($classes as $class) {
 
             $io->info('FOUND CLASS WITH DaggerFunction annotation: ' . $class);
+
             // Loop thru all the functions in this class
+            $reflectedClass = new ReflectionClass($class);
+            $reflectedMethods = $reflectedClass->getMethods();
+            $io->info(var_export($reflectedMethods, true));
+
+            
             // Find functions tagged with [DaggerFunction]
             // create a ->withFunction entry
             // Find the args on the function, and do ->withArg() on it
