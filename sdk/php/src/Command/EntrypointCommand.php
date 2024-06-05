@@ -31,11 +31,10 @@ class EntrypointCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         /** @var Client $client */
-        // $client = $this->daggerConnection->connect();
 
         $io->info('==----=-==-=-=-= CUSTOM CODEEEE ==----=-==-=-=-=');
 
-        $moduleName = $client->module()->name();
+        $moduleName = $this->daggerConnection->module()->name();
         $io->info('MODULE NAME: ' . $moduleName);
         // $parentName = $client->currentFunctionCall()->parent()->getValue();
 
