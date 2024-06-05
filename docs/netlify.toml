@@ -153,6 +153,30 @@
   status = 301
 
 [[redirects]]
+  # redirect developer manual first module page to developer manual index
+  from = "/manuals/developer/:language/:docid/first-module"
+  to = "/manuals/developer"
+  status = 301
+
+[[redirects]]
+  # redirect Python name overrides page to developer manual index
+  from = "/manuals/developer/python/:docid/name-overrides"
+  to = "/manuals/developer"
+  status = 301
+
+[[redirects]]
+  # redirect TypeScript aliases page to developer manual index
+  from = "/manuals/developer/typescript/:docid/aliases"
+  to = "/manuals/developer"
+  status = 301
+
+[[redirects]]
+  # redirect Typescript decorators page to developer manual index
+  from = "/manuals/developer/typescript/:docid/decorators"
+  to = "/manuals/developer"
+  status = 301
+
+[[redirects]]
   # redirect developer manual overview pages
   from = "/manuals/developer/overview/:docid/*"
   to = "/manuals/developer/:splat"
