@@ -71,18 +71,19 @@ class EntrypointCommand extends Command
                 $io->info('FOUND METHOD: ' . $methodName);
                 $methodAttributes = $method->getAttributes();
 
-                $io->info('METHOD ATTRIBUTES');
-                $io->info(var_export($methodAttributes, true));
-                continue;
-
-
-
                 foreach($methodAttributes as $methodAttribute) {
+                    if(!$this->hasDaggerFunctionAttribute($methodAttribute)) {
+                        continue;
+                    }
 
                     // We found a method with a DaggerFunction attribute! yay!
                     $io->info('FOUND METHOD with DaggerFunction attribute! yay');
 
-                    
+                    $methodArgs = $method->getParameters();
+
+                    foreach($methodArgs as $arg) {
+                        $io->info('METHOD: ' . $method->getName() . ' - ARG: ' . $arg->getName());
+                    }
 
                     // create a ->withFunction entry
                     // Find the args on the function, and do ->withArg() on it
@@ -158,6 +159,9 @@ class EntrypointCommand extends Command
         return $parentName === 'null';
     }
 
-
+    private function hasDaggerFunctionAttribute(ReflectionAttribute $attribute): bool
+    {
+        return $attribute->getName() === DaggerFunction::class;
+    }
 
 }
