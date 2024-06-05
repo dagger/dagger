@@ -69,13 +69,13 @@ class EntrypointCommand extends Command
             foreach($reflectedMethods as $method) {
                 $methodName = $method->getName();
                 $io->info('FOUND METHOD: ' . $methodName);
-                $methodAttributes = $method->getAttributes(DaggerFunction::class);
+                $methodAttributes = $method->getAttributes();
 
                 $io->info('METHOD ATTRIBUTES');
                 $io->info(var_export($methodAttributes, true));
-
-
                 continue;
+
+
 
                 foreach($methodAttributes as $methodAttribute) {
 
