@@ -155,7 +155,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.5.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.11.6.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -163,9 +163,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.5.md`
+      `.changes/v0.11.6.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.5-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.6-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -282,30 +282,41 @@ cd ci
 go mod edit -require github.com/dagger/dagger@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
+```
 
-# Check that the most important workflow works locally (requires local Docker):
-./hack/make engine:test
+- [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
+      - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
+      - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
 
+- [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
+
+- [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
+
+```console
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+git add .  # or any other files changed during the last few steps
+git commit -s -m "Improve releasing during $ENGINE_VERSION"
+git push 
+```
 
-# Update .github/workflows dagger versions $ENGINE_VERSION
-# Update docs/current_docs files to point to new dagger version
+Ensure that all the workflows succeed before continuing (specifically `test` and `testdev`)!
 
-# Commit & push
+- [ ] Download and install the latest release, and continue the rest of the
+      release process using the just-released CLI.
 
-# Test using the just-released CLI
-# curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.5 sh
-# mv ~/.local/bin/dagger{,-0.11.5}
-dagger version | grep ${ENGINE_VERSION:?must be set}
-dagger run ./hack/make engine:test
+```console
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.6 sh
+# install the cli to dagger-0.11.6, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.11.6}
+ln -s ~/.local/bin/dagger{-0.11.6,}
+
+dagger version
 ```
 
 - [ ] After you confirm that our internal tooling works with the new Go SDK
-      release, [🐙
-      github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
-      double-check that is was picked up by
-      [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
-      this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
+      release, [🐙 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
+      double-check that is was picked up by [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
+      You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
       The new version can take up to `60mins` to appear, it's OK to move on.
 
 > [!NOTE]
@@ -559,7 +570,8 @@ git push origin <NEXT_PATCH_VERSION> --force
 ## 🍺 dagger Homebrew ⏱ `2mins`
 
 - [ ] Check that Dagger Homebrew formula has been updated to latest, e.g.
-  [dagger 0.10.2](https://github.com/Homebrew/homebrew-core/pull/165904)
+  [dagger 0.10.2](https://github.com/Homebrew/homebrew-core/pull/165904).
+  This is automated, but note that it may take several hours to trigger.
 
 ## ❄️ nix ⏱ `2mins`
 
