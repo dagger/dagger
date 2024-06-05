@@ -13,6 +13,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Dagger\Dagger;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
@@ -22,14 +23,16 @@ class EntrypointCommand extends Command
     public function __construct()
     {
         parent::__construct();
-        $this->daggerConnection = Connection::get();
+        $this->daggerConnection = Dagger::connect();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
         /** @var Client $client */
-        $client = $this->daggerConnection->connect();
+        // $client = $this->daggerConnection->connect();
+
+        $io->info(var_export($this->daggerConnection, true));
 
         $io->info('==----=-==-=-=-= CUSTOM CODEEEE ==----=-==-=-=-=');
 
