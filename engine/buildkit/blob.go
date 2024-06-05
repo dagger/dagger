@@ -24,7 +24,12 @@ import (
 func (c *Client) DefToBlob(
 	ctx context.Context,
 	pbDef *bksolverpb.Definition,
+	compressionType compression.Type,
 ) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
+	if compressionType == nil {
+		compressionType = compression.Zstd
+	}
+
 	res, err := c.Solve(ctx, bkgw.SolveRequest{
 		Definition: pbDef,
 		Evaluate:   true,
@@ -57,13 +62,7 @@ func (c *Client) DefToBlob(
 	}
 
 	remotes, err := ref.GetRemotes(ctx, true, cacheconfig.RefConfig{
-		Compression: compression.Config{
-			// TODO: double check whether using Zstd is best idea. It's the fastest, but
-			// if it ends up in an exported image and the user tries to load that into
-			// old docker versions, they will get an error unless they specify the force
-			// compression option during export.
-			Type: compression.Zstd,
-		},
+		Compression: compression.Config{Type: compressionType},
 	}, false, nil)
 	if err != nil {
 		return nil, desc, fmt.Errorf("failed to get remotes: %w", err)
@@ -102,6 +101,7 @@ func (c *Client) BytesToBlob(
 	fileName string,
 	perms fs.FileMode,
 	bs []byte,
+	compressionType compression.Type,
 ) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
 	def, err := llb.Scratch().
 		File(llb.Mkfile(fileName, perms, bs)).
@@ -109,5 +109,5 @@ func (c *Client) BytesToBlob(
 	if err != nil {
 		return nil, desc, fmt.Errorf("failed to create llb definition: %w", err)
 	}
-	return c.DefToBlob(ctx, def.ToPB())
+	return c.DefToBlob(ctx, def.ToPB(), compressionType)
 }

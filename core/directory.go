@@ -12,6 +12,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/util/compression"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -757,7 +758,7 @@ func (dir *Directory) AsBlob(
 	}
 	pbDef := def.ToPB()
 
-	_, desc, err := dir.Query.Buildkit.DefToBlob(ctx, pbDef)
+	_, desc, err := dir.Query.Buildkit.DefToBlob(ctx, pbDef, compression.Zstd)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get blob descriptor: %w", err)
 	}

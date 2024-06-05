@@ -144,7 +144,7 @@ func (s *moduleSchema) newModuleSDK(
 
 // Codegen calls the Codegen function on the SDK Module
 func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, true)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk codegen: %w", sdk.mod.Self.Name(), err)
 	}
@@ -171,7 +171,7 @@ func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source da
 
 // Runtime calls the Runtime function on the SDK Module
 func (sdk *moduleSDK) Runtime(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.Container, error) {
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, true)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection json during %s module sdk runtime: %w", sdk.mod.Self.Name(), err)
 	}
@@ -413,7 +413,7 @@ func (sdk *goSDK) baseWithCodegen(
 ) (dagql.Instance[*core.Container], error) {
 	var ctr dagql.Instance[*core.Container]
 
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx, true)
+	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
 	if err != nil {
 		return ctr, fmt.Errorf("failed to get schema introspection json during module sdk codegen: %w", err)
 	}
