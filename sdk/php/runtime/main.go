@@ -29,7 +29,7 @@ func New(
 ) *PhpSdk {
 	if sdkSourceDir == nil {
 		sdkSourceDir = dag.Git("https://github.com/carnage/dagger.git").
-			Branch("add-php-runtime").
+			Branch("paul-php-runtime").
 			Tree().
 			Directory("sdk/php")
 	}
