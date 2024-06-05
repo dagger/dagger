@@ -6,11 +6,11 @@ class MyModule {
    * Query the GitHub API
    */
   @func()
-  async githubApi(
+  async githubAuth(
     /**
      * GitHub Hosts configuration File
      */
-    file: Secret,
+    ghCreds: Secret,
   ): Promise<string> {
     return await dag
       .container()
