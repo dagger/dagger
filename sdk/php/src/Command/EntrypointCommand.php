@@ -1,227 +1,173 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Dagger\Command;
 
-use Dagger\Attribute\DaggerFunction;
-use Dagger\Attribute\DaggerObject;
-use Dagger\Client;
-use Dagger\Connection;
+use Dagger;
 use Dagger\Container;
 use Dagger\Directory;
 use Dagger\File;
-use Dagger\Json as DaggerJson;
+use Dagger\Service\DecodesValue;
+use Dagger\Service\FindsDaggerFunctions;
+use Dagger\Service\FindsDaggerObjects;
+use Dagger\Service\FindsSrcDirectory;
 use Dagger\TypeDef;
-use GuzzleHttp\Psr7\Response;
-use Roave\BetterReflection\BetterReflection;
-use Roave\BetterReflection\Reflector\DefaultReflector;
-use Roave\BetterReflection\SourceLocator\Type\DirectoriesSourceLocator;
+use Dagger\TypeDefKind;
+use Dagger\ValueObject\DaggerObject;
+use Dagger\ValueObject\Type;
+use ReflectionClass;
+use ReflectionMethod;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Dagger\Dagger;
-use Dagger\Client as DaggerClient;
-use Dagger\ScalarTypeDef;
-use Dagger\TypeDefKind;
-use ReflectionAttribute;
-use ReflectionClass;
-use ReflectionMethod;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
 {
-    private DaggerClient $daggerConnection;
+    private Dagger\Client $daggerClient;
 
     public function __construct()
     {
         parent::__construct();
-        $this->daggerConnection = Dagger::connect();
+        $this->daggerClient = Dagger\Dagger::connect();
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
-    {
-        $io = new SymfonyStyle($input, $output);
-        /** @var Client $client */
-
-        $io->info('==----=-==-=-=-= CUSTOM CODEEEE ==----=-==-=-=-=');
-
-        // $moduleName = $this->daggerConnection->module()->id();
-        // $moduleName = $this->daggerConnection->module()->name();
-        // $io->info('MODULE NAME: ' . $moduleName);
-
-        $currentFunctionCall = $this->daggerConnection->currentFunctionCall();
-        $parentName = $currentFunctionCall->parent()->getValue();
-
-        if (!$this->hasParentName($parentName)) {
-            $io->info('NO PARENT NAME FOUND');
-            // register module with dagger
-        } else {
-            $io->info('!!!!! FOUND A PARENT NAME: ' . $parentName);
-            // invocation, run module code.
-        }
-
-        $dir = $this->findSrcDirectory();
-        $classes = $this->getDaggerObjects($dir);
-        $io->info(var_export($classes, true));
+    //@todo work out how to include documentation
+    protected function execute(
+        InputInterface $input,
+        OutputInterface $output
+    ): int {
+        $functionCall = $this->daggerClient->currentFunctionCall();
+        $parentName = $functionCall->parentName();
 
         try {
-            $daggerModule = $this->daggerConnection->module();
-
-            // Find classes tagged with [DaggerFunction]
-            foreach ($classes as $class) {
-                $io->info('FOUND CLASS WITH DaggerFunction annotation: ' . $class);
-                $reflectedClass = new ReflectionClass($class);
-
-                $typeDef = $this->daggerConnection->typeDef()
-                    ->withObject($this->normalizeClassname($reflectedClass->getName()));
-
-                // Loop thru all the functions in this class
-                foreach ($reflectedClass->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-                    $functionAttribute = $this->getDaggerFunctionAttribute($method);
-                    if ($functionAttribute === null) {
-                        continue;
-                    }
-                    // We found a method with a DaggerFunction attribute! yay!
-                    $io->info('FOUND METHOD with DaggerFunction attribute! yay');
-
-                    $methodName = $method->getName();
-                    $io->info('FOUND METHOD: ' . $methodName);
-
-                    $methodReturnType = $method->getReturnType();
-
-                    // Perhaps Dagger mandates a return type, and if we don't find one,
-                    // then we flag up an error/notice/exception/warning
-                    //@TODO is this check sufficient to ensure a return type?
-                    //@TODO when we figure out how to support union/intersection types, we still need a check for no return type
-                    if (!($methodReturnType instanceof \ReflectionNamedType)) {
-                        throw new \RuntimeException('Cannot handle union/intersection types yet');
-                    }
-
-                    $func = $this->daggerConnection->function(
-                        $methodName,
-                        $this->getTypeDefFromPHPType($methodReturnType)
-                    );
-
-                    foreach ($method->getParameters() as $arg) {
-                        $argType = $arg->getType();
-                        //@TODO see above notes on arg types
-                        if (!($argType instanceof \ReflectionNamedType)) {
-                            throw new \RuntimeException('Cannot handle union/intersection types yet');
-                        }
-
-                        $func = $func->withArg($arg->getName(), $this->getTypeDefFromPHPType($argType));
-                    }
-
-                    $typeDef = $typeDef->withFunction($func);
-                }
-
-
-                $daggerModule = $daggerModule->withObject($typeDef);
-
-
-                // $reflectionMethod = new ReflectionMethod($reflectedClass->, 'myMethod');
-                // // Get the attributes of the method
-                // $attributes = $reflectionMethod->getAttributes();
-                // foreach ($attributes as $attribute) {
-                //     $attributeInstance = $attribute->newInstance();
-                //     echo 'Attribute class: ' . $attribute->getName() . PHP_EOL;
-                //     echo 'Attribute value: ' . $attributeInstance->value . PHP_EOL;
-                // }
-
-            }
-
-            // SUCCESS - WE HAVE DAGGER ID
-            $io->info('DAGGER MODULE ID' . substr($daggerModule->id(), 0, 10));
-            $result = $daggerModule->id();
-            $currentFunctionCall->returnValue(new DaggerJson(json_encode((string) $result)));
+            $parentName === '' ?
+                $this->registerModule($functionCall) :
+                $this->callFunctionOnParent($functionCall, $parentName);
         } catch (\Throwable $t) {
-            //@TODO tidy this up...
-            $io->error($t->getMessage());
-            if (method_exists($t, 'getResponse')) {
-                /** @var Response $response */
-                $response = $t->getResponse();
-                $io->error($response->getBody()->getContents());
-            }
-            $io->error($t->getTraceAsString());
+            $this->outputErrorInformation($input, $output, $t);
+
+            return Command::FAILURE;
         }
 
         return Command::SUCCESS;
     }
 
-    private function findSrcDirectory(): string
+    private function registerModule(Dagger\FunctionCall $functionCall): void
     {
-        $dir = __DIR__;
-        while(!file_exists($dir . '/dagger') && $dir !== '/') {
-            $dir = realpath($dir . '/..');
-        }
+        $src = (new FindsSrcDirectory())();
+        $daggerObjects = (new FindsDaggerObjects())($src);
 
-        if (!file_exists($dir . '/dagger') || !file_exists($dir . '/src')) {
-            throw new \RuntimeException('Could not find module source directory');
-        }
+        $daggerModule = $this->daggerClient->module();
 
-        return $dir . '/src';
-    }
+        foreach ($daggerObjects as $daggerObject) {
+            $typeDef = $this->daggerClient->typeDef()
+                ->withObject($this->normalizeClassname($daggerObject->name));
 
-    private function getDaggerObjects(string $dir): array
-    {
-        $astLocator = (new BetterReflection())->astLocator();
-        $directoriesSourceLocator = new DirectoriesSourceLocator([$dir], $astLocator);
-        $reflector = new DefaultReflector($directoriesSourceLocator);
-        $classes = [];
+            foreach ($daggerObject->daggerFunctions as $daggerFunction) {
+                $func = $this->daggerClient
+                    ->function(
+                        $daggerFunction->name,
+                        $this->getTypeDef($daggerFunction->returnType)
+                    );
 
-        foreach($reflector->reflectAllClasses() as $class) {
-            if (count($class->getAttributesByName(DaggerObject::class))) {
-                $classes[] = $class->getName();
+                if ($daggerFunction->description !== null) {
+                    $func = $func->withDescription($daggerFunction->description);
+                }
+
+                foreach ($daggerFunction->arguments as $argument) {
+                    $func = $func->withArg(
+                        $argument->name,
+                        $this->getTypeDef($argument->type),
+                        $argument->description,
+                    );
+                }
+
+                $typeDef = $typeDef->withFunction($func);
             }
+
+            $daggerModule = $daggerModule->withObject($typeDef);
         }
 
-        return $classes;
+        $functionCall->returnValue(new Dagger\Json(json_encode(
+            (string) $daggerModule->id()
+        )));
     }
 
-    private function hasParentName(string $parentName): bool
-    {
-        return $parentName !== 'null';
+    private function callFunctionOnParent(
+        Dagger\FunctionCall $functionCall,
+        string $parentName
+    ): void {
+        $className = "DaggerModule\\$parentName";
+        $functionName = $functionCall->name();
+        $class = new $className();
+        $class->client = $this->daggerClient;
+
+        $args = $this->formatArguments(
+            $className,
+            $functionName,
+            json_decode(json_encode($functionCall->inputArgs()), true)
+        );
+
+        $result = ($class)->$functionName(...$args);
+        if ($result instanceof Dagger\Client\IdAble) {
+            $result = (string) $result->id();
+        }
+
+        $functionCall->returnValue(new Dagger\Json(json_encode($result)));
     }
 
-    private function getDaggerFunctionAttribute(ReflectionMethod $method): ?DaggerFunction
+    private function getTypeDef(Type $type): TypeDef
     {
-        $attribute = current($method->getAttributes(DaggerFunction::class)) ?: null;
-        return $attribute?->newInstance();
-    }
-
-    private function getTypeDefFromPHPType(\ReflectionNamedType $methodReturnType): TypeDef
-    {
+        $typeDef = $this->daggerClient->typeDef();
         // See: https://github.com/dagger/dagger/blob/main/sdk/typescript/introspector/scanner/utils.ts#L95-L117
         //@TODO support descriptions, optional and defaults.
+        /**
+         * Optional = nullable
+         * if nullable then check list of provides args
+         * if nullable arg not provides, then add argument in, and provide it with NULL,
+         * Default:
+         * already optional, nothing should need to be done.
+         */
         //@TODO support arrays via additional attribute to define the array subtype
-        switch ($methodReturnType->getName()) {
+        switch ($type->name) {
             case 'string':
-                return $this->daggerConnection->typeDef()->withKind(TypeDefKind::STRING_KIND);
+                return $typeDef->withKind(TypeDefKind::STRING_KIND);
             case 'int':
-                return $this->daggerConnection->typeDef()->withKind(TypeDefKind::INTEGER_KIND);
+                return $typeDef->withKind(TypeDefKind::INTEGER_KIND);
             case 'bool':
-                return $this->daggerConnection->typeDef()->withKind(TypeDefKind::BOOLEAN_KIND);
+                return $typeDef->withKind(TypeDefKind::BOOLEAN_KIND);
             case 'float':
             case 'array':
-                throw new \RuntimeException('cant support type: ' . $methodReturnType->getName());
+            throw new \RuntimeException('cant support type: ' . $type->name);
             case 'void':
-                return $this->daggerConnection->typeDef()->withKind(TypeDefKind::VOID_KIND);
+                return $typeDef->withKind(TypeDefKind::VOID_KIND);
             case Container::class:
-                return $this->daggerConnection->typeDef()->withObject('Container');
+                return $typeDef->withObject('Container');
             case Directory::class:
-                return $this->daggerConnection->typeDef()->withObject('Directory');
+                return $typeDef->withObject('Directory');
             case File::class:
-                return $this->daggerConnection->typeDef()->withObject('File');
+                return $typeDef->withObject('File');
             default:
-                if (class_exists($methodReturnType->getName())) {
-                    return $this->daggerConnection->typeDef()->withObject($this->normalizeClassname($methodReturnType->getName()));
+                if (class_exists($type->name)) {
+                    throw new \RuntimeException(sprintf(
+                        'Currently cannot handle custom classes: %s',
+                        $type->name
+                    ));
+//                    return $typeDef->withObject($this->normalizeClassname($type->name));
                 }
-                if (interface_exists($methodReturnType->getName())) {
-                    return $this->daggerConnection->typeDef()->withInterface($this->normalizeClassname($methodReturnType->getName()));
+                if (interface_exists($type->name)) {
+                    throw new \RuntimeException(sprintf(
+                        'Currently cannot handle custom interfaces: %s',
+                        $type->name
+                    ));
+//                    return $typeDef->withInterface($this->normalizeClassname($type->name));
                 }
 
-                throw new \RuntimeException('dont know what to do with: ' . $methodReturnType->getName());
+                throw new \RuntimeException('dont know what to do with: ' . $type->name);
 
         }
     }
@@ -231,5 +177,49 @@ class EntrypointCommand extends Command
         $classname = str_replace('DaggerModule', '', $classname);
         $classname = ltrim($classname, '\\');
         return str_replace('\\', ':', $classname);
+    }
+
+    /**
+     * @param array<array{Name:string,Value:string}> $arguments
+     *
+     * @return array<string,mixed>
+     */
+    private function formatArguments(
+        string $className,
+        string $functionName,
+        array $arguments,
+    ): array {
+        $parameters = (new ReflectionMethod($className, $functionName))
+            ->getParameters();
+
+        $result = [];
+        $formatsValue = new DecodesValue($this->daggerClient);
+        foreach ($parameters as $parameter) {
+            foreach ($arguments as $argument) {
+                if ($parameter->name === $argument['Name']) {
+                    $result[$parameter->name] = $formatsValue(
+                        $argument['Value'],
+                        $parameter->getType()->getName()
+                    );
+                    continue 2;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    private function outputErrorInformation(
+        InputInterface $input,
+        OutputInterface $output,
+        \Throwable $t
+    ): void {
+        $io = new SymfonyStyle($input, $output);
+        $io->error($t->getMessage());
+        if (method_exists($t, 'getResponse')) {
+            $response = $t->getResponse();
+            $io->error($response->getBody()->getContents());
+        }
+        $io->error($t->getTraceAsString());
     }
 }

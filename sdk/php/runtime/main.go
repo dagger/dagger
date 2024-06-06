@@ -29,7 +29,7 @@ func New(
 ) *PhpSdk {
 	if sdkSourceDir == nil {
 		sdkSourceDir = dag.Git("https://github.com/carnage/dagger.git").
-			Branch("add-php-runtime").
+			Branch("charjr-add-php-runtime").
 			Tree().
 			Directory("sdk/php")
 	}
@@ -76,6 +76,12 @@ func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, int
 		WithMountedDirectory("/codegen", sdk.SourceDir).
 		WithoutEntrypoint().
 		WithWorkdir("/codegen").
+		WithExec([]string{
+		  "apk", "add", "git", "openssh", "curl",
+		}).
+		WithExec([]string {
+		  "git", "config", "--global", "url.https://github.com/.insteadOf", "git@github.com:",
+		}).
 		WithExec([]string{
 			"./install-composer.sh",
 		}).

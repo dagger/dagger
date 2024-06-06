@@ -4,12 +4,13 @@
     "type": "library",
     "homepage": "https://dagger.io",
     "license": "Apache-2.0",
+    "minimum-stability": "dev",
     "require": {
         "php": ">=8.2",
         "roave/better-reflection": "^6.25",
         "symfony/process": "^6.3|^7.0",
         "symfony/console": "^6.3|^7.0",
-        "gmostafa/php-graphql-client": "^1.13",
+        "gmostafa/php-graphql-client": "dev-fix-double-escaped-quotes@dev",
         "psr/log": "^3.0"
     },
     "autoload": {
@@ -25,7 +26,14 @@
     "require-dev": {
         "phpunit/phpunit": "^10.4",
         "symfony/console": "^6.3|^7.0",
+        "mikey179/vfsstream": "^1.6",
         "nette/php-generator": "^4.1",
         "webonyx/graphql-php": "^15.8"
-    }
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/thewunder/php-graphql-client.git"
+        }
+    ]
 }
