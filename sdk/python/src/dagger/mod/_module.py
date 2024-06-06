@@ -19,7 +19,7 @@ from rich.console import Console
 from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
-from dagger import dag, telemetry
+from dagger import dag
 from dagger.log import configure_logging
 from dagger.mod._converter import make_converter
 from dagger.mod._exceptions import (
