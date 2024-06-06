@@ -284,7 +284,9 @@ func (fe *frontendPlain) render() {
 }
 
 func (fe *frontendPlain) finalRender() {
-	fe.render()
+	if !fe.Silent {
+		fe.render()
+	}
 
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
