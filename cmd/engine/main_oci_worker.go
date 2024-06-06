@@ -157,7 +157,7 @@ func init() {
 		Value: func() int64 {
 			keep := defaultConf.Workers.OCI.GCKeepStorage.AsBytes(defaultConf.Root)
 			if keep == 0 {
-				keep = config.DetectDefaultGCCap().AsBytes(defaultConf.Root)
+				keep = config.DiskSpace{Percentage: 75}.AsBytes(defaultConf.Root)
 			}
 			return keep / 1e6
 		}(),
