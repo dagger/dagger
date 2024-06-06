@@ -33,7 +33,7 @@ func (p *Go) Base() *Container {
 	return dag.
 		Wolfi().
 		Container(WolfiContainerOpts{Packages: []string{
-			"go=" + p.Version,
+			"go~" + p.Version,
 			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 			"build-base",
 			// adding the git CLI to inject vcs info
