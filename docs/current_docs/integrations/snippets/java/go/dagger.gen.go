@@ -584,17 +584,6 @@ func dispatch(ctx context.Context) error {
 	))
 	defer telemetry.Close()
 
-	ctx, span := Tracer().Start(ctx, "Go runtime",
-		trace.WithAttributes(
-			// In effect, the following two attributes hide the exec /runtime span.
-			//
-			// Replace the parent span,
-			attribute.Bool("dagger.io/ui.mask", true),
-			// and only show our children.
-			attribute.Bool("dagger.io/ui.passthrough", true),
-		))
-	defer span.End()
-
 	// A lot of the "work" actually happens when we're marshalling the return
 	// value, which entails getting object IDs, which happens in MarshalJSON,
 	// which has no ctx argument, so we use this lovely global variable.

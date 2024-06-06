@@ -10,6 +10,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
@@ -182,6 +183,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		Module:         mod,
 		Cache:          opts.Cache,
 		SkipSelfSchema: opts.SkipSelfSchema,
+		SpanContext:    trace.SpanContextFromContext(ctx),
 	}
 	if fn.objDef != nil {
 		callMeta.ParentName = fn.objDef.OriginalName

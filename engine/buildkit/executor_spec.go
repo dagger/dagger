@@ -31,6 +31,7 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log"
 
 	"dagger.io/dagger/telemetry"
@@ -626,6 +627,9 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 
 	logAttrs := []log.KeyValue{}
 	if w.execMD != nil {
+		if w.execMD.SpanContext != nil {
+			ctx = otel.GetTextMapPropagator().Extract(ctx, w.execMD.SpanContext)
+		}
 		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTelEnvs...)
 		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
 	}

@@ -13,6 +13,9 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ContainerExecOpts struct {
@@ -97,6 +100,15 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				Cache: true,
 			}
 		}
+
+		if callerOpts.SpanContext.IsValid() {
+			execMD.SpanContext = propagation.MapCarrier{}
+			otel.GetTextMapPropagator().Inject(
+				trace.ContextWithSpanContext(ctx, callerOpts.SpanContext),
+				execMD.SpanContext,
+			)
+		}
+
 		execMD.ClientID, err = container.Query.RegisterCaller(ctx, callerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)

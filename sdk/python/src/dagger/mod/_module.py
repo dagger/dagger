@@ -45,7 +45,6 @@ from dagger.mod._utils import (
     to_pascal_case,
     transform_error,
 )
-from dagger.telemetry.attributes import UI_MASK, UI_PASSTHROUGH
 
 errors = Console(stderr=True, style="bold red")
 logger = logging.getLogger(__name__)
@@ -198,36 +197,29 @@ class Module:
             await fn(mod_name)
 
     @staticmethod
-    def serve(span_name: str, passthrough: bool = False):
+    def serve():
         def _serve(func):
             @functools.wraps(func)
             async def wrapper(*args, **kwargs):
-                with telemetry.get_tracer().start_as_current_span(
-                    span_name,
-                    attributes={
-                        UI_MASK: True,
-                        UI_PASSTHROUGH: passthrough,
-                    },
-                ):
-                    result = await func(*args, **kwargs)
+                result = await func(*args, **kwargs)
 
-                    try:
-                        output = json.dumps(result)
-                    except (TypeError, ValueError) as e:
-                        msg = f"Failed to serialize result: {e}"
-                        raise InternalError(msg) from e
+                try:
+                    output = json.dumps(result)
+                except (TypeError, ValueError) as e:
+                    msg = f"Failed to serialize result: {e}"
+                    raise InternalError(msg) from e
 
-                    logger.debug(
-                        "output => %s",
-                        textwrap.shorten(repr(output), 144),
-                    )
-                    await dag.current_function_call().return_value(dagger.JSON(output))
+                logger.debug(
+                    "output => %s",
+                    textwrap.shorten(repr(output), 144),
+                )
+                await dag.current_function_call().return_value(dagger.JSON(output))
 
             return wrapper
 
         return _serve
 
-    @serve("python module registration")
+    @serve()
     async def _register(self, mod_name: str) -> dagger.ModuleID:
         resolvers = self.get_resolvers(mod_name)
         mod_name = to_pascal_case(mod_name)
@@ -257,7 +249,7 @@ class Module:
 
         return await mod.id()
 
-    @serve("python module execution", passthrough=True)
+    @serve()
     async def _invoke(self, parent_name: str, mod_name: str) -> Any:
         resolvers = self.get_resolvers(mod_name)
         name = await self._fn_call.name()

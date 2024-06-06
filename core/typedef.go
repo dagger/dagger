@@ -10,6 +10,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -911,6 +912,9 @@ type FunctionCall struct {
 
 	// Whether to serve the schema for the function's own module to it or not
 	SkipSelfSchema bool
+
+	// Send logs to a particular span.
+	SpanContext trace.SpanContext
 }
 
 func (*FunctionCall) Type() *ast.Type {

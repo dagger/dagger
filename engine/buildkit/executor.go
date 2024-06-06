@@ -35,6 +35,7 @@ import (
 	"github.com/moby/sys/signal"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
@@ -57,6 +58,8 @@ type ExecutionMetadata struct {
 	OTelEnvs []string
 
 	EnabledGPUs []string
+
+	SpanContext propagation.MapCarrier
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
