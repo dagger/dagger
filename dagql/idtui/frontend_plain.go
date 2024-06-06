@@ -230,6 +230,12 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 		}
 
 		body := log.Body().AsString()
+		if body == "" {
+			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
+			// want to avoid giving it its own line.
+			continue
+		}
+
 		body = strings.TrimSuffix(body, "\n")
 		for _, line := range strings.Split(body, "\n") {
 			spanDt.logs = append(spanDt.logs, logLine{line, log.Timestamp()})
