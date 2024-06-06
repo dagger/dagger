@@ -60,6 +60,10 @@ The SDK support the Dagger Function by initiate it with:
 $ dagger init --sdk=github.com/dagger/dagger/sdk/elixir/runtime <name>
 ```
 
+**CAUTIONS**: Please note that `dagger` version 0.11.6 and earlier are not
+compatible with the runtime on `main` branch, please pin the sdk to `github.com/dagger/dagger/sdk/elixir/runtime@sdk/elixir/v0.11.6`
+instead.
+
 The SDK will generate 2 modules inside the `dagger` directory (or the destination defined
 by `--source` during call `dagger init`):
 
