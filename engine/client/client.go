@@ -134,7 +134,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
 	c.closeCtx, c.closeRequests = context.WithCancel(context.WithoutCancel(ctx))
 
-	// FIXME: is this still needed? (not a problem, just want to be sure)
 	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 
 	defer func() {

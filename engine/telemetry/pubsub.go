@@ -213,20 +213,20 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
-		rw.WriteHeader(http.StatusBadRequest)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var req coltracepb.ExportTraceServiceRequest
 	if err := proto.Unmarshal(body, &req); err != nil {
 		slog.Error("error unmarshalling request", "err", err)
-		rw.WriteHeader(http.StatusBadRequest)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if err := ps.Spans().ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
 		slog.Error("error exporting spans", "err", err)
-		rw.WriteHeader(http.StatusInternalServerError)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -237,20 +237,20 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
-		rw.WriteHeader(http.StatusBadRequest)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var req collogspb.ExportLogsServiceRequest
 	if err := proto.Unmarshal(body, &req); err != nil {
 		slog.Error("error unmarshalling request", "err", err)
-		rw.WriteHeader(http.StatusBadRequest)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if err := ps.Logs().Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
 		slog.Error("error exporting spans", "err", err)
-		rw.WriteHeader(http.StatusInternalServerError)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
