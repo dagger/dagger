@@ -645,56 +645,30 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("otel tcp proxy listen: %w", err)
 	}
-
-	proxyConnPool := pool.New()
-	listenerCtx, cancelListener := context.WithCancel(ctx)
-	listenerPool := pool.New().WithContext(listenerCtx).WithCancelOnError()
-
-	otelProto := "http/protobuf"
-	otelEndpoint := "http://" + listener.Addr().String()
 	otelSrv := &http.Server{
 		Handler: w.telemetryPubSub,
 
 		ReadHeaderTimeout: 10 * time.Second, // for gocritic
 	}
-
-	listenerPool.Go(func(ctx context.Context) error {
-		<-ctx.Done()
-		err := listener.Close()
-		if err != nil {
-			return fmt.Errorf("close otel proxy listener: %w", err)
+	listenerPool := pool.New().WithErrors()
+	listenerPool.Go(func() error {
+		return otelSrv.Serve(listener)
+	})
+	state.cleanups.add("wait for otel proxy", func() error {
+		if err := listenerPool.Wait(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
 		}
 		return nil
 	})
-	listenerPool.Go(func(ctx context.Context) error {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-					err = nil
-				}
-				return err
-			}
-
-			l := &singleConnListener{
-				conn:    conn,
-				closeCh: make(chan struct{}),
-			}
-			proxyConnPool.Go(func() {
-				<-listenerCtx.Done()
-				l.Close()
-			})
-
-			proxyConnPool.Go(func() {
-				otelSrv.Serve(l)
-			})
-		}
+	state.cleanups.add("shutdown otel proxy", func() error {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		return otelSrv.Shutdown(shutdownCtx)
 	})
-	state.cleanups.addNoErr("wait for otel proxy conn pool", proxyConnPool.Wait)
-	state.cleanups.add("wait for otel listener pool", listenerPool.Wait)
-	state.cleanups.addNoErr("cancel otel listener context", cancelListener)
 
 	// Configure our OpenTelemetry proxy. A lot.
+	otelProto := "http/protobuf"
+	otelEndpoint := "http://" + listener.Addr().String()
 	state.spec.Process.Env = append(state.spec.Process.Env,
 		OTelExporterProtocolEnv+"="+otelProto,
 		OTelExporterEndpointEnv+"="+otelEndpoint,
@@ -716,40 +690,6 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	state.spec.Process.Env = append(state.spec.Process.Env,
 		telemetry.PropagationEnv(ctx)...)
 
-	return nil
-}
-
-// TODO dedup from engine/server
-// converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
-type singleConnListener struct {
-	conn      net.Conn
-	l         sync.Mutex
-	closeCh   chan struct{}
-	closeOnce sync.Once
-}
-
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	l.l.Lock()
-	if l.conn == nil {
-		l.l.Unlock()
-		<-l.closeCh
-		return nil, io.ErrClosedPipe
-	}
-	defer l.l.Unlock()
-
-	c := l.conn
-	l.conn = nil
-	return c, nil
-}
-
-func (l *singleConnListener) Addr() net.Addr {
-	return nil
-}
-
-func (l *singleConnListener) Close() error {
-	l.closeOnce.Do(func() {
-		close(l.closeCh)
-	})
 	return nil
 }
 
