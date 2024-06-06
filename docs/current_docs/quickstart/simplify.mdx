@@ -86,6 +86,10 @@ dagger call publish --source=.
 
 As before, you should see the application being tested, built, and published to the [ttl.sh container registry](https://ttl.sh).
 
+:::note PUBLISHING TO PRIVATE CONTAINER REGISTRIES
+This quickstart uses the public [ttl.sh container registry](https://ttl.sh), but Dagger also supports publishing to private registries, including [Docker Hub](../cookbook/cookbook.mdx#publish-a-container-image-to-a-private-registry), [GitHub Container Registry](../cookbook/cookbook.mdx#publish-a-container-image-to-a-private-registry), and many others.
+:::
+
 Using a Daggerverse module instead of writing your own Dagger Functions is often advantageous because:
 
 - It provides ready-to-use functionality encapsulating the community's knowledge. This allows you to get started quickly and confidently, without needing to "roll your own code" from scratch.
