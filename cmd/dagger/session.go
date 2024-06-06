@@ -100,6 +100,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		go func() {
 			if _, err := os.Stdout.Write(paramBytes); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				l.Close()
 			}
 		}()
 
