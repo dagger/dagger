@@ -491,6 +491,128 @@ Execute a build, invalidating the cache on each run:
 dagger call build
 ```
 
+## Secrets
+
+### Use secret variables
+
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API. The secret may be sourced from a host environment variable, host file, or host command execution.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secret-variable/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secret-variable/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Query the API using a secret sourced from an environment variable:
+
+    ```shell
+    dagger call github-api --token=env:GITHUB_API_TOKEN
+    ```
+
+- Query the API using a secret sourced from a file:
+
+    ```shell
+    dagger call github-api --token=file:./github.txt
+    ```
+
+- Query the API using a secret sourced from a command:
+
+    ```shell
+    dagger call github-api --token=cmd:"gh auth token"
+    ```
+
+### Mount files as secrets
+
+The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secret-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secret-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secret-file/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Query the GitHub API using a mounted secret file:
+
+```shell
+dagger call github-auth \
+    --gh-creds=file:$HOME/.config/gh/hosts.yml
+```
+
+### Use secret in Dockerfile build
+
+The following code listing demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secret-dockerfile/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secret-dockerfile/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secret-dockerfile/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The sample Dockerfile below demonstrates the process of mounting the secret using a secret filesystem mount type and using it in the Dockerfile build process:
+
+```shell
+FROM alpine:3.17
+RUN apk add curl
+RUN --mount=type=secret,id=gh-secret curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $(cat /run/secrets/gh-secret)"
+```
+
+#### Example
+
+Build from a Dockerfile with a mounted secret:
+
+```shell
+dagger call build --source=. --secret=env:GITHUB_API_TOKEN
+```
+
 ## Services
 
 ### Bind and use services in Dagger Functions
