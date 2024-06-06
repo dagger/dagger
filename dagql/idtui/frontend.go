@@ -103,7 +103,7 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 		parent = parent.Foreground(moduleColor)
 	}
 	fmt.Fprint(out, parent.String())
-	if r.Verbosity > 0 && call.ReceiverDigest != "" {
+	if r.Verbosity > 2 && call.ReceiverDigest != "" {
 		fmt.Fprint(out, out.String(fmt.Sprintf("@%s", call.ReceiverDigest)).Foreground(faintColor))
 	}
 	return nil
@@ -180,7 +180,7 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 	typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
 	fmt.Fprint(out, typeStr)
 
-	if r.Verbosity > 0 {
+	if r.Verbosity > 2 {
 		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
 	}
 
