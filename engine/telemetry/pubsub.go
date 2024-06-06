@@ -184,38 +184,6 @@ func (ps *PubSub) trackSpans(spans []sdktrace.ReadOnlySpan) {
 	}
 }
 
-func (ps *PubSub) filterAbandonedSpans(spans map[trace.SpanID]sdktrace.ReadOnlySpan) []sdktrace.ReadOnlySpan {
-	ps.spansL.Lock()
-	defer ps.spansL.Unlock()
-	var kept []sdktrace.ReadOnlySpan
-	for _, span := range spans {
-		if ps.isAbandonedL(span) {
-			slog.ExtraDebug("dropping abandoned span", "span", span.Name(), "spanID", span.SpanContext().SpanID())
-			continue
-		}
-		kept = append(kept, span)
-	}
-	return kept
-}
-
-// isAbandonedL returns true if the span or any of its parents are done.
-func (ps *PubSub) isAbandonedL(span sdktrace.ReadOnlySpan) bool {
-	key := spanKey{
-		TraceID: span.SpanContext().TraceID(),
-		SpanID:  span.SpanContext().SpanID(),
-	}
-	for {
-		if ps.spanDone[key] {
-			return true
-		}
-		if parent, ok := ps.spanParents[key]; ok && parent.IsValid() {
-			key.SpanID = parent
-		} else {
-			return false
-		}
-	}
-}
-
 func (ps *PubSub) trackSpan(span sdktrace.ReadOnlySpan) {
 	key := spanKey{
 		TraceID: span.SpanContext().TraceID(),
@@ -722,8 +690,23 @@ func (c *activeClient) startSpan(span sdktrace.ReadOnlySpan) {
 
 func (c *activeClient) finishSpan(span sdktrace.ReadOnlySpan) {
 	c.cond.L.Lock()
-	delete(c.spans, span.SpanContext().SpanID())
+	c.finishAndAbandonChildrenLocked(span)
 	c.cond.L.Unlock()
+}
+
+func (c *activeClient) finishAndAbandonChildrenLocked(span sdktrace.ReadOnlySpan) {
+	delete(c.spans, span.SpanContext().SpanID())
+	for _, s := range c.spans {
+		if s.Parent().SpanID() == span.SpanContext().SpanID() {
+			slog.ExtraDebug("abandoning child span",
+				"parent", span.Name(),
+				"parentID", span.SpanContext().SpanID(),
+				"span", s.Name(),
+				"spanID", s.SpanContext().SpanID(),
+			)
+			c.finishAndAbandonChildrenLocked(s)
+		}
+	}
 }
 
 func (c *activeClient) spanNames() []string {
@@ -797,15 +780,7 @@ func (c *activeClient) wait(ctx context.Context) {
 			break
 		}
 		if c.draining {
-			kept := c.ps.filterAbandonedSpans(c.spans)
-			if len(kept) > 0 {
-				slog.Debug("waiting for spans")
-			} else if len(c.logStreams) > 0 {
-				slog.Debug("waiting for logs")
-			} else {
-				slog.Debug("remaining spans all abandoned")
-				break
-			}
+			slog.Debug("waiting for spans and/or logs to drain")
 		}
 		c.cond.Wait()
 	}
