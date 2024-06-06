@@ -16,7 +16,7 @@ class MyModule {
       .container()
       .from("alpine:3.17")
       .withExec(["apk", "add", "github-cli"])
-      .withSecretVariable("/root/.config/gh/hosts.yml", file)
+      .withMountedSecret("/root/.config/gh/hosts.yml", ghCreds)
       .withExec(["gh", "auth", "status"])
       .stdout()
   }
