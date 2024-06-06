@@ -61,9 +61,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
+	spanName := fmt.Sprintf("exec %s", strings.Join(args, " "))
+
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -101,12 +102,16 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			}
 		}
 
+		// directing telemetry to another span (i.e. a function call).
 		if callerOpts.SpanContext.IsValid() {
 			execMD.SpanContext = propagation.MapCarrier{}
 			otel.GetTextMapPropagator().Inject(
 				trace.ContextWithSpanContext(ctx, callerOpts.SpanContext),
 				execMD.SpanContext,
 			)
+
+			// hide the exec span
+			spanName = buildkit.InternalPrefix + spanName
 		}
 
 		execMD.ClientID, err = container.Query.RegisterCaller(ctx, callerOpts)
@@ -129,6 +134,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerServerIDEnv, clientMetadata.ServerID))
 		}
 	}
+
+	runOpts = append(runOpts, llb.WithCustomName(spanName))
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
 
