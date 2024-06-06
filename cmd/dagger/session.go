@@ -42,6 +42,8 @@ type connectParams struct {
 func EngineSession(cmd *cobra.Command, args []string) error {
 	// discard SIGPIPE, which can happen when stdout or stderr are closed
 	// (possibly from the spawning process going away)
+	//
+	// see https://pkg.go.dev/os/signal#hdr-SIGPIPE for more info
 	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 
 	ctx := cmd.Context()
