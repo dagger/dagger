@@ -155,16 +155,18 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			WithSecretVariable("GIT_CONFIG_VALUE_0", dag.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
 	}
 
+	tmpBranch := "internal/publish"
 	result := git.
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		WithExec([]string{"git", "clone", opts.source, "/src/dagger"}).
 		WithWorkdir("/src/dagger").
+		WithExec([]string{"git", "clone", opts.source, "."}).
+		WithExec([]string{"git", "fetch", "origin", opts.sourceTag + ":" + tmpBranch}).
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", opts.sourcePath,
 			"--tree-filter", opts.sourceFilter,
-			"--", opts.sourceTag,
+			"--", tmpBranch,
 		})
 	if !opts.dryRun {
 		result = result.WithExec([]string{

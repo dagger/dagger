@@ -139,6 +139,9 @@ func (t TypescriptSDK) Publish(
 	npmToken *Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/typescript/v")
+	if dryRun {
+		version = "prepatch"
+	}
 
 	build := t.nodeJsBase().
 		WithExec([]string{"npm", "run", "build"}).
