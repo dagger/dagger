@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
@@ -15,6 +16,10 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) error {
+	if debug {
+		params.LogLevel = slog.LevelDebug
+	}
+
 	if params.RunnerHost == "" {
 		var err error
 		params.RunnerHost, err = engine.RunnerHost()

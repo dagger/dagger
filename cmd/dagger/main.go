@@ -169,8 +169,8 @@ var rootCmd = &cobra.Command{
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	flags.CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&debug, "debug", "d", false, "show debug logs and full verbosity")
-	flags.BoolVarP(&silent, "silent", "s", false, "disable terminal UI and progress output")
+	flags.BoolVarP(&debug, "debug", "d", debug, "show debug logs and full verbosity")
+	flags.BoolVarP(&silent, "silent", "s", silent, "disable terminal UI and progress output")
 	flags.StringVar(&progress, "progress", "auto", "progress output format (auto, plain, tty)")
 
 	for _, fl := range []string{"workdir"} {
@@ -272,8 +272,9 @@ func main() {
 
 	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
 		telemetryCfg := telemetry.Config{
-			Detect:             true,
-			Resource:           Resource(),
+			Detect:   true,
+			Resource: Resource(),
+
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
 			LiveLogExporters:   []sdklog.Exporter{Frontend.LogExporter()},
 		}

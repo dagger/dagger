@@ -70,6 +70,9 @@ type Params struct {
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
+
+	// Log level (0 = INFO)
+	LogLevel slog.Level
 }
 
 type Client struct {
@@ -248,7 +251,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "connecting to engine")
 	defer telemetry.End(span, func() error { return rerr })
 
-	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, c.LogLevel)
 	defer logs.Close()
 
 	slog.Info("connecting", "runner", c.RunnerHost, "client", c.ID)
@@ -260,7 +263,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.bkClient = bkClient
 
 	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
-		slog.Info("dialing telemetry", "remote", c.RunnerHost)
+		slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 		// Open a separate connection for telemetry.
 		telemetryConn, err := grpc.NewClient(
@@ -299,7 +302,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 			}
 		}
 
-		slog.Info("dialed telemetry", "elapsed", elapsed)
+		slog.Debug("subscribed to telemetry", "elapsed", elapsed)
 
 		return nil
 	}); err != nil {
@@ -322,7 +325,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	ctx, sessionSpan := Tracer().Start(ctx, "starting session")
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
-	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, c.LogLevel)
 	defer logs.Close()
 
 	hostname, err := os.Hostname()
