@@ -50,9 +50,9 @@ type Frontend interface {
 	sdklog.LogExporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
-	ConnectedToEngine(name string, version string)
+	ConnectedToEngine(ctx context.Context, name string, version string)
 	// ConnectedToCloud is called when the CLI has started emitting events to The Cloud.
-	ConnectedToCloud(url string)
+	ConnectedToCloud(ctx context.Context, url string, msg string)
 }
 
 // DumpID is exposed for troubleshooting.

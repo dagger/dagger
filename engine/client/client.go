@@ -63,8 +63,8 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineCallback func(string, string)
-	CloudCallback  func(string)
+	EngineCallback func(context.Context, string, string)
+	CloudCallback  func(context.Context, string, string)
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.LogExporter
@@ -284,11 +284,11 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	}
 
 	if c.EngineCallback != nil {
-		c.EngineCallback(bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
+		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version)
 	}
 	if c.CloudCallback != nil {
-		if url, ok := telemetry.URLForTrace(ctx); ok {
-			c.CloudCallback(url)
+		if url, msg, ok := telemetry.URLForTrace(ctx); ok {
+			c.CloudCallback(ctx, url, msg)
 		}
 	}
 

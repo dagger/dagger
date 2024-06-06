@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -44,6 +45,7 @@ type frontendPretty struct {
 
 	// panels
 	logsPanel *panel
+	msgsPanel *panel
 
 	// TUI state/config
 	restore func()  // restore terminal
@@ -93,15 +95,33 @@ func New() Frontend {
 		view:    new(strings.Builder),
 
 		logsPanel: newPanel(profile),
+		msgsPanel: newPanel(profile),
 	}
 }
 
-func (fe *frontendPretty) ConnectedToEngine(name string, version string) {
+func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, version string) {
 	// noisy, so suppress this for now
 }
 
-func (fe *frontendPretty) ConnectedToCloud(url string) {
-	// noisy, so suppress this for now
+func (fe *frontendPretty) ConnectedToCloud(ctx context.Context, url string, msg string) {
+	out := NewOutput(nil, termenv.WithProfile(fe.profile))
+	fmt.Fprintln(fe.msgsPanel, traceMessage(out, url, msg))
+}
+
+func traceMessage(out *termenv.Output, url string, msg string) string {
+	buffer := &bytes.Buffer{}
+
+	fmt.Fprint(buffer, out.String("Full trace at ").Bold().String())
+	if out.Profile == termenv.Ascii {
+		fmt.Fprint(buffer, url)
+	} else {
+		fmt.Fprint(buffer, out.Hyperlink(url, url))
+	}
+	if msg != "" {
+		fmt.Fprintf(buffer, " (%s)", msg)
+	}
+
+	return buffer.String()
 }
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
@@ -222,20 +242,24 @@ func (fe *frontendPretty) finalRender() error {
 		}
 	}
 
+	if fe.msgsPanel.buf.Len() > 0 {
+		fmt.Fprintln(out, fe.msgsPanel.buf.String())
+	}
+
 	return renderPrimaryOutput(fe.db)
 }
 
-func (fe *frontendPretty) renderMessages(out *termenv.Output, full bool) (bool, error) {
-	if fe.logsPanel.vterm.UsedHeight() == 0 {
-		return false, nil
+func (fe *frontendPretty) renderPanel(out *termenv.Output, panel *panel, full bool) error {
+	if panel.vterm.UsedHeight() == 0 {
+		return nil
 	}
 	if full {
-		fe.logsPanel.vterm.SetHeight(fe.logsPanel.vterm.UsedHeight())
+		panel.vterm.SetHeight(fe.logsPanel.vterm.UsedHeight())
 	} else {
-		fe.logsPanel.vterm.SetHeight(10)
+		panel.vterm.SetHeight(10)
 	}
-	_, err := fmt.Fprintln(out, fe.logsPanel.vterm.View())
-	return true, err
+	_, err := fmt.Fprintln(out, panel.vterm.View())
+	return err
 }
 
 func (fe *frontendPretty) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
@@ -297,10 +321,13 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	fe.recalculateView()
-	if _, err := fe.renderMessages(out, false); err != nil {
+	if err := fe.renderPanel(out, fe.logsPanel, false); err != nil {
 		return err
 	}
 	if _, err := fe.renderProgress(out); err != nil {
+		return err
+	}
+	if err := fe.renderPanel(out, fe.msgsPanel, false); err != nil {
 		return err
 	}
 	return nil
@@ -329,8 +356,11 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 		if renderedAny {
 			fmt.Fprintln(out)
 		}
-		fe.renderLogs(out, fe.rowsView.Primary, -1)
-		renderedAny = true
+		renderLogs := fe.renderLogs(out, fe.rowsView.Primary, -1)
+		if renderLogs {
+			fmt.Fprintln(out)
+			renderedAny = true
+		}
 	}
 	return renderedAny, nil
 }
@@ -427,6 +457,7 @@ func (fe *frontendPretty) SetWindowSize(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
 	fe.logsPanel.vterm.SetWidth(msg.Width)
+	fe.msgsPanel.vterm.SetWidth(msg.Width)
 }
 
 func (fe *frontendPretty) render() {
@@ -495,7 +526,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) {
+func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) bool {
 	if logs, ok := fe.logs.Logs[span.SpanContext().SpanID()]; ok {
 		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		if depth != -1 {
@@ -503,7 +534,9 @@ func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int)
 		}
 		logs.SetHeight(fe.window.Height / 3)
 		fmt.Fprint(out, logs.View())
+		return logs.UsedHeight() > 0
 	}
+	return false
 }
 
 type prettyLogs struct {

@@ -54,6 +54,9 @@ type frontendPlain struct {
 	output  *termenv.Output
 	profile termenv.Profile
 
+	// msgsBuffer contains messages to display on the final render
+	msgsBuffer strings.Builder
+
 	// ticker keeps a constant frame rate
 	ticker *time.Ticker
 
@@ -65,6 +68,13 @@ type frontendPlain struct {
 }
 
 type spanData struct {
+	// idx is the human-readable number for this span
+	idx uint
+
+	// if set to true, overrides the heuristic from shouldShow
+	// NOTE: currently doesn't work with deeply nested spans
+	mustShow bool
+
 	// ready indicates that the span is ready to be displayed - this allows to
 	// start bufferings logs before we've actually exported the span itself
 	ready bool
@@ -75,8 +85,6 @@ type spanData struct {
 	// the second time
 	ended bool
 
-	// idx is the human-readable number for this span
-	idx uint
 	// logs is a list of log lines pending printing for this span
 	logs []logLine
 }
@@ -106,16 +114,43 @@ func NewPlain() Frontend {
 	}
 }
 
-func (fe *frontendPlain) ConnectedToEngine(name string, version string) {
-	if !fe.Silent {
-		slog.Info("Connected to engine", "name", name, "version", version)
+func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string) {
+	if fe.Silent {
+		return
 	}
+	fe.addVirtualLog(trace.SpanFromContext(ctx), "engine", "name", name, "version", version)
 }
 
-func (fe *frontendPlain) ConnectedToCloud(url string) {
-	if !fe.Silent {
-		slog.Info("Connected to cloud", "url", url)
+func (fe *frontendPlain) ConnectedToCloud(ctx context.Context, url string, msg string) {
+	if fe.Silent {
+		return
 	}
+	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
+	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.output, url, msg))
+}
+
+// addVirtualLog attaches a fake log row to a given span
+func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...string) {
+	if !span.SpanContext().SpanID().IsValid() {
+		return
+	}
+	_ = fields
+
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+
+	line := name
+	for i := 0; i+1 < len(fields); i += 2 {
+		line += " " + fe.output.String(fields[i]+"=").Faint().String() + fields[i+1]
+	}
+
+	spanDt, ok := fe.data[span.SpanContext().SpanID()]
+	if !ok {
+		spanDt = &spanData{}
+		fe.data[span.SpanContext().SpanID()] = spanDt
+	}
+	spanDt.logs = append(spanDt.logs, logLine{line: line})
+	spanDt.mustShow = true
 }
 
 func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
@@ -240,6 +275,9 @@ func (fe *frontendPlain) finalRender() {
 		// if we rendered anything, leave a newline
 		fmt.Fprintln(os.Stderr)
 	}
+	if fe.msgsBuffer.Len() > 0 {
+		fmt.Fprintln(os.Stderr, fe.msgsBuffer.String())
+	}
 	renderPrimaryOutput(fe.db)
 	fe.mu.Unlock()
 }
@@ -277,14 +315,14 @@ func (fe *frontendPlain) renderProgress() {
 }
 
 func (fe *frontendPlain) renderRow(row *TraceRow) {
-	if !fe.shouldShow(fe.FrontendOpts, row) && !fe.Debug {
-		return
-	}
-
 	span := row.Span
 	spanDt := fe.data[span.SpanContext().SpanID()]
 	if !spanDt.ready {
 		// don't render! this span hasn't been exported yet
+		return
+	}
+
+	if !(spanDt.mustShow || fe.shouldShow(fe.FrontendOpts, row)) && !fe.Debug {
 		return
 	}
 
@@ -398,8 +436,10 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 		fmt.Fprint(out, prefix)
 		r.indent(fe.output, depth)
 
-		duration := fmtDuration(logLine.time.Sub(span.StartTime()))
-		fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
+		if !logLine.time.IsZero() {
+			duration := fmtDuration(logLine.time.Sub(span.StartTime()))
+			fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
+		}
 		pipe := out.String("|").Foreground(termenv.ANSIBrightBlack)
 		fmt.Fprintln(out, pipe, logLine.line)
 	}

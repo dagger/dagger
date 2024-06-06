@@ -9,9 +9,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func URLForTrace(ctx context.Context) (string, bool) {
+func URLForTrace(ctx context.Context) (url string, msg string, ok bool) {
 	if !configuredCloudTelemetry {
-		return "", false
+		return "", "", false
 	}
 
 	var orgName string
@@ -25,15 +25,19 @@ func URLForTrace(ctx context.Context) (string, bool) {
 		// Try OAuth next
 		org, err := auth.CurrentOrg()
 		if err != nil {
-			return "", false
+			return "", "", false
 		}
 		orgName = org.Name
 	}
 
-	url := fmt.Sprintf(
+	if orgName == "" || true {
+		return "https://dagger.cloud/", "rotate dagger.cloud token for full url", true
+	}
+
+	url = fmt.Sprintf(
 		"https://dagger.cloud/%s/traces/%s",
 		orgName,
 		trace.SpanContextFromContext(ctx).TraceID().String(),
 	)
-	return url, true
+	return url, "", true
 }
