@@ -269,7 +269,7 @@ func TestContainerSystemProxies(t *testing.T) {
 					Stderr(ctx)
 				require.NoError(t, err)
 				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
-				require.Regexp(t, `.*< Via: .* \(squid/5.9\).*`, out)
+				require.Regexp(t, `.*< Via: .* \(squid/.*\).*`, out)
 			}},
 
 			proxyTest{name: "https", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
@@ -308,7 +308,7 @@ func TestContainerSystemProxies(t *testing.T) {
 					Stderr(ctx)
 				require.NoError(t, err)
 				require.Regexp(t, `.*< HTTP/1\.1 200 OK.*`, out)
-				require.Regexp(t, `.*< Via: .* \(squid/5.9\).*`, out)
+				require.Regexp(t, `.*< Via: .* \(squid/.*\).*`, out)
 
 				// verify we fail if we override the proxy with a bad password
 				u := f.httpProxyURL

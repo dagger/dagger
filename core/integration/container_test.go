@@ -3346,7 +3346,7 @@ func TestContainerImageRef(t *testing.T) {
 				}
 			}`, &res, nil)
 		require.NoError(t, err)
-		require.Regexp(t, res.Container.From.ImageRef, "docker.io/library/"+alpineImage+"@sha256:")
+		require.Contains(t, res.Container.From.ImageRef, "docker.io/library/"+alpineImage+"@sha256:")
 	})
 
 	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {
