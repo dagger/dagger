@@ -95,7 +95,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		slog.Warn("invalid traceID", "traceID", traceID.String())
 	}
 
-	labels := clientMetadata.Labels.
+	labels := enginetel.Labels(clientMetadata.Labels).
 		WithEngineLabel(e.EngineName).
 		WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
 			e.cacheManager.ID() != cache.LocalCacheID)

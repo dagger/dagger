@@ -2,8 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,9 +19,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -130,7 +128,7 @@ func (p clientTracker) extractClient(ctx context.Context, span sdktrace.ReadOnly
 	}
 
 	var clientID string
-	metadata, err := ClientMetadataFromContext(ctx)
+	metadata, err := engine.ClientMetadataFromContext(ctx)
 	if err == nil {
 		clientID = metadata.ClientID
 		// slog.ExtraDebug("!!! > adding client ID from ctx", "client", clientID)
@@ -205,47 +203,6 @@ func (ps *PubSub) trackSpan(span sdktrace.ReadOnlySpan) {
 	}
 
 	// slog.ExtraDebug("!!! trackSpan did not find client ID")
-}
-
-type ClientMetadata struct {
-	// ClientID is unique to each client. The main client's ID is the empty string,
-	// any module and/or nested exec client's ID is a unique digest.
-	ClientID string `json:"client_id"`
-}
-
-const (
-	// NB: a bit odd to move this here, but feels less risky than duplicating
-	ClientMetadataMetaKey = "x-dagger-client-metadata"
-)
-
-func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, fmt.Errorf("failed to get metadata from context")
-	}
-	clientMetadata := &ClientMetadata{}
-	if err := decodeMeta(md, ClientMetadataMetaKey, clientMetadata); err != nil {
-		return nil, err
-	}
-	return clientMetadata, nil
-}
-
-func decodeMeta(md metadata.MD, key string, dest interface{}) error {
-	vals, ok := md[key]
-	if !ok {
-		return fmt.Errorf("failed to get %s from metadata", key)
-	}
-	if len(vals) != 1 {
-		return fmt.Errorf("expected exactly one %s value, got %d", key, len(vals))
-	}
-	jsonPayload, err := base64.StdEncoding.DecodeString(vals[0])
-	if err != nil {
-		return fmt.Errorf("failed to base64-decode %s: %w", key, err)
-	}
-	if err := json.Unmarshal(jsonPayload, dest); err != nil {
-		return fmt.Errorf("failed to JSON-unmarshal %s: %w", key, err)
-	}
-	return nil
 }
 
 func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
