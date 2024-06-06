@@ -36,20 +36,21 @@ func (t Topic) String() string {
 }
 
 type PubSub struct {
-	mux         http.Handler
-	traceSubs   map[Topic][]sdktrace.SpanExporter
-	traceSubsL  sync.Mutex
-	logSubs     map[Topic][]sdklog.Exporter
-	logSubsL    sync.Mutex
-	metricSubs  map[Topic][]sdkmetric.Exporter
-	metricSubsL sync.Mutex
-	clients     map[string]*activeClient
-	clientsL    sync.Mutex
+	mux           http.Handler
+	traceClients  map[trace.TraceID]map[string]struct{}
+	traceClientsL sync.Mutex
+	traceSubs     map[Topic][]sdktrace.SpanExporter
+	traceSubsL    sync.Mutex
+	logSubs       map[Topic][]sdklog.Exporter
+	logSubsL      sync.Mutex
+	metricSubs    map[Topic][]sdkmetric.Exporter
+	metricSubsL   sync.Mutex
+	clients       map[string]*activeClient
+	clientsL      sync.Mutex
 
 	// updated via span processor
 	spanClients map[spanKey]string
 	spanParents map[spanKey]trace.SpanID
-	spanDone    map[spanKey]bool
 	spansL      sync.Mutex
 }
 
@@ -61,15 +62,15 @@ type spanKey struct {
 func NewPubSub() *PubSub {
 	mux := http.NewServeMux()
 	ps := &PubSub{
-		mux:        mux,
-		traceSubs:  map[Topic][]sdktrace.SpanExporter{},
-		logSubs:    map[Topic][]sdklog.Exporter{},
-		metricSubs: map[Topic][]sdkmetric.Exporter{},
-		clients:    map[string]*activeClient{},
+		mux:          mux,
+		traceClients: map[trace.TraceID]map[string]struct{}{},
+		traceSubs:    map[Topic][]sdktrace.SpanExporter{},
+		logSubs:      map[Topic][]sdklog.Exporter{},
+		metricSubs:   map[Topic][]sdkmetric.Exporter{},
+		clients:      map[string]*activeClient{},
 
 		spanClients: map[spanKey]string{},
 		spanParents: map[spanKey]trace.SpanID{},
-		spanDone:    map[spanKey]bool{},
 	}
 	mux.HandleFunc("/v1/traces", ps.TracesHandler)
 	mux.HandleFunc("/v1/logs", ps.LogsHandler)
@@ -85,64 +86,41 @@ func (ps *PubSub) Processor() sdktrace.SpanProcessor {
 
 type clientTracker struct{ *PubSub }
 
-// OnStart sets the client ID on the span, if it is not already present,
-// inheriting it from its parent span if needed by keeping track of all span
-// clients.
+// OnStart keeps track of the client ID and parent span ID for each span,
+// setting it to the starting context's client ID if not present.
 func (p clientTracker) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
 	p.spansL.Lock()
 	defer p.spansL.Unlock()
-	clientID := p.extractClient(ctx, span)
-	if clientID != "" {
-		span.SetAttributes(attribute.String(telemetry.ClientIDAttr, clientID))
+
+	// respect existing client ID. not sure if load bearing, just seems logical;
+	// better to trust the source.
+	for _, attr := range span.Attributes() {
+		if attr.Key == telemetry.ClientIDAttr {
+			p.trackSpan(span)
+			return
+		}
 	}
+
+	// extract client ID from calling context.
+	metadata, err := engine.ClientMetadataFromContext(ctx)
+	if err == nil {
+		span.SetAttributes(attribute.String(telemetry.ClientIDAttr, metadata.ClientID))
+	}
+
+	// track the span, whether we found a client ID or not, so we can step
+	// through parents.
 	p.trackSpan(span)
 }
 
-// OnEnd does nothing. Span client state must be cleaned up when the client
-// goes away, not when a span completes.
-func (p clientTracker) OnEnd(span sdktrace.ReadOnlySpan) {
-	p.spansL.Lock()
-	p.spanDone[spanKey{
-		TraceID: span.SpanContext().TraceID(),
-		SpanID:  span.SpanContext().SpanID(),
-	}] = true
-	p.spansL.Unlock()
-}
+// OnEnd does nothing. Span state is cleaned up when clients go away, not when
+// a span completes.
+func (clientTracker) OnEnd(span sdktrace.ReadOnlySpan) {}
 
 // Shutdown does nothing.
 func (clientTracker) Shutdown(context.Context) error { return nil }
 
 // ForceFlush does nothing.
 func (clientTracker) ForceFlush(context.Context) error { return nil }
-
-func (p clientTracker) extractClient(ctx context.Context, span sdktrace.ReadOnlySpan) string {
-	// slog := slog.With("span", span.Name(), "spanID", span.SpanContext().SpanID())
-
-	// slog.ExtraDebug("!!! ClientAnnotator tracking span clients")
-
-	for _, attr := range span.Attributes() {
-		if attr.Key == telemetry.ClientIDAttr {
-			// slog.ExtraDebug("!!! > found existing client ID", "value", attr.Value.AsString())
-			return attr.Value.AsString()
-		}
-	}
-
-	var clientID string
-	metadata, err := engine.ClientMetadataFromContext(ctx)
-	if err == nil {
-		clientID = metadata.ClientID
-		// slog.ExtraDebug("!!! > adding client ID from ctx", "client", clientID)
-	} else if span.Parent().IsValid() {
-		// NOTE: empty result if not found is OK
-		clientID = p.spanClients[spanKey{
-			TraceID: span.SpanContext().TraceID(),
-			SpanID:  span.Parent().SpanID(),
-		}]
-		// slog.ExtraDebug("!!! > inheriting client ID from parent", "client", clientID)
-	}
-
-	return clientID
-}
 
 // clientsFor returns the relevant client IDs for a given span, traversing
 // through parents, in random order.
@@ -196,28 +174,21 @@ func (ps *PubSub) trackSpan(span sdktrace.ReadOnlySpan) {
 		SpanID:  span.SpanContext().SpanID(),
 	}
 
-	// slog := slog.With("span", span.Name(), "spanID", span.SpanContext().SpanID(), "parentID", span.Parent().SpanID())
-
 	ps.spanParents[key] = span.Parent().SpanID()
-
-	// slog.ExtraDebug("!!! ClientAnnotator tracking span clients")
 
 	for _, attr := range span.Attributes() {
 		if attr.Key == telemetry.ClientIDAttr {
-			// slog.ExtraDebug("!!! > trackSpan tracking client ID", "value", attr.Value.AsString())
 			ps.spanClients[key] = attr.Value.AsString()
 			return
 		}
 	}
-
-	// slog.ExtraDebug("!!! trackSpan did not find client ID")
 }
 
 func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ps.mux.ServeHTTP(w, r)
 }
 
-func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
+func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
@@ -241,7 +212,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	rw.WriteHeader(http.StatusCreated)
 }
 
-func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
+func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
@@ -285,38 +256,61 @@ func (ps *PubSub) Drain(client string, immediate bool) {
 	ps.clientsL.Unlock()
 }
 
-func (ps *PubSub) initClient(id string) *activeClient {
+func (ps *PubSub) initTopic(topic Topic) *activeClient {
+	traceID := topic.TraceID
+	clientID := topic.ClientID
+
+	ps.traceClientsL.Lock()
+	clients, found := ps.traceClients[traceID]
+	if !found {
+		clients = map[string]struct{}{}
+		ps.traceClients[traceID] = clients
+	}
+	clients[clientID] = struct{}{}
+	ps.traceClientsL.Unlock()
+
 	ps.clientsL.Lock()
-	defer ps.clientsL.Unlock()
-	c, ok := ps.clients[id]
+	c, ok := ps.clients[clientID]
 	if !ok {
 		c = &activeClient{
 			ps:         ps,
-			id:         id,
+			id:         clientID,
 			cond:       sync.NewCond(&sync.Mutex{}),
 			spans:      map[trace.SpanID]sdktrace.ReadOnlySpan{},
 			logStreams: map[logStream]struct{}{},
 		}
-		ps.clients[id] = c
+		ps.clients[clientID] = c
 	}
 	c.subscribers++
+	defer ps.clientsL.Unlock()
+
 	return c
 }
 
-func (ps *PubSub) lookupClient(id string) (*activeClient, bool) {
-	ps.clientsL.Lock()
-	defer ps.clientsL.Unlock()
-	c, ok := ps.clients[id]
-	return c, ok
-}
+func (ps *PubSub) deinitTopic(topic Topic) {
+	traceID := topic.TraceID
+	clientID := topic.ClientID
 
-func (ps *PubSub) deinitClient(id string) {
+	var lastForTrace bool
+	ps.traceClientsL.Lock()
+	clients, found := ps.traceClients[traceID]
+	if !found {
+		clients = map[string]struct{}{}
+		ps.traceClients[traceID] = clients
+	}
+	delete(clients, clientID)
+	if len(clients) == 0 {
+		lastForTrace = true
+		delete(ps.traceClients, traceID)
+	}
+	ps.traceClientsL.Unlock()
+
 	ps.clientsL.Lock()
-	c, ok := ps.clients[id]
+	c, ok := ps.clients[clientID]
 	if ok {
 		c.subscribers--
 		if c.subscribers == 0 {
-			delete(ps.clients, id)
+			delete(ps.clients, clientID)
 		} else {
 			// still an active subscriber for this client; keep it around
 			ps.clientsL.Unlock()
@@ -328,13 +322,19 @@ func (ps *PubSub) deinitClient(id string) {
 	// free up span parent/client state
 	ps.spansL.Lock()
 	for key, client := range ps.spanClients {
-		if client == id {
+		if client == clientID || (lastForTrace && key.TraceID == traceID) {
 			delete(ps.spanParents, key)
 			delete(ps.spanClients, key)
-			delete(ps.spanDone, key)
 		}
 	}
 	ps.spansL.Unlock()
+}
+
+func (ps *PubSub) lookupClient(id string) (*activeClient, bool) {
+	ps.clientsL.Lock()
+	defer ps.clientsL.Unlock()
+	c, ok := ps.clients[id]
+	return c, ok
 }
 
 type SpansPubSub struct {
@@ -438,8 +438,8 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 
 func (ps *PubSub) SubscribeToSpans(ctx context.Context, topic Topic, exp sdktrace.SpanExporter) error {
 	slog.ExtraDebug("subscribing to spans", "topic", topic)
-	client := ps.initClient(topic.ClientID)
-	defer ps.deinitClient(topic.ClientID)
+	client := ps.initTopic(topic)
+	defer ps.deinitTopic(topic)
 	ps.traceSubsL.Lock()
 	ps.traceSubs[topic] = append(ps.traceSubs[topic], exp)
 	ps.traceSubsL.Unlock()
@@ -523,8 +523,8 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 
 func (ps *PubSub) SubscribeToLogs(ctx context.Context, topic Topic, exp sdklog.Exporter) error {
 	slog.ExtraDebug("subscribing to logs", "topic", topic)
-	client := ps.initClient(topic.ClientID)
-	defer ps.deinitClient(topic.ClientID)
+	client := ps.initTopic(topic)
+	defer ps.deinitTopic(topic)
 	ps.logSubsL.Lock()
 	ps.logSubs[topic] = append(ps.logSubs[topic], exp)
 	ps.logSubsL.Unlock()
@@ -711,11 +711,9 @@ func (c *activeClient) trackLogStream(rec sdklog.Record) {
 	}
 	c.cond.L.Lock()
 	if eof {
-		// slog.Warn("!!! STREAM EOF", "stream", stream)
 		delete(c.logStreams, stream)
 		c.cond.Broadcast()
 	} else if _, active := c.logStreams[stream]; !active {
-		// slog.Warn("!!! STREAM ACTIVE", "stream", stream, "log", rec.Body().AsString())
 		c.logStreams[stream] = struct{}{}
 		c.cond.Broadcast()
 	}
