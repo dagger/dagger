@@ -51,9 +51,10 @@ func (p *SpanHeartbeater) ExportSpans(ctx context.Context, spans []sdktrace.Read
 			span.SpanContext().SpanID(),
 		}
 		if span.EndTime().After(span.StartTime()) {
-			continue
+			delete(p.activeSpans, key)
+		} else {
+			p.activeSpans[key] = span
 		}
-		p.activeSpans[key] = span
 	}
 
 	return p.SpanExporter.ExportSpans(ctx, spans)
@@ -77,7 +78,7 @@ func (p *SpanHeartbeater) heartbeat() {
 				stayinAlive = append(stayinAlive, span)
 			}
 			if len(stayinAlive) > 0 {
-				if err := p.ExportSpans(p.heartbeatCtx, stayinAlive); err != nil {
+				if err := p.SpanExporter.ExportSpans(p.heartbeatCtx, stayinAlive); err != nil {
 					slog.Warn("failed to heartbeat live spans", "error", err)
 				}
 			}
