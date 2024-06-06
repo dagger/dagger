@@ -153,17 +153,25 @@ func (ps *PubSub) clientsFor(traceID trace.TraceID, spanID trace.SpanID) []strin
 		TraceID: traceID,
 		SpanID:  spanID,
 	}
-	// slog := slog.With("traceID", traceID, "spanID", spanID)
 	clients := map[string]struct{}{}
+	seen := map[spanKey]bool{}
 	for {
+		if seen[key] {
+			// something horrible has happened, better than looping forever
+			slog.Error("cycle detected collecting span clients",
+				"originalSpanID", spanID,
+				"traceID", key.TraceID,
+				"spanID", key.SpanID,
+				"seen", seen)
+			break
+		}
+		seen[key] = true
 		if client, ok := ps.spanClients[key]; ok {
-			// slog.ExtraDebug("!!! ClientsFor found client", "client", client, "keySpan", key.SpanID)
 			clients[client] = struct{}{}
 		}
 		if parent, ok := ps.spanParents[key]; ok && parent.IsValid() {
 			key.SpanID = parent
 		} else {
-			// slog.ExtraDebug("!!! ClientsFor did not find parent")
 			break
 		}
 	}
