@@ -61,7 +61,7 @@ $ dagger init --sdk=github.com/dagger/dagger/sdk/elixir/runtime <name>
 ```
 
 **CAUTIONS**: Please note that `dagger` version 0.11.6 and earlier are not
-compatible with the runtime on `main` branch, please pin the sdk to `github.com/dagger/dagger/sdk/elixir/runtime@sdk/elixir/v0.11.6`
+compatible with the runtime on `main` branch. If you are using `dagger` v0.11.6, please pin the sdk to `github.com/dagger/dagger/sdk/elixir/runtime@sdk/elixir/v0.11.6`
 instead.
 
 The SDK will generate 2 modules inside the `dagger` directory (or the destination defined
