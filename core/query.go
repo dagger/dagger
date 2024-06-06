@@ -8,6 +8,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/moby/buildkit/identity"
+	sourcepolicypb "github.com/moby/buildkit/sourcepolicy/pb"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -28,6 +29,9 @@ type Query struct {
 
 	// The current pipeline.
 	Pipeline pipeline.Path
+
+	// The configured source policies
+	SourcePolicy []sourcepolicypb.Policy
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")

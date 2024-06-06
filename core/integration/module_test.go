@@ -5622,7 +5622,7 @@ type Toplevel struct {}
 
 func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 	// get the id of a secret to force the engine to eval it
-	_, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	_, err := dag.SetSecret("mysecret", "asdf" + "asdf").ID(ctx)
 	if err != nil {
 		return err
 	}

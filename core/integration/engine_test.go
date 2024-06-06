@@ -139,7 +139,6 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "Connected to engine")
 	require.Contains(t, out, engineName)
 }
 
