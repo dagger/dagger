@@ -102,6 +102,10 @@ type DBLogExporter struct {
 
 func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
+		if log.Body().AsString() == "" {
+			// eof; ignore
+			continue
+		}
 		if log.SpanID() == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
 			db.PrimaryLogs[log.SpanID()] = append(db.PrimaryLogs[log.SpanID()], log)
