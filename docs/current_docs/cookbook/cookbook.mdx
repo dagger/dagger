@@ -491,7 +491,6 @@ Execute a build, invalidating the cache on each run:
 dagger call build
 ```
 
-<<<<<<< HEAD:docs/current_docs/manuals/developer/cookbook.mdx
 ## Secrets
 
 ### Use secret variables
@@ -501,19 +500,19 @@ The following Dagger Function accepts a GitHub personal access token as a `Secre
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/secret-variable/go/main.go
+```go file=./snippets/secret-variable/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/secret-variable/python/main.py
+```python file=./snippets/secret-variable/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/secret-variable/typescript/index.ts
+```typescript file=./snippets/secret-variable/typescript/index.ts
 ```
 
 </TabItem>
@@ -546,32 +545,32 @@ The following Dagger Function accepts a GitHub hosts configuration file as a `Se
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/secret-file/go/main.go
+```go file=./snippets/secret-file/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/secret-file/python/main.py
+```python file=./snippets/secret-file/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/secret-file/typescript/index.ts
+```typescript file=./snippets/secret-file/typescript/index.ts
 ```
 
 </TabItem>
 </Tabs>
 
-Example:
+#### Example
 
-- Query the GitHub API using a mounted secret file:
+Query the GitHub API using a mounted secret file:
 
-    ```shell
-    dagger call github-auth \
-        --gh-creds=file:$HOME/.config/gh/hosts.yml
-    ```
+```shell
+dagger call github-auth \
+    --gh-creds=file:$HOME/.config/gh/hosts.yml
+```
 
 ### Use secret in Dockerfile build
 
@@ -580,19 +579,19 @@ The following code listing demonstrates how to inject a secret into a Dockerfile
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./cookbook/snippets/secret-dockerfile/go/main.go
+```go file=./snippets/secret-dockerfile/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./cookbook/snippets/secret-dockerfile/python/main.py
+```python file=./snippets/secret-dockerfile/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./cookbook/snippets/secret-dockerfile/typescript/index.ts
+```typescript file=./snippets/secret-dockerfile/typescript/index.ts
 ```
 
 </TabItem>
@@ -608,14 +607,12 @@ RUN --mount=type=secret,id=gh-secret curl "https://api.github.com/repos/dagger/d
 
 #### Example
 
-- Build the Dockerfile with a secret mounted:
+Build from a Dockerfile with a mounted secret:
 
-    ```shell
-    dagger call build --source=. --secret=env:GITHUB_API_TOKEN
-    ```
+```shell
+dagger call build --source=. --secret=env:GITHUB_API_TOKEN
+```
 
-=======
->>>>>>> main:docs/current_docs/cookbook/cookbook.mdx
 ## Services
 
 ### Bind and use services in Dagger Functions
