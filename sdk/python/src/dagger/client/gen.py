@@ -176,11 +176,6 @@ class SocketID(Scalar):
     of type Socket."""
 
 
-class TerminalID(Scalar):
-    """The `TerminalID` scalar type represents an identifier for an object
-    of type Terminal."""
-
-
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
     of type TypeDef."""
@@ -1033,8 +1028,8 @@ class Container(Type):
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
-    ) -> "Terminal":
-        """Return an interactive terminal for this container using its configured
+    ) -> Self:
+        """Opens an interactive terminal for this container using its configured
         default terminal command if not overridden by args (or sh as a
         fallback default).
 
@@ -1063,7 +1058,7 @@ class Container(Type):
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
         ]
         _ctx = self._select("terminal", _args)
-        return Terminal(_ctx)
+        return Container(_ctx)
 
     async def user(self) -> str:
         """Retrieves the user to be set for all commands.
@@ -2342,6 +2337,47 @@ class Directory(Type):
 
     def __await__(self):
         return self.sync().__await__()
+
+    def terminal(
+        self,
+        *,
+        cmd: list[str] | None = None,
+        experimental_privileged_nesting: bool | None = False,
+        insecure_root_capabilities: bool | None = False,
+        container: Container | None = None,
+    ) -> Self:
+        """Opens an interactive terminal in new container with this directory
+        mounted inside.
+
+        Parameters
+        ----------
+        cmd:
+            If set, override the container's default terminal command and
+            invoke these command arguments instead.
+        experimental_privileged_nesting:
+            Provides Dagger access to the executed command.
+            Do not use this option unless you trust the command being
+            executed; the command being executed WILL BE GRANTED FULL ACCESS
+            TO YOUR HOST FILESYSTEM.
+        insecure_root_capabilities:
+            Execute the command with all root capabilities. This is similar to
+            running a command with "sudo" or executing "docker run" with the "
+            --privileged" flag. Containerization does not provide any security
+            guarantees when using this option. It should only be used when
+            absolutely necessary and only with trusted commands.
+        container:
+            If set, override the default container used for the terminal.
+        """
+        _args = [
+            Arg("cmd", [] if cmd is None else cmd),
+            Arg(
+                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
+            ),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg("container", container, None),
+        ]
+        _ctx = self._select("terminal", _args)
+        return Directory(_ctx)
 
     def with_directory(
         self,
@@ -5988,14 +6024,6 @@ class Client(Root):
         _ctx = self._select("loadSocketFromID", _args)
         return Socket(_ctx)
 
-    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
-        """Load a Terminal from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTerminalFromID", _args)
-        return Terminal(_ctx)
-
     def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
         """Load a TypeDef from its ID."""
         _args = [
@@ -6558,57 +6586,6 @@ class Socket(Type):
 
 
 @typecheck
-class Terminal(Type):
-    """An interactive terminal that clients can connect to."""
-
-    async def id(self) -> TerminalID:
-        """A unique identifier for this Terminal.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        TerminalID
-            The `TerminalID` scalar type represents an identifier for an
-            object of type Terminal.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(TerminalID)
-
-    async def websocket_endpoint(self) -> str:
-        """An http endpoint at which this terminal can be connected to over a
-        websocket.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("websocketEndpoint", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -6919,8 +6896,6 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
-    "Terminal",
-    "TerminalID",
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",

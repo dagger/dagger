@@ -60,29 +60,10 @@ dagger call lint stdout
 		return nil
 	},
 	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, modType *modTypeDef) error {
-		if modType.Name() != Terminal {
-			return nil
-		}
-
-		// Even though these flags are global, we only check them just before query
-		// execution because you may want to debug an error during loading or for
-		// --help.
-		if silent || !(progress == "auto" && hasTTY || progress == "tty") {
-			return fmt.Errorf("running shell without the TUI is not supported")
-		}
-		if outputPath != "" {
-			return fmt.Errorf("running shell with --output is not supported")
-		}
 		return nil
 	},
 	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, modType *modTypeDef, response any) error {
 		switch modType.Name() {
-		case Terminal:
-			termEndpoint, ok := response.(string)
-			if !ok {
-				return fmt.Errorf("unexpected response %T: %+v", response, response)
-			}
-			return attachToShell(cmd.Context(), c.c, termEndpoint)
 		case Container, Directory, File:
 			if outputPath != "" {
 				logOutputSuccess(cmd, outputPath)

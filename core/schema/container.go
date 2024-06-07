@@ -475,7 +475,7 @@ func (s *containerSchema) Install() {
 			absolutely necessary and only with trusted commands.`),
 
 		dagql.NodeFunc("terminal", s.terminal).
-			Doc(`Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
 			ArgDoc("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`,
@@ -499,11 +499,6 @@ func (s *containerSchema) Install() {
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
-	}.Install(s.srv)
-
-	dagql.Fields[*core.Terminal]{
-		dagql.Func("websocketEndpoint", s.shellWebsocketEndpoint).
-			Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
 	}.Install(s.srv)
 }
 
@@ -1415,7 +1410,7 @@ func (s *containerSchema) terminal(
 	ctx context.Context,
 	ctr dagql.Instance[*core.Container],
 	args containerTerminalArgs,
-) (*core.Terminal, error) {
+) (*core.Container, error) {
 	if args.Cmd == nil || len(args.Cmd) == 0 {
 		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
 	}
@@ -1433,18 +1428,10 @@ func (s *containerSchema) terminal(
 		args.Cmd = []string{"sh"}
 	}
 
-	term, handler, err := ctr.Self.Terminal(ctr.ID(), &args.TerminalArgs)
+	err := ctr.Self.Terminal(ctx, ctr.ID(), &args.TerminalArgs)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := ctr.Self.Query.MuxEndpoint(ctx, path.Join("/", term.Endpoint), handler); err != nil {
-		return nil, err
-	}
-
-	return term, nil
-}
-
-func (s *containerSchema) shellWebsocketEndpoint(ctx context.Context, parent *core.Terminal, args struct{}) (string, error) {
-	return parent.WebsocketURL(), nil
+	return ctr.Self, nil
 }

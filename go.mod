@@ -45,7 +45,7 @@ require (
 	github.com/google/go-github/v59 v59.0.0
 	github.com/google/uuid v1.6.0
 	github.com/goproxy/goproxy v0.16.10
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/iancoleman/strcase v0.3.0
 	github.com/jackpal/gateway v1.0.15
 	github.com/juju/ansiterm v1.0.0

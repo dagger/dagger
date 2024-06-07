@@ -92,6 +92,21 @@ func (s *directorySchema) Install() {
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+		dagql.NodeFunc("terminal", s.terminal).
+			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
+			ArgDoc("container", `If set, override the default container used for the terminal.`).
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+			FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+			running a command with "sudo" or executing "docker run" with the
+			"--privileged" flag. Containerization does not provide any security
+			guarantees when using this option. It should only be used when
+			absolutely necessary and only with trusted commands.`),
 	}.Install(s.srv)
 }
 
@@ -302,4 +317,36 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 		args.Target,
 		secrets,
 	)
+}
+
+type directoryTerminalArgs struct {
+	core.TerminalArgs
+	Container dagql.Optional[core.ContainerID]
+}
+
+func (s *directorySchema) terminal(
+	ctx context.Context,
+	dir dagql.Instance[*core.Directory],
+	args directoryTerminalArgs,
+) (*core.Directory, error) {
+	if len(args.Cmd) == 0 {
+		args.Cmd = []string{"sh"}
+	}
+
+	var ctr *core.Container
+
+	if args.Container.Valid {
+		inst, err := args.Container.Value.Load(ctx, s.srv)
+		if err != nil {
+			return nil, err
+		}
+		ctr = inst.Self
+	}
+
+	err := dir.Self.Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
+	if err != nil {
+		return nil, err
+	}
+
+	return dir.Self, nil
 }

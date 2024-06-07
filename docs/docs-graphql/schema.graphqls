@@ -341,7 +341,7 @@ type Container {
   sync: ContainerID!
 
   """
-  Return an interactive terminal for this container using its configured default
+  Opens an interactive terminal for this container using its configured default
   terminal command if not overridden by args (or sh as a fallback default).
   """
   terminal(
@@ -366,7 +366,7 @@ type Container {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
-  ): Terminal!
+  ): Container!
 
   """Retrieves the user to be set for all commands."""
   user: String!
@@ -1056,6 +1056,36 @@ type Directory {
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
+
+  """
+  Opens an interactive terminal in new container with this directory mounted inside.
+  """
+  terminal(
+    """
+    If set, override the container's default terminal command and invoke these command arguments instead.
+    """
+    cmd: [String!] = []
+
+    """If set, override the default container used for the terminal."""
+    container: ContainerID
+
+    """
+    Provides Dagger access to the executed command.
+    
+    Do not use this option unless you trust the command being executed; the
+    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    """
+    experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Execute the command with all root capabilities. This is similar to running a
+    command with "sudo" or executing "docker run" with the "--privileged" flag.
+    Containerization does not provide any security guarantees when using this
+    option. It should only be used when absolutely necessary and only with
+    trusted commands.
+    """
+    insecureRootCapabilities: Boolean = false
+  ): Directory!
 
   """Retrieves this directory plus a directory written at the given path."""
   withDirectory(
@@ -2332,9 +2362,6 @@ type Query {
   """Load a Socket from its ID."""
   loadSocketFromID(id: SocketID!): Socket!
 
-  """Load a Terminal from its ID."""
-  loadTerminalFromID(id: TerminalID!): Terminal!
-
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
@@ -2517,22 +2544,6 @@ type Socket {
 The `SocketID` scalar type represents an identifier for an object of type Socket.
 """
 scalar SocketID
-
-"""An interactive terminal that clients can connect to."""
-type Terminal {
-  """A unique identifier for this Terminal."""
-  id: TerminalID!
-
-  """
-  An http endpoint at which this terminal can be connected to over a websocket.
-  """
-  websocketEndpoint: String!
-}
-
-"""
-The `TerminalID` scalar type represents an identifier for an object of type Terminal.
-"""
-scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {

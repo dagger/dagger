@@ -157,6 +157,31 @@ defmodule Dagger.Directory do
     execute(selection, directory.client)
   end
 
+  @doc "Opens an interactive terminal in new container with this directory mounted inside."
+  @spec terminal(t(), [
+          {:cmd, [String.t()]},
+          {:experimental_privileged_nesting, boolean() | nil},
+          {:insecure_root_capabilities, boolean() | nil},
+          {:container, Dagger.ContainerID.t() | nil}
+        ]) :: Dagger.Directory.t()
+  def terminal(%__MODULE__{} = directory, optional_args \\ []) do
+    selection =
+      directory.selection
+      |> select("terminal")
+      |> maybe_put_arg("cmd", optional_args[:cmd])
+      |> maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
+      |> maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+      |> maybe_put_arg("container", optional_args[:container])
+
+    %Dagger.Directory{
+      selection: selection,
+      client: directory.client
+    }
+  end
+
   @doc "Retrieves this directory plus a directory written at the given path."
   @spec with_directory(t(), String.t(), Dagger.Directory.t(), [
           {:exclude, [String.t()]},

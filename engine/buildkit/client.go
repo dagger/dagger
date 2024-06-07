@@ -577,6 +577,112 @@ func (c *Client) ListenHostToContainer(
 	}, nil
 }
 
+type TerminalClient struct {
+	Stdin    io.ReadCloser
+	Stdout   io.WriteCloser
+	Stderr   io.WriteCloser
+	ResizeCh chan bkgw.WinSize
+	ErrCh    chan error
+	Close    func(exitCode int) error
+}
+
+func (c *Client) OpenTerminal(
+	ctx context.Context,
+) (*TerminalClient, error) {
+	terminalClient := session.NewTerminalClient(c.Opts.MainClientCaller.Conn())
+
+	term, err := terminalClient.Session(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	var (
+		stdoutR, stdoutW = io.Pipe()
+		stderrR, stderrW = io.Pipe()
+		stdinR, stdinW   = io.Pipe()
+	)
+
+	forwardFD := func(r io.Reader, fn func([]byte) *session.SessionRequest) error {
+		for {
+			b := make([]byte, 2048)
+			n, err := r.Read(b)
+			if err != nil {
+				if err == io.EOF || err == io.ErrClosedPipe {
+					return nil
+				}
+				return fmt.Errorf("error reading fd: %w", err)
+			}
+
+			if err := term.Send(fn(b[:n])); err != nil {
+				return fmt.Errorf("error forwarding fd: %w", err)
+			}
+		}
+	}
+
+	go forwardFD(stdoutR, func(stdout []byte) *session.SessionRequest {
+		return &session.SessionRequest{
+			Msg: &session.SessionRequest_Stdout{Stdout: stdout},
+		}
+	})
+
+	go forwardFD(stderrR, func(stderr []byte) *session.SessionRequest {
+		return &session.SessionRequest{
+			Msg: &session.SessionRequest_Stderr{Stderr: stderr},
+		}
+	})
+
+	errCh := make(chan error)
+	resizeCh := make(chan bkgw.WinSize)
+	go func() {
+		defer close(errCh)
+		defer close(resizeCh)
+		for {
+			res, err := term.Recv()
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					bklog.G(ctx).Warnf("terminal recv err: %v", err)
+					errCh <- err
+				}
+				return
+			}
+			switch msg := res.GetMsg().(type) {
+			case *session.SessionResponse_Stdin:
+				_, err := stdinW.Write(msg.Stdin)
+				if err != nil {
+					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
+					errCh <- err
+					return
+				}
+			case *session.SessionResponse_Resize:
+				resizeCh <- bkgw.WinSize{
+					Rows: uint32(msg.Resize.Height),
+					Cols: uint32(msg.Resize.Width),
+				}
+			}
+		}
+	}()
+
+	return &TerminalClient{
+		Stdin:    stdinR,
+		Stdout:   stdoutW,
+		Stderr:   stderrW,
+		ErrCh:    errCh,
+		ResizeCh: resizeCh,
+		Close: func(exitCode int) error {
+			defer stdinW.Close()
+			defer term.CloseSend()
+
+			err := term.Send(&session.SessionRequest{
+				Msg: &session.SessionRequest_Exit{Exit: int32(exitCode)},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to close terminal: %w", err)
+			}
+			return nil
+		},
+	}, nil
+}
+
 func withOutgoingContext(ctx context.Context) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
