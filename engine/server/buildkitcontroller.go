@@ -29,16 +29,16 @@ import (
 	"github.com/moby/buildkit/util/throttle"
 	"github.com/moby/locker"
 	"github.com/sirupsen/logrus"
-	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
+	otlptracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 type BuildkitController struct {
@@ -66,7 +66,7 @@ type BuildkitControllerOpts struct {
 	Entitlements           []string
 	EngineName             string
 	Frontends              map[string]frontend.Frontend
-	TelemetryPubSub        *telemetry.PubSub
+	TelemetryPubSub        *enginetel.PubSub
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 	DNSConfig              *oci.DNSConfig
@@ -401,17 +401,17 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
 
-	traceSrv := &telemetry.TraceServer{PubSub: e.TelemetryPubSub}
-	tracev1.RegisterTraceServiceServer(server, traceSrv)
-	telemetry.RegisterTracesSourceServer(server, traceSrv)
+	traceSrv := &enginetel.TraceServer{PubSub: e.TelemetryPubSub}
+	otlptracev1.RegisterTraceServiceServer(server, traceSrv)
+	enginetel.RegisterTracesSourceServer(server, traceSrv)
 
-	logsSrv := &telemetry.LogsServer{PubSub: e.TelemetryPubSub}
-	logsv1.RegisterLogsServiceServer(server, logsSrv)
-	telemetry.RegisterLogsSourceServer(server, logsSrv)
+	logsSrv := &enginetel.LogsServer{PubSub: e.TelemetryPubSub}
+	otlplogsv1.RegisterLogsServiceServer(server, logsSrv)
+	enginetel.RegisterLogsSourceServer(server, logsSrv)
 
-	metricsSrv := &telemetry.MetricsServer{PubSub: e.TelemetryPubSub}
-	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
-	telemetry.RegisterMetricsSourceServer(server, metricsSrv)
+	metricsSrv := &enginetel.MetricsServer{PubSub: e.TelemetryPubSub}
+	otlpmetricsv1.RegisterMetricsServiceServer(server, metricsSrv)
+	enginetel.RegisterMetricsSourceServer(server, metricsSrv)
 }
 
 func (e *BuildkitController) Close() error {

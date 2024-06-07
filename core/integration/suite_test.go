@@ -21,28 +21,38 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/dagger/dagger/telemetry"
 )
 
-func init() {
-	telemetry.Init(context.Background(), telemetry.Config{
-		Detect:   true,
-		Resource: telemetry.FallbackResource(),
-	})
+var testCtx = context.Background()
+
+func TestMain(m *testing.M) {
+	testCtx = telemetry.InitEmbedded(testCtx, nil)
+	res := m.Run()
+	telemetry.Close()
+	os.Exit(res)
 }
 
 func Tracer() trace.Tracer {
-	return otel.Tracer("test")
+	return otel.Tracer("dagger.io/integration")
 }
 
 func connect(t testing.TB, opts ...dagger.ClientOpt) (*dagger.Client, context.Context) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(testCtx)
 	t.Cleanup(cancel)
 
-	ctx, span := Tracer().Start(ctx, t.Name())
-	t.Cleanup(func() { span.End() })
+	ctx, span := Tracer().Start(ctx, t.Name(), telemetry.Encapsulate())
+	t.Cleanup(func() {
+		telemetry.End(span, func() error {
+			if t.Failed() {
+				return fmt.Errorf("test failed")
+			} else {
+				return nil
+			}
+		})
+	})
 
 	opts = append([]dagger.ClientOpt{
 		dagger.WithLogOutput(newTWriter(t)),

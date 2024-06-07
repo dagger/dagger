@@ -1,4 +1,4 @@
-package telemetry
+package core
 
 import (
 	"context"
@@ -8,10 +8,10 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -34,8 +34,8 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		return ctx, dagql.NoopDone
 	}
 	attrs := []attribute.KeyValue{
-		attribute.String(DagDigestAttr, id.Digest().String()),
-		attribute.String(DagCallAttr, callAttr),
+		attribute.String(telemetry.DagDigestAttr, id.Digest().String()),
+		attribute.String(telemetry.DagCallAttr, callAttr),
 	}
 	if idInputs, err := id.Inputs(); err != nil {
 		slog.Warn("failed to compute inputs(id)", "id", id.Display(), "err", err)
@@ -44,21 +44,22 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		for i, input := range idInputs {
 			inputs[i] = input.String()
 		}
-		attrs = append(attrs, attribute.StringSlice(DagInputsAttr, inputs))
+		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
 	if dagql.IsInternal(ctx) {
-		attrs = append(attrs, attribute.Bool(UIInternalAttr, true))
+		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 
 	ctx, span := dagql.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
-	ctx, _, _ = WithStdioToOtel(ctx, dagql.InstrumentationLibrary)
+	logs := telemetry.Logs(ctx, dagql.InstrumentationLibrary)
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
-		defer End(span, func() error { return err })
+		defer telemetry.End(span, func() error { return err })
+		defer logs.Close()
 
 		if cached {
 			// TODO maybe this should be an event?
-			span.SetAttributes(attribute.Bool(CachedAttr, true))
+			span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 		}
 
 		if err != nil {
@@ -82,7 +83,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			isLoader := strings.HasPrefix(id.Field(), "load") && strings.HasSuffix(id.Field(), "FromID")
 			if !isLoader {
 				objDigest := obj.ID().Digest()
-				span.SetAttributes(attribute.String(DagOutputAttr, objDigest.String()))
+				span.SetAttributes(attribute.String(telemetry.DagOutputAttr, objDigest.String()))
 			}
 		}
 
@@ -92,7 +93,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		// operations and their eventual execution. The listed digests will be
 		// correlated to spans coming from Buildkit which set the matching digest
 		// as the 'vertex' span attribute.
-		if hasPBs, ok := res.(hasPBDefinitions); ok {
+		if hasPBs, ok := res.(HasPBDefinitions); ok {
 			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 				slog.Warn("failed to get LLB definitions", "err", err)
 			} else {
@@ -108,15 +109,10 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 						ops = append(ops, dig.String())
 					}
 				}
-				span.SetAttributes(attribute.StringSlice(LLBDigestsAttr, ops))
+				span.SetAttributes(attribute.StringSlice(telemetry.LLBDigestsAttr, ops))
 			}
 		}
 	}
-}
-
-// Also defined in core package.
-type hasPBDefinitions interface {
-	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
 // isIntrospection detects whether an ID is an introspection query.

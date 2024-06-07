@@ -13,13 +13,12 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/vito/progrock/ui"
 	"go.opentelemetry.io/otel/codes"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 )
 
 type frontendPretty struct {
@@ -82,7 +81,7 @@ func New() Frontend {
 	}
 }
 
-func (fe *frontendPretty) ConnectedToEngine(name string, version string) {
+func (fe *frontendPretty) ConnectedToEngine(name, version, clientID string) {
 	// noisy, so suppress this for now
 }
 
@@ -96,14 +95,14 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	fe.FrontendOpts = opts
 
 	// set default context logs
-	ctx = telemetry.WithLogProfile(ctx, fe.profile)
+	ctx = slog.WithLogProfile(ctx, fe.profile)
 
 	// redirect slog to the logs pane
 	level := slog.LevelInfo
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
-	slog.SetDefault(telemetry.PrettyLogger(fe.messagesW, fe.profile, level))
+	slog.SetDefault(slog.PrettyLogger(fe.messagesW, fe.profile, level))
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
@@ -224,7 +223,15 @@ func (fe *frontendPretty) renderMessages(out *termenv.Output, full bool) (bool, 
 	return true, err
 }
 
-func (fe *frontendPretty) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
+	return FrontendSpanExporter{fe}
+}
+
+type FrontendSpanExporter struct {
+	*frontendPretty
+}
+
+func (fe FrontendSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	slog.Debug("frontend exporting", "spans", len(spans))
@@ -240,17 +247,6 @@ func (fe *frontendPretty) ExportSpans(ctx context.Context, spans []sdktrace.Read
 	return fe.db.ExportSpans(ctx, spans)
 }
 
-func (fe *frontendPretty) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	slog.Debug("frontend exporting logs", "logs", len(logs))
-
-	if err := fe.db.ExportLogs(ctx, logs); err != nil {
-		return err
-	}
-	return fe.logs.ExportLogs(ctx, logs)
-}
-
 func (fe *frontendPretty) Shutdown(ctx context.Context) error {
 	if err := fe.db.Shutdown(ctx); err != nil {
 		return err
@@ -258,7 +254,29 @@ func (fe *frontendPretty) Shutdown(ctx context.Context) error {
 	return fe.Close()
 }
 
+func (fe *frontendPretty) LogExporter() sdklog.Exporter {
+	return prettyLogExporter{fe}
+}
+
+type prettyLogExporter struct {
+	*frontendPretty
+}
+
+func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	slog.Debug("frontend exporting logs", "logs", len(logs))
+	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
+		return err
+	}
+	return fe.logs.Export(ctx, logs)
+}
+
 type eofMsg struct{}
+
+func (fe *frontendPretty) ForceFlush(context.Context) error {
+	return nil
+}
 
 func (fe *frontendPretty) Close() error {
 	if fe.program != nil {
@@ -304,7 +322,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 		return false, nil
 	}
 	for _, row := range fe.logsView.Body {
-		if fe.Debug || fe.shouldShow(fe.FrontendOpts, row) {
+		if fe.shouldShow(fe.FrontendOpts, row) {
 			if err := fe.renderRow(out, row, 0); err != nil {
 				return renderedAny, err
 			}
@@ -439,7 +457,7 @@ func (fe *frontendPretty) View() string {
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
-	if !fe.shouldShow(fe.FrontendOpts, row) && !fe.Debug {
+	if !fe.shouldShow(fe.FrontendOpts, row) {
 		return nil
 	}
 	if !row.Span.Passthrough {
@@ -456,7 +474,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth in
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
-	r := renderer{db: fe.db, width: fe.window.Width}
+	r := renderer{db: fe.db, width: fe.window.Width, FrontendOpts: fe.FrontendOpts}
 
 	id := span.Call
 	if id != nil {
@@ -504,14 +522,12 @@ func newPrettyLogs() *prettyLogs {
 	}
 }
 
-var _ sdklog.LogExporter = (*prettyLogs)(nil)
-
-func (l *prettyLogs) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
 		slog.Debug("exporting log", "span", log.SpanID, "body", log.Body().AsString())
 
 		// render vterm for TUI
-		_, _ = fmt.Fprint(l.spanLogs(log.SpanID), log.Body().AsString())
+		_, _ = fmt.Fprint(l.spanLogs(log.SpanID()), log.Body().AsString())
 	}
 	return nil
 }

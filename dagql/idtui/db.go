@@ -6,19 +6,19 @@ import (
 	"sort"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type DB struct {
 	PrimarySpan trace.SpanID
-	PrimaryLogs map[trace.SpanID][]*sdklog.LogData
+	PrimaryLogs map[trace.SpanID][]sdklog.Record
 
 	Traces   map[trace.TraceID]*Trace
 	Spans    map[trace.SpanID]*Span
@@ -32,7 +32,7 @@ type DB struct {
 
 func NewDB() *DB {
 	return &DB{
-		PrimaryLogs: make(map[trace.SpanID][]*sdklog.LogData),
+		PrimaryLogs: make(map[trace.SpanID][]sdklog.Record),
 
 		Traces:   make(map[trace.TraceID]*Trace),
 		Spans:    make(map[trace.SpanID]*Span),
@@ -92,19 +92,33 @@ func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) er
 	return nil
 }
 
-var _ sdklog.LogExporter = (*prettyLogs)(nil)
+func (db *DB) LogExporter() sdklog.Exporter {
+	return DBLogExporter{db}
+}
 
-func (db *DB) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+type DBLogExporter struct {
+	*DB
+}
+
+func (db DBLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
-		if log.SpanID == db.PrimarySpan {
+		if log.Body().AsString() == "" {
+			// eof; ignore
+			continue
+		}
+		if log.SpanID() == db.PrimarySpan {
 			// buffer raw logs so we can replay them later
-			db.PrimaryLogs[log.SpanID] = append(db.PrimaryLogs[log.SpanID], log)
+			db.PrimaryLogs[log.SpanID()] = append(db.PrimaryLogs[log.SpanID()], log)
 		}
 	}
 	return nil
 }
 
 func (db *DB) Shutdown(ctx context.Context) error {
+	return nil // noop
+}
+
+func (db *DB) ForceFlush(ctx context.Context) error {
 	return nil // noop
 }
 
@@ -209,9 +223,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 		case telemetry.UIInternalAttr:
 			spanData.Internal = attr.Value.AsBool()
-
-		case telemetry.UIMaskAttr:
-			spanData.Mask = attr.Value.AsBool()
 
 		case telemetry.UIPassthroughAttr:
 			spanData.Passthrough = attr.Value.AsBool()

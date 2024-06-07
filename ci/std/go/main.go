@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"path"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -90,10 +91,14 @@ func (p *Go) Lint(
 		pkg := pkg
 		golangci := base.WithWorkdir(pkg).WithExec(cmd)
 		eg.Go(func() error {
+			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
+			defer span.End()
 			_, err := golangci.Sync(ctx)
 			return err
 		})
 		eg.Go(func() error {
+			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
+			defer span.End()
 			beforeTidy := p.Source.Directory(pkg)
 			afterTidy := p.Env().WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
 			// FIXME: the client binding for AssertEqual should return only an error.

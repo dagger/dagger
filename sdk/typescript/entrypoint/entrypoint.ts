@@ -6,8 +6,6 @@ import { connection } from "../connect.js"
 import { Args } from "../introspector/registry/registry"
 import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
-import { UI_MASK, UI_PASSTHROUGH } from "../telemetry/attributes.js"
-import { getTracer } from "../telemetry/index.js"
 import { invoke } from "./invoke.js"
 import { load } from "./load.js"
 import { register } from "./register.js"
@@ -36,13 +34,7 @@ export async function entrypoint() {
       let result: any
 
       if (parentName === "") {
-        result = await getTracer().startActiveSpan(
-          "typescript module registration",
-          async () => {
-            return await register(files, scanResult)
-          },
-          { [UI_MASK]: true },
-        )
+        result = await register(files, scanResult)
       } else {
         // Invocation
         const fnName = await fnCall.name()
@@ -59,21 +51,12 @@ export async function entrypoint() {
         await load(files)
 
         try {
-          result = await getTracer().startActiveSpan(
-            "typescript module execution",
-            async () => {
-              return await invoke(scanResult, {
-                parentName,
-                fnName,
-                parentArgs,
-                fnArgs: args,
-              })
-            },
-            {
-              [UI_MASK]: true,
-              [UI_PASSTHROUGH]: true,
-            },
-          )
+          result = await invoke(scanResult, {
+            parentName,
+            fnName,
+            parentArgs,
+            fnArgs: args,
+          })
         } catch (e) {
           if (e instanceof Error) {
             console.error(`Error: ${e.message}`)

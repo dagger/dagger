@@ -4,9 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/dagger/dagger/telemetry"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
+
+	"dagger.io/dagger/telemetry"
 )
 
 // buildkitTelemetryContext returns a context with a wrapped span that has a

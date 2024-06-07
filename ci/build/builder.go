@@ -30,6 +30,8 @@ type Builder struct {
 
 	base       string
 	gpuSupport bool
+
+	race bool
 }
 
 func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error) {
@@ -58,6 +60,9 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 			"go.work",
 			"go.work.sum",
 
+			// don't rebuild on test-only-changes
+			"**/*_test.go",
+
 			// rust
 			"**/target",
 
@@ -78,6 +83,12 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 func (build *Builder) WithVersion(version string) *Builder {
 	b := *build
 	b.version = version
+	return &b
+}
+
+func (build *Builder) WithRace(race bool) *Builder {
+	b := *build
+	b.race = race
 	return &b
 }
 
@@ -113,7 +124,7 @@ func (build *Builder) WithGPUSupport() *Builder {
 }
 
 func (build *Builder) CLI(ctx context.Context) (*dagger.File, error) {
-	return build.binary("./cmd/dagger", true), nil
+	return build.binary("./cmd/dagger", true, build.race), nil
 }
 
 func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
@@ -196,7 +207,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		file *dagger.File
 	}
 	bins := []binAndPath{
-		{path: consts.EngineServerPath, file: build.engineBinary()},
+		{path: consts.EngineServerPath, file: build.engineBinary(build.race)},
 		{path: "/usr/bin/dial-stdio", file: build.dialstdioBinary()},
 		{path: "/opt/cni/bin/dnsname", file: build.dnsnameBinary()},
 		{path: consts.RuncPath, file: build.runcBin()},
@@ -262,22 +273,22 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 }
 
 func (build *Builder) CodegenBinary() *dagger.File {
-	return build.binary("./cmd/codegen", false)
+	return build.binary("./cmd/codegen", false, false)
 }
 
-func (build *Builder) engineBinary() *dagger.File {
-	return build.binary("./cmd/engine", true)
+func (build *Builder) engineBinary(race bool) *dagger.File {
+	return build.binary("./cmd/engine", true, race)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
-	return build.binary("./cmd/dnsname", false)
+	return build.binary("./cmd/dnsname", false, false)
 }
 
 func (build *Builder) dialstdioBinary() *dagger.File {
-	return build.binary("./cmd/dialstdio", false)
+	return build.binary("./cmd/dialstdio", false, false)
 }
 
-func (build *Builder) binary(pkg string, version bool) *dagger.File {
+func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
 	base := dag.Go(build.source).Env().With(build.goPlatformEnv)
 	ldflags := []string{
 		"-s", "-w",
@@ -287,15 +298,20 @@ func (build *Builder) binary(pkg string, version bool) *dagger.File {
 	}
 
 	output := filepath.Join("./bin/", filepath.Base(pkg))
+	buildArgs := []string{
+		"go", "build",
+		"-o", output,
+		"-ldflags", strings.Join(ldflags, " "),
+	}
+	if race {
+		// -race requires cgo
+		base = base.WithEnvVariable("CGO_ENABLED", "1")
+		buildArgs = append(buildArgs, "-race")
+	}
+	buildArgs = append(buildArgs, pkg)
+
 	result := base.
-		WithExec(
-			[]string{
-				"go", "build",
-				"-o", output,
-				"-ldflags", strings.Join(ldflags, " "),
-				pkg,
-			},
-		).
+		WithExec(buildArgs).
 		File(output)
 	return result
 }

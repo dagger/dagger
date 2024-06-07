@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/containerd/containerd/defaults"
@@ -21,6 +22,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
@@ -33,7 +35,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 type DaggerServer struct {
@@ -56,7 +58,7 @@ type DaggerServer struct {
 
 	services *core.Services
 
-	pubsub    *telemetry.PubSub
+	pubsub    *enginetel.PubSub
 	analytics analytics.Tracker
 
 	doneCh    chan struct{}
@@ -93,7 +95,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 		slog.Warn("invalid traceID", "traceID", traceID.String())
 	}
 
-	labels := clientMetadata.Labels.
+	labels := enginetel.Labels(clientMetadata.Labels).
 		WithEngineLabel(e.EngineName).
 		WithServerLabels(engine.Version, runtime.GOOS, runtime.GOARCH,
 			e.cacheManager.ID() != cache.LocalCacheID)
@@ -180,7 +182,7 @@ func (e *BuildkitController) newDaggerServer(ctx context.Context, clientMetadata
 	// stash away the cache so we can share it between other servers
 	root.Cache = dag.Cache
 
-	dag.Around(telemetry.AroundFunc)
+	dag.Around(core.AroundFunc)
 
 	coreMod := &schema.CoreMod{Dag: dag}
 	root.DefaultDeps = core.NewModDeps(root, []core.Mod{coreMod})
@@ -244,7 +246,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// propagate span context from the client (i.e. for Dagger-in-Dagger)
-	ctx = propagation.TraceContext{}.Extract(ctx, propagation.HeaderCarrier(r.Header))
+	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
 
 	errorOut := func(err error, code int) {
 		bklog.G(ctx).WithError(err).Error("failed to serve request")
@@ -337,7 +339,7 @@ func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.services.StopClientServices(ctx, s.serverID)
 
 			// Start draining telemetry
-			s.pubsub.Drain(s.traceID, immediate)
+			s.pubsub.Drain(s.mainClientCallerID, immediate)
 
 			if len(s.upstreamCacheExporterCfgs) > 0 {
 				bklog.G(ctx).Debugf("running cache export for client %s", clientMetadata.ClientID)

@@ -14,9 +14,9 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (

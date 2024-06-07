@@ -29,7 +29,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TracesSourceClient interface {
-	Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (TracesSource_SubscribeClient, error)
+	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (TracesSource_SubscribeClient, error)
 }
 
 type tracesSourceClient struct {
@@ -40,7 +40,7 @@ func NewTracesSourceClient(cc grpc.ClientConnInterface) TracesSourceClient {
 	return &tracesSourceClient{cc}
 }
 
-func (c *tracesSourceClient) Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (TracesSource_SubscribeClient, error) {
+func (c *tracesSourceClient) Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (TracesSource_SubscribeClient, error) {
 	stream, err := c.cc.NewStream(ctx, &TracesSource_ServiceDesc.Streams[0], TracesSource_Subscribe_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (x *tracesSourceSubscribeClient) Recv() (*v1.TracesData, error) {
 // All implementations must embed UnimplementedTracesSourceServer
 // for forward compatibility
 type TracesSourceServer interface {
-	Subscribe(*TelemetryRequest, TracesSource_SubscribeServer) error
+	Subscribe(*SubscribeRequest, TracesSource_SubscribeServer) error
 	mustEmbedUnimplementedTracesSourceServer()
 }
 
@@ -84,7 +84,7 @@ type TracesSourceServer interface {
 type UnimplementedTracesSourceServer struct {
 }
 
-func (UnimplementedTracesSourceServer) Subscribe(*TelemetryRequest, TracesSource_SubscribeServer) error {
+func (UnimplementedTracesSourceServer) Subscribe(*SubscribeRequest, TracesSource_SubscribeServer) error {
 	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedTracesSourceServer) mustEmbedUnimplementedTracesSourceServer() {}
@@ -101,7 +101,7 @@ func RegisterTracesSourceServer(s grpc.ServiceRegistrar, srv TracesSourceServer)
 }
 
 func _TracesSource_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(TelemetryRequest)
+	m := new(SubscribeRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type LogsSourceClient interface {
-	Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (LogsSource_SubscribeClient, error)
+	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (LogsSource_SubscribeClient, error)
 }
 
 type logsSourceClient struct {
@@ -157,7 +157,7 @@ func NewLogsSourceClient(cc grpc.ClientConnInterface) LogsSourceClient {
 	return &logsSourceClient{cc}
 }
 
-func (c *logsSourceClient) Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (LogsSource_SubscribeClient, error) {
+func (c *logsSourceClient) Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (LogsSource_SubscribeClient, error) {
 	stream, err := c.cc.NewStream(ctx, &LogsSource_ServiceDesc.Streams[0], LogsSource_Subscribe_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
@@ -193,7 +193,7 @@ func (x *logsSourceSubscribeClient) Recv() (*v11.LogsData, error) {
 // All implementations must embed UnimplementedLogsSourceServer
 // for forward compatibility
 type LogsSourceServer interface {
-	Subscribe(*TelemetryRequest, LogsSource_SubscribeServer) error
+	Subscribe(*SubscribeRequest, LogsSource_SubscribeServer) error
 	mustEmbedUnimplementedLogsSourceServer()
 }
 
@@ -201,7 +201,7 @@ type LogsSourceServer interface {
 type UnimplementedLogsSourceServer struct {
 }
 
-func (UnimplementedLogsSourceServer) Subscribe(*TelemetryRequest, LogsSource_SubscribeServer) error {
+func (UnimplementedLogsSourceServer) Subscribe(*SubscribeRequest, LogsSource_SubscribeServer) error {
 	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedLogsSourceServer) mustEmbedUnimplementedLogsSourceServer() {}
@@ -218,7 +218,7 @@ func RegisterLogsSourceServer(s grpc.ServiceRegistrar, srv LogsSourceServer) {
 }
 
 func _LogsSource_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(TelemetryRequest)
+	m := new(SubscribeRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
@@ -263,7 +263,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MetricsSourceClient interface {
-	Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (MetricsSource_SubscribeClient, error)
+	Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (MetricsSource_SubscribeClient, error)
 }
 
 type metricsSourceClient struct {
@@ -274,7 +274,7 @@ func NewMetricsSourceClient(cc grpc.ClientConnInterface) MetricsSourceClient {
 	return &metricsSourceClient{cc}
 }
 
-func (c *metricsSourceClient) Subscribe(ctx context.Context, in *TelemetryRequest, opts ...grpc.CallOption) (MetricsSource_SubscribeClient, error) {
+func (c *metricsSourceClient) Subscribe(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (MetricsSource_SubscribeClient, error) {
 	stream, err := c.cc.NewStream(ctx, &MetricsSource_ServiceDesc.Streams[0], MetricsSource_Subscribe_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
@@ -310,7 +310,7 @@ func (x *metricsSourceSubscribeClient) Recv() (*v12.MetricsData, error) {
 // All implementations must embed UnimplementedMetricsSourceServer
 // for forward compatibility
 type MetricsSourceServer interface {
-	Subscribe(*TelemetryRequest, MetricsSource_SubscribeServer) error
+	Subscribe(*SubscribeRequest, MetricsSource_SubscribeServer) error
 	mustEmbedUnimplementedMetricsSourceServer()
 }
 
@@ -318,7 +318,7 @@ type MetricsSourceServer interface {
 type UnimplementedMetricsSourceServer struct {
 }
 
-func (UnimplementedMetricsSourceServer) Subscribe(*TelemetryRequest, MetricsSource_SubscribeServer) error {
+func (UnimplementedMetricsSourceServer) Subscribe(*SubscribeRequest, MetricsSource_SubscribeServer) error {
 	return status.Errorf(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedMetricsSourceServer) mustEmbedUnimplementedMetricsSourceServer() {}
@@ -335,7 +335,7 @@ func RegisterMetricsSourceServer(s grpc.ServiceRegistrar, srv MetricsSourceServe
 }
 
 func _MetricsSource_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(TelemetryRequest)
+	m := new(SubscribeRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}

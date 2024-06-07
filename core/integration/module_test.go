@@ -4220,7 +4220,7 @@ import (
 )
 
 func New() (*Test, error) {
-	return nil, fmt.Errorf("too bad")
+	return nil, fmt.Errorf("too bad: %s", "so sad")
 }
 
 type Test struct {
@@ -4237,7 +4237,7 @@ class Test:
     foo: str = field()
 
     def __init__(self):
-        raise ValueError("too bad")
+        raise ValueError("too bad: " + "so sad")
 `,
 			},
 			{
@@ -4251,7 +4251,7 @@ class Test {
   foo: string
 
   constructor() {
-    throw new Error("too bad")
+    throw new Error("too bad: " + "so sad")
   }
 }
 `,
@@ -4277,7 +4277,7 @@ class Test {
 				require.NoError(t, c.Close())
 
 				t.Log(logs.String())
-				require.Contains(t, logs.String(), "too bad")
+				require.Regexp(t, "too bad: so sad", logs.String())
 			})
 		}
 	})

@@ -22,7 +22,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/telemetry"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 var (
@@ -399,7 +399,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			log := telemetry.GlobalLogger(ctx)
+			_, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn)
 
 			dag := engineClient.Dagger()
 			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
@@ -433,7 +433,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 			}
 			commit := head.Hash()
 
-			log.Debug("git commit", "commit", commit.String())
+			slog.Debug("git commit", "commit", commit.String())
 
 			orig, err := repo.Remote("origin")
 			if err != nil {

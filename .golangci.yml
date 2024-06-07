@@ -69,3 +69,7 @@ linters-settings:
     errorf-multi: false
     asserts: false
     comparison: false
+
+  gocritic:
+    disabled-checks:
+      - ifElseChain

@@ -15,13 +15,13 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -263,12 +263,13 @@ func (svc *Service) startContainer(
 	}()
 
 	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
-	ctx, stdout, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	logs := telemetry.Logs(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
+			logs.Close()
 		}
 	}()
 
@@ -331,7 +332,7 @@ func (svc *Service) startContainer(
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- newHealth(bk, gc, fullHost, ctr.Ports, stderr).Check(ctx)
+		checked <- newHealth(bk, gc, fullHost, ctr.Ports, logs.Stderr).Check(ctx)
 	}()
 
 	env := append([]string{}, execOp.Meta.Env...)
@@ -347,13 +348,13 @@ func (svc *Service) startContainer(
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
 	} else {
-		stdoutCtr = nopCloser{io.MultiWriter(stdout, outBuf)}
+		stdoutCtr = nopCloser{io.MultiWriter(logs.Stdout, outBuf)}
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
 	} else {
-		stderrCtr = nopCloser{io.MultiWriter(stderr, outBuf)}
+		stderrCtr = nopCloser{io.MultiWriter(logs.Stderr, outBuf)}
 	}
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -590,12 +591,13 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	ctx, span := Tracer().Start(ctx, strings.Join(descs, ", "))
-	ctx, _, stderr := telemetry.WithStdioToOtel(ctx, InstrumentationLibrary)
+	logs := telemetry.Logs(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
+			logs.Close()
 		}
 	}()
 
@@ -606,7 +608,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		tunnelServiceHost:  fullHost,
 		tunnelServicePorts: svc.HostPorts,
 		sessionID:          svc.HostSessionID,
-		logWriter:          stderr,
+		logWriter:          logs.Stderr,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
@@ -619,7 +621,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- newHealth(bk, netNS, fullHost, checkPorts, stderr).Check(svcCtx)
+		checked <- newHealth(bk, netNS, fullHost, checkPorts, logs.Stderr).Check(svcCtx)
 	}()
 
 	select {
@@ -639,9 +641,10 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			Host:  fullHost,
 			Ports: checkPorts,
 			Stop: func(context.Context, bool) error {
+				defer span.End()
+				defer logs.Close()
 				netNS.Release(svcCtx)
 				stop()
-				span.End()
 				return nil
 			},
 		}, nil

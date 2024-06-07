@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -16,10 +17,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
-	"github.com/dagger/dagger/telemetry"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
-var sessionLabels = telemetry.NewLabelFlag()
+var sessionLabels = enginetel.NewLabelFlag()
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -39,6 +40,12 @@ type connectParams struct {
 }
 
 func EngineSession(cmd *cobra.Command, args []string) error {
+	// discard SIGPIPE, which can happen when stdout or stderr are closed
+	// (possibly from the spawning process going away)
+	//
+	// see https://pkg.go.dev/os/signal#hdr-SIGPIPE for more info
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
+
 	ctx := cmd.Context()
 
 	sessionToken, err := uuid.NewRandom()
@@ -92,7 +99,8 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		paramBytes = append(paramBytes, '\n')
 		go func() {
 			if _, err := os.Stdout.Write(paramBytes); err != nil {
-				panic(err)
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				l.Close()
 			}
 		}()
 

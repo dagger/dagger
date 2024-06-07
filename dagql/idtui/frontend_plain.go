@@ -13,10 +13,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
 	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel/codes"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -104,9 +103,9 @@ func NewPlain() Frontend {
 	}
 }
 
-func (fe *frontendPlain) ConnectedToEngine(name string, version string) {
+func (fe *frontendPlain) ConnectedToEngine(name, version, clientID string) {
 	if !fe.Silent {
-		slog.Info("Connected to engine", "name", name, "version", version)
+		slog.Info("Connected to engine", "name", name, "version", version, "client", clientID)
 	}
 }
 
@@ -120,14 +119,14 @@ func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(co
 	fe.FrontendOpts = opts
 
 	// set default context logs
-	ctx = telemetry.WithLogProfile(ctx, fe.profile)
+	ctx = slog.WithLogProfile(ctx, fe.profile)
 
 	// redirect slog to the logs pane
 	level := slog.LevelInfo
 	if fe.Debug {
 		level = slog.LevelDebug
 	}
-	slog.SetDefault(telemetry.PrettyLogger(os.Stderr, fe.profile, level))
+	slog.SetDefault(slog.PrettyLogger(os.Stderr, fe.profile, level))
 
 	if !fe.Silent {
 		go func() {
@@ -143,9 +142,6 @@ func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(co
 
 				fe.render()
 			}
-
-			// disable context holds, for this final render of *everything*
-			fe.contextHold = 0
 			fe.render()
 		}()
 	}
@@ -173,7 +169,15 @@ func (fe *frontendPlain) Shutdown(ctx context.Context) error {
 	return fe.db.Shutdown(ctx)
 }
 
-func (fe *frontendPlain) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+func (fe *frontendPlain) SpanExporter() sdktrace.SpanExporter {
+	return plainSpanExporter{fe}
+}
+
+type plainSpanExporter struct {
+	*frontendPlain
+}
+
+func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
@@ -197,29 +201,47 @@ func (fe *frontendPlain) ExportSpans(ctx context.Context, spans []sdktrace.ReadO
 	return fe.db.ExportSpans(ctx, spans)
 }
 
-func (fe *frontendPlain) ExportLogs(ctx context.Context, logs []*sdklog.LogData) error {
+func (fe *frontendPlain) LogExporter() sdklog.Exporter {
+	return plainLogExporter{fe}
+}
+
+type plainLogExporter struct {
+	*frontendPlain
+}
+
+func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
 	slog.Debug("frontend exporting logs", "logs", len(logs))
 
-	err := fe.db.ExportLogs(ctx, logs)
+	err := fe.db.LogExporter().Export(ctx, logs)
 	if err != nil {
 		return err
 	}
 	for _, log := range logs {
-		spanDt, ok := fe.data[log.SpanID]
+		spanDt, ok := fe.data[log.SpanID()]
 		if !ok {
 			spanDt = &spanData{}
-			fe.data[log.SpanID] = spanDt
+			fe.data[log.SpanID()] = spanDt
 		}
 
 		body := log.Body().AsString()
+		if body == "" {
+			// NOTE: likely just indicates EOF (stdio.eof=true attr); either way we
+			// want to avoid giving it its own line.
+			continue
+		}
+
 		body = strings.TrimSuffix(body, "\n")
 		for _, line := range strings.Split(body, "\n") {
 			spanDt.logs = append(spanDt.logs, logLine{line, log.Timestamp()})
 		}
 	}
+	return nil
+}
+
+func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
 }
 
@@ -259,7 +281,9 @@ func (fe *frontendPlain) render() {
 }
 
 func (fe *frontendPlain) finalRender() {
-	if fe.Debug || fe.Verbosity > 0 {
+	if !fe.Silent {
+		// disable context holds, for this final render of *everything*
+		fe.contextHold = 0
 		fe.render()
 	}
 
@@ -269,7 +293,7 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderRow(row *TraceRow) {
-	if !fe.shouldShow(fe.FrontendOpts, row) && !fe.Debug {
+	if !fe.shouldShow(fe.FrontendOpts, row) {
 		return
 	}
 
@@ -337,9 +361,14 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := renderer{db: fe.db, width: -1}
+	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
 	prefix := fe.output.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
+
+	if r.Debug {
+		prefix += fe.output.String(fmt.Sprintf("%s: ", span.SpanContext().SpanID().String())).Foreground(termenv.ANSIBrightBlack).String()
+	}
+
 	if span.Call != nil {
 		call := &callpbv1.Call{
 			Field:          span.Call.Field,
@@ -382,7 +411,7 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 
 	spanDt := fe.data[span.SpanContext().SpanID()]
 
-	r := renderer{db: fe.db, width: -1}
+	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
 	for _, logLine := range spanDt.logs {
 		fmt.Fprint(out, out.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta))

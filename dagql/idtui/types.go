@@ -4,7 +4,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/dagger/dagger/engine/slog"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -48,19 +47,6 @@ func CollectSpans(db *DB, traceID trace.TraceID) []*Span {
 		}
 		if traceID.IsValid() && span.SpanContext().TraceID() != traceID {
 			continue
-		}
-		if span.Mask && span.Parent().IsValid() {
-			masked := db.Spans[span.Parent().SpanID()]
-			if masked != nil {
-				masked.Passthrough = true
-			} else {
-				// FIXME(vito): still investigating why this happens, but in
-				// the mean time, better not to panic
-				slog.Warn("masked parent span not found; possible data loss?",
-					"traceID", traceID,
-					"spanID", span.SpanContext().SpanID(),
-					"parentID", span.Parent().SpanID())
-			}
 		}
 		spans = append(spans, span)
 	}

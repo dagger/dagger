@@ -18,10 +18,10 @@ import (
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/telemetry"
 )
 
 // Directory is a content-addressed directory.
