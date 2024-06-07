@@ -1,5 +1,5 @@
 ---
-slug: /integrations/734201/gitlab
+slug: /integrations/gitlab
 ---
 
 # GitLab CI
@@ -22,7 +22,7 @@ The following code listing illustrates Dagger usage in a GitLab CI/CD pipeline, 
 
 In this case, each GitLab Runner must be configured to only run on nodes with pre-provisioned instances of the Dagger Engine. This is achieved using taints and tolerations on the nodes, and pod affinity.
 
-The following code listings illustrate the configuration to be applied to each GitLab Runner, with taints, tolerations and pod affinity set via the `dagger-node` key. For an example of the corresponding node configuration, refer to the [OpenShift](./248292-openshift.mdx) integration page.
+The following code listings illustrate the configuration to be applied to each GitLab Runner, with taints, tolerations and pod affinity set via the `dagger-node` key. For an example of the corresponding node configuration, refer to the [OpenShift](./openshift.mdx) integration page.
 
 To use this configuration, replace the YOUR-GITLAB-URL placeholder with the URL of your GitLab instance and replace the YOUR-GITLAB-RUNNER-TOKEN-REFERENCE placeholder with your [GitLab Runner authentication token](https://docs.gitlab.com/ee/ci/runners/runners_scope.html#create-a-shared-runner-with-a-runner-authentication-token).
 

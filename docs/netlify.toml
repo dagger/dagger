@@ -196,44 +196,14 @@
 
 [[redirects]]
   # redirect CI pages from user guide
-  from = "/user-guide/ci/533927-argo-workflows"
-  to = "/integrations/533927/argo-workflows"
+  from = "/user-guide/ci/:docid-*"
+  to = "/integrations/:splat"
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/642920-github-actions"
-  to = "/integrations/642920/github-actions"
-  status = 301
-
-[[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/734201-gitlab"
-  to = "/integrations/734201/gitlab"
-  status = 301
-
-[[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/592501-circleci"
-  to = "/integrations/592501/circleci"
-  status = 301
-
-[[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/322019-jenkins"
-  to = "/integrations/322019/jenkins"
-  status = 301
-
-[[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/197291-azure-pipelines"
-  to = "/integrations/197291/azure-pipelines"
-  status = 301
-
-[[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/963919-aws-codebuild"
-  to = "/integrations/963919/aws-codebuild"
+  # redirect integrations
+  from = "/integrations/:docid/*"
+  to = "/integrations/:splat"
   status = 301
 
 [[redirects]]
