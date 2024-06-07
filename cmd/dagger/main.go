@@ -49,10 +49,11 @@ var (
 
 	workdir string
 
-	debug     bool
-	verbosity int = idtui.DefaultVerbosity
-	silent    bool
-	progress  string
+	debug       bool
+	verbosity   int = idtui.DefaultVerbosity
+	silent      bool
+	progress    string
+	interactive bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -171,8 +172,9 @@ var rootCmd = &cobra.Command{
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	flags.CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&debug, "debug", "d", debug, "show debug logs and full verbosity")
-	flags.BoolVarP(&silent, "silent", "s", silent, "disable terminal UI and progress output")
+	flags.BoolVarP(&debug, "debug", "d", false, "show debug logs and full verbosity")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "interactive mode will spawn a terminal on container exec failure")
+	flags.BoolVarP(&silent, "silent", "s", false, "disable terminal UI and progress output")
 	flags.StringVar(&progress, "progress", "auto", "progress output format (auto, plain, tty)")
 
 	for _, fl := range []string{"workdir"} {
