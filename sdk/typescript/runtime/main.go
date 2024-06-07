@@ -16,7 +16,7 @@ const (
 	nodeVersion = "21.3"
 
 	nodeImageDigest = "sha256:3dab5cc219983a5f1904d285081cceffc9d181e64bed2a4a18855d2d62c64ccb"
-	bunImageDigest  = "sha256:82d3d3b8ad96c4eea45c88167ce46e7e24afc726897d48e48cc6d6bf230c061c"
+	bunImageDigest  = "sha256:a87fa7c4c7fbd2e98cf9c5616e1d47aed65f96805c7a7830f734b27ef8bd75de"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
