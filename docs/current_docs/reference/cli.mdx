@@ -13,6 +13,7 @@ The Dagger CLI provides a command-line interface to Dagger.
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -53,6 +54,7 @@ dagger call [options]
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -93,6 +95,7 @@ dagger config -m github.com/dagger/hello-dagger
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -140,6 +143,7 @@ dagger develop [options]
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -176,6 +180,7 @@ dagger functions [options] [function]...
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -227,6 +232,7 @@ dagger init --name=hello --sdk=python --source=some/subdir
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -266,6 +272,7 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -288,6 +295,7 @@ dagger login [options] [org]
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -310,6 +318,7 @@ dagger logout
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -368,6 +377,7 @@ EOF
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -423,6 +433,7 @@ dagger run python main.py
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
@@ -445,6 +456,7 @@ dagger version
 
 ```
   -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all

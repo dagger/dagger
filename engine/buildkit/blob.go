@@ -43,7 +43,7 @@ func (c *Client) DefToBlob(
 	}
 	cachedRes, err := resultProxy.Result(ctx)
 	if err != nil {
-		return nil, desc, wrapError(ctx, err, c.ID())
+		return nil, desc, wrapError(ctx, err, c)
 	}
 	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
 	if !ok {
@@ -90,7 +90,7 @@ func (c *Client) DefToBlob(
 		Evaluate:   true,
 	})
 	if err != nil {
-		return nil, desc, fmt.Errorf("failed to solve blobsource: %w", wrapError(ctx, err, c.ID()))
+		return nil, desc, fmt.Errorf("failed to solve blobsource: %w", wrapError(ctx, err, c))
 	}
 
 	return blobPB, desc, nil

@@ -461,6 +461,68 @@ type Test struct {
 		err = cmd.Wait()
 		require.NoError(t, err)
 	})
+
+	t.Run("on failure", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
+	import "context"
+
+	func New(ctx context.Context) *Test {
+		return &Test{
+			Ctr: dag.Container().
+				From("%s").
+				WithExec([]string{"sh", "-c", "echo breakpoint > /fail && exit 42"}),
+		}
+	}
+
+	type Test struct {
+		Ctr *Container
+	}
+	`, alpineImage)), 0644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		// cache the module load itself so there's less to wait for in the shell invocation below
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		require.NoError(t, err)
+
+		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+
+		// We want the size to be big enough to fit the output we're expecting, but increasing
+		// the size also eventually slows down the tests due to more output being generated and
+		// needing parsing.
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "--interactive", "call", "ctr")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /fail")
+		require.NoError(t, err)
+
+		err = console.ExpectLineRegex(ctx, "breakpoint")
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.Error(t, err)
+	})
 }
 
 // tuiConsole wraps expect.Console with methods that allow us to enforce
