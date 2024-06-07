@@ -22,7 +22,7 @@ const (
 	nodeVersionMaintenance = "18"
 	nodeVersionLTS         = "20"
 
-	bunVersion = "1.0.27"
+	bunVersion = "1.1.12"
 )
 
 type TypescriptSDK struct {
@@ -211,7 +211,7 @@ func (t TypescriptSDK) bunJsBase() *Container {
 	mountPath := fmt.Sprintf("/%s", appDir)
 
 	return dag.Container().
-		From("oven/bun:"+bunVersion).
+		From("oven/bun:"+bunVersion+"-alpine").
 		WithWorkdir(mountPath).
 		WithMountedCache("/root/.bun/install/cache", dag.CacheVolume("bun_cache")).
 		WithFile(fmt.Sprintf("%s/package.json", mountPath), src.File("package.json")).

@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	bunVersion  = "1.0.27"
+	bunVersion  = "1.1.12"
 	nodeVersion = "21.3"
 
 	nodeImageDigest = "sha256:3dab5cc219983a5f1904d285081cceffc9d181e64bed2a4a18855d2d62c64ccb"
-	bunImageDigest  = "sha256:a87fa7c4c7fbd2e98cf9c5616e1d47aed65f96805c7a7830f734b27ef8bd75de"
+	bunImageDigest  = "sha256:6568a679b87107d3d7d46b829f614c443e73bbe3bf7d6ea5c9ceb8f845869c96"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
