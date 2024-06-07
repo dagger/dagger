@@ -8,7 +8,6 @@ import (
 
 	"github.com/moby/buildkit/identity"
 
-	"github.com/dagger/dagger/ci/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -36,7 +35,7 @@ func (t *Test) All(
 	// +optional
 	race bool,
 ) error {
-	return t.test(ctx, "", "./...", failfast, parallel, timeout, race)
+	return t.test(ctx, "", "./...", failfast, parallel, timeout, race, 1)
 }
 
 // Run "important" engine tests
@@ -52,7 +51,7 @@ func (t *Test) Important(
 	race bool,
 ) error {
 	// These tests give good basic coverage of functionality w/out having to run everything
-	return t.test(ctx, `^(TestModule|TestContainer)`, "./...", failfast, parallel, timeout, race)
+	return t.test(ctx, `^(TestModule|TestContainer)`, "./...", failfast, parallel, timeout, race, 1)
 }
 
 // Run custom engine tests
@@ -70,8 +69,11 @@ func (t *Test) Custom(
 	timeout string,
 	// +optional
 	race bool,
+	// +default=1
+	// +optional
+	count int,
 ) error {
-	return t.test(ctx, run, pkg, failfast, parallel, timeout, race)
+	return t.test(ctx, run, pkg, failfast, parallel, timeout, race, count)
 }
 
 func (t *Test) test(
@@ -82,6 +84,7 @@ func (t *Test) test(
 	parallel int,
 	timeout string,
 	race bool,
+	count int,
 ) error {
 	cgoEnabledEnv := "0"
 	args := []string{
@@ -117,7 +120,7 @@ func (t *Test) test(
 	}
 
 	// Disable test caching
-	args = append(args, "-count=1")
+	args = append(args, fmt.Sprintf("-count=%d", count))
 
 	if testRegex != "" {
 		args = append(args, "-run", testRegex)
@@ -188,12 +191,10 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
-	tests := util.GoBase(t.Dagger.Source).
+	tests := t.Dagger.Go().Env().
 		WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.10.0"}).
-		WithMountedDirectory("/app", t.Dagger.Source). // need all the source for extension tests
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
-		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngineSvc).
 		WithServiceBinding("registry", registrySvc)
 

@@ -110,31 +110,39 @@ describe("TypeScript default client", function () {
 })
 
 describe("TypeScript sdk Connect", function () {
-  it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
-    this.timeout(60000)
+  describe("DAGGER_SESSION envs", function () {
+    let oldEnv: string
 
-    process.env["DAGGER_SESSION_TOKEN"] = "foo"
-    process.env["DAGGER_SESSION_PORT"] = "1234"
+    before(() => {
+      oldEnv = JSON.stringify(process.env)
+      process.env["DAGGER_SESSION_TOKEN"] = "foo"
+      process.env["DAGGER_SESSION_PORT"] = "1234"
+    })
 
-    await connect(
-      async (client) => {
-        const authorization = JSON.stringify(
-          client["_ctx"]["_client"]?.requestConfig.headers,
-        )
+    it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
+      this.timeout(60000)
 
-        assert.equal(
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          client["_ctx"]["_client"]["url"],
-          "http://127.0.0.1:1234/query",
-        )
-        assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)
-      },
-      { LogOutput: process.stderr },
-    )
+      await connect(
+        async (client) => {
+          const authorization = JSON.stringify(
+            client["_ctx"]["_client"]?.requestConfig.headers,
+          )
 
-    delete process.env["DAGGER_SESSION_PORT"]
-    delete process.env["DAGGER_SESSION_TOKEN"]
+          assert.equal(
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            client["_ctx"]["_client"]["url"],
+            "http://127.0.0.1:1234/query",
+          )
+          assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)
+        },
+        { LogOutput: process.stderr },
+      )
+    })
+
+    after(() => {
+      process.env = JSON.parse(oldEnv)
+    })
   })
 
   it.skip("Connect to local engine and execute a simple query to make sure it does not fail", async function () {

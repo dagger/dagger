@@ -16,13 +16,14 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/propagation"
+	"dagger.io/dagger/telemetry"
 )
 
 type cliSessionConn struct {
 	*http.Client
 	childCancel func()
 	childProc   *exec.Cmd
+	stderrBuf   *safeBuffer
 }
 
 func (c *cliSessionConn) Host() string {
@@ -39,7 +40,7 @@ func (c *cliSessionConn) Close() error {
 				return nil
 			}
 
-			return err
+			return fmt.Errorf("close: %w\nstderr:\n%s", err, c.stderrBuf.String())
 		}
 	}
 	return nil
@@ -90,11 +91,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	ctx = fallbackSpanContext(ctx)
 
 	// propagate trace context to the child process (i.e. for Dagger-in-Dagger)
-	carrier := propagation.MapCarrier{}
-	propagation.TraceContext{}.Inject(ctx, carrier)
-	for key, value := range carrier {
-		env = append(env, strings.ToUpper(key)+"="+value)
-	}
+	env = append(env, telemetry.PropagationEnv(ctx)...)
 
 	cmdCtx, cmdCancel := context.WithCancel(ctx)
 
@@ -241,6 +238,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		Client:      defaultHTTPClient(&params),
 		childCancel: cmdCancel,
 		childProc:   proc,
+		stderrBuf:   stderrBuf,
 	}, nil
 }
 

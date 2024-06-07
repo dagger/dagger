@@ -58,9 +58,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
@@ -68,9 +65,9 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/network/netinst"
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
@@ -92,7 +89,7 @@ func init() {
 type workerInitializerOpt struct {
 	config         *config.Config
 	sessionManager *session.Manager
-	traceSocket    string
+	pubsub         *telemetry.PubSub
 }
 
 var (
@@ -684,19 +681,10 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config, pubs
 		return nil, nil, err
 	}
 
-	var traceSocket string
-	if pubsub != nil {
-		traceSocket = filepath.Join(cfg.Root, "otel-grpc.sock")
-		if err := runOtelController(traceSocket, pubsub); err != nil {
-			logrus.Warnf("failed set up otel-grpc controller: %v", err)
-			traceSocket = ""
-		}
-	}
-
 	w, err := newWorker(ctx, c, workerInitializerOpt{
 		config:         cfg,
 		sessionManager: sessionManager,
-		traceSocket:    traceSocket,
+		pubsub:         pubsub,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create worker: %w", err)
@@ -886,25 +874,6 @@ func parseBoolOrAuto(s string) (*bool, error) {
 	}
 	b, err := strconv.ParseBool(s)
 	return &b, err
-}
-
-// Run a separate gRPC serving _only_ the trace/log exporter services.
-func runOtelController(p string, pubsub *telemetry.PubSub) error {
-	server := grpc.NewServer()
-	tracev1.RegisterTraceServiceServer(server, &telemetry.TraceServer{PubSub: pubsub})
-	logsv1.RegisterLogsServiceServer(server, &telemetry.LogsServer{PubSub: pubsub})
-	metricsv1.RegisterMetricsServiceServer(server, &telemetry.MetricsServer{PubSub: pubsub})
-	uid := os.Getuid()
-	l, err := sys.GetLocalListener(p, uid, uid)
-	if err != nil {
-		return err
-	}
-	if err := os.Chmod(p, 0o666); err != nil {
-		l.Close()
-		return err
-	}
-	go server.Serve(l)
-	return nil
 }
 
 type networkConfig struct {

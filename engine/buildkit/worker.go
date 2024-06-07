@@ -49,6 +49,7 @@ import (
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
+	"github.com/dagger/dagger/engine/telemetry"
 )
 
 /*
@@ -87,7 +88,7 @@ type sharedWorkerState struct {
 	mu               sync.RWMutex
 	apparmorProfile  string
 	selinux          bool
-	tracingSocket    string
+	telemetryPubSub  *telemetry.PubSub
 	entitlements     entitlements.Set
 }
 
@@ -102,7 +103,7 @@ type NewWorkerOpts struct {
 	ApparmorProfile      string
 	SELinux              bool
 	ParallelismSem       *semaphore.Weighted
-	TraceSocket          string
+	TelemetryPubSub      *telemetry.PubSub
 	DefaultCgroupParent  string
 	Entitlements         []string
 	GCPolicy             []client.PruneInfo
@@ -130,7 +131,7 @@ func NewWorker(ctx context.Context, opts *NewWorkerOpts) (*Worker, error) {
 		running:         make(map[string]*execState),
 		apparmorProfile: opts.ApparmorProfile,
 		selinux:         opts.SELinux,
-		tracingSocket:   opts.TraceSocket,
+		telemetryPubSub: opts.TelemetryPubSub,
 		entitlements:    entitlements.Set{},
 	}}
 

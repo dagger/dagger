@@ -107,14 +107,17 @@ func (c *withDeadlineConn) Read(b []byte) (n int, err error) {
 	defer cancel()
 
 	if !c.readDeadline.IsZero() {
-		if time.Now().After(c.readDeadline) {
+		// capture with the lock held to prevent goroutine race
+		deadline := c.readDeadline
+
+		if time.Now().After(deadline) {
 			c.readCond.L.Unlock()
 			// return early without calling inner Read
 			return 0, os.ErrDeadlineExceeded
 		}
 
 		go func() {
-			dt := time.Until(c.readDeadline)
+			dt := time.Until(deadline)
 			if dt > 0 {
 				time.Sleep(dt)
 			}
@@ -233,7 +236,7 @@ func (c *withDeadlineConn) SetReadDeadline(t time.Time) error {
 
 	if len(readers) > 0 && !t.IsZero() {
 		go func() {
-			dt := time.Until(c.readDeadline)
+			dt := time.Until(t)
 			if dt > 0 {
 				time.Sleep(dt)
 			}

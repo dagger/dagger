@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	bunVersion  = "1.0.27"
+	bunVersion  = "1.1.12"
 	nodeVersion = "21.3"
 
 	nodeImageDigest = "sha256:3dab5cc219983a5f1904d285081cceffc9d181e64bed2a4a18855d2d62c64ccb"
-	bunImageDigest  = "sha256:82d3d3b8ad96c4eea45c88167ce46e7e24afc726897d48e48cc6d6bf230c061c"
+	bunImageDigest  = "sha256:6568a679b87107d3d7d46b829f614c443e73bbe3bf7d6ea5c9ceb8f845869c96"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
@@ -60,7 +60,7 @@ const (
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
-func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
@@ -102,17 +102,17 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
+func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
 	// Get base container
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
+
 	return dag.GeneratedCode(
-		dag.Directory().WithDirectory(
-			".",
-			ctr.Directory(ModSourceDirPath),
-			DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules/**"}}),
+		ctr.
+			Directory(ModSourceDirPath).
+			WithoutDirectory("**/node_modules/**"),
 	).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",
@@ -125,7 +125,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	// Load module name for the template class
 	name, err := modSource.ModuleOriginalName(ctx)
 	if err != nil {
@@ -187,7 +187,7 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			// Comment cache here, it seems it creates cache conflicts with yarn (v1 and v4).
 			// We should investigate this further and see if we hit the same issue with pnpm.
 			// WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
-			WithExec([]string{"npm", "install", "-g", "tsx"}), nil
+			WithExec([]string{"npm", "install", "-g", "tsx@4.13.0"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -272,14 +272,12 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *Container, name, introspectionJSON, subPath string) *Directory {
+func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectionJSON *File, subPath string) *Directory {
 	return ctr.
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
-		// Write the introspection file.
-		WithNewFile(schemaPath, ContainerWithNewFileOpts{
-			Contents: introspectionJSON,
-		}).
+		// Mount the introspection file.
+		WithMountedFile(schemaPath, introspectionJSON).
 		// Execute the code generator using the given introspection file.
 		WithExec([]string{
 			codegenBinPath,

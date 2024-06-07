@@ -10,8 +10,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/telemetry"
 )
 
 type portHealthChecker struct {

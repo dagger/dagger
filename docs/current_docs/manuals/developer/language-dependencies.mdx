@@ -70,7 +70,7 @@ The lock file should only include dependencies, and not the editable installs fo
 
 ### Poetry's lock file
 
-Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./module-structure.mdx#modules-as-python-libraries). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
+Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./module-structure.mdx#language-native-packaging). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
 
 ```console
 poetry export --with dev --without main -o requirements.lock

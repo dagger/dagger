@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
@@ -12,9 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/build"
-	"github.com/dagger/dagger/ci/consts"
 	"github.com/dagger/dagger/ci/internal/dagger"
-	"github.com/dagger/dagger/ci/util"
 )
 
 type Engine struct {
@@ -24,6 +21,8 @@ type Engine struct {
 	Config []string // +private
 
 	Trace bool // +private
+
+	Race bool // +private
 
 	GPUSupport bool   // +private
 	ImageBase  string // +private
@@ -36,6 +35,11 @@ func (e *Engine) WithConfig(key, value string) *Engine {
 
 func (e *Engine) WithArg(key, value string) *Engine {
 	e.Args = append(e.Args, key+"="+value)
+	return e
+}
+
+func (e *Engine) WithRace() *Engine {
+	e.Race = true
 	return e
 }
 
@@ -79,7 +83,9 @@ func (e *Engine) Container(
 	if err != nil {
 		return nil, err
 	}
-	builder = builder.WithVersion(e.Dagger.Version.String())
+	builder = builder.
+		WithVersion(e.Dagger.Version.String()).
+		WithRace(e.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -149,45 +155,26 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
-	return lintGoModule(ctx, all, daggerDevelop(util.GoDirectory(e.Dagger.Source), ""), []string{
+	// Packages to lint
+	packages := []string{
 		"",
+		// FIXME: should the CI lint itself?
 		"ci",
-	})
-}
-
-func lintGoModule(ctx context.Context, all bool, src *Directory, pkgs []string) error {
-	eg, ctx := errgroup.WithContext(ctx)
-
-	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
-	if all {
-		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
+		"ci/dirdiff",
+		"ci/std/go",
+		"ci/std/graphql",
 	}
-	for _, pkg := range pkgs {
-		golangci := dag.Container().
-			From(consts.GolangLintImage).
-			WithMountedDirectory("/app", src).
-			WithWorkdir(path.Join("/app", pkg)).
-			WithExec(cmd)
-		eg.Go(func() error {
-			_, err := golangci.Sync(ctx)
-			return err
-		})
-
-		eg.Go(func() error {
-			return util.DiffDirectoryF(ctx, src.Directory(pkg), func(ctx context.Context) (*dagger.Directory, error) {
-				return util.GoBase(src).
-					WithWorkdir(path.Join("/app", pkg)).
-					WithExec([]string{"go", "mod", "tidy"}).
-					Directory("."), nil
-			}, "go.mod", "go.sum")
-		})
+	// Packages that need codegen
+	codegen := []string{
+		"",
+		"ci/dirdiff",
+		"ci/std/go",
+		"ci/std/graphql",
 	}
 
-	return eg.Wait()
-}
-
-func daggerDevelop(dir *Directory, path string) *Directory {
-	return dir.WithDirectory(path, dir.Directory(path).AsModule().GeneratedContextDirectory())
+	return e.Dagger.Go().
+		WithCodegen(codegen).
+		Lint(ctx, packages, all)
 }
 
 // Publish all engine images to a registry

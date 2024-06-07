@@ -18,10 +18,10 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
-	"github.com/dagger/dagger/telemetry"
-	"github.com/dagger/dagger/telemetry/sdklog"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type FrontendOpts struct {
@@ -46,11 +46,11 @@ type Frontend interface {
 	Background(cmd tea.ExecCommand) error
 
 	// Can consume otel spans and logs.
-	sdktrace.SpanExporter
-	sdklog.LogExporter
+	SpanExporter() sdktrace.SpanExporter
+	LogExporter() sdklog.Exporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
-	ConnectedToEngine(ctx context.Context, name string, version string)
+	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
 	// ConnectedToCloud is called when the CLI has started emitting events to The Cloud.
 	ConnectedToCloud(ctx context.Context, url string, msg string)
 }
@@ -79,6 +79,8 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 }
 
 type renderer struct {
+	FrontendOpts
+
 	db *DB
 
 	width int
@@ -86,7 +88,7 @@ type renderer struct {
 
 const (
 	kwColor     = termenv.ANSICyan
-	parentColor = termenv.ANSIWhite
+	faintColor  = termenv.ANSIBrightBlack
 	moduleColor = termenv.ANSIMagenta
 )
 
@@ -101,10 +103,13 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 		parent = parent.Foreground(moduleColor)
 	}
 	fmt.Fprint(out, parent.String())
+	if r.Verbosity > 2 && call.ReceiverDigest != "" {
+		fmt.Fprint(out, out.String(fmt.Sprintf("@%s", call.ReceiverDigest)).Foreground(faintColor))
+	}
 	return nil
 }
 
-func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call, prefix string, depth int, inline bool) error {
+func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Call, prefix string, depth int, inline bool) error {
 	if !inline {
 		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
@@ -114,19 +119,19 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 		r.renderStatus(out, span)
 	}
 
-	if id.ReceiverDigest != "" {
-		if err := r.renderIDBase(out, r.db.MustCall(id.ReceiverDigest)); err != nil {
+	if call.ReceiverDigest != "" {
+		if err := r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest)); err != nil {
 			return err
 		}
 		fmt.Fprint(out, ".")
 	}
 
-	fmt.Fprint(out, out.String(id.Field).Bold())
+	fmt.Fprint(out, out.String(call.Field).Bold())
 
-	if len(id.Args) > 0 {
+	if len(call.Args) > 0 {
 		fmt.Fprint(out, "(")
 		var needIndent bool
-		for _, arg := range id.Args {
+		for _, arg := range call.Args {
 			if arg.GetValue().GetCallDigest() != "" {
 				needIndent = true
 				break
@@ -136,7 +141,7 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 			fmt.Fprintln(out)
 			depth++
 			depth++
-			for _, arg := range id.Args {
+			for _, arg := range call.Args {
 				fmt.Fprint(out, prefix)
 				r.indent(out, depth)
 				fmt.Fprintf(out, out.String("%s:").Foreground(kwColor).String(), arg.GetName())
@@ -163,7 +168,7 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 			r.indent(out, depth)
 			depth-- //nolint:ineffassign
 		} else {
-			for i, arg := range id.Args {
+			for i, arg := range call.Args {
 				if i > 0 {
 					fmt.Fprint(out, ", ")
 				}
@@ -174,9 +179,13 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, id *callpbv1.Call,
 		fmt.Fprint(out, ")")
 	}
 
-	if id.Type != nil {
-		typeStr := out.String(": " + id.Type.ToAST().String()).Faint()
+	if call.Type != nil {
+		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
 		fmt.Fprint(out, typeStr)
+	}
+
+	if r.Verbosity > 2 {
+		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
 	}
 
 	if span != nil {
@@ -269,6 +278,12 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 	symbol = out.String(symbol).Foreground(color).String()
 
 	fmt.Fprintf(out, "%s ", symbol)
+
+	if r.Debug {
+		fmt.Fprintf(out, "%s ", out.String(
+			span.SpanContext().SpanID().String(),
+		).Foreground(termenv.ANSIBrightBlack))
+	}
 }
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
@@ -329,6 +344,10 @@ type spanFilter struct {
 }
 
 func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
+	if opts.Debug {
+		// debug reveals all
+		return true
+	}
 	span := row.Span
 	if span.IsInternal() && opts.Verbosity < 2 {
 		// internal steps are hidden by default
@@ -369,7 +388,7 @@ func renderPrimaryOutput(db *DB) error {
 		data := l.Body().AsString()
 		var stream int
 		l.WalkAttributes(func(attr log.KeyValue) bool {
-			if attr.Key == telemetry.LogStreamAttr {
+			if attr.Key == telemetry.StdioStreamAttr {
 				stream = int(attr.Value.AsInt64())
 				return false
 			}

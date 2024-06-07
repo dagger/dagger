@@ -14,14 +14,12 @@ import (
 
 	controlapi "github.com/moby/buildkit/api/services/control"
 	"google.golang.org/grpc/metadata"
-
-	"github.com/dagger/dagger/telemetry"
 )
 
 const (
 	EngineVersionMetaKey = "x-dagger-engine"
 
-	clientMetadataMetaKey  = "x-dagger-client-metadata"
+	ClientMetadataMetaKey  = "x-dagger-client-metadata"
 	localImportOptsMetaKey = "x-dagger-local-import-opts"
 	localExportOptsMetaKey = "x-dagger-local-export-opts"
 
@@ -60,7 +58,7 @@ type ClientMetadata struct {
 	ClientHostname string `json:"client_hostname"`
 
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
-	Labels telemetry.Labels `json:"labels"`
+	Labels map[string]string `json:"labels"`
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
@@ -76,7 +74,7 @@ type ClientMetadata struct {
 }
 
 func (m ClientMetadata) ToGRPCMD() metadata.MD {
-	return encodeMeta(clientMetadataMetaKey, m)
+	return encodeMeta(ClientMetadataMetaKey, m)
 }
 
 func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
@@ -105,7 +103,7 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 		return nil, fmt.Errorf("failed to get metadata from context")
 	}
 	clientMetadata := &ClientMetadata{}
-	if err := decodeMeta(md, clientMetadataMetaKey, clientMetadata); err != nil {
+	if err := decodeMeta(md, ClientMetadataMetaKey, clientMetadata); err != nil {
 		return nil, err
 	}
 	return clientMetadata, nil

@@ -13,6 +13,9 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ContainerExecOpts struct {
@@ -58,9 +61,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
+	spanName := fmt.Sprintf("exec %s", strings.Join(args, " "))
+
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -97,11 +101,23 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 				Cache: true,
 			}
 		}
+
+		// directing telemetry to another span (i.e. a function call).
+		if callerOpts.SpanContext.IsValid() {
+			execMD.SpanContext = propagation.MapCarrier{}
+			otel.GetTextMapPropagator().Inject(
+				trace.ContextWithSpanContext(ctx, callerOpts.SpanContext),
+				execMD.SpanContext,
+			)
+
+			// hide the exec span
+			spanName = buildkit.InternalPrefix + spanName
+		}
+
 		execMD.ClientID, err = container.Query.RegisterCaller(ctx, callerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("register caller: %w", err)
 		}
-		execMD.OTELEnvs = callerOpts.OTELEnvs
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
@@ -118,6 +134,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerServerIDEnv, clientMetadata.ServerID))
 		}
 	}
+
+	runOpts = append(runOpts, llb.WithCustomName(spanName))
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
 

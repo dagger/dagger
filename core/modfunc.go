@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/iancoleman/strcase"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
@@ -184,6 +183,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		Module:         mod,
 		Cache:          opts.Cache,
 		SkipSelfSchema: opts.SkipSelfSchema,
+		SpanContext:    trace.SpanContextFromContext(ctx),
 	}
 	if fn.objDef != nil {
 		callMeta.ParentName = fn.objDef.OriginalName
@@ -195,18 +195,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
-	}
-
-	// Used by the shim to associate logs to the function call instead of the
-	// exec /runtime process, which we hide.
-	tc := propagation.TraceContext{}
-	carrier := propagation.MapCarrier{}
-	tc.Inject(ctx, carrier)
-	for _, f := range tc.Fields() {
-		name := "DAGGER_FUNCTION_" + strcase.ToScreamingSnake(f)
-		if val, ok := carrier[f]; ok {
-			callMeta.OTELEnvs = append(callMeta.OTELEnvs, name+"="+val)
-		}
 	}
 
 	// Setup the Exec for the Function call and evaluate it

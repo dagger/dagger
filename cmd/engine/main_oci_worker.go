@@ -157,7 +157,7 @@ func init() {
 		Value: func() int64 {
 			keep := defaultConf.Workers.OCI.GCKeepStorage.AsBytes(defaultConf.Root)
 			if keep == 0 {
-				keep = config.DetectDefaultGCCap().AsBytes(defaultConf.Root)
+				keep = config.DiskSpace{Percentage: 75}.AsBytes(defaultConf.Root)
 			}
 			return keep / 1e6
 		}(),
@@ -342,7 +342,7 @@ func newWorker(ctx context.Context, c *cli.Context, common workerInitializerOpt)
 		ApparmorProfile:      cfg.ApparmorProfile,
 		SELinux:              cfg.SELinux,
 		ParallelismSem:       parallelismSem,
-		TraceSocket:          common.traceSocket,
+		TelemetryPubSub:      common.pubsub,
 		DefaultCgroupParent:  cfg.DefaultCgroupParent,
 		Entitlements:         common.config.Entitlements,
 		GCPolicy:             gcPolicy,
@@ -377,7 +377,7 @@ func snapshotterFactory(commonRoot string, cfg config.OCIConfig, sm *session.Man
 				grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
 				grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
 			}
-			conn, err := grpc.Dial(dialer.DialAddress(address), gopts...)
+			conn, err := grpc.NewClient(dialer.DialAddress(address), gopts...)
 			if err != nil {
 				return nil, errors.Wrapf(err, "failed to dial %q", address)
 			}

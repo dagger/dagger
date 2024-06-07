@@ -6,7 +6,7 @@ const SERVICE_NAME = "dagger-typescript-sdk"
 const env = getEnvWithoutDefaults()
 
 /*
- * Look for variables prefixed with OTEL to see if OpenTelemetry is configured.
+ * Look for variables prefixed with OTel to see if OpenTelemetry is configured.
  */
 function otelConfigured(): boolean {
   return Object.keys(process.env).some((key) => key.startsWith("OTEL_"))

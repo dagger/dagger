@@ -1,0 +1,25 @@
+syntax = "proto3";
+package telemetry;
+
+import "opentelemetry/proto/trace/v1/trace.proto";
+import "opentelemetry/proto/logs/v1/logs.proto";
+import "opentelemetry/proto/metrics/v1/metrics.proto";
+
+option go_package = "./telemetry";
+
+service TracesSource {
+  rpc Subscribe (SubscribeRequest) returns (stream opentelemetry.proto.trace.v1.TracesData) {}
+}
+
+service LogsSource {
+  rpc Subscribe (SubscribeRequest) returns (stream opentelemetry.proto.logs.v1.LogsData) {}
+}
+
+service MetricsSource {
+  rpc Subscribe (SubscribeRequest) returns (stream opentelemetry.proto.metrics.v1.MetricsData) {}
+}
+
+message SubscribeRequest {
+  bytes trace_id = 1;
+  string client_id = 2;
+};

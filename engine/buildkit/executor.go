@@ -35,6 +35,7 @@ import (
 	"github.com/moby/sys/signal"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
@@ -54,9 +55,11 @@ type ExecutionMetadata struct {
 
 	SystemEnvNames []string
 
-	OTELEnvs []string
+	OTelEnvs []string
 
 	EnabledGPUs []string
+
+	SpanContext propagation.MapCarrier
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -121,7 +124,7 @@ func (w *Worker) Run(
 		w.setUserGroup,
 		w.setExitCodePath,
 		w.setupStdio,
-		w.setupOTEL,
+		w.setupOTel,
 		w.setupSecretScrubbing,
 		w.setProxyEnvs,
 		w.enableGPU,

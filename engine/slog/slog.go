@@ -4,7 +4,15 @@ import (
 	"context"
 	"io"
 	"log/slog"
+
+	"github.com/muesli/termenv"
 )
+
+type logProfileKey struct{}
+
+func WithLogProfile(ctx context.Context, profile termenv.Profile) context.Context {
+	return context.WithValue(ctx, logProfileKey{}, profile)
+}
 
 const (
 	// standard levels
@@ -16,7 +24,7 @@ const (
 	// custom levels
 
 	// LevelExtraDebug is between Debug and Trace. It had extra information that's useful sometimes
-	// but not as overwhelming as Trace. e.g. OTEL logging is at this level.
+	// but not as overwhelming as Trace. e.g. OTel logging is at this level.
 	LevelExtraDebug = slog.LevelDebug - 1
 
 	// Trace is the most verbose level. It includes session logging and an enormous amount of detail from

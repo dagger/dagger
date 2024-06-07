@@ -1,6 +1,4 @@
 // Go name linting. Copied from https://github.com/golang/lint/blob/master/lint.go#L719
-//
-//nolint:gocritic
 package templates
 
 import (

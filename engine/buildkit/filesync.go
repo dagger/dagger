@@ -19,6 +19,7 @@ import (
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/compression"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 
@@ -79,7 +80,7 @@ func (c *Client) LocalImport(
 	}
 	copyPB := copyDef.ToPB()
 
-	return c.DefToBlob(ctx, copyPB)
+	return c.DefToBlob(ctx, copyPB, compression.Zstd)
 }
 
 // Import a directory from the engine container, as opposed to from a client

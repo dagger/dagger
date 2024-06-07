@@ -236,10 +236,6 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	return typeDefs, nil
 }
 
-func (mod *Module) DependencySchemaIntrospectionJSON(ctx context.Context, forModule bool) (string, error) {
-	return mod.Deps.SchemaIntrospectionJSON(ctx, forModule)
-}
-
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	var modType ModType
 	switch typeDef.Kind {

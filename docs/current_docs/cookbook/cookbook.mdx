@@ -1,0 +1,1144 @@
+---
+slug: /cookbook
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Cookbook
+
+## Filesystem
+
+### Copy a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/copy-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/copy-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/copy-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Copy the `/myapp` host directory to `/src` in the container and return the modified container:
+
+    ```shell
+    dagger call copy-directory --source=./myapp/
+    ```
+
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container and return the modified container:
+
+    ```shell
+    dagger call copy-directory --source=github.com/dagger/dagger#main
+    ```
+
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
+
+    ```shell
+    dagger call \
+      copy-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+
+### Modify a copied directory or remote repository in a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container, adds a file to it, and returns the modified container.
+
+:::note
+Modifications made to a directory's contents after it is written to a container filesystem do not appear on the source. Data flows only one way between Dagger operations, because they are connected in a DAG. To transfer modifications back to the local host, you must explicitly export the directory back to the host filesystem.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/copy-modify-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/copy-modify-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/copy-modify-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Copy the `/myapp` host directory to `/src` in the container, add a file to it, and return the modified container:
+
+    ```shell
+    dagger call copy-and-modify-directory --source=./myapp/
+    ```
+
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and return the modified container:
+
+    ```shell
+    dagger call copy-and-modify-directory --source=github.com/dagger/dagger#main
+    ```
+
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and list the contents of the directory:
+
+    ```shell
+    dagger call \
+      copy-and-modify-directory --source=https://github.com/dagger/dagger#main \
+      directory --path=/src \
+      entries
+    ```
+
+### Copy a file to a container
+
+The following Dagger Function accepts a `File` argument representing the host file to be copied. It writes the specified file to a container in the `/src/` directory and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/copy-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/copy-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/copy-file/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+-  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and return the modified container:
+
+    ```shell
+    dagger call copy-file --f=/home/admin/archives.zip
+    ```
+
+-  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
+
+    ```shell
+    dagger call \
+      copy-file --f=/home/admin/archives.zip \
+      directory --path=/src \
+      entries
+    ```
+
+### Copy a subset of a directory or remote repository to a container
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a remote Git repository. It copies the specified directory to the `/src` path in a container, using wildcard patterns to exclude specified sub-directories and files, and returns the modified container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/copy-filter-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/copy-filter-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/copy-filter-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Copy the current host directory to `/src` in the container, excluding the `dagger` sub-directory and the `dagger.json` file, and return the modified container:
+
+    ```shell
+    dagger call copy-directory-with-exclusions --source=. --exclude-directory=dagger --exclude-file=dagger.json
+    ```
+
+- Copy the `dagger/dagger` GitHub repository to `/src` in the container, excluding all `*.md` files, and list the contents of the directory:
+
+    ```shell
+    dagger call \
+      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude-file=*.md \
+      directory --path=/src \
+      entries
+    ```
+
+## Builds
+
+### Perform a multi-stage build
+
+The following Dagger Function performs a multi-stage build.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/multi-stage-build/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/multi-stage-build/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/multi-stage-build/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Perform a multi-stage build of the source code in the `golang/example/hello` repository and publish the resulting image:
+
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello"
+```
+
+### Perform a matrix build
+
+The following Dagger Function performs a matrix build.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/matrix-build/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/matrix-build/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/matrix-build/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Perform a matrix build of the source code in the `golang/example/hello` repository and export build directory with go binaries for different operating systems and architectures.
+
+```shell
+dagger call build \
+  --src="https://github.com/golang/example#master:hello" \
+  export --path /tmp/matrix-builds
+```
+
+Inspect the contents of the exported directory with `tree /tmp/matrix-builds`. The output should look like this:
+
+```shell
+/tmp/matrix-builds
+└── build
+    ├── darwin
+    │   ├── amd64
+    │   │   └── hello
+    │   └── arm64
+    │       └── hello
+    └── linux
+        ├── amd64
+        │   └── hello
+        └── arm64
+            └── hello
+
+8 directories, 4 files
+```
+
+### Build multi-arch image
+
+The following Dagger Function builds a single image for different CPU architectures using native emulation.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/multi-arch/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/multi-arch/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/multi-arch/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish a multi-platform image:
+
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello"
+```
+
+### Build multi-arch image with cross-compliation
+
+The following Dagger Function builds a single image for different CPU architectures using cross-compilation.
+
+:::info
+This Dagger Function uses the `containerd` utility module. To run it locally
+install the module first with `dagger install github.com/levlaz/daggerverse/containerd@v0.1.2`
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/multi-arch-cc/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/multi-arch-cc/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/multi-arch-cc/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish a multi-platform image with cross compliation:
+
+```shell
+dagger call build --src="https://github.com/golang/example#master:hello"
+```
+
+### Build image from Dockerfile
+
+The following Dagger Function builds an image from a Dockerfile.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/dockerfile/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/dockerfile/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/dockerfile/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+Build and publish an image from an existing Dockerfile
+
+```shell
+dagger call build --src https://github.com/dockersamples/python-flask-redis
+```
+
+### Build image from Dockerfile using different build context
+
+The following function builds an image from a Dockerfile with a build context that is different than the current working directory.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/dockerfile-context/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/dockerfile-context/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/dockerfile-context/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build an image from the source code in `https://github.com/dockersamples/python-flask-redis` using the Dockerfile from a different build context, at `https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile`:
+
+```shell
+dagger call build \
+  --src "https://github.com/dockersamples/python-flask-redis" \
+  --dockerfile https://github.com/vimagick/dockerfiles#master:registry-cli/Dockerfile
+```
+
+### Add OCI labels to image
+
+The following Dagger Function adds OpenContainer Initiative (OCI) labels to an image.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/oci/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/oci/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/oci/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build and publish an image with OCI labels:
+
+```shell
+dagger call build
+```
+
+### Invalidate cache
+
+The following function demonstrates how to invalidate the Dagger pipeline
+operations cache and force execution of subsequent pipeline steps, by
+introducing a volatile time variable at a specific point in the Dagger pipeline.
+
+:::note
+* This is a temporary workaround until cache invalidation support is officially added to Dagger.
+* Changes in mounted cache volumes or secrets do not invalidate the Dagger pipeline operations cache.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/builds/cache/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/builds/cache/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/builds/cache/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a build, invalidating the cache on each run:
+
+```shell
+dagger call build
+```
+
+## Secrets
+
+### Use secret variables
+
+The following Dagger Function accepts a GitHub personal access token as a `Secret`, and uses the `Secret` to authorize a request to the GitHub API. The secret may be sourced from a host environment variable, host file, or host command execution.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secret-variable/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secret-variable/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Query the API using a secret sourced from an environment variable:
+
+    ```shell
+    dagger call github-api --token=env:GITHUB_API_TOKEN
+    ```
+
+- Query the API using a secret sourced from a file:
+
+    ```shell
+    dagger call github-api --token=file:./github.txt
+    ```
+
+- Query the API using a secret sourced from a command:
+
+    ```shell
+    dagger call github-api --token=cmd:"gh auth token"
+    ```
+
+### Mount files as secrets
+
+The following Dagger Function accepts a GitHub hosts configuration file as a `Secret`, and mounts the file as a `Secret` to a container to authorize a request to GitHub.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secret-file/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secret-file/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secret-file/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Query the GitHub API using a mounted secret file:
+
+```shell
+dagger call github-auth \
+    --gh-creds=file:$HOME/.config/gh/hosts.yml
+```
+
+### Use secret in Dockerfile build
+
+The following code listing demonstrates how to inject a secret into a Dockerfile build. The secret is automatically mounted in the build container at `/run/secrets/SECRET-ID`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secret-dockerfile/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secret-dockerfile/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/secret-dockerfile/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The sample Dockerfile below demonstrates the process of mounting the secret using a secret filesystem mount type and using it in the Dockerfile build process:
+
+```shell
+FROM alpine:3.17
+RUN apk add curl
+RUN --mount=type=secret,id=gh-secret curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $(cat /run/secrets/gh-secret)"
+```
+
+#### Example
+
+Build from a Dockerfile with a mounted secret:
+
+```shell
+dagger call build --source=. --secret=env:GITHUB_API_TOKEN
+```
+
+## Services
+
+### Bind and use services in Dagger Functions
+
+The first Dagger Function below creates and returns an HTTP service. This service is bound and used from a different Dagger Function, via a service binding using an alias like `www`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/bind-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/bind-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/bind-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Send a request from one Dagger Function to a bound HTTP service instantiated by a different Dagger Function:
+
+```shell
+dagger call get
+```
+
+### Expose services in Dagger Functions to the host
+
+The Dagger Function below creates and returns an HTTP service. This service can be used from the host.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/expose-dagger-services-to-host/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/expose-dagger-services-to-host/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/expose-dagger-services-to-host/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Expose the HTTP service instantiated by a Dagger Function to the host on the default port:
+
+    ```shell
+    dagger call http-service up
+
+    # access the service from the host
+    curl localhost:8080
+    ```
+
+- Expose the HTTP service instantiated by a Dagger Function to the host on a different host port:
+
+    ```shell
+    dagger call \
+      http-service \
+      up --ports 9000:8080
+
+    # access the service from the host
+    curl localhost:9000
+    ```
+
+### Expose host services to Dagger Functions
+
+The following Dagger Function accepts a `Service` running on the host, binds it using an alias, and creates a client to access it via the service binding. This example uses a MariaDB database service running on host port 3306, aliased as `db` in the Dagger Function.
+
+:::note
+This implies that a service is already listening on a port on the host, out-of-band of Dagger.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/expose-host-services-to-dagger/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/expose-host-services-to-dagger/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/expose-host-services-to-dagger/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Send a query to the database service listening on host port 3306 and return the result as a string:
+
+```shell
+# assumes a service is listening on host port 3306
+dagger call user-list --svc=tcp://localhost:3306
+```
+
+### Create a transient service for unit tests
+
+The following Dagger Function creates a service and binds it to an application container for unit testing. In this example, the application being tested is Drupal. Drupal includes a large number of unit tests, including tests which depend on an active database service. This database service is created on-the-fly by the Dagger Function.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/test-against-db-service/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/test-against-db-service/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/test-against-db-service/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Run Drupal's unit tests, instantiating a database service during the process:
+
+```shell
+dagger call test
+```
+
+### Start and stop services
+
+The following Dagger Function demonstrates how to control a service's lifecycle by explicitly starting and stopping a service. This example uses a Redis service.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/start-stop-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/start-stop-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/start-stop-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Start and stop a Redis service:
+
+```shell
+dagger call redis-service
+```
+
+## Just-in-time artifacts
+
+### Publish a container image to a private registry
+
+The following Dagger Function publishes a just-in-time container image to a private registry.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/publish-image/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/publish-image/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/publish-image/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
+    ```
+
+- Publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
+    ```
+
+### Publish a container image to a private registry with multiple tags
+
+The following Dagger Function tags a just-in-time container image multiple times and publishes it to a private registry.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/tag-publish-image/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/tag-publish-image/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/tag-publish-image/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Tag and publish a just-in-time container image to Docker Hub, using the account username `user` and the password set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=docker.io --username=user --password=env:PASSWORD
+    ```
+
+- Tag and publish a just-in-time container image to GitHub Container Registry, using the account username `user` and the GitHub personal access token set in the `PASSWORD` environment variable:
+
+    ```shell
+    dagger call publish --registry=ghcr.io --username=user --password=env:PASSWORD
+    ```
+
+### Export a directory or file to the host
+
+The following Dagger Functions return a just-in-time directory and file. These outputs can be exported to the host with `dagger call ... export ...`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/export-file-dir/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/export-file-dir/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/export-file-dir/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Export the directory returned by the Dagger Function to the `/home/admin/export` path on the host:
+
+    ```shell
+    dagger call \
+      get-dir \
+      export --path=/home/admin/export
+    ```
+
+- Export the file returned by the Dagger Function to the `/home/admin/myfile` path on the host:
+
+    ```shell
+    dagger call \
+      get-file \
+      export --path=/home/admin/myfile
+    ```
+
+### Export a container image to the host
+
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball with `dagger call ... export ...`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/export-container/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/export-container/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/export-container/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Export the container image returned by the Dagger Function as an OCI tarball to the `/home/admin/mycontainer.tgz` path on the host. This OCI tarball can then be loaded into Docker with `docker load ...`.
+
+```shell
+dagger call \
+  base \
+  export --path=/home/admin/mycontainer.tgz
+```
+
+## Optimizations
+
+### Cache application dependencies
+
+The following Dagger Function uses a cache volume for application dependencies. This enables Dagger to reuse the contents of the cache across Dagger Function runs and reduce execution time.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/cache-dependencies/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/cache-dependencies/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/cache-dependencies/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build an application using cached dependencies:
+
+```shell
+dagger call build --source=.
+```
+
+### Set environment variables in a container
+
+The following Dagger Function demonstrates how to set multiple environment variables in a container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/set-env-vars/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/set-env-vars/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/set-env-vars/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Set environment variables in a container:
+
+```shell
+dagger call set-env
+```
+
+### Persist service state across runs
+
+The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/services/persist-service-state/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../manuals/developer/snippets/services/persist-service-state/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/services/persist-service-state/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Save data to a Redis service which uses a cache volume to persist a key named `foo` with value `123:
+
+```shell
+dagger call set --key=foo --value=123
+```
+
+Retrieve the value of the key `foo` after recreating the service state from the cache volume:
+
+```shell
+# returns "123"
+dagger call get --key=foo
+```
+
+## Error handling
+
+### Terminate gracefully
+
+The following Dagger Function demonstrates how to handle errors in a pipeline.
+
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/handle-errors/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/handle-errors/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/handle-errors/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function which creates a container and runs a command in it. If the command fails, the error is captured and the Dagger Function is gracefully terminated with a custom error message.
+
+```shell
+dagger call test
+```
+
+### Continue using a container after command execution fails
+
+The following Dagger Function demonstrates how to continue using a container after a command executed within it fails. A common use case for this is to export a report that a test suite tool generates.
+
+:::note
+The caveat with this approach is that forcing a zero exit code on a failure caches the failure. This may not be desired depending on the use case.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/continue-after-errors/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/continue-after-errors/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/continue-after-errors/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Continue executing a Dagger Function even after a command within it fails. The Dagger Function returns a custom `TestResult` object containing a test report and the exit code of the failed command.
+
+```shell
+# get exit code
+dagger call test exit-code
+
+# get test report
+dagger call test report contents
+```
