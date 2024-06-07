@@ -262,8 +262,10 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
 	}
 	defer destF.Close()
-	if err := destF.Chown(int(t.uid), int(t.gid)); err != nil {
-		return fmt.Errorf("failed to chown synctarget dest file %s: %w", finalDestPath, err)
+	if runtime.GOOS != "windows" {
+		if err := destF.Chown(int(t.uid), int(t.gid)); err != nil {
+			return fmt.Errorf("failed to chown synctarget dest file %s: %w", finalDestPath, err)
+		}
 	}
 
 	for {
