@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"syscall"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -51,10 +52,16 @@ func (s *serviceSchema) Install() {
 			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
 				`Frontend is the port accepting traffic on the host, backend is the service port.`),
 
+		dagql.NodeFunc("signal", s.signal).
+			Impure("Imperatively mutates runtime state.").
+			Doc(`Signal the service.`).
+			ArgDoc("signal", `The signal to send to the service.`),
+
 		dagql.NodeFunc("stop", s.stop).
 			Impure("Imperatively mutates runtime state.").
 			Doc(`Stop the service.`).
-			ArgDoc("kill", `Immediately kill the service without waiting for a graceful exit`),
+			ArgDoc("kill", `Immediately kill the service without waiting for a graceful exit`).
+			ArgDoc("signal", `The signal to send to the service.`),
 	}.Install(s.srv)
 }
 
@@ -102,12 +109,33 @@ func (s *serviceSchema) start(ctx context.Context, parent dagql.Instance[*core.S
 	return dagql.NewID[*core.Service](parent.ID()), nil
 }
 
+type serviceSignalArgs struct {
+	Signal core.SignalTypes
+}
+
+func (s *serviceSchema) signal(ctx context.Context, parent dagql.Instance[*core.Service], args serviceSignalArgs) (core.ServiceID, error) {
+	signal := args.Signal.ToSignal()
+	if err := parent.Self.Signal(ctx, parent.ID(), signal); err != nil {
+		return core.ServiceID{}, err
+	}
+	return dagql.NewID[*core.Service](parent.ID()), nil
+}
+
 type serviceStopArgs struct {
-	Kill bool `default:"false"`
+	Kill   bool `default:"false"`
+	Signal dagql.Optional[core.SignalTypes]
 }
 
 func (s *serviceSchema) stop(ctx context.Context, parent dagql.Instance[*core.Service], args serviceStopArgs) (core.ServiceID, error) {
-	if err := parent.Self.Stop(ctx, parent.ID(), args.Kill); err != nil {
+	signal := syscall.SIGTERM
+	if args.Kill {
+		signal = syscall.SIGKILL
+	}
+	if args.Signal.Valid {
+		signal = args.Signal.Value.ToSignal()
+	}
+
+	if err := parent.Self.Stop(ctx, parent.ID(), signal); err != nil {
 		return core.ServiceID{}, err
 	}
 	return dagql.NewID[*core.Service](parent.ID()), nil

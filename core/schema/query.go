@@ -32,6 +32,7 @@ func (s *querySchema) Install() {
 	core.CacheSharingModes.Install(s.srv)
 	core.TypeDefKinds.Install(s.srv)
 	core.ModuleSourceKindEnum.Install(s.srv)
+	core.SignalTypesEnum.Install(s.srv)
 
 	dagql.MustInputSpec(PipelineLabel{}).Install(s.srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(s.srv)

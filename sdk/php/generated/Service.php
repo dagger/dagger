@@ -60,6 +60,16 @@ class Service extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Signal the service.
+     */
+    public function signal(SignalTypes $signal): ServiceId
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('signal');
+        $leafQueryBuilder->setArgument('signal', $signal);
+        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'signal'));
+    }
+
+    /**
      * Start the service and wait for its health checks to succeed.
      *
      * Services bound to a Container do not need to be manually started.
@@ -73,11 +83,14 @@ class Service extends Client\AbstractObject implements Client\IdAble
     /**
      * Stop the service.
      */
-    public function stop(?bool $kill = false): ServiceId
+    public function stop(?bool $kill = false, ?SignalTypes $signal = null): ServiceId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
         if (null !== $kill) {
         $leafQueryBuilder->setArgument('kill', $kill);
+        }
+        if (null !== $signal) {
+        $leafQueryBuilder->setArgument('signal', $signal);
         }
         return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'stop'));
     }

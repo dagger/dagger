@@ -6287,6 +6287,7 @@ type Service struct {
 	endpoint *string
 	hostname *string
 	id       *ServiceID
+	signal   *ServiceID
 	start    *ServiceID
 	stop     *ServiceID
 	up       *Void
@@ -6419,6 +6420,14 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 	return convert(response), nil
 }
 
+// Signal the service.
+func (r *Service) Signal(ctx context.Context, signal SignalTypes) (*Service, error) {
+	q := r.query.Select("signal")
+	q = q.Arg("signal", signal)
+
+	return r, q.Execute(ctx)
+}
+
 // Start the service and wait for its health checks to succeed.
 //
 // Services bound to a Container do not need to be manually started.
@@ -6432,6 +6441,8 @@ func (r *Service) Start(ctx context.Context) (*Service, error) {
 type ServiceStopOpts struct {
 	// Immediately kill the service without waiting for a graceful exit
 	Kill bool
+	// The signal to send to the service.
+	Signal SignalTypes
 }
 
 // Stop the service.
@@ -6441,6 +6452,10 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		// `kill` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Kill) {
 			q = q.Arg("kill", opts[i].Kill)
+		}
+		// `signal` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Signal) {
+			q = q.Arg("signal", opts[i].Signal)
 		}
 	}
 
@@ -6933,6 +6948,82 @@ const (
 	Tcp NetworkProtocol = "TCP"
 
 	Udp NetworkProtocol = "UDP"
+)
+
+type SignalTypes string
+
+func (SignalTypes) IsEnum() {}
+
+const (
+	Sigabrt SignalTypes = "SIGABRT"
+
+	Sigalrm SignalTypes = "SIGALRM"
+
+	Sigbus SignalTypes = "SIGBUS"
+
+	Sigchld SignalTypes = "SIGCHLD"
+
+	Sigcld SignalTypes = "SIGCLD"
+
+	Sigcont SignalTypes = "SIGCONT"
+
+	Sigfpe SignalTypes = "SIGFPE"
+
+	Sighup SignalTypes = "SIGHUP"
+
+	Sigill SignalTypes = "SIGILL"
+
+	Sigint SignalTypes = "SIGINT"
+
+	Sigio SignalTypes = "SIGIO"
+
+	Sigiot SignalTypes = "SIGIOT"
+
+	Sigkill SignalTypes = "SIGKILL"
+
+	Sigpipe SignalTypes = "SIGPIPE"
+
+	Sigpoll SignalTypes = "SIGPOLL"
+
+	Sigprof SignalTypes = "SIGPROF"
+
+	Sigpwr SignalTypes = "SIGPWR"
+
+	Sigquit SignalTypes = "SIGQUIT"
+
+	Sigsegv SignalTypes = "SIGSEGV"
+
+	Sigstkflt SignalTypes = "SIGSTKFLT"
+
+	Sigstop SignalTypes = "SIGSTOP"
+
+	Sigsys SignalTypes = "SIGSYS"
+
+	Sigterm SignalTypes = "SIGTERM"
+
+	Sigtrap SignalTypes = "SIGTRAP"
+
+	Sigtstp SignalTypes = "SIGTSTP"
+
+	Sigttin SignalTypes = "SIGTTIN"
+
+	Sigttou SignalTypes = "SIGTTOU"
+
+	Sigunused SignalTypes = "SIGUNUSED"
+
+	Sigurg SignalTypes = "SIGURG"
+
+	Sigusr1 SignalTypes = "SIGUSR1"
+
+	Sigusr2 SignalTypes = "SIGUSR2"
+
+	Sigvtalrm SignalTypes = "SIGVTALRM"
+
+	Sigwinch SignalTypes = "SIGWINCH"
+
+	Sigxcpu SignalTypes = "SIGXCPU"
+
+	Sigxfsz SignalTypes = "SIGXFSZ"
 )
 
 type TypeDefKind string
