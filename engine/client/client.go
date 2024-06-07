@@ -683,12 +683,6 @@ func (c *Client) shutdownServer() error {
 		return fmt.Errorf("new request: %w", err)
 	}
 
-	if c.rootCtx.Err() != nil {
-		req.URL.RawQuery = url.Values{
-			"immediate": []string{"true"},
-		}.Encode()
-	}
-
 	req.SetBasicAuth(c.SecretToken, "")
 
 	resp, err := c.httpClient.Do(req)
