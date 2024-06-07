@@ -7,7 +7,7 @@ slug: /manuals/user/services
 Dagger Functions enable users to spin up long-running services (as containers) and communicate with those services from other Dagger Functions or from the calling host by forwarding their ports. This is akin to a "programmable docker-compose".
 
 :::note
-It is also possible to [pass host network services to a Dagger Function](../../host/053831-host-services.mdx), by explicitly specifying them as arguments in the form `tcp://<host>:<port>` when executing `dagger call`.
+It is also possible to [pass host network services to a Dagger Function](../../host/host-services.mdx), by explicitly specifying them as arguments in the form `tcp://<host>:<port>` when executing `dagger call`.
 :::
 
 - Each service container has a canonical, content-addressed hostname and an optional set of exposed ports.
