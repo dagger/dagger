@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
@@ -274,6 +275,9 @@ func main() {
 	ctx = slog.ContextWithDebugMode(ctx, debug)
 
 	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
+		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+		defer stop()
+
 		telemetryCfg := telemetry.Config{
 			Detect:   true,
 			Resource: Resource(),
