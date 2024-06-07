@@ -1,0 +1,26 @@
+---
+slug: /integrations/containerd
+---
+
+# Containerd (nerdctl)
+
+`nerdctl` is CLI-compatible with Docker and therefore can be used by creating a symbolic link to the `nerdctl` executable in your system path and naming it `docker`.
+
+- To use `nerdctl` directly, create a symbolic link as below:
+
+    ```shell
+    sudo ln -s $(which nerdctl) /usr/local/bin/docker
+    ```
+
+- To use `nerdctl` via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
+
+    ```shell
+    #!/bin/sh
+    lima nerdctl "$@"
+    ```
+
+    Then, create a symbolic link to the shell script and name it `docker`:
+
+    ```shell
+    sudo ln -s /usr/local/bin/nerdctl /usr/local/bin/docker
+    ```

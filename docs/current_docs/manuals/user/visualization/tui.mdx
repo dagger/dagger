@@ -1,0 +1,24 @@
+---
+slug: /manuals/user/tui
+---
+
+# Dagger TUI
+
+The Dagger CLI includes a real-time visualization feature, also called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
+
+The TUI is designed for rapid iteration, in the same way regular scripting works: you run a command, it shows live progress, and then leaves all the output in your terminal scrollback. Here is an example of it in action:
+
+![Dagger TUI](/img/current_docs/manuals/user/visualization/tui.gif)
+
+The TUI is driven by [OpenTelemetry](https://opentelemetry.io/) and is essentially a live-streaming OpenTelemetry trace visualizer. It represents Dagger API calls as OpenTelemetry spans with special metadata. If user code integrates with OpenTelemetry, related spans will appear in the TUI as first-class citizens.
+
+The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A parent-child relationship means that the child call is being made by the parent call.
+- A red X or green check indicates whether the call succeeded or failed.
+- A call's duration is rendered after its name.
+
+The CLI has tiered verbosity: `-v`, `-vv`, `-vvv` (just like `curl`):
+- `-v` keeps spans visible after they complete, rather than disappearing after a brief pause;
+- `-vv` reveals internal and encapsulated spans;
+- `-vvv` reveals sub-100ms spans.
+
+For additional debugging information, add the `--debug` flag to the `dagger call` command.

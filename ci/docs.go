@@ -15,11 +15,11 @@ type Docs struct {
 
 const (
 	generatedSchemaPath = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath = "docs/current_docs/reference/979596-cli.mdx"
+	generatedCliZenPath = "docs/current_docs/reference/cli.mdx"
 )
 
 const cliZenFrontmatter = `---
-slug: /reference/979596/cli/
+slug: /reference/cli/
 pagination_next: null
 pagination_prev: null
 ---
