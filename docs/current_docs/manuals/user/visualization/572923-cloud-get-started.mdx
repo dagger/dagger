@@ -108,7 +108,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your GitHub Actions workflow and add the secret to the Dagger pipeline step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
 
-    [See an example of a sample GitHub Actions workflow file](../../../integrations/642920-github-actions.mdx)
+    [See an example of a sample GitHub Actions workflow file](../../../integrations/github-actions.mdx)
 
 1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow job in Dagger Cloud.
 
