@@ -195,27 +195,15 @@
   status = 301
 
 [[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/:docid-*"
-  to = "/integrations/:splat"
-  status = 301
-
-[[redirects]]
-  # redirect integrations
-  from = "/integrations/:docid/*"
-  to = "/integrations/:splat"
-  status = 301
-
-[[redirects]]
   # redirect cloud orgs admin page from user guide
   from = "/user-guide/cloud/609601/org-administration"
-  to = "/manuals/administrator/609601/organizations"
+  to = "/manuals/administrator/organizations"
   status = 301
 
 [[redirects]]
   # redirect cloud roles and permissions page from user guide
   from = "/user-guide/cloud/968372/roles-permissions"
-  to = "/manuals/administrator/968372/roles-permissions"
+  to = "/manuals/administrator/roles-permissions"
   status = 301
 
 [[redirects]]
@@ -242,11 +230,6 @@
   to = "/manuals/developer"
   status = 301
 
-[[redirects]]
-  # redirect developer guide pages to developer manual
-  from = "/developer-guide/*"
-  to = "/manuals/developer/:splat"
-  status = 301
 
 [[redirects]]
   # redirect contributing page
@@ -264,6 +247,61 @@
   # redirect publish modules page
   from = "/guides/821742/publish-modules"
   to = "/manuals/developer/publish-modules"
+  status = 301
+
+
+[[redirects]]
+  # redirect CI page
+  from = "/manuals/administrator/738921/ci"
+  to = "/manuals/administrator/ci"
+  status = 301
+
+[[redirects]]
+  # redirect caching page
+  from = "/manuals/administrator/413929/caching"
+  to = "/manuals/administrator/caching"
+  status = 301
+
+[[redirects]]
+  # redirect cloud orgs page
+  from = "/manuals/administrator/609601/organizations"
+  to = "/manuals/administrator/organizations"
+  status = 301
+
+[[redirects]]
+  # redirect cloud roles page
+  from = "/manuals/administrator/968372/roles-permissions"
+  to = "/manuals/administrator/roles-permissions"
+  status = 301
+
+[[redirects]]
+  # redirect custom runner page
+  from = "/manuals/administrator/472258/custom-runner"
+  to = "/manuals/administrator/custom-runner"
+  status = 301
+
+[[redirects]]
+  # redirect custom registry page
+  from = "/manuals/administrator/272381/custom-registry"
+  to = "/manuals/administrator/custom-registry"
+  status = 301
+
+[[redirects]]
+  # redirect developer guide pages to developer manual
+  from = "/developer-guide/*"
+  to = "/manuals/developer/:splat"
+  status = 301
+
+[[redirects]]
+  # redirect CI pages from user guide
+  from = "/user-guide/ci/:docid-*"
+  to = "/integrations/:splat"
+  status = 301
+
+[[redirects]]
+  # redirect integrations
+  from = "/integrations/:docid/*"
+  to = "/integrations/:splat"
   status = 301
 
 [[redirects]]
