@@ -86,7 +86,7 @@ describe("TypeScript SDK api", function () {
 
   it("Pass a client with an explicit ID as a parameter", async function () {
     this.timeout(60000)
-    connect(async (client: Client) => {
+    await connect(async (client: Client) => {
       const image = await client
         .loadContainerFromID(
           await client
@@ -105,7 +105,7 @@ describe("TypeScript SDK api", function () {
 
   it("Pass a cache volume with an implicit ID as a parameter", async function () {
     this.timeout(60000)
-    connect(async (client: Client) => {
+    await connect(async (client: Client) => {
       const cacheVolume = client.cacheVolume("cache_key")
       const image = await client
         .container()
