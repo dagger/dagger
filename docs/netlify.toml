@@ -294,14 +294,14 @@
 
 [[redirects]]
   # redirect CI pages from user guide
-  from = "/user-guide/ci/:docid-*"
-  to = "/integrations/:splat"
+  from = "/user-guide/ci/:docid-:slug"
+  to = "/integrations/:slug"
   status = 301
 
 [[redirects]]
   # redirect integrations
-  from = "/integrations/:docid/*"
-  to = "/integrations/:splat"
+  from = "/integrations/:docid/:slug"
+  to = "/integrations/:slug"
   status = 301
 
 [[redirects]]
