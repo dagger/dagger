@@ -468,6 +468,7 @@ func TestModulePythonAltRuntime(t *testing.T) {
 		WithExec([]string{"sed", "-i", "s#../../../../../sdk/python/##", "/work/extended/dagger.json"})
 
 	t.Run("git dependency", func(t *testing.T) {
+		t.Parallel()
 		out, err := base.
 			WithMountedDirectory("/work/git-dep", c.Host().Directory(moduleSrcPath)).
 			WithWorkdir("/work/git-dep").
@@ -479,6 +480,7 @@ func TestModulePythonAltRuntime(t *testing.T) {
 	})
 
 	t.Run("disabled custom config", func(t *testing.T) {
+		t.Parallel()
 		out, err := base.
 			WithWorkdir("/work/test").
 			With(fileContents(".python-version", "3.12")).
@@ -685,6 +687,7 @@ func TestModulePythonLockHashes(t *testing.T) {
 	t.Logf("requirements.lock:\n%s", requirements)
 
 	t.Run("uv", func(t *testing.T) {
+		t.Parallel()
 		_, err := base.
 			With(fileContents("requirements.lock", requirements)).
 			With(daggerExec("develop")).
@@ -696,6 +699,7 @@ func TestModulePythonLockHashes(t *testing.T) {
 	})
 
 	t.Run("pip", func(t *testing.T) {
+		t.Parallel()
 		_, err := base.
 			With(fileContents("requirements.lock", requirements)).
 			With(pyprojectExtra(`
@@ -970,6 +974,7 @@ func TestModulePythonSignaturesBuiltinTypes(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, out)
@@ -1288,7 +1293,9 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		With(daggerExec("install", "../dep"))
 
 	t.Run("return as other module object", func(t *testing.T) {
+		t.Parallel()
 		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger
@@ -1309,6 +1316,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		})
 
 		t.Run("list", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger
@@ -1330,7 +1338,9 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 	})
 
 	t.Run("arg as other module object", func(t *testing.T) {
+		t.Parallel()
 		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.With(pythonSource(`
                 import dagger
 
@@ -1350,6 +1360,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		})
 
 		t.Run("list", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.With(pythonSource(`
                 import dagger
 
@@ -1370,7 +1381,9 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 	})
 
 	t.Run("field as other module object", func(t *testing.T) {
+		t.Parallel()
 		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger
@@ -1395,6 +1408,7 @@ func TestModulePythonWithOtherModuleTypes(t *testing.T) {
 		})
 
 		t.Run("list", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				With(pythonSource(`
                     import dagger

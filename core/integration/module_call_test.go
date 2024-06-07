@@ -39,6 +39,7 @@ func (m *Test) Container() *Container {
 	)
 
 	t.Run("no required arg validation", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerCall("container", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
@@ -46,6 +47,7 @@ func (m *Test) Container() *Container {
 	})
 
 	t.Run("globally parsed", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerCall("container", "--help", "directory")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
@@ -207,6 +209,7 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 			t.Parallel()
 
 			t.Run("abs path", func(t *testing.T) {
+				t.Parallel()
 				c, ctx := connect(t)
 
 				modGen := c.Container().From(golangImage).
@@ -329,6 +332,7 @@ func (m *Test) Fn(
 			} {
 				tc := tc
 				t.Run(fmt.Sprintf("%s:%s", tc.baseURL, tc.subpath), func(t *testing.T) {
+					t.Parallel()
 					url := tc.baseURL + "#v0.9.1"
 					if tc.subpath != "" {
 						url += ":" + tc.subpath
@@ -353,6 +357,7 @@ func (m *Test) Fn(
 		t.Parallel()
 
 		t.Run("abs path", func(t *testing.T) {
+			t.Parallel()
 			c, ctx := connect(t)
 
 			modGen := c.Container().From(golangImage).
@@ -448,12 +453,15 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
 
 		t.Run("explicit env", func(t *testing.T) {
+			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "shhh", out)
 			})
 			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
 				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
@@ -462,41 +470,50 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 		t.Run("implicit env", func(t *testing.T) {
 			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "shhh", out)
 			})
 			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
 				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
 		t.Run("file", func(t *testing.T) {
+			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "file shhh", out)
 			})
 			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
 				require.ErrorContains(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
 			})
 		})
 
 		t.Run("cmd", func(t *testing.T) {
+			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
+				t.Parallel()
 				out, err := modGen.With(daggerCall("insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "cmd shhh", out)
 			})
 			t.Run("sad", func(t *testing.T) {
+				t.Parallel()
 				_, err := modGen.With(daggerCall("insecure", "--token", "cmd:exit 1")).Stdout(ctx)
 				require.ErrorContains(t, err, `failed to run secret command "exit 1": exit status 1`)
 			})
 		})
 
 		t.Run("invalid source", func(t *testing.T) {
+			t.Parallel()
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
 			require.ErrorContains(t, err, `unsupported secret arg source: "wtf"`)
 		})
@@ -701,12 +718,14 @@ func (m *Minimal) Fn() []*Foo {
 		expected := "0\n1\n2\n"
 
 		t.Run("print", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expected, out)
 		})
 
 		t.Run("output", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.
 				With(daggerCall("fn", "bar", "-o", "./outfile")).
 				File("./outfile").
@@ -716,6 +735,7 @@ func (m *Minimal) Fn() []*Foo {
 		})
 
 		t.Run("json", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.
 				With(daggerCall("fn", "bar", "--json")).
 				Stdout(ctx)
@@ -748,6 +768,7 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(t *testing.T) {
+			t.Parallel()
 			ctr := modGen.With(daggerCall("ctr"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
@@ -758,6 +779,7 @@ type Test struct {
 		})
 
 		t.Run("output", func(t *testing.T) {
+			t.Parallel()
 			modGen, err := modGen.With(daggerCall("ctr", "-o", "./container.tar")).Sync(ctx)
 			require.NoError(t, err)
 			size, err := modGen.File("./container.tar").Size(ctx)
@@ -794,6 +816,7 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(t *testing.T) {
+			t.Parallel()
 			ctr := modGen.With(daggerCall("dir"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
@@ -804,6 +827,7 @@ type Test struct {
 		})
 
 		t.Run("output", func(t *testing.T) {
+			t.Parallel()
 			modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
 			require.NoError(t, err)
 
@@ -847,6 +871,7 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(t *testing.T) {
+			t.Parallel()
 			ctr := modGen.With(daggerCall("file"))
 			out, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
@@ -857,6 +882,7 @@ type Test struct {
 		})
 
 		t.Run("output", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.
 				With(daggerCall("file", "-o", "./outfile")).
 				File("./outfile").
@@ -919,12 +945,14 @@ type Test struct {
 			})
 
 		t.Run("file", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "3.18.5\n", out)
 		})
 
 		t.Run("export", func(t *testing.T) {
+			t.Parallel()
 			modGen, err := modGen.With(daggerCall("ctr", "export", "--path=./container.tar.gz")).Sync(ctx)
 			require.NoError(t, err)
 			size, err := modGen.File("./container.tar.gz").Size(ctx)
@@ -957,12 +985,14 @@ type Test struct {
 			})
 
 		t.Run("file", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.With(daggerCall("dir", "file", "--path=foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "foo", out)
 		})
 
 		t.Run("export", func(t *testing.T) {
+			t.Parallel()
 			modGen, err := modGen.With(daggerCall("dir", "export", "--path=./outdir")).Sync(ctx)
 			require.NoError(t, err)
 			ents, err := modGen.Directory("./outdir").Entries(ctx)
@@ -995,12 +1025,14 @@ type Test struct {
 			})
 
 		t.Run("size", func(t *testing.T) {
+			t.Parallel()
 			out, err := modGen.With(daggerCall("file", "size")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "3", out)
 		})
 
 		t.Run("export", func(t *testing.T) {
+			t.Parallel()
 			modGen, err := modGen.With(daggerCall("file", "export", "--path=./outfile")).Sync(ctx)
 			require.NoError(t, err)
 			contents, err := modGen.File("./outfile").Contents(ctx)
@@ -1040,6 +1072,7 @@ func (t *Test) File() *File {
 	logGen(ctx, t, modGen.Directory("."))
 
 	t.Run("truncate file", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.
 			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
 				Contents: "foobar",
@@ -1052,11 +1085,13 @@ func (t *Test) File() *File {
 	})
 
 	t.Run("not a file", func(t *testing.T) {
+		t.Parallel()
 		_, err := modGen.With(daggerCall("hello", "-o", ".")).Sync(ctx)
 		require.ErrorContains(t, err, "is a directory")
 	})
 
 	t.Run("allow dir for file", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.
 			With(daggerCall("file", "-o", ".")).
 			File("foo.txt").
@@ -1066,10 +1101,12 @@ func (t *Test) File() *File {
 	})
 
 	t.Run("create parent dirs", func(t *testing.T) {
+		t.Parallel()
 		ctr, err := modGen.With(daggerCall("hello", "-o", "foo/bar.txt")).Sync(ctx)
 		require.NoError(t, err)
 
 		t.Run("print success", func(t *testing.T) {
+			t.Parallel()
 			// should print success to stderr so it doesn't interfere with piping output
 			out, err := ctr.Stderr(ctx)
 			require.NoError(t, err)
@@ -1077,12 +1114,14 @@ func (t *Test) File() *File {
 		})
 
 		t.Run("check directory permissions", func(t *testing.T) {
+			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "755\n", out)
 		})
 
 		t.Run("check file permissions", func(t *testing.T) {
+			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo/bar.txt"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "644\n", out)
@@ -1090,6 +1129,7 @@ func (t *Test) File() *File {
 	})
 
 	t.Run("check umask", func(t *testing.T) {
+		t.Parallel()
 		ctr, err := modGen.
 			WithNewFile("/entrypoint.sh", dagger.ContainerWithNewFileOpts{
 				Contents: `#!/bin/sh
@@ -1104,12 +1144,14 @@ exec "$@"
 		require.NoError(t, err)
 
 		t.Run("directory", func(t *testing.T) {
+			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "750\n", out)
 		})
 
 		t.Run("file", func(t *testing.T) {
+			t.Parallel()
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo/bar.txt"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "640\n", out)
@@ -1276,6 +1318,7 @@ func (m *Chain) Echo(msg string) string {
 	)
 
 	t.Run("functions list", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerCall("--help")).Stdout(ctx)
 		require.NoError(t, err)
 
@@ -1290,6 +1333,7 @@ func (m *Chain) Echo(msg string) string {
 	})
 
 	t.Run("arguments list", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerCall("fn-b", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 
@@ -1298,17 +1342,20 @@ func (m *Chain) Echo(msg string) string {
 	})
 
 	t.Run("in chain", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerCall("fn-b", "--msg", "", "echo", "--msg", "hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello")
 	})
 
 	t.Run("no sub-command", func(t *testing.T) {
+		t.Parallel()
 		_, err := modGen.With(daggerCall("fn-a")).Sync(ctx)
 		require.ErrorContains(t, err, `unknown command "fn-a"`)
 	})
 
 	t.Run("no flag", func(t *testing.T) {
+		t.Parallel()
 		_, err := modGen.With(daggerCall("fn-b", "--msg", "hello", "--matrix", "")).Sync(ctx)
 		require.ErrorContains(t, err, `unknown flag: --matrix`)
 	})

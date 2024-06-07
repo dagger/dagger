@@ -687,6 +687,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 	proxyReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
