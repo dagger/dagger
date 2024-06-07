@@ -142,9 +142,6 @@ func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(co
 
 				fe.render()
 			}
-
-			// disable context holds, for this final render of *everything*
-			fe.contextHold = 0
 			fe.render()
 		}()
 	}
@@ -285,6 +282,8 @@ func (fe *frontendPlain) render() {
 
 func (fe *frontendPlain) finalRender() {
 	if !fe.Silent {
+		// disable context holds, for this final render of *everything*
+		fe.contextHold = 0
 		fe.render()
 	}
 
