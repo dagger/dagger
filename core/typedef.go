@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -323,6 +324,8 @@ func (*TypeDef) TypeDescription() string {
 }
 
 func (typeDef *TypeDef) ToTyped() dagql.Typed {
+	slog.Error("TypeDef.ToTyped", "kind", typeDef.Kind)
+
 	var typed dagql.Typed
 	switch typeDef.Kind {
 	case TypeDefKindString:
@@ -344,7 +347,18 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindInput:
 		typed = typeDef.AsInput.Value.ToInputObjectSpec()
 	case TypeDefKindEnum:
-		typed = &EnumObject{TypeDef: typeDef.AsEnum.Value}
+		enum := typeDef.AsEnum.Value
+
+		slog.Error("TypeDef.ToTyped.TypeDefKindEnum", "enum", enum.Name, "values", len(enum.Values))
+
+		// Load enum values from its typeDef
+		enumTypeDef := dagql.NewDynamicEnum(enum)
+		for _, value := range enum.Values {
+			slog.Error("TypeDef.ToTyped.TypeDefKindEnum loading values", "enum", enum.Name, "value", value.OriginalName)
+			enumTypeDef = enumTypeDef.Register(value.OriginalName, value.Description)
+		}
+
+		typed = enumTypeDef
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -355,6 +369,8 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 }
 
 func (typeDef *TypeDef) ToInput() dagql.Input {
+	slog.Error("TypeDef.ToInput", "kind", typeDef.Kind)
+
 	var typed dagql.Input
 	switch typeDef.Kind {
 	case TypeDefKindString:
@@ -376,7 +392,17 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindEnum:
-		typed = dagql.NewScalar[dagql.String](typeDef.AsEnum.Value.Name, dagql.String(""))
+		enum := typeDef.AsEnum.Value
+
+		// Load enum values from its typeDef
+		slog.Error("TypeDef.ToInput.TypeDefKindEnum", "enum", enum.Name, "values", len(enum.Values))
+		enumTypeDef := dagql.NewDynamicEnum(enum)
+		for _, value := range enum.Values {
+			slog.Error("TypeDef.ToInput.TypeDefKindEnum loading values", "enum", enum.Name, "value", value.OriginalName)
+			enumTypeDef = enumTypeDef.Register(value.OriginalName, value.Description)
+		}
+
+		typed = enumTypeDef
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}

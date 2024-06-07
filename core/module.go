@@ -230,16 +230,14 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, def := range mod.EnumDefs {
 		enumDef := def.AsEnum.Value
 
-		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name)
+		slog.Error("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
 
-		enum := &EnumObject{
-			Module:  mod,
-			TypeDef: enumDef,
+		enum := dagql.NewDynamicEnum(enumDef)
+		for _, value := range enumDef.Values {
+			enum = enum.Register(value.Name, value.Description)
 		}
 
-		if err := enum.Install(ctx, dag); err != nil {
-			return err
-		}
+		enum.Install(dag)
 	}
 
 	return nil

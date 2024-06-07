@@ -12,6 +12,7 @@ import (
 	"golang.org/x/exp/constraints"
 
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 // Typed is any value that knows its GraphQL type.
@@ -859,48 +860,128 @@ func (arr Array[T]) Nth(i int) (Typed, error) {
 	return arr[i-1], nil
 }
 
-type DynamicEnumValue interface {
-	ScalarType
+type EnumValue interface {
 	Input
+	~string
+}
+type DynamicEnumValue struct {
+	parent *DynamicEnumValues
+	value string
 }
 
-type dynamicEnumValue struct {
-	enumType Typed
-	value    string
+func NewDynamicEnumValue(parent *DynamicEnumValues, value string) *DynamicEnumValue {
+	return &DynamicEnumValue{parent, value}
 }
 
-func NewDynamicEnumValue(enum Typed, val string) DynamicEnumValue {
-	return &dynamicEnumValue{enumType: enum, value: val}
+func (e *DynamicEnumValue) Type() *ast.Type {
+	return e.parent.Type()
 }
 
-func (d *dynamicEnumValue) Type() *ast.Type {
-	return d.enumType.Type()
+func (e *DynamicEnumValue) TypeDescription() string {
+	if isType, ok := any(e.parent).(Descriptive); ok {
+		return isType.TypeDescription()
+	}
+
+	return ""
 }
 
-func (d *dynamicEnumValue) TypeName() string {
-	return d.Type().Name()
+func (e *DynamicEnumValue) Decoder() InputDecoder {
+	return e.parent
 }
 
-func (d *dynamicEnumValue) Decoder() InputDecoder {
-	return d
+func (e *DynamicEnumValue) ToLiteral() call.Literal {
+	return e.parent.Literal(e.value)
 }
 
-func (d *dynamicEnumValue) DecodeInput(val any) (Input, error) {
+type DynamicEnumValues struct {
+	t Typed
+	values []string
+	descriptions []string
+}
+
+func NewDynamicEnum(t Typed) *DynamicEnumValues {
+	return &DynamicEnumValues{t: t}
+}
+
+func (e *DynamicEnumValues) Type() *ast.Type {
+	return e.t.Type()
+}
+
+func (e *DynamicEnumValues) TypeName() string {
+	return e.Type().Name()
+}
+
+func (e *DynamicEnumValues) Register(val string, desc string) *DynamicEnumValues {
+	e.values = append(e.values, val)
+	e.descriptions = append(e.descriptions, desc)
+
+	return e
+}
+
+func (e *DynamicEnumValues) TypeDefinition() *ast.Definition {
+	def := &ast.Definition{
+		Kind: ast.Enum,
+		Name: e.TypeName(),
+		EnumValues: e.PossibleValues(),
+	}
+
+	if isType, ok := any(e.t).(Descriptive); ok {
+		def.Description = isType.TypeDescription()
+	}
+
+	return def
+}
+
+func (e *DynamicEnumValues) Decoder() InputDecoder {
+	return e
+}
+
+func (e *DynamicEnumValues) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case string:
-		return NewScalar(d.TypeName(), String(x)), nil
+		return e.Lookup(x)
+	case Scalar[String]:
+		return e.Lookup(string(x.Value))
 	default:
 		return nil, fmt.Errorf("cannot create Enum from %T", x)
 	}
 }
 
-func (d *dynamicEnumValue) ToLiteral() call.Literal {
-	return call.NewLiteralEnum(d.value)
+func (e *DynamicEnumValues) Literal(val string) call.Literal {
+	return call.NewLiteralEnum(val)
 }
 
-type EnumValue interface {
-	Input
-	~string
+func (e *DynamicEnumValues) PossibleValues() ast.EnumValueList {
+	var values ast.EnumValueList
+	for i, val := range e.values {
+		values = append(values, &ast.EnumValueDefinition{
+			Name:        val,
+			Description: e.descriptions[i],
+		})
+	}
+	return values
+}
+
+func (e *DynamicEnumValues) ToLiteral() call.Literal {
+	return call.NewLiteralEnum("")
+}
+
+func (e *DynamicEnumValues) Lookup(val string) (*DynamicEnumValue, error) {
+	slog.Error("DynamicEnumValues.Lookup", "val", val, "e.values", e.values)
+
+	for _, possible := range e.values {
+		if val == possible {
+			return NewDynamicEnumValue(e, possible), nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid enum value %q", val)
+}
+
+func (e *DynamicEnumValues) Install(srv *Server) {
+	slog.Error("DynamicEnumValues.Install", "e", e.TypeName(), "values", e.values)
+
+	srv.InstallTypeDef(e)
 }
 
 // EnumValues is a list of possible values for an Enum.
@@ -956,6 +1037,7 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 			Description: e.descriptions[i],
 		})
 	}
+
 	return values
 }
 

@@ -90,7 +90,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 
-		modType = &CoreModEnum{coreMod: m, name: typeDef.AsEnum.Value.Name}
+		modType = &CoreModEnum{coreMod: m, typeDef: typeDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
 		// core does not yet defined any interfaces
@@ -337,32 +337,43 @@ func (obj *CoreModObject) TypeDef() *core.TypeDef {
 
 type CoreModEnum struct {
 	coreMod *CoreMod
-	name    string
+	typeDef *core.EnumTypeDef
 }
 
 var _ core.ModType = (*CoreModEnum)(nil)
 
 func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
-	s, ok := enum.coreMod.Dag.ScalarType(enum.name)
+	slog.Error("CoreModEnum.ConvertFromSDKResult", "value", value, "enum.typeDef.Name", enum.typeDef.Name)
+
+	_, ok := enum.coreMod.Dag.TypeDef(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
 	}
 
-	return s.DecodeInput(value)
+	// Construct a dynamic enum to decode the value
+	dynamicEnum := dagql.NewDynamicEnum(enum.typeDef)
+	for _, v := range enum.typeDef.Values {
+		dynamicEnum = dynamicEnum.Register(v.OriginalName, v.Description)
+	}
+
+	return dynamicEnum.DecodeInput(value)
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
-	s, ok := enum.coreMod.Dag.ScalarType(enum.name)
+	slog.Error("CoreModEnum.ConvertToSDKInput", "value", value, "enum.typeDef.Name", enum.typeDef.Name)
+
+	_, ok := enum.coreMod.Dag.TypeDef(enum.typeDef.Name)
 	if !ok {
-		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
+		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
 	}
 
-	val, ok := value.(dagql.Scalar[dagql.String])
-	if !ok {
-		// we assume all core scalars are strings
-		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: core enum should be string")
+	// Construct a dynamic enum to decode the input
+	dynamicEnum := dagql.NewDynamicEnum(enum.typeDef)
+	for _, v := range enum.typeDef.Values {
+		dynamicEnum = dynamicEnum.Register(v.OriginalName, v.Description)
 	}
-	return s.DecodeInput(string(val.Value))
+
+	return dynamicEnum.DecodeInput(value)
 }
 
 func (enum *CoreModEnum) SourceMod() core.Mod {
@@ -373,7 +384,7 @@ func (enum *CoreModEnum) TypeDef() *core.TypeDef {
 	return &core.TypeDef{
 		Kind: core.TypeDefKindEnum,
 		AsEnum: dagql.NonNull(&core.EnumTypeDef{
-			Name: enum.name,
+			Name: enum.typeDef.Name,
 		}),
 	}
 }
