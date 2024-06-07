@@ -69,6 +69,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "integrations/google-cloud-run"
+        },
+        {
+          "type": "doc",
           "id": "integrations/java"
         },
         {
@@ -409,11 +413,6 @@ module.exports = {
           "type": "link",
           "label": "API Reference",
           "href": "https://docs.dagger.io/api/reference"
-        },
-        {
-          "type": "doc",
-          "id": "guides",
-          "label": "Guides"
         },
         {
           "type": "doc",

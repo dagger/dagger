@@ -209,19 +209,25 @@
 [[redirects]]
   # redirect cloud get started page from user guide
   from = "/user-guide/cloud/572923/get-started"
-  to = "/manuals/user/572923/cloud-get-started"
+  to = "/manuals/user/cloud-get-started"
   status = 301
 
 [[redirects]]
   # redirect cloud get started page from user manual
   from = "/manuals/user/cloud/572923/get-started"
-  to = "/manuals/user/572923/cloud-get-started"
+  to = "/manuals/user/cloud-get-started"
   status = 301
 
 [[redirects]]
   # redirect cloud user interface page from user manual
   from = "/manuals/user/cloud/741031/user-interface"
-  to = "/manuals/user/572923/cloud-get-started"
+  to = "/manuals/user/cloud-get-started"
+  status = 301
+
+[[redirects]]
+  # redirect Google Cloud Run guide
+  from = "/620942/github-google-cloud"
+  to = "/integrations/google-cloud-run"
   status = 301
 
 [[redirects]]
@@ -307,7 +313,6 @@
   from = "/manuals/user/:docid/:slug"
   to = "/manuals/user/:slug"
   status = 301
-
 
 [[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
