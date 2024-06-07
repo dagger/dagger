@@ -58,7 +58,7 @@ This output means that the build succeeded, and a `Container` type representing 
 
 ### Run a container as a local service
 
-The `as-service` function can be used to [start a just-in-time container as a local service](../manuals/user/artifacts/consumption/384829-services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
+The `as-service` function can be used to [start a just-in-time container as a local service](../manuals/user/artifacts/consumption/services.mdx) and have any exposed ports forwarded to the host machine. This is similar to Docker Compose, except that you're using code instead of YAML to manage your services.
 
 To see this in action, chain additional function calls to `as-service` and `up` on the returned `Container`:
 

@@ -230,7 +230,6 @@
   to = "/manuals/developer"
   status = 301
 
-
 [[redirects]]
   # redirect contributing page
   from = "/204441/contributing"
@@ -248,7 +247,6 @@
   from = "/guides/821742/publish-modules"
   to = "/manuals/developer/publish-modules"
   status = 301
-
 
 [[redirects]]
   # redirect CI page
@@ -299,10 +297,17 @@
   status = 301
 
 [[redirects]]
-  # redirect integrations
+  # redirect integrations pages
   from = "/integrations/:docid/:slug"
   to = "/integrations/:slug"
   status = 301
+
+[[redirects]]
+  # redirect user manual pages
+  from = "/manuals/user/:docid/:slug"
+  to = "/manuals/user/:slug"
+  status = 301
+
 
 [[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
