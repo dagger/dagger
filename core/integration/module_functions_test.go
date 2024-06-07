@@ -89,6 +89,7 @@ func (m *OtherObj) FnE() *Container {
 		})
 
 	t.Run("top-level", func(t *testing.T) {
+		t.Parallel()
 		out, err := ctr.With(daggerFunctions()).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -99,6 +100,7 @@ func (m *OtherObj) FnE() *Container {
 	})
 
 	t.Run("top-level from subdir", func(t *testing.T) {
+		t.Parallel()
 		// find-up should kick in
 		out, err := ctr.
 			WithWorkdir("/work/some/subdir").
@@ -113,6 +115,7 @@ func (m *OtherObj) FnE() *Container {
 	})
 
 	t.Run("return core object", func(t *testing.T) {
+		t.Parallel()
 		out, err := ctr.With(daggerFunctions("fn-a")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -122,11 +125,13 @@ func (m *OtherObj) FnE() *Container {
 	})
 
 	t.Run("return primitive", func(t *testing.T) {
+		t.Parallel()
 		_, err := ctr.With(daggerFunctions("prim")).Stdout(ctx)
 		require.ErrorContains(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
 	})
 
 	t.Run("alt casing", func(t *testing.T) {
+		t.Parallel()
 		out, err := ctr.With(daggerFunctions("fnA")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -136,6 +141,7 @@ func (m *OtherObj) FnE() *Container {
 	})
 
 	t.Run("return user interface", func(t *testing.T) {
+		t.Parallel()
 		out, err := ctr.With(daggerFunctions("fn-b")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -143,6 +149,7 @@ func (m *OtherObj) FnE() *Container {
 	})
 
 	t.Run("return user object", func(t *testing.T) {
+		t.Parallel()
 		out, err := ctr.With(daggerFunctions("fn-c")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -155,6 +162,7 @@ func (m *OtherObj) FnE() *Container {
 	})
 
 	t.Run("return user object nested", func(t *testing.T) {
+		t.Parallel()
 		out, err := ctr.With(daggerFunctions("fn-c", "field-d")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")

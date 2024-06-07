@@ -110,6 +110,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"beneathGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("names Go module after Dagger module", func(t *testing.T) {
+			t.Parallel()
 			generated, err := modGen.Directory("dagger").File("go.mod").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "module dagger/beneath-go-mod")
@@ -134,12 +135,14 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("preserves module name", func(t *testing.T) {
+			t.Parallel()
 			generated, err := modGen.File("go.mod").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "module example.com/test")
 		})
 
 		t.Run("no new go.mod", func(t *testing.T) {
+			t.Parallel()
 			_, err := modGen.File("dagger/go.mod").Contents(ctx)
 			require.ErrorContains(t, err, "no such file or directory")
 		})
@@ -163,6 +166,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("go.work is edited", func(t *testing.T) {
+			t.Parallel()
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "use ./dagger\n")
@@ -189,6 +193,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("go.work is edited", func(t *testing.T) {
+			t.Parallel()
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "use .\n")
@@ -214,6 +219,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("go.work is edited", func(t *testing.T) {
+			t.Parallel()
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "use ./subdir/dagger\n")
@@ -243,6 +249,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.JSONEq(t, `{"hasGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("go.work is unedited", func(t *testing.T) {
+			t.Parallel()
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
 			require.NotContains(t, generated, "use")
@@ -276,6 +283,7 @@ func TestModuleGoInit(t *testing.T) {
 		require.NotContains(t, childEntries, "go.mod")
 
 		t.Run("preserves parent module name", func(t *testing.T) {
+			t.Parallel()
 			goMod, err := generated.File("go.mod").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, goMod, "module example.com/test")
@@ -601,6 +609,7 @@ func TestModuleGit(t *testing.T) {
 			require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 			t.Run("configures .gitattributes", func(t *testing.T) {
+				t.Parallel()
 				ignore, err := modGen.File("dagger/.gitattributes").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitGeneratedFiles {
@@ -609,6 +618,7 @@ func TestModuleGit(t *testing.T) {
 			})
 
 			t.Run("configures .gitignore", func(t *testing.T) {
+				t.Parallel()
 				ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitIgnoredFiles {
@@ -617,6 +627,7 @@ func TestModuleGit(t *testing.T) {
 			})
 
 			t.Run("does not configure .gitignore if disabled", func(t *testing.T) {
+				t.Parallel()
 				modGen := goGitBase(t, c).
 					With(daggerExec("init", "--name=bare"))
 
@@ -660,30 +671,35 @@ func TestModuleGoSignatures(t *testing.T) {
 		})
 
 	t.Run("func Hello() string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
 	t.Run("func Echo(string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoPointer(*string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoPointer(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoPointer":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoPointerPointer(**string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoPointerPointer(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoPointerPointer":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func EchoOptional(string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptional":"hello...hello...hello..."}}`, out)
@@ -693,6 +709,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptionalPointer(string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalPointer(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalPointer":"hello...hello...hello..."}}`, out)
@@ -702,6 +719,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptionalSlice([]string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"hello+there...hello+there...hello+there..."}}`, out)
@@ -711,48 +729,56 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func Echoes([]string) []string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
 	t.Run("func EchoesVariadic(...string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
 
 	t.Run("func HelloContext(context.Context) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloContext}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloContext":"hello context"}}`, out)
 	})
 
 	t.Run("func EchoContext(context.Context, string) string", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoContext(msg: "hello")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoContext":"ctx.hello...ctx.hello...ctx.hello..."}}`, out)
 	})
 
 	t.Run("func HelloStringError() (string, error)", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloStringError}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloStringError":"hello i worked"}}`, out)
 	})
 
 	t.Run("func HelloVoid()", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
 	t.Run("func HelloVoidError() error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoidError}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoidError":null}}`, out)
 	})
 
 	t.Run("func EchoOpts(string, string, int) error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
@@ -763,6 +789,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInline(struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInline(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInline":"hi"}}`, out)
@@ -773,6 +800,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInlinePointer(*struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlinePointer(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlinePointer":"hi"}}`, out)
@@ -783,6 +811,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInlineCtx(ctx, struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineCtx(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineCtx":"hi"}}`, out)
@@ -793,6 +822,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsInlineTags(struct{string, string, int}) error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsInlineTags(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsInlineTags":"hi"}}`, out)
@@ -803,6 +833,7 @@ func TestModuleGoSignatures(t *testing.T) {
 	})
 
 	t.Run("func EchoOptsPragmas(string, string, int) error", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptsPragmas(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOptsPragmas":"hi...hi...hi..."}}`, out)
@@ -858,30 +889,35 @@ func (m *Minimal) ReadOptional(
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
 	t.Run("func Read(ctx, Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
 	})
 
 	t.Run("func ReadPointer(ctx, *Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readPointer(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readPointer":"bar"}}`, out)
 	})
 
 	t.Run("func ReadSlice(ctx, []Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
 	})
 
 	t.Run("func ReadVariadic(ctx, ...Directory) (string, error)", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
 	})
 
 	t.Run("func ReadOptional(ctx, Optional[Directory]) (string, error)", func(t *testing.T) {
+		t.Parallel()
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
@@ -1838,6 +1874,7 @@ class Test {
 			args := gjson.Get(out, "__type.fields.#(name=foo).args")
 
 			t.Run("a: String!", func(t *testing.T) {
+				t.Parallel()
 				// required, i.e., non-null and no default
 				arg := args.Get("#(name=a)")
 				require.Equal(t, "NON_NULL", arg.Get("type.kind").String())
@@ -1846,6 +1883,7 @@ class Test {
 			})
 
 			t.Run("b: String", func(t *testing.T) {
+				t.Parallel()
 				// GraphQL implicitly sets default to null for nullable types
 				arg := args.Get("#(name=b)")
 				require.Equal(t, "SCALAR", arg.Get("type.kind").String())
@@ -1853,6 +1891,7 @@ class Test {
 			})
 
 			t.Run(`c: String! = "foo"`, func(t *testing.T) {
+				t.Parallel()
 				// non-null, with default
 				arg := args.Get("#(name=c)")
 				require.Equal(t, "NON_NULL", arg.Get("type.kind").String())
@@ -1861,6 +1900,7 @@ class Test {
 			})
 
 			t.Run("d: String = null", func(t *testing.T) {
+				t.Parallel()
 				// nullable, with explicit null default; same as b in practice
 				arg := args.Get("#(name=d)")
 				require.Equal(t, "SCALAR", arg.Get("type.kind").String())
@@ -1868,6 +1908,7 @@ class Test {
 			})
 
 			t.Run(`e: String = "bar"`, func(t *testing.T) {
+				t.Parallel()
 				// nullable, with non-null default
 				arg := args.Get("#(name=e)")
 				require.Equal(t, "SCALAR", arg.Get("type.kind").String())
@@ -1875,6 +1916,7 @@ class Test {
 			})
 
 			t.Run("default values", func(t *testing.T) {
+				t.Parallel()
 				out, err = modGen.With(daggerCall("foo", "--a=test")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, tc.expected, out)
@@ -3341,7 +3383,9 @@ func (m *Dep) Fn() Obj {
 		WithWorkdir("/work/test")
 
 	t.Run("return as other module object", func(t *testing.T) {
+		t.Parallel()
 		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3363,6 +3407,7 @@ func (m *Test) Fn() (*DepObj, error) {
 		})
 
 		t.Run("list", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3385,7 +3430,9 @@ func (m *Test) Fn() ([]*DepObj, error) {
 	})
 
 	t.Run("arg as other module object", func(t *testing.T) {
+		t.Parallel()
 		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -3406,6 +3453,7 @@ func (m *Test) Fn(obj *DepObj) error {
 		})
 
 		t.Run("list", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
@@ -3427,7 +3475,9 @@ func (m *Test) Fn(obj []*DepObj) error {
 	})
 
 	t.Run("field as other module object", func(t *testing.T) {
+		t.Parallel()
 		t.Run("direct", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -3453,6 +3503,7 @@ func (m *Test) Fn() (*Obj, error) {
 		})
 
 		t.Run("list", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
@@ -5398,6 +5449,7 @@ func TestModuleSecretNested(t *testing.T) {
 	t.Parallel()
 
 	t.Run("pass secrets between modules", func(t *testing.T) {
+		t.Parallel()
 		// check that we can pass valid secret objects between functions in
 		// different modules
 
@@ -5464,11 +5516,13 @@ func (t *Toplevel) TryArg(ctx context.Context) error {
 			})
 
 		t.Run("can pass secrets", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.With(daggerQuery(`{toplevel{tryArg}}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 
 		t.Run("can return secrets", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.With(daggerQuery(`{toplevel{tryReturn}}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
@@ -5808,11 +5862,13 @@ func diffSecret(ctx context.Context, first, second *Secret) error {
 			})
 
 		t.Run("internal secrets cache", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.With(daggerQuery(`{toplevel{attemptInternal}}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 
 		t.Run("external secrets cache", func(t *testing.T) {
+			t.Parallel()
 			_, err := ctr.With(daggerQuery(`{toplevel{attemptExternal}}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
