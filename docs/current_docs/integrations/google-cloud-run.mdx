@@ -141,5 +141,12 @@ The code sample above is illustrative only. Modify it to your application's spec
 Here is an example of calling the Dagger Function to deploy the application to Google Cloud Run. Remember to update the `registry-location`, `repository`, `service`, and `service-location` arguments, and update the `SERVICE-ACCOUNT-KEY-FILE` placeholder with the local filesystem path to your JSON service key file.
 
 ```shell
-dagger call deploy --source . --project myproject --registry-location us-central1 --repository myregistry/myapp --service-location us-central1 --service myservice  --credential file:SERVICE-ACCOUNT-KEY-FILE
+dagger call deploy \
+  --source=. \
+  --project=myproject \
+  --registry-location=us-central1 \
+  --repository=myregistry/myapp \
+  --service-location=us-central1 \
+  --service=myservice \
+  --credential=file:SERVICE-ACCOUNT-KEY-FILE
 ```
