@@ -388,7 +388,7 @@ module.exports = {
         {
           "type": "doc",
           "label": "Publish Modules",
-          "id": "guides/publish-modules"
+          "id": "manuals/developer/publish-modules"
         },
         {
           "type": "link",

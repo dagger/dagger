@@ -279,6 +279,24 @@
   status = 301
 
 [[redirects]]
+  # redirect contributing page
+  from = "/204441/contributing"
+  to = "/contributing"
+  status = 301
+
+[[redirects]]
+  # redirect CLI page
+  from = "/reference/979596/cli"
+  to = "/reference/cli"
+  status = 301
+
+[[redirects]]
+  # redirect publish modules page
+  from = "/guides/821742/publish-modules"
+  to = "/manuals/developer/publish-modules"
+  status = 301
+
+[[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
   from = "/0.1/*"
   to = "https://archive.docs.dagger.io/0.1/:splat"
