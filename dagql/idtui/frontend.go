@@ -80,8 +80,8 @@ type Dump struct {
 }
 
 func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
-	if id.Base() != nil {
-		if err := d.DumpID(out, id.Base()); err != nil {
+	if id.Receiver() != nil {
+		if err := d.DumpID(out, id.Receiver()); err != nil {
 			return err
 		}
 	}
