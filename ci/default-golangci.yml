@@ -27,6 +27,7 @@ linters:
     - unused
     - unparam
     - whitespace
+    - gomodguard
 
 issues:
   exclude-rules:

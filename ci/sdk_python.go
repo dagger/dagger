@@ -28,45 +28,73 @@ type PythonSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint the Python SDK
+// Lint the Python SDK, and return an error in case of issue
 func (t PythonSDK) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
-
-	base := t.pythonBase(pythonDefaultVersion, true)
-
-	eg.Go(func() error {
-		path := "docs/current_docs"
-		_, err := base.
-			WithDirectory(
-				fmt.Sprintf("/%s", path),
-				t.Dagger.Source.Directory(path),
-				dagger.ContainerWithDirectoryOpts{
-					Include: []string{
-						"**/*.py",
-						".ruff.toml",
-					},
-				},
-			).
-			WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "/docs"}).
-			Sync(ctx)
+	report, err := t.LintReport(ctx)
+	if err != nil {
 		return err
-	})
+	}
+	return report.AssertPass(ctx)
+}
 
+// Produce a lint report for the Python SDK
+// FIXME: rename this to Lint soon, it's a better interface
+func (t PythonSDK) LintReport(ctx context.Context) (*LintReport, error) {
+	goSource := t.Dagger.Source.Directory("sdk/python/runtime")
+	pySource := dag.Directory().WithDirectory(
+		"/",
+		t.Dagger.Source,
+		DirectoryWithDirectoryOpts{Include: []string{
+			"**/*.py",
+			"**/.ruff.toml",
+			"**/pyproject.toml",
+		}},
+	)
+	return t.lintReport(ctx, goSource, pySource)
+}
+
+// Produce a lint report for the Python SDK
+// This is a private implementation because it simulates future support
+// for context directories, which makes its API cleaner.
+// FIXME: when context directories ship, make this public
+func (t PythonSDK) lintReport(
+	ctx context.Context,
+	// Source code of the Python runtime (written in Go)
+	// +default="/sdk/python/runtime"
+	goSource *dagger.Directory,
+
+	// Python source code across SDK and docs
+	// +default="/"
+	// +ignore=["*", "!**/*.py", "!**/.ruff.toml", "!**/pyproject.toml"]
+	pySource *dagger.Directory,
+) (*LintReport, error) {
+	report := new(LintReport)
+	eg, ctx := errgroup.WithContext(ctx)
+	// Lint the python source
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, pythonGeneratedAPIPath)
+		pyReport, err := new(PythonLint).Lint(ctx, pySource)
+		if err != nil {
+			return err
+		}
+		return report.merge(pyReport)
 	})
-
+	// Check that core client library (generated) is up-to-date
 	eg.Go(func() error {
-		// Call `dagger develop` on the python sdk module
-		// FIXME: this goes away when we spin out each SDK pipeline into its own module
-		return t.Dagger.
-			Go().
-			WithCodegen([]string{pythonRuntimeSubdir}).
-			Lint(ctx, []string{pythonRuntimeSubdir}, false)
+		err := util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, pythonGeneratedAPIPath)
+		if err != nil {
+			report.merge(new(LintReport).WithIssue(err.Error(), true))
+		}
+		return nil
 	})
-
-	return eg.Wait()
+	// Lint the code of the Python runtime (which is written in Go)
+	eg.Go(func() error {
+		goReport, err := new(GoLint).Lint(ctx, goSource.AsModule().GeneratedContextDirectory())
+		if err != nil {
+			return err
+		}
+		return report.merge(goReport)
+	})
+	return report, eg.Wait()
 }
 
 // Test the Python SDK
@@ -177,6 +205,13 @@ func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
 	return dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference), nil
+}
+
+// Build a container
+// returns a python container with the Python SDK source files
+// added and dependencies installed.
+func (t PythonSDK) Base(version string, install bool) *Container {
+	return t.pythonBase(version, install)
 }
 
 // pythonBase returns a python container with the Python SDK source files

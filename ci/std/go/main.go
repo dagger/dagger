@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"path"
-
-	"golang.org/x/sync/errgroup"
 )
 
 func New(
@@ -80,43 +78,139 @@ func (p *Go) Env() *Container {
 		WithMountedDirectory("/app", p.Source)
 }
 
-// Lint the project
-func (p *Go) Lint(
-	ctx context.Context,
-
-	pkgs []string,
-	all bool, // +optional
-) error {
-	eg, ctx := errgroup.WithContext(ctx)
-
-	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
-	if all {
-		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
+// Lint the Go code
+func (p *Go) Lint(ctx context.Context) (*LintReport, error) {
+	config := dag.CurrentModule().Source().File("default-golangci.yml")
+	cmd := []string{
+		"golangci-lint", "run",
+		"-v",
+		"--timeout", "5m",
+		// Disable limits, we can filter the report instead
+		"--max-issues-per-linter", "0",
+		"--max-same-issues", "0",
+		"--out-format", "json",
+		"--issues-exit-code", "0",
+		"./...",
 	}
-	// FIXME: consider using the same base container in Lint() and Env()
-	base := dag.
+	llreportFile := dag.
 		Container().
 		From(fmt.Sprintf("golangci/golangci-lint:v%s-alpine", p.LintVersion)).
-		WithMountedDirectory("/app", p.Source).
-		WithWorkdir("/app")
-	for _, pkg := range pkgs {
-		pkg := pkg
-		golangci := base.WithWorkdir(pkg).WithExec(cmd)
-		eg.Go(func() error {
-			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
-			defer span.End()
-			_, err := golangci.Sync(ctx)
-			return err
-		})
-		eg.Go(func() error {
-			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
-			defer span.End()
-			beforeTidy := p.Source.Directory(pkg)
-			afterTidy := p.Env().WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
-			// FIXME: the client binding for AssertEqual should return only an error.
-			_, err := dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
-			return err
-		})
+		WithFile("/etc/golangci.yml", config).
+		WithEnvVariable("GOLANGCI_LINT_CONFIG", "/etc/golangci.yml").
+		WithMountedDirectory("/src", p.Source).
+		WithWorkdir("/src").
+		WithExec(cmd, ContainerWithExecOpts{RedirectStdout: "lint.json"}).
+		File("lint.json")
+	llreportJSON, err := llreportFile.Contents(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return eg.Wait()
+	// Unmarshal the low-level report from linting tool
+	var llreport struct {
+		Issues []struct {
+			Text        string   `json:"Text"`
+			FromLinter  string   `json:"FromLinter"`
+			SourceLines []string `json:"SourceLines"`
+			Replacement *struct {
+				Text string `json:"Text"`
+			} `json:"Replacement,omitempty"`
+			Pos struct {
+				Filename string `json:"Filename"`
+				Offset   int    `json:"Offset"`
+				Line     int    `json:"Line"`
+				Column   int    `json:"Column"`
+			} `json:"Pos"`
+			ExpectedNoLint bool   `json:"ExpectedNoLint"`
+			Severity       string `json:"Severity"`
+		} `json:"Issues"`
+	}
+	if err := json.Unmarshal([]byte(llreportJSON), &llreport); err != nil {
+		return nil, err
+	}
+	report := &LintReport{
+		Issues:   make([]LintIssue, len(llreport.Issues)),
+		LLReport: llreportFile, // Keep the low-level report just in case
+	}
+	for i := range llreport.Issues {
+		report.Issues[i].Text = llreport.Issues[i].Text
+		if llreport.Issues[i].Severity == "error" {
+			report.Issues[i].IsError = true
+		}
+	}
+	return report, nil
+}
+
+// A linting report
+type LintReport struct {
+	Issues   []LintIssue
+	LLReport *File // +private
+}
+
+// An individual linting issue
+type LintIssue struct {
+	IsError bool
+	Text    string
+	// FIXME add more fields
+}
+
+// Return the linting report as a JSON file
+func (li LintReport) JSON(
+	ctx context.Context,
+	// Return the low-level linting tool's report instead of the high-level one
+	// Note: currently this is golangci-lint's format, but could change in the future
+	// +optional
+	ll bool,
+) (*File, error) {
+	if ll {
+		return li.LLReport, nil
+	}
+	data, err := json.MarshalIndent(li, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	f := dag.
+		Directory().
+		WithNewFile("lint.json", string(data)).
+		File("lint.json")
+	return f, nil
+}
+
+// Return the total number of linting errors
+func (li LintReport) ErrorCount() int {
+	var count int
+	for _, issue := range li.Issues {
+		if issue.IsError {
+			count += 1
+		}
+	}
+	return count
+}
+
+// Return the total number of linting warnings
+func (li LintReport) WarningCount() int {
+	var count int
+	for _, issue := range li.Issues {
+		if !issue.IsError {
+			count += 1
+		}
+	}
+	return count
+}
+
+// Return the total number of linting issues (errors and warnings)
+func (li LintReport) IssueCount() int {
+	return len(li.Issues)
+}
+
+// Lint the Go project, and return an error if any check fails,
+// without returning any additional details.
+func (p *Go) AssertLintPass(ctx context.Context) error {
+	report, err := p.Lint(ctx)
+	if err != nil {
+		return err
+	}
+	if report.ErrorCount() > 0 {
+		return fmt.Errorf("linting failed with %d errors", report.ErrorCount())
+	}
+	return nil
 }
