@@ -429,8 +429,8 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 	var base Object
 	var err error
-	if id.Base() != nil {
-		base, err = s.Load(ctx, id.Base())
+	if id.Receiver() != nil {
+		base, err = s.Load(ctx, id.Receiver())
 		if err != nil {
 			return nil, fmt.Errorf("load base: %w", err)
 		}
@@ -605,8 +605,8 @@ func idToPath(id *call.ID) ast.Path {
 	if id == nil { // Query
 		return path
 	}
-	if id.Base() != nil {
-		path = idToPath(id.Base())
+	if id.Receiver() != nil {
+		path = idToPath(id.Receiver())
 	}
 	path = append(path, ast.PathName(id.Field()))
 	if id.Nth() != 0 {

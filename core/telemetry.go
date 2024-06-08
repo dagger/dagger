@@ -21,10 +21,10 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 	}
 
 	var base string
-	if id.Base() == nil {
+	if id.Receiver() == nil {
 		base = "Query"
 	} else {
-		base = id.Base().Type().ToAST().Name()
+		base = id.Receiver().Type().ToAST().Name()
 	}
 	spanName := fmt.Sprintf("%s.%s", base, id.Field())
 
@@ -118,7 +118,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(id *call.ID) bool {
-	if id.Base() == nil {
+	if id.Receiver() == nil {
 		switch id.Field() {
 		case "__schema",
 			"__schemaVersion",
@@ -130,7 +130,7 @@ func isIntrospection(id *call.ID) bool {
 			return false
 		}
 	} else {
-		return isIntrospection(id.Base())
+		return isIntrospection(id.Receiver())
 	}
 }
 
