@@ -63,8 +63,8 @@ type Frontend interface {
 
 // DumpID is exposed for troubleshooting.
 func DumpID(out *termenv.Output, id *call.ID) error {
-	if id.Base() != nil {
-		if err := DumpID(out, id.Base()); err != nil {
+	if id.Receiver() != nil {
+		if err := DumpID(out, id.Receiver()); err != nil {
 			return err
 		}
 	}
