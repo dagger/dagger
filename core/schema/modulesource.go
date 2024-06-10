@@ -18,7 +18,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/vcs"
-	"github.com/tonistiigi/fsutil/types"
 )
 
 type moduleSourceArgs struct {
@@ -29,41 +28,41 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
-	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
-	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
+	parsed := vcs.ParseRefStringDir(ctx, query.Buildkit, args.RefString)
+	if args.Stable && !parsed.HasVersion && parsed.Kind == core.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
 
 	src := &core.ModuleSource{
 		Query: query,
-		Kind:  parsed.kind,
+		Kind:  parsed.Kind,
 	}
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		if filepath.IsAbs(parsed.modPath) {
-			return nil, fmt.Errorf("local module source root path is absolute: %s", parsed.modPath)
+		if filepath.IsAbs(parsed.ModPath) {
+			return nil, fmt.Errorf("local module source root path is absolute: %s", parsed.ModPath)
 		}
 
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
-			RootSubpath: parsed.modPath,
+			RootSubpath: parsed.ModPath,
 		})
 
 	case core.ModuleSourceKindGit:
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
-		src.AsGitSource.Value.Root = parsed.repoRoot.Root
-		src.AsGitSource.Value.CloneURL = parsed.repoRoot.Repo
+		src.AsGitSource.Value.Root = parsed.RepoRoot.Root
+		src.AsGitSource.Value.CloneURL = parsed.RepoRoot.Repo
 
 		var modVersion string
-		if parsed.hasVersion {
-			modVersion = parsed.modVersion
+		if parsed.HasVersion {
+			modVersion = parsed.ModVersion
 		} else {
 			if args.Stable {
 				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 			}
 			var err error
-			modVersion, err = defaultBranch(ctx, parsed.repoRoot.Repo)
+			modVersion, err = defaultBranch(ctx, parsed.RepoRoot.Repo)
 			if err != nil {
 				return nil, fmt.Errorf("determine default branch: %w", err)
 			}
@@ -71,13 +70,13 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource.Value.Version = modVersion
 
 		subPath := "/"
-		if parsed.repoRootSubdir != "" {
-			subPath = parsed.repoRootSubdir
+		if parsed.RepoRootSubdir != "" {
+			subPath = parsed.RepoRootSubdir
 		}
 
 		commitRef := modVersion
-		if parsed.hasVersion && isSemver(modVersion) {
-			allTags, err := gitTags(ctx, parsed.repoRoot.Repo)
+		if parsed.HasVersion && isSemver(modVersion) {
+			allTags, err := gitTags(ctx, parsed.RepoRoot.Repo)
 			if err != nil {
 				return nil, fmt.Errorf("get git tags: %w", err)
 			}
@@ -94,7 +93,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+					{Name: "url", Value: dagql.String(parsed.RepoRoot.Repo)},
 				},
 			},
 			dagql.Selector{
@@ -135,53 +134,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	}
 
 	return src, nil
-}
-
-type parsedRefString struct {
-	modPath        string
-	modVersion     string
-	hasVersion     bool
-	kind           core.ModuleSourceKind
-	repoRoot       *vcs.RepoRoot
-	repoRootSubdir string
-}
-
-// interface used for host interaction mocking
-type buildkitClient interface {
-	StatCallerHostPath(ctx context.Context, path string, followLinks bool) (*types.Stat, error)
-}
-
-// parseRefString parses a ref string into its components
-// New heuristic:
-// - stat folder to see if dir is present
-// - if not, try to isolate root of git repo from the ref
-// - if nothing worked, fallback as local ref, as before
-func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
-	var parsed parsedRefString
-	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
-
-	// We do a stat in case the mod path github.com/username is a local directory
-	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
-	if err == nil {
-		if !parsed.hasVersion && stat.IsDir() {
-			parsed.kind = core.ModuleSourceKindLocal
-			return parsed
-		}
-	}
-
-	// we try to isolate the root of the git repo
-	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
-	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
-		parsed.kind = core.ModuleSourceKindGit
-		parsed.repoRoot = repoRoot
-		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
-		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-		parsed.repoRootSubdir = strings.TrimPrefix(parsed.repoRootSubdir, "/")
-		return parsed
-	}
-
-	parsed.kind = core.ModuleSourceKindLocal
-	return parsed
 }
 
 func (s *moduleSchema) moduleSourceAsModule(
@@ -984,11 +936,11 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		for _, depCfg := range modCfg.Dependencies {
-			parsed := parseRefString(ctx, query.Buildkit, depCfg.Source)
-			if parsed.kind != core.ModuleSourceKindLocal {
+			parsed := vcs.ParseRefStringDir(ctx, query.Buildkit, depCfg.Source)
+			if parsed.Kind != core.ModuleSourceKindLocal {
 				continue
 			}
-			depAbsPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
+			depAbsPath := filepath.Join(sourceRootAbsPath, parsed.ModPath)
 			err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, depAbsPath, false, src, collectedDeps)
 			if err != nil {
 				return nil, fmt.Errorf("failed to collect local module source dep: %w", err)
@@ -1005,11 +957,11 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(ctx, query.Buildkit, modCfg.SDK)
-			switch parsed.kind {
+			parsed := vcs.ParseRefStringDir(ctx, query.Buildkit, modCfg.SDK)
+			switch parsed.Kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
-				sdkPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
+				sdkPath := filepath.Join(sourceRootAbsPath, parsed.ModPath)
 
 				err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, sdkPath, false, src, collectedDeps)
 				if err != nil {
