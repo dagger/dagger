@@ -24,58 +24,64 @@ func TestParsePublicRefString(t *testing.T) {
 
 	for _, tc := range []struct {
 		urlStr     string
-		mockClient BuildkitClient
+		mockClient buildkitClient
 		want       *parsedRefString
 	}{
 		// github
 		{
 			urlStr: "github.com/shykes/daggerverse/ci",
 			want: &parsedRefString{
-				modPath:  "github.com/shykes/daggerverse/ci",
-				kind:     core.ModuleSourceKindGit,
-				repoRoot: &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "/ci",
 			},
 		},
 		{
 			urlStr: "github.com/shykes/daggerverse.git/ci",
 			want: &parsedRefString{
-				modPath:  "github.com/shykes/daggerverse.git/ci",
-				kind:     core.ModuleSourceKindGit,
-				repoRoot: &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				repoRootSubdir: "/ci",
 			},
 		},
 		// gitlab
 		{
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 			want: &parsedRefString{
-				modPath:  "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
-				kind:     core.ModuleSourceKindGit,
-				repoRoot: &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
+				modPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
+				repoRootSubdir: "/depth1/depth2",
 			},
 		},
 		{
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
 			want: &parsedRefString{
-				modPath:  "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
-				kind:     core.ModuleSourceKindGit,
-				repoRoot: &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
+				modPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
+				repoRootSubdir: "/depth1/depth2",
 			},
 		},
 		// bitbucket
 		{
 			urlStr: "bitbucket.org/test-travail/test/depth1",
 			want: &parsedRefString{
-				modPath:  "bitbucket.org/test-travail/test/depth1",
-				kind:     core.ModuleSourceKindGit,
-				repoRoot: &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test", Repo: "https://bitbucket.org/test-travail/test"},
+				modPath:        "bitbucket.org/test-travail/test/depth1",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test", Repo: "https://bitbucket.org/test-travail/test"},
+				repoRootSubdir: "/depth1",
 			},
 		},
 		{
 			urlStr: "bitbucket.org/test-travail/test.git/depth1",
 			want: &parsedRefString{
-				modPath:  "bitbucket.org/test-travail/test.git/depth1",
-				kind:     core.ModuleSourceKindGit,
-				repoRoot: &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test.git"},
+				modPath:        "bitbucket.org/test-travail/test.git/depth1",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test.git"},
+				repoRootSubdir: "/depth1",
 			},
 		},
 	} {
@@ -88,6 +94,7 @@ func TestParsePublicRefString(t *testing.T) {
 			require.Equal(t, parsed.kind, tc.want.kind)
 			require.Equal(t, parsed.repoRoot.Repo, tc.want.repoRoot.Repo)
 			require.Equal(t, parsed.repoRoot.Root, tc.want.repoRoot.Root)
+			require.Equal(t, parsed.repoRootSubdir, tc.want.repoRootSubdir)
 		})
 	}
 }

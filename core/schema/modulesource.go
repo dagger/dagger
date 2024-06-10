@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/tonistiigi/fsutil/types"
 )
@@ -149,7 +148,7 @@ type parsedRefString struct {
 }
 
 // interface used for host interaction mocking
-type BuildkitClient interface {
+type buildkitClient interface {
 	StatCallerHostPath(ctx context.Context, path string, followLinks bool) (*types.Stat, error)
 }
 
@@ -158,7 +157,7 @@ type BuildkitClient interface {
 // - stat folder to see if dir is present
 // - if not, try to isolate root of git repo from the ref
 // - if nothing worked, fallback as local ref, as before
-func parseRefString(ctx context.Context, bk BuildkitClient, refString string) parsedRefString {
+func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
@@ -178,11 +177,6 @@ func parseRefString(ctx context.Context, bk BuildkitClient, refString string) pa
 		parsed.repoRoot = repoRoot
 		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
 		return parsed
-	}
-
-	// log warning to hint that the remote ref fallbacked as a local source kind
-	if err != nil {
-		slog.Warn("ref %s has not been parsed as a git remote: %v", refString, err)
 	}
 
 	parsed.kind = core.ModuleSourceKindLocal
