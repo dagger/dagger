@@ -165,7 +165,7 @@ func (ci *Dagger) Dev(
 		img := "ubuntu"
 		engine = engine.WithBase(&img, &experimentalGPUSupport)
 	}
-	svc, err := engine.Service(ctx, "dev")
+	svc, err := engine.Service(ctx, ci.Version, "")
 	if err != nil {
 		return nil, err
 	}
