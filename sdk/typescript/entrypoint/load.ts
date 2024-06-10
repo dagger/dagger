@@ -170,7 +170,7 @@ export async function loadValue(
     case TypeDefKind.VoidKind:
     case TypeDefKind.ScalarKind:
     case TypeDefKind.EnumKind:
-        return value
+      return value
     default:
       throw new Error(`unsupported type ${type.kind}`)
   }
