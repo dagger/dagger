@@ -134,6 +134,7 @@ func run(ctx context.Context, args []string) error {
 		go srv.Serve(sessionL)
 
 		logs := telemetry.Logs(ctx, InstrumentationLibrary)
+		defer logs.Close()
 
 		var cmdErr error
 		if !silent {

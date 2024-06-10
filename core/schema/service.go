@@ -148,6 +148,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 	}
 
 	logs := telemetry.Logs(ctx, InstrumentationLibrary)
+	defer logs.Close()
 
 	for _, port := range runningSvc.Ports {
 		portStr := fmt.Sprintf("%d/%s", port.Port, port.Protocol)

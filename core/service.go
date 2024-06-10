@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -266,10 +267,10 @@ func (svc *Service) startContainer(
 	logs := telemetry.Logs(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
+			logs.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
-			logs.Close()
 		}
 	}()
 
@@ -595,10 +596,10 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	logs := telemetry.Logs(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
+			logs.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
-			logs.Close()
 		}
 	}()
 
@@ -644,9 +645,16 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			Stop: func(context.Context, bool) error {
 				defer span.End()
 				defer logs.Close()
-				netNS.Release(svcCtx)
 				stop()
-				return nil
+				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
+				defer waitCancel()
+				netNS.Release(waitCtx)
+				select {
+				case <-waitCtx.Done():
+					return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
+				case err := <-exited:
+					return err
+				}
 			},
 		}, nil
 	case err := <-exited:
