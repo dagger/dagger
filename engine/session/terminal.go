@@ -5,7 +5,6 @@ import (
 	"errors"
 	fmt "fmt"
 	"io"
-	"log/slog"
 	"os"
 
 	"github.com/mattn/go-isatty"
@@ -85,9 +84,15 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 		}
 		switch msg := req.GetMsg().(type) {
 		case *SessionRequest_Stdout:
-			stdout.Write(msg.Stdout)
+			_, err := stdout.Write(msg.Stdout)
+			if err != nil {
+				return fmt.Errorf("terminal write stdout: %w", err)
+			}
 		case *SessionRequest_Stderr:
-			stderr.Write(msg.Stderr)
+			_, err := stderr.Write(msg.Stderr)
+			if err != nil {
+				return fmt.Errorf("terminal write stderr: %w", err)
+			}
 		case *SessionRequest_Exit:
 			fmt.Fprintf(stderr, "exit %d\n", msg.Exit)
 			return nil
@@ -98,8 +103,7 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 func (s TerminalAttachable) sendSize(srv Terminal_SessionServer, stdout io.Writer) error {
 	f, ok := stdout.(*os.File)
 	if !ok || !isatty.IsTerminal(f.Fd()) {
-		slog.Debug("stdin is not a terminal; cannot get terminal size")
-		return nil
+		return errors.New("stdin is not a terminal; cannot get terminal size")
 	}
 
 	w, h, err := term.GetSize(int(f.Fd()))

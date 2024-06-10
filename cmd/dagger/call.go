@@ -52,8 +52,6 @@ dagger call lint stdout
 				return nil
 			}
 			c.Select("sync")
-		case Terminal:
-			c.Select("websocketEndpoint")
 		default:
 			return fmt.Errorf("return type %q requires a sub-command", name)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 
@@ -589,7 +590,11 @@ type TerminalClient struct {
 func (c *Client) OpenTerminal(
 	ctx context.Context,
 ) (*TerminalClient, error) {
-	terminalClient := session.NewTerminalClient(c.Opts.MainClientCaller.Conn())
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+	terminalClient := session.NewTerminalClient(caller.Conn())
 
 	term, err := terminalClient.Session(ctx)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/distconsts"
 )
 
 const terminalPrompt = `PS1=\\033[38;5;11mdagger:\w$ \\033[0m`
@@ -60,11 +61,11 @@ func (dir *Directory) Terminal(
 	if ctr == nil {
 		ctr, err = NewContainer(dir.Query, dir.Platform)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
-		ctr, err = ctr.From(ctx, "alpine:3.20")
+		ctr, err = ctr.From(ctx, distconsts.AlpineImage)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
 	}
 
@@ -73,7 +74,7 @@ func (dir *Directory) Terminal(
 	ctr.Config.WorkingDir = "/src"
 	ctr, err = ctr.WithMountedDirectory(ctx, "/src", dir, "", true)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create terminal container: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
@@ -129,6 +130,9 @@ func (container *Container) terminal(
 			eg.Go(func() error {
 				_, err := io.Copy(stdin, term.Stdin)
 				if err != nil {
+					if errors.Is(err, io.ErrClosedPipe) {
+						return nil
+					}
 					return fmt.Errorf("error forwarding terminal stdin to container: %w", err)
 				}
 				return nil
@@ -178,8 +182,9 @@ func (container *Container) terminal(
 		err := <-term.ErrCh
 		if err != nil {
 			runningSvc.Stop(egctx, true)
+			return fmt.Errorf("terminal session failed: %w", err)
 		}
-		return err
+		return nil
 	})
 
 	eg.Go(func() error {
