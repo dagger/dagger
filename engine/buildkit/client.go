@@ -311,52 +311,14 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
 
-	// include exec metadata that isn't included in the cache key
-	var llbRes *bkfrontend.Result
-	switch {
-	case req.Definition != nil && req.Definition.Def != nil:
-		llbRes, err = c.llbBridge.Solve(ctx, req, c.ID())
-		if err != nil {
-			return nil, wrapError(ctx, err, c.ID())
-		}
-	case req.Frontend != "":
-		// HACK: don't force evaluation like this, we can write custom frontend
-		// wrappers (for dockerfile.v0 and gateway.v0) that read from ctx to
-		// replace the llbBridge it knows about.
-		// This current implementation may be limited when it comes to
-		// implement provenance/etc.
-
-		f, ok := c.Frontends[req.Frontend]
-		if !ok {
-			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
-		}
-
-		gw := newFilterGateway(c.llbBridge, req)
-		gw.secretTranslator = ctx.Value("secret-translator").(func(string) (string, error))
-
-		llbRes, err = f.Solve(
-			ctx,
-			gw,
-			c.worker, // also implements Executor
-			req.FrontendOpt,
-			req.FrontendInputs,
-			c.ID(),
-			c.SessionManager,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if req.Evaluate {
-			err = llbRes.EachRef(func(ref bksolver.ResultProxy) error {
-				_, err := ref.Result(ctx)
-				return err
-			})
-			if err != nil {
-				return nil, err
-			}
-		}
-	default:
-		llbRes = &bkfrontend.Result{}
+	// handle secret translation
+	gw := newFilterGateway(c, req)
+	if v := ctx.Value("secret-translator"); v != nil {
+		gw.secretTranslator = v.(func(string) (string, error))
+	}
+	llbRes, err := gw.Solve(ctx, req, c.ID())
+	if err != nil {
+		return nil, wrapError(ctx, err, c.ID())
 	}
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
@@ -791,12 +753,15 @@ type filteringGateway struct {
 	// in the secret store.
 	secretTranslator func(string) (string, error)
 
+	// client is the top-most client that is owning the filtering process
+	client *Client
+
 	// skipInputs specifies op digests that were part of the request inputs and
 	// so shouldn't be processed.
 	skipInputs map[digest.Digest]struct{}
 }
 
-func newFilterGateway(bridge bkfrontend.FrontendLLBBridge, req bkgw.SolveRequest) *filteringGateway {
+func newFilterGateway(client *Client, req bkgw.SolveRequest) *filteringGateway {
 	inputs := map[digest.Digest]struct{}{}
 	for _, inp := range req.FrontendInputs {
 		for _, def := range inp.Def {
@@ -805,54 +770,98 @@ func newFilterGateway(bridge bkfrontend.FrontendLLBBridge, req bkgw.SolveRequest
 	}
 
 	return &filteringGateway{
-		FrontendLLBBridge: bridge,
-		skipInputs:        inputs,
+		client:            client,
+		FrontendLLBBridge: client.llbBridge,
+
+		skipInputs: inputs,
 	}
 }
 
 func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveRequest, sid string) (*bkfrontend.Result, error) {
-	if req.Definition != nil && req.Definition.Def != nil {
-		dag, err := DefToDAG(req.Definition)
-		if err != nil {
-			return nil, err
-		}
-		if err := dag.Walk(func(dag *OpDAG) error {
-			if _, ok := gw.skipInputs[*dag.OpDigest]; ok {
-				return SkipInputs
+	switch {
+	case req.Definition != nil && req.Definition.Def != nil:
+		if gw.secretTranslator != nil {
+			dag, err := DefToDAG(req.Definition)
+			if err != nil {
+				return nil, err
 			}
 
-			execOp, ok := dag.AsExec()
-			if !ok {
+			if err := dag.Walk(func(dag *OpDAG) error {
+				if _, ok := gw.skipInputs[*dag.OpDigest]; ok {
+					return SkipInputs
+				}
+
+				execOp, ok := dag.AsExec()
+				if !ok {
+					return nil
+				}
+
+				for _, secret := range execOp.ExecOp.GetSecretenv() {
+					secret.ID, err = gw.secretTranslator(secret.ID)
+					if err != nil {
+						return err
+					}
+				}
+				for _, mount := range execOp.ExecOp.GetMounts() {
+					if mount.MountType != bksolverpb.MountType_SECRET {
+						continue
+					}
+					secret := mount.SecretOpt
+					secret.ID, err = gw.secretTranslator(secret.ID)
+					if err != nil {
+						return err
+					}
+				}
 				return nil
+			}); err != nil {
+				return nil, err
 			}
 
-			for _, secret := range execOp.ExecOp.GetSecretenv() {
-				secret.ID, err = gw.secretTranslator(secret.ID)
-				if err != nil {
-					return err
-				}
+			newDef, err := dag.Marshal()
+			if err != nil {
+				return nil, err
 			}
-			for _, mount := range execOp.ExecOp.GetMounts() {
-				if mount.MountType != bksolverpb.MountType_SECRET {
-					continue
-				}
-				secret := mount.SecretOpt
-				secret.ID, err = gw.secretTranslator(secret.ID)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
-			return nil, err
+			req.Definition = newDef
 		}
 
-		newDef, err := dag.Marshal()
+		return gw.FrontendLLBBridge.Solve(ctx, req, sid)
+
+	case req.Frontend != "":
+		// HACK: don't force evaluation like this, we can write custom frontend
+		// wrappers (for dockerfile.v0 and gateway.v0) that read from ctx to
+		// replace the llbBridge it knows about.
+		// This current implementation may be limited when it comes to
+		// implement provenance/etc.
+
+		f, ok := gw.client.Frontends[req.Frontend]
+		if !ok {
+			return nil, fmt.Errorf("invalid frontend: %s", req.Frontend)
+		}
+
+		llbRes, err := f.Solve(
+			ctx,
+			gw,
+			gw.client.worker, // also implements Executor
+			req.FrontendOpt,
+			req.FrontendInputs,
+			sid,
+			gw.client.SessionManager,
+		)
 		if err != nil {
 			return nil, err
 		}
-		req.Definition = newDef
-	}
+		if req.Evaluate {
+			err = llbRes.EachRef(func(ref bksolver.ResultProxy) error {
+				_, err := ref.Result(ctx)
+				return err
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		return llbRes, nil
 
-	return gw.FrontendLLBBridge.Solve(ctx, req, sid)
+	default:
+		return &bkfrontend.Result{}, nil
+	}
 }
