@@ -11,10 +11,6 @@ const (
 const (
 	GolangVersion = distconsts.GolangVersion
 	GolangImage   = distconsts.GolangImage
-	// GolangVersionRuncHack needs to be 1.21, since 1.22 is not yet
-	// supported, and can cause crashes: opencontainers/runc#4233
-	GolangVersionRuncHackVersion = "1.21.7"
-	GolangVersionRuncHackImage   = "golang:" + GolangVersionRuncHackVersion + "-alpine"
 
 	AlpineVersion = distconsts.AlpineVersion
 	AlpineImage   = distconsts.AlpineImage

@@ -21,6 +21,6 @@ const (
 	AlpineVersion = "3.20.0"
 	AlpineImage   = "alpine:" + AlpineVersion
 
-	GolangVersion = "1.22.3"
+	GolangVersion = "1.22.4"
 	GolangImage   = "golang:" + GolangVersion + "-alpine"
 )

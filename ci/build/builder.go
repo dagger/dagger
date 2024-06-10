@@ -320,7 +320,7 @@ func (build *Builder) runcBin() *dagger.File {
 	// We build runc from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	buildCtr := dag.Container().
-		From(consts.GolangVersionRuncHackImage).
+		From(consts.GolangImage).
 		With(build.goPlatformEnv).
 		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
