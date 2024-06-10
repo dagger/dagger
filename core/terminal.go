@@ -16,8 +16,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
-const terminalPrompt = `PS1=\\033[38;5;11mdagger:\w$ \\033[0m`
-
 type TerminalArgs struct {
 	Cmd []string `default:"[]"`
 
@@ -35,9 +33,27 @@ func (container *Container) Terminal(
 	svcID *call.ID,
 	args *TerminalArgs,
 ) error {
+	term, err := container.Query.Buildkit.OpenTerminal(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to open terminal: %w", err)
+	}
+	output := idtui.NewOutput(term.Stderr)
+	fmt.Fprintf(
+		term.Stderr,
+		output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
+	)
+	if err := idtui.DumpID(output, svcID); err != nil {
+		return fmt.Errorf("failed to serialize service ID: %w", err)
+	}
+	fmt.Fprintf(term.Stderr, "\r\n\n")
+
 	container = container.Clone()
-
-	container, err := container.WithExec(ctx, ContainerExecOpts{
+	// Inject a custom shell prompt `dagger:<cwd>$`
+	container.Config.Env = append(container.Config.Env, fmt.Sprintf("PS1=%s %s $ ",
+		output.String("dagger").Foreground(termenv.ANSIYellow).String(),
+		output.String(`\w`).Faint().String(),
+	))
+	container, err = container.WithExec(ctx, ContainerExecOpts{
 		Args:                          args.Cmd,
 		SkipEntrypoint:                true,
 		ExperimentalPrivilegedNesting: *args.ExperimentalPrivilegedNesting,
@@ -46,81 +62,10 @@ func (container *Container) Terminal(
 	if err != nil {
 		return fmt.Errorf("failed to create container for interactive terminal: %w", err)
 	}
-
-	return container.terminal(ctx, svcID, args)
-}
-
-func (dir *Directory) Terminal(
-	ctx context.Context,
-	svcID *call.ID,
-	ctr *Container,
-	args *TerminalArgs,
-) error {
-	var err error
-
-	if ctr == nil {
-		ctr, err = NewContainer(dir.Query, dir.Platform)
-		if err != nil {
-			return fmt.Errorf("failed to create terminal container: %w", err)
-		}
-		ctr, err = ctr.From(ctx, distconsts.AlpineImage)
-		if err != nil {
-			return fmt.Errorf("failed to create terminal container: %w", err)
-		}
-	}
-
-	ctr = ctr.Clone()
-
-	ctr.Config.WorkingDir = "/src"
-	ctr, err = ctr.WithMountedDirectory(ctx, "/src", dir, "", true)
-	if err != nil {
-		return fmt.Errorf("failed to create terminal container: %w", err)
-	}
-
-	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
-		Args:                          args.Cmd,
-		SkipEntrypoint:                true,
-		ExperimentalPrivilegedNesting: *args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      *args.InsecureRootCapabilities,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create container for interactive terminal: %w", err)
-	}
-
-	return ctr.terminal(ctx, svcID, args)
-}
-
-func (container *Container) terminal(
-	ctx context.Context,
-	svcID *call.ID,
-	args *TerminalArgs,
-) error {
-	container = container.Clone()
-	container.Config.Env = append(container.Config.Env, terminalPrompt)
-	container, err := container.WithExec(ctx, ContainerExecOpts{
-		Args:                          args.Cmd,
-		SkipEntrypoint:                true,
-		ExperimentalPrivilegedNesting: *args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      *args.InsecureRootCapabilities,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create container for interactive terminal: %w", err)
-	}
-
 	svc, err := container.Service(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}
-
-	bk := container.Query.Buildkit
-	term, err := bk.OpenTerminal(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to open terminal: %w", err)
-	}
-
-	fmt.Fprintf(term.Stderr, "Attaching interactive terminal: ")
-	idtui.DumpID(idtui.NewOutput(term.Stderr, termenv.WithTTY(true)), svcID)
-	fmt.Fprintf(term.Stderr, "\r\n\n")
 	eg, egctx := errgroup.WithContext(ctx)
 	runningSvc, err := svc.Start(
 		ctx,
@@ -206,4 +151,32 @@ func (container *Container) terminal(
 	})
 
 	return eg.Wait()
+}
+
+func (dir *Directory) Terminal(
+	ctx context.Context,
+	svcID *call.ID,
+	ctr *Container,
+	args *TerminalArgs,
+) error {
+	var err error
+
+	if ctr == nil {
+		ctr, err = NewContainer(dir.Query, dir.Platform)
+		if err != nil {
+			return fmt.Errorf("failed to create terminal container: %w", err)
+		}
+		ctr, err = ctr.From(ctx, distconsts.AlpineImage)
+		if err != nil {
+			return fmt.Errorf("failed to create terminal container: %w", err)
+		}
+	}
+
+	ctr = ctr.Clone()
+	ctr.Config.WorkingDir = "/src"
+	ctr, err = ctr.WithMountedDirectory(ctx, "/src", dir, "", true)
+	if err != nil {
+		return fmt.Errorf("failed to create terminal container: %w", err)
+	}
+	return ctr.Terminal(ctx, svcID, args)
 }
