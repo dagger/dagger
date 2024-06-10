@@ -264,10 +264,10 @@ func (svc *Service) startContainer(
 	}()
 
 	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
-	logs := telemetry.Logs(ctx, InstrumentationLibrary)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
-			logs.Close()
+			stdio.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
@@ -333,7 +333,7 @@ func (svc *Service) startContainer(
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- newHealth(bk, gc, fullHost, ctr.Ports, logs.Stderr).Check(ctx)
+		checked <- newHealth(bk, gc, fullHost, ctr.Ports).Check(ctx)
 	}()
 
 	env := append([]string{}, execOp.Meta.Env...)
@@ -349,13 +349,13 @@ func (svc *Service) startContainer(
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
 	} else {
-		stdoutCtr = nopCloser{io.MultiWriter(logs.Stdout, outBuf)}
+		stdoutCtr = nopCloser{io.MultiWriter(stdio.Stdout, outBuf)}
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
 	} else {
-		stderrCtr = nopCloser{io.MultiWriter(logs.Stderr, outBuf)}
+		stderrCtr = nopCloser{io.MultiWriter(stdio.Stderr, outBuf)}
 	}
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -390,7 +390,7 @@ func (svc *Service) startContainer(
 		// terminate the span; we're not interested in setting an error, since
 		// services return a benign error like `exit status 1` on exit
 		defer span.End()
-		defer logs.Close()
+		defer stdio.Close()
 
 		defer func() {
 			if stdinClient != nil {
@@ -593,10 +593,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	ctx, span := Tracer().Start(ctx, strings.Join(descs, ", "))
-	logs := telemetry.Logs(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
-			logs.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
@@ -610,7 +608,6 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		tunnelServiceHost:  fullHost,
 		tunnelServicePorts: svc.HostPorts,
 		sessionID:          svc.HostSessionID,
-		logWriter:          logs.Stderr,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
@@ -623,7 +620,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- newHealth(bk, netNS, fullHost, checkPorts, logs.Stderr).Check(svcCtx)
+		checked <- newHealth(bk, netNS, fullHost, checkPorts).Check(svcCtx)
 	}()
 
 	select {
@@ -644,7 +641,6 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			Ports: checkPorts,
 			Stop: func(context.Context, bool) error {
 				defer span.End()
-				defer logs.Close()
 				stop()
 				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
 				defer waitCancel()

@@ -633,11 +633,12 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		state.spec.Process.Env = append(state.spec.Process.Env, w.execMD.OTelEnvs...)
 		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
 	}
-	logs := telemetry.Logs(ctx, InstrumentationLibrary, logAttrs...)
 
-	state.procInfo.Stdout = nopCloser{io.MultiWriter(logs.Stdout, state.procInfo.Stdout)}
-	state.procInfo.Stderr = nopCloser{io.MultiWriter(logs.Stderr, state.procInfo.Stderr)}
-	state.cleanups.add("close logs", logs.Close)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, logAttrs...)
+	state.cleanups.add("close logs", stdio.Close)
+
+	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
+	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
 
 	listener, err := runInNetNS(ctx, state, func() (net.Listener, error) {
 		return net.Listen("tcp", "127.0.0.1:0")

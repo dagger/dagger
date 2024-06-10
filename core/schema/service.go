@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type serviceSchema struct {
@@ -124,6 +124,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 	void := dagql.Null[core.Void]()
 
 	useNative := !args.Random && len(args.Ports) == 0
+
 	var hostSvc dagql.Instance[*core.Service]
 	err := s.srv.Select(ctx, s.srv.Root(), &hostSvc,
 		dagql.Selector{
@@ -147,16 +148,15 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 		return void, fmt.Errorf("failed to start host service: %w", err)
 	}
 
-	logs := telemetry.Logs(ctx, InstrumentationLibrary)
-	defer logs.Close()
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
 
 	for _, port := range runningSvc.Ports {
-		portStr := fmt.Sprintf("%d/%s", port.Port, port.Protocol)
-		if port.Description != nil {
-			portStr += ": " + *port.Description
-		}
-		portStr += "\n"
-		logs.Stdout.Write([]byte(portStr))
+		slog.Info(
+			"tunnel started",
+			"port", port.Port,
+			"protocol", port.Protocol.Network(),
+			"description", *port.Description,
+		)
 	}
 
 	// wait for the request to be canceled

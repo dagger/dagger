@@ -298,11 +298,11 @@ func main() {
 		// Set the span as the primary span for the frontend.
 		Frontend.SetPrimary(span.SpanContext().SpanID())
 
-		// Direct command stdout/stderr to span logs via OpenTelemetry.
-		logs := telemetry.Logs(ctx, InstrumentationLibrary)
-		defer logs.Close()
-		rootCmd.SetOut(logs.Stdout)
-		rootCmd.SetErr(logs.Stderr)
+		// Direct command stdout/stderr to span stdio via OpenTelemetry.
+		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+		defer stdio.Close()
+		rootCmd.SetOut(stdio.Stdout)
+		rootCmd.SetErr(stdio.Stderr)
 
 		return rootCmd.ExecuteContext(ctx)
 	}); err != nil {

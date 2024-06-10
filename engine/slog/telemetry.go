@@ -12,13 +12,23 @@ import (
 	"go.opentelemetry.io/otel/log"
 )
 
-func SpanLogger(ctx context.Context, name string, level slog.Level, attrs ...log.KeyValue) (telemetry.SpanLogs, *Logger) {
-	logs := telemetry.Logs(ctx, name, attrs...)
-	profile := termenv.Ascii
+type logProfileKey struct{}
+
+func WithLogProfile(ctx context.Context, profile termenv.Profile) context.Context {
+	return context.WithValue(ctx, logProfileKey{}, profile)
+}
+
+// SpanLogger returns a Logger that writes to the give context's span logs.
+func SpanLogger(ctx context.Context, name string, level slog.Level, attrs ...log.KeyValue) *Logger {
+	profile := termenv.ANSI
 	if v := ctx.Value(logProfileKey{}); v != nil {
 		profile = v.(termenv.Profile)
 	}
-	return logs, PrettyLogger(logs.Stderr, profile, level)
+	return PrettyLogger(
+		telemetry.NewWriter(ctx, name, attrs...),
+		profile,
+		level,
+	)
 }
 
 func PrettyLogger(dest io.Writer, profile termenv.Profile, level slog.Level) *Logger {

@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"time"
@@ -12,23 +11,22 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type portHealthChecker struct {
-	bk        *buildkit.Client
-	ns        buildkit.Namespaced
-	host      string
-	ports     []Port
-	logWriter io.Writer
+	bk    *buildkit.Client
+	ns    buildkit.Namespaced
+	host  string
+	ports []Port
 }
 
-func newHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port, logWriter io.Writer) *portHealthChecker {
+func newHealth(bk *buildkit.Client, ns buildkit.Namespaced, host string, ports []Port) *portHealthChecker {
 	return &portHealthChecker{
-		bk:        bk,
-		ns:        ns,
-		host:      host,
-		ports:     ports,
-		logWriter: logWriter,
+		bk:    bk,
+		ns:    ns,
+		host:  host,
+		ports: ports,
 	}
 }
 
@@ -49,6 +47,8 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, strings.Join(portStrs, " "))
 	defer telemetry.End(span, func() error { return rerr })
 
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+
 	dialer := net.Dialer{
 		Timeout: time.Second,
 	}
@@ -65,7 +65,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 					net.JoinHostPort(d.host, fmt.Sprintf("%d", port.Port)),
 				)
 				if err != nil {
-					fmt.Fprintf(d.logWriter, "port not ready: %v, elapsed: %s\n", err, retry.GetElapsedTime())
+					slog.Warn("port not ready", "error", err, "elapsed", retry.GetElapsedTime())
 					return "", err
 				}
 
@@ -78,7 +78,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 			return fmt.Errorf("checking for port %d/%s: %w", port.Port, port.Protocol.Network(), err)
 		}
 
-		fmt.Fprintf(d.logWriter, "port is up: %s\n", endpoint)
+		slog.Info("port is healthy", "port", endpoint)
 	}
 
 	return nil

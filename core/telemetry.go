@@ -51,11 +51,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 	}
 
 	ctx, span := dagql.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
-	logs := telemetry.Logs(ctx, dagql.InstrumentationLibrary)
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
 		defer telemetry.End(span, func() error { return err })
-		defer logs.Close()
 
 		if cached {
 			// TODO maybe this should be an event?
