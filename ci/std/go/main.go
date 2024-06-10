@@ -12,7 +12,7 @@ func New(
 	source *Directory,
 	// Go version
 	// +optional
-	// +default="1.22.3"
+	// +default="1.22.4"
 	version string,
 ) *Go {
 	if source == nil {

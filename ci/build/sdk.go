@@ -3,7 +3,6 @@ package build
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -124,7 +123,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 
 func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	base := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
-		From(fmt.Sprintf("golang:%s-alpine%s", consts.GolangVersion, consts.AlpineVersion)).
+		From(consts.GolangImage).
 		WithExec([]string{"apk", "add", "git"})
 
 	sdkCtrTarball := base.

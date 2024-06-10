@@ -226,7 +226,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 			WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0o444}).
 			WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0o444}).
 			WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0o444})
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		ctr := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
 
@@ -380,7 +380,7 @@ func TestDirectoryWithFile(t *testing.T) {
 				"this should have rwxrwxrwx permissions",
 				dagger.DirectoryWithNewFileOpts{Permissions: 0o777})
 
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		ctr := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -390,7 +390,7 @@ func TestDirectoryWithFile(t *testing.T) {
 			WithNewFile(
 				"file-with-permissions",
 				"this should have rw-r--r-- permissions")
-		ctr2 := c.Container().From("alpine").WithDirectory("/permissions-test", dir2)
+		ctr2 := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir2)
 		stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")
@@ -442,13 +442,13 @@ func TestDirectoryWithFiles(t *testing.T) {
 		dir := c.Directory().
 			WithFiles("/", files)
 
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		ctr := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-set-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "rwxrwxrwx")
 
-		ctr2 := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		ctr2 := c.Container().From(alpineImage).WithDirectory("/permissions-test", dir)
 		stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-default-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")

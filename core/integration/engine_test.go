@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
@@ -162,14 +163,16 @@ func TestDaggerRun(t *testing.T) {
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
 
-	runCommand := `
-	export NO_COLOR=1
-	jq -n '{query:"{container{from(address: \"alpine:3.18.2\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
-	dagger run sh -c 'curl -s \
-		-u $DAGGER_SESSION_TOKEN: \
-		-H "content-type:application/json" \
-		-d @- \
-		http://127.0.0.1:$DAGGER_SESSION_PORT/query'`
+	runCommand := fmt.Sprintf(`
+		export NO_COLOR=1
+		jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+		dagger run sh -c 'curl -s \
+			-u $DAGGER_SESSION_TOKEN: \
+			-H "content-type:application/json" \
+			-d @- \
+			http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
+		alpineImage,
+	)
 
 	clientCtr = clientCtr.
 		WithExec([]string{"apk", "add", "jq", "curl"}).
@@ -177,8 +180,8 @@ func TestDaggerRun(t *testing.T) {
 
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stdout, "3.18.2")
-	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "3.18.2\n"}}}}}`, stdout)
+	require.Contains(t, stdout, distconsts.AlpineVersion)
+	require.JSONEq(t, `{"data": {"container": {"from": {"file": {"contents": "`+distconsts.AlpineVersion+`\n"}}}}}`, stdout)
 
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)

@@ -26,13 +26,13 @@ func TestModuleDaggerTerminal(t *testing.T) {
 
 	t.Run("default arg /bin/sh", func(t *testing.T) {
 		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 import "context"
 
 func New(ctx context.Context) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("mirror.gcr.io/alpine:3.18").
+			From("%s").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir"),
 	}
@@ -41,7 +41,7 @@ func New(ctx context.Context) *Test {
 type Test struct {
 	Ctr *Container
 }
-`), 0644)
+`, alpineImage)), 0644)
 		require.NoError(t, err)
 
 		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
@@ -95,13 +95,13 @@ type Test struct {
 
 	t.Run("basic", func(t *testing.T) {
 		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 import "context"
 
 func New(ctx context.Context) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("mirror.gcr.io/alpine:3.18").
+			From("%s").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithDefaultTerminalCmd([]string{"/bin/sh"}),
@@ -111,7 +111,7 @@ func New(ctx context.Context) *Test {
 type Test struct {
 	Ctr *Container
 }
-`), 0644)
+`, alpineImage)), 0644)
 		require.NoError(t, err)
 
 		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
@@ -165,13 +165,13 @@ type Test struct {
 
 	t.Run("override args", func(t *testing.T) {
 		modDir := t.TempDir()
-		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 import "context"
 
 func New(ctx context.Context) *Test {
 	return &Test{
 		Ctr: dag.Container().
-			From("mirror.gcr.io/alpine:3.18").
+			From("%s").
 			WithEnvVariable("COOLENV", "woo").
 			WithWorkdir("/coolworkdir").
 			WithExec([]string{"apk", "add", "python3"}).
@@ -182,7 +182,7 @@ func New(ctx context.Context) *Test {
 type Test struct {
 	Ctr *Container
 }
-`), 0644)
+`, alpineImage)), 0644)
 		require.NoError(t, err)
 
 		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
