@@ -34,7 +34,7 @@ var (
 
 func init() {
 	var ok bool
-	engineName, ok = os.LookupEnv("_EXPERIMENTAL_DAGGER_ENGINE_NAME")
+	engineName, ok = os.LookupEnv(engine.DaggerNameEnv)
 	if !ok {
 		// use the hostname
 		hostname, err := os.Hostname()

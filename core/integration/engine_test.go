@@ -125,22 +125,31 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	c, ctx := connect(t)
 
 	engineName := "my-special-engine"
+	engineVersion := "v1000.0.0-special"
 	devEngineSvc := devEngineContainer(c, 103, func(c *dagger.Container) *dagger.Container {
-		return c.WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName)
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", engineVersion)
 	}).AsService()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
 
-	out, err := clientCtr.
+	clientCtr = clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`,
-		}). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).
-		Stderr(ctx)
+			Contents: `{ version }`,
+		}).
+		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"})
+	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
-	require.Contains(t, out, "Connected to engine")
-	require.Contains(t, out, engineName)
+	stderr, err := clientCtr.Stderr(ctx)
+	require.NoError(t, err)
+
+	require.Contains(t, stderr, "Connected to engine")
+	require.Contains(t, stderr, engineName)
+	require.Contains(t, stderr, engineVersion)
+
+	require.Contains(t, stdout, engineVersion)
 }
 
 func TestDaggerRun(t *testing.T) {
@@ -244,4 +253,78 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, receivedEvents, "dagger.io/git.title")
 	require.Contains(t, receivedEvents, "init test repo")
+}
+
+func TestEngineVersionCompat(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	devEngineSvc := devEngineContainer(c, 106, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0")
+	}).AsService()
+
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
+	require.NoError(t, err)
+
+	// versions are compatible!
+	stderr, err := clientCtr.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ version }`,
+		}).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "Connected to engine")
+
+	// client version is a development version
+	stderr, err = clientCtr.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "foobar").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ version }`,
+		}).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "Connected to engine")
+
+	// client version is too old (v1.0.0 < v2.0.0)
+	stderr, err = clientCtr.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v1.0.0").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ version }`,
+		}).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "incompatible client version")
+
+	// server version is too old (v2.0.0 < v3.0.0)
+	stderr, err = clientCtr.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v3.0.0").
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ version }`,
+		}).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "incompatible engine version")
+
+	// both versions are too old
+	stderr, err = clientCtr.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v1.0.0").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v3.0.0").
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{ version }`,
+		}).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "incompatible engine version")
 }

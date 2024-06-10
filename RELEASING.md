@@ -113,12 +113,29 @@ to read more about this, see [this (private) Discord
 thread](https://discord.com/channels/707636530424053791/1101242942267601038/1101508879671623780).
 
 - [ ] If doing a minor release, determine if there are any deprecations that
-      can be removed
+      can be removed.
 
 > [!NOTE]
 >
 > Once you know what type of release we are producing - patch vs minor -
 > remember to edit the `?` in the Discord thread.
+
+### Backwards compatibility
+
+Where possible, we try to ensure backwards compatibility between mismatched cli
+and engine versions. However, for technical reasons, this isn't always possible:
+sometime the communication protocol changes, or a bug fix or new feature
+requires changes on both the CLI and the engine.
+
+Before releasing, make sure to sanity check the backwards compatibility of a
+release. If you enounter issues, then:
+
+- [ ] Add a release note using `changie new` (or add it later manually).
+- [ ] Bump the minimum version numbers in [engine/version.go](https://github.com/dagger/dagger/blob/mainengine/version.go).
+
+If unsure, bump both the client and engine minimum version numbers, but if
+the backwards compatibility is only an issue in one direction, you only need
+to bump that one.
 
 ## Improve this doc while releasing 改善
 
