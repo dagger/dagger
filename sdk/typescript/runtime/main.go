@@ -185,7 +185,7 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			// Comment cache here, it seems it creates cache conflicts with yarn (v1 and v4).
 			// We should investigate this further and see if we hit the same issue with pnpm.
 			// WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
-			WithExec([]string{"npm", "install", "-g", "tsx@4.13.0"}), nil
+			WithExec([]string{"npm", "install", "-g", "tsx@4.13.3"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
