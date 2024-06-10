@@ -34,8 +34,8 @@ require (
 	github.com/creack/pty v1.1.21
 	github.com/dave/jennifer v1.7.0
 	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/distribution/reference v0.5.0
 	github.com/docker/cli v26.1.4+incompatible
-	github.com/docker/distribution v2.8.3+incompatible
 	github.com/docker/docker v26.1.4+incompatible
 	github.com/dschmidt/go-layerfs v0.2.0
 	github.com/go-git/go-git/v5 v5.12.0
@@ -169,7 +169,7 @@ require (
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
-	github.com/distribution/reference v0.5.0 // indirect
+	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.8.0 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect

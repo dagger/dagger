@@ -16,7 +16,7 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
-	"github.com/docker/distribution/reference"
+	"github.com/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
