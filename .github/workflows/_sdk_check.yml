@@ -26,8 +26,8 @@ on:
         default: 10
 
 jobs:
-  test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+  check:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6' || 'ubuntu-latest' }}"
     timeout-minutes: "${{ inputs.timeout }}"
     steps:
       - uses: actions/checkout@v4
