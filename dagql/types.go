@@ -893,6 +893,10 @@ func (e *DynamicEnumValue) ToLiteral() call.Literal {
 	return e.parent.Literal(e.value)
 }
 
+func (e *DynamicEnumValue) Value() string {
+	return e.value
+}
+
 type DynamicEnumValues struct {
 	t Typed
 	values []string
@@ -969,6 +973,12 @@ func (e *DynamicEnumValues) ToLiteral() call.Literal {
 func (e *DynamicEnumValues) Lookup(val string) (*DynamicEnumValue, error) {
 	slog.Error("DynamicEnumValues.Lookup", "val", val, "e.values", e.values)
 
+	// Don't verify the enum if values are not loaded yet.
+	if e.values == nil {
+		slog.Error("DynamicEnumValues.Lookup: values not loaded yet", "val", val)
+		return NewDynamicEnumValue(e, val), nil
+	}
+
 	for _, possible := range e.values {
 		if val == possible {
 			return NewDynamicEnumValue(e, possible), nil
@@ -981,7 +991,7 @@ func (e *DynamicEnumValues) Lookup(val string) (*DynamicEnumValue, error) {
 func (e *DynamicEnumValues) Install(srv *Server) {
 	slog.Error("DynamicEnumValues.Install", "e", e.TypeName(), "values", e.values)
 
-	srv.InstallTypeDef(e)
+	srv.scalars[e.Type().Name()] = e
 }
 
 // EnumValues is a list of possible values for an Enum.

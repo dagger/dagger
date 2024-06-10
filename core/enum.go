@@ -63,19 +63,34 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	}
 
 	switch x := value.(type) {
-	case dagql.Scalar[dagql.String]:
-		typeDef := dagql.NewDynamicEnum(m.typeDef)
+	case *dagql.DynamicEnumValue:
+		// Check if the enum is part of its own module
+		enumTypeDefs:= m.mod.EnumDefs
 
-		for _, v := range m.typeDef.Values {
-			typeDef = typeDef.Register(v.OriginalName, v.Description)
+		for _, enumTypeDef := range enumTypeDefs {
+			if enumTypeDef.AsEnum.Value.Name == m.typeDef.Name {
+				typeDef := dagql.NewDynamicEnum(enumTypeDef.AsEnum.Value)
+
+				for _, v := range enumTypeDef.AsEnum.Value.Values {
+					typeDef = typeDef.Register(v.OriginalName, v.Description)
+				}
+
+				return typeDef.DecodeInput(x.Value())
+			}
 		}
 
-		val, err := typeDef.DecodeInput(value)
+		// Then we check dependencies
+		srv, err := m.mod.Deps.Schema(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: invalid enum value %q for %q", x.Value, m.typeDef.Name)
+			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to get schema: %w", err)
+		}	
+			
+		enumType, ok := srv.ScalarType(m.typeDef.Name)
+		if !ok {
+			return nil, fmt.Errorf("ModuleEnumType.ConvertToSDKInput: failed to get enum type %q", m.typeDef.Name)
 		}
 
-		return val, nil
+		return enumType.DecodeInput(x.Value())
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle type %T", m, x)
 	}

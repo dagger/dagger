@@ -244,7 +244,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 }
 
 func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
-	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs))
+	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
 	for _, def := range mod.ObjectDefs {
 		typeDef := def.Clone()
 		if typeDef.AsObject.Valid {
@@ -258,6 +258,14 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 			typeDef.AsInterface.Value.SourceModuleName = mod.Name()
 		}
 		typeDefs = append(typeDefs, typeDef)
+	}
+	for _, def := range mod.EnumDefs {
+		typeDef := def.Clone()
+		if typeDef.AsEnum.Valid {
+			typeDef.AsEnum.Value.SourceModuleName = mod.Name()
+		}
+		typeDefs = append(typeDefs, typeDef)
+	
 	}
 	return typeDefs, nil
 }
@@ -617,6 +625,18 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 				}
 			}
 		}
+	case TypeDefKindEnum:
+		enum := typeDef.AsEnum.Value
+
+		// only namespace enums defined in this module
+		_, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+
+		if !ok {
+			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
+		}
 	}
 	return nil
 }
@@ -728,6 +748,11 @@ func (mod Module) Clone() *Module {
 		cp.InterfaceDefs[i] = def.Clone()
 	}
 
+	cp.EnumDefs = make([]*TypeDef, len(mod.EnumDefs))
+	for i, def := range mod.EnumDefs {
+		cp.EnumDefs[i] = def.Clone()
+	}
+
 	return &cp
 }
 
@@ -808,6 +833,7 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 		}
 	}
 
+	slog.Error("Module.WithEnum adding enum", "enum", def.AsEnum.Value.Name, "values", len(def.AsEnum.Value.Values))
 	mod.EnumDefs = append(mod.EnumDefs, def)
 
 	return mod, nil
