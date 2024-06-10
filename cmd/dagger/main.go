@@ -32,6 +32,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -269,6 +270,8 @@ func main() {
 	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx := context.Background()
+	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
+	ctx = slog.ContextWithDebugMode(ctx, debug)
 
 	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
 		telemetryCfg := telemetry.Config{

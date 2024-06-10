@@ -148,7 +148,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 		return void, fmt.Errorf("failed to start host service: %w", err)
 	}
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	for _, port := range runningSvc.Ports {
 		slog.Info(

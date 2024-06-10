@@ -28,7 +28,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 		return fmt.Errorf("failed to get buildkit session caller %s: %w", d.sessionID, err)
 	}
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

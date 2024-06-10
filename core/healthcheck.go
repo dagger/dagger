@@ -47,7 +47,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, strings.Join(portStrs, " "))
 	defer telemetry.End(span, func() error { return rerr })
 
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelDebug)
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	dialer := net.Dialer{
 		Timeout: time.Second,
@@ -78,7 +78,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 			return fmt.Errorf("checking for port %d/%s: %w", port.Port, port.Protocol.Network(), err)
 		}
 
-		slog.Info("port is healthy", "port", endpoint)
+		slog.Info("port is healthy", "endpoint", endpoint)
 	}
 
 	return nil

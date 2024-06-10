@@ -61,7 +61,7 @@ var licenseFiles = []string{
 }
 
 func findOrCreateLicense(ctx context.Context, dir string) error {
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn)
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	id := licenseID
 	if id == "" {

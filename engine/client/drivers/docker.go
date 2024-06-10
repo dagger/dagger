@@ -64,7 +64,7 @@ const InstrumentationLibrary = "dagger.io/client.drivers"
 func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "create")
 	defer telemetry.End(span, func() error { return rerr })
-	slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn)
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
