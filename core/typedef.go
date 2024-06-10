@@ -324,8 +324,6 @@ func (*TypeDef) TypeDescription() string {
 }
 
 func (typeDef *TypeDef) ToTyped() dagql.Typed {
-	slog.Error("TypeDef.ToTyped", "kind", typeDef.Kind)
-
 	var typed dagql.Typed
 	switch typeDef.Kind {
 	case TypeDefKindString:
@@ -347,18 +345,7 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindInput:
 		typed = typeDef.AsInput.Value.ToInputObjectSpec()
 	case TypeDefKindEnum:
-		enum := typeDef.AsEnum.Value
-
-		slog.Error("TypeDef.ToTyped.TypeDefKindEnum", "enum", enum.Name, "values", len(enum.Values))
-
-		// Load enum values from its typeDef
-		enumTypeDef := dagql.NewDynamicEnum(enum)
-		for _, value := range enum.Values {
-			slog.Error("TypeDef.ToTyped.TypeDefKindEnum loading values", "enum", enum.Name, "value", value.OriginalName)
-			enumTypeDef = enumTypeDef.Register(value.OriginalName, value.Description)
-		}
-
-		typed = enumTypeDef
+		typed = dagql.NewDynamicEnum(typeDef.AsEnum.Value)
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -369,8 +356,6 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 }
 
 func (typeDef *TypeDef) ToInput() dagql.Input {
-	slog.Error("TypeDef.ToInput", "kind", typeDef.Kind)
-
 	var typed dagql.Input
 	switch typeDef.Kind {
 	case TypeDefKindString:
@@ -392,17 +377,7 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindEnum:
-		enum := typeDef.AsEnum.Value
-
-		// Load enum values from its typeDef
-		slog.Error("TypeDef.ToInput.TypeDefKindEnum", "enum", enum.Name, "values", len(enum.Values))
-		enumTypeDef := dagql.NewDynamicEnum(enum)
-		for _, value := range enum.Values {
-			slog.Error("TypeDef.ToInput.TypeDefKindEnum loading values", "enum", enum.Name, "value", value.OriginalName)
-			enumTypeDef = enumTypeDef.Register(value.OriginalName, value.Description)
-		}
-
-		typed = enumTypeDef
+		typed = dagql.NewDynamicEnum(typeDef.AsEnum.Value)
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -914,6 +889,20 @@ func (*EnumTypeDef) Type() *ast.Type {
 
 func (*EnumTypeDef) TypeDescription() string {
 	return "A definition of a custom enum defined in a Module."
+}
+
+// Implements dagql.Enum interface
+func (enum *EnumTypeDef) ListValues() ast.EnumValueList {
+	var values ast.EnumValueList
+
+	for _, val := range enum.Values {
+		values = append(values, &ast.EnumValueDefinition{
+			Name:        val.OriginalName,
+			Description: val.Description,
+		})
+	}
+
+	return values
 }
 
 func NewEnumTypeDef(name, description string) *EnumTypeDef {

@@ -163,27 +163,14 @@ export async function loadValue(
       // TODO(supports subfields serialization)
       return registry.buildClass(objectType, value)
     }
-    case TypeDefKind.EnumKind: {
-      const enumType = (type as TypeDef<TypeDefKind.EnumKind>).name
-
-      // Workaround to call to get the enum that has an id
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      if (dag[`load${enumType}FromID`]) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        return dag[`load${enumType}FromID`](value)
-      }
-
-      return value
-    }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.
     case TypeDefKind.StringKind:
     case TypeDefKind.IntegerKind:
     case TypeDefKind.BooleanKind:
     case TypeDefKind.VoidKind:
     case TypeDefKind.ScalarKind:
-      return value
+    case TypeDefKind.EnumKind:
+        return value
     default:
       throw new Error(`unsupported type ${type.kind}`)
   }

@@ -3199,7 +3199,7 @@ class Status {
 }
 
 @object()
-export class Enums {
+export class Test {
   @func()
   fromStatus(status: Status): string {
     return status as string

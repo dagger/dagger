@@ -230,12 +230,9 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, def := range mod.EnumDefs {
 		enumDef := def.AsEnum.Value
 
-		slog.Error("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
+		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
 
 		enum := dagql.NewDynamicEnum(enumDef)
-		for _, value := range enumDef.Values {
-			enum = enum.Register(value.Name, value.Description)
-		}
 
 		enum.Install(dag)
 	}
@@ -245,6 +242,7 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 
 func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
+
 	for _, def := range mod.ObjectDefs {
 		typeDef := def.Clone()
 		if typeDef.AsObject.Valid {
@@ -252,6 +250,7 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 		}
 		typeDefs = append(typeDefs, typeDef)
 	}
+
 	for _, def := range mod.InterfaceDefs {
 		typeDef := def.Clone()
 		if typeDef.AsInterface.Valid {
@@ -259,14 +258,15 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 		}
 		typeDefs = append(typeDefs, typeDef)
 	}
+
 	for _, def := range mod.EnumDefs {
 		typeDef := def.Clone()
 		if typeDef.AsEnum.Valid {
 			typeDef.AsEnum.Value.SourceModuleName = mod.Name()
 		}
 		typeDefs = append(typeDefs, typeDef)
-	
 	}
+
 	return typeDefs, nil
 }
 
@@ -833,7 +833,6 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 		}
 	}
 
-	slog.Error("Module.WithEnum adding enum", "enum", def.AsEnum.Value.Name, "values", len(def.AsEnum.Value.Values))
 	mod.EnumDefs = append(mod.EnumDefs, def)
 
 	return mod, nil

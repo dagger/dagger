@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"

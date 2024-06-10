@@ -864,9 +864,15 @@ type EnumValue interface {
 	Input
 	~string
 }
+
+type Enum interface {
+	Typed
+	ListValues() ast.EnumValueList
+}
+
 type DynamicEnumValue struct {
 	parent *DynamicEnumValues
-	value string
+	value  string
 }
 
 func NewDynamicEnumValue(parent *DynamicEnumValues, value string) *DynamicEnumValue {
@@ -898,13 +904,19 @@ func (e *DynamicEnumValue) Value() string {
 }
 
 type DynamicEnumValues struct {
-	t Typed
+	t      Enum
 	values []string
-	descriptions []string
 }
 
-func NewDynamicEnum(t Typed) *DynamicEnumValues {
-	return &DynamicEnumValues{t: t}
+func NewDynamicEnum(t Enum) *DynamicEnumValues {
+	enumValues := t.ListValues()
+
+	values := make([]string, len(enumValues))
+	for _, v := range enumValues {
+		values = append(values, v.Name)
+	}
+
+	return &DynamicEnumValues{t: t, values: values}
 }
 
 func (e *DynamicEnumValues) Type() *ast.Type {
@@ -915,17 +927,10 @@ func (e *DynamicEnumValues) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *DynamicEnumValues) Register(val string, desc string) *DynamicEnumValues {
-	e.values = append(e.values, val)
-	e.descriptions = append(e.descriptions, desc)
-
-	return e
-}
-
 func (e *DynamicEnumValues) TypeDefinition() *ast.Definition {
 	def := &ast.Definition{
-		Kind: ast.Enum,
-		Name: e.TypeName(),
+		Kind:       ast.Enum,
+		Name:       e.TypeName(),
 		EnumValues: e.PossibleValues(),
 	}
 
@@ -956,32 +961,26 @@ func (e *DynamicEnumValues) Literal(val string) call.Literal {
 }
 
 func (e *DynamicEnumValues) PossibleValues() ast.EnumValueList {
-	var values ast.EnumValueList
-	for i, val := range e.values {
-		values = append(values, &ast.EnumValueDefinition{
-			Name:        val,
-			Description: e.descriptions[i],
-		})
-	}
-	return values
+	return e.t.ListValues()
 }
 
 func (e *DynamicEnumValues) ToLiteral() call.Literal {
 	return call.NewLiteralEnum("")
 }
 
-func (e *DynamicEnumValues) Lookup(val string) (*DynamicEnumValue, error) {
-	slog.Error("DynamicEnumValues.Lookup", "val", val, "e.values", e.values)
-
-	// Don't verify the enum if values are not loaded yet.
-	if e.values == nil {
-		slog.Error("DynamicEnumValues.Lookup: values not loaded yet", "val", val)
+func (e *DynamicEnumValues) Lookup(val string) (Input, error) {
+	// Don't verify the enum if values are not loaded yet, we cannot compare it to nil since
+	// we call `make` in the constructor.
+	// Instead we log a warning for debug purposes
+	if len(e.values) == 0 {
+		slog.Warn("DynamicEnumValues.Lookup: values not loaded yet inside enum", "val", val)
 		return NewDynamicEnumValue(e, val), nil
 	}
 
 	for _, possible := range e.values {
 		if val == possible {
-			return NewDynamicEnumValue(e, possible), nil
+			// Convert it to a string so it can be serialized in JSON
+			return NewString(val), nil
 		}
 	}
 
@@ -989,8 +988,6 @@ func (e *DynamicEnumValues) Lookup(val string) (*DynamicEnumValue, error) {
 }
 
 func (e *DynamicEnumValues) Install(srv *Server) {
-	slog.Error("DynamicEnumValues.Install", "e", e.TypeName(), "values", e.values)
-
 	srv.scalars[e.Type().Name()] = e
 }
 

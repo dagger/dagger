@@ -343,8 +343,6 @@ type CoreModEnum struct {
 var _ core.ModType = (*CoreModEnum)(nil)
 
 func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
-	slog.Error("CoreModEnum.ConvertFromSDKResult", "value", value, "enum.typeDef.Name", enum.typeDef.Name)
-
 	_, ok := enum.coreMod.Dag.TypeDef(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
@@ -352,16 +350,11 @@ func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (d
 
 	// Construct a dynamic enum to decode the value
 	dynamicEnum := dagql.NewDynamicEnum(enum.typeDef)
-	for _, v := range enum.typeDef.Values {
-		dynamicEnum = dynamicEnum.Register(v.OriginalName, v.Description)
-	}
 
 	return dynamicEnum.DecodeInput(value)
 }
 
 func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
-	slog.Error("CoreModEnum.ConvertToSDKInput", "value", value, "enum.typeDef.Name", enum.typeDef.Name)
-
 	_, ok := enum.coreMod.Dag.TypeDef(enum.typeDef.Name)
 	if !ok {
 		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
@@ -369,9 +362,6 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 
 	// Construct a dynamic enum to decode the input
 	dynamicEnum := dagql.NewDynamicEnum(enum.typeDef)
-	for _, v := range enum.typeDef.Values {
-		dynamicEnum = dynamicEnum.Register(v.OriginalName, v.Description)
-	}
 
 	return dynamicEnum.DecodeInput(value)
 }
