@@ -45,9 +45,10 @@ spec:
         - name: dagger-engine
           image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
+          {{- if .Values.engine.args }}
           args:
-            - "--oci-max-parallelism"
-            - "num-cpu"
+            {{- toYaml .Values.engine.args | nindent 12 }}
+          {{- end }}
           {{- if .Values.magicache.enabled }}
           env:
           - name: _EXPERIMENTAL_DAGGER_CACHESERVICE_URL
