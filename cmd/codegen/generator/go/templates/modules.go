@@ -355,7 +355,11 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 		Id("_").Id("any"),
 		// err error)
 		Id("err").Error(),
-	).Block(objSwitch)
+	).Block(
+		// suppress warning if `inputArgs` is unused
+		Id("_").Op("=").Id(inputArgsVar),
+		objSwitch,
+	)
 
 	return fmt.Sprintf("%#v", invokeFunc)
 }

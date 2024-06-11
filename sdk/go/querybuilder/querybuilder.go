@@ -150,7 +150,9 @@ func (s *Selection) unpack(data interface{}) error {
 			if err != nil {
 				return err
 			}
-			json.Unmarshal(marshalled, s.bind)
+			if err := json.Unmarshal(marshalled, s.bind); err != nil {
+				return err
+			}
 		}
 	}
 
