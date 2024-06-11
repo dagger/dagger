@@ -1,6 +1,0 @@
-kind: Fixed
-body: Correctly support all node package managers dependencies downloading
-time: 2024-05-31T10:20:26.694994+02:00
-custom:
-  Author: TomChv
-  PR: "7518"

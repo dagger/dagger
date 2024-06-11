@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix `:inets` application doesn't start before using the SDK
-time: 2024-05-10T22:56:56.496219888+07:00
-custom:
-  Author: wingyplus
-  PR: "7352"
