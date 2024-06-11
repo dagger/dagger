@@ -50,9 +50,9 @@ type Frontend interface {
 	LogExporter() sdklog.Exporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
-	ConnectedToEngine(name, version, clientID string)
+	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
 	// ConnectedToCloud is called when the CLI has started emitting events to The Cloud.
-	ConnectedToCloud(url string)
+	ConnectedToCloud(ctx context.Context, url string, msg string)
 }
 
 // DumpID is exposed for troubleshooting.
@@ -148,11 +148,15 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 				val := arg.GetValue()
 				fmt.Fprint(out, " ")
 				if argDig := val.GetCallDigest(); argDig != "" {
-					argCall := r.db.Simplify(r.db.MustCall(argDig))
 					var argSpan *Span
+					var argInternal bool
 					if span != nil {
 						argSpan = r.db.MostInterestingSpan(argDig)
+						if argSpan != nil {
+							argInternal = argSpan.Internal
+						}
 					}
+					argCall := r.db.Simplify(r.db.MustCall(argDig), argInternal)
 					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true); err != nil {
 						return err
 					}
@@ -177,8 +181,10 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 		fmt.Fprint(out, ")")
 	}
 
-	typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
-	fmt.Fprint(out, typeStr)
+	if call.Type != nil {
+		typeStr := out.String(": " + call.Type.ToAST().String()).Faint()
+		fmt.Fprint(out, typeStr)
+	}
 
 	if r.Verbosity > 2 {
 		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
@@ -334,6 +340,7 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // }
 
 type spanFilter struct {
+	db               *DB
 	gcThreshold      time.Duration
 	tooFastThreshold time.Duration
 }
@@ -357,8 +364,10 @@ func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
 		return true
 	}
 	if sf.tooFastThreshold > 0 && span.Duration() < sf.tooFastThreshold && opts.Verbosity < 3 {
-		// ignore fast steps; signal:noise is too poor
-		return false
+		// ignore fast leaf steps; signal:noise is too poor
+		if row.Parent != nil && row.Parent.Span.SpanContext().SpanID() != sf.db.PrimarySpan {
+			return false
+		}
 	}
 	if row.IsRunning {
 		// show running steps

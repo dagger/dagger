@@ -53,6 +53,9 @@ type frontendPlain struct {
 	output  *termenv.Output
 	profile termenv.Profile
 
+	// msgsBuffer contains messages to display on the final render
+	msgsBuffer strings.Builder
+
 	// ticker keeps a constant frame rate
 	ticker *time.Ticker
 
@@ -64,6 +67,13 @@ type frontendPlain struct {
 }
 
 type spanData struct {
+	// idx is the human-readable number for this span
+	idx uint
+
+	// if set to true, overrides the heuristic from shouldShow
+	// NOTE: currently doesn't work with deeply nested spans
+	mustShow bool
+
 	// ready indicates that the span is ready to be displayed - this allows to
 	// start bufferings logs before we've actually exported the span itself
 	ready bool
@@ -74,8 +84,6 @@ type spanData struct {
 	// the second time
 	ended bool
 
-	// idx is the human-readable number for this span
-	idx uint
 	// logs is a list of log lines pending printing for this span
 	logs []logLine
 }
@@ -86,11 +94,13 @@ type logLine struct {
 }
 
 func NewPlain() Frontend {
+	db := NewDB()
 	return &frontendPlain{
-		db:   NewDB(),
+		db:   db,
 		data: make(map[trace.SpanID]*spanData),
 
 		spanFilter: spanFilter{
+			db:               db,
 			tooFastThreshold: 100 * time.Millisecond,
 		},
 
@@ -103,16 +113,42 @@ func NewPlain() Frontend {
 	}
 }
 
-func (fe *frontendPlain) ConnectedToEngine(name, version, clientID string) {
-	if !fe.Silent {
-		slog.Info("Connected to engine", "name", name, "version", version, "client", clientID)
+func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, version string, clientID string) {
+	if fe.Silent {
+		return
 	}
+	fe.addVirtualLog(trace.SpanFromContext(ctx), "engine", "name", name, "version", version, "client", clientID)
 }
 
-func (fe *frontendPlain) ConnectedToCloud(url string) {
-	if !fe.Silent {
-		slog.Info("Connected to cloud", "url", url)
+func (fe *frontendPlain) ConnectedToCloud(ctx context.Context, url string, msg string) {
+	if fe.Silent {
+		return
 	}
+	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
+	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.output, url, msg))
+}
+
+// addVirtualLog attaches a fake log row to a given span
+func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...string) {
+	if !span.SpanContext().SpanID().IsValid() {
+		return
+	}
+
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+
+	line := name
+	for i := 0; i+1 < len(fields); i += 2 {
+		line += " " + fe.output.String(fields[i]+"=").Faint().String() + fields[i+1]
+	}
+
+	spanDt, ok := fe.data[span.SpanContext().SpanID()]
+	if !ok {
+		spanDt = &spanData{}
+		fe.data[span.SpanContext().SpanID()] = spanDt
+	}
+	spanDt.logs = append(spanDt.logs, logLine{line: line})
+	spanDt.mustShow = true
 }
 
 func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
@@ -244,11 +280,33 @@ func (fe *frontendPlain) ForceFlush(context.Context) error {
 
 func (fe *frontendPlain) render() {
 	fe.mu.Lock()
+	fe.renderProgress()
+	fe.mu.Unlock()
+}
+
+func (fe *frontendPlain) finalRender() {
+	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
+	if !fe.Silent {
+		// disable context holds, for this final render of *everything*
+		fe.contextHold = 0
+		fe.renderProgress()
+	}
+	if fe.idx > 0 {
+		// if we rendered anything, leave a newline
+		fmt.Fprintln(os.Stderr)
+	}
+	if fe.msgsBuffer.Len() > 0 {
+		fmt.Fprintln(os.Stderr, fe.msgsBuffer.String())
+	}
+	renderPrimaryOutput(fe.db)
+}
+
+func (fe *frontendPlain) renderProgress() {
 	steps := CollectSpans(fe.db, trace.TraceID{})
 	rows := CollectRows(steps)
-	logsView := CollectLogsView(rows)
+	logsView := CollectRowsView(rows)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear
@@ -277,27 +335,15 @@ func (fe *frontendPlain) render() {
 	}
 }
 
-func (fe *frontendPlain) finalRender() {
-	if !fe.Silent {
-		// disable context holds, for this final render of *everything*
-		fe.contextHold = 0
-		fe.render()
-	}
-
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	renderPrimaryOutput(fe.db)
-}
-
 func (fe *frontendPlain) renderRow(row *TraceRow) {
-	if !fe.shouldShow(fe.FrontendOpts, row) {
-		return
-	}
-
 	span := row.Span
 	spanDt := fe.data[span.SpanContext().SpanID()]
 	if !spanDt.ready {
 		// don't render! this span hasn't been exported yet
+		return
+	}
+
+	if !spanDt.mustShow && !fe.shouldShow(fe.FrontendOpts, row) {
 		return
 	}
 
@@ -360,12 +406,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 
 	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
-	prefix := fe.output.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
-
-	if r.Debug {
-		prefix += fe.output.String(fmt.Sprintf("%s: ", span.SpanContext().SpanID().String())).Foreground(termenv.ANSIBrightBlack).String()
-	}
-
+	prefix := fe.stepPrefix(span, spanDt)
 	if span.Call != nil {
 		call := &callpbv1.Call{
 			Field:          span.Call.Field,
@@ -375,6 +416,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		}
 		if done {
 			call.Args = nil
+			call.Type = nil
 		}
 		r.renderCall(fe.output, nil, call, prefix, depth, false)
 	} else {
@@ -410,15 +452,27 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 
 	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
+	prefix := fe.stepPrefix(span, spanDt)
 	for _, logLine := range spanDt.logs {
-		fmt.Fprint(out, out.String(fmt.Sprintf("%-4d: ", spanDt.idx)).Foreground(termenv.ANSIBrightMagenta))
+		fmt.Fprint(out, prefix)
 		r.indent(fe.output, depth)
-		duration := fmtDuration(logLine.time.Sub(span.StartTime()))
-		fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
+
+		if !logLine.time.IsZero() {
+			duration := fmtDuration(logLine.time.Sub(span.StartTime()))
+			fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
+		}
 		pipe := out.String("|").Foreground(termenv.ANSIBrightBlack)
 		fmt.Fprintln(out, pipe, logLine.line)
 	}
 	spanDt.logs = nil
+}
+
+func (fe *frontendPlain) stepPrefix(span *Span, dt *spanData) string {
+	prefix := fe.output.String(fmt.Sprintf("%-4d: ", dt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
+	if fe.Debug {
+		prefix += fe.output.String(fmt.Sprintf("%s: ", span.SpanContext().SpanID().String())).Foreground(termenv.ANSIBrightBlack).String()
+	}
+	return prefix
 }
 
 func (fe *frontendPlain) renderContext(row *TraceRow) (int, bool) {

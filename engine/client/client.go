@@ -65,8 +65,8 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineCallback func(name, version, clientID string)
-	CloudCallback  func(string)
+	EngineCallback func(context.Context, string, string, string)
+	CloudCallback  func(context.Context, string, string)
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
@@ -257,7 +257,7 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
-	slog.Info("connecting", "runner", c.RunnerHost, "client", c.ID)
+	slog.Debug("connecting", "runner", c.RunnerHost, "client", c.ID)
 
 	bkClient, bkInfo, err := newBuildkitClient(ctx, remote, connector)
 	if err != nil {
@@ -314,11 +314,11 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	}
 
 	if c.EngineCallback != nil {
-		c.EngineCallback(bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
+		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
 	}
 	if c.CloudCallback != nil {
-		if url, ok := enginetel.URLForTrace(ctx); ok {
-			c.CloudCallback(url)
+		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
+			c.CloudCallback(ctx, url, msg)
 		}
 	}
 

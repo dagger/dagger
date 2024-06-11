@@ -48,7 +48,7 @@ func (span *Span) Base() (*callpbv1.Call, bool) {
 	if !ok {
 		return nil, false
 	}
-	return span.db.Simplify(call), true
+	return span.db.Simplify(call, span.Internal), true
 }
 
 func (span *Span) IsRunning() bool {

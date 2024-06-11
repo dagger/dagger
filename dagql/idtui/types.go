@@ -102,13 +102,13 @@ func CollectPipelines(rows []*TraceRow) []Pipeline {
 	return pls
 }
 
-type LogsView struct {
+type RowsView struct {
 	Primary *Span
 	Body    []*TraceRow
 }
 
-func CollectLogsView(rows []*TraceRow) *LogsView {
-	view := &LogsView{}
+func CollectRowsView(rows []*TraceRow) *RowsView {
+	view := &RowsView{}
 	for _, row := range rows {
 		if row.Span.Primary {
 			// promote children of primary vertex to the top-level

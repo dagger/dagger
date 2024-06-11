@@ -146,7 +146,6 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	stderr, err := clientCtr.Stderr(ctx)
 	require.NoError(t, err)
 
-	require.Contains(t, stderr, "Connected to engine")
 	require.Contains(t, stderr, engineName)
 	require.Contains(t, stderr, engineVersion)
 
@@ -262,9 +261,10 @@ func TestEngineVersionCompat(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
+	devEngineVersion := "v2.0.0"
 	devEngineSvc := devEngineContainer(c, 106, func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", devEngineVersion).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0")
 	}).AsService()
 
@@ -281,7 +281,7 @@ func TestEngineVersionCompat(t *testing.T) {
 		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stderr, "Connected to engine")
+	require.Contains(t, stderr, devEngineVersion)
 
 	// client version is a development version
 	stderr, err = clientCtr.
@@ -293,7 +293,7 @@ func TestEngineVersionCompat(t *testing.T) {
 		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
-	require.Contains(t, stderr, "Connected to engine")
+	require.Contains(t, stderr, devEngineVersion)
 
 	// client version is too old (v1.0.0 < v2.0.0)
 	stderr, err = clientCtr.
