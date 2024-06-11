@@ -18,9 +18,6 @@ const (
 	WolfiImage   = "cgr.dev/chainguard/wolfi-base"
 	WolfiVersion = "latest" // Wolfi is a rolling distro; no release to pin to
 
-	GolangLintVersion = "v1.57"
-	GolangLintImage   = "golangci/golangci-lint:" + GolangLintVersion + "-alpine"
-
 	UbuntuVersion   = "22.04"
 	RuncVersion     = "v1.1.12"
 	CniVersion      = "v1.3.0"
