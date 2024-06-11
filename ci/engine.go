@@ -121,8 +121,9 @@ func (e *Engine) Container(
 // Create a test engine service
 func (e *Engine) Service(
 	ctx context.Context,
-	version *VersionInfo,
 	name string,
+	// +optional
+	version *VersionInfo,
 ) (*Service, error) {
 	var cacheVolumeName string
 	if version != nil {
