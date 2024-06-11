@@ -9,6 +9,8 @@ import (
 
 	bkclient "github.com/moby/buildkit/client"
 	"go.opentelemetry.io/otel"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/drivers"
@@ -20,11 +22,17 @@ const (
 )
 
 func newBuildkitClient(ctx context.Context, remote *url.URL, connector drivers.Connector) (_ *bkclient.Client, _ *bkclient.Info, rerr error) {
+	backoffConfig := backoff.DefaultConfig
+	backoffConfig.MaxDelay = 30 * time.Second
 	opts := []bkclient.ClientOpt{
 		bkclient.WithTracerProvider(otel.GetTracerProvider()), // TODO verify?
 		bkclient.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return connector.Connect(ctx)
 		}),
+		bkclient.WithGRPCDialOption(grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoffConfig,
+			MinConnectTimeout: 1 * time.Second,
+		})),
 	}
 
 	c, err := bkclient.New(ctx, remote.String(), opts...)
