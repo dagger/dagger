@@ -475,6 +475,7 @@ func (s *containerSchema) Install() {
 			absolutely necessary and only with trusted commands.`),
 
 		dagql.NodeFunc("terminal", s.terminal).
+			Impure("Nondeterministic.").
 			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
 			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
 			ArgDoc("experimentalPrivilegedNesting",
