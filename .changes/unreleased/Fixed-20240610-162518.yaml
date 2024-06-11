@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'core: handle secrets in dockerfile builds with syntax directives'
-time: 2024-06-10T16:25:18.328274656+01:00
-custom:
-  Author: jedevc
-  PR: "7595"

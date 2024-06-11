@@ -1,6 +1,0 @@
-kind: Changed
-body: decrease connect timeout in grpc dial
-time: 2024-06-11T11:30:54.423975174-03:00
-custom:
-    Author: marcosnils
-    PR: "7599"
