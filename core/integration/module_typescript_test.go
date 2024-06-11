@@ -3,7 +3,6 @@ package core
 import (
 	_ "embed"
 	"fmt"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -487,31 +486,6 @@ func TestModuleTypescriptOptional(t *testing.T) {
 	out, err = modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
-
-	// TODO: minimal test coverage of the workaround for https://github.com/dagger/dagger/issues/7583
-	// Can be removed once that issue is resolved.
-	t.Run("standalone ts sdk", func(t *testing.T) {
-		t.Parallel()
-
-		standaloneModPath, err := filepath.Abs("../../sdk/typescript/standalone")
-		require.NoError(t, err)
-		standaloneModDir := c.Host().Directory(standaloneModPath)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithMountedDirectory("/work/standalone-ts", standaloneModDir).
-			With(daggerExec("init", "--name=minimal", "--sdk=./standalone-ts")).
-			With(sdkSource("typescript", tsOptional))
-
-		out, err := modGen.With(daggerQuery(`{minimal{foo}}`)).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal": {"foo": ""}}`, out)
-
-		out, err = modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
-	})
 }
 
 func TestModuleTypescriptRuntimeDetection(t *testing.T) {

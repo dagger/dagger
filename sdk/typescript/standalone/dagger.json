@@ -1,6 +1,0 @@
-{
-  "name": "ts",
-  "sdk": "go",
-  "source": ".",
-  "engineVersion": "v0.11.6"
-}
