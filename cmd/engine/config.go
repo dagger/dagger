@@ -6,7 +6,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
-func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
+func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) {
 	if cfg.Root == "" {
 		cfg.Root = distconsts.EngineDefaultStateDir
 	}
@@ -30,8 +30,6 @@ func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 			setNetworkDefaults(&cfg.Workers.Containerd.NetworkConfig, netConf.CNIConfigPath)
 		}
 	}
-
-	return nil
 }
 
 func setNetworkDefaults(cfg *config.NetworkConfig, cniConfigPath string) {

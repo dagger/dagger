@@ -130,7 +130,9 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 	var replacedOptions bool
 
 	for _, ns := range dns.Nameservers {
-		fmt.Fprintln(dst, "nameserver", ns)
+		if _, err := fmt.Fprintln(dst, "nameserver", ns); err != nil {
+			return err
+		}
 	}
 
 	for srcScan.Scan() {
@@ -139,30 +141,42 @@ func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 			oldDomains := strings.Fields(srcScan.Text())[1:]
 			newDomains := append([]string{}, dns.SearchDomains...)
 			newDomains = append(newDomains, oldDomains...)
-			fmt.Fprintln(dst, "search", strings.Join(newDomains, " "))
+			if _, err := fmt.Fprintln(dst, "search", strings.Join(newDomains, " ")); err != nil {
+				return err
+			}
 			replacedSearch = true
 		case strings.HasPrefix(srcScan.Text(), "options"):
 			oldOptions := strings.Fields(srcScan.Text())[1:]
 			newOptions := append([]string{}, dns.Options...)
 			newOptions = append(newOptions, oldOptions...)
-			fmt.Fprintln(dst, "options", strings.Join(newOptions, " "))
+			if _, err := fmt.Fprintln(dst, "options", strings.Join(newOptions, " ")); err != nil {
+				return err
+			}
 			replacedOptions = true
 		case strings.HasPrefix(srcScan.Text(), "nameserver"):
 			if len(dns.Nameservers) == 0 {
 				// preserve existing nameservers
-				fmt.Fprintln(dst, srcScan.Text())
+				if _, err := fmt.Fprintln(dst, srcScan.Text()); err != nil {
+					return err
+				}
 			}
 		default:
-			fmt.Fprintln(dst, srcScan.Text())
+			if _, err := fmt.Fprintln(dst, srcScan.Text()); err != nil {
+				return err
+			}
 		}
 	}
 
 	if !replacedSearch {
-		fmt.Fprintln(dst, "search", strings.Join(dns.SearchDomains, " "))
+		if _, err := fmt.Fprintln(dst, "search", strings.Join(dns.SearchDomains, " ")); err != nil {
+			return err
+		}
 	}
 
 	if !replacedOptions {
-		fmt.Fprintln(dst, "options", strings.Join(dns.Options, " "))
+		if _, err := fmt.Fprintln(dst, "options", strings.Join(dns.Options, " ")); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path"
 
 	"golang.org/x/sync/errgroup"
@@ -14,17 +15,28 @@ func New(
 	// +optional
 	// +default="1.22.4"
 	version string,
+	// Go linter version
+	// +optional
+	// +default="1.59"
+	lintVersion string,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
 	}
-	return &Go{Version: version, Source: source}
+	return &Go{
+		Version:     version,
+		LintVersion: lintVersion,
+		Source:      source,
+	}
 }
 
 // A Go project
 type Go struct {
 	// Go version
 	Version string
+	// Go linter version
+	LintVersion string
+
 	// Project source directory
 	Source *Directory
 }
@@ -84,7 +96,7 @@ func (p *Go) Lint(
 	// FIXME: consider using the same base container in Lint() and Env()
 	base := dag.
 		Container().
-		From("golangci/golangci-lint:v1.57-alpine").
+		From(fmt.Sprintf("golangci/golangci-lint:v%s-alpine", p.LintVersion)).
 		WithMountedDirectory("/app", p.Source).
 		WithWorkdir("/app")
 	for _, pkg := range pkgs {
