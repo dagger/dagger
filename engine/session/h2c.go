@@ -41,7 +41,7 @@ func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
 const InstrumentationLibrary = "dagger.io/engine.session"
 
 func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
-	_, slog := slog.SpanLogger(s.rootCtx, InstrumentationLibrary, slog.LevelWarn)
+	slog := slog.SpanLogger(s.rootCtx, InstrumentationLibrary)
 
 	req, err := srv.Recv()
 	if err != nil {

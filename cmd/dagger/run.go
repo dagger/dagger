@@ -71,9 +71,7 @@ func init() {
 }
 
 func Run(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-
-	err := run(ctx, args)
+	err := run(cmd, args)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(os.Stderr, "run canceled")
@@ -89,7 +87,9 @@ func Run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func run(ctx context.Context, args []string) error {
+func run(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	u, err := uuid.NewRandom()
 	if err != nil {
 		return fmt.Errorf("generate uuid: %w", err)
@@ -133,18 +133,16 @@ func run(ctx context.Context, args []string) error {
 
 		go srv.Serve(sessionL)
 
-		logs := telemetry.Logs(ctx, InstrumentationLibrary)
-
 		var cmdErr error
 		if !silent {
 			if stdoutIsTTY {
-				subCmd.Stdout = logs.Stdout
+				subCmd.Stdout = cmd.OutOrStdout()
 			} else {
 				subCmd.Stdout = os.Stdout
 			}
 
 			if stderrIsTTY {
-				subCmd.Stderr = logs.Stderr
+				subCmd.Stderr = cmd.ErrOrStderr()
 			} else {
 				subCmd.Stderr = os.Stderr
 			}

@@ -89,10 +89,11 @@ type Test struct {
 
 		tty := console.Tty()
 
-		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 28})
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 10, Cols: 80})
 		require.NoError(t, err)
 
 		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--random")
+		cmd.Env = append(os.Environ(), "NO_COLOR=true")
 		cmd.Stdin = nil
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -101,7 +102,7 @@ type Test struct {
 		require.NoError(t, err)
 		defer cmd.Process.Kill()
 
-		_, matches, err := console.MatchLine(ctx, `(\d+)/TCP:`)
+		_, matches, err := console.MatchLine(ctx, `tunnel started port=(\d+)`)
 		require.NoError(t, err)
 
 		port := matches[1]

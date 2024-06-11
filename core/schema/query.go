@@ -80,7 +80,7 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(ctx context.Context, _ *core.Query, args checkVersionCompatibilityArgs) (dagql.Boolean, error) {
-	_, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn,
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary,
 		log.Bool(telemetry.LogsGlobalAttr, true))
 
 	// Skip development version
