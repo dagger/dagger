@@ -414,7 +414,7 @@ func exitError(ctx context.Context, exitCodePath string, err error) error {
 
 		select {
 		case <-ctx.Done():
-			exitErr.Err = fmt.Errorf(exitErr.Error())
+			exitErr.Err = fmt.Errorf("%s: %w", exitErr.Error(), context.Cause(ctx))
 			return exitErr
 		default:
 			return stack.Enable(exitErr)
