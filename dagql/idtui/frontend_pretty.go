@@ -226,6 +226,12 @@ func (fe *frontendPretty) finalRender() error {
 
 	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 
+	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
+		if fe.msgsPanel.buf.Len() > 0 {
+			fmt.Fprintln(out, fe.msgsPanel.buf.String())
+		}
+	}
+
 	if fe.logsPanel.buf.Len() > 0 {
 		fmt.Fprintln(out, fe.logsPanel.buf.String())
 	}
@@ -236,10 +242,6 @@ func (fe *frontendPretty) finalRender() error {
 		} else if renderedAny {
 			fmt.Fprintln(out)
 		}
-	}
-
-	if fe.msgsPanel.buf.Len() > 0 {
-		fmt.Fprintln(out, fe.msgsPanel.buf.String())
 	}
 
 	return renderPrimaryOutput(fe.db)
@@ -336,13 +338,13 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	fe.recalculateView()
+	if err := fe.renderPanel(out, fe.msgsPanel, false); err != nil {
+		return err
+	}
 	if err := fe.renderPanel(out, fe.logsPanel, false); err != nil {
 		return err
 	}
 	if _, err := fe.renderProgress(out); err != nil {
-		return err
-	}
-	if err := fe.renderPanel(out, fe.msgsPanel, false); err != nil {
 		return err
 	}
 	return nil
