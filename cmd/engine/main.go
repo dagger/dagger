@@ -241,9 +241,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
-		if err := setDaggerDefaults(&cfg, netConf); err != nil {
-			return err
-		}
+		setDaggerDefaults(&cfg, netConf)
 
 		setDefaultConfig(&cfg)
 
