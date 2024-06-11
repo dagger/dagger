@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2028,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2011,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -92,9 +92,9 @@ cadence.
 
 To let the team know:
 
-- [ ] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
+- [x] Create a new milestone in [GitHub](https://github.com/dagger/dagger/milestones),
       e.g. [`v0.11.5 Milestone`](https://github.com/dagger/dagger/milestone/47)
-- [ ] Create a new post in [Discord #engine-dev](https://discord.com/channels/707636530424053791/1003718839739105300),
+- [x] Create a new post in [Discord #engine-dev](https://discord.com/channels/707636530424053791/1003718839739105300),
       e.g. [`v0.11.5 release - 28th May 2024`](https://discord.com/channels/707636530424053791/1240714480275689574)
 
 This allows others to weigh in whether:
@@ -112,7 +112,7 @@ Most importantly, patch vs minor is **not** a technical decision. If you want
 to read more about this, see [this (private) Discord
 thread](https://discord.com/channels/707636530424053791/1101242942267601038/1101508879671623780).
 
-- [ ] If doing a minor release, determine if there are any deprecations that
+- [x] If doing a minor release, determine if there are any deprecations that
       can be removed.
 
 > [!NOTE]
@@ -130,8 +130,8 @@ requires changes on both the CLI and the engine.
 Before releasing, make sure to sanity check the backwards compatibility of a
 release. If you enounter issues, then:
 
-- [ ] Add a release note using `changie new` (or add it later manually).
-- [ ] Bump the minimum version numbers in [engine/version.go](https://github.com/dagger/dagger/blob/mainengine/version.go).
+- [x] Add a release note using `changie new` (or add it later manually).
+- [x] Bump the minimum version numbers in [engine/version.go](https://github.com/dagger/dagger/blob/mainengine/version.go).
 
 If unsure, bump both the client and engine minimum version numbers, but if
 the backwards compatibility is only an issue in one direction, you only need
@@ -143,12 +143,12 @@ In order to keep this relevant & accurate, we improve this doc during the
 release process. It's the best time to pause, observe how it all fits together,
 and improve it. We want small, constant improvements which compound. Therefore:
 
-- [ ] Save a copy of this doc outside of this repository (e.g.
+- [x] Save a copy of this doc outside of this repository (e.g.
       `~/Downloads/RELEASING.md`). Now open that copy in your editor and start
       ticking items off it as you make progress. Remember to add / remove / edit
       any parts which could be improved. As inspiration, [see what a past PR with
       improvements looks like](https://github.com/dagger/dagger/pull/5056).
-- [ ] Update the date in the shields.io badge, first line in this file.
+- [x] Update the date in the shields.io badge, first line in this file.
 
 > [!NOTE]
 >
@@ -172,22 +172,22 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.6.md` by either running `changie batch patch`
+- [x] Create e.g. `.changes/v0.11.7.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
 >
 > If you do not have `changie` installed, see https://changie.dev
 
-- [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.6.md`
-- [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.6-release-notes` with the new release notes
+- [x] Make any necessary edits to the newly generated file, e.g.
+      `.changes/v0.11.7.md`
+- [x] Update `CHANGELOG.md` by running `changie merge`.
+- [x] `30 mins` Submit a PR - e.g. `add-v0.11.7-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
-- [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
+- [x] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
       `main` branch that you are about to release.
-- [ ] `30mins` When you have confirmed that all checks are green, run the following:
+- [x] `30mins` When you have confirmed that all checks are green, run the following:
 
 ```console
 git checkout main
@@ -252,9 +252,10 @@ changie merge
 cd ../..
 ```
 
-- [ ] For the Helm chart, bump `version` & `appVersion` in `helm/dagger/Chart.yaml`
-- [ ] Commit and push the changes with the message `Add SDK release notes`
-- [ ] `30mins` Open this draft PR in
+- [x] Commit and push the changes with the message `Add SDK release notes`
+- [x] For the Helm chart, bump `version` & `appVersion` in `helm/dagger/Chart.yaml`
+- [x] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
+- [x] `30mins` Open this draft PR in
       [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
       click on **Ready to review**.
 - [ ] **After all checks pass**, merge this PR. Tip: go to the **Files
@@ -262,7 +263,7 @@ cd ../..
 
 ## 🐹 Go SDK ⏱ `30mins`
 
-- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+- [x] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
       branch that you are about to release. This will usually be the commit that
       bumps the Engine version, the one that you merged earlier.
 
@@ -274,7 +275,7 @@ git branch -D bump-engine
 export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
 ```
 
-- [ ] Tag & publish:
+- [x] Tag & publish:
 
 ```console
 cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
@@ -287,13 +288,14 @@ workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-- [ ] `20mins` Bump the Go SDK version in our internal CI targets & check
+- [x] `20mins` Bump the Go SDK version in our internal CI targets & check
       that Engine tests pass locally. If everything looks good, submit a new PR
       with this change so that we can check that all our workflows pass with the new
       SDK version before we create a new GitHub release and make it widely public.
 
 ```console
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
+go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
 go mod tidy
 cd ci
 go mod edit -require github.com/dagger/dagger@${ENGINE_VERSION:?must be set}
@@ -304,8 +306,6 @@ cd ..
 - [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
       - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
       - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
-
-- [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
 
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
@@ -322,10 +322,10 @@ Ensure that all the workflows succeed before continuing (specifically `test` and
       release process using the just-released CLI.
 
 ```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.6 sh
-# install the cli to dagger-0.11.6, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.11.6}
-ln -s ~/.local/bin/dagger{-0.11.6,}
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.7 sh
+# install the cli to dagger-0.11.7, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.11.7}
+ln -s ~/.local/bin/dagger{-0.11.7,}
 
 dagger version
 ```
