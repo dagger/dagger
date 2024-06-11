@@ -128,9 +128,6 @@ func traceMessage(out *termenv.Output, url string, msg string) string {
 func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
 	fe.FrontendOpts = opts
 
-	// set default context logs
-	ctx = slog.WithLogProfile(ctx, fe.profile)
-
 	// redirect slog to the logs pane
 	level := slog.LevelInfo
 	if fe.Debug {

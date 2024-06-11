@@ -147,6 +147,9 @@ func (t PythonSDK) Publish(
 	pypiToken *Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/python/v")
+	if dryRun {
+		version = "0.0.0"
+	}
 	if pypiRepo == "" || pypiRepo == "pypi" {
 		pypiRepo = "main"
 	}

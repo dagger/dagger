@@ -153,6 +153,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 		WithField("client_hostname", opts.ClientHostname).
 		WithField("server_id", opts.ServerID))
 
+	if err := engine.CheckVersionCompatibility(opts.ClientVersion, engine.MinimumClientVersion); err != nil {
+		return fmt.Errorf("incompatible client version: %w", err)
+	}
+
 	{
 		lg := bklog.G(ctx).WithField("register_client", opts.RegisterClient)
 		lgLevel := lg.Trace

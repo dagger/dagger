@@ -1,0 +1,15 @@
+---
+slug: /integrations/podman
+---
+
+# Podman
+
+Podman is CLI-compatible with Docker and therefore can be used by creating a symbolic link to the Podman executable in your system path and naming it `docker`:
+
+```shell
+sudo ln -s $(which podman) /usr/local/bin/docker
+```
+
+:::note
+RHEL 8.x users may need to additionally execute `modprobe iptable_nat`.
+:::

@@ -1,0 +1,29 @@
+---
+slug: /manuals/user/directories
+---
+
+# Just-in-Time Directories
+
+Just-in-time directories are produced by calling a Dagger Function that returns the `Directory` type.
+
+Just-in-time directories might be produced by a Dagger Function that:
+
+- Builds language-specific binaries
+- Downloads source code from git or another remote source
+- Processes source code (for example, generating documentation or linting code)
+- Downloads or processes datasets
+- Downloads machine learning models
+
+Here is an example of a Go builder Dagger Function that accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a Go binary from the source code in that repository, and returns the build directory containing the compiled binary.
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger
+```
+
+Once the command completes, you should see this output:
+
+```shell
+Directory evaluated. Use "dagger call build --help" to see available sub-commands.
+```
+
+This means that the build succeeded, and a `Directory` type representing the build directory was returned.

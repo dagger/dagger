@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix File cannot export to local on Windows
+time: 2024-06-07T22:18:01.148335+07:00
+custom:
+  Author: wingyplus
+  PR: "7564"

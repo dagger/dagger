@@ -19,9 +19,6 @@ spec:
     - name: dagger-engine
       # modify to use the desired Dagger version
       image: registry.dagger.io/engine:vX.Y.Z 
-      args:
-        - "--oci-max-parallelism"
-        - "num-cpu"
       securityContext:
         privileged: true
         capabilities:

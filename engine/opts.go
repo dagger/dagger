@@ -57,6 +57,9 @@ type ClientMetadata struct {
 	// matches.
 	ClientHostname string `json:"client_hostname"`
 
+	// ClientVersion is the version string of the client that make the request.
+	ClientVersion string `json:"client_version"`
+
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels map[string]string `json:"labels"`
 
@@ -105,6 +108,10 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 	clientMetadata := &ClientMetadata{}
 	if err := decodeMeta(md, ClientMetadataMetaKey, clientMetadata); err != nil {
 		return nil, err
+	}
+	if clientMetadata.ClientVersion == "" {
+		// fallback for old clients that don't send a client version!
+		clientMetadata.ClientVersion = clientMetadata.Labels["dagger.io/client.version"]
 	}
 	return clientMetadata, nil
 }

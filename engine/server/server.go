@@ -245,6 +245,15 @@ func (s *DaggerServer) ServeClientConn(
 func (s *DaggerServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Debug https://github.com/dagger/dagger/issues/7592 by logging method and some headers, which
+	// are checked by gqlgen's handler
+	bklog.G(ctx).WithFields(logrus.Fields{
+		"path":          r.URL.Path,
+		"method":        r.Method,
+		"upgradeHeader": r.Header.Get("Upgrade"),
+		"contentType":   r.Header.Get("Content-Type"),
+	}).Debug("handling http request")
+
 	// propagate span context from the client (i.e. for Dagger-in-Dagger)
 	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
 

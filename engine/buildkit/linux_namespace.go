@@ -29,7 +29,7 @@ func runInNetNS[T any](
 		value T
 		err   error
 	}
-	resultCh := make(chan result)
+	resultCh := make(chan result, 1)
 
 	select {
 	case <-ctx.Done():
@@ -37,6 +37,7 @@ func runInNetNS[T any](
 	case <-state.done:
 		return zero, fmt.Errorf("container exited")
 	case state.netNSJobs <- func() {
+		defer close(resultCh)
 		v, err := fn()
 		resultCh <- result{value: v, err: err}
 	}:
@@ -108,8 +109,9 @@ func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
 				}}}
 
 				// must run in it's own isolated goroutine since it will lock to threads
-				errCh := make(chan error)
+				errCh := make(chan error, 1)
 				go func() {
+					defer close(errCh)
 					errCh <- nsw.run(ctx, state.netNSJobs)
 				}()
 				err := <-errCh

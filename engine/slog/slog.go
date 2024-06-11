@@ -4,15 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
-
-	"github.com/muesli/termenv"
 )
-
-type logProfileKey struct{}
-
-func WithLogProfile(ctx context.Context, profile termenv.Profile) context.Context {
-	return context.WithValue(ctx, logProfileKey{}, profile)
-}
 
 const (
 	// standard levels

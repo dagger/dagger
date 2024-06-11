@@ -64,8 +64,7 @@ const InstrumentationLibrary = "dagger.io/client.drivers"
 func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, "create")
 	defer telemetry.End(span, func() error { return rerr })
-	logs, slog := slog.SpanLogger(ctx, InstrumentationLibrary, slog.LevelWarn)
-	defer logs.Close()
+	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
@@ -208,11 +207,11 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
 	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
 	defer telemetry.End(span, func() error { return rerr })
-	logs := telemetry.Logs(ctx, "")
-	defer logs.Close()
+	stdio := telemetry.SpanStdio(ctx, "")
+	defer stdio.Close()
 	outBuf := new(bytes.Buffer)
-	cmd.Stdout = io.MultiWriter(logs.Stdout, outBuf)
-	cmd.Stderr = io.MultiWriter(logs.Stderr, outBuf)
+	cmd.Stdout = io.MultiWriter(stdio.Stdout, outBuf)
+	cmd.Stderr = io.MultiWriter(stdio.Stderr, outBuf)
 	if err := cmd.Run(); err != nil {
 		return outBuf.String(), errors.Wrap(err, "failed to run command")
 	}

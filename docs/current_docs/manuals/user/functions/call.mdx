@@ -1,0 +1,23 @@
+---
+slug: /manuals/user/call
+---
+
+# Function Calls from the CLI
+
+The simplest and most common way to call Dagger Functions is to use the Dagger CLI. The Dagger CLI is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI configuration.
+
+Here is an example of calling a Dagger Function using the Dagger CLI:
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello
+```
+
+Here's what you should see:
+
+```shell
+hello, world!
+```
+
+In this example, the Dagger CLI is first loading a `hello` module directly from its GitHub repository and then executing the `Hello()` function from that module.
+
+If you inspect the source code of the module, you'll see a `Hello()` function, written in Go, which prepares a message and returns it as a string.
