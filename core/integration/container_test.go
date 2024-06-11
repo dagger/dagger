@@ -240,23 +240,37 @@ CMD echo "stage2"
 	t.Run("with build secrets", func(t *testing.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 
-		src := contextDir.
-			WithNewFile("Dockerfile",
-				`FROM golang:1.18.2-alpine
+		dockerfile := `FROM golang:1.18.2-alpine
 WORKDIR /src
 RUN --mount=type=secret,id=my-secret,required=true test "$(cat /run/secrets/my-secret)" = "barbar"
 RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /secret
-CMD cat /secret
-`)
+CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
+`
 
-		stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
-			Secrets: []*dagger.Secret{sec},
-		}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, stdout, "***")
+		t.Run("builtin frontend", func(t *testing.T) {
+			src := contextDir.WithNewFile("Dockerfile", dockerfile)
+
+			stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
+				Secrets: []*dagger.Secret{sec},
+			}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
+
+		t.Run("remote frontend", func(t *testing.T) {
+			src := contextDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
+
+			stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
+				Secrets: []*dagger.Secret{sec},
+			}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, stdout, "***")
+			require.Contains(t, stdout, "BARBAR")
+		})
 	})
 
-	t.Run("with input build secrets", func(t *testing.T) {
+	t.Run("prevent duplicate secret transform", func(t *testing.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 
 		// src is a directory that has a secret dependency in it's build graph
