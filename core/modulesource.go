@@ -403,7 +403,7 @@ type GitModuleSource struct {
 	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
 	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
-	CloneURL string `field:"true" doc:"The URL to clone the root of the git repo from"`
+	CloneURL string `field:"true" name:"cloneURL" doc:"The URL to clone the root of the git repo from"`
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" doc:"The directory containing everything needed to load load and use the module."`
 }

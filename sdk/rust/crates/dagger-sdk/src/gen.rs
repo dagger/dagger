@@ -4300,7 +4300,7 @@ pub struct GitModuleSource {
     pub graphql_client: DynGraphQLClient,
 }
 impl GitModuleSource {
-    /// The URL from which the source's git repo can be cloned.
+    /// The URL to clone the root of the git repo from
     pub async fn clone_url(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneURL");
         query.execute(self.graphql_client.clone()).await
@@ -4327,6 +4327,11 @@ impl GitModuleSource {
     /// A unique identifier for this GitModuleSource.
     pub async fn id(&self) -> Result<GitModuleSourceId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The clean module name of the root of the module
+    pub async fn root(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("root");
         query.execute(self.graphql_client.clone()).await
     }
     /// The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).

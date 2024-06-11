@@ -3433,7 +3433,7 @@ class GitModuleSource(Type):
     """Module source originating from a git repo."""
 
     async def clone_url(self) -> str:
-        """The URL from which the source's git repo can be cloned.
+        """The URL to clone the root of the git repo from
 
         Returns
         -------
@@ -3526,6 +3526,27 @@ class GitModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitModuleSourceID)
+
+    async def root(self) -> str:
+        """The clean module name of the root of the module
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("root", _args)
+        return await _ctx.execute(str)
 
     async def root_subpath(self) -> str:
         """The path to the root of the module source under the context directory.

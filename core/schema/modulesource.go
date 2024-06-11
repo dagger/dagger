@@ -209,14 +209,6 @@ func (s *moduleSchema) moduleSourceAsString(ctx context.Context, src *core.Modul
 	return src.RefString()
 }
 
-func (s *moduleSchema) gitModuleSourceCloneURL(
-	ctx context.Context,
-	ref *core.GitModuleSource,
-	args struct{},
-) (string, error) {
-	return ref.CloneURL, nil
-}
-
 func (s *moduleSchema) gitModuleSourceHTMLURL(
 	ctx context.Context,
 	ref *core.GitModuleSource,
