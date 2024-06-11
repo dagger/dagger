@@ -1,6 +1,0 @@
-kind: Fixed
-body: Correctly load module with subpath root dir
-time: 2024-06-05T11:15:17.051885+02:00
-custom:
-  Author: TomChv
-  PR: "7551"
