@@ -1,6 +1,0 @@
-kind: Changed
-body: engine gc policy is less aggressive
-time: 2024-06-06T12:45:41.887611597-03:00
-custom:
-    Author: marcosnils
-    PR: "7563"
