@@ -122,14 +122,18 @@ func (e *Engine) Container(
 func (e *Engine) Service(
 	ctx context.Context,
 	name string,
+	// +optional
+	version *VersionInfo,
 ) (*Service, error) {
 	var cacheVolumeName string
-	if name != "" {
-		cacheVolumeName = "dagger-dev-engine-state-" + name
+	if version != nil {
+		cacheVolumeName = "dagger-dev-engine-state-" + version.String()
 	} else {
-		cacheVolumeName = "dagger-dev-engine-state"
+		cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
 	}
-	cacheVolumeName += identity.NewID()
+	if name != "" {
+		cacheVolumeName += "-" + name
+	}
 
 	e = e.
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
@@ -141,7 +145,12 @@ func (e *Engine) Service(
 	}
 	devEngine = devEngine.
 		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName)).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), ContainerWithMountedCacheOpts{
+			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
+			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
+			// one, which gets us best-effort cache re-use for these nested engine services
+			Sharing: Private,
+		}).
 		WithExec(nil, ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
