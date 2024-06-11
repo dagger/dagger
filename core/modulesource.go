@@ -397,13 +397,13 @@ func (src *LocalModuleSource) Symbolic() string {
 }
 
 type GitModuleSource struct {
-	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
-
-	Commit string `field:"true" doc:"The resolved commit of the git repo this source points to."`
-
-	URLParent string
-
+	Root        string `field:"true" doc:"The clean module name of the root of the module"`
 	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
+
+	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
+	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
+
+	CloneURL string `field:"true" doc:"The URL to clone the root of the git repo from"`
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" doc:"The directory containing everything needed to load load and use the module."`
 }
@@ -432,7 +432,7 @@ func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition
 }
 
 func (src *GitModuleSource) RefString() string {
-	refPath := src.URLParent
+	refPath := src.Root
 	subPath := filepath.Join("/", src.RootSubpath)
 	if subPath != "/" {
 		refPath += subPath
@@ -442,16 +442,12 @@ func (src *GitModuleSource) RefString() string {
 
 func (src *GitModuleSource) Symbolic() string {
 	// ignore error since ref is validated upon module initialization
-	p, _ := url.JoinPath(src.CloneURL(), src.RootSubpath)
+	p, _ := url.JoinPath(src.CloneURL, src.RootSubpath)
 	return p
 }
 
-func (src *GitModuleSource) CloneURL() string {
-	return "https://" + src.URLParent
-}
-
 func (src *GitModuleSource) HTMLURL() string {
-	u := "https://" + src.URLParent + "/tree/" + src.Commit
+	u := "https://" + src.Root + "/tree/" + src.Commit
 	if subPath := src.RootSubpath; subPath != "" {
 		u += "/" + subPath
 	}

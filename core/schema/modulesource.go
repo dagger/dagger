@@ -31,9 +31,8 @@ type moduleSourceArgs struct {
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
 	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
-	refWithoutVersion, modVersion, hasVersion, isRemote := parsed.modPath, parsed.modVersion, parsed.hasVersion, parsed.kind == core.ModuleSourceKindGit
 
-	if !hasVersion && isRemote && args.Stable {
+	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
 
@@ -44,47 +43,43 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
-		if filepath.IsAbs(refWithoutVersion) {
-			return nil, fmt.Errorf("local module source root path is absolute: %s", refWithoutVersion)
+		if filepath.IsAbs(parsed.modPath) {
+			return nil, fmt.Errorf("local module source root path is absolute: %s", parsed.modPath)
 		}
 
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
-			RootSubpath: refWithoutVersion,
+			RootSubpath: parsed.modPath,
 		})
 
 	case core.ModuleSourceKindGit:
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
-		root, subdir, err := vcs.ExtractRootAndSubdirFromRef(refWithoutVersion, parsed.repoRoot.Repo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to separate root from subdir in remote ref: %s", args.RefString)
-		}
+		src.AsGitSource.Value.Root = parsed.repoRoot.Root
+		src.AsGitSource.Value.CloneURL = parsed.repoRoot.Repo
 
-		src.AsGitSource.Value.URLParent = root
-		cloneURL := src.AsGitSource.Value.CloneURL()
-
-		if !hasVersion {
+		var modVersion string
+		if parsed.hasVersion {
+			modVersion = parsed.modVersion
+		} else {
 			if args.Stable {
 				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 			}
 			var err error
-			modVersion, err = defaultBranch(ctx, cloneURL)
+			modVersion, err = defaultBranch(ctx, parsed.repoRoot.Repo)
 			if err != nil {
 				return nil, fmt.Errorf("determine default branch: %w", err)
 			}
 		}
 		src.AsGitSource.Value.Version = modVersion
 
-		var subPath string
-		if subdir != "" {
-			subPath = subdir
-		} else {
-			subPath = "/"
+		subPath := "/"
+		if parsed.repoRootSubdir != "" {
+			subPath = parsed.repoRootSubdir
 		}
 
 		commitRef := modVersion
-		if hasVersion && isSemver(modVersion) {
-			allTags, err := gitTags(ctx, cloneURL)
+		if parsed.hasVersion && isSemver(modVersion) {
+			allTags, err := gitTags(ctx, parsed.repoRoot.Repo)
 			if err != nil {
 				return nil, fmt.Errorf("get git tags: %w", err)
 			}
@@ -97,11 +92,11 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]
-		err = s.dag.Select(ctx, s.dag.Root(), &gitRef,
+		err := s.dag.Select(ctx, s.dag.Root(), &gitRef,
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(cloneURL)},
+					{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
 				},
 			},
 			dagql.Selector{
@@ -145,11 +140,12 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 }
 
 type parsedRefString struct {
-	modPath    string
-	modVersion string
-	hasVersion bool
-	kind       core.ModuleSourceKind
-	repoRoot   *vcs.RepoRoot
+	modPath        string
+	modVersion     string
+	hasVersion     bool
+	kind           core.ModuleSourceKind
+	repoRoot       *vcs.RepoRoot
+	repoRootSubdir string
 }
 
 // interface used for host interaction mocking
@@ -180,6 +176,7 @@ func parseRefString(ctx context.Context, bk BuildkitClient, refString string) pa
 	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
 		parsed.kind = core.ModuleSourceKindGit
 		parsed.repoRoot = repoRoot
+		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
 		return parsed
 	}
 
@@ -223,7 +220,7 @@ func (s *moduleSchema) gitModuleSourceCloneURL(
 	ref *core.GitModuleSource,
 	args struct{},
 ) (string, error) {
-	return ref.CloneURL(), nil
+	return ref.CloneURL, nil
 }
 
 func (s *moduleSchema) gitModuleSourceHTMLURL(
