@@ -49,6 +49,24 @@ nix:
         --fish <($out/bin/dagger completion fish) \
         --zsh <($out/bin/dagger completion zsh)
 
+# https://goreleaser.com/customization/winget/
+winget:
+  - name: dagger
+    publisher: Dagger
+    short_description: "Dagger is an integrated platform to orchestrate the delivery of applications"
+    license: "asl20"
+    homepage: "https://dagger.io"
+    publisher_url: "https://dagger.io"
+    publisher_support_url: https://github.com/dagger/dagger/issues/new/choose
+    package_identifier: Dagger.Cli
+    use: archive
+    url_template: "https://{{ .Env.ARTEFACTS_FQDN }}/dagger/releases/{{ .Version }}/{{ .ArtifactName }}"
+    skip_upload: false
+    tags:
+      - dagger
+      - cli
+      - cicd
+
 blobs:
   - provider: s3
     region: "{{ .Env.AWS_REGION }}"
