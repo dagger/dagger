@@ -68,7 +68,7 @@ importlib-metadata==7.0.0
     # via opentelemetry-api
 iniconfig==2.0.0
     # via pytest
-jinja2==3.1.3
+jinja2==3.1.4
     # via sphinx
 markdown-it-py==3.0.0
     # via rich
