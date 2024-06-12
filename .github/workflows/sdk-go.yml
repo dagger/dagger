@@ -22,6 +22,7 @@ jobs:
     secrets: inherit
     with:
       function: sdk go lint
+      dev-engine: true
       timeout: 10
 
   test:
@@ -29,6 +30,7 @@ jobs:
     secrets: inherit
     with:
       function: sdk go test
+      dev-engine: true
       timeout: 10
 
   test-publish:

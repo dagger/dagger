@@ -22,6 +22,7 @@ jobs:
     secrets: inherit
     with:
       function: sdk rust lint
+      dev-engine: true
       timeout: 10
 
   test:
@@ -29,4 +30,5 @@ jobs:
     secrets: inherit
     with:
       function: sdk rust test
+      dev-engine: true
       timeout: 10
