@@ -83,7 +83,7 @@ uname_arch() {
     armv6*) arch="armv6" ;;
     armv7*) arch="armv7" ;;
   esac
-  echo ${arch}
+  echo "${arch}"
 }
 uname_os_check() {
   os=$(uname_os)
@@ -267,9 +267,9 @@ latest_version() {
 base_url() {
   os="$(uname_os)"
   arch="$(uname_arch)"
-  if [ ! -z "$DAGGER_VERSION" ]; then
+  if [ -n "$DAGGER_VERSION" ]; then
     path="releases/${DAGGER_VERSION}"
-  elif [ ! -z "$DAGGER_COMMIT" ]; then
+  elif [ -n "$DAGGER_COMMIT" ]; then
     path="main/${DAGGER_COMMIT}"
   else
     path="releases/$(latest_version)"
@@ -281,9 +281,9 @@ base_url() {
 tarball() {
   os="$(uname_os)"
   arch="$(uname_arch)"
-  if [ ! -z "$DAGGER_VERSION" ]; then
+  if [ -n "$DAGGER_VERSION" ]; then
     version="v${DAGGER_VERSION}"
-  elif [ ! -z "$DAGGER_COMMIT" ]; then
+  elif [ -n "$DAGGER_COMMIT" ]; then
     version="${DAGGER_COMMIT}"
   else
     version="v$(latest_version)"
@@ -332,7 +332,7 @@ ${binexe} has built-in shell completion. This is how you can install it for:
 }
 
 clean_install_version() {
-  DAGGER_VERSION=$(echo $DAGGER_VERSION | sed -E 's/^v+//g')
+  DAGGER_VERSION=$(echo "$DAGGER_VERSION" | sed -E 's/^v+//g')
 }
 
 execute() {
