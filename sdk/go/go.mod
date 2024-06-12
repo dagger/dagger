@@ -2,8 +2,12 @@ module dagger.io/dagger
 
 go 1.22
 
-// retract engine releases from SDK releases
-retract [v0.0.0, v0.2.36]
+retract (
+	// retract SDK releases with known issues
+	v0.11.7
+	// retract engine releases from SDK releases
+	[v0.0.0, v0.2.36]
+)
 
 require (
 	github.com/99designs/gqlgen v0.17.44
