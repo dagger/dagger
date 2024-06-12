@@ -3,7 +3,7 @@ module github.com/dagger/dagger
 go 1.22
 
 require (
-	dagger.io/dagger v0.11.7
+	dagger.io/dagger v0.11.8-rc.2
 	github.com/dagger/dagger/engine/distconsts v0.11.7
 )
 
