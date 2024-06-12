@@ -87,9 +87,7 @@ async def test_container_with_mounted_directory(alpine_image: str):
         .with_new_file("goodbye.txt", "Goodbye, world!")
     )
 
-    container = (
-        dag.container().from_(alpine_image).with_mounted_directory("/mnt", dir_)
-    )
+    container = dag.container().from_(alpine_image).with_mounted_directory("/mnt", dir_)
 
     out = await container.with_exec(["ls", "/mnt"]).stdout()
 
