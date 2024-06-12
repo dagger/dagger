@@ -34,7 +34,7 @@ func TestParsePublicRefString(t *testing.T) {
 				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
-				repoRootSubdir: "/ci",
+				repoRootSubdir: "ci",
 			},
 		},
 		{
@@ -43,7 +43,16 @@ func TestParsePublicRefString(t *testing.T) {
 				modPath:        "github.com/shykes/daggerverse.git/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
-				repoRootSubdir: "/ci",
+				repoRootSubdir: "ci",
+			},
+		},
+		{
+			urlStr: "github.com/shykes/daggerverse.git/../../",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/../../",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				repoRootSubdir: "../../",
 			},
 		},
 		// gitlab
@@ -53,7 +62,7 @@ func TestParsePublicRefString(t *testing.T) {
 				modPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
-				repoRootSubdir: "/depth1/depth2",
+				repoRootSubdir: "depth1/depth2",
 			},
 		},
 		{
@@ -62,7 +71,7 @@ func TestParsePublicRefString(t *testing.T) {
 				modPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
-				repoRootSubdir: "/depth1/depth2",
+				repoRootSubdir: "depth1/depth2",
 			},
 		},
 		// bitbucket
@@ -72,7 +81,7 @@ func TestParsePublicRefString(t *testing.T) {
 				modPath:        "bitbucket.org/test-travail/test/depth1",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test", Repo: "https://bitbucket.org/test-travail/test"},
-				repoRootSubdir: "/depth1",
+				repoRootSubdir: "depth1",
 			},
 		},
 		{
@@ -81,7 +90,7 @@ func TestParsePublicRefString(t *testing.T) {
 				modPath:        "bitbucket.org/test-travail/test.git/depth1",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test.git"},
-				repoRootSubdir: "/depth1",
+				repoRootSubdir: "depth1",
 			},
 		},
 	} {

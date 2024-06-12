@@ -30,7 +30,6 @@ type moduleSourceArgs struct {
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
 	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
-
 	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
@@ -176,6 +175,8 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 		parsed.kind = core.ModuleSourceKindGit
 		parsed.repoRoot = repoRoot
 		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
+		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
+		parsed.repoRootSubdir = strings.TrimPrefix(parsed.repoRootSubdir, "/")
 		return parsed
 	}
 
