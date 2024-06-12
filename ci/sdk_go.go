@@ -174,7 +174,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			"push",
 			"-f",
 			opts.dest,
-			fmt.Sprintf("%s:%s", opts.sourceTag, opts.destTag),
+			fmt.Sprintf("%s:%s", tmpBranch, opts.destTag),
 		})
 	}
 	_, err := result.Sync(ctx)
