@@ -30,6 +30,10 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: "engine lint"
+      - name: "scripts lint"
+        uses: ./.github/actions/call
+        with:
+          function: "scripts lint"
 
   test:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-16c-nvme' || 'ubuntu-latest' }}"
