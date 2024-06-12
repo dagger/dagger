@@ -105,26 +105,28 @@ func (t ElixirSDK) Publish(
 
 	ctr := t.elixirBase(elixirVersions[1])
 
-	mixExs, err := t.Dagger.Source.File(mixFile).Contents(ctx)
-	if err != nil {
-		return err
+	if !dryRun {
+		mixExs, err := t.Dagger.Source.File(mixFile).Contents(ctx)
+		if err != nil {
+			return err
+		}
+		newMixExs := strings.Replace(mixExs, `@version "0.0.0"`, `@version "`+version+`"`, 1)
+		ctr = ctr.WithNewFile(mixFile, dagger.ContainerWithNewFileOpts{
+			Contents: newMixExs,
+		})
 	}
-	newMixExs := strings.Replace(mixExs, `@version "0.0.0"`, `@version "`+version+`"`, 1)
 
-	ctr = ctr.WithNewFile(mixFile, dagger.ContainerWithNewFileOpts{
-		Contents: newMixExs,
-	})
-
-	args := []string{"mix", "hex.publish", "--yes"}
 	if dryRun {
-		args = append(args, "--dry-run")
+		ctr = ctr.
+			WithEnvVariable("HEX_API_KEY", "").
+			WithExec([]string{"mix", "hex.publish", "--yes", "--dry-run"})
+	} else {
+		ctr = ctr.
+			WithSecretVariable("HEX_API_KEY", hexAPIKey).
+			WithExec([]string{"mix", "hex.publish", "--yes"})
 	}
 
-	_, err = ctr.
-		WithSecretVariable("HEX_API_KEY", hexAPIKey).
-		WithExec(args).
-		Sync(ctx)
-
+	_, err := ctr.Sync(ctx)
 	return err
 }
 
