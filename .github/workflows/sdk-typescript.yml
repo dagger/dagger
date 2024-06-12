@@ -22,6 +22,7 @@ jobs:
     secrets: inherit
     with:
       function: sdk typescript lint
+      dev-engine: true
       timeout: 10
 
   test:
@@ -29,6 +30,7 @@ jobs:
     secrets: inherit
     with:
       function: sdk typescript test
+      dev-engine: true
       timeout: 10
 
   test-publish:
