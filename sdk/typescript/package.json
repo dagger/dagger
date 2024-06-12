@@ -17,7 +17,7 @@
   },
   "main": "dist/index.js",
   "dependencies": {
-    "@grpc/grpc-js": "^1.10.6",
+    "@grpc/grpc-js": "^1.10.9",
     "@lifeomic/axios-fetch": "^3.0.1",
     "@opentelemetry/api": "^1.8.0",
     "@opentelemetry/exporter-trace-otlp-grpc": "^0.51.0",
