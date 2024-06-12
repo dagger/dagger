@@ -10,11 +10,6 @@ pytestmark = [
 
 
 @pytest.fixture(scope="module")
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture(scope="module")
 async def client():
     async with dagger.Connection(dagger.Config(retry=None)) as client:
         yield client

@@ -19,11 +19,11 @@ async def test_connection_closed_error():
         await client.container().id()
 
 
-async def test_execute_timeout():
+async def test_execute_timeout(alpine_image: str):
     cfg = dagger.Config(execute_timeout=0.5, retry=None)
 
     async with dagger.Connection(cfg) as client:
-        alpine = client.container().from_("alpine:3.16.2")
+        alpine = client.container().from_(alpine_image)
         with pytest.raises(dagger.ExecuteTimeoutError):
             await (
                 alpine.with_env_variable("_NO_CACHE", str(uuid.uuid4()))
