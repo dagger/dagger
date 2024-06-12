@@ -97,12 +97,12 @@ runs:
         if [[ "${{ inputs.module }}" == "." ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            dagger -m . call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
           else
-            dagger call --source=".:default" ${{ inputs.function }}
+            dagger -m . call --source=".:default" ${{ inputs.function }}
           fi
         else
-          dagger call ${{ inputs.function }}
+          dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
         fi
       env:
         DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"

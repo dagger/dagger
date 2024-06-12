@@ -16,6 +16,7 @@ jobs:
         with:
           function: sdk go publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
       - name: "notify"
+        if: github.ref_name != 'main'
         uses: ./.github/actions/notify
         with:
           message: "🐹 Go SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
