@@ -24,6 +24,12 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Setup
+      shell: bash
+      run: |
+        mkdir -p /tmp/actions/call
+        touch /tmp/actions/call/local-envs
+
     - name: Install dagger
       shell: bash
       env:
@@ -61,15 +67,19 @@ runs:
         fi
         ./hack/dev
 
-        echo "$PWD/bin" >> "$GITHUB_PATH"
-        echo "_EXPERIMENTAL_DAGGER_CLI_BIN=$PWD/bin/dagger" >> "$GITHUB_ENV"
-        echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev" >> "$GITHUB_ENV"
+        # put env variables in /tmp/actions/call/local-envs instead of $GITHUB_ENV to avoid
+        # leaking into parent workflow
+        echo "export PATH=$PWD/bin:$PATH" >> /tmp/actions/call/local-envs
+        echo "export _EXPERIMENTAL_DAGGER_CLI_BIN=$PWD/bin/dagger" >> /tmp/actions/call/local-envs
+        echo "export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev" >> /tmp/actions/call/local-envs
 
         echo "::endgroup::"
 
     - name: Wait for dagger to be ready
       shell: bash
       run: |
+        source /tmp/actions/call/local-envs
+
         echo "::group::Dagger client version"
         dagger --silent version
         echo "::endgroup::"
@@ -81,6 +91,8 @@ runs:
     - name: ${{ inputs.function }}
       shell: bash
       run: |
+        source /tmp/actions/call/local-envs
+
         set -x
         if [[ "${{ inputs.module }}" == "." ]]; then
           # set some sane defaults for the current module
@@ -94,3 +106,8 @@ runs:
         fi
       env:
         DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+
+    - name: Cleanup
+      shell: bash
+      run: |
+        rm -rf /tmp/actions/call
