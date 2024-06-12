@@ -40,7 +40,7 @@ func TestClientMultiSameTrace(t *testing.T) {
 	defer span.End()
 	c1, out1 := newClient(ctx1, "client 1")
 
-	// NOTE: the failure mode for these tests is to hang forever, so let's set a
+	// NOTE: the failure mode for these tests is to hang forever, so we'll set a
 	// reasonable timeout and try to insulate from network flakiness by resolving
 	// and using the image beforehand.
 	//
@@ -65,6 +65,9 @@ func TestClientMultiSameTrace(t *testing.T) {
 
 	c1msg := identity.NewID()
 	echo(ctx1, c1, c1msg)
+	require.Eventually(t, func() bool {
+		return strings.Contains(out1.String(), "echoed: "+c1msg)
+	}, 10*time.Second, 10*time.Millisecond)
 
 	ctx2, span := Tracer().Start(rootCtx, "client 2")
 	defer span.End()
@@ -74,6 +77,9 @@ func TestClientMultiSameTrace(t *testing.T) {
 
 	c2msg := identity.NewID()
 	echo(ctx2, c2, c2msg)
+	require.Eventually(t, func() bool {
+		return strings.Contains(out2.String(), "echoed: "+c2msg)
+	}, 10*time.Second, 10*time.Millisecond)
 
 	ctx3, span := Tracer().Start(rootCtx, "client 3")
 	defer span.End()
@@ -83,6 +89,9 @@ func TestClientMultiSameTrace(t *testing.T) {
 
 	c3msg := identity.NewID()
 	echo(ctx3, c3, c3msg)
+	require.Eventually(t, func() bool {
+		return strings.Contains(out3.String(), "echoed: "+c3msg)
+	}, 10*time.Second, 10*time.Millisecond)
 
 	t.Logf("closing c2 (which has timeout)")
 	require.NoError(t, c2.Close())
