@@ -123,6 +123,11 @@ func (ci *Dagger) Docs() *Docs {
 	return &Docs{Dagger: ci}
 }
 
+// Run Dagger scripts
+func (ci *Dagger) Scripts() *Scripts {
+	return &Scripts{Dagger: ci}
+}
+
 // Run all tests
 func (ci *Dagger) Test() *Test {
 	return &Test{Dagger: ci}
