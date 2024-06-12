@@ -127,7 +127,7 @@ pytest==7.4.4
 pytest-httpx==0.30.0
 pytest-mock==3.14.0
 pytest-subprocess==1.5.0
-requests==2.31.0
+requests==2.32.2
     # via sphinx
 rich==13.7.1
 ruff==0.1.15
