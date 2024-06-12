@@ -1,0 +1,22 @@
+name: "notify"
+description: "New Release Notification"
+
+inputs:
+  message:
+    required: true
+    description: "Contents of the notification"
+
+  discord-webhook:
+    required: true
+    description: "Discord webhook"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Notify Discord
+      uses: ./.github/actions/call
+      env:
+        DISCORD_WEBHOOK: ${{ inputs.discord-webhook }}
+      with:
+        module: "github.com/gerhard/daggerverse/notify@2024-02-13"
+        function: discord --webhook-url env:DISCORD_WEBHOOK --message '${{ inputs.message }}'

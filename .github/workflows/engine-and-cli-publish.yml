@@ -27,31 +27,71 @@ jobs:
         with:
           go-version: "1.22"
           cache-dependency-path: "ci/go.sum"
-      - name: "Publish Engine & CLI"
-        run: |
-          cd ci/mage
-          if [ $GITHUB_REF_NAME == 'main' ]; then
-            # this is a push to the main branch, publish to the commit we're at
-            go run main.go -w ../.. dagger:publish ${{ github.sha }}
-          else
-            # this is a tag push, publish to that tag
-            go run main.go -w ../.. dagger:publish ${{ github.ref_name }}
-          fi
+      - name: "Publish Engine"
+        uses: ./.github/actions/call
+        with:
+          function: |
+            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
+            engine \
+            publish \
+            --platform="linux/amd64" --platform="linux/arm64" \
+            --image="$DAGGER_ENGINE_IMAGE" \
+            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
+            --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
+            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
+        env:
+          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
+          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+      - name: "Publish Engine (GPU)"
+        uses: ./.github/actions/call
+        with:
+          function: |
+            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
+            engine with-base --image=ubuntu --gpu-support=true \
+            publish \
+            --platform="linux/amd64" \
+            --image="$DAGGER_ENGINE_IMAGE" \
+            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
+            --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
+            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
+        env:
+          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
+          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+      - name: "Publish CLI"
+        uses: ./.github/actions/call
+        with:
+          function: |
+            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
+            cli \
+            publish \
+            --git-dir=./.git \
+            --github-org-name="$GH_ORG_NAME" \
+            --github-token=env:GITHUB_TOKEN \
+            --goreleaser-key=env:GORELEASER_KEY \
+            --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
+            --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
+            --aws-region=env:AWS_REGION \
+            --aws-bucket=env:AWS_BUCKET \
+            --artefacts-fqdn=env:ARTEFACTS_FQDN
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
-          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
-          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
-          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
       - name: "Bump SDK Engine Dependencies"
+        if: github.ref_name != 'main'
+        uses: ./.github/actions/call
+        with:
+          function: sdk all bump --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" -o ./
+      - name: "Open SDK Engine Dependencies PR"
         uses: peter-evans/create-pull-request@v3
         if: github.ref_name != 'main'
         with:
@@ -67,24 +107,21 @@ jobs:
           delete-branch: true
           branch: bump-engine
           draft: true
-
-  notify:
-    if: github.ref_type == 'tag'
-    needs: publish
-    uses: ./.github/workflows/_new_release_notification.yml
-    secrets: inherit
-    with:
-      message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+      - name: "Notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
   scan-engine:
-    name: "Scan Engine Image for Vulnerabilities"
-    needs: publish
-    # only run this on push events, not in PRs (since we only publish images during pushes)
-    if: github.event_name == 'push' && github.repository == 'dagger/dagger'
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: engine scan
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "scan"
+        uses: ./.github/actions/call
+        with:
+          function: "engine scan"
 
   test-provision-macos:
     name: "Test SDK Provision / macos"

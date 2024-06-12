@@ -11,82 +11,12 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
-	"golang.org/x/mod/semver"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/mage/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
 type Engine mg.Namespace
-
-var (
-	publishedEnginePlatforms    = []string{"linux/amd64", "linux/arm64"}
-	publishedGPUEnginePlatforms = []string{"linux/amd64"}
-
-	publishedSDKs = []string{
-		"go",
-		"python",
-		"typescript",
-		"elixir",
-		"rust",
-		"php",
-	}
-)
-
-// Publish builds and pushes Engine OCI image to a container registry
-func (t Engine) Publish(ctx context.Context, version string) error {
-	var commonArgs []string
-	if v, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE"); ok {
-		commonArgs = append(commonArgs, "--image="+v)
-	}
-	if v, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_REGISTRY"); ok {
-		commonArgs = append(commonArgs, "--registry="+v)
-	}
-	if v, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_USERNAME"); ok {
-		commonArgs = append(commonArgs, "--registry-username="+v)
-	}
-	if _, ok := os.LookupEnv("DAGGER_ENGINE_IMAGE_PASSWORD"); ok {
-		commonArgs = append(commonArgs, "--registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD")
-	}
-
-	args := []string{"--version=" + version, "engine", "publish"}
-	args = append(args, commonArgs...)
-	for _, p := range publishedEnginePlatforms {
-		args = append(args, "--platform="+p)
-	}
-	err := util.DaggerCall(ctx, args...)
-	if err != nil {
-		return err
-	}
-
-	args = []string{"--version=" + version, "engine", "with-base", "--image=ubuntu", "--gpu-support=true", "publish"}
-	args = append(args, commonArgs...)
-	for _, p := range publishedGPUEnginePlatforms {
-		args = append(args, "--platform="+p)
-	}
-	err = util.DaggerCall(ctx, args...)
-	if err != nil {
-		return err
-	}
-
-	if semver.IsValid(version) {
-		eg, gctx := errgroup.WithContext(ctx)
-		for _, sdk := range publishedSDKs {
-			sdk := sdk
-			eg.Go(func() error {
-				return util.DaggerCall(gctx, "sdk", sdk, "bump", "--version="+version, "export", "--path=.")
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return err
-		}
-	} else {
-		fmt.Println("skipping image bump in SDKs")
-	}
-
-	return nil
-}
 
 // Dev builds and starts an Engine & CLI from local source code
 func (t Engine) Dev(ctx context.Context) error {

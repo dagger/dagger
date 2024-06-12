@@ -1,0 +1,21 @@
+name: "Publish Rust SDK"
+on:
+  push:
+    tags: ["sdk/rust/v**"]
+jobs:
+  publish:
+    if: github.repository == 'dagger/dagger'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "go publish"
+        uses: ./.github/actions/call
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        with:
+          function: sdk rust publish --tag="${{ github.ref_name }}" --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "⚙️ Rust SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}

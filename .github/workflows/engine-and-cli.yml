@@ -3,16 +3,12 @@ name: Engine & CLI
 on:
   push:
     branches: ["main"]
-    paths-ignore:
-      - docs/**
   pull_request:
     types:
       - opened
       - synchronize
       - reopened
       - ready_for_review
-    paths-ignore:
-      - docs/**
   # Enable manual trigger for easy debugging
   workflow_dispatch:
 
@@ -20,45 +16,69 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
+  lint:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "engine lint"
+        uses: ./.github/actions/call
+        with:
+          function: "engine lint"
+
   test:
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: test all --race=true --parallel=16
-      size: "dagger-v0-11-6-16c-nvme"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-16c-nvme' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test all --race=true --parallel=16"
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
   # functionality rather than repeat every test already run in the other targets.
   testdev:
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: test important --race=true --parallel=16
-      dev-engine: true
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test important --race=true --parallel=16"
+          dev-engine: true
 
-  test-publish-cli:
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: cli test-publish
-
-  test-publish-engine:
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: engine test-publish
-
-  test-publish-engine-gpu:
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: engine with-base --image=ubuntu --gpu-support=true test-publish
+  test-publish:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test publish cli"
+        uses: ./.github/actions/call
+        with:
+          function: "cli test-publish"
+      - name: "test publish engine"
+        uses: ./.github/actions/call
+        with:
+          function: "engine test-publish"
+      - name: "test publish engine (gpu)"
+        uses: ./.github/actions/call
+        with:
+          function: "engine with-base --image=ubuntu --gpu-support=true test-publish"
 
   scan-engine:
-    name: "Scan Engine Image for Vulnerabilities"
-    uses: ./.github/workflows/_dagger_call.yml
-    secrets: inherit
-    with:
-      function: engine scan
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: "scan"
+        uses: ./.github/actions/call
+        with:
+          function: "engine scan"

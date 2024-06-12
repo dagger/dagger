@@ -1,6 +1,6 @@
 module dagger/runtime
 
-go 1.21.7
+go 1.22
 
 require (
 	github.com/99designs/gqlgen v0.17.44

@@ -1,0 +1,58 @@
+name: SDK
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  # Enable manual trigger for easier debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: go
+      dev-engine: true
+
+  python:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: python
+      dev-engine: true
+
+  typescript:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: typescript
+      dev-engine: true
+
+  java:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: java
+      dev-engine: true
+
+  elixir:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: elixir
+      dev-engine: true
+
+  rust:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: rust
+      dev-engine: true

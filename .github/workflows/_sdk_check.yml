@@ -1,0 +1,52 @@
+name: "sdk check"
+
+on:
+  workflow_call:
+    inputs:
+      sdk:
+        description: "The SDK to check"
+        type: string
+        required: true
+
+      version:
+        type: string
+        default: "v0.11.6"
+        required: false
+
+      dev-engine:
+        description: "Whether to run against a dev Engine"
+        type: boolean
+        default: false
+        required: false
+
+      timeout:
+        description: "How many minutes to timeout after"
+        type: number
+        required: false
+        default: 10
+
+jobs:
+  check:
+    runs-on: "${{ github.repository == 'dagger/dagger' && (inputs.dev-engine && 'dagger-v0-11-6-dind' || 'dagger-v0-11-6-4c-nvme') || 'ubuntu-latest' }}"
+    timeout-minutes: "${{ inputs.timeout }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "${{ inputs.sdk }} lint"
+        uses: ./.github/actions/call
+        with:
+          function: "sdk ${{ inputs.sdk }} lint"
+          version: "${{ inputs.version }}"
+          dev-engine: "${{ inputs.dev-engine }}"
+      - name: "${{ inputs.sdk }} test"
+        uses: ./.github/actions/call
+        with:
+          function: "sdk ${{ inputs.sdk }} test"
+          version: "${{ inputs.version }}"
+          dev-engine: "${{ inputs.dev-engine }}"
+      - name: "${{ inputs.sdk }} test publish"
+        uses: ./.github/actions/call
+        if: contains(fromJson('["go", "python", "typescript"]'), inputs.sdk)
+        with:
+          function: "sdk ${{ inputs.sdk }} publish --dry-run=true --tag=$GITHUB_REF"
+          version: "${{ inputs.version }}"
+          dev-engine: "${{ inputs.dev-engine }}"
