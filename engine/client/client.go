@@ -1014,9 +1014,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {
-	headers = c.clientMetadata().AppendToHTTPHeaders(headers)
-	otel.GetTextMapPropagator().Inject(c.internalCtx, propagation.HeaderCarrier(headers))
-	return headers
+	return c.clientMetadata().AppendToHTTPHeaders(headers)
 }
 
 func (c *Client) newHTTPClient() *httpClient {
@@ -1044,6 +1042,7 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 	for k, v := range c.headers {
 		req.Header[k] = v
 	}
+	otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))
 	req.SetBasicAuth(c.secretToken, "")
 
 	// We're making a request to the engine HTTP/2 server, but these headers are not
