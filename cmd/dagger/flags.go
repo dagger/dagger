@@ -321,8 +321,8 @@ func (v *fileValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Modul
 			}
 			return gitDir.File(path), nil
 		}
-
 	}
+
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
 	vStr = strings.TrimPrefix(ref, "file://")
 	if !filepath.IsAbs(vStr) {
