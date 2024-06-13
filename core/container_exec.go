@@ -50,7 +50,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	mounts := container.Mounts
 	platform := container.Platform
 	if platform.OS == "" {
-		platform = container.Query.Platform
+		platform = container.Query.Platform()
 	}
 
 	args, err := container.command(opts)

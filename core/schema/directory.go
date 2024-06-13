@@ -133,7 +133,7 @@ func (s *directorySchema) directory(ctx context.Context, parent *core.Query, arg
 		}
 		return inst.Self, nil
 	}
-	platform := parent.Platform
+	platform := parent.Platform()
 	return core.NewScratchDirectory(parent, platform), nil
 }
 
@@ -302,7 +302,7 @@ type dirDockerBuildArgs struct {
 }
 
 func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Query.Platform
+	platform := parent.Query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}

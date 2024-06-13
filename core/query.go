@@ -19,7 +19,7 @@ import (
 // Query forms the root of the DAG and houses all necessary state and
 // dependencies for evaluating queries.
 type Query struct {
-	QueryOpts
+	Server
 
 	// The current pipeline.
 	Pipeline pipeline.Path
@@ -27,43 +27,57 @@ type Query struct {
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
 
-// Settings for Query that are shared across all instances for a given DaggerServer
-type QueryOpts struct {
-	Server
+// APIs from the server+session+client that are needed by core APIs
+type Server interface {
+	// Stitch in the given module to the list being served to the current client
+	ServeModule(context.Context, *Module) error
 
-	Services *Services
+	// If the current client is coming from a function, return the module that function is from
+	CurrentModule(context.Context) (*Module, error)
 
-	Secrets *SecretStore
+	// If the current client is coming from a function, return the function call metadata
+	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	Auth *auth.RegistryAuthProvider
+	// Return the list of deps being served to the current client
+	CurrentServedDeps(context.Context) (*ModDeps, error)
 
-	OCIStore     content.Store
-	LeaseManager *leaseutil.Manager
-
-	// The default platform.
-	Platform Platform
+	// The ClientID of the main client caller (i.e. the one who created the session, typically the CLI
+	// invoked by the user)
+	MainClientCallerID(context.Context) (string, error)
 
 	// The default deps of every user module (currently just core)
-	DefaultDeps *ModDeps
+	DefaultDeps(context.Context) (*ModDeps, error)
 
-	// The DagQL query cache.
-	Cache dagql.Cache
+	// The DagQL query cache for the current client's session
+	Cache(context.Context) (dagql.Cache, error)
 
-	Buildkit *buildkit.Client
-
-	MainClientCallerID string
-}
-
-type Server interface {
-	ServeModule(context.Context, *Module) error
-	CurrentModule(context.Context) (*Module, error)
-	CurrentFunctionCall(context.Context) (*FunctionCall, error)
-	CurrentServedDeps(context.Context) (*ModDeps, error)
+	// Mix in this http endpoint+handler to the current client's session
 	MuxEndpoint(context.Context, string, http.Handler) error
+
+	// The secret store for the current client
+	Secrets(context.Context) (*SecretStore, error)
+
+	// The auth provider for the current client
+	Auth(context.Context) (*auth.RegistryAuthProvider, error)
+
+	// The buildkit APIs for the current client
+	Buildkit(context.Context) (*buildkit.Client, error)
+
+	// The services for the current client's session
+	Services(context.Context) (*Services, error)
+
+	// The default platform for the engine as a whole
+	Platform() Platform
+
+	// The content store for the engine as a whole
+	OCIStore() content.Store
+
+	// The lease manager for the engine as a whole
+	LeaseManager() *leaseutil.Manager
 }
 
-func NewRoot(opts QueryOpts) *Query {
-	return &Query{QueryOpts: opts}
+func NewRoot(srv Server) *Query {
+	return &Query{Server: srv}
 }
 
 func (*Query) Type() *ast.Type {
@@ -149,11 +163,16 @@ func (q *Query) NewHostService(ctx context.Context, upstream string, ports []Por
 // The returned ModDeps extends the inner DefaultDeps with all modules found in
 // the ID, loaded by using the DefaultDeps schema.
 func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
-	bootstrap, err := q.DefaultDeps.Schema(ctx)
+	defaultDeps, err := q.DefaultDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("default deps: %w", err)
+	}
+
+	bootstrap, err := defaultDeps.Schema(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap schema: %w", err)
 	}
-	deps := q.DefaultDeps
+	deps := defaultDeps
 	for _, modID := range id.Modules() {
 		mod, err := dagql.NewID[*Module](modID.ID()).Load(ctx, bootstrap)
 		if err != nil {

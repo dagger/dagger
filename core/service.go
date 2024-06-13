@@ -86,7 +86,11 @@ func (svc *Service) PipelinePath() pipeline.Path {
 func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
-		upstream, err := svc.Query.Services.Get(ctx, id)
+		svcs, err := svc.Query.Services(ctx)
+		if err != nil {
+			return "", err
+		}
+		upstream, err := svcs.Get(ctx, id)
 		if err != nil {
 			return "", err
 		}
@@ -103,7 +107,11 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	switch {
 	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
-		running, err := svc.Query.Services.Get(ctx, id)
+		svcs, err := svc.Query.Services(ctx)
+		if err != nil {
+			return nil, err
+		}
+		running, err := svcs.Get(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +142,11 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			port = svc.Container.Ports[0].Port
 		}
 	case svc.TunnelUpstream != nil:
-		tunnel, err := svc.Query.Services.Get(ctx, id)
+		svcs, err := svc.Query.Services(ctx)
+		if err != nil {
+			return "", err
+		}
+		tunnel, err := svcs.Get(ctx, id)
 		if err != nil {
 			return "", err
 		}
@@ -174,12 +186,20 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 }
 
 func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
-	_, err := svc.Query.Services.Start(ctx, id, svc)
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = svcs.Start(ctx, id, svc)
 	return err
 }
 
 func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
-	return svc.Query.Services.Stop(ctx, id, kill)
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return err
+	}
+	return svcs.Stop(ctx, id, kill)
 }
 
 func (svc *Service) Start(
@@ -264,7 +284,11 @@ func (svc *Service) startContainer(
 		}
 	}
 
-	detachDeps, _, err := svc.Query.Services.StartBindings(ctx, ctr.Services)
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return nil, err
+	}
+	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
 	}
@@ -286,7 +310,10 @@ func (svc *Service) startContainer(
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
 
-	bk := svc.Query.Buildkit
+	bk, err := svc.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
@@ -486,8 +513,14 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
-	svcs := svc.Query.Services
-	bk := svc.Query.Buildkit
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := svc.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self)
 	if err != nil {
@@ -576,7 +609,10 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
 
-	bk := svc.Query.Buildkit
+	bk, err := svc.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
 	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)

@@ -23,5 +23,5 @@ func (s *platformSchema) Install() {
 }
 
 func (s *platformSchema) defaultPlatform(ctx context.Context, parent *core.Query, _ struct{}) (core.Platform, error) {
-	return parent.Platform, nil
+	return parent.Platform(), nil
 }
