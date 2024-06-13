@@ -174,9 +174,6 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.LocalModuleSource]{}.Install(s.dag)
 
 	dagql.Fields[*core.GitModuleSource]{
-		dagql.Func("cloneURL", s.gitModuleSourceCloneURL).
-			Doc(`The URL from which the source's git repo can be cloned.`),
-
 		dagql.Func("htmlURL", s.gitModuleSourceHTMLURL).
 			Doc(`The URL to the source's git repo in a web browser`),
 	}.Install(s.dag)

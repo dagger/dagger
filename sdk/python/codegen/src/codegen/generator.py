@@ -414,19 +414,22 @@ class _InputField:
 
         self.name = format_name(name)
         self.named_type = get_named_type(graphql.type)
-        self.parent_type_name: TypeName | None = (
+        self.parent_return_type: TypeName | None = (
             get_named_type(parent.graphql.type).name if parent else None
+        )
+        self.parent_object_name: TypeName | None = (
+            parent.parent_name if parent else None
         )
 
         # On object type fields, don't replace ID scalar with object
         # only if field name is `id` and the corresponding type is different
         # from the output type (e.g., `file(id: FileID) -> File`).
         convert_id = not (
-            name == "id" and self.parent_type_name == type_from_id(self.named_type)
+            name == "id" and self.parent_return_type == type_from_id(self.named_type)
         )
 
         self.type = format_input_type(graphql.type, convert_id)
-        self.is_self = self.type == self.parent_type_name
+        self.is_self = self.type == self.parent_object_name
         self.description = graphql.description
         self.has_default = graphql.default_value is not Undefined
 
@@ -498,6 +501,7 @@ class _ObjectField:
 
         self.name = format_name(name)
         self.named_type = get_named_type(field.type)
+        self.parent_name = get_named_type(parent).name
 
         self.required_args = []
         self.default_args = []
@@ -511,7 +515,6 @@ class _ObjectField:
         self.is_list = is_list_of_objects_type(field.type)
         self.is_exec = self.is_leaf or self.is_list
         self.type = format_output_type(field.type).replace("Query", "Client")
-        self.parent_name = get_named_type(parent).name
 
         # Currently, `sync` is the only field where the error is all we
         # care about but more could be added later.

@@ -194,7 +194,7 @@ func (t PythonSDK) pythonBase(version string, install bool) *Container {
 		WithMountedCache("/root/.local/pipx/cache", dag.CacheVolume("pipx_cache_"+version)).
 		WithMountedCache("/root/.cache/hatch", dag.CacheVolume("hatch_cache_"+version)).
 		WithMountedFile("/pipx.pyz", pipx).
-		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.7.0"}).
+		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.12.0"}).
 		WithExec([]string{"python", "-m", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable(

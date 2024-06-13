@@ -6,6 +6,7 @@
 #   features: []
 #   all-features: false
 #   with-sources: false
+#   generate-hashes: false
 
 -e file:.
 graphql-core==3.2.3

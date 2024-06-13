@@ -4382,6 +4382,7 @@ export class GitModuleSource extends BaseClient {
   private readonly _cloneURL?: string = undefined
   private readonly _commit?: string = undefined
   private readonly _htmlURL?: string = undefined
+  private readonly _root?: string = undefined
   private readonly _rootSubpath?: string = undefined
   private readonly _version?: string = undefined
 
@@ -4394,6 +4395,7 @@ export class GitModuleSource extends BaseClient {
     _cloneURL?: string,
     _commit?: string,
     _htmlURL?: string,
+    _root?: string,
     _rootSubpath?: string,
     _version?: string,
   ) {
@@ -4403,6 +4405,7 @@ export class GitModuleSource extends BaseClient {
     this._cloneURL = _cloneURL
     this._commit = _commit
     this._htmlURL = _htmlURL
+    this._root = _root
     this._rootSubpath = _rootSubpath
     this._version = _version
   }
@@ -4429,7 +4432,7 @@ export class GitModuleSource extends BaseClient {
   }
 
   /**
-   * The URL from which the source's git repo can be cloned.
+   * The URL to clone the root of the git repo from
    */
   cloneURL = async (): Promise<string> => {
     if (this._cloneURL) {
@@ -4498,6 +4501,27 @@ export class GitModuleSource extends BaseClient {
         ...this._queryTree,
         {
           operation: "htmlURL",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The clean module name of the root of the module
+   */
+  root = async (): Promise<string> => {
+    if (this._root) {
+      return this._root
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "root",
         },
       ],
       await this._ctx.connection(),

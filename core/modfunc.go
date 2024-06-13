@@ -301,7 +301,7 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 		git := source.AsGitSource.Value
 		props[prefix+"source_kind"] = "git"
 		props[prefix+"git_symbolic"] = git.Symbolic()
-		props[prefix+"git_clone_url"] = git.CloneURL()
+		props[prefix+"git_clone_url"] = git.CloneURL
 		props[prefix+"git_subpath"] = git.RootSubpath
 		props[prefix+"git_version"] = git.Version
 		props[prefix+"git_commit"] = git.Commit
