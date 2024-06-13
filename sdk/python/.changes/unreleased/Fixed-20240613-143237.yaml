@@ -1,0 +1,6 @@
+kind: Fixed
+body: Incorrect code generation for some `Self` arguments
+time: 2024-06-13T14:32:37.817634Z
+custom:
+    Author: helderco
+    PR: "7654"
