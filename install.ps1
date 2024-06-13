@@ -2,7 +2,7 @@
 
 Param (
     [Parameter(Mandatory = $false)][System.Management.Automation.SemanticVersion]$DaggerVersion,
-    [Parameter(Mandatory = $false)][string][ValidatePattern("^[0-9a-fA-F]{40}$")]$DaggerCommit,
+    [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:[0-9a-fA-F]{40})?$")]$DaggerCommit,
     [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
     [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
     [Parameter(Mandatory = $false)][System.Boolean]$AddToPath = $false,
@@ -14,7 +14,6 @@ Param (
 # Co Author: Brittan DeYoung
 # Dagger Installation Utility for the windows dagger.exe binary
 # ---------------------------------------------------------------------------------
-
 
 # This function prompts the user for a download location and validates it.
 function Get-DownloadPath {
@@ -99,6 +98,15 @@ function Get-DownloadUrl {
     }
 
     return "https://dl.dagger.io/dagger/releases/${DaggerVersion}/${fileName}"
+}
+
+function Get-ChecksumUrl {
+
+    if (-not [string]::IsNullOrWhiteSpace($DaggerCommit)) {
+        return "https://dl.dagger.io/dagger/main/${DaggerCommit}/checksums.txt"
+    }
+
+    return "https://dl.dagger.io/dagger/releases/${DaggerVersion}/checksums.txt"
 }
 
 # Used for interactive mode to get a true or false response from the user
@@ -210,6 +218,63 @@ Please check you have the right permission to do so or try to create the path ma
     return (Get-Item -Path $InstallPath).FullName
 }
 
+# This function extracts the checksum of the downloaded file which contains all checksums for a version
+function Get-Checksum {
+
+    $checksumUrl = Get-ChecksumUrl
+    $arch = Get-ProcessorArchitecture
+    $response = Invoke-RestMethod -Uri $ChecksumUrl -UserAgent "PowerShell"
+    $checksums = $response -split "`n"
+    
+    $checksum = $null
+    $target = $null
+    
+    if (-not [string]::IsNullOrWhiteSpace($DaggerCommit)) {
+        $target = "dagger_${DaggerCommit}_windows_${arch}.zip"
+    }
+    else {
+        $target = "dagger_v${DaggerVersion}_windows_${arch}.zip"
+    }
+
+    # Find the checksum for the target file
+    foreach ($line in $checksums) {
+        if ($line -match $target) {
+            $checksum = $line -split " " | Select-Object -First 1
+            Write-Host "Checksum for $target is $checksum"
+            break
+        }
+    }
+
+    return $checksum
+}
+
+function Compare-Checksum {
+    Param (
+        [Parameter(Mandatory = $true)]
+        [string]$DownloadPath,
+        [Parameter(Mandatory = $true)]
+        [string]$Checksum
+    )
+
+    $hash = Get-FileHash -Path $DownloadPath -Algorithm SHA256
+
+    if ($hash.Hash -ne $Checksum) {
+        
+        Remove-Item -Path $DownloadPath
+
+        Write-Host @"
+---------------------------------------------------------------------------
+The file checksum does not match the expected checksum!
+Expected: $Checksum
+File    : $($hash.Hash)
+The downloaded file has been removed.
+---------------------------------------------------------------------------
+"@
+        exit 1
+    }
+}
+
+
 function Main {
     # Powershell is cross-platform, notice about windows binary when used on non-windows
     if (-not $IsWindows) {
@@ -304,11 +369,12 @@ Please check the option and try again.
         }
     }
 
-    $url = Get-DownloadUrl
-    write-host "Downloading Dagger from $url"
+    $zipUrl = Get-DownloadUrl
+    Write-Host "Downloading Dagger from $zipUrl"
 
-    Invoke-RestMethod -Uri $url -OutFile $downloadPath -UserAgent "PowerShell"
-
+    Invoke-RestMethod -Uri $zipUrl -OutFile $DownloadPath -UserAgent "PowerShell"
+    $checksum = Get-Checksum -ErrorAction Stop -ErrorVariable ChecksumError
+    Compare-Checksum -DownloadPath $DownloadPath -Checksum $checksum
     Expand-Archive -Path $downloadPath -DestinationPath $InstallPath -Force -ErrorVariable ProcessError
 
     If ($ProcessError) {
@@ -357,9 +423,9 @@ if ($isInvoked) {
     function Install-Dagger {
         Param (
             [Parameter(Mandatory = $false)][System.Management.Automation.SemanticVersion]$DaggerVersion,
-            [Parameter(Mandatory = $false)][string][ValidatePattern("^[0-9a-fA-F]{40}$")]$DaggerCommit,
+            [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:[0-9a-fA-F]{40})?$")]$DaggerCommit,
             [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
-            [Parameter(Mandatory = $false)][string]$InstallPath = "$env:HOMEPATH\dagger",
+            [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
             [Parameter(Mandatory = $false)][System.Boolean]$AddToPath = $false,
             [Parameter(Mandatory = $false)][switch]$Interactive = $false
         )
