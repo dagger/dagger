@@ -117,7 +117,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			},
 		},
 		// { FAILS as returns 404 without tags
-		// 	"git.sr.ht/~jacqueline/tangara-fw/lib.git",
+		// 	"git.sr.ht/~jacqueline/tangara-fw.git/lib",
 		// 	&RepoRoot{
 		// 		VCS:  vcsGit,
 		// 		Repo: "https://git.sr.ht/~jacqueline/tangara-fw.git",
@@ -142,6 +142,13 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://bitbucket.org/workspace/pkgname",
+			},
+		},
+		{
+			"bitbucket.org/workspace/pkgname.git",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://bitbucket.org/workspace/pkgname.git",
 			},
 		},
 		// GitLab public repo
