@@ -19,7 +19,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -55,8 +54,6 @@ type Opts struct {
 	Worker               *Worker
 	SessionManager       *bksession.Manager
 	BkSession            *bksession.Session
-	Job                  *bksolver.Job
-	LLBSolver            *llbsolver.Solver
 	LLBBridge            bkfrontend.FrontendLLBBridge
 	Dialer               *net.Dialer
 	GetMainClientCaller  func() (bksession.Caller, error)
