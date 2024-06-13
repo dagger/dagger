@@ -42,6 +42,8 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 	return report.AssertPass(ctx)
 }
 
+// Produce a lint report for the Python SDK
+// FIXME: rename this to Lint soon, it's a better interface
 func (t PythonSDK) LintReport(ctx context.Context) (*LintReport, error) {
 	runtimeSource := t.Dagger.Source.Directory("sdk/python")
 	docs := t.Dagger.Source.Directory("docs/current_docs")
@@ -55,7 +57,9 @@ func (t PythonSDK) LintReport(ctx context.Context) (*LintReport, error) {
 }
 
 // Produce a lint report for the Python SDK
-// FIXME: rename this to Lint soon, it's a better interface
+// This is a private implementation because it simulates future support
+// for context directories, which makes its API cleaner.
+// FIXME: when context directories ship, make this public
 func (t PythonSDK) lintReport(
 	ctx context.Context,
 	// Source code of the Python runtime (written in Go)
@@ -97,17 +101,15 @@ func (t PythonSDK) lintReport(
 
 	// Lint the code of the Python runtime (which is written in Go)
 	eg.Go(func() error {
-		runtimeSource := t.Dagger.Source.
-			Directory("sdk/python/runtime").
-			// Call `dagger develop` on the python sdk module
-			// FIXME: this goes away when we spin out each SDK pipeline into its own module
-			AsModule().GeneratedContextDirectory()
-		// FIXME: return the lint report instead of an error
+		runtimeSource := t.Dagger.Source.Directory("sdk/python/runtime")
+		// Call `dagger develop` on the python sdk module
+		runtimeSource = runtimeSource.AsModule().GeneratedContextDirectory()
 		// This requires wrapping python linters in an API similar to Go.Lint
-		_, err := dag.Go(runtimeSource).AssertLintPass(ctx)
+		report, err := new(Superlint).Go(ctx, runtimeSource)
 		if err != nil {
-			goReport = goReport.WithIssue(err.Error(), true)
+			return err
 		}
+		goReport = *report
 		return nil
 	})
 	err := eg.Wait()

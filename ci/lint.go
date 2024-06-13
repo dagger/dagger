@@ -6,6 +6,120 @@ import (
 	"fmt"
 )
 
+const (
+	golangCiLintImage = "docker.io/golangci/golangci-lint@sha256:b5f8712114561f1e2fbe74d04ed07ddfd992768705033a6251f3c7b848eac38e"
+)
+
+// A go linter
+type GoLint struct{}
+
+// Lint a go codebae
+func (gl GoLint) Lint(
+	ctx context.Context,
+	// The Go source directory to lint
+	source *Directory,
+) (*LintReport, error) {
+	config := dag.CurrentModule().Source().File("default-golangci.yml")
+	cmd := []string{
+		"golangci-lint", "run",
+		"-v",
+		"--timeout", "5m",
+		// Disable limits, we can filter the report instead
+		"--max-issues-per-linter", "0",
+		"--max-same-issues", "0",
+		"--out-format", "json",
+		"--issues-exit-code", "0",
+		"./...",
+	}
+	llreportFile := dag.
+		Container().
+		From(golangCiLintImage).
+		WithFile("/etc/golangci.yml", config).
+		WithEnvVariable("GOLANGCI_LINT_CONFIG", "/etc/golangci.yml").
+		WithMountedDirectory("/src", source).
+		WithWorkdir("/src").
+		WithExec(cmd, ContainerWithExecOpts{RedirectStdout: "lint.json"}).
+		File("lint.json")
+	llreportJSON, err := llreportFile.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Unmarshal the low-level report from linting tool
+	var llreport struct {
+		Issues []struct {
+			Text        string   `json:"Text"`
+			FromLinter  string   `json:"FromLinter"`
+			SourceLines []string `json:"SourceLines"`
+			Replacement *struct {
+				Text string `json:"Text"`
+			} `json:"Replacement,omitempty"`
+			Pos struct {
+				Filename string `json:"Filename"`
+				Offset   int    `json:"Offset"`
+				Line     int    `json:"Line"`
+				Column   int    `json:"Column"`
+			} `json:"Pos"`
+			ExpectedNoLint bool   `json:"ExpectedNoLint"`
+			Severity       string `json:"Severity"`
+		} `json:"Issues"`
+	}
+	if err := json.Unmarshal([]byte(llreportJSON), &llreport); err != nil {
+		return nil, err
+	}
+	report := &LintReport{
+		Issues:   make([]LintIssue, len(llreport.Issues)),
+		LLReport: llreportFile, // Keep the low-level report just in case
+	}
+	for i := range llreport.Issues {
+		report.Issues[i].Text = llreport.Issues[i].Text
+		if llreport.Issues[i].Severity == "error" {
+			report.Issues[i].IsError = true
+		}
+	}
+	return report, nil
+}
+
+// A Python linter
+type PythonLint struct{}
+
+func (pl PythonLint) Lint(
+	ctx context.Context,
+	// The Python source directory to lint
+	source *Directory,
+	pythonVersion string
+) (*LintReport, error) {
+	version := "3.11"
+	base := dag.Container().
+		From(fmt.Sprintf(
+			"docker.io/library/python:3.11-slim@sha256:fc39d2e68b554c3f0a5cb8a776280c0b3d73b4c04b83dbade835e2a171ca27ef",
+			version,
+		).
+		WithEnvVariable("PIPX_BIN_DIR", "/usr/local/bin").
+		WithMountedCache("/root/.cache/pip", dag.CacheVolume("pip_cache_"+version)).
+		WithMountedCache("/root/.local/pipx/cache", dag.CacheVolume("pipx_cache_"+version)).
+		WithMountedCache("/root/.cache/hatch", dag.CacheVolume("hatch_cache_"+version)).
+		WithMountedFile("/pipx.pyz", pipx).
+		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.7.0"}).
+		WithExec([]string{"python", "-m", "venv", venv}).
+		WithEnvVariable("VIRTUAL_ENV", venv).
+		WithEnvVariable(
+			"PATH",
+			"$VIRTUAL_ENV/bin:$PATH",
+			dagger.ContainerWithEnvVariableOpts{
+				Expand: true,
+			},
+		).
+		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv).
+		// Mirror the same dir structure from the repo because of the
+		// relative paths in ruff (for docs linting).
+		WithWorkdir(pythonSubdir).
+		WithMountedFile("requirements.txt", src.File("requirements.txt")).
+		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
+
+	WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
+
+}
+
 // A linting report
 type LintReport struct {
 	Issues   []LintIssue
