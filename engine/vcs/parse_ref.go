@@ -55,6 +55,7 @@ func ParseRefStringDir(ctx context.Context, bk buildkitClient, refString string)
 		parsed.Kind = core.ModuleSourceKindGit
 		parsed.RepoRoot = repoRoot
 		parsed.RepoRootSubdir = strings.TrimPrefix(parsed.ModPath, repoRoot.Root)
+		parsed.RepoRoot.Repo = strings.TrimSuffix(parsed.RepoRoot.Repo, ".git")
 		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
 		parsed.RepoRootSubdir = strings.TrimPrefix(parsed.RepoRootSubdir, "/")
 		return parsed
@@ -88,6 +89,9 @@ func ParseRefStringFile(ctx context.Context, bk buildkitClient, refString string
 		parsed.Kind = core.ModuleSourceKindGit
 		parsed.RepoRoot = repoRoot
 		parsed.RepoRootSubdir = strings.TrimPrefix(parsed.ModPath, repoRoot.Root)
+		if !strings.HasSuffix(repoRoot.Repo, ".git") {
+			parsed.RepoRoot.Repo += ".git"
+		}
 		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
 		parsed.RepoRootSubdir = strings.TrimPrefix(parsed.RepoRootSubdir, "/")
 		return parsed

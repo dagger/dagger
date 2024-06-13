@@ -30,7 +30,7 @@ func TestConvertRef(t *testing.T) {
 		{
 			name:           "basic with .git",
 			urlStr:         "github.com/sipsma/daggerverse.git",
-			expectedUrlStr: "https://github.com/sipsma/daggerverse.git",
+			expectedUrlStr: "https://github.com/sipsma/daggerverse",
 		},
 
 		// New ref style - basic ref with subdir
@@ -42,7 +42,7 @@ func TestConvertRef(t *testing.T) {
 		{
 			name:           "basic with subdir and .git",
 			urlStr:         "github.com/sipsma/daggerverse.git/subdir1/subdir2",
-			expectedUrlStr: "https://github.com/sipsma/daggerverse.git:subdir1/subdir2",
+			expectedUrlStr: "https://github.com/sipsma/daggerverse:subdir1/subdir2",
 		},
 
 		// New ref style - basic ref with version
@@ -54,7 +54,7 @@ func TestConvertRef(t *testing.T) {
 		{
 			name:           "basic with version and .git",
 			urlStr:         "github.com/sipsma/daggerverse.git@v0.9.1",
-			expectedUrlStr: "https://github.com/sipsma/daggerverse.git#v0.9.1",
+			expectedUrlStr: "https://github.com/sipsma/daggerverse#v0.9.1",
 		},
 
 		//New ref style - basic ref version and subdir
@@ -66,7 +66,7 @@ func TestConvertRef(t *testing.T) {
 		{
 			name:           "basic with subdir, version and .git",
 			urlStr:         "github.com/sipsma/daggerverse.git/subdir1/subdir2@v0.9.1",
-			expectedUrlStr: "https://github.com/sipsma/daggerverse.git#v0.9.1:subdir1/subdir2",
+			expectedUrlStr: "https://github.com/sipsma/daggerverse#v0.9.1:subdir1/subdir2",
 		},
 		// other CI
 		{
@@ -77,7 +77,7 @@ func TestConvertRef(t *testing.T) {
 		{
 			name:           "GitLab with subdir, with .git",
 			urlStr:         "gitlab.com/grouville-public/subgroup/daggerverse.git/zip",
-			expectedUrlStr: "https://gitlab.com/grouville-public/subgroup/daggerverse.git:zip",
+			expectedUrlStr: "https://gitlab.com/grouville-public/subgroup/daggerverse:zip",
 		},
 
 		// Vanity ref

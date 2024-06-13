@@ -41,7 +41,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				ModPath:        "github.com/shykes/daggerverse.git/ci",
 				Kind:           core.ModuleSourceKindGit,
-				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				RepoRootSubdir: "ci",
 			},
 		},
@@ -50,7 +50,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				ModPath:        "github.com/shykes/daggerverse.git/../../",
 				Kind:           core.ModuleSourceKindGit,
-				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				RepoRootSubdir: "../../",
 			},
 		},
@@ -60,7 +60,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				ModPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 				Kind:           core.ModuleSourceKindGit,
-				RepoRoot:       &RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
+				RepoRoot:       &RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				RepoRootSubdir: "depth1/depth2",
 			},
 		},
@@ -88,7 +88,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				ModPath:        "bitbucket.org/test-travail/test.git/depth1",
 				Kind:           core.ModuleSourceKindGit,
-				RepoRoot:       &RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test.git"},
+				RepoRoot:       &RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
 				RepoRootSubdir: "depth1",
 			},
 		},
