@@ -3915,7 +3915,7 @@ class Host(Type):
 
     def tunnel(
         self,
-        service: Self,
+        service: "Service",
         *,
         ports: list[PortForward] | None = None,
         native: bool | None = False,
