@@ -162,8 +162,12 @@ The "--source" flag allows controlling the directory in which the actual module 
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
-				return err
+			if sdk != "" {
+				// If we're generating code by setting a SDK, we should also generate a license
+				// if it doesn't already exists.
+				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
+					return err
+				}
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootPath)
@@ -374,6 +378,11 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
+			}
+
+			// If no license has been created yet, we should create one.
+			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
+				return err
 			}
 
 			return nil
