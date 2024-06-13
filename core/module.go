@@ -285,11 +285,21 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 		if checkDirectDeps && ok {
 			return modType, true, nil
 		}
+
 	case TypeDefKindInterface:
-		modType, ok, err = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
-		if checkDirectDeps && ok {
-			return modType, true, nil
+		// For some reason, if we do this logic inside `modTypeForInferface`, it doesn't work...
+		if checkDirectDeps {
+			// check to see if this is from a *direct* dependency
+			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to get interface type from dependency: %w", err)
+			}
+			if ok {
+				return depType, true, nil
+			}
 		}
+
+		modType, ok, err = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindScalar:
 		modType, ok, err = mod.modTypeForScalar(ctx, typeDef, checkDirectDeps)
 		if checkDirectDeps && ok {
@@ -367,18 +377,7 @@ func (mod *Module) modTypeForObject(ctx context.Context, typeDef *TypeDef, check
 	return nil, false, nil
 }
 
-func (mod *Module) modTypeForInterface(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	if checkDirectDeps {
-		// check to see if this is from a *direct* dependency
-		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get interface type from dependency: %w", err)
-		}
-		if ok {
-			return depType, true, nil
-		}
-	}
-
+func (mod *Module) modTypeForInterface(_ context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	// otherwise it must be from this module
 	for _, iface := range mod.InterfaceDefs {
 		if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
