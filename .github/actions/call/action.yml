@@ -65,15 +65,17 @@ runs:
           echo "docker is not installed"
           exit 1
         fi
-        ./hack/dev
 
-        # put env variables in /tmp/actions/call/local-envs instead of $GITHUB_ENV to avoid
-        # leaking into parent workflow
-        echo "export PATH=$PWD/bin:$PATH" >> /tmp/actions/call/local-envs
-        echo "export _EXPERIMENTAL_DAGGER_CLI_BIN=$PWD/bin/dagger" >> /tmp/actions/call/local-envs
-        echo "export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev" >> /tmp/actions/call/local-envs
+        # put env variables in /tmp/actions/call/local-envs instead of
+        # $GITHUB_ENV to avoid leaking into parent workflow
+        (cd ci/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
 
         echo "::endgroup::"
+      env:
+        # create separate outputs and containers for each workflow (to prevent
+        # collisions with shared docker containers)
+        _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ github.job }}
+        _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ github.job }}
 
     - name: Wait for dagger to be ready
       shell: bash

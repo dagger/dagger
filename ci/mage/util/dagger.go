@@ -24,9 +24,9 @@ func DaggerCall(ctx context.Context, args ...string) error {
 	cmd.Args = append(cmd.Args, args...)
 
 	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
-	fmt.Println(">", strings.Join(cmd.Args, " "))
+	fmt.Fprintln(os.Stderr, ">", strings.Join(cmd.Args, " "))
 	return cmd.Run()
 }
 
