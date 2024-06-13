@@ -22,51 +22,99 @@ const (
 
 var (
 	pythonVersions = []string{"3.10", "3.11", "3.12"}
+	docsIgnore     = []string{
+		"*",
+		"!**/*.py",
+		"!.ruff.toml",
+	}
 )
 
 type PythonSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint the Python SDK
+// Lint the Python SDK, and return an error in case of issue
 func (t PythonSDK) Lint(ctx context.Context) error {
+	report, err := t.LintReport(ctx)
+	if err != nil {
+		return err
+	}
+	return report.AssertPass(ctx)
+}
+
+// Produce a lint report for the Python SDK
+// FIXME: rename this to Lint soon, it's a better interface
+func (t PythonSDK) LintReport(ctx context.Context) (*LintReport, error) {
+	runtimeSource := t.Dagger.Source.Directory("sdk/python")
+	docs := t.Dagger.Source.Directory("docs/current_docs")
+	filteredDocs := dag.
+		Directory().
+		WithDirectory("/", docs, DirectoryWithDirectoryOpts{Include: []string{
+			"**/*.py",
+			".ruff.toml",
+		}})
+	return t.lintReport(ctx, runtimeSource, filteredDocs)
+}
+
+// Produce a lint report for the Python SDK
+// This is a private implementation because it simulates future support
+// for context directories, which makes its API cleaner.
+// FIXME: when context directories ship, make this public
+func (t PythonSDK) lintReport(
+	ctx context.Context,
+	// Source code of the Python runtime (written in Go)
+	// +default="../runtime"
+	runtimeSource *dagger.Directory,
+
+	// Dagger documentation (it has python files to lint inside)
+	// +default="/docs"
+	// +ignore=docsIgnore
+	docs *dagger.Directory,
+) (*LintReport, error) {
+	var pyReport, goReport, codegenReport LintReport
 	eg, ctx := errgroup.WithContext(ctx)
 
 	base := t.pythonBase(pythonDefaultVersion, true)
 
+	// Lint the python SDK + docs together
 	eg.Go(func() error {
-		path := "docs/current_docs"
 		_, err := base.
-			WithDirectory(
-				fmt.Sprintf("/%s", path),
-				t.Dagger.Source.Directory(path),
-				dagger.ContainerWithDirectoryOpts{
-					Include: []string{
-						"**/*.py",
-						".ruff.toml",
-					},
-				},
-			).
+			WithDirectory("/docs", docs).
 			WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
 			WithExec([]string{"black", "--check", "--diff", ".", "/docs"}).
 			Sync(ctx)
-		return err
+		if err != nil {
+			pyReport = pyReport.WithIssue(err.Error(), true)
+		}
+		return nil
 	})
 
+	// Check that core client library (generated) is up-to-date
+	// FIXME: make this fixable
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, pythonGeneratedAPIPath)
+		err := util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, pythonGeneratedAPIPath)
+		if err != nil {
+			codegenReport = codegenReport.WithIssue(err.Error(), true)
+		}
+		return nil
 	})
 
+	// Lint the code of the Python runtime (which is written in Go)
 	eg.Go(func() error {
+		runtimeSource := t.Dagger.Source.Directory("sdk/python/runtime")
 		// Call `dagger develop` on the python sdk module
-		// FIXME: this goes away when we spin out each SDK pipeline into its own module
-		return t.Dagger.
-			Go().
-			WithCodegen([]string{pythonRuntimeSubdir}).
-			Lint(ctx, []string{pythonRuntimeSubdir}, false)
+		runtimeSource = runtimeSource.AsModule().GeneratedContextDirectory()
+		// This requires wrapping python linters in an API similar to Go.Lint
+		report, err := new(Superlint).Go(ctx, runtimeSource)
+		if err != nil {
+			return err
+		}
+		goReport = *report
+		return nil
 	})
-
-	return eg.Wait()
+	err := eg.Wait()
+	report := pyReport.Merge([]LintReport{goReport, codegenReport})
+	return &report, err
 }
 
 // Test the Python SDK
@@ -177,6 +225,13 @@ func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
 	return dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference), nil
+}
+
+// Build a container
+// returns a python container with the Python SDK source files
+// added and dependencies installed.
+func (t PythonSDK) Base(version string, install bool) *Container {
+	return t.pythonBase(version, install)
 }
 
 // pythonBase returns a python container with the Python SDK source files

@@ -16,7 +16,6 @@ import (
 // TODO: use dev module (this is just the mage port)
 
 const (
-	typescriptRuntimeSubdir    = "sdk/typescript/runtime"
 	typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
 
 	nodeVersionMaintenance = "18"
@@ -36,6 +35,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	base := t.nodeJsBase()
 
 	eg.Go(func() error {
+		// FIXME: yarn is very slow. Use something faster?
 		_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
 		return err
 	})
@@ -62,17 +62,24 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 		return err
 	})
 
+	// Check that all generated files are checked in
 	eg.Go(func() error {
 		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, typescriptGeneratedAPIPath)
 	})
 
+	// Lint the code of the Typescript runtime (which is written in Go)
 	eg.Go(func() error {
-		return t.Dagger.
-			Go().
-			WithCodegen([]string{typescriptRuntimeSubdir}).
-			Lint(ctx, []string{typescriptRuntimeSubdir}, false)
+		runtimeSource := t.Dagger.Source.
+			Directory("sdk/typescript/runtime").
+			// Call `dagger develop` on the typescript sdk module
+			// FIXME: this goes away when we spin out each SDK pipeline into its own module
+			AsModule().
+			GeneratedContextDirectory()
+		// FIXME: return the lint report instead of an error
+		// This requires wrapping python linters in an API similar to Go.Lint
+		_, err := dag.Go(runtimeSource).AssertLintPass(ctx)
+		return err
 	})
-
 	return eg.Wait()
 }
 

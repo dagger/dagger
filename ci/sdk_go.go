@@ -7,26 +7,19 @@ import (
 	"strings"
 
 	"github.com/moby/buildkit/identity"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/ci/consts"
-	"github.com/dagger/dagger/ci/util"
 )
 
 type GoSDK struct {
 	Dagger *Dagger // +private
 }
 
-// Lint the Go SDK
+// Lint the Go SDK source code
 func (t GoSDK) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
-		return t.Dagger.Go().Lint(ctx, []string{"sdk/go"}, false)
-	})
-	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, "sdk/go")
-	})
-	return eg.Wait()
+	src := t.Dagger.Source.Directory("sdk/go")
+	_, err := dag.Go(src).AssertLintPass(ctx)
+	return err
 }
 
 // Test the Go SDK
