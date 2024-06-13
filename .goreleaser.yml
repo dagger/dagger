@@ -1,3 +1,5 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goreleaser/goreleaser/v1.26.0/www/docs/static/schema-pro.json
+
 includes:
   - from_file:
       path: ./.goreleaser.common.yml
@@ -50,6 +52,9 @@ nix:
 # https://goreleaser.com/customization/winget/
 winget:
   - name: dagger
+    repository:
+      owner: "{{ .Env.GH_ORG_NAME }}"
+      name: winget
     publisher: Dagger
     short_description: "Dagger is an integrated platform to orchestrate the delivery of applications"
     license: "asl20"
