@@ -116,6 +116,8 @@ func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 }
 
 func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme string) (string, error) {
+	return "", errors.New("uh oh")
+
 	var host string
 	var err error
 	switch {
