@@ -15,6 +15,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/Khan/genqlient/graphql"
+	"github.com/containerd/containerd/content"
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
@@ -24,6 +25,7 @@ import (
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -107,6 +109,8 @@ type daggerClient struct {
 
 	// the DAG of modules being served to this client
 	deps *core.ModDeps
+	// the default deps that each client/module starts out with (currently just core)
+	defaultDeps *core.ModDeps
 
 	// If the client is itself from a function call in a user module, this is set with the
 	// metadata of that ongoing function call
@@ -405,18 +409,7 @@ func (srv *Server) initializeDaggerClient(
 
 	// setup the graphql server + module/function state for the client
 
-	client.dagqlRoot = core.NewRoot(core.QueryOpts{
-		Server:             srv,
-		Services:           client.daggerSession.services,
-		Secrets:            client.daggerSession.secretStore,
-		Auth:               client.daggerSession.authProvider,
-		OCIStore:           srv.contentStore,
-		LeaseManager:       srv.worker.LeaseManager(),
-		Platform:           core.Platform(srv.defaultPlatform),
-		Cache:              client.daggerSession.dagqlCache,
-		Buildkit:           client.bkClient,
-		MainClientCallerID: client.daggerSession.mainClientCallerID,
-	})
+	client.dagqlRoot = core.NewRoot(srv)
 
 	dag := dagql.NewServer(client.dagqlRoot)
 	dag.Cache = client.daggerSession.dagqlCache
@@ -425,7 +418,7 @@ func (srv *Server) initializeDaggerClient(
 	if err := coreMod.Install(ctx, dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
-	client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	if opts.EncodedModuleID != "" {
@@ -922,6 +915,34 @@ func (srv *Server) CurrentServedDeps(ctx context.Context) (*core.ModDeps, error)
 	return client.deps, nil
 }
 
+// The ClientID of the main client caller (i.e. the one who created the session, typically the CLI
+// invoked by the user)
+func (srv *Server) MainClientCallerID(ctx context.Context) (string, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return client.daggerSession.mainClientCallerID, nil
+}
+
+// The default deps of every user module (currently just core)
+func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.defaultDeps, nil
+}
+
+// The DagQL query cache for the current client's session
+func (srv *Server) Cache(ctx context.Context) (dagql.Cache, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.dagqlCache, nil
+}
+
 // Mix in this http endpoint+handler to the current client's session
 func (srv *Server) MuxEndpoint(ctx context.Context, path string, handler http.Handler) error {
 	client, err := srv.clientFromContext(ctx)
@@ -932,6 +953,57 @@ func (srv *Server) MuxEndpoint(ctx context.Context, path string, handler http.Ha
 	defer client.daggerSession.endpointMu.Unlock()
 	client.daggerSession.endpoints[path] = handler
 	return nil
+}
+
+// The secret store for the current client
+func (srv *Server) Secrets(ctx context.Context) (*core.SecretStore, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.secretStore, nil
+}
+
+// The auth provider for the current client
+func (srv *Server) Auth(ctx context.Context) (*auth.RegistryAuthProvider, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.authProvider, nil
+}
+
+// The buildkit APIs for the current client
+func (srv *Server) Buildkit(ctx context.Context) (*buildkit.Client, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.bkClient, nil
+}
+
+// The services for the current client's session
+func (srv *Server) Services(ctx context.Context) (*core.Services, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.services, nil
+}
+
+// The default platform for the engine as a whole
+func (srv *Server) Platform() core.Platform {
+	return core.Platform(srv.defaultPlatform)
+}
+
+// The content store for the engine as a whole
+func (srv *Server) OCIStore() content.Store {
+	return srv.contentStore
+}
+
+// The lease manager for the engine as a whole
+func (srv *Server) LeaseManager() *leaseutil.Manager {
+	return srv.leaseManager
 }
 
 type httpError struct {

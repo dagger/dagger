@@ -129,7 +129,11 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	dag.Around(AroundFunc)
 
 	// share the same cache session-wide
-	dag.Cache = d.root.Cache
+	var err error
+	dag.Cache, err = d.root.Cache(ctx)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+	}
 
 	dagintro.Install[*Query](dag)
 
@@ -221,7 +225,12 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 
 	const schemaJSONFilename = "schema.json"
 
-	_, schemaJSONDesc, err := d.root.Buildkit.BytesToBlob(ctx,
+	bk, err := d.root.Buildkit(ctx)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	_, schemaJSONDesc, err := bk.BytesToBlob(ctx,
 		schemaJSONFilename,
 		0644,
 		moduleSchemaJSON,
