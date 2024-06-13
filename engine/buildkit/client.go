@@ -18,9 +18,7 @@ import (
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
-	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -31,7 +29,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
 )
@@ -54,20 +51,15 @@ const (
 
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
-	Worker                 *Worker
-	SessionManager         *bksession.Manager
-	BkSession              *bksession.Session
-	Job                    *bksolver.Job
-	LLBSolver              *llbsolver.Solver
-	LLBBridge              bkfrontend.FrontendLLBBridge
-	Dialer                 *net.Dialer
-	GetMainClientCaller    func() (bksession.Caller, error)
-	Entitlements           entitlements.Set
-	SecretStore            bksecrets.SecretStore
-	AuthProvider           *auth.RegistryAuthProvider
-	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
-	UpstreamCacheImports   []bkgw.CacheOptionsEntry
-	Frontends              map[string]bkfrontend.Frontend
+	Worker               *Worker
+	SessionManager       *bksession.Manager
+	BkSession            *bksession.Session
+	LLBBridge            bkfrontend.FrontendLLBBridge
+	Dialer               *net.Dialer
+	GetMainClientCaller  func() (bksession.Caller, error)
+	Entitlements         entitlements.Set
+	UpstreamCacheImports []bkgw.CacheOptionsEntry
+	Frontends            map[string]bkfrontend.Frontend
 
 	Refs         map[Reference]struct{}
 	RefsMu       *sync.Mutex
