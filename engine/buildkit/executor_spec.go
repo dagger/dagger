@@ -22,6 +22,8 @@ import (
 	ctdoci "github.com/containerd/containerd/oci"
 	"github.com/containerd/continuity/fs"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/gofrs/flock"
+	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	randid "github.com/moby/buildkit/identity"
@@ -54,6 +56,7 @@ const (
 	DaggerRedirectStdoutEnv  = "_DAGGER_REDIRECT_STDOUT"
 	DaggerRedirectStderrEnv  = "_DAGGER_REDIRECT_STDERR"
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
+	CacheVolumesEnvName      = "_DAGGER_CACHE_VOLUME_MOUNTS"
 
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
@@ -75,6 +78,14 @@ const (
 	buildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 )
 
+type CacheVolumeMount struct {
+	ID          string
+	SharingMode llb.CacheMountSharingMode
+	DestPath    string
+	SourcePath  string
+	// TODO: support base source layers
+}
+
 var removeEnvs = map[string]struct{}{
 	// envs that are used to scope cache but not needed at runtime
 	DaggerCallDigestEnv:      {},
@@ -82,6 +93,9 @@ var removeEnvs = map[string]struct{}{
 	DaggerRedirectStdoutEnv:  {},
 	DaggerRedirectStderrEnv:  {},
 	DaggerHostnameAliasesEnv: {},
+
+	// envs that we use but shouldn't be set in the container
+	CacheVolumesEnvName: {},
 }
 
 type execState struct {
@@ -103,6 +117,7 @@ type execState struct {
 	exitCodePath     string
 	metaMount        *specs.Mount
 	origEnvMap       map[string]string
+	cacheVolumes     []CacheVolumeMount
 
 	doneErr error
 	done    chan struct{}
@@ -289,39 +304,10 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	return nil
 }
 
-type hostBindMount struct {
-	srcPath string
-}
-
-var _ executor.Mountable = (*hostBindMount)(nil)
-
-func (m hostBindMount) Mount(_ context.Context, readonly bool) (executor.MountableRef, error) {
-	if !readonly {
-		return nil, errors.New("host bind mounts must be readonly")
-	}
-	return hostBindMountRef(m), nil
-}
-
-type hostBindMountRef hostBindMount
-
-var _ executor.MountableRef = (*hostBindMountRef)(nil)
-
-func (m hostBindMountRef) Mount() ([]mount.Mount, func() error, error) {
-	return []mount.Mount{{
-		Type:    "bind",
-		Source:  m.srcPath,
-		Options: []string{"ro", "rbind"},
-	}}, func() error { return nil }, nil
-}
-
-func (m hostBindMountRef) IdentityMapping() *idtools.IdentityMapping {
-	return nil
-}
-
 func (w *Worker) injectDumbInit(_ context.Context, state *execState) error {
 	dumbInitPath := "/.init"
 	state.mounts = append(state.mounts, executor.Mount{
-		Src:      hostBindMount{srcPath: distconsts.DumbInitPath},
+		Src:      readOnlyHostBindMount{srcPath: distconsts.DumbInitPath},
 		Dest:     dumbInitPath,
 		Readonly: true,
 	})
@@ -369,6 +355,15 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 		if !ok {
 			continue
 		}
+
+		if k == CacheVolumesEnvName {
+			err := json.Unmarshal([]byte(v), &state.cacheVolumes)
+			if err != nil {
+				return fmt.Errorf("unmarshal cache volumes: %w", err)
+			}
+			continue
+		}
+
 		if _, ok := removeEnvs[k]; !ok {
 			state.origEnvMap[k] = v
 			filteredEnvs = append(filteredEnvs, env)
@@ -438,6 +433,76 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		}
 	}
 	state.spec.Mounts = filteredMounts
+
+	// sanity check
+	if w.cacheVolumeRootDir == "" || w.cacheVolumeRootDir == "/" {
+		return fmt.Errorf("invalid cache volume root dir %q", w.cacheVolumeRootDir)
+	}
+	for _, cacheVolMnt := range state.cacheVolumes {
+		// TODO: split out to mount manager or similar
+		// TODO: enforce sharing mode
+
+		// fs.RootPath is kinda overkill, but do it anyways to be sure we don't end up with
+		// some vulnerability if cacheVolMnt.ID ends up being more user controlled in the future
+		hostPath, err := fs.RootPath(w.cacheVolumeRootDir, cacheVolMnt.ID)
+		if err != nil {
+			return fmt.Errorf("get cache volume host path: %w", err)
+		}
+		// sanity check
+		relPath, err := filepath.Rel(w.cacheVolumeRootDir, hostPath)
+		if err != nil {
+			return fmt.Errorf("get cache volume relative path: %w", err)
+		}
+		if relPath == "." || !filepath.IsLocal(relPath) {
+			return fmt.Errorf("cache volume host path %s is not under cache volume root dir %s", hostPath, w.cacheVolumeRootDir)
+		}
+
+		// TODO: how do we deal with owner/permissions? how does that even work today???
+		if err := os.MkdirAll(hostPath, 0o755); err != nil {
+			return fmt.Errorf("create cache volume host path: %w", err)
+		}
+
+		lockPath := filepath.Join(hostPath, ".lock")
+		lock := flock.New(lockPath)
+		state.cleanups.Add("remove cache volume lock "+lockPath, lock.Close)
+
+		// TODO: support llb.CacheMountPrivate
+		// TODO: think more about best retry timeouts
+		const retryInterval = 100 * time.Millisecond
+		switch cacheVolMnt.SharingMode {
+		case llb.CacheMountShared:
+			ok, err := lock.TryRLockContext(ctx, retryInterval)
+			if err != nil {
+				return fmt.Errorf("try rlock cache volume %s: %w", hostPath, err)
+			}
+			if !ok {
+				return fmt.Errorf("failed to rlock cache volume %s", hostPath)
+			}
+		case llb.CacheMountLocked:
+			ok, err := lock.TryLockContext(ctx, retryInterval)
+			if err != nil {
+				return fmt.Errorf("try lock cache volume %s: %w", hostPath, err)
+			}
+			if !ok {
+				return fmt.Errorf("failed to lock cache volume %s", hostPath)
+			}
+		default:
+			return fmt.Errorf("unsupported cache volume sharing mode %v", cacheVolMnt.SharingMode)
+		}
+
+		// add to state.mounts so the stub cleaner handles it
+		// TODO: is read-only even an option on cache volume mounts? if so, set that here
+		mntable := cacheVolumeMount{
+			hostSrcPath: hostPath,
+			ctrDestPath: cacheVolMnt.DestPath,
+		}
+		state.mounts = append(state.mounts, executor.Mount{
+			Src:      mntable,
+			Selector: cacheVolMnt.SourcePath,
+			Dest:     cacheVolMnt.DestPath,
+		})
+		nonRootMounts = append(nonRootMounts, mntable.ctdMnts()...)
+	}
 
 	state.cleanups.Add("cleanup rootfs stubs", Infallible(executor.MountStubsCleaner(
 		ctx,
@@ -573,7 +638,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if w.execMD != nil && (w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
 		ctrFS, err := containerfs.NewContainerFS(state.spec, nil)
 		if err != nil {
-			return err
+			return fmt.Errorf("create container fs: %w", err)
 		}
 
 		ctrCwd := state.spec.Process.Cwd

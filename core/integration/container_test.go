@@ -4242,7 +4242,13 @@ func TestContainerEmptyExecDiff(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 
-	base := c.Container().From(alpineImage)
+	base := c.Container().From(alpineImage).
+		// include various mount types for extra coverage of stub cleanups
+		WithMountedDirectory("/dirmnt", c.Directory().WithNewFile("some-file", "some-content")).
+		WithMountedFile("/filemnt", c.Directory().WithNewFile("some-other-file", "some-other-content").File("some-other-file")).
+		WithMountedCache("/cachemnt", c.CacheVolume("idc")).
+		WithMountedTemp("/tmpmnt")
+
 	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)
 	require.NoError(t, err)
 	require.Len(t, ents, 0)
