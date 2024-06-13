@@ -299,7 +299,7 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 			}
 		}
 
-		modType, ok, err = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
+		modType, ok = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindScalar:
 		modType, ok, err = mod.modTypeForScalar(ctx, typeDef, checkDirectDeps)
 		if checkDirectDeps && ok {
@@ -377,19 +377,19 @@ func (mod *Module) modTypeForObject(ctx context.Context, typeDef *TypeDef, check
 	return nil, false, nil
 }
 
-func (mod *Module) modTypeForInterface(_ context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+func (mod *Module) modTypeForInterface(_ context.Context, typeDef *TypeDef, _ bool) (ModType, bool) {
 	// otherwise it must be from this module
 	for _, iface := range mod.InterfaceDefs {
 		if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
 			return &InterfaceType{
 				typeDef: iface.AsInterface.Value,
 				mod:     mod,
-			}, true, nil
+			}, true
 		}
 	}
 
 	slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
-	return nil, false, nil
+	return nil, false
 }
 
 func (mod *Module) modTypeForScalar(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
