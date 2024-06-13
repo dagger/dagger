@@ -11,16 +11,11 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module")
-def anyio_backend():
-    return "asyncio"
-
-
 def test_singleton():
     assert SharedConnection() is SharedConnection()
 
 
-async def test_context_manager_provision():
+async def test_context_manager_provision(alpine_image: str):
     conn = SharedConnection()
     assert not conn.is_connected(), "Connection should not be established yet."
 
@@ -28,7 +23,7 @@ async def test_context_manager_provision():
         assert conn.is_connected(), "Connection should be established."
         out = await (
             dag.container()
-            .from_("alpine:3.16.2")
+            .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
         )
@@ -63,44 +58,44 @@ class TestConnectionManagement:
         yield
         assert not conn.is_connected(), "Connection should be closed."
 
-    async def test_connect_with_context_manager(self):
+    async def test_connect_with_context_manager(self, alpine_image: str):
         async with await dagger.connect() as conn:
             assert conn.is_connected(), "Connection should be established."
             out = await (
                 dag.container()
-                .from_("alpine:3.16.2")
+                .from_(alpine_image)
                 .with_exec(["echo", "-n", "hello"])
                 .stdout()
             )
             assert out == "hello"
 
-    async def test_connect_and_close(self):
+    async def test_connect_and_close(self, alpine_image: str):
         conn = await dagger.connect()
         assert conn.is_connected(), "Connection should be established."
         out = await (
             dag.container()
-            .from_("alpine:3.16.2")
+            .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
         )
         assert out == "hello"
         await conn.close()
 
-    async def test_connect_and_global_close(self):
+    async def test_connect_and_global_close(self, alpine_image: str):
         await dagger.connect()
         out = await (
             dag.container()
-            .from_("alpine:3.16.2")
+            .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
         )
         assert out == "hello"
         await dagger.close()
 
-    async def test_lazy_connect_and_global_close(self):
+    async def test_lazy_connect_and_global_close(self, alpine_image: str):
         out = await (
             dag.container()
-            .from_("alpine:3.16.2")
+            .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
         )
