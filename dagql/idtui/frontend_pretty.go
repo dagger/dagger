@@ -12,7 +12,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
-	"github.com/vito/progrock/ui"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -384,7 +383,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 
 func (fe *frontendPretty) Init() tea.Cmd {
 	return tea.Batch(
-		ui.Frame(fe.fps),
+		frame(fe.fps),
 		fe.spawn,
 	)
 }
@@ -458,12 +457,12 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		fe.SetWindowSize(msg)
 		return fe, nil
 
-	case ui.FrameMsg:
+	case frameMsg:
 		fe.render()
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
-		return fe, ui.Frame(fe.fps)
+		return fe, frame(fe.fps)
 
 	default:
 		return fe, nil
@@ -545,7 +544,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 
 func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) bool {
 	if logs, ok := fe.logs.Logs[span.SpanContext().SpanID()]; ok {
-		pipe := out.String(ui.VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+		pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		if depth != -1 {
 			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
 		}
@@ -612,4 +611,12 @@ func findTTYs() (in *os.File, out *os.File) {
 		}
 	}
 	return
+}
+
+type frameMsg time.Time
+
+func frame(fps float64) tea.Cmd {
+	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
+		return frameMsg(t)
+	})
 }
