@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/distconsts"
 )
@@ -49,7 +50,7 @@ func (s *moduleSchema) sdkForModule(
 		return nil, fmt.Errorf("failed to get sdk source for %s: %w", sdk, err)
 	}
 
-	if sdkSource.Self.Kind == core.ModuleSourceKindLocal {
+	if sdkSource.Self.Kind == modules.ModuleSourceKindLocal {
 		err = s.dag.Select(ctx, parentSrc, &sdkSource,
 			dagql.Selector{
 				Field: "resolveDependency",

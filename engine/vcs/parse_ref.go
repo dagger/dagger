@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -12,7 +12,7 @@ type parsedRefString struct {
 	ModPath        string
 	ModVersion     string
 	HasVersion     bool
-	Kind           core.ModuleSourceKind
+	Kind           modules.ModuleSourceKind
 	RepoRoot       *RepoRoot
 	RepoRootSubdir string
 }
@@ -44,7 +44,7 @@ func ParseRefStringDir(ctx context.Context, bk buildkitClient, refString string)
 	stat, err := bk.StatCallerHostPath(ctx, parsed.ModPath, false)
 	if err == nil {
 		if !parsed.HasVersion && stat.IsDir() {
-			parsed.Kind = core.ModuleSourceKindLocal
+			parsed.Kind = modules.ModuleSourceKindLocal
 			return parsed
 		}
 	}
@@ -52,7 +52,7 @@ func ParseRefStringDir(ctx context.Context, bk buildkitClient, refString string)
 	// we try to isolate the root of the git repo
 	repoRoot, err := RepoRootForImportPath(parsed.ModPath, false)
 	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
-		parsed.Kind = core.ModuleSourceKindGit
+		parsed.Kind = modules.ModuleSourceKindGit
 		parsed.RepoRoot = repoRoot
 		parsed.RepoRootSubdir = strings.TrimPrefix(parsed.ModPath, repoRoot.Root)
 		parsed.RepoRoot.Repo = strings.TrimSuffix(parsed.RepoRoot.Repo, ".git")
@@ -61,7 +61,7 @@ func ParseRefStringDir(ctx context.Context, bk buildkitClient, refString string)
 		return parsed
 	}
 
-	parsed.Kind = core.ModuleSourceKindLocal
+	parsed.Kind = modules.ModuleSourceKindLocal
 	return parsed
 }
 
@@ -78,7 +78,7 @@ func ParseRefStringFile(ctx context.Context, bk buildkitClient, refString string
 	stat, err := bk.StatCallerHostPath(ctx, parsed.ModPath, false)
 	if err == nil {
 		if !parsed.HasVersion && !stat.IsDir() {
-			parsed.Kind = core.ModuleSourceKindLocal
+			parsed.Kind = modules.ModuleSourceKindLocal
 			return parsed
 		}
 	}
@@ -86,7 +86,7 @@ func ParseRefStringFile(ctx context.Context, bk buildkitClient, refString string
 	// we try to isolate the root of the git repo
 	repoRoot, err := RepoRootForImportPath(parsed.ModPath, false)
 	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
-		parsed.Kind = core.ModuleSourceKindGit
+		parsed.Kind = modules.ModuleSourceKindGit
 		parsed.RepoRoot = repoRoot
 		parsed.RepoRootSubdir = strings.TrimPrefix(parsed.ModPath, repoRoot.Root)
 		parsed.RepoRoot.Repo = strings.TrimSuffix(parsed.RepoRoot.Repo, ".git")
@@ -95,6 +95,6 @@ func ParseRefStringFile(ctx context.Context, bk buildkitClient, refString string
 		return parsed
 	}
 
-	parsed.Kind = core.ModuleSourceKindLocal
+	parsed.Kind = modules.ModuleSourceKindLocal
 	return parsed
 }

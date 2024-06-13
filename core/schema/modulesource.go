@@ -29,7 +29,7 @@ type moduleSourceArgs struct {
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
 	parsed := vcs.ParseRefStringDir(ctx, query.Buildkit, args.RefString)
-	if args.Stable && !parsed.HasVersion && parsed.Kind == core.ModuleSourceKindGit {
+	if args.Stable && !parsed.HasVersion && parsed.Kind == modules.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
 
@@ -39,7 +39,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	}
 
 	switch src.Kind {
-	case core.ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		if filepath.IsAbs(parsed.ModPath) {
 			return nil, fmt.Errorf("local module source root path is absolute: %s", parsed.ModPath)
 		}
@@ -48,7 +48,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			RootSubpath: parsed.ModPath,
 		})
 
-	case core.ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
 		src.AsGitSource.Value.Root = parsed.RepoRoot.Root
@@ -403,7 +403,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 		return inst, fmt.Errorf("failed to decode module source: %w", err)
 	}
 
-	if depSrc.Self.Kind == core.ModuleSourceKindGit {
+	if depSrc.Self.Kind == modules.ModuleSourceKindGit {
 		// git deps stand on their own, no special handling needed
 		return depSrc, nil
 	}
@@ -438,7 +438,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 	}
 
 	switch src.Kind {
-	case core.ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		src = src.Clone()
 		src.AsGitSource.Value.RootSubpath = depSubpath
 
@@ -464,7 +464,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 		}
 		return newDepSrc, nil
 
-	case core.ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		var newDepSrc dagql.Instance[*core.ModuleSource]
 		err = s.dag.Select(ctx, s.dag.Root(), &newDepSrc,
 			dagql.Selector{
@@ -505,7 +505,7 @@ func (s *moduleSchema) moduleSourceWithContextDirectory(
 		Dir dagql.ID[*core.Directory]
 	},
 ) (*core.ModuleSource, error) {
-	if src.Kind != core.ModuleSourceKindLocal {
+	if src.Kind != modules.ModuleSourceKindLocal {
 		return nil, fmt.Errorf("cannot set context directory for non-local module source")
 	}
 
@@ -561,7 +561,7 @@ func (s *moduleSchema) resolveContextPathFromCaller(
 	ctx context.Context,
 	src *core.ModuleSource,
 ) (contextRootAbsPath, sourceRootAbsPath string, _ error) {
-	if src.Kind != core.ModuleSourceKindLocal {
+	if src.Kind != modules.ModuleSourceKindLocal {
 		return "", "", fmt.Errorf("cannot resolve non-local module source from caller")
 	}
 
@@ -937,7 +937,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 
 		for _, depCfg := range modCfg.Dependencies {
 			parsed := vcs.ParseRefStringDir(ctx, query.Buildkit, depCfg.Source)
-			if parsed.Kind != core.ModuleSourceKindLocal {
+			if parsed.Kind != modules.ModuleSourceKindLocal {
 				continue
 			}
 			depAbsPath := filepath.Join(sourceRootAbsPath, parsed.ModPath)
@@ -959,7 +959,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		case errors.Is(err, errUnknownBuiltinSDK):
 			parsed := vcs.ParseRefStringDir(ctx, query.Buildkit, modCfg.SDK)
 			switch parsed.Kind {
-			case core.ModuleSourceKindLocal:
+			case modules.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
 				sdkPath := filepath.Join(sourceRootAbsPath, parsed.ModPath)
 
@@ -1006,7 +1006,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				}
 				localDep.sdkKey = sdkPath
 
-			case core.ModuleSourceKindGit:
+			case modules.ModuleSourceKindGit:
 				localDep.sdk, err = s.sdkForModule(ctx, query, modCfg.SDK, dagql.Instance[*core.ModuleSource]{})
 				if err != nil {
 					return nil, fmt.Errorf("failed to get git module sdk: %w", err)

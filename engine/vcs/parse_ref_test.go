@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/fsutil/types"
 )
@@ -31,7 +31,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "github.com/shykes/daggerverse/ci",
 			want: &parsedRefString{
 				ModPath:        "github.com/shykes/daggerverse/ci",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				RepoRootSubdir: "ci",
 			},
@@ -40,7 +40,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "github.com/shykes/daggerverse.git/ci",
 			want: &parsedRefString{
 				ModPath:        "github.com/shykes/daggerverse.git/ci",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				RepoRootSubdir: "ci",
 			},
@@ -49,7 +49,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "github.com/shykes/daggerverse.git/../../",
 			want: &parsedRefString{
 				ModPath:        "github.com/shykes/daggerverse.git/../../",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				RepoRootSubdir: "../../",
 			},
@@ -59,7 +59,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 			want: &parsedRefString{
 				ModPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				RepoRootSubdir: "depth1/depth2",
 			},
@@ -68,7 +68,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
 			want: &parsedRefString{
 				ModPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				RepoRootSubdir: "depth1/depth2",
 			},
@@ -78,7 +78,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "bitbucket.org/test-travail/test/depth1",
 			want: &parsedRefString{
 				ModPath:        "bitbucket.org/test-travail/test/depth1",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "bitbucket.org/test-travail/test", Repo: "https://bitbucket.org/test-travail/test"},
 				RepoRootSubdir: "depth1",
 			},
@@ -87,7 +87,7 @@ func TestParsePublicRefString(t *testing.T) {
 			urlStr: "bitbucket.org/test-travail/test.git/depth1",
 			want: &parsedRefString{
 				ModPath:        "bitbucket.org/test-travail/test.git/depth1",
-				Kind:           core.ModuleSourceKindGit,
+				Kind:           modules.ModuleSourceKindGit,
 				RepoRoot:       &RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
 				RepoRootSubdir: "depth1",
 			},

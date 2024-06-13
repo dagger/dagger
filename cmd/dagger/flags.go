@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
@@ -224,7 +224,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	bk := &osBuildkitClient{}
 	ref, kind := vcs.ConvertToBuildKitRef(ctx, v.String(), bk, vcs.ParseRefStringDir)
 
-	if kind == core.ModuleSourceKindGit {
+	if kind == modules.ModuleSourceKindGit {
 		// Try parsing as a Git URL
 		parsedGit, err := parseGit(ref)
 		if err == nil {
@@ -304,7 +304,7 @@ func (v *fileValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.Modul
 	bk := &osBuildkitClient{}
 	ref, kind := vcs.ConvertToBuildKitRef(ctx, vStr, bk, vcs.ParseRefStringFile)
 
-	if kind == core.ModuleSourceKindGit {
+	if kind == modules.ModuleSourceKindGit {
 		// Try parsing as a Git URL
 		parsedGit, err := parseGit(ref)
 		if err == nil {

@@ -4,25 +4,25 @@ import (
 	"context"
 	"strings"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/moby/buildkit/util/gitutil"
 )
 
-func ConvertToBuildKitRef(ctx context.Context, ref string, bk buildkitClient, parseRef ParseRefFunc) (string, core.ModuleSourceKind) {
+func ConvertToBuildKitRef(ctx context.Context, ref string, bk buildkitClient, parseRef ParseRefFunc) (string, modules.ModuleSourceKind) {
 	// explicit local ref
 	if strings.HasPrefix(ref, "file://") {
-		return ref, core.ModuleSourceKindLocal
+		return ref, modules.ModuleSourceKindLocal
 	}
 
 	// retro-compatibility with previous remote BuildKit ref
 	if _, err := gitutil.ParseURL(ref); err == nil {
-		return ref, core.ModuleSourceKindGit
+		return ref, modules.ModuleSourceKindGit
 	}
 
 	// New ref parsing
 	parsed := parseRef(ctx, bk, ref)
-	if parsed.Kind == core.ModuleSourceKindLocal {
-		return parsed.ModPath, core.ModuleSourceKindLocal
+	if parsed.Kind == modules.ModuleSourceKindLocal {
+		return parsed.ModPath, modules.ModuleSourceKindLocal
 	}
 
 	var sb strings.Builder
@@ -34,5 +34,5 @@ func ConvertToBuildKitRef(ctx context.Context, ref string, bk buildkitClient, pa
 		sb.Write([]byte(":" + parsed.RepoRootSubdir))
 	}
 
-	return sb.String(), core.ModuleSourceKindGit
+	return sb.String(), modules.ModuleSourceKindGit
 }
