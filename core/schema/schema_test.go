@@ -27,6 +27,8 @@ func TestCoreModTypeDefs(t *testing.T) {
 			typeByName[typeDef.AsObject.Value.Name] = typeDef
 		case core.TypeDefKindInput:
 			typeByName[typeDef.AsInput.Value.Name] = typeDef
+		case core.TypeDefKindEnum:
+			typeByName[typeDef.AsEnum.Value.Name] = typeDef
 		}
 	}
 
@@ -95,7 +97,7 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.Equal(t, core.TypeDefKindInteger, backendPortField.TypeDef.Kind)
 	require.False(t, backendPortField.TypeDef.Optional)
 	require.NotNil(t, protocolField)
-	require.Equal(t, core.TypeDefKindString, protocolField.TypeDef.Kind)
+	require.Equal(t, core.TypeDefKindEnum, protocolField.TypeDef.Kind)
 
 	// File
 	fileTypeDef, ok := typeByName["File"]
