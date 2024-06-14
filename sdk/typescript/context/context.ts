@@ -1,8 +1,8 @@
 import { GraphQLClient } from "graphql-request"
 
 import { ConnectOpts } from "../connectOpts.js"
-import { ExecaChildProcess } from "../provisioning/bin.js"
 import { initDefaultContext } from "./builder.js"
+import { ExecaChildProcess } from "execa"
 
 interface ContextConfig {
   client?: GraphQLClient
@@ -59,7 +59,11 @@ export class Context {
    */
   public close(): void {
     if (this._subProcess) {
-      this._subProcess.kill("SIGTERM")
+      this._subProcess.kill("SIGTERM", {
+        // Set a long timeout to give time for any cache exports to pack layers up
+        // which currently has to happen synchronously with the session.
+        forceKillAfterTimeout: 300000, // 5 mins
+      })
     }
 
     // Reset client, so it can restart a new connection if necessary

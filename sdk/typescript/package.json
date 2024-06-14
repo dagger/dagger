@@ -26,7 +26,7 @@
     "@opentelemetry/semantic-conventions": "^1.25.0",
     "adm-zip": "^0.5.10",
     "env-paths": "^3.0.0",
-    "execa": "^9.2.0",
+    "execa": "^8.0.1",
     "graphql": "^16.8.1",
     "graphql-request": "^7.0.1",
     "graphql-tag": "^2.12.6",
