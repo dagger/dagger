@@ -27,6 +27,30 @@ git clone https://github.com/dagger/hello-dagger
 cd hello-dagger
 ```
 
+### Configure Dagger Cloud (optional)
+
+:::note
+This step is optional and requires signing up for Dagger Cloud's individual plan. The individual plan is free of charge for a single user. You will require a GitHub account for account setup and identity verification. If you prefer not to sign up for Dagger Cloud, you can skip this section.
+:::
+
+Dagger Cloud is an online visualization tool for Dagger pipelines. It provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+
+Create a new Dagger Cloud account by running `dagger login`:
+
+```shell
+dagger login
+```
+
+The Dagger CLI will invite you to authenticate your device by displaying a link containing a unique key. Click the link in your browser, and verify that you see the same key in the Dagger Cloud Web interface.
+
+FIXME: Add image
+
+Once you confirm that the keys match, your device will be authenticated and you will be transferred to your auto-created Dagger Cloud organization page.
+
+FIXME: Add image
+
+FIXME: Update the signup steps here, and the result ie. the user is dropped into an autoconfigured org. Ideally don't point to any other doc for Cloud setup, and keep the steps brief to avoid adding friction to this page.
+
 ### Initialize a Dagger module
 
 Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory:
@@ -125,6 +149,12 @@ dagger call publish --source=.
 This single command runs the application's tests, then builds and publishes it as a container image to the [ttl.sh container registry](https://ttl.sh). Here's what you should see:
 
 ![Publish](/img/current_docs/quickstart/publish.gif)
+
+If you signed up for Dagger Cloud, the output of the previous command would have also included a link to visualize the pipeline run on Dagger Cloud. Click the link in your browser to see a complete breakdown  of the steps performed by the pipeline. Here's what you should see:
+
+FIXME Add image
+
+This is called a "Trace". It represents a single run of a Daggerized pipeline, and shows a detailed log and output of each step in the pipeline. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list.
 
 :::tip DID YOU NOTICE...
 1. Even though you just tested, built and published a Node.js application, you didn't need to install any dependencies like `node` or `npm` on your local machine. You only needed the Dagger CLI and the ability to run containers. This is a very powerful feature that eliminates all the variability and dependencies related to the host environment and/or configuration.
