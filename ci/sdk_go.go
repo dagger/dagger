@@ -155,18 +155,17 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			WithSecretVariable("GIT_CONFIG_VALUE_0", dag.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
 	}
 
-	tmpBranch := "internal/publish"
 	result := git.
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithWorkdir("/src/dagger").
 		WithExec([]string{"git", "clone", opts.source, "."}).
-		WithExec([]string{"git", "fetch", "origin", opts.sourceTag + ":" + tmpBranch}).
+		WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(opts.sourceTag, "refs/"))}).
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
 			"--subdirectory-filter", opts.sourcePath,
 			"--tree-filter", opts.sourceFilter,
-			"--", tmpBranch,
+			"--", opts.sourceTag,
 		})
 	if !opts.dryRun {
 		result = result.WithExec([]string{
@@ -174,9 +173,18 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			"push",
 			"-f",
 			opts.dest,
-			fmt.Sprintf("%s:%s", tmpBranch, opts.destTag),
+			fmt.Sprintf("%s:%s", opts.sourceTag, opts.destTag),
+		})
+	} else {
+		// on a dry run, just resolve the ref
+		result = result.WithExec([]string{
+			"git",
+			"rev-parse",
+			"--symbolic-full-name",
+			opts.sourceTag,
 		})
 	}
+
 	_, err := result.Sync(ctx)
 	return err
 }
