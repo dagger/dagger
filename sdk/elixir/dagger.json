@@ -1,0 +1,16 @@
+{
+  "name": "elixir-sdk",
+  "sdk": "go",
+  "include": [
+    "LICENSE",
+    "lib/**/*.ex",
+    ".formatter.exs",
+    "mix.exs",
+    "mix.lock",
+    "dagger_codegen/lib/**/*.ex",
+    "dagger_codegen/mix.exs",
+    "dagger_codegen/mix.lock"
+  ],
+  "source": "runtime",
+  "engineVersion": "v0.12.0"
+}

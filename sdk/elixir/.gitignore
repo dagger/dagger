@@ -28,3 +28,4 @@ tmp/
 # LSP
 .elixir_ls
 .lexical
+.elixir-tools
