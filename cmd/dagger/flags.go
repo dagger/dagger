@@ -224,9 +224,6 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 		gitOpts := dagger.GitOpts{
 			KeepGitDir: true,
 		}
-		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
-		}
 		git := dag.Git(parsedGit.Remote, gitOpts)
 		var gitRef *dagger.GitRef
 		if parsedGit.Fragment.Ref == "" {
@@ -301,9 +298,6 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 	if err == nil {
 		gitOpts := dagger.GitOpts{
 			KeepGitDir: true,
-		}
-		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
-			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
 		git := dag.Git(parsedGit.Remote, gitOpts)
 		var gitRef *dagger.GitRef
