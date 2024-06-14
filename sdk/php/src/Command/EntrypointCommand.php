@@ -83,6 +83,7 @@ class EntrypointCommand extends Command
                         $argument->name,
                         $this->getTypeDef($argument->type),
                         $argument->description,
+                        $argument->default
                     );
                 }
 

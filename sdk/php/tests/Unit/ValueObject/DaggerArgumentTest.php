@@ -7,6 +7,7 @@ namespace Dagger\tests\Unit\ValueObject;
 use Dagger\Container;
 use Dagger\Directory;
 use Dagger\File;
+use Dagger\Json;
 use Dagger\ValueObject\DaggerArgument;
 use Dagger\ValueObject\Type;
 use Generator;
@@ -37,10 +38,45 @@ class DaggerArgumentTest extends TestCase
     public static function provideReflectionParameters(): Generator
     {
         yield 'array parameter without description' =>  [
-            new DaggerArgument('param', null, new Type('array')),
+            new DaggerArgument(
+                'param',
+                null,
+                new Type('array'),
+                null
+            ),
             self::getReflectionParameter(new class() {
                 public function method(array $param): void
                 {
+                }
+            }, 'method', 'param'),
+        ];
+
+        yield 'optional array parameter defaults to null' =>  [
+            new DaggerArgument(
+                'param',
+                null,
+                new Type('array'),
+                new Json('null'),
+            ),
+            self::getReflectionParameter(new class() {
+                public function method(
+                    ?array $param = null,
+                ): void {
+                }
+            }, 'method', 'param'),
+        ];
+
+        yield 'optional array parameter defaults to [1, 2, 3]' =>  [
+            new DaggerArgument(
+                'param',
+                null,
+                new Type('array'),
+                new Json('[1,2,3]'),
+            ),
+            self::getReflectionParameter(new class() {
+                public function method(
+                    array $param = [1, 2, 3],
+                ): void {
                 }
             }, 'method', 'param'),
         ];
@@ -76,11 +112,37 @@ class DaggerArgumentTest extends TestCase
             }, 'method', 'param'),
         ];
 
+        yield 'optional int parameter, without description' =>  [
+            new DaggerArgument('param', null, new Type('int'), new Json('5')),
+            self::getReflectionParameter(new class() {
+                public function method(
+                    int $param = 5,
+                ): void {
+                }
+            }, 'method', 'param'),
+        ];
+
         yield 'string parameter without description' =>  [
             new DaggerArgument('param', null, new Type('string')),
             self::getReflectionParameter(new class() {
                 public function method(string $param): void
                 {
+                }
+            }, 'method', 'param'),
+        ];
+
+        yield 'optional string parameter with description' =>  [
+            new DaggerArgument(
+                'param',
+                'defaults to "hello world"',
+                new Type('string'),
+                new Json('"hello world"'),
+            ),
+            self::getReflectionParameter(new class() {
+                public function method(
+                    #[\Dagger\Attribute\DaggerArgument('defaults to "hello world"')]
+                    string $param = 'hello world',
+                ): void {
                 }
             }, 'method', 'param'),
         ];

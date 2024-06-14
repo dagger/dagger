@@ -30,8 +30,6 @@ final class FindsDaggerObjects
             fn($class) => $this->isDaggerObject($class)
         );
 
-
-
         return array_values(array_map(
             fn($d) => ValueObject\DaggerObject::fromReflection(
                 new \ReflectionClass($d->getName())

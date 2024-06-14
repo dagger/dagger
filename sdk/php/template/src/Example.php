@@ -19,7 +19,7 @@ class Example
      #[DaggerFunction('Echo the value to standard output')]
      public function echo(
          #[DaggerArgument('The value to echo')]
-         string $value
+         string $value = 'hello world',
      ): Container {
          return $this->client->container()->from('alpine:latest')
              ->withExec(['echo', $value]);
