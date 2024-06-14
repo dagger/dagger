@@ -1,0 +1,6 @@
+kind: Added
+body: Generate license only if code has been generated
+time: 2024-06-13T22:14:41.883445+02:00
+custom:
+  Author: TomChv
+  PR: "7658"

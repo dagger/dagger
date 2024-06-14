@@ -479,6 +479,29 @@ func TestModuleInitLICENSE(t *testing.T) {
 		require.Contains(t, content, "Apache License, Version 2.0")
 	})
 
+	t.Run("do not bootstrap LICENSE file if no sdk is specified", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=no-license"))
+
+		content, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, content, "LICENSE")
+
+		t.Run("bootstrap a license after sdk is set on dagger develop", func(t *testing.T) {
+			modGen = modGen.With(daggerExec("develop", "--sdk=go"))
+
+			content, err := modGen.File("LICENSE").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, content, "Apache License, Version 2.0")
+		})
+	})
+
 	t.Run("creates LICENSE file in the directory specified by arg", func(t *testing.T) {
 		t.Parallel()
 
