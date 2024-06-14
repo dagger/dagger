@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix runtime broken on aarch64 machine
+time: 2024-06-14T09:28:10.112453764+07:00
+custom:
+    Author: wingyplus
+    PR: "7661"
