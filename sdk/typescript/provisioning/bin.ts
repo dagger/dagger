@@ -1,7 +1,7 @@
 import AdmZip from "adm-zip"
 import * as crypto from "crypto"
 import envPaths from "env-paths"
-import { execaCommand, ExecaChildProcess } from "execa"
+import { execa, ResultPromise } from "execa"
 import * as fs from "fs"
 import { GraphQLClient } from "graphql-request"
 import fetch from "node-fetch"
@@ -24,6 +24,12 @@ import { ConnectOpts, EngineConn, ConnectParams } from "./engineconn.js"
 const CLI_HOST = "dl.dagger.io"
 let OVERRIDE_CLI_URL: string
 let OVERRIDE_CHECKSUMS_URL: string
+
+export type ExecaChildProcess = ResultPromise<{
+    stdio: "pipe",
+    reject: true,
+    cleanup: true,
+}>
 
 /**
  * Bin runs an engine session from a specified binary
@@ -170,7 +176,7 @@ export class Bin implements EngineConn {
     binPath: string,
     opts: ConnectOpts,
   ): Promise<GraphQLClient> {
-    const args = [binPath, "session"]
+    const args = ["session"]
 
     const sdkVersion = this.getSDKVersion()
 
@@ -191,12 +197,16 @@ export class Bin implements EngineConn {
       opts.LogOutput.write("Creating new Engine session... ")
     }
 
-    this._subProcess = execaCommand(args.join(" "), {
+    this._subProcess = execa(binPath, args, {
       stdio: "pipe",
       reject: true,
 
       // Kill the process if parent exit.
       cleanup: true,
+
+      // Set a long timeout to give time for any cache exports to pack layers up
+      // which currently has to happen synchronously with the session.
+      forceKillAfterDelay: 300000
     })
 
     // Log the output if the user wants to.
@@ -268,11 +278,7 @@ export class Bin implements EngineConn {
 
   async Close(): Promise<void> {
     if (this.subProcess?.pid) {
-      this.subProcess.kill("SIGTERM", {
-        // Set a long timeout to give time for any cache exports to pack layers up
-        // which currently has to happen synchronously with the session.
-        forceKillAfterTimeout: 300000, // 5 mins
-      })
+      this.subProcess.kill("SIGTERM")
     }
   }
 
