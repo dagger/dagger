@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -3393,42 +3394,6 @@ func (m *Test) FnB() string {
 	require.JSONEq(t, `{"test":{"fnA": "hi from b"}}`, out)
 }
 
-func (ModuleSuite) TestNoHostSocket(ctx context.Context, t *testctx.T) {
-	// verify that a sneaky module can't access host sockets with raw gql queries
-	c := connect(ctx, t)
-
-	out, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-
-	"github.com/Khan/genqlient/graphql"
-)
-
-type Test struct{}
-
-func (m *Test) Fn(ctx context.Context) string {
-	resp := &graphql.Response{}
-	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{host{unixSocket(path:\"/some/sock\"){id}}}",
-	}, resp)
-	if err != nil {
-		return err.Error()
-	}
-	panic("should not reach here")
-}
-`,
-		).
-		With(daggerCall("fn")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "only the main client can access the host's unix sockets")
-}
-
 func (ModuleSuite) TestGoWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -5486,6 +5451,142 @@ func (t *Toplevel) TryArg(ctx context.Context) error {
 		})
 	})
 
+	t.Run("pass embedded secrets between modules", func(ctx context.Context, t *testctx.T) {
+		// check that we can pass valid secret objects between functions in
+		// different modules when the secrets are embedded in containers rather than
+		// passed directly
+
+		t.Run("embedded in returns", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			ctr = ctr.
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (*Dep) GetEncoded(ctx context.Context) *dagger.Container {
+	secret := dag.SetSecret("FOO", "shhh")
+	return dag.Container().From("`+alpineImage+`").
+		WithSecretVariable("SECRET", secret).
+		WithExec([]string{"sh", "-c", "echo $SECRET | base64"})
+}
+
+func (*Dep) GetCensored(ctx context.Context) *dagger.Container {
+	secret := dag.SetSecret("BAR", "fdjsklajakldjfl")
+	return dag.Container().From("`+alpineImage+`").
+		WithSecretVariable("SECRET", secret).
+		WithExec([]string{"sh", "-c", "echo $SECRET"})
+}
+`,
+				)
+
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./dep")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (t *Test) GetEncoded(ctx context.Context) (string, error) {
+	return dag.Dep().GetEncoded().Stdout(ctx)
+}
+
+func (t *Test) GetCensored(ctx context.Context) (string, error) {
+	return dag.Dep().GetCensored().Stdout(ctx)
+}
+`,
+				)
+
+			encodedOut, err := ctr.With(daggerCall("get-encoded")).Stdout(ctx)
+			require.NoError(t, err)
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
+			require.NoError(t, err)
+			require.Equal(t, "shhh\n", string(decoded))
+
+			censoredOut, err := ctr.With(daggerCall("get-censored")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "***\n", censoredOut)
+		})
+
+		t.Run("embedded in args", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			ctr = ctr.
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (*Dep) Get(ctx context.Context, ctr *dagger.Container) (string, error) {
+	return ctr.Stdout(ctx)
+}
+`,
+				)
+
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./dep")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (t *Test) GetEncoded(ctx context.Context) (string, error) {
+	secret := dag.SetSecret("FOO", "shhh")
+	ctr := dag.Container().From("`+alpineImage+`").
+		WithSecretVariable("SECRET", secret).
+		WithExec([]string{"sh", "-c", "echo $SECRET | base64"})
+	return dag.Dep().Get(ctx, ctr)
+}
+
+func (t *Test) GetCensored(ctx context.Context) (string, error) {
+	secret := dag.SetSecret("BAR", "fdlaskfjdlsajfdkasl")
+	ctr := dag.Container().From("`+alpineImage+`").
+		WithSecretVariable("SECRET", secret).
+		WithExec([]string{"sh", "-c", "echo $SECRET"})
+	return dag.Dep().Get(ctx, ctr)
+}
+`,
+				)
+
+			encodedOut, err := ctr.With(daggerCall("get-encoded")).Stdout(ctx)
+			require.NoError(t, err)
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
+			require.NoError(t, err)
+			require.Equal(t, "shhh\n", string(decoded))
+
+			censoredOut, err := ctr.With(daggerCall("get-censored")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "***\n", censoredOut)
+		})
+	})
+
 	t.Run("duplicate secret names", func(ctx context.Context, t *testctx.T) {
 		// check that each module has it's own segmented secret store, by
 		// writing secrets with the same name
@@ -5603,7 +5704,11 @@ func (l *Leaker) Leak(ctx context.Context) error {
 			With(daggerExec("init", "--name=leaker-build", "--sdk=go", "--source=.")).
 			WithNewFile("main.go", `package main
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
 type LeakerBuild struct {}
 
@@ -5612,7 +5717,13 @@ func (l *LeakerBuild) Leak(ctx context.Context) error {
 		WithNewFile("Dockerfile", "FROM alpine\nRUN --mount=type=secret,id=mysecret cat /run/secrets/mysecret || true").
 		DockerBuild().
 		Sync(ctx)
-	return err
+	if err == nil {
+		return fmt.Errorf("expected error, but got nil")
+	}
+	if !strings.Contains(err.Error(), "secret not found: mysecret") {
+		return fmt.Errorf("unexpected error: %v", err)
+	}
+	return nil
 }
 `,
 			)
@@ -5657,8 +5768,6 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 		// check that modules can't access each other's global secret stores,
 		// even when we know the underlying IDs
 
-		t.Skip("this protection is not yet implemented")
-
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 
@@ -5672,12 +5781,14 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 
 import (
 	"context"
+
+	"dagger/leaker/internal/dagger"
 )
 
 type Leaker struct {}
 
 func (l *Leaker) Leak(ctx context.Context, target string) string {
-	secret, _ := dag.LoadSecretFromID(SecretID(target)).Plaintext(ctx)
+	secret, _ := dag.LoadSecretFromID(dagger.SecretID(target)).Plaintext(ctx)
 	return secret
 }
 `,

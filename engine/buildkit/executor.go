@@ -59,6 +59,7 @@ type ExecutionMetadata struct {
 	CallID              *call.ID
 	EncodedModuleID     string
 	EncodedFunctionCall json.RawMessage
+	CallerClientID      string
 
 	CachePerSession bool
 

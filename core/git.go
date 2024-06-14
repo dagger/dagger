@@ -95,13 +95,13 @@ func (ref *GitRef) getState(ctx context.Context) (llb.State, error) {
 		opts = append(opts, llb.KnownSSHHosts(ref.Repo.SSHKnownHosts))
 	}
 	if ref.Repo.SSHAuthSocket != nil {
-		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.SSHID()))
+		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.LLBID()))
 	}
 	if ref.Repo.AuthToken != nil {
-		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.Accessor))
+		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.LLBID()))
 	}
 	if ref.Repo.AuthHeader != nil {
-		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.Accessor))
+		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.LLBID()))
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)

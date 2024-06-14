@@ -10,40 +10,31 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/session/sshforward"
 	"github.com/sourcegraph/conc/pool"
-	"google.golang.org/grpc/metadata"
 )
 
 type c2hTunnel struct {
-	bk                 *buildkit.Client
-	ns                 buildkit.Namespaced
-	upstreamHost       string
-	tunnelServiceHost  string
-	tunnelServicePorts []PortForward
-	sessionID          string
+	bk        *buildkit.Client
+	ns        buildkit.Namespaced
+	socks     []*Socket
+	sockStore *SocketStore
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
-	hostCaller, err := d.bk.SessionManager.Get(ctx, d.sessionID, true)
-	if err != nil {
-		return fmt.Errorf("failed to get buildkit session caller %s: %w", d.sessionID, err)
-	}
-
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	listenerPool := pool.New().WithContext(ctx)
 	proxyConnPool := pool.New().WithContext(ctx)
-	for _, port := range d.tunnelServicePorts {
-		port := port
+	for _, sock := range d.socks {
+		sock := sock
 		listenerPool.Go(func(ctx context.Context) error {
 			defer cancel() // if one exits, all should exit
-			upstreamSock := NewHostIPSocket(
-				port.Protocol.Network(),
-				fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
-				d.sessionID,
-			)
 
+			port, ok := d.sockStore.GetSocketPortForward(sock.IDDigest)
+			if !ok {
+				return fmt.Errorf("socket not found: %s", sock.IDDigest)
+			}
 			frontend := port.FrontendOrBackendPort()
 
 			srvSlog := slog.With(
@@ -81,14 +72,15 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 				connSlog.Debug("handling connection")
 
-				upstreamClient, err := sshforward.NewSSHClient(hostCaller.Conn()).ForwardAgent(
-					metadata.NewOutgoingContext(ctx, map[string][]string{
-						sshforward.KeySSHID: {upstreamSock.SSHID()},
-					}),
-				)
+				urlEncoded, ok := d.sockStore.GetSocketURLEncoded(sock.IDDigest)
+				if !ok {
+					connSlog.Error("socket not found", "id", sock.IDDigest)
+					return fmt.Errorf("socket not found: %s", sock.IDDigest)
+				}
+				upstreamClient, err := d.sockStore.ConnectSocket(ctx, sock.IDDigest)
 				if err != nil {
-					connSlog.Error("failed to create upstream client", "id", upstreamSock.SSHID(), "error", err)
-					return fmt.Errorf("failed to create upstream client %s: %w", upstreamSock.SSHID(), err)
+					connSlog.Error("failed to create upstream client", "id", urlEncoded, "error", err)
+					return fmt.Errorf("failed to create upstream client %s: %w", urlEncoded, err)
 				}
 
 				proxyConnPool.Go(func(ctx context.Context) error {

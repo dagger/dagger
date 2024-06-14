@@ -889,7 +889,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	attachables := []bksession.Attachable{
 		client.SocketProvider{
 			EnableHostNetworkAccess: true,
-			Dialer: func(networkType, addr string) (net.Conn, error) {
+			IPDialer: func(networkType, addr string) (net.Conn, error) {
 				// To handle the case where the host being looked up is another service container
 				// endpoint without any qualification, we check both the unqualified and
 				// search-domain-qualified hostnames.
@@ -921,6 +921,16 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				return runInNetNS(ctx, state, func() (net.Conn, error) {
 					return net.Dial(networkType, addr)
 				})
+			},
+			UnixPathMapper: func(p string) (string, error) {
+				if !filepath.IsAbs(p) {
+					return "", fmt.Errorf("path %s is not absolute", p)
+				}
+				fullPath, err := fs.RootPath(state.rootfsPath, p)
+				if err != nil {
+					return "", fmt.Errorf("find full root path: %w", err)
+				}
+				return fullPath, nil
 			},
 		},
 		session.NewTunnelListenerAttachable(ctx, func(network, addr string) (net.Listener, error) {
