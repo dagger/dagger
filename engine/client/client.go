@@ -1008,6 +1008,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Labels:                    c.labels,
 		CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 		DoNotTrack:                analytics.DoNotTrack(),
+		SSHAuthSocketPath:         os.Getenv("SSH_AUTH_SOCK"),
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -100,6 +101,12 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			return nil, err
 		}
 		authSock = sock.Self
+	} else {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+		authSock = core.NewHostUnixSocket(clientMetadata.SSHAuthSocketPath)
 	}
 	return &core.GitRepository{
 		Query:         parent,
