@@ -28,10 +28,12 @@ func New(
 	sdkSourceDir *Directory,
 ) *PhpSdk {
 	if sdkSourceDir == nil {
-		sdkSourceDir = dag.Git("https://github.com/carnage/dagger.git").
-			Branch("charjr-add-php-runtime").
-			Tree().
-			Directory("sdk/php")
+		// TODO: change back to git or something remote when the runtime is ready.
+		// Go back to ../ to get the root of the PHP SDK
+		// This is a bit of a hack, you need to call it from a parent directory but it works.
+		// Example from ../../ (the directory above the dagger git repo)
+		// dagger init --sdk=dagger/sdk/php --source=test
+		sdkSourceDir = dag.CurrentModule().Source().Directory("../").WithoutDirectory("runtime")
 	}
 
 	return &PhpSdk{

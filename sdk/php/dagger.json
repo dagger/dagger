@@ -1,0 +1,9 @@
+{
+  "name": "php-sdk",
+  "sdk": "go",
+  "include": [
+    "."
+  ],
+  "source": "runtime",
+  "engineVersion": "v0.11.6"
+}
