@@ -951,8 +951,10 @@ func (e *DynamicEnumValues) DecodeInput(val any) (Input, error) {
 		return e.Lookup(x)
 	case Scalar[String]:
 		return e.Lookup(string(x.Value))
+	case *DynamicEnumValue:
+		return e.Lookup(string(x.value))
 	default:
-		return nil, fmt.Errorf("cannot create Enum from %T", x)
+		return nil, fmt.Errorf("cannot create dynamic Enum from %T", x)
 	}
 }
 
@@ -1031,6 +1033,10 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case string:
 		return e.Lookup(x)
+	case Scalar[String]:
+		return e.Lookup(string(x.Value))
+	case *DynamicEnumValue:
+		return e.Lookup(string(x.value))
 	default:
 		return nil, fmt.Errorf("cannot create Enum from %T", x)
 	}
