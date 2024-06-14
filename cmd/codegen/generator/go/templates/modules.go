@@ -66,8 +66,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
-		methods:    make(map[string][]method),
 		moduleName: funcs.moduleName,
+
+		methods: make(map[string][]method),
 	}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
@@ -76,24 +77,24 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 	createMod := Qual("dag", "Module").Call()
 
-	objs := []types.Object{}
+	ps.objs = []types.Object{}
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
 		if obj == nil {
 			continue
 		}
 
-		objs = append(objs, obj)
+		ps.objs = append(ps.objs, obj)
 	}
 
 	// preserve definition order, so developer can keep more important /
 	// entrypoint types higher up
-	sort.Slice(objs, func(i, j int) bool {
-		return objs[i].Pos() < objs[j].Pos()
+	sort.Slice(ps.objs, func(i, j int) bool {
+		return ps.objs[i].Pos() < ps.objs[j].Pos()
 	})
 
 	tps := []types.Type{}
-	for _, obj := range objs {
+	for _, obj := range ps.objs {
 		// ignore any private definitions, they may be part of the runtime itself
 		// e.g. marshalCtx
 		if !obj.Exported() {
@@ -214,6 +215,35 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 				// If the object has any extra sub-types (e.g. for function return
 				// values), add them to the list of types to process
 				nextTps = append(nextTps, ifaceTypeSpec.GoSubTypes()...)
+
+			case *types.Basic:
+				enum := underlyingObj
+				enumTypeSpec, err := ps.parseGoEnum(enum, named)
+				if err != nil {
+					return "", err
+				}
+				if enumTypeSpec == nil {
+					// not including in module schema, skip it
+					continue
+				}
+
+				// Add the enum to the module
+				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
+				added[obj.Name()] = struct{}{}
+
+				implCode, err := enumTypeSpec.ImplementationCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				// If the object has any extra sub-types (e.g. for function return
+				// values), add them to the list of types to process
+				nextTps = append(nextTps, enumTypeSpec.GoSubTypes()...)
 			}
 		}
 
@@ -676,8 +706,10 @@ func (ps *parseState) fillObjectFunctionCase(
 type parseState struct {
 	pkg        *packages.Package
 	fset       *token.FileSet
-	methods    map[string][]method
 	moduleName string
+	objs       []types.Object
+
+	methods map[string][]method
 
 	// If it exists, constructor is the New func that returns the main module object
 	constructor *types.Func
