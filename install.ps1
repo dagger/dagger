@@ -5,7 +5,7 @@ Param (
     [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:[0-9a-fA-F]{40})?$")]$DaggerCommit,
     [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
     [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
-    [Parameter(Mandatory = $false)][System.Boolean]$AddToPath = $false,
+    [Parameter(Mandatory = $false)][switch]$AddToPath = $false,
     [Parameter(Mandatory = $false)][switch]$Interactive = $false
 )
 
@@ -423,7 +423,7 @@ if ($isInvoked) {
             [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:[0-9a-fA-F]{40})?$")]$DaggerCommit,
             [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
             [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
-            [Parameter(Mandatory = $false)][System.Boolean]$AddToPath = $false,
+            [Parameter(Mandatory = $false)][switch]$AddToPath = $false,
             [Parameter(Mandatory = $false)][switch]$Interactive = $false
         )
         Main
