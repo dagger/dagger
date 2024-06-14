@@ -61,6 +61,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &moduleValue{}
 	case Platform:
 		return &platformValue{}
+	case Socket:
+		return &socketValue{}
 	}
 	return nil
 }
@@ -88,6 +90,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*moduleValue]{}
 	case Platform:
 		return &sliceValue[*platformValue]{}
+	case Socket:
+		return &sliceValue[*socketValue]{}
 	}
 	return nil
 }
@@ -577,6 +581,31 @@ func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.Mo
 		Frontend: v.frontend,
 		Backend:  v.backend,
 	}, nil
+}
+
+type socketValue struct {
+	path string
+}
+
+func (v *socketValue) Type() string {
+	return Socket
+}
+
+func (v *socketValue) String() string {
+	return v.path
+}
+
+func (v *socketValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("socket path cannot be empty")
+	}
+	s = strings.TrimPrefix(s, "unix://") // allow unix:// scheme
+	v.path = s
+	return nil
+}
+
+func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+	return c.Host().UnixSocket(v.path), nil
 }
 
 // cacheVolumeValue is a pflag.Value that builds a dagger.CacheVolume from a

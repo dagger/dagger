@@ -31,8 +31,8 @@ func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bk
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
-	sess.Allow(secretsprovider.NewSecretProvider(c.daggerSession.secretStore))
-	sess.Allow(&socketProxy{c, srv.bkSessionManager})
+	sess.Allow(secretsprovider.NewSecretProvider(c.secretStore.AsBuildkitSecretStore()))
+	sess.Allow(c.socketStore)
 	sess.Allow(&authProxy{c, srv.bkSessionManager})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show

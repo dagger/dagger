@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -74,6 +75,10 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: failed to get decoder: %w", m, err)
 	}
 	return decoder.DecodeInput(val)
+}
+
+func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	return nil
 }
 
 func (m *ModuleEnumType) getDecoder(ctx context.Context) (dagql.InputDecoder, error) {

@@ -6,9 +6,11 @@ import (
 	"sort"
 
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -77,6 +79,42 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	default:
 		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle %T", t, x)
 	}
+}
+
+func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	var obj *ModuleObject
+	switch value := value.(type) {
+	case *ModuleObject:
+		obj = value
+	case dagql.Instance[*ModuleObject]:
+		obj = value.Self
+	default:
+		return fmt.Errorf("expected *ModuleObject, got %T", value)
+	}
+
+	for k, v := range obj.Fields {
+		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
+		if !ok {
+			// ok to not be ok when it's a private field
+			continue
+		}
+		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for field %q: %w", k, err)
+		}
+		if !ok {
+			return fmt.Errorf("could not find mod type for field %q", k)
+		}
+		typed, err := modType.ConvertFromSDKResult(ctx, v)
+		if err != nil {
+			return fmt.Errorf("failed to convert field %q: %w", k, err)
+		}
+		if err := modType.CollectCoreIDs(ctx, typed, ids); err != nil {
+			return fmt.Errorf("failed to collect IDs for field %q: %w", k, err)
+		}
+	}
+
+	return nil
 }
 
 func (t *ModuleObjectType) TypeDef() *TypeDef {
