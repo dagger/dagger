@@ -11,8 +11,9 @@ export function typeToTypedef(
   checker: ts.TypeChecker,
   type: ts.Type,
 ): TypeDef<TypeDefKind> {
-  const symbolName = type.getSymbol()?.name
-  const symbolDeclaration = type.getSymbol()?.valueDeclaration
+  const symbol = type.getSymbol()
+  const symbolName = symbol?.name
+  const symbolDeclaration = symbol?.valueDeclaration
 
   if (symbolName === "Promise") {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference)
@@ -63,6 +64,16 @@ export function typeToTypedef(
     case "void":
       return { kind: TypeDefKind.VoidKind }
     default:
+      if (
+        symbol?.getFlags() !== undefined &&
+        (symbol.getFlags() & ts.SymbolFlags.Enum) !== 0
+      ) {
+        return {
+          kind: TypeDefKind.EnumKind,
+          name: strType,
+        }
+      }
+
       // If it's a union, then it's a scalar type
       if (type.isUnionOrIntersection()) {
         return {
