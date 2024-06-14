@@ -3179,6 +3179,28 @@ func TestCustomModuleEnumType(t *testing.T) {
 	}
 	for _, tc := range []testCase{
 		{
+			sdk: "go",
+			source: `package main
+			
+type Status string
+
+const (
+	Active Status = "ACTIVE"
+	Inactive Status = "INACTIVE"
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}
+`,
+		},
+		{
 			sdk: "typescript",
 			source: `import { func, object, field, daggerEnum } from "@dagger.io/dagger"
 

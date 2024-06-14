@@ -627,13 +627,71 @@ func (m *Test) ToProto(proto string) NetworkProtocol {
 		require.NoError(t, err)
 		require.Equal(t, "TCP", out)
 		_, err = modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "invalid enum value")
+		require.ErrorContains(t, err, "value should be one of")
+		require.ErrorContains(t, err, "TCP")
+		require.ErrorContains(t, err, "UDP")
 
 		out, err = modGen.With(daggerCall("to-proto", "--proto", "TCP")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "TCP", out)
 		_, err = modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
 		require.ErrorContains(t, err, "invalid enum value")
+
+		out, err = modGen.With(daggerCall("from-proto", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "TCP")
+		require.Contains(t, out, "UDP")
+	})
+
+	t.Run("custom enum args", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+				
+type Status string
+
+const (
+	Active Status = "ACTIVE"
+	Inactive Status = "INACTIVE"
+)
+
+type Test struct {}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}
+`,
+			})
+
+		out, err := modGen.With(daggerCall("from-status", "--status", "ACTIVE")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ACTIVE", out)
+		_, err = modGen.With(daggerCall("from-status", "--status", "INVALID")).Stdout(ctx)
+		require.ErrorContains(t, err, "value should be one of")
+		require.ErrorContains(t, err, "ACTIVE")
+		require.ErrorContains(t, err, "INACTIVE")
+
+		out, err = modGen.With(daggerCall("to-status", "--status", "ACTIVE")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ACTIVE", out)
+		_, err = modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
+		require.ErrorContains(t, err, "invalid enum value")
+
+		out, err = modGen.With(daggerCall("from-status", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "ACTIVE")
+		require.Contains(t, out, "INACTIVE")
 	})
 
 	t.Run("module args", func(t *testing.T) {
