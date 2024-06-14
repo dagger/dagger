@@ -5288,16 +5288,31 @@ func (m *Test) Fn() string {
 		require.Equal(t, "true", strings.TrimSpace(out))
 	})
 
-	t.Run("git", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef("cool-sdk"))).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			testGitModuleRef := func(subpath string) string {
+				url := tc.gitTestRepoURL
+				if subpath != "" {
+					if !strings.HasPrefix(subpath, "/") {
+						subpath = "/" + subpath
+					}
+					url += subpath
+				}
+				return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
+			}
+			t.Run("git", func(t *testing.T) {
+				t.Parallel()
+				c, ctx := connect(t)
+
+				ctr := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef("cool-sdk"))).
+					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+						Contents: `package main
 
 import "os"
 
@@ -5307,15 +5322,17 @@ func (m *Test) Fn() string {
 	return os.Getenv("COOL")
 }
 `,
+					})
+
+				out, err := ctr.
+					With(daggerCall("fn")).
+					Stdout(ctx)
+
+				require.NoError(t, err)
+				require.Equal(t, "true", strings.TrimSpace(out))
 			})
-
-		out, err := ctr.
-			With(daggerCall("fn")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "true", strings.TrimSpace(out))
-	})
+		})
+	}
 }
 
 // TestModuleHostError verifies the host api is not exposed to modules
