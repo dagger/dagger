@@ -11,7 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"github.com/vito/progrock/ui"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -264,16 +263,16 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 	var color termenv.Color
 	switch {
 	case span.IsRunning():
-		symbol = ui.DotFilled
+		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.Canceled:
-		symbol = ui.IconSkipped
+		symbol = IconSkipped
 		color = termenv.ANSIBrightBlack
 	case span.Status().Code == codes.Error:
-		symbol = ui.IconFailure
+		symbol = IconFailure
 		color = termenv.ANSIRed
 	default:
-		symbol = ui.IconSuccess
+		symbol = IconSuccess
 		color = termenv.ANSIGreen
 	}
 
@@ -319,9 +318,9 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // 		} else {
 // 			// TODO: don't bother printing non-progress-bar tasks for now
 // 			// else if t.Completed != nil {
-// 			// sym = out.String(ui.IconSuccess)
+// 			// sym = out.String(IconSuccess)
 // 			// } else if t.Started != nil {
-// 			// sym = out.String(ui.DotFilled)
+// 			// sym = out.String(DotFilled)
 // 			// }
 // 			continue
 // 		}
