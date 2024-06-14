@@ -8,7 +8,7 @@
     "./dev"
   ],
   "compilerOptions": {
-    "target": "ES2022",
+    "target": "ESNext",
     "strict": true,
     "outDir": "./dist",
     "rootDir": ".",
