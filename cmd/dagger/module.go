@@ -749,6 +749,7 @@ type moduleDef struct {
 	MainObject *modTypeDef
 	Objects    []*modTypeDef
 	Interfaces []*modTypeDef
+	Enums      []*modTypeDef
 	Inputs     []*modTypeDef
 
 	// the ModuleSource definition for the module, needed by some arg types
@@ -847,6 +848,12 @@ query TypeDefs {
 		asScalar {
 			name
 		}
+		asEnum {
+			name
+			values {
+				name
+			}
+		}
 		asInterface {
 			name
 			sourceModuleName
@@ -895,6 +902,8 @@ query TypeDefs {
 			m.Objects = append(m.Objects, typeDef)
 		case dagger.InterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
+		case dagger.EnumKind:
+			m.Enums = append(m.Enums, typeDef)
 		case dagger.InputKind:
 			m.Inputs = append(m.Inputs, typeDef)
 		}
@@ -935,6 +944,16 @@ func (m *moduleDef) AsInterfaces() []*modInterface {
 	return defs
 }
 
+func (m *moduleDef) AsEnums() []*modEnum {
+	var defs []*modEnum
+	for _, typeDef := range m.Enums {
+		if typeDef.AsEnum != nil {
+			defs = append(defs, typeDef.AsEnum)
+		}
+	}
+	return defs
+}
+
 func (m *moduleDef) AsInputs() []*modInput {
 	var defs []*modInput
 	for _, typeDef := range m.Inputs {
@@ -962,6 +981,17 @@ func (m *moduleDef) GetInterface(name string) *modInterface {
 		// Normalize name in case an SDK uses a different convention for interface names.
 		if gqlObjectName(iface.Name) == gqlObjectName(name) {
 			return iface
+		}
+	}
+	return nil
+}
+
+// GetEnum retrieves a saved enum type definition from the module.
+func (m *moduleDef) GetEnum(name string) *modEnum {
+	for _, enum := range m.AsEnums() {
+		// Normalize name in case an SDK uses a different convention for object names.
+		if gqlObjectName(enum.Name) == gqlObjectName(name) {
+			return enum
 		}
 	}
 	return nil
@@ -1003,6 +1033,12 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 		iface := m.GetInterface(typeDef.AsInterface.Name)
 		if iface != nil {
 			typeDef.AsInterface = iface
+		}
+	}
+	if typeDef.AsEnum != nil {
+		enum := m.GetEnum(typeDef.AsEnum.Name)
+		if enum != nil {
+			typeDef.AsEnum = enum
 		}
 	}
 	if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
@@ -1128,6 +1164,11 @@ type modScalar struct {
 }
 
 type modEnum struct {
+	Name   string
+	Values []*modEnumValue
+}
+
+type modEnumValue struct {
 	Name string
 }
 
