@@ -130,24 +130,24 @@ function Get-TrueFalse {
 
 function Find-LatestVersion {
     $body = $null
-        $response = Invoke-RestMethod "https://dl.dagger.io/dagger/latest_version" -Body $body -ErrorVariable LatestVersionError
+    $response = Invoke-RestMethod "https://dl.dagger.io/dagger/latest_version" -Body $body -ErrorVariable LatestVersionError
 
-        if ($LatestVersionError) {
-            Write-Host
-            @"
+    if ($LatestVersionError) {
+        Write-Host
+        @"
 ---------------------------------------------------------------------------
 Houston we have a problem!
 Apparently we had an issue finding the latest version of Dagger.
 Please check https://docs.dagger.io/install
 ----------------------------------------------------------------------------
 "@
-            exit 1
-        }
+        exit 1
+    }
 
-        $latestVersion = $response -replace "v", ""
-        Write-Host "Latest version of Dagger is v$latestVersion"
+    $latestVersion = $response -replace "v", ""
+    Write-Host "Latest version of Dagger is v$latestVersion"
 
-        return [System.Management.Automation.SemanticVersion]::Parse($latestVersion)
+    return [System.Management.Automation.SemanticVersion]::Parse($latestVersion)
 }
 
 # This function returns the file name of the Dagger zip file to download.
@@ -181,7 +181,6 @@ function Get-SemVer {
         if ([string]::IsNullOrWhiteSpace($inputString)) {
             return $Default
         }
-
 
         $isValid = [System.Management.Automation.SemanticVersion]::TryParse($inputString, [ref]$version) -and $inputString -match $semVerPattern
 
@@ -220,7 +219,6 @@ Please check you have the right permission to do so or try to create the path ma
 
 # This function extracts the checksum of the downloaded file which contains all checksums for a version
 function Get-Checksum {
-
     $checksumUrl = Get-ChecksumUrl
     $arch = Get-ProcessorArchitecture
     $response = Invoke-RestMethod -Uri $ChecksumUrl -UserAgent "PowerShell"
@@ -387,7 +385,6 @@ Dagger is currently downloaded at $DownloadPath.
 "@
     }
     else {
-
         $installPath = Get-InstallPath
         Write-Host @"
 ---------------------------------------------------------------------------
@@ -401,7 +398,8 @@ Dagger has been successfully installed at $(Get-InstallPath)
             if (-not $existsInPath) {
                 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$installPath", "User")
                 Write-Host "Dagger has been added to your PATH"
-            } else {
+            }
+            else {
                 Write-Host "Dagger is already in your PATH"
             }
         }
@@ -433,5 +431,5 @@ if ($isInvoked) {
     }
 }
 else {
-   Main
+    Main
 }
