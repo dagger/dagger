@@ -257,7 +257,6 @@ function Compare-Checksum {
     $hash = Get-FileHash -Path $DownloadPath -Algorithm SHA256
 
     if ($hash.Hash -ne $Checksum) {
-        
         Remove-Item -Path $DownloadPath
 
         Write-Host @"
