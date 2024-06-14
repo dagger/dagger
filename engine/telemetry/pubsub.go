@@ -84,12 +84,14 @@ func (ps *PubSub) Processor() sdktrace.SpanProcessor {
 	return clientTracker{ps}
 }
 
-// DrainClientImmediately is called when a client disconnects from
-// the server.
-func (ps *PubSub) DrainClientImmediately(clientID string) {
+// ClientDisconnected is called when a client disconnects from the server.
+//
+// This hook is necessary for draining any dependent clients who were waiting
+// for the client's spans or logs to complete.
+func (ps *PubSub) ClientDisconnected(clientID string) {
 	ps.clientsL.Lock()
-	defer ps.clientsL.Unlock()
 	client, ok := ps.clients[clientID]
+	ps.clientsL.Unlock()
 	if !ok {
 		return
 	}
@@ -110,16 +112,19 @@ func (ps *PubSub) DrainClientImmediately(clientID string) {
 
 func (c *activeClient) eachSpan(f func(trace.TraceID, trace.SpanID)) {
 	c.cond.L.Lock()
-	defer c.cond.L.Unlock()
-	seen := map[trace.SpanID]bool{}
-	for id, span := range c.spans {
-		seen[id] = true
-		f(span.SpanContext().TraceID(), span.SpanContext().SpanID())
+	seen := map[spanKey]bool{}
+	for _, span := range c.spans {
+		seen[spanKey{
+			TraceID: span.SpanContext().TraceID(),
+			SpanID:  span.SpanContext().SpanID(),
+		}] = true
 	}
 	for stream := range c.logStreams {
-		if !seen[stream.span.SpanID] {
-			f(stream.span.TraceID, stream.span.SpanID)
-		}
+		seen[stream.span] = true
+	}
+	c.cond.L.Unlock()
+	for key := range seen {
+		f(key.TraceID, key.SpanID)
 	}
 }
 
