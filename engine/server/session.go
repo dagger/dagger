@@ -59,6 +59,9 @@ type daggerSession struct {
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
 
+	// informed when a client goes away to prevent hanging on drain
+	telemetryPubSub *enginetel.PubSub
+
 	services *core.Services
 
 	analytics analytics.Tracker
@@ -146,6 +149,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCache = dagql.NewCache()
+	sess.telemetryPubSub = srv.telemetryPubSub
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -577,11 +581,16 @@ func (srv *Server) getOrInitClient(
 		defer client.stateMu.Unlock()
 		client.activeCount--
 
-		// if the main client caller has no more active calls, cleanup the whole session
-		if clientID != sess.mainClientCallerID {
+		if client.activeCount > 0 {
 			return nil
 		}
-		if client.activeCount > 0 {
+
+		// notify the telemetry pub/sub to clean up draining for any of the
+		// client's unfinished spans/log streams
+		sess.telemetryPubSub.ClientDisconnected(client.clientID)
+
+		// if the main client caller has no more active calls, cleanup the whole session
+		if clientID != sess.mainClientCallerID {
 			return nil
 		}
 

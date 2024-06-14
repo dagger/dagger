@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -106,6 +107,9 @@ func (p *Go) Lint(
 			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
 			defer span.End()
 			_, err := golangci.Sync(ctx)
+			if err != nil {
+				span.SetStatus(codes.Error, err.Error())
+			}
 			return err
 		})
 		eg.Go(func() error {
@@ -115,6 +119,9 @@ func (p *Go) Lint(
 			afterTidy := p.Env().WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
 			// FIXME: the client binding for AssertEqual should return only an error.
 			_, err := dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
+			if err != nil {
+				span.SetStatus(codes.Error, err.Error())
+			}
 			return err
 		})
 	}

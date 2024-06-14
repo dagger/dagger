@@ -84,6 +84,62 @@ func (ps *PubSub) Processor() sdktrace.SpanProcessor {
 	return clientTracker{ps}
 }
 
+// ClientDisconnected is called when a client disconnects from the server.
+//
+// This hook is necessary for draining any dependent clients who were waiting
+// for the client's spans or logs to complete.
+func (ps *PubSub) ClientDisconnected(clientID string) {
+	ps.clientsL.Lock()
+	client, ok := ps.clients[clientID]
+	ps.clientsL.Unlock()
+	if !ok {
+		return
+	}
+	slog.Warn("draining client spans immediately due to disconnect",
+		"client", clientID)
+	client.eachSpan(func(traceID trace.TraceID, spanID trace.SpanID) {
+		for _, affected := range ps.clientsFor(traceID, spanID) {
+			slog.Warn("dropping span due to disconnect",
+				"client", affected,
+				"trace", traceID,
+				"span", spanID)
+			if affectedClient, active := ps.clients[affected]; active {
+				affectedClient.dropSpan(spanID)
+			}
+		}
+	})
+}
+
+func (c *activeClient) eachSpan(f func(trace.TraceID, trace.SpanID)) {
+	c.cond.L.Lock()
+	seen := map[spanKey]bool{}
+	for _, span := range c.spans {
+		seen[spanKey{
+			TraceID: span.SpanContext().TraceID(),
+			SpanID:  span.SpanContext().SpanID(),
+		}] = true
+	}
+	for stream := range c.logStreams {
+		seen[stream.span] = true
+	}
+	c.cond.L.Unlock()
+	for key := range seen {
+		f(key.TraceID, key.SpanID)
+	}
+}
+
+func (c *activeClient) dropSpan(spanID trace.SpanID) {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+	delete(c.spans, spanID)
+	for stream := range c.logStreams {
+		if stream.span.SpanID == spanID {
+			delete(c.logStreams, stream)
+		}
+	}
+	c.cond.Broadcast()
+}
+
 type clientTracker struct{ *PubSub }
 
 // OnStart keeps track of the client ID and parent span ID for each span,
@@ -620,7 +676,7 @@ func (ps *PubSub) unsubLogs(topic Topic, exp sdklog.Exporter) {
 }
 
 type logStream struct {
-	span   trace.SpanID
+	span   spanKey
 	stream int64
 }
 
@@ -692,7 +748,10 @@ func (c *activeClient) spanIDs() []string {
 
 func (c *activeClient) trackLogStream(rec sdklog.Record) {
 	stream := logStream{
-		span:   rec.SpanID(),
+		span: spanKey{
+			TraceID: rec.TraceID(),
+			SpanID:  rec.SpanID(),
+		},
 		stream: -1,
 	}
 	var eof bool
