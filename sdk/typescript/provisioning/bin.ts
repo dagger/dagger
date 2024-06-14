@@ -26,9 +26,9 @@ let OVERRIDE_CLI_URL: string
 let OVERRIDE_CHECKSUMS_URL: string
 
 export type ExecaChildProcess = ResultPromise<{
-    stdio: "pipe",
-    reject: true,
-    cleanup: true,
+  stdio: "pipe"
+  reject: true
+  cleanup: true
 }>
 
 /**
@@ -206,7 +206,7 @@ export class Bin implements EngineConn {
 
       // Set a long timeout to give time for any cache exports to pack layers up
       // which currently has to happen synchronously with the session.
-      forceKillAfterDelay: 300000
+      forceKillAfterDelay: 300000,
     })
 
     // Log the output if the user wants to.

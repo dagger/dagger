@@ -1,8 +1,8 @@
 import { GraphQLClient } from "graphql-request"
 
 import { ConnectOpts } from "../connectOpts.js"
-import { initDefaultContext } from "./builder.js"
 import { ExecaChildProcess } from "../provisioning/bin.js"
+import { initDefaultContext } from "./builder.js"
 
 interface ContextConfig {
   client?: GraphQLClient

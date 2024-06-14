@@ -1,6 +1,4 @@
-import {
-  ClientError,
-} from "graphql-request"
+import { ClientError } from "graphql-request"
 
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
 import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
