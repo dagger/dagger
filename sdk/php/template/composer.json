@@ -9,10 +9,6 @@
     {
       "type": "path",
       "url": "./sdk"
-    },
-    {
-      "type": "vcs",
-      "url": "https://github.com/thewunder/php-graphql-client.git"
     }
   ],
   "require": {

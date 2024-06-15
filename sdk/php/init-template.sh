@@ -1,7 +1,7 @@
 #!/bin/sh
 
 cd $1
-CLASS="$(echo -n ${2:0:1} | tr '[:lower:]' '[:upper:]')${2:1}"
+CLASS=$(/codegen/codegen dagger:generate-module-classname $2)
 
 if ! [ -f composer.json ]; then
   cp -r /codegen/template/* .
