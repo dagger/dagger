@@ -23,7 +23,6 @@ import (
 
 type frontendPretty struct {
 	FrontendOpts
-	spanFilter
 
 	// updated by Run
 	program     *tea.Program
@@ -39,6 +38,11 @@ type frontendPretty struct {
 	logs         *prettyLogs
 	eof          bool
 	backgrounded bool
+	autoFocus    bool
+	focused      trace.SpanID
+	zoomed       trace.SpanID
+	focusedIdx   int
+	rows         []*TraceRow
 	rowsView     *RowsView
 
 	// panels
@@ -81,17 +85,12 @@ func New() Frontend {
 		db:   db,
 		logs: newPrettyLogs(),
 
-		spanFilter: spanFilter{
-			db:               db,
-			tooFastThreshold: 100 * time.Millisecond,
-			gcThreshold:      1 * time.Second,
-		},
+		autoFocus: true,
 
-		fps:     30, // sane default, fine-tune if needed
-		profile: profile,
-		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:    new(strings.Builder),
-
+		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		fps:       30,                                       // sane default, fine-tune if needed
+		profile:   profile,
+		view:      new(strings.Builder),
 		logsPanel: newPanel(profile),
 		msgsPanel: newPanel(profile),
 	}
@@ -125,6 +124,12 @@ func traceMessage(out *termenv.Output, url string, msg string) string {
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
+	if opts.TooFastThreshold == 0 {
+		opts.TooFastThreshold = 100 * time.Millisecond
+	}
+	if opts.GCThreshold == 0 {
+		opts.GCThreshold = 1 * time.Second
+	}
 	fe.FrontendOpts = opts
 
 	// redirect slog to the logs pane
@@ -218,8 +223,6 @@ func (fe *frontendPretty) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	fe.recalculateView()
-
 	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
@@ -233,7 +236,7 @@ func (fe *frontendPretty) finalRender() error {
 	}
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if renderedAny, err := fe.renderProgress(out); err != nil {
+		if renderedAny, err := fe.renderProgress(out, true); err != nil {
 			return err
 		} else if renderedAny {
 			fmt.Fprintln(out)
@@ -267,16 +270,8 @@ type FrontendSpanExporter struct {
 func (fe FrontendSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-	slog.Debug("frontend exporting", "spans", len(spans))
-	for _, span := range spans {
-		slog.Debug("frontend exporting span",
-			"trace", span.SpanContext().TraceID(),
-			"id", span.SpanContext().SpanID(),
-			"parent", span.Parent().SpanID(),
-			"span", span.Name(),
-		)
-	}
-
+	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
+	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
 }
 
@@ -333,37 +328,55 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 }
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
-	fe.recalculateView()
 	if err := fe.renderPanel(out, fe.msgsPanel, false); err != nil {
 		return err
 	}
 	if err := fe.renderPanel(out, fe.logsPanel, false); err != nil {
 		return err
 	}
-	if _, err := fe.renderProgress(out); err != nil {
+	if _, err := fe.renderProgress(out, false); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (fe *frontendPretty) recalculateView() {
+func (fe *frontendPretty) recalculateViewLocked() {
 	steps := CollectSpans(fe.db, trace.TraceID{})
-	rows := CollectRows(steps)
-	fe.rowsView = CollectRowsView(rows)
+	tree := CollectTree(steps)
+	fe.rowsView = CollectRowsView(tree)
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
+type lineCountingWriter struct {
+	io.Writer
+	lines int
+	max   int
+}
+
+func (w *lineCountingWriter) Write(p []byte) (int, error) {
+	for _, b := range p {
+		if b == '\n' {
+			w.lines++
+		}
+	}
+	return w.Writer.Write(p)
+}
+
+func (fe *frontendPretty) renderedRowLines(row *TraceRow) []string {
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	_ = fe.renderRow(out, row)
+	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+}
+
+func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, error) {
 	var renderedAny bool
 	if fe.rowsView == nil {
 		return false, nil
 	}
-	for _, row := range fe.rowsView.Body {
-		if fe.shouldShow(fe.FrontendOpts, row) {
-			if err := fe.renderRow(out, row, 0); err != nil {
-				return renderedAny, err
-			}
-			renderedAny = true
-		}
+	buf := new(strings.Builder)
+	lineCounter := &lineCountingWriter{Writer: buf}
+	if !full {
+		lineCounter.max = fe.window.Height
 	}
 	if fe.rowsView.Primary != nil && !fe.done {
 		if renderedAny {
@@ -375,7 +388,90 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
 			renderedAny = true
 		}
 	}
+
+	rows := fe.rowsView.Rows(fe.FrontendOpts)
+	fe.rows = rows
+
+	if !fe.autoFocus {
+		// must be manually focused
+		// NOTE: it's possible for the focused span to go away
+		lostFocus := true
+		for _, row := range rows {
+			if row.Span.ID == fe.focused {
+				fe.focusedIdx = row.Index
+				lostFocus = false
+				break
+			}
+		}
+		if lostFocus {
+			fe.autoFocus = true
+		}
+	}
+
+	if len(rows) < fe.focusedIdx {
+		// durability: everything disappeared?
+		fe.autoFocus = true
+	}
+
+	if len(rows) == 0 {
+		// NB: this is a bit redundant with above, but feels better to decouple
+		return renderedAny, nil
+	}
+
+	if fe.autoFocus && len(rows) > 0 {
+		fe.focusedIdx = len(rows) - 1
+		fe.focused = rows[fe.focusedIdx].Span.ID
+	}
+
+	before, focused, after := rows[:fe.focusedIdx], rows[fe.focusedIdx], rows[fe.focusedIdx+1:]
+	lines := fe.renderedRowLines(focused)
+	contextLines := (fe.window.Height - lineCounter.lines - len(lines)) / 2
+
+	beforeLines := []string{}
+	for len(beforeLines) < contextLines && len(before) > 0 {
+		row := before[len(before)-1]
+		before = before[:len(before)-1]
+		beforeLines = append(fe.renderedRowLines(row), beforeLines...)
+		if len(beforeLines) >= contextLines {
+			beforeLines = beforeLines[len(beforeLines)-contextLines:]
+			break
+		}
+	}
+	lines = append(beforeLines, lines...)
+
+	afterLines := []string{}
+	for len(afterLines) < contextLines && len(after) > 0 {
+		row := after[0]
+		after = after[1:]
+		afterLines = append(afterLines, fe.renderedRowLines(row)...)
+		if len(afterLines) >= contextLines {
+			afterLines = afterLines[:contextLines]
+			break
+		}
+	}
+	lines = append(lines, afterLines...)
+
+	//
+	// for _, row := range rows[focusedIdx:] {
+	// 	if err := fe.renderRow(outBuf, row); err != nil {
+	// 		return renderedAny, err
+	// 	}
+	// 	renderedAny = true
+	// 	if lineCounter.max > 0 && lineCounter.lines >= lineCounter.max {
+	// 		break
+	// 	}
+	// }
+	fmt.Fprint(out, buf.String()+strings.Join(lines, "\n"))
 	return renderedAny, nil
+}
+
+func (fe *frontendPretty) focus(row *TraceRow) {
+	spanID := row.Span.ID
+	if spanID == fe.focused {
+		return
+	}
+	fe.focused = spanID
+	fe.focusedIdx = row.Index
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -383,6 +479,33 @@ func (fe *frontendPretty) Init() tea.Cmd {
 		frame(fe.fps),
 		fe.spawn,
 	)
+}
+
+func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	fe, cmd := fe.update(msg)
+	cmds = append(cmds, cmd)
+
+	// fe.viewport, cmd = fe.viewport.Update(msg)
+	// cmds = append(cmds, cmd)
+	//
+	return fe, tea.Batch(cmds...)
+}
+
+func (fe *frontendPretty) View() string {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	if fe.backgrounded {
+		// if we've been backgrounded, show nothing, so a user's shell session
+		// doesn't have any garbage before/after
+		return ""
+	}
+	if fe.done && fe.eof {
+		// print nothing; make way for the pristine output in the final render
+		return ""
+	}
+	return fe.view.String()
 }
 
 type doneMsg struct {
@@ -401,7 +524,7 @@ func (fe *frontendPretty) spawn() (msg tea.Msg) {
 
 type backgroundDoneMsg struct{}
 
-func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 	switch msg := msg.(type) {
 	case doneMsg: // run finished
 		slog.Debug("run finished", "err", msg.err)
@@ -446,6 +569,43 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fe.restore()
 			sigquit()
 			return fe, nil
+		case "a":
+			fe.autoFocus = true
+			return fe, nil
+		// case "h", "left":
+		case "j", "down":
+			fe.autoFocus = false
+			newIdx := fe.focusedIdx + 1
+			if newIdx >= len(fe.rows) {
+				// at bottom
+				return fe, nil
+			}
+			fe.focus(fe.rows[newIdx])
+			return fe, nil
+		case "k", "up":
+			fe.autoFocus = false
+			newIdx := fe.focusedIdx - 1
+			if newIdx < 0 || newIdx >= len(fe.rows) {
+				return fe, nil
+			}
+			fe.focus(fe.rows[newIdx])
+			return fe, nil
+		// case "l", "right":
+		case "home":
+			if len(fe.rows) > 0 {
+				fe.focus(fe.rows[0])
+			}
+			return fe, nil
+		case "end":
+			fe.autoFocus = true
+			if len(fe.rows) > 0 {
+				fe.focus(fe.rows[len(fe.rows)-1])
+			}
+			return fe, nil
+		case "enter":
+			fe.zoomed = fe.focused
+			fe.recalculateViewLocked()
+			return fe, nil
 		default:
 			return fe, nil
 		}
@@ -467,6 +627,8 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (fe *frontendPretty) SetWindowSize(msg tea.WindowSizeMsg) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
 	fe.logsPanel.vterm.SetWidth(msg.Width)
@@ -480,35 +642,10 @@ func (fe *frontendPretty) render() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPretty) View() string {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	view := fe.view.String()
-	if fe.backgrounded {
-		// if we've been backgrounded, show nothing, so a user's shell session
-		// doesn't have any garbage before/after
-		return ""
-	}
-	if fe.done && fe.eof {
-		// print nothing; make way for the pristine output in the final render
-		return ""
-	}
-	return view
-}
-
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
-	if !fe.shouldShow(fe.FrontendOpts, row) {
-		return nil
-	}
-	if !row.Span.Passthrough {
-		fe.renderStep(out, row.Span, depth)
-		fe.renderLogs(out, row.Span, depth)
-		depth++
-	}
-	for _, child := range row.Children {
-		if err := fe.renderRow(out, child, depth); err != nil {
-			return err
-		}
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow) error {
+	fe.renderStep(out, row.Span, row.Depth)
+	if row.IsRunningOrChildRunning {
+		fe.renderLogs(out, row.Span, row.Depth+1) // HACK: extra depth to account for focus indicator
 	}
 	return nil
 }
@@ -516,31 +653,41 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth in
 func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
+	isFocused := span.ID == fe.focused
+
+	var prefix string
+	if isFocused {
+		prefix = termenv.String("▐ ").Foreground(termenv.ANSIYellow).String()
+	} else {
+		prefix = "  "
+	}
+
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, "", depth, false, span.Internal); err != nil {
+		if err := r.renderCall(out, span, id, prefix, depth, false, span.Internal); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderVertex(out, span, span.Name(), "", depth); err != nil {
+		if err := r.renderVertex(out, span, span.Name(), prefix, depth); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out)
 
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
-		r.indent(out, depth)
+		r.indent(out, depth+1) // HACK: +1 for focus prefix
 		// print error description above it
 		fmt.Fprintf(out,
 			out.String("! %s\n").Foreground(termenv.ANSIYellow).String(),
 			span.Status().Description,
 		)
 	}
+
 	return nil
 }
 
 func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) bool {
-	if logs, ok := fe.logs.Logs[span.SpanContext().SpanID()]; ok {
+	if logs, ok := fe.logs.Logs[span.ID]; ok {
 		pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 		if depth != -1 {
 			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")

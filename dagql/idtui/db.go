@@ -20,9 +20,11 @@ type DB struct {
 	PrimarySpan trace.SpanID
 	PrimaryLogs map[trace.SpanID][]sdklog.Record
 
-	Traces   map[trace.TraceID]*Trace
-	Spans    map[trace.SpanID]*Span
-	Children map[trace.SpanID]map[trace.SpanID]struct{}
+	Traces        map[trace.TraceID]*Trace
+	Spans         map[trace.SpanID]*Span
+	SpanOrder     []*Span
+	Children      map[trace.SpanID]map[trace.SpanID]struct{}
+	ChildrenOrder map[trace.SpanID][]trace.SpanID
 
 	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
@@ -34,9 +36,11 @@ func NewDB() *DB {
 	return &DB{
 		PrimaryLogs: make(map[trace.SpanID][]sdklog.Record),
 
-		Traces:   make(map[trace.TraceID]*Trace),
-		Spans:    make(map[trace.SpanID]*Span),
-		Children: make(map[trace.SpanID]map[trace.SpanID]struct{}),
+		Traces:        make(map[trace.TraceID]*Trace),
+		Spans:         make(map[trace.SpanID]*Span),
+		SpanOrder:     make([]*Span, 0),
+		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
+		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
 		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
@@ -136,6 +140,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 	spanData := &Span{
 		ReadOnlySpan: span,
 
+		ID: spanID,
+
+		IsRunning: span.EndTime().Before(span.StartTime()),
+
 		// All root spans are Primary, unless we're explicitly told a different
 		// span to treat as the "primary" as with Dagger-in-Dagger.
 		Primary: !span.Parent().SpanID().IsValid() ||
@@ -147,6 +155,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 
 	slog.Debug("recording span", "span", span.Name(), "id", spanID)
 
+	if _, exists := db.Spans[spanID]; !exists {
+		db.SpanOrder = append(db.SpanOrder, spanData)
+	}
+
 	db.Spans[spanID] = spanData
 
 	// track parent/child relationships
@@ -155,7 +167,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 			db.Children[parent.SpanID()] = make(map[trace.SpanID]struct{})
 		}
 		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
-		db.Children[parent.SpanID()][spanID] = struct{}{}
+		if _, found := db.Children[parent.SpanID()][spanID]; !found {
+			db.Children[parent.SpanID()][spanID] = struct{}{}
+			db.ChildrenOrder[parent.SpanID()] = append(db.ChildrenOrder[parent.SpanID()], spanID)
+		}
 	} else if !db.PrimarySpan.IsValid() {
 		// default primary to "root" span, but we might never see it in a nested
 		// scenario.
@@ -254,6 +269,13 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 			spanData.Passthrough = true
 		}
 	}
+
+	if spanData.Call != nil && spanData.Call.ReceiverDigest != "" {
+		parentCall, ok := db.Calls[spanData.Call.ReceiverDigest]
+		if ok {
+			spanData.Base = db.Simplify(parentCall, spanData.Internal)
+		}
+	}
 }
 
 func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
@@ -283,7 +305,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if span.IsRunning() {
+		if span.IsRunning {
 			return span
 		}
 		switch {

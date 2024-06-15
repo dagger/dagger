@@ -33,6 +33,12 @@ type FrontendOpts struct {
 
 	// Verbosity is the level of detail to show in the TUI.
 	Verbosity int
+
+	// Don't show things that completed beneath this duration. (default 100ms)
+	TooFastThreshold time.Duration
+
+	// Remove completed things after this duration. (default 1s)
+	GCThreshold time.Duration
 }
 
 type Frontend interface {
@@ -115,7 +121,15 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 	return nil
 }
 
-func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Call, prefix string, depth int, inline bool, internal bool) error {
+func (r renderer) renderCall(
+	out *termenv.Output,
+	span *Span,
+	call *callpbv1.Call,
+	prefix string,
+	depth int,
+	inline bool,
+	internal bool,
+) error {
 	if r.rendering[call.Digest] {
 		slog.Warn("cycle detected while rendering call", "span", span.Name(), "call", call.String())
 		return nil
@@ -278,7 +292,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 	var symbol string
 	var color termenv.Color
 	switch {
-	case span.IsRunning():
+	case span.IsRunning:
 		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.Canceled:
@@ -297,16 +311,14 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 	fmt.Fprintf(out, "%s ", symbol)
 
 	if r.Debug {
-		fmt.Fprintf(out, "%s ", out.String(
-			span.SpanContext().SpanID().String(),
-		).Foreground(termenv.ANSIBrightBlack))
+		fmt.Fprintf(out, "%s ", out.String(span.ID.String()).Foreground(termenv.ANSIBrightBlack))
 	}
 }
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(fmtDuration(span.Duration()))
-	if span.IsRunning() {
+	if span.IsRunning {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
@@ -354,23 +366,17 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // 	return nil
 // }
 
-type spanFilter struct {
-	db               *DB
-	gcThreshold      time.Duration
-	tooFastThreshold time.Duration
-}
-
-func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
+func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
 	}
-	span := row.Span
+	span := tree.Span
 	if span.IsInternal() && opts.Verbosity < 2 {
 		// internal steps are hidden by default
 		return false
 	}
-	if row.Parent != nil && (span.Encapsulated || row.Parent.Span.Encapsulate) && row.Parent.Span.Err() == nil && opts.Verbosity < 2 {
+	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < 2 {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return false
 	}
@@ -378,20 +384,22 @@ func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
 		// show errors
 		return true
 	}
-	if sf.tooFastThreshold > 0 && span.Duration() < sf.tooFastThreshold && opts.Verbosity < 3 {
-		// ignore fast leaf steps; signal:noise is too poor
-		if row.Parent != nil && row.Parent.Span.SpanContext().SpanID() != sf.db.PrimarySpan {
-			return false
-		}
+	if opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < 3 {
+		// TODO(vito): bring this back
+		// if tree.Parent != nil && tree.Parent.Span.SpanContext().SpanID() != opts.PrimarySpan {
+		// 	return false
+		// }
+		// ignore fast steps; signal:noise is too poor
+		return false
 	}
-	if row.IsRunning {
+	if tree.IsRunningOrChildRunning {
 		// show running steps
 		return true
 	}
-	if sf.gcThreshold > 0 && time.Since(span.EndTime()) > sf.gcThreshold && opts.Verbosity < 1 {
-		// stop showing steps that ended after a given threshold
-		return false
-	}
+	// if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < 1 {
+	// 	// stop showing steps that ended after a given threshold
+	// 	return false
+	// }
 	return true
 }
 

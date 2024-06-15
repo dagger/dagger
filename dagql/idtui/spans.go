@@ -3,13 +3,13 @@ package idtui
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
@@ -17,9 +17,13 @@ import (
 type Span struct {
 	sdktrace.ReadOnlySpan
 
-	Digest string
+	ID trace.SpanID
 
-	Call *callpbv1.Call
+	IsRunning bool
+
+	Digest string
+	Call   *callpbv1.Call
+	Base   *callpbv1.Call
 
 	Internal bool
 	Cached   bool
@@ -37,23 +41,18 @@ type Span struct {
 	trace *Trace
 }
 
-func (span *Span) Base() (*callpbv1.Call, bool) {
-	if span.Call == nil {
-		return nil, false
+func (span *Span) HasParent(parent *Span) bool {
+	if !span.Parent().IsValid() {
+		return false
 	}
-	if span.Call.ReceiverDigest == "" {
-		return nil, false
+	p, found := span.db.Spans[span.Parent().SpanID()]
+	if !found {
+		return false
 	}
-	call, ok := span.db.Calls[span.Call.ReceiverDigest]
-	if !ok {
-		return nil, false
+	if p == parent {
+		return true
 	}
-	return span.db.Simplify(call, span.Internal), true
-}
-
-func (span *Span) IsRunning() bool {
-	inner := span.ReadOnlySpan
-	return inner.EndTime().Before(inner.StartTime())
+	return p.HasParent(parent)
 }
 
 func (span *Span) Name() string {
@@ -86,7 +85,7 @@ func (span *Span) IsInternal() bool {
 func (span *Span) Duration() time.Duration {
 	inner := span.ReadOnlySpan
 	var dur time.Duration
-	if span.IsRunning() {
+	if span.IsRunning {
 		dur = time.Since(inner.StartTime())
 	} else {
 		dur = inner.EndTime().Sub(inner.StartTime())
@@ -95,7 +94,7 @@ func (span *Span) Duration() time.Duration {
 }
 
 func (span *Span) EndTime() time.Time {
-	if span.IsRunning() {
+	if span.IsRunning {
 		return time.Now()
 	}
 	return span.ReadOnlySpan.EndTime()
@@ -107,7 +106,7 @@ func (span *Span) IsBefore(other *Span) bool {
 
 func (span *Span) Children() []*Span {
 	children := []*Span{}
-	for childID := range span.db.Children[span.SpanContext().SpanID()] {
+	for _, childID := range span.db.ChildrenOrder[span.ID] {
 		child, ok := span.db.Spans[childID]
 		if !ok {
 			continue
@@ -116,9 +115,6 @@ func (span *Span) Children() []*Span {
 			children = append(children, child)
 		}
 	}
-	sort.Slice(children, func(i, j int) bool {
-		return children[i].IsBefore(children[j])
-	})
 	return children
 }
 
