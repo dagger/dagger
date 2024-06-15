@@ -20,6 +20,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -70,19 +71,25 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 	for dig, call := range dag.CallsByDigest {
 		db.Calls[dig] = call
 	}
-	r := renderer{
-		db:    db,
-		width: -1,
-	}
+	r := newRenderer(db, -1, FrontendOpts{})
 	return r.renderCall(out, nil, id.Call(), "", 0, false, false)
 }
 
 type renderer struct {
 	FrontendOpts
 
-	db *DB
+	db        *DB
+	width     int
+	rendering map[string]bool
+}
 
-	width int
+func newRenderer(db *DB, width int, fe FrontendOpts) renderer {
+	return renderer{
+		FrontendOpts: fe,
+		db:           db,
+		width:        width,
+		rendering:    map[string]bool{},
+	}
 }
 
 const (
@@ -109,6 +116,13 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 }
 
 func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Call, prefix string, depth int, inline bool, internal bool) error {
+	if r.rendering[call.Digest] {
+		slog.Warn("cycle detected while rendering call", "span", span.Name(), "call", call.String())
+		return nil
+	}
+	r.rendering[call.Digest] = true
+	defer func() { delete(r.rendering, call.Digest) }()
+
 	if !inline {
 		fmt.Fprint(out, prefix)
 		r.indent(out, depth)

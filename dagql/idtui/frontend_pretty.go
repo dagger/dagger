@@ -514,7 +514,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth in
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
-	r := renderer{db: fe.db, width: fe.window.Width, FrontendOpts: fe.FrontendOpts}
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	id := span.Call
 	if id != nil {

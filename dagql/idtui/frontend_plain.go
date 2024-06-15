@@ -437,7 +437,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
+	r := newRenderer(fe.db, -1, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
 	if span.Call != nil {
@@ -484,7 +484,7 @@ func (fe *frontendPlain) renderLogs(row *TraceRow, depth int) {
 	span := row.Span
 	spanDt := fe.data[span.SpanContext().SpanID()]
 
-	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
+	r := newRenderer(fe.db, -1, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
 
