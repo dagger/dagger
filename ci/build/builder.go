@@ -163,7 +163,12 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				// for Buildkit
 				"git", "openssh", "pigz", "xz",
 				// for CNI
-				"iptables", "ip6tables", "dnsmasq",
+				"dnsmasq",
+			}).
+			WithExec([]string{
+				"apk", "add",
+				"-X", "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
+				"iptables=1.8.9-r2", "ip6tables=1.8.9-r2",
 			}).
 			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
 	case "ubuntu":
@@ -176,6 +181,14 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"apt-get", "install", "-y",
 				"iptables", "git", "dnsmasq-base", "network-manager",
 				"gpg", "curl",
+			}).
+			WithExec([]string{
+				"update-alternatives",
+				"--set", "iptables", "/usr/sbin/iptables-legacy",
+			}).
+			WithExec([]string{
+				"update-alternatives",
+				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
 			}).
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
 	case "wolfi":
