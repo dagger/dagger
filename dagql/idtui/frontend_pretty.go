@@ -618,6 +618,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			return fe, nil
 		// case "l", "right":
 		case "home":
+			fe.autoFocus = false
 			if len(fe.rows) > 0 {
 				fe.focus(fe.rows[0])
 			}
