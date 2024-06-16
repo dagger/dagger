@@ -613,9 +613,6 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			fe.restore()
 			sigquit()
 			return fe, nil
-		case "a":
-			fe.autoFocus = true
-			return fe, nil
 		case "down", "j":
 			fe.goDown()
 			return fe, nil
@@ -623,33 +620,16 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			fe.goUp()
 			return fe, nil
 		case "left", "h":
-			if parentID := fe.db.Spans[fe.focused].Parent().SpanID(); parentID.IsValid() {
-				if fe.zoomed.IsValid() && parentID == fe.zoomed {
-					// targeted the zoomed span; zoom on its parent isntead
-					fe.zoomed = fe.db.Spans[fe.zoomed].Parent().SpanID()
-				}
-				fe.focus(fe.rows.BySpan[parentID])
-				fe.recalculateViewLocked()
-			}
+			fe.goOut()
 			return fe, nil
 		case "right", "l":
-			if focused := fe.db.Spans[fe.focused]; focused != nil {
-				if len(focused.ChildSpans) > 0 {
-					fe.focus(fe.rows.BySpan[focused.ChildSpans[0].ID])
-				}
-			}
+			fe.goIn()
 			return fe, nil
 		case "home":
-			fe.autoFocus = false
-			if len(fe.rows.Order) > 0 {
-				fe.focus(fe.rows.Order[0])
-			}
+			fe.goStart()
 			return fe, nil
 		case "end", "space":
-			if len(fe.rows.Order) > 0 {
-				fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
-			}
-			fe.autoFocus = true
+			fe.goEnd()
 			return fe, nil
 		case "enter":
 			fe.zoomed = fe.focused
@@ -675,8 +655,20 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 	}
 }
 
+func (fe *frontendPretty) goStart() {
+	if len(fe.rows.Order) > 0 {
+		fe.focus(fe.rows.Order[0])
+	}
+}
+
+func (fe *frontendPretty) goEnd() {
+	if len(fe.rows.Order) > 0 {
+		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
+	}
+	fe.autoFocus = true
+}
+
 func (fe *frontendPretty) goUp() {
-	fe.autoFocus = false
 	newIdx := fe.focusedIdx - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
@@ -691,6 +683,25 @@ func (fe *frontendPretty) goDown() {
 		return
 	}
 	fe.focus(fe.rows.Order[newIdx])
+}
+
+func (fe *frontendPretty) goOut() {
+	if parentID := fe.db.Spans[fe.focused].Parent().SpanID(); parentID.IsValid() {
+		if fe.zoomed.IsValid() && parentID == fe.zoomed {
+			// targeted the zoomed span; zoom on its parent isntead
+			fe.zoomed = fe.db.Spans[fe.zoomed].Parent().SpanID()
+		}
+		fe.focus(fe.rows.BySpan[parentID])
+		fe.recalculateViewLocked()
+	}
+}
+
+func (fe *frontendPretty) goIn() {
+	if focused := fe.db.Spans[fe.focused]; focused != nil {
+		if len(focused.ChildSpans) > 0 {
+			fe.focus(fe.rows.BySpan[focused.ChildSpans[0].ID])
+		}
+	}
 }
 
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
