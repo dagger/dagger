@@ -101,12 +101,12 @@ func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, ve
 }
 
 func (fe *frontendPretty) ConnectedToCloud(ctx context.Context, url string, msg string) {
-	out := NewOutput(nil, termenv.WithProfile(fe.profile))
-	fmt.Fprintln(fe.msgsPanel, traceMessage(out, url, msg))
+	fmt.Fprintln(fe.msgsPanel, traceMessage(fe.profile, url, msg))
 }
 
-func traceMessage(out *termenv.Output, url string, msg string) string {
+func traceMessage(profile termenv.Profile, url string, msg string) string {
 	buffer := &bytes.Buffer{}
+	out := NewOutput(buffer, termenv.WithProfile(profile))
 
 	fmt.Fprint(buffer, out.String("Full trace at ").Bold().String())
 	if out.Profile == termenv.Ascii {

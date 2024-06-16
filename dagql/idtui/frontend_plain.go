@@ -120,7 +120,7 @@ func (fe *frontendPlain) ConnectedToCloud(ctx context.Context, url string, msg s
 		return
 	}
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
-	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.output, url, msg))
+	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.profile, url, msg))
 }
 
 // addVirtualLog attaches a fake log row to a given span
