@@ -427,6 +427,8 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, 
 	contextLines := (fe.window.Height - lineCounter.lines - len(lines)) / 2
 
 	beforeLines := []string{}
+	afterLines := []string{}
+
 	for len(beforeLines) < contextLines && len(before) > 0 {
 		row := before[len(before)-1]
 		before = before[:len(before)-1]
@@ -436,9 +438,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, 
 			break
 		}
 	}
-	lines = append(beforeLines, lines...)
 
-	afterLines := []string{}
 	for len(afterLines) < contextLines && len(after) > 0 {
 		row := after[0]
 		after = after[1:]
@@ -448,6 +448,33 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, 
 			break
 		}
 	}
+
+	totalLines := len(beforeLines) + len(lines) + len(afterLines)
+	viewportHeight := fe.window.Height
+	for totalLines < viewportHeight && (len(before) > 0 || len(after) > 0) {
+		if len(before) > 0 {
+			row := before[len(before)-1]
+			before = before[:len(before)-1]
+			beforeLines = append(fe.renderedRowLines(row), beforeLines...)
+			totalLines = len(beforeLines) + len(lines) + len(afterLines)
+			if totalLines > viewportHeight {
+				extra := (totalLines - viewportHeight)
+				beforeLines = beforeLines[extra:]
+			}
+		} else if len(after) > 0 {
+			row := after[0]
+			after = after[1:]
+			afterLines = append(afterLines, fe.renderedRowLines(row)...)
+			totalLines = len(beforeLines) + len(lines) + len(afterLines)
+			if totalLines > viewportHeight {
+				extra := (totalLines - viewportHeight)
+				afterLines = afterLines[:len(afterLines)-extra]
+			}
+		}
+		totalLines = len(beforeLines) + len(lines) + len(afterLines)
+	}
+
+	lines = append(beforeLines, lines...)
 	lines = append(lines, afterLines...)
 
 	//
