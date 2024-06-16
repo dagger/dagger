@@ -631,6 +631,15 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 		case "end", "space":
 			fe.goEnd()
 			return fe, nil
+		case "+":
+			fe.FrontendOpts.Verbosity++
+			return fe, nil
+		case "-":
+			fe.FrontendOpts.Verbosity--
+			if fe.FrontendOpts.Verbosity < 0 {
+				fe.FrontendOpts.Verbosity = 0
+			}
+			return fe, nil
 		case "enter":
 			fe.zoomed = fe.focused
 			fe.recalculateViewLocked()
