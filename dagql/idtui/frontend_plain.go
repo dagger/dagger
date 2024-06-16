@@ -334,8 +334,7 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderProgress() {
-	tree := CollectTree(fe.db.SpanOrder)
-	logsView := CollectRowsView(tree)
+	rowsView := fe.db.RowsView(fe.db.PrimarySpan)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear
@@ -359,7 +358,7 @@ func (fe *frontendPlain) renderProgress() {
 		fe.lastContextLock = newLock
 	}
 
-	for _, row := range logsView.Body {
+	for _, row := range rowsView.Body {
 		fe.renderRow(row)
 	}
 }

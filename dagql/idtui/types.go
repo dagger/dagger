@@ -18,17 +18,6 @@ func (trace *Trace) HexID() string {
 	return trace.ID.String()
 }
 
-func (trace *Trace) Name() string {
-	if span := trace.db.PrimarySpanForTrace(trace.ID); span != nil {
-		return span.Name()
-	}
-	return "unknown"
-}
-
-func (trace *Trace) PrimarySpan() *Span {
-	return trace.db.PrimarySpanForTrace(trace.ID)
-}
-
 type Task struct {
 	Span      sdktrace.ReadOnlySpan
 	Name      string
@@ -76,39 +65,43 @@ type RowsView struct {
 	Body    []*TraceTree
 }
 
-func CollectRowsView(rows []*TraceTree) *RowsView {
-	view := &RowsView{}
-	for _, row := range rows {
-		if row.Span.Primary {
-			// promote children of primary vertex to the top-level
-			for _, child := range row.Children {
-				child.Parent = nil
-			}
-			view.Primary = row.Span
-			// reveal anything 'extra' below the primary content
-			view.Body = append(row.Children, view.Body...)
-		} else {
-			// reveal anything 'extra' by default (fail open)
-			view.Body = append(view.Body, row)
-		}
+func (db *DB) RowsView(spanID trace.SpanID) *RowsView {
+	view := &RowsView{
+		Primary: db.Spans[spanID],
 	}
+	var spans []*Span
+	if view.Primary != nil {
+		spans = view.Primary.ChildSpans
+	} else {
+		spans = db.SpanOrder
+	}
+	view.Body = CollectTree(spans)
 	return view
 }
 
-func (lv *RowsView) Rows(opts FrontendOpts) []*TraceRow {
-	var rows []*TraceRow
+type Rows struct {
+	Order  []*TraceRow
+	BySpan map[trace.SpanID]*TraceRow
+}
+
+func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
+	rows := &Rows{
+		BySpan: make(map[trace.SpanID]*TraceRow, len(lv.Body)),
+	}
 	var walk func(*TraceTree, int)
 	walk = func(tree *TraceTree, depth int) {
 		if !opts.ShouldShow(tree) {
 			return
 		}
 		if !tree.Span.Passthrough {
-			rows = append(rows, &TraceRow{
-				Index:                   len(rows),
+			row := &TraceRow{
+				Index:                   len(rows.Order),
 				Span:                    tree.Span,
 				Depth:                   depth,
 				IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
-			})
+			}
+			rows.Order = append(rows.Order, row)
+			rows.BySpan[tree.Span.ID] = row
 			depth++
 		}
 		if tree.IsRunningOrChildRunning {

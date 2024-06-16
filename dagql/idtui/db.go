@@ -138,23 +138,23 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 	spanID := span.SpanContext().SpanID()
 
 	spanData, found := db.Spans[spanID]
-	if found {
-	} else {
+	if !found {
+		if !span.Parent().IsValid() && !db.PrimarySpan.IsValid() {
+			// Default the 'primary' span to the root span.
+			db.PrimarySpan = spanID
+		}
+
 		spanData = &Span{
 			ID: spanID,
-
-			// All root spans are Primary, unless we're explicitly told a different
-			// span to treat as the "primary" as with Dagger-in-Dagger.
-			Primary: !span.Parent().IsValid() || spanID == db.PrimarySpan,
 
 			db:    db,
 			trace: traceData,
 		}
 
 		db.Spans[spanID] = spanData
-
 		db.SpanOrder = append(db.SpanOrder, spanData)
 
+		// collect any children that were received before the parent
 		for _, child := range db.ChildrenOrder[spanID] {
 			spanData.ChildSpans = append(spanData.ChildSpans, db.Spans[child])
 		}
@@ -283,16 +283,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 			spanData.Base = db.Simplify(parentCall, spanData.Internal)
 		}
 	}
-}
-
-func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
-	for _, span := range db.Spans {
-		spanCtx := span.SpanContext()
-		if span.Primary && spanCtx.TraceID() == traceID {
-			return span
-		}
-	}
-	return nil
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {

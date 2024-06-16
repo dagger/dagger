@@ -33,7 +33,6 @@ type Span struct {
 	Canceled bool
 	Inputs   []string
 
-	Primary      bool
 	Encapsulate  bool
 	Encapsulated bool
 	Mask         bool

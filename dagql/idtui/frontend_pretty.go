@@ -42,8 +42,8 @@ type frontendPretty struct {
 	focused      trace.SpanID
 	zoomed       trace.SpanID
 	focusedIdx   int
-	rows         []*TraceRow
 	rowsView     *RowsView
+	rows         *Rows
 
 	// panels
 	logsPanel *panel
@@ -147,7 +147,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	if fe.Silent {
 		// no TTY found; set a reasonable screen size for logs, and just run the
 		// function
-		fe.SetWindowSize(tea.WindowSizeMsg{
+		fe.setWindowSizeLocked(tea.WindowSizeMsg{
 			Width:  300, // influences vterm width
 			Height: 100, // theoretically noop, since we always render full logs
 		})
@@ -169,6 +169,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
 	fe.db.PrimarySpan = spanID
+	fe.zoomed = spanID
 	fe.mu.Unlock()
 }
 
@@ -239,7 +240,11 @@ func (fe *frontendPretty) finalRender() error {
 		if renderedAny, err := fe.renderProgress(out, true, fe.window.Height); err != nil {
 			return err
 		} else if renderedAny {
-			fmt.Fprintln(out)
+			fmt.Fprintln(out) // terminate line (there's no trailing linebreak)
+			// TODO: replay from local OTLP database instead
+			if len(fe.db.PrimaryLogs[fe.db.PrimarySpan]) > 0 {
+				fmt.Fprintln(out) // add blank line prior to primary output
+			}
 		}
 	}
 
@@ -335,21 +340,37 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	if err := fe.renderPanel(lineCounter, fe.logsPanel, false); err != nil {
 		return err
 	}
-	if _, err := fe.renderProgress(out, false, fe.window.Height-lineCounter.lines); err != nil {
-		return err
+
+	primaryBuf := new(strings.Builder)
+	if fe.rowsView != nil && fe.rowsView.Primary != nil {
+		lineCounter.Writer = primaryBuf
+		countOut := NewOutput(lineCounter, termenv.WithProfile(fe.profile))
+		renderLogs := fe.renderLogs(countOut, fe.rowsView.Primary, -1)
+		if renderLogs {
+			fmt.Fprintln(lineCounter)
+		}
 	}
+
+	renderedProgress, err := fe.renderProgress(out, false, fe.window.Height-lineCounter.lines)
+	if err != nil {
+		return err
+	} else if renderedProgress && primaryBuf.Len() > 0 {
+		fmt.Fprintln(lineCounter) // add trailing linebreak
+		fmt.Fprintln(lineCounter) // add blank line prior to primary output
+	}
+
+	fmt.Fprint(out, primaryBuf.String())
 	return nil
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
-	tree := CollectTree(fe.db.SpanOrder)
-	fe.rowsView = CollectRowsView(tree)
+	fe.rowsView = fe.db.RowsView(fe.zoomed)
+	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 }
 
 type lineCountingWriter struct {
 	io.Writer
 	lines int
-	max   int
 }
 
 func (w *lineCountingWriter) Write(p []byte) (int, error) {
@@ -373,59 +394,48 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	if fe.rowsView == nil {
 		return false, nil
 	}
-	buf := new(strings.Builder)
-	lineCounter := &lineCountingWriter{Writer: buf}
-	if !full {
-		lineCounter.max = height
-	}
-	if fe.rowsView.Primary != nil && !fe.done {
-		if renderedAny {
-			fmt.Fprintln(out)
-		}
-		renderLogs := fe.renderLogs(out, fe.rowsView.Primary, -1)
-		if renderLogs {
-			fmt.Fprintln(out)
+
+	rows := fe.rows
+
+	if full {
+		for _, row := range rows.Order {
+			fe.renderRow(out, row)
 			renderedAny = true
 		}
+		return renderedAny, nil
 	}
-
-	rows := fe.rowsView.Rows(fe.FrontendOpts)
-	fe.rows = rows
 
 	if !fe.autoFocus {
 		// must be manually focused
 		// NOTE: it's possible for the focused span to go away
 		lostFocus := true
-		for _, row := range rows {
-			if row.Span.ID == fe.focused {
-				fe.focusedIdx = row.Index
-				lostFocus = false
-				break
-			}
+		if row := rows.BySpan[fe.focused]; row != nil {
+			fe.focusedIdx = row.Index
+			lostFocus = false
 		}
 		if lostFocus {
 			fe.autoFocus = true
 		}
 	}
 
-	if len(rows) < fe.focusedIdx {
+	if len(rows.Order) < fe.focusedIdx {
 		// durability: everything disappeared?
 		fe.autoFocus = true
 	}
 
-	if len(rows) == 0 {
+	if len(rows.Order) == 0 {
 		// NB: this is a bit redundant with above, but feels better to decouple
 		return renderedAny, nil
 	}
 
-	if fe.autoFocus && len(rows) > 0 {
-		fe.focusedIdx = len(rows) - 1
-		fe.focused = rows[fe.focusedIdx].Span.ID
+	if fe.autoFocus && len(rows.Order) > 0 {
+		fe.focusedIdx = len(rows.Order) - 1
+		fe.focused = rows.Order[fe.focusedIdx].Span.ID
 	}
 
-	before, focused, after := rows[:fe.focusedIdx], rows[fe.focusedIdx], rows[fe.focusedIdx+1:]
+	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
 	lines := fe.renderedRowLines(focused)
-	contextLines := (height - lineCounter.lines - len(lines)) / 2
+	contextLines := (height - len(lines)) / 2
 
 	beforeLines := []string{}
 	afterLines := []string{}
@@ -453,16 +463,14 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	totalLines := len(beforeLines) + len(lines) + len(afterLines)
 
 	// limit to the remaining space
-	viewportHeight := height - lineCounter.lines
-
-	for totalLines < viewportHeight && (len(before) > 0 || len(after) > 0) {
+	for totalLines < height && (len(before) > 0 || len(after) > 0) {
 		if len(before) > 0 {
 			row := before[len(before)-1]
 			before = before[:len(before)-1]
 			beforeLines = append(fe.renderedRowLines(row), beforeLines...)
 			totalLines = len(beforeLines) + len(lines) + len(afterLines)
-			if totalLines > viewportHeight {
-				extra := (totalLines - viewportHeight)
+			if totalLines > height {
+				extra := (totalLines - height)
 				beforeLines = beforeLines[extra:]
 			}
 		} else if len(after) > 0 {
@@ -470,8 +478,8 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 			after = after[1:]
 			afterLines = append(afterLines, fe.renderedRowLines(row)...)
 			totalLines = len(beforeLines) + len(lines) + len(afterLines)
-			if totalLines > viewportHeight {
-				extra := (totalLines - viewportHeight)
+			if totalLines > height {
+				extra := (totalLines - height)
 				afterLines = afterLines[:len(afterLines)-extra]
 			}
 		}
@@ -480,28 +488,22 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	lines = append(beforeLines, lines...)
 	lines = append(lines, afterLines...)
-
-	//
-	// for _, row := range rows[focusedIdx:] {
-	// 	if err := fe.renderRow(outBuf, row); err != nil {
-	// 		return renderedAny, err
-	// 	}
-	// 	renderedAny = true
-	// 	if lineCounter.max > 0 && lineCounter.lines >= lineCounter.max {
-	// 		break
-	// 	}
-	// }
-	fmt.Fprint(out, buf.String()+strings.Join(lines, "\n"))
+	fmt.Fprint(out, strings.Join(lines, "\n"))
+	renderedAny = true
 	return renderedAny, nil
 }
 
 func (fe *frontendPretty) focus(row *TraceRow) {
+	if row == nil {
+		return
+	}
 	spanID := row.Span.ID
 	if spanID == fe.focused {
 		return
 	}
 	fe.focused = spanID
 	fe.focusedIdx = row.Index
+	fe.autoFocus = false
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -512,6 +514,8 @@ func (fe *frontendPretty) Init() tea.Cmd {
 }
 
 func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
 	var cmds []tea.Cmd
 
 	fe, cmd := fe.update(msg)
@@ -602,36 +606,51 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 		case "a":
 			fe.autoFocus = true
 			return fe, nil
-		// case "h", "left":
-		case "j", "down":
+		case "down", "j":
 			fe.autoFocus = false
 			newIdx := fe.focusedIdx + 1
-			if newIdx >= len(fe.rows) {
+			if newIdx >= len(fe.rows.Order) {
 				// at bottom
 				return fe, nil
 			}
-			fe.focus(fe.rows[newIdx])
+			fe.focus(fe.rows.Order[newIdx])
 			return fe, nil
-		case "k", "up":
+		case "up", "k":
 			fe.autoFocus = false
 			newIdx := fe.focusedIdx - 1
-			if newIdx < 0 || newIdx >= len(fe.rows) {
+			if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 				return fe, nil
 			}
-			fe.focus(fe.rows[newIdx])
+			fe.focus(fe.rows.Order[newIdx])
 			return fe, nil
-		// case "l", "right":
+		case "left", "h":
+			if parentID := fe.db.Spans[fe.focused].Parent().SpanID(); parentID.IsValid() {
+				if fe.zoomed.IsValid() && parentID == fe.zoomed {
+					// targeted the zoomed span; zoom on its parent isntead
+					fe.zoomed = fe.db.Spans[fe.zoomed].Parent().SpanID()
+				}
+				fe.focus(fe.rows.BySpan[parentID])
+				fe.recalculateViewLocked()
+			}
+			return fe, nil
+		case "right", "l":
+			if focused := fe.db.Spans[fe.focused]; focused != nil {
+				if len(focused.ChildSpans) > 0 {
+					fe.focus(fe.rows.BySpan[focused.ChildSpans[0].ID])
+				}
+			}
+			return fe, nil
 		case "home":
 			fe.autoFocus = false
-			if len(fe.rows) > 0 {
-				fe.focus(fe.rows[0])
+			if len(fe.rows.Order) > 0 {
+				fe.focus(fe.rows.Order[0])
 			}
 			return fe, nil
-		case "end":
-			fe.autoFocus = true
-			if len(fe.rows) > 0 {
-				fe.focus(fe.rows[len(fe.rows)-1])
+		case "end", "space":
+			if len(fe.rows.Order) > 0 {
+				fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
 			}
+			fe.autoFocus = true
 			return fe, nil
 		case "enter":
 			fe.zoomed = fe.focused
@@ -642,11 +661,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		fe.SetWindowSize(msg)
+		fe.setWindowSizeLocked(msg)
 		return fe, nil
 
 	case frameMsg:
-		fe.render()
+		fe.renderLocked()
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
@@ -657,20 +676,16 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 	}
 }
 
-func (fe *frontendPretty) SetWindowSize(msg tea.WindowSizeMsg) {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
+func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
 	fe.logsPanel.vterm.SetWidth(msg.Width)
 	fe.msgsPanel.vterm.SetWidth(msg.Width)
 }
 
-func (fe *frontendPretty) render() {
-	fe.mu.Lock()
+func (fe *frontendPretty) renderLocked() {
 	fe.view.Reset()
 	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
-	fe.mu.Unlock()
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow) error {
@@ -687,7 +702,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	isFocused := span.ID == fe.focused
 
 	var prefix string
-	if isFocused {
+	if isFocused && !fe.done {
 		prefix = termenv.String("▐ ").Foreground(termenv.ANSIYellow).String()
 	} else {
 		prefix = "  "
