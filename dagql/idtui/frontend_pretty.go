@@ -758,12 +758,14 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	fmt.Fprintln(out)
 
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
-		r.indent(out, depth+1) // HACK: +1 for focus prefix
-		// print error description above it
-		fmt.Fprintf(out,
-			out.String("! %s\n").Foreground(termenv.ANSIYellow).String(),
-			span.Status().Description,
-		)
+		for _, line := range strings.Split(span.Status().Description, "\n") {
+			r.indent(out, depth+1) // HACK: +1 for focus prefix
+			fmt.Fprintf(out,
+				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+				line,
+			)
+			fmt.Fprintln(out)
+		}
 	}
 
 	return nil
