@@ -236,7 +236,7 @@ func (fe *frontendPretty) finalRender() error {
 	}
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if renderedAny, err := fe.renderProgress(out, true); err != nil {
+		if renderedAny, err := fe.renderProgress(out, true, fe.window.Height); err != nil {
 			return err
 		} else if renderedAny {
 			fmt.Fprintln(out)
@@ -246,7 +246,7 @@ func (fe *frontendPretty) finalRender() error {
 	return renderPrimaryOutput(fe.db)
 }
 
-func (fe *frontendPretty) renderPanel(out *termenv.Output, panel *panel, full bool) error {
+func (fe *frontendPretty) renderPanel(out io.Writer, panel *panel, full bool) error {
 	if panel.vterm.UsedHeight() == 0 {
 		return nil
 	}
@@ -328,13 +328,14 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 }
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
-	if err := fe.renderPanel(out, fe.msgsPanel, false); err != nil {
+	lineCounter := &lineCountingWriter{Writer: out}
+	if err := fe.renderPanel(lineCounter, fe.msgsPanel, false); err != nil {
 		return err
 	}
-	if err := fe.renderPanel(out, fe.logsPanel, false); err != nil {
+	if err := fe.renderPanel(lineCounter, fe.logsPanel, false); err != nil {
 		return err
 	}
-	if _, err := fe.renderProgress(out, false); err != nil {
+	if _, err := fe.renderProgress(out, false, fe.window.Height-lineCounter.lines); err != nil {
 		return err
 	}
 	return nil
@@ -367,7 +368,7 @@ func (fe *frontendPretty) renderedRowLines(row *TraceRow) []string {
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, error) {
+func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int) (bool, error) {
 	var renderedAny bool
 	if fe.rowsView == nil {
 		return false, nil
@@ -375,7 +376,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, 
 	buf := new(strings.Builder)
 	lineCounter := &lineCountingWriter{Writer: buf}
 	if !full {
-		lineCounter.max = fe.window.Height
+		lineCounter.max = height
 	}
 	if fe.rowsView.Primary != nil && !fe.done {
 		if renderedAny {
@@ -424,7 +425,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, 
 
 	before, focused, after := rows[:fe.focusedIdx], rows[fe.focusedIdx], rows[fe.focusedIdx+1:]
 	lines := fe.renderedRowLines(focused)
-	contextLines := (fe.window.Height - lineCounter.lines - len(lines)) / 2
+	contextLines := (height - lineCounter.lines - len(lines)) / 2
 
 	beforeLines := []string{}
 	afterLines := []string{}
@@ -450,7 +451,10 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool) (bool, 
 	}
 
 	totalLines := len(beforeLines) + len(lines) + len(afterLines)
-	viewportHeight := fe.window.Height
+
+	// limit to the remaining space
+	viewportHeight := height - lineCounter.lines
+
 	for totalLines < viewportHeight && (len(before) > 0 || len(after) > 0) {
 		if len(before) > 0 {
 			row := before[len(before)-1]
