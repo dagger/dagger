@@ -201,6 +201,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
 		// counter-productive.
 		tea.WithoutCatchPanics(),
+		tea.WithMouseCellMotion(),
 	)
 
 	// run the program, which starts the callback async
@@ -587,6 +588,15 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 	case backgroundDoneMsg:
 		return fe, nil
 
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelDown:
+			fe.goDown()
+		case tea.MouseButtonWheelUp:
+			fe.goUp()
+		}
+		return fe, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -607,21 +617,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			fe.autoFocus = true
 			return fe, nil
 		case "down", "j":
-			fe.autoFocus = false
-			newIdx := fe.focusedIdx + 1
-			if newIdx >= len(fe.rows.Order) {
-				// at bottom
-				return fe, nil
-			}
-			fe.focus(fe.rows.Order[newIdx])
+			fe.goDown()
 			return fe, nil
 		case "up", "k":
-			fe.autoFocus = false
-			newIdx := fe.focusedIdx - 1
-			if newIdx < 0 || newIdx >= len(fe.rows.Order) {
-				return fe, nil
-			}
-			fe.focus(fe.rows.Order[newIdx])
+			fe.goUp()
 			return fe, nil
 		case "left", "h":
 			if parentID := fe.db.Spans[fe.focused].Parent().SpanID(); parentID.IsValid() {
@@ -674,6 +673,24 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 	default:
 		return fe, nil
 	}
+}
+
+func (fe *frontendPretty) goUp() {
+	fe.autoFocus = false
+	newIdx := fe.focusedIdx - 1
+	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
+		return
+	}
+	fe.focus(fe.rows.Order[newIdx])
+}
+
+func (fe *frontendPretty) goDown() {
+	newIdx := fe.focusedIdx + 1
+	if newIdx >= len(fe.rows.Order) {
+		// at bottom
+		return
+	}
+	fe.focus(fe.rows.Order[newIdx])
 }
 
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
