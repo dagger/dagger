@@ -241,7 +241,6 @@ func (fe *frontendPretty) finalRender() error {
 		if renderedAny, err := fe.renderProgress(out, true, fe.window.Height); err != nil {
 			return err
 		} else if renderedAny {
-			fmt.Fprintln(out) // terminate line (there's no trailing linebreak)
 			// TODO: replay from local OTLP database instead
 			if len(fe.db.PrimaryLogs[fe.db.PrimarySpan]) > 0 {
 				fmt.Fprintln(out) // add blank line prior to primary output
@@ -352,14 +351,16 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	bottomBuf := new(strings.Builder)
 	lineCounter.Writer = bottomBuf
 
+	var hasPrimaryLogs bool
 	if fe.rowsView != nil && fe.rowsView.Primary != nil {
 		countOut := NewOutput(lineCounter, termenv.WithProfile(fe.profile))
-		fe.renderLogs(countOut, fe.rowsView.Primary, -1)
+		hasPrimaryLogs = fe.renderLogs(countOut, fe.rowsView.Primary, -1)
 	}
 
 	// Blank line prior to keymap
-	fmt.Fprintln(lineCounter) // add trailing linebreak
-	fmt.Fprintln(lineCounter) // add blank line prior to primary output
+	if hasPrimaryLogs {
+		fmt.Fprintln(lineCounter)
+	}
 	for i, key := range []keyHelp{
 		{"quit", []string{"q", "ctrl+c"}},
 		{"prev", []string{"↑", "up", "k"}},
@@ -381,8 +382,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	}
 
 	progHeight := fe.window.Height - lineCounter.lines
-	progHeight -= 1 // account for blank line
-	progHeight -= 1 // account for blank line
+	progHeight -= 2 // account for blank line
 	renderedProgress, err := fe.renderProgress(out, false, progHeight)
 	if err != nil {
 		return err
