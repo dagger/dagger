@@ -341,8 +341,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
-	steps := CollectSpans(fe.db, trace.TraceID{})
-	tree := CollectTree(steps)
+	tree := CollectTree(fe.db.SpanOrder)
 	fe.rowsView = CollectRowsView(tree)
 }
 

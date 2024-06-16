@@ -38,23 +38,9 @@ type Task struct {
 	Completed time.Time
 }
 
-func CollectSpans(db *DB, traceID trace.TraceID) []*Span {
-	var spans []*Span //nolint:prealloc
-	for _, span := range db.SpanOrder {
-		if span.Ignore {
-			continue
-		}
-		if traceID.IsValid() && span.SpanContext().TraceID() != traceID {
-			continue
-		}
-		spans = append(spans, span)
-	}
-	return spans
-}
-
-func CollectTree(steps []*Span) []*TraceTree {
+func CollectTree(spans []*Span) []*TraceTree {
 	var rows []*TraceTree
-	WalkSteps(steps, func(row *TraceTree) {
+	WalkSpans(spans, func(row *TraceTree) {
 		if row.Parent != nil {
 			row.Parent.Children = append(row.Parent.Children, row)
 		} else {
@@ -151,11 +137,14 @@ func (row *TraceTree) setRunning() {
 	}
 }
 
-func WalkSteps(spans []*Span, f func(*TraceTree)) {
+func WalkSpans(spans []*Span, f func(*TraceTree)) {
 	var lastRow *TraceTree
-	seen := map[trace.SpanID]bool{}
+	seen := make(map[trace.SpanID]bool, len(spans))
 	var walk func(*Span, *TraceTree)
 	walk = func(span *Span, parent *TraceTree) {
+		if span.Ignore {
+			return
+		}
 		spanID := span.ID
 		if seen[spanID] {
 			return

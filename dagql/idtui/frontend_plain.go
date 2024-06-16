@@ -334,8 +334,7 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderProgress() {
-	steps := CollectSpans(fe.db, trace.TraceID{})
-	tree := CollectTree(steps)
+	tree := CollectTree(fe.db.SpanOrder)
 	logsView := CollectRowsView(tree)
 
 	// quickly sanity check the context - if a span from it has gone missing
