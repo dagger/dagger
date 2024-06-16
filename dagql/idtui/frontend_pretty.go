@@ -238,9 +238,7 @@ func (fe *frontendPretty) finalRender() error {
 	}
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if renderedAny, err := fe.renderProgress(out, true, fe.window.Height); err != nil {
-			return err
-		} else if renderedAny {
+		if renderedAny := fe.renderProgress(out, true, fe.window.Height); renderedAny {
 			// TODO: replay from local OTLP database instead
 			if len(fe.db.PrimaryLogs[fe.db.PrimarySpan]) > 0 {
 				fmt.Fprintln(out) // add blank line prior to primary output
@@ -383,10 +381,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 
 	progHeight := fe.window.Height - lineCounter.lines
 	progHeight -= 2 // account for blank line
-	renderedProgress, err := fe.renderProgress(out, false, progHeight)
-	if err != nil {
-		return err
-	} else if renderedProgress && bottomBuf.Len() > 0 {
+	if fe.renderProgress(out, false, progHeight) && bottomBuf.Len() > 0 {
 		fmt.Fprintln(out) // add trailing linebreak
 		fmt.Fprintln(out) // add blank line prior to primary output
 	}
@@ -417,14 +412,14 @@ func (w *lineCountingWriter) Write(p []byte) (int, error) {
 func (fe *frontendPretty) renderedRowLines(row *TraceRow) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	_ = fe.renderRow(out, row)
+	fe.renderRow(out, row)
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int) (bool, error) {
+func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int) bool {
 	var renderedAny bool
 	if fe.rowsView == nil {
-		return false, nil
+		return false
 	}
 
 	rows := fe.rows
@@ -434,7 +429,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 			fe.renderRow(out, row)
 			renderedAny = true
 		}
-		return renderedAny, nil
+		return renderedAny
 	}
 
 	if !fe.autoFocus {
@@ -457,7 +452,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	if len(rows.Order) == 0 {
 		// NB: this is a bit redundant with above, but feels better to decouple
-		return renderedAny, nil
+		return renderedAny
 	}
 
 	if fe.autoFocus && len(rows.Order) > 0 {
@@ -534,7 +529,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
 	renderedAny = true
 
-	return renderedAny, nil
+	return renderedAny
 }
 
 func (fe *frontendPretty) focus(row *TraceRow) {
@@ -768,12 +763,11 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow) error {
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow) {
 	fe.renderStep(out, row.Span, row.Depth)
 	if row.IsRunningOrChildRunning {
 		fe.renderLogs(out, row.Span, row.Depth+1) // HACK: extra depth to account for focus indicator
 	}
-	return nil
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {

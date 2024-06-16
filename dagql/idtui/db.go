@@ -134,7 +134,7 @@ func (db *DB) SetPrimarySpan(span trace.SpanID) {
 	db.PrimarySpan = span
 }
 
-func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
+func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //nolint: gocyclo
 	spanID := span.SpanContext().SpanID()
 
 	spanData, found := db.Spans[spanID]

@@ -108,7 +108,7 @@ func (r renderer) indent(out io.Writer, depth int) {
 	fmt.Fprint(out, strings.Repeat("  ", depth))
 }
 
-func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
+func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
 	if call.Module != nil {
@@ -118,7 +118,6 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 	if r.Verbosity > 2 && call.ReceiverDigest != "" {
 		fmt.Fprint(out, out.String(fmt.Sprintf("@%s", call.ReceiverDigest)).Foreground(faintColor))
 	}
-	return nil
 }
 
 func (r renderer) renderCall(
@@ -147,9 +146,7 @@ func (r renderer) renderCall(
 	}
 
 	if call.ReceiverDigest != "" {
-		if err := r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest)); err != nil {
-			return err
-		}
+		r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
 		fmt.Fprint(out, ".")
 	}
 
