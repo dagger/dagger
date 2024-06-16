@@ -333,34 +333,65 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 	return <-errs
 }
 
+type keyHelp struct {
+	label string
+	keys  []string
+}
+
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	lineCounter := &lineCountingWriter{Writer: out}
+
 	if err := fe.renderPanel(lineCounter, fe.msgsPanel, false); err != nil {
 		return err
 	}
+
 	if err := fe.renderPanel(lineCounter, fe.logsPanel, false); err != nil {
 		return err
 	}
 
-	primaryBuf := new(strings.Builder)
+	bottomBuf := new(strings.Builder)
+	lineCounter.Writer = bottomBuf
+
 	if fe.rowsView != nil && fe.rowsView.Primary != nil {
-		lineCounter.Writer = primaryBuf
 		countOut := NewOutput(lineCounter, termenv.WithProfile(fe.profile))
-		renderLogs := fe.renderLogs(countOut, fe.rowsView.Primary, -1)
-		if renderLogs {
-			fmt.Fprintln(lineCounter)
-		}
+		fe.renderLogs(countOut, fe.rowsView.Primary, -1)
 	}
 
-	renderedProgress, err := fe.renderProgress(out, false, fe.window.Height-lineCounter.lines)
+	// Blank line prior to keymap
+	fmt.Fprintln(lineCounter) // add trailing linebreak
+	fmt.Fprintln(lineCounter) // add blank line prior to primary output
+	for i, key := range []keyHelp{
+		{"quit", []string{"q", "ctrl+c"}},
+		{"prev", []string{"↑", "up", "k"}},
+		{"next", []string{"↓", "down", "j"}},
+		{"start", []string{"home"}},
+		{"end", []string{"end", "space"}},
+		{"parent", []string{"←", "left", "h"}},
+		{"child", []string{"→", "right", "l"}},
+		{"zoom", []string{"enter"}},
+		{"chattier", []string{"+"}},
+		{"quieter", []string{"-"}},
+	} {
+		mainKey := key.keys[0]
+		if i > 0 {
+			fmt.Fprint(lineCounter, "  ")
+		}
+		fmt.Fprint(lineCounter, out.String(mainKey).Bold().Faint())
+		fmt.Fprint(lineCounter, out.String(": "+key.label).Faint())
+	}
+
+	progHeight := fe.window.Height - lineCounter.lines
+	progHeight -= 1 // account for blank line
+	progHeight -= 1 // account for blank line
+	renderedProgress, err := fe.renderProgress(out, false, progHeight)
 	if err != nil {
 		return err
-	} else if renderedProgress && primaryBuf.Len() > 0 {
-		fmt.Fprintln(lineCounter) // add trailing linebreak
-		fmt.Fprintln(lineCounter) // add blank line prior to primary output
+	} else if renderedProgress && bottomBuf.Len() > 0 {
+		fmt.Fprintln(out) // add trailing linebreak
+		fmt.Fprintln(out) // add blank line prior to primary output
 	}
 
-	fmt.Fprint(out, primaryBuf.String())
+	fmt.Fprint(out, bottomBuf.String())
 	return nil
 }
 
@@ -435,62 +466,74 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	}
 
 	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
-	lines := fe.renderedRowLines(focused)
-	contextLines := (height - len(lines)) / 2
 
 	beforeLines := []string{}
+	lines := fe.renderedRowLines(focused)
 	afterLines := []string{}
-
-	for len(beforeLines) < contextLines && len(before) > 0 {
+	renderBefore := func() {
 		row := before[len(before)-1]
 		before = before[:len(before)-1]
 		beforeLines = append(fe.renderedRowLines(row), beforeLines...)
-		if len(beforeLines) >= contextLines {
-			beforeLines = beforeLines[len(beforeLines)-contextLines:]
-			break
-		}
 	}
-
-	for len(afterLines) < contextLines && len(after) > 0 {
+	renderAfter := func() {
 		row := after[0]
 		after = after[1:]
 		afterLines = append(afterLines, fe.renderedRowLines(row)...)
-		if len(afterLines) >= contextLines {
-			afterLines = afterLines[:contextLines]
-			break
+	}
+	totalLines := func() int {
+		return len(beforeLines) + len(lines) + len(afterLines)
+	}
+
+	// fill in context surrounding the focused row
+	contextLines := (height - len(lines)) / 2
+	for len(beforeLines) < contextLines && len(before) > 0 {
+		renderBefore()
+	}
+	for len(afterLines) < contextLines && len(after) > 0 {
+		renderAfter()
+	}
+
+	if total := totalLines(); total > height {
+		extra := total - height
+		if len(beforeLines) >= contextLines && len(afterLines) >= contextLines {
+			// exceeded the height, so trim the context
+			if len(beforeLines) > contextLines {
+				beforeLines = beforeLines[len(beforeLines)-contextLines:]
+			}
+			if len(afterLines) > contextLines {
+				afterLines = afterLines[:contextLines]
+			}
+		} else if len(beforeLines) >= contextLines {
+			beforeLines = beforeLines[extra:]
+		} else if len(afterLines) >= contextLines {
+			afterLines = afterLines[:len(afterLines)-extra]
+		}
+	} else {
+		// fill in the rest of the screen if there's not enough to fill both sides
+		for totalLines() < height && (len(before) > 0 || len(after) > 0) {
+			switch {
+			case len(before) > 0:
+				renderBefore()
+				if total := totalLines(); total > height {
+					extra := total - height
+					beforeLines = beforeLines[extra:]
+				}
+			case len(after) > 0:
+				renderAfter()
+				if total := totalLines(); total > height {
+					extra := total - height
+					afterLines = afterLines[:len(afterLines)-extra]
+				}
+			}
 		}
 	}
 
-	totalLines := len(beforeLines) + len(lines) + len(afterLines)
-
-	// limit to the remaining space
-	for totalLines < height && (len(before) > 0 || len(after) > 0) {
-		if len(before) > 0 {
-			row := before[len(before)-1]
-			before = before[:len(before)-1]
-			beforeLines = append(fe.renderedRowLines(row), beforeLines...)
-			totalLines = len(beforeLines) + len(lines) + len(afterLines)
-			if totalLines > height {
-				extra := (totalLines - height)
-				beforeLines = beforeLines[extra:]
-			}
-		} else if len(after) > 0 {
-			row := after[0]
-			after = after[1:]
-			afterLines = append(afterLines, fe.renderedRowLines(row)...)
-			totalLines = len(beforeLines) + len(lines) + len(afterLines)
-			if totalLines > height {
-				extra := (totalLines - height)
-				afterLines = afterLines[:len(afterLines)-extra]
-			}
-		}
-		totalLines = len(beforeLines) + len(lines) + len(afterLines)
-	}
-
+	// finally, print all the lines
 	lines = append(beforeLines, lines...)
 	lines = append(lines, afterLines...)
 	fmt.Fprint(out, strings.Join(lines, "\n"))
 	renderedAny = true
+
 	return renderedAny, nil
 }
 
