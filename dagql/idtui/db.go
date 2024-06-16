@@ -137,29 +137,33 @@ func (db *DB) SetPrimarySpan(span trace.SpanID) {
 func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 	spanID := span.SpanContext().SpanID()
 
-	spanData := &Span{
-		ReadOnlySpan: span,
+	spanData, found := db.Spans[spanID]
+	if found {
+	} else {
+		spanData = &Span{
+			ID: spanID,
 
-		ID: spanID,
+			// All root spans are Primary, unless we're explicitly told a different
+			// span to treat as the "primary" as with Dagger-in-Dagger.
+			Primary: !span.Parent().IsValid() || spanID == db.PrimarySpan,
 
-		IsRunning: span.EndTime().Before(span.StartTime()),
+			db:    db,
+			trace: traceData,
+		}
 
-		// All root spans are Primary, unless we're explicitly told a different
-		// span to treat as the "primary" as with Dagger-in-Dagger.
-		Primary: !span.Parent().SpanID().IsValid() ||
-			spanID == db.PrimarySpan,
+		db.Spans[spanID] = spanData
 
-		db:    db,
-		trace: traceData,
+		db.SpanOrder = append(db.SpanOrder, spanData)
+
+		for _, child := range db.ChildrenOrder[spanID] {
+			spanData.ChildSpans = append(spanData.ChildSpans, db.Spans[child])
+		}
 	}
+
+	spanData.ReadOnlySpan = span
+	spanData.IsRunning = span.EndTime().Before(span.StartTime())
 
 	slog.Debug("recording span", "span", span.Name(), "id", spanID)
-
-	if _, exists := db.Spans[spanID]; !exists {
-		db.SpanOrder = append(db.SpanOrder, spanData)
-	}
-
-	db.Spans[spanID] = spanData
 
 	// track parent/child relationships
 	if parent := span.Parent(); parent.IsValid() {
@@ -170,6 +174,9 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 		if _, found := db.Children[parent.SpanID()][spanID]; !found {
 			db.Children[parent.SpanID()][spanID] = struct{}{}
 			db.ChildrenOrder[parent.SpanID()] = append(db.ChildrenOrder[parent.SpanID()], spanID)
+			if parent, exists := db.Spans[span.Parent().SpanID()]; exists {
+				parent.ChildSpans = append(parent.ChildSpans, spanData)
+			}
 		}
 	} else if !db.PrimarySpan.IsValid() {
 		// default primary to "root" span, but we might never see it in a nested

@@ -161,7 +161,7 @@ func WalkSteps(spans []*Span, f func(*TraceTree)) {
 			return
 		}
 		if span.Passthrough {
-			for _, child := range span.Children() {
+			for _, child := range span.ChildSpans {
 				walk(child, parent)
 			}
 			return
@@ -179,7 +179,7 @@ func WalkSteps(spans []*Span, f func(*TraceTree)) {
 		f(row)
 		lastRow = row
 		seen[spanID] = true
-		for _, child := range span.Children() {
+		for _, child := range span.ChildSpans {
 			walk(child, row)
 		}
 		lastRow = row

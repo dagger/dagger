@@ -17,6 +17,9 @@ import (
 type Span struct {
 	sdktrace.ReadOnlySpan
 
+	ParentSpan *Span
+	ChildSpans []*Span
+
 	ID trace.SpanID
 
 	IsRunning bool
@@ -42,17 +45,13 @@ type Span struct {
 }
 
 func (span *Span) HasParent(parent *Span) bool {
-	if !span.Parent().IsValid() {
+	if span.ParentSpan == nil {
 		return false
 	}
-	p, found := span.db.Spans[span.Parent().SpanID()]
-	if !found {
-		return false
-	}
-	if p == parent {
+	if span.ParentSpan == parent {
 		return true
 	}
-	return p.HasParent(parent)
+	return span.ParentSpan.HasParent(parent)
 }
 
 func (span *Span) Name() string {
@@ -102,20 +101,6 @@ func (span *Span) EndTime() time.Time {
 
 func (span *Span) IsBefore(other *Span) bool {
 	return span.StartTime().Before(other.StartTime())
-}
-
-func (span *Span) Children() []*Span {
-	children := []*Span{}
-	for _, childID := range span.db.ChildrenOrder[span.ID] {
-		child, ok := span.db.Spans[childID]
-		if !ok {
-			continue
-		}
-		if !child.Ignore {
-			children = append(children, child)
-		}
-	}
-	return children
 }
 
 type SpanBar struct {
