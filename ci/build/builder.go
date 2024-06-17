@@ -163,8 +163,17 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				// for Buildkit
 				"git", "openssh", "pigz", "xz",
 				// for CNI
-				"iptables", "ip6tables", "dnsmasq",
+				"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 			}).
+			WithExec([]string{"sh", "-c", `
+				set -e
+				ln -s /sbin/iptables-legacy /usr/sbin/iptables
+				ln -s /sbin/iptables-legacy-save /usr/sbin/iptables-save
+				ln -s /sbin/iptables-legacy-restore /usr/sbin/iptables-restore
+				ln -s /sbin/ip6tables-legacy /usr/sbin/ip6tables
+				ln -s /sbin/ip6tables-legacy-save /usr/sbin/ip6tables-save
+				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
+			`}).
 			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
 	case "ubuntu":
 		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
@@ -176,6 +185,14 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"apt-get", "install", "-y",
 				"iptables", "git", "dnsmasq-base", "network-manager",
 				"gpg", "curl",
+			}).
+			WithExec([]string{
+				"update-alternatives",
+				"--set", "iptables", "/usr/sbin/iptables-legacy",
+			}).
+			WithExec([]string{
+				"update-alternatives",
+				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
 			}).
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
 	case "wolfi":
