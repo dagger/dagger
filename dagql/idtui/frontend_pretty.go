@@ -518,7 +518,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, "", depth, false); err != nil {
+		if err := r.renderCall(out, span, id, "", depth, false, span.Internal); err != nil {
 			return err
 		}
 	} else if span != nil {
