@@ -9,14 +9,11 @@ use Dagger\Container;
 use Dagger\Directory;
 use Dagger\File;
 use Dagger\Service\DecodesValue;
-use Dagger\Service\FindsDaggerFunctions;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Service\FindsSrcDirectory;
 use Dagger\TypeDef;
 use Dagger\TypeDefKind;
-use Dagger\ValueObject\DaggerObject;
 use Dagger\ValueObject\Type;
-use ReflectionClass;
 use ReflectionMethod;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -35,7 +32,6 @@ class EntrypointCommand extends Command
         $this->daggerClient = Dagger\Dagger::connect();
     }
 
-    //@todo work out how to include documentation
     protected function execute(
         InputInterface $input,
         OutputInterface $output
@@ -58,21 +54,21 @@ class EntrypointCommand extends Command
 
     private function registerModule(Dagger\FunctionCall $functionCall): void
     {
+        $daggerModule = $this->daggerClient->module();
+
         $src = (new FindsSrcDirectory())();
         $daggerObjects = (new FindsDaggerObjects())($src);
 
-        $daggerModule = $this->daggerClient->module();
-
         foreach ($daggerObjects as $daggerObject) {
-            $typeDef = $this->daggerClient->typeDef()
+            $objectTypeDef = $this->daggerClient
+                ->typeDef()
                 ->withObject($this->normalizeClassname($daggerObject->name));
 
             foreach ($daggerObject->daggerFunctions as $daggerFunction) {
-                $func = $this->daggerClient
-                    ->function(
-                        $daggerFunction->name,
-                        $this->getTypeDef($daggerFunction->returnType)
-                    );
+                $func = $this->daggerClient->function(
+                    $daggerFunction->name,
+                    $this->getTypeDef($daggerFunction->returnType)
+                );
 
                 if ($daggerFunction->description !== null) {
                     $func = $func->withDescription($daggerFunction->description);
@@ -87,10 +83,10 @@ class EntrypointCommand extends Command
                     );
                 }
 
-                $typeDef = $typeDef->withFunction($func);
+                $objectTypeDef = $objectTypeDef->withFunction($func);
             }
 
-            $daggerModule = $daggerModule->withObject($typeDef);
+            $daggerModule = $daggerModule->withObject($objectTypeDef);
         }
 
         $functionCall->returnValue(new Dagger\Json(json_encode(
@@ -125,14 +121,6 @@ class EntrypointCommand extends Command
     {
         $typeDef = $this->daggerClient->typeDef();
         // See: https://github.com/dagger/dagger/blob/main/sdk/typescript/introspector/scanner/utils.ts#L95-L117
-        //@TODO support descriptions, optional and defaults.
-        /**
-         * Optional = nullable
-         * if nullable then check list of provides args
-         * if nullable arg not provides, then add argument in, and provide it with NULL,
-         * Default:
-         * already optional, nothing should need to be done.
-         */
         //@TODO support arrays via additional attribute to define the array subtype
         switch ($type->name) {
             case 'string':
@@ -158,18 +146,16 @@ class EntrypointCommand extends Command
                         'Currently cannot handle custom classes: %s',
                         $type->name
                     ));
-//                    return $typeDef->withObject($this->normalizeClassname($type->name));
                 }
+
                 if (interface_exists($type->name)) {
                     throw new \RuntimeException(sprintf(
                         'Currently cannot handle custom interfaces: %s',
                         $type->name
                     ));
-//                    return $typeDef->withInterface($this->normalizeClassname($type->name));
                 }
 
                 throw new \RuntimeException('dont know what to do with: ' . $type->name);
-
         }
     }
 
@@ -205,6 +191,7 @@ class EntrypointCommand extends Command
                     continue 2;
                 }
             }
+            // todo if no argument matched && default === null,
         }
 
         return $result;

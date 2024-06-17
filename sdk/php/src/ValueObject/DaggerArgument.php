@@ -8,6 +8,7 @@ use Dagger\Attribute;
 use Dagger\Client\IdAble;
 use Dagger\Json;
 use ReflectionParameter;
+use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 
 final readonly class DaggerArgument
 {
@@ -17,6 +18,7 @@ final readonly class DaggerArgument
         public Type $type,
         public ?Json $default = null,
     ) {
+
     }
 
     public static function fromReflection(ReflectionParameter $parameter): self
@@ -35,14 +37,23 @@ final readonly class DaggerArgument
 
     private static function getDefault(ReflectionParameter $parameter): ?Json
     {
-        if (!$parameter->isOptional()) {
-            return null;
+        if ($parameter->isDefaultValueAvailable()) {
+            $betterReflection = BetterReflectionParameter
+                ::createFromClassNameAndMethod(
+                    $parameter->getDeclaringClass()->getName(),
+                    $parameter->getDeclaringFunction()->getName(),
+                    $parameter->getName(),
+                );
+            $default = $betterReflection->getDefaultValue();
+            return new Json(json_encode(
+                $default instanceof IdAble ? (string) $default->id() : $default
+            ));
         }
 
-        $default = $parameter->getDefaultValue();
+        if ($parameter->allowsNull()) {
+            return new Json(json_encode(null));
+        }
 
-        return new Json(json_encode(
-            $default instanceof IdAble ? (string) $default->id() : $default,
-        ));
+        return null;
     }
 }

@@ -3,52 +3,36 @@
 namespace Dagger\tests\Unit\Service;
 
 use Dagger\Service\FindsDaggerObjects;
-use Dagger\Tests\Unit\Fixture\ButterKnife;
-use Dagger\ValueObject\DaggerArgument;
-use Dagger\ValueObject\DaggerFunction;
+use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
+use Dagger\Tests\Unit\Fixture\NoDaggerFunctions;
 use Dagger\ValueObject\DaggerObject;
-use Dagger\ValueObject\Type;
+use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 #[CoversClass(FindsDaggerObjects::class)]
 class FindsDaggerObjectsTest extends TestCase
 {
-    #[Test]
-    public function itFindsDaggerObjects(): void {
-        $expected = [
-            new DaggerObject(ButterKnife::class, [
-                new DaggerFunction(
-                    'spread',
-                    null,
-                    [
-                        new DaggerArgument(
-                            'spread',
-                            null,
-                            new Type('string')
-                        ),
-                        new DaggerArgument(
-                            'surface',
-                            'The surface on which to spread',
-                            new Type('string')
-                        ),
-                    ],
-                    new Type('bool'),
-                ),
-                new DaggerFunction(
-                    'sliceBread',
-                    'Nothing better',
-                    [],
-                    new Type('string'),
-                ),
-            ])
-        ];
-        $fixture = __DIR__ . '/../Fixture';
-
-        $actual = (new FindsDaggerObjects())($fixture);
-
+    /** @param DaggerObject[] $expected */
+    #[Test, DataProvider('provideDirectoriesToSearch')]
+    public function itFindsDaggerObjects(array $expected, string $dir): void {
+        $actual = (new FindsDaggerObjects())($dir);
 
         self::assertEquals($expected, $actual);
+    }
+
+    /** @return Generator<array{ 0: DaggerObject[], 1: string}> */
+    public static function provideDirectoriesToSearch(): Generator
+    {
+        yield 'test fixtures' => [
+            [
+                NoDaggerFunctions::getValueObjectEquivalent(),
+                DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
+
+            ],
+            __DIR__ . '/../Fixture',
+        ];
     }
 }

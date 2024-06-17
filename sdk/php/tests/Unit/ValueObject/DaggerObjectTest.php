@@ -2,13 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Dagger\tests\Unit\ValueObject;
+namespace Dagger\Tests\Unit\ValueObject;
 
-use Dagger\Attribute;
-use Dagger\Service\FindsDaggerFunctions;
+use Dagger\Container;
+use Dagger\File;
+use Dagger\Json;
+use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
+use Dagger\ValueObject\DaggerArgument;
 use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\DaggerObject;
 use Dagger\ValueObject\Type;
+use Dagger\Tests\Unit\Fixture\NoDaggerFunctions;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -32,65 +36,14 @@ class DaggerObjectTest extends TestCase
     /** @return Generator<array{ 0: DaggerObject, 1:ReflectionClass}> */
     public static function provideReflectionClasses(): Generator
     {
-        yield 'no methods' => (function () {
-            $class = new #[Attribute\DaggerObject] class () {
-            };
+        yield 'DaggerObject without DaggerFunctions' => [
+            new DaggerObject(NoDaggerFunctions::class, []),
+            new ReflectionClass(NoDaggerFunctions::class),
+        ];
 
-            return [
-                new DaggerObject($class::class, []),
-                new ReflectionClass($class),
-            ];
-        })();
-
-        yield 'public method without DaggerFunction attribute' => (function () {
-            $class = new #[Attribute\DaggerObject] class () {
-                public function ignoreThis(): void
-                {
-
-                }
-            };
-
-            return [
-                new DaggerObject($class::class, []),
-                new ReflectionClass($class),
-            ];
-        })();
-
-        yield 'private method with DaggerFunction attribute' => (function () {
-            $class = new #[Attribute\DaggerObject] class () {
-                #[Attribute\DaggerFunction()]
-                private function ignoreThis(): void
-                {
-
-                }
-            };
-
-            return [
-                new DaggerObject($class::class, []),
-                new ReflectionClass($class),
-            ];
-        })();
-
-        yield 'public method with DaggerFunction attribute' => (function () {
-            $class = new #[Attribute\DaggerObject] class () {
-                #[Attribute\DaggerFunction()]
-                public function dontIgnoreThis(): void
-                {
-
-                }
-            };
-
-            return [
-                new DaggerObject($class::class, [
-                    new DaggerFunction(
-                        'dontIgnoreThis',
-                        '',
-                        [],
-                        new Type('void'),
-                    )
-                ]),
-                new ReflectionClass($class),
-            ];
-        })();
+        yield 'DaggerObject with DaggerFunctions' => [
+            DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
+            new ReflectionClass(DaggerObjectWithDaggerFunctions::class),
+        ];
     }
 }

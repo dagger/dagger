@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Dagger\tests\Unit\ValueObject;
 
-use Dagger\Attribute;
+use Dagger\Container;
+use Dagger\File;
+use Dagger\Json;
+use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
 use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\DaggerArgument;
 use Dagger\ValueObject\Type;
@@ -14,11 +17,24 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
+use RuntimeException;
 
-//todo finish these tests
 #[CoversClass(DaggerFunction::class)]
 class DaggerFunctionTest extends TestCase
 {
+    #[Test]
+    public function itThrowsIfBuiltFromNonDaggerFunctions(): void
+    {
+        $reflection = new ReflectionMethod(
+            DaggerObjectWithDaggerFunctions::class,
+            'notADaggerFunction',
+        );
+
+        self::expectException(RuntimeException::class);
+
+        DaggerFunction::fromReflection($reflection);
+    }
+
     #[Test, DataProvider('provideReflectionMethods')]
     public function ItBuildsFromReflectionMethod(
         DaggerFunction $expected,
@@ -32,49 +48,96 @@ class DaggerFunctionTest extends TestCase
     /** @return Generator<array{ 0: DaggerFunction, 1:ReflectionMethod}> */
     public static function provideReflectionMethods(): Generator
     {
-        yield 'no description, no parameters' => [
+        yield 'no parameters' => [
             new DaggerFunction(
-                'returnTrue',
+                'returnBool',
                 null,
                 [],
                 new Type('bool'),
             ),
-            new ReflectionMethod(new class () {
-                    #[Attribute\DaggerFunction]
-                    public function returnTrue(): bool
-                    {
-                    }
-                }, 'returnTrue'),
-        ];
-
-        yield 'description, no parameters' => [
-            new DaggerFunction(
-                'returnTrue',
-                'read me',
-                [],
-                new Type('bool'),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'returnBool',
             ),
-            new ReflectionMethod(new class () {
-                    #[Attribute\DaggerFunction(description: 'read me')]
-                    public function returnTrue(): bool
-                    {
-                    }
-                }, 'returnTrue'),
         ];
 
-        yield 'no description, one parameter' => [
+        yield 'no parameters, method description' => [
             new DaggerFunction(
-                'echoText',
+                'returnInt',
+                'this method returns 1',
+                [],
+                new Type('int'),
+            ),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'returnInt',
+            )
+        ];
+
+        yield 'one parameter' => [
+            new DaggerFunction(
+                'requiredString',
                 null,
-                [new DaggerArgument('text', null, new Type('string'))],
+                [new DaggerArgument('value', null, new Type('string'))],
                 new Type('void'),
             ),
-            new ReflectionMethod(new class () {
-                    #[Attribute\DaggerFunction]
-                    public function echoText(string $text): void
-                    {
-                    }
-                }, 'echoText'),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'requiredString',
+            ),
+        ];
+
+        yield 'annotated parameter' => [
+            new DaggerFunction(
+                'annotatedString',
+                null,
+                [new DaggerArgument(
+                    'value',
+                    'this value should have a description',
+                    new Type('string')
+                )],
+                new Type('void'),
+            ),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'annotatedString',
+            ),
+        ];
+
+        yield 'implicitly optional parameter' => [
+            new DaggerFunction(
+                'implicitlyOptionalContainer',
+                null,
+                [new DaggerArgument(
+                    'value',
+                    null,
+                    new Type(Container::class, true),
+                    new Json('null'),
+                )],
+                new Type('void'),
+            ),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'implicitlyOptionalContainer',
+            ),
+        ];
+
+        yield 'explicitly optional parameter' => [
+            new DaggerFunction(
+                'explicitlyOptionalFile',
+                null,
+                [new DaggerArgument(
+                    'value',
+                    null,
+                    new Type(File::class, true),
+                    new Json('null'),
+                )],
+                new Type('void'),
+            ),
+            new ReflectionMethod(
+                DaggerObjectWithDaggerFunctions::class,
+                'explicitlyOptionalFile',
+            ),
         ];
     }
 }

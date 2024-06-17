@@ -6,7 +6,7 @@ namespace Dagger\Tests\Unit\Fixture;
 
 use Dagger\Attribute\DaggerFunction;
 
-final class Spork
+final class NotDaggerObject
 {
     #[DaggerFunction]
     public function poke(string $thingPoked): string

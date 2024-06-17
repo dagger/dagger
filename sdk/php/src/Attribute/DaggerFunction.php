@@ -7,7 +7,7 @@ namespace Dagger\Attribute;
 #[\Attribute(\Attribute::TARGET_METHOD)]
 final class DaggerFunction
 {
-    //@TODO support renaming argumet with public string $name
+    //@TODO support renaming argument with public string $name
     public function __construct(
         public ?string $description = null,
     ) {

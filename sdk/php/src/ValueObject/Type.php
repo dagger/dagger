@@ -14,6 +14,7 @@ final readonly class Type
 {
     public function __construct(
         public string $name,
+        public bool $nullable = false,
     ) {
     }
 
@@ -29,6 +30,6 @@ final readonly class Type
             );
         }
 
-        return new self($type->getName());
+        return new self($type->getName(), $type->allowsNull());
     }
 }
