@@ -696,10 +696,19 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			fe.recalculateViewLocked()
 			return fe, nil
 		case "c":
-			if fe.cloudURL != "" {
-				browser.OpenURL(fe.cloudURL)
+			if fe.cloudURL == "" {
+				return fe, nil
 			}
-			return fe, nil
+			url := fe.cloudURL
+			if fe.zoomed != fe.db.PrimarySpan {
+				url += "?span=" + fe.zoomed.String()
+			}
+			return fe, func() tea.Msg {
+				if err := browser.OpenURL(url); err != nil {
+					slog.Warn("failed to open URL", "url", url, "err", err)
+				}
+				return nil
+			}
 		case "enter":
 			fe.zoomed = fe.focused
 			fe.recalculateViewLocked()
