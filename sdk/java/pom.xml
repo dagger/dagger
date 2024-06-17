@@ -235,10 +235,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <daggerengine.version>devel</daggerengine.version>
 
-        <assertj-core.version>3.25.0</assertj-core.version>
+        <assertj-core.version>3.26.0</assertj-core.version>
         <commons-compress.version>1.26.1</commons-compress.version>
         <commons-lang.version>3.14.0</commons-lang.version>
-        <exec-maven-plugin.version>3.2.0</exec-maven-plugin.version>
+        <exec-maven-plugin.version>3.3.0</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
         <fmt-maven-plugin.version>2.23</fmt-maven-plugin.version>
         <inject-maven-plugin.version>1.7</inject-maven-plugin.version>
