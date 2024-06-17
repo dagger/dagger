@@ -8,7 +8,7 @@ class HelloDagger {
   @func()
   async publish(source: Directory): Promise<string> {
     // call Dagger Function to run unit tests
-    this.test(source)
+    await this.test(source)
     // call Dagger Function to build the application image
     // publish the image to ttl.sh
     return await this.build(source).publish(
