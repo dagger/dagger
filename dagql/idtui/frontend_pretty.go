@@ -602,7 +602,7 @@ func (fe *frontendPretty) spawn() (msg tea.Msg) {
 
 type backgroundDoneMsg struct{}
 
-func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
+func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
 	switch msg := msg.(type) {
 	case doneMsg: // run finished
 		slog.Debug("run finished", "err", msg.err)
