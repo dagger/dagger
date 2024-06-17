@@ -61,17 +61,17 @@ type TraceRow struct {
 }
 
 type RowsView struct {
-	Primary *Span
-	Body    []*TraceTree
+	Zoomed *Span
+	Body   []*TraceTree
 }
 
-func (db *DB) RowsView(spanID trace.SpanID) *RowsView {
+func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	view := &RowsView{
-		Primary: db.Spans[spanID],
+		Zoomed: db.Spans[zoomedID],
 	}
 	var spans []*Span
-	if view.Primary != nil {
-		spans = view.Primary.ChildSpans
+	if view.Zoomed != nil {
+		spans = view.Zoomed.ChildSpans
 	} else {
 		spans = db.SpanOrder
 	}

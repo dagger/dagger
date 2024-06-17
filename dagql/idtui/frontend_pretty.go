@@ -152,7 +152,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
-	fe.db.PrimarySpan = spanID
+	fe.db.SetPrimarySpan(spanID)
 	fe.zoomed = spanID
 	fe.mu.Unlock()
 }
@@ -218,7 +218,7 @@ func (fe *frontendPretty) finalRender() error {
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
-		if fe.renderProgress(out, true, fe.window.Height) {
+		if fe.renderProgress(out, true, fe.window.Height, "") {
 			logs := fe.logs.Logs[fe.db.PrimarySpan]
 			if logs != nil && logs.UsedHeight() > 0 {
 				fmt.Fprintln(os.Stderr)
@@ -353,9 +353,17 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 }
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
+	progHeight := fe.window.Height
+
+	var progPrefix string
+	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		fe.renderStep(out, fe.rowsView.Zoomed, 0, "")
+		progHeight -= 1
+		progPrefix = "  "
+	}
+
 	below := new(strings.Builder)
-	lineCounter := &countingWriter{Writer: below}
-	countOut := NewOutput(lineCounter, termenv.WithProfile(fe.profile))
+	countOut := NewOutput(below, termenv.WithProfile(fe.profile))
 
 	fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
 	fmt.Fprint(countOut, KeymapStyle.Render(" "))
@@ -366,13 +374,14 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 	}
 
 	if logs := fe.logs.Logs[fe.db.PrimarySpan]; logs != nil && logs.UsedHeight() > 0 {
-		fmt.Fprintln(lineCounter)
+		fmt.Fprintln(below)
 		fe.renderLogs(countOut, logs, -1, fe.window.Height/3)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
-	progHeight := fe.window.Height - lipgloss.Height(belowOut)
-	fe.renderProgress(out, false, progHeight)
+	progHeight -= lipgloss.Height(belowOut)
+
+	fe.renderProgress(out, false, progHeight, progPrefix)
 	fmt.Fprintln(out)
 
 	fmt.Fprint(out, belowOut)
@@ -385,30 +394,14 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.focus(fe.rows.BySpan[fe.focused])
 }
 
-type countingWriter struct {
-	io.Writer
-	bytes int
-	lines int
-}
-
-func (w *countingWriter) Write(p []byte) (int, error) {
-	w.bytes += len(p)
-	for _, b := range p {
-		if b == '\n' {
-			w.lines++
-		}
-	}
-	return w.Writer.Write(p)
-}
-
-func (fe *frontendPretty) renderedRowLines(row *TraceRow) []string {
+func (fe *frontendPretty) renderedRowLines(row *TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	fe.renderRow(out, row, false)
+	fe.renderRow(out, row, false, prefix)
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int) bool {
+func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int, prefix string) bool {
 	var renderedAny bool
 	if fe.rowsView == nil {
 		return false
@@ -418,7 +411,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	if full {
 		for _, row := range rows.Order {
-			fe.renderRow(out, row, full)
+			fe.renderRow(out, row, full, "")
 			renderedAny = true
 		}
 		return renderedAny
@@ -452,7 +445,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 		fe.focused = rows.Order[fe.focusedIdx].Span.ID
 	}
 
-	lines := fe.renderLines(height)
+	lines := fe.renderLines(height, prefix)
 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
 	renderedAny = true
@@ -460,22 +453,22 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	return renderedAny
 }
 
-func (fe *frontendPretty) renderLines(height int) []string {
+func (fe *frontendPretty) renderLines(height int, prefix string) []string {
 	rows := fe.rows
 	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
 
 	beforeLines := []string{}
-	focusedLines := fe.renderedRowLines(focused)
+	focusedLines := fe.renderedRowLines(focused, prefix)
 	afterLines := []string{}
 	renderBefore := func() {
 		row := before[len(before)-1]
 		before = before[:len(before)-1]
-		beforeLines = append(fe.renderedRowLines(row), beforeLines...)
+		beforeLines = append(fe.renderedRowLines(row, prefix), beforeLines...)
 	}
 	renderAfter := func() {
 		row := after[0]
 		after = after[1:]
-		afterLines = append(afterLines, fe.renderedRowLines(row)...)
+		afterLines = append(afterLines, fe.renderedRowLines(row, prefix)...)
 	}
 	totalLines := func() int {
 		return len(beforeLines) + len(focusedLines) + len(afterLines)
@@ -784,7 +777,7 @@ func (fe *frontendPretty) goOut() {
 		if zoomedParent != nil {
 			fe.zoomed = zoomedParent.ID
 		} else {
-			fe.zoomed = fe.db.PrimarySpan
+			fe.zoomed = trace.SpanID{}
 		}
 	}
 	fe.recalculateViewLocked()
@@ -816,8 +809,8 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool) {
-	fe.renderStep(out, row.Span, row.Depth)
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool, prefix string) {
+	fe.renderStep(out, row.Span, row.Depth, prefix)
 	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= ShowSpammyVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			logLimit := fe.window.Height / 3
@@ -833,18 +826,18 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full boo
 	}
 }
 
-func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
+func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int, prefix string) error {
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	isFocused := span.ID == fe.focused
 
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, "", depth, false, span.Internal, isFocused); err != nil {
+		if err := r.renderCall(out, span, id, prefix, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderSpan(out, span, span.Name(), "", depth, isFocused); err != nil {
+		if err := r.renderSpan(out, span, span.Name(), prefix, depth, isFocused); err != nil {
 			return err
 		}
 	}
@@ -853,6 +846,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
 		// only print the first line
 		line := strings.Split(span.Status().Description, "\n")[0]
+		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
 		fmt.Fprintf(out,
 			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
