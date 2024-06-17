@@ -74,7 +74,7 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 		db:    db,
 		width: -1,
 	}
-	return r.renderCall(out, nil, id.Call(), "", 0, false)
+	return r.renderCall(out, nil, id.Call(), "", 0, false, false)
 }
 
 type renderer struct {
@@ -108,7 +108,7 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
 	return nil
 }
 
-func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Call, prefix string, depth int, inline bool) error {
+func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Call, prefix string, depth int, inline bool, internal bool) error {
 	if !inline {
 		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
@@ -147,16 +147,18 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 				val := arg.GetValue()
 				fmt.Fprint(out, " ")
 				if argDig := val.GetCallDigest(); argDig != "" {
-					var argSpan *Span
-					var argInternal bool
-					if span != nil {
-						argSpan = r.db.MostInterestingSpan(argDig)
-						if argSpan != nil {
-							argInternal = argSpan.Internal
+					forceSimplify := false
+					internal := internal
+					argSpan := r.db.MostInterestingSpan(argDig)
+					if argSpan != nil {
+						forceSimplify = argSpan.Internal && !internal // only for the first internal call (not it's children)
+						internal = internal || argSpan.Internal
+						if span == nil {
+							argSpan = nil
 						}
 					}
-					argCall := r.db.Simplify(r.db.MustCall(argDig), argInternal)
-					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true); err != nil {
+					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
+					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true, internal); err != nil {
 						return err
 					}
 				} else {
