@@ -155,8 +155,15 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		db.SpanOrder = append(db.SpanOrder, spanData)
 
 		// collect any children that were received before the parent
-		for _, child := range db.ChildrenOrder[spanID] {
-			spanData.ChildSpans = append(spanData.ChildSpans, db.Spans[child])
+		for _, childID := range db.ChildrenOrder[spanID] {
+			child := db.Spans[childID]
+			if child == nil {
+				// defensive
+				slog.Warn("child span not found", "child", childID)
+				continue
+			}
+			spanData.ChildSpans = append(spanData.ChildSpans, child)
+			child.ParentSpan = spanData
 		}
 	}
 
@@ -175,6 +182,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			db.Children[parent.SpanID()][spanID] = struct{}{}
 			db.ChildrenOrder[parent.SpanID()] = append(db.ChildrenOrder[parent.SpanID()], spanID)
 			if parent, exists := db.Spans[span.Parent().SpanID()]; exists {
+				spanData.ParentSpan = parent
 				parent.ChildSpans = append(parent.ChildSpans, spanData)
 			}
 		}
