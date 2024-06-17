@@ -78,7 +78,7 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 		db.Calls[dig] = call
 	}
 	r := newRenderer(db, -1, FrontendOpts{})
-	return r.renderCall(out, nil, id.Call(), "", 0, false, false)
+	return r.renderCall(out, nil, id.Call(), "", 0, false, false, false)
 }
 
 type renderer struct {
@@ -128,6 +128,7 @@ func (r renderer) renderCall(
 	depth int,
 	inline bool,
 	internal bool,
+	focused bool,
 ) error {
 	if r.rendering[call.Digest] {
 		slog.Warn("cycle detected while rendering call", "span", span.Name(), "call", call.String())
@@ -142,7 +143,7 @@ func (r renderer) renderCall(
 	}
 
 	if span != nil {
-		r.renderStatus(out, span)
+		r.renderStatus(out, span, focused)
 	}
 
 	if call.ReceiverDigest != "" {
@@ -183,7 +184,7 @@ func (r renderer) renderCall(
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true, internal); err != nil {
+					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true, internal, false); err != nil {
 						return err
 					}
 				} else {
@@ -223,12 +224,19 @@ func (r renderer) renderCall(
 	return nil
 }
 
-func (r renderer) renderVertex(out *termenv.Output, span *Span, name string, prefix string, depth int) error {
+func (r renderer) renderVertex(
+	out *termenv.Output,
+	span *Span,
+	name string,
+	prefix string,
+	depth int,
+	focused bool,
+) error {
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
 	if span != nil {
-		r.renderStatus(out, span)
+		r.renderStatus(out, span, focused)
 	}
 
 	fmt.Fprint(out, name)
@@ -285,7 +293,7 @@ func (r renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	}
 }
 
-func (r renderer) renderStatus(out *termenv.Output, span *Span) {
+func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
@@ -303,7 +311,11 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 		color = termenv.ANSIGreen
 	}
 
-	symbol = out.String(symbol).Foreground(color).String()
+	style := out.String(symbol).Foreground(color)
+	if focused {
+		style = style.Reverse()
+	}
+	symbol = style.String()
 
 	fmt.Fprintf(out, "%s ", symbol)
 

@@ -441,9 +441,9 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 			call.Args = nil
 			call.Type = nil
 		}
-		r.renderCall(fe.output, nil, call, prefix, depth, false, span.Internal)
+		r.renderCall(fe.output, nil, call, prefix, depth, false, span.Internal, false)
 	} else {
-		r.renderVertex(fe.output, nil, span.Name(), prefix, depth)
+		r.renderVertex(fe.output, nil, span.Name(), prefix, depth, false)
 	}
 	if done {
 		if span.Status().Code == codes.Error {

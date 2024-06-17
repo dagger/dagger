@@ -759,7 +759,7 @@ func (fe *frontendPretty) renderLocked() {
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow) {
 	fe.renderStep(out, row.Span, row.Depth)
 	if row.IsRunningOrChildRunning {
-		fe.renderLogs(out, row.Span, row.Depth+1) // HACK: extra depth to account for focus indicator
+		fe.renderLogs(out, row.Span, row.Depth)
 	}
 }
 
@@ -768,20 +768,13 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 
 	isFocused := span.ID == fe.focused
 
-	var prefix string
-	if isFocused && !fe.done {
-		prefix = termenv.String("▐ ").Foreground(termenv.ANSIYellow).String()
-	} else {
-		prefix = "  "
-	}
-
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, prefix, depth, false, span.Internal); err != nil {
+		if err := r.renderCall(out, span, id, "", depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderVertex(out, span, span.Name(), prefix, depth); err != nil {
+		if err := r.renderVertex(out, span, span.Name(), "", depth, isFocused); err != nil {
 			return err
 		}
 	}
@@ -789,7 +782,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
 		for _, line := range strings.Split(span.Status().Description, "\n") {
-			r.indent(out, depth+1) // HACK: +1 for focus prefix
+			r.indent(out, depth)
 			fmt.Fprintf(out,
 				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
 				line,
