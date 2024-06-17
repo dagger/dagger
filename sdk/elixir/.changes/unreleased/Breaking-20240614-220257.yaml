@@ -1,0 +1,6 @@
+kind: Breaking
+body: The Elixir module is now changed to github.com/dagger/dagger/sdk/elixir
+time: 2024-06-14T22:02:57.959533+07:00
+custom:
+  Author: wingyplus
+  PR: "7667"

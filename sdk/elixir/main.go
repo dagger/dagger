@@ -20,10 +20,7 @@ func New(
 	sdkSourceDir *Directory,
 ) *ElixirSdk {
 	if sdkSourceDir == nil {
-		sdkSourceDir = dag.Git("https://github.com/dagger/dagger.git").
-			Branch("main").
-			Tree().
-			Directory("sdk/elixir")
+		sdkSourceDir = dag.CurrentModule().Source()
 	}
 	return &ElixirSdk{
 		SDKSourceDir:  sdkSourceDir,
@@ -136,7 +133,7 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 			WithExec([]string{"mix", "new", "--sup", modName}).
 			WithExec([]string{"mkdir", "-p", modName + "/lib/mix/tasks"}).
 			// TODO: moved it to WithSource.
-			WithExec([]string{"elixir", "/sdk/runtime/template.exs", "generate", modName})
+			WithExec([]string{"elixir", "/sdk/template.exs", "generate", modName})
 	}
 	return m
 }
