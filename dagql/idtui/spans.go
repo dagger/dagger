@@ -31,7 +31,10 @@ type Span struct {
 	Internal bool
 	Cached   bool
 	Canceled bool
-	Inputs   []string
+	EffectID string
+
+	Inputs  []string
+	Effects []string
 
 	Encapsulate  bool
 	Encapsulated bool
@@ -68,9 +71,40 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
+func (span *Span) ChildrenAndEffects() []*Span {
+	var children []*Span
+	for _, child := range span.ChildSpans {
+		children = append(children, child)
+	}
+	for _, effect := range span.EffectSpans() {
+		children = append(children, effect)
+	}
+	return children
+}
+
+func (span *Span) EffectSpans() []*Span {
+	var effects []*Span
+	for _, e := range span.Effects {
+		if s, ok := span.db.Effects[e]; ok {
+			effects = append(effects, s)
+		}
+	}
+	return effects
+}
+
 func (span *Span) Failed() bool {
 	status := span.Status()
-	return status.Code == codes.Error
+	if status.Code == codes.Error {
+		return true
+	}
+	for _, e := range span.Effects {
+		if s, ok := span.db.Effects[e]; ok {
+			if s.Failed() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (span *Span) Err() error {

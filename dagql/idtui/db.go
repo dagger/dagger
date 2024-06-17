@@ -30,6 +30,9 @@ type DB struct {
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
+
+	Effects     map[string]*Span
+	EffectSites map[string][]*Span
 }
 
 func NewDB() *DB {
@@ -42,10 +45,12 @@ func NewDB() *DB {
 		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
 		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:     make(map[string]*callpbv1.Call),
-		OutputOf:  make(map[string]map[string]struct{}),
-		Outputs:   make(map[string]map[string]struct{}),
-		Intervals: make(map[string]map[time.Time]*Span),
+		Calls:       make(map[string]*callpbv1.Call),
+		OutputOf:    make(map[string]map[string]struct{}),
+		Outputs:     make(map[string]map[string]struct{}),
+		Intervals:   make(map[string]map[time.Time]*Span),
+		Effects:     make(map[string]*Span),
+		EffectSites: make(map[string][]*Span),
 	}
 }
 
@@ -260,6 +265,16 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		case telemetry.DagInputsAttr:
 			spanData.Inputs = attr.Value.AsStringSlice()
 
+		case telemetry.LLBDigestsAttr:
+			// NOTE: avoid processing this twice so we can preserve order in EffectSites
+			// without resorting to a map, just in case we want to add a reverse nav
+			if len(spanData.Effects) == 0 {
+				spanData.Effects = attr.Value.AsStringSlice()
+				for _, digest := range spanData.Effects {
+					db.EffectSites[digest] = append(db.EffectSites[digest], spanData)
+				}
+			}
+
 		case telemetry.DagOutputAttr:
 			output := attr.Value.AsString()
 			if digest == "" {
@@ -282,6 +297,11 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 
 		case "rpc.service":
 			spanData.Passthrough = true
+
+		case "vertex":
+			// NOTE: this is set by Buildkit, and we overload it as the effect ID
+			spanData.EffectID = attr.Value.AsString()
+			db.Effects[spanData.EffectID] = spanData
 		}
 	}
 

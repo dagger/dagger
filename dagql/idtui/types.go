@@ -27,18 +27,6 @@ type Task struct {
 	Completed time.Time
 }
 
-func CollectTree(spans []*Span) []*TraceTree {
-	var rows []*TraceTree
-	WalkSpans(spans, func(row *TraceTree) {
-		if row.Parent != nil {
-			row.Parent.Children = append(row.Parent.Children, row)
-		} else {
-			rows = append(rows, row)
-		}
-	})
-	return rows
-}
-
 type TraceTree struct {
 	Span *Span
 
@@ -71,12 +59,78 @@ func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	}
 	var spans []*Span
 	if view.Zoomed != nil {
-		spans = view.Zoomed.ChildSpans
+		spans = view.Zoomed.ChildrenAndEffects()
 	} else {
 		spans = db.SpanOrder
 	}
-	view.Body = CollectTree(spans)
+	view.Body = db.CollectTree(spans)
 	return view
+}
+
+func (db *DB) CollectTree(spans []*Span) []*TraceTree {
+	var rows []*TraceTree
+	db.WalkSpans(spans, func(row *TraceTree) {
+		if row.Parent != nil {
+			row.Parent.Children = append(row.Parent.Children, row)
+		} else {
+			rows = append(rows, row)
+		}
+	})
+	return rows
+}
+
+func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
+	var lastRow *TraceTree
+	seen := make(map[trace.SpanID]bool, len(spans))
+	var walk func(*Span, *TraceTree)
+	walk = func(span *Span, parent *TraceTree) {
+		if span.Ignore {
+			return
+		}
+		spanID := span.ID
+		if seen[spanID] {
+			return
+		}
+		if span.Passthrough {
+			for _, child := range span.ChildSpans {
+				walk(child, parent)
+			}
+			return
+		}
+		row := &TraceTree{
+			Span:   span,
+			Parent: parent,
+		}
+		if span.Base != nil && lastRow != nil {
+			row.Chained = span.Base.Digest == lastRow.Span.Digest
+		}
+		if span.IsRunning || span.Failed() {
+			row.setRunning()
+		}
+		f(row)
+		lastRow = row
+		seen[spanID] = true
+		for _, child := range span.ChildSpans {
+			if child.EffectID != "" && len(db.EffectSites[child.EffectID]) > 0 {
+				// let it show up at the call sites instead
+				continue
+			}
+			walk(child, row)
+		}
+		lastRow = row
+		for _, effectID := range span.Effects {
+			if effect, ok := db.Effects[effectID]; ok {
+				walk(effect, row)
+				if effect.IsRunning || effect.Failed() {
+					row.setRunning()
+				}
+			}
+		}
+		lastRow = row
+	}
+	for _, step := range spans {
+		walk(step, nil)
+	}
 }
 
 type Rows struct {
@@ -124,49 +178,11 @@ func (row *TraceTree) Depth() int {
 }
 
 func (row *TraceTree) setRunning() {
+	if row.IsRunningOrChildRunning {
+		return
+	}
 	row.IsRunningOrChildRunning = true
 	if row.Parent != nil && !row.Parent.IsRunningOrChildRunning {
 		row.Parent.setRunning()
-	}
-}
-
-func WalkSpans(spans []*Span, f func(*TraceTree)) {
-	var lastRow *TraceTree
-	seen := make(map[trace.SpanID]bool, len(spans))
-	var walk func(*Span, *TraceTree)
-	walk = func(span *Span, parent *TraceTree) {
-		if span.Ignore {
-			return
-		}
-		spanID := span.ID
-		if seen[spanID] {
-			return
-		}
-		if span.Passthrough {
-			for _, child := range span.ChildSpans {
-				walk(child, parent)
-			}
-			return
-		}
-		row := &TraceTree{
-			Span:   span,
-			Parent: parent,
-		}
-		if span.Base != nil && lastRow != nil {
-			row.Chained = span.Base.Digest == lastRow.Span.Digest
-		}
-		if span.IsRunning {
-			row.setRunning()
-		}
-		f(row)
-		lastRow = row
-		seen[spanID] = true
-		for _, child := range span.ChildSpans {
-			walk(child, row)
-		}
-		lastRow = row
-	}
-	for _, step := range spans {
-		walk(step, nil)
 	}
 }

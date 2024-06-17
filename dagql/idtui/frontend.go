@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/codes"
@@ -239,7 +240,11 @@ func (r renderer) renderSpan(
 		r.renderStatus(out, span, focused)
 	}
 
-	fmt.Fprint(out, name)
+	style := lipgloss.NewStyle()
+	if span.EffectID != "" {
+		style = style.Italic(true)
+	}
+	fmt.Fprint(out, style.Render(name))
 
 	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress
@@ -403,13 +408,13 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show errors
 		return true
 	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
-		// ignore fast steps; signal:noise is too poor
-		return false
-	}
 	if tree.IsRunningOrChildRunning {
 		// show running steps
 		return true
+	}
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+		// ignore fast steps; signal:noise is too poor
+		return false
 	}
 	if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
