@@ -104,7 +104,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			rows.BySpan[tree.Span.ID] = row
 			depth++
 		}
-		if tree.IsRunningOrChildRunning {
+		if tree.IsRunningOrChildRunning || tree.Span.Failed() {
 			for _, child := range tree.Children {
 				walk(child, depth)
 			}

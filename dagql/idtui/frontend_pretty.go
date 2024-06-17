@@ -767,7 +767,7 @@ func (fe *frontendPretty) renderLocked() {
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool) {
 	fe.renderStep(out, row.Span, row.Depth)
-	if row.IsRunningOrChildRunning {
+	if row.IsRunningOrChildRunning || row.Span.Failed() {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			logLimit := fe.window.Height / 3
 			if full {

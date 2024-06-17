@@ -68,6 +68,11 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
+func (span *Span) Failed() bool {
+	status := span.Status()
+	return status.Code == codes.Error
+}
+
 func (span *Span) Err() error {
 	status := span.Status()
 	if status.Code == codes.Error {
