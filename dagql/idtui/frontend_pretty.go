@@ -373,7 +373,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 		fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
 
-	if logs := fe.logs.Logs[fe.db.PrimarySpan]; logs != nil && logs.UsedHeight() > 0 {
+	if logs := fe.logs.Logs[fe.zoomed]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
 		fe.renderLogs(countOut, logs, -1, fe.window.Height/3)
 	}
