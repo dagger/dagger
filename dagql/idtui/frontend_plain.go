@@ -85,7 +85,8 @@ type spanData struct {
 	ended bool
 
 	// logs is a list of log lines pending printing for this span
-	logs []logLine
+	logs        []logLine
+	logsPending bool
 }
 
 type logLine struct {
@@ -266,9 +267,41 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			continue
 		}
 
-		body = strings.TrimSuffix(body, "\n")
-		for _, line := range strings.Split(body, "\n") {
-			spanDt.logs = append(spanDt.logs, logLine{line, log.Timestamp()})
+		lines := strings.SplitAfter(body, "\n")
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+
+			// there's no neat way to handle carriage returns, so remove them
+			lineParts := strings.Split(line, "\r")
+			line = lineParts[len(lineParts)-1]
+
+			// TODO: we might also want to ignore escape sequences that move
+			// the cursor, while keeping colors/etc. this feels tricky.
+
+			if spanDt.logsPending && len(spanDt.logs) > 0 {
+				// append to the previous line
+				if len(lineParts) > 1 {
+					spanDt.logs[len(spanDt.logs)-1].line = line
+				} else {
+					spanDt.logs[len(spanDt.logs)-1].line += line
+				}
+				spanDt.logs[len(spanDt.logs)-1].time = log.Timestamp()
+			} else {
+				// append the line to the logs
+				spanDt.logs = append(spanDt.logs, logLine{
+					line: line,
+					time: log.Timestamp(),
+				})
+			}
+
+			// determine if this log line is full
+			if line == "" {
+				spanDt.logsPending = true
+			} else {
+				spanDt.logsPending = line[len(line)-1] != '\n'
+			}
 		}
 	}
 	return nil
@@ -354,7 +387,7 @@ func (fe *frontendPlain) renderRow(row *TraceRow) {
 			return
 		}
 		fe.renderStep(span, depth, false)
-		fe.renderLogs(span, depth)
+		fe.renderLogs(row, depth)
 		spanDt.started = true
 	}
 
@@ -373,7 +406,7 @@ func (fe *frontendPlain) renderRow(row *TraceRow) {
 		if row.Span.SpanContext().SpanID() != lastVertex {
 			fe.renderStep(span, depth, spanDt.ended)
 		}
-		fe.renderLogs(span, depth)
+		fe.renderLogs(row, depth)
 	}
 	if !spanDt.ended && !row.IsRunning {
 		// render! this span has finished
@@ -445,15 +478,26 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 	fmt.Fprintln(fe.output)
 }
 
-func (fe *frontendPlain) renderLogs(span *Span, depth int) {
+func (fe *frontendPlain) renderLogs(row *TraceRow, depth int) {
 	out := fe.output
 
+	span := row.Span
 	spanDt := fe.data[span.SpanContext().SpanID()]
 
 	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
 
 	prefix := fe.stepPrefix(span, spanDt)
-	for _, logLine := range spanDt.logs {
+
+	var logs []logLine
+	if spanDt.logsPending && len(spanDt.logs) > 0 && row.IsRunning {
+		logs = spanDt.logs[:len(spanDt.logs)-1]
+		spanDt.logs = spanDt.logs[len(spanDt.logs)-1:]
+	} else {
+		logs = spanDt.logs
+		spanDt.logs = nil
+	}
+
+	for _, logLine := range logs {
 		fmt.Fprint(out, prefix)
 		r.indent(fe.output, depth)
 
@@ -462,9 +506,8 @@ func (fe *frontendPlain) renderLogs(span *Span, depth int) {
 			fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
 		}
 		pipe := out.String("|").Foreground(termenv.ANSIBrightBlack)
-		fmt.Fprintln(out, pipe, logLine.line)
+		fmt.Fprintln(out, pipe, strings.TrimSuffix(logLine.line, "\n"))
 	}
-	spanDt.logs = nil
 }
 
 func (fe *frontendPlain) stepPrefix(span *Span, dt *spanData) string {
