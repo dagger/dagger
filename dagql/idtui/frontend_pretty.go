@@ -46,6 +46,8 @@ type frontendPretty struct {
 	focusedIdx   int
 	rowsView     *RowsView
 	rows         *Rows
+	pressedKey   string
+	pressedKeyAt time.Time
 
 	// set when authenticated to Cloud
 	cloudURL string
@@ -308,14 +310,21 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		keys  []string
 		show  bool
 	}
+	var quitMsg string
+	if fe.interrupted {
+		quitMsg = "quit!"
+	} else {
+		quitMsg = "quit"
+	}
 	// Blank line prior to keymap
 	for i, key := range []keyHelp{
-		{"prev/next", []string{"↑/↓"}, true},
-		{"parent/child", []string{"←/→"}, true},
+		{quitMsg, []string{"q", "ctrl+c"}, true},
+		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
-		{"last", []string{"end", "space"}, true},
+		{"last", []string{"end", " "}, true},
 		{"zoom", []string{"enter"}, true},
-		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-"}, true},
+		{"reset", []string{"esc"}, true},
+		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
 		{"Cloud", []string{"c"}, fe.cloudURL != ""},
 	} {
 		if !key.show {
@@ -325,8 +334,17 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		if i > 0 {
 			fmt.Fprint(w, style.Render("  "))
 		}
-		fmt.Fprint(w, style.Bold(true).Render(mainKey))
-		fmt.Fprint(w, style.Render(": "+key.label))
+		keyStyle := style
+		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+			for _, k := range key.keys {
+				if k == fe.pressedKey {
+					keyStyle = keyStyle.Foreground(nil)
+					// Reverse(true)
+				}
+			}
+		}
+		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
+		fmt.Fprint(w, keyStyle.Render(": "+key.label))
 	}
 	res := w.String()
 	fmt.Fprint(out, res)
@@ -617,12 +635,18 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 		switch msg.Button {
 		case tea.MouseButtonWheelDown:
 			fe.goDown()
+			fe.pressedKey = "down"
+			fe.pressedKeyAt = time.Now()
 		case tea.MouseButtonWheelUp:
 			fe.goUp()
+			fe.pressedKey = "up"
+			fe.pressedKeyAt = time.Now()
 		}
 		return fe, nil
 
 	case tea.KeyMsg:
+		fe.pressedKey = msg.String()
+		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
 			if fe.interrupted {
