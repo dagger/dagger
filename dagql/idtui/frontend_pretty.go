@@ -647,12 +647,14 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			return fe, nil
 		case "+":
 			fe.FrontendOpts.Verbosity++
+			fe.recalculateViewLocked()
 			return fe, nil
 		case "-":
 			fe.FrontendOpts.Verbosity--
 			if fe.FrontendOpts.Verbosity < 0 {
 				fe.FrontendOpts.Verbosity = 0
 			}
+			fe.recalculateViewLocked()
 			return fe, nil
 		case "c":
 			if fe.cloudURL != "" {
