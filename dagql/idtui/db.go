@@ -376,23 +376,37 @@ func (db *DB) idSize(id *callpbv1.Call) int {
 	return size
 }
 
-func (db *DB) Simplify(call *callpbv1.Call, require bool) (smallest *callpbv1.Call) {
+func (db *DB) Simplify(call *callpbv1.Call, force bool) (smallest *callpbv1.Call) {
 	smallest = call
+	smallestSize := -1
+	if !force {
+		smallestSize = db.idSize(smallest)
+	}
+
 	creators, ok := db.OutputOf[call.Digest]
 	if !ok {
 		return
 	}
-	smallestSize := -1
-	if !require {
-		smallestSize = db.idSize(smallest)
-	}
-	var simplified bool
+	simplified := false
+
+loop:
 	for creatorDig := range creators {
 		if creatorDig == call.Digest {
+			// can't be simplified to itself
 			continue
 		}
 		creator, ok := db.Calls[creatorDig]
 		if ok {
+			for _, creatorArg := range creator.Args {
+				if creatorArg, ok := creatorArg.Value.Value.(*callpbv1.Literal_CallDigest); ok {
+					if creatorArg.CallDigest == call.Digest {
+						// can't be simplified to a call that references itself
+						// in it's argument - which would loop endlessly
+						continue loop
+					}
+				}
+			}
+
 			if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
 				smallest = creator
 				smallestSize = size
