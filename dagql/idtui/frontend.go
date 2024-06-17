@@ -147,12 +147,12 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 				val := arg.GetValue()
 				fmt.Fprint(out, " ")
 				if argDig := val.GetCallDigest(); argDig != "" {
-					var argSpan *Span
-					var argInternal bool
-					if span != nil {
-						argSpan = r.db.MostInterestingSpan(argDig)
-						if argSpan != nil {
-							argInternal = argSpan.Internal
+					argSpan := r.db.MostInterestingSpan(argDig)
+					argInternal := false
+					if argSpan != nil {
+						argInternal = argSpan.Internal
+						if span == nil {
+							argSpan = nil
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), argInternal)
