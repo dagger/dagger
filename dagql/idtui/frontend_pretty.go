@@ -316,16 +316,17 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	} else {
 		quitMsg = "quit"
 	}
+
 	// Blank line prior to keymap
 	for i, key := range []keyHelp{
 		{quitMsg, []string{"q", "ctrl+c"}, true},
+		{out.Hyperlink(fe.cloudURL, "Cloud"), []string{"c"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
 		{"last", []string{"end", " "}, true},
 		{"zoom", []string{"enter"}, true},
 		{"reset", []string{"esc"}, true},
 		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
-		{"Cloud", []string{"c"}, fe.cloudURL != ""},
 	} {
 		if !key.show {
 			continue
