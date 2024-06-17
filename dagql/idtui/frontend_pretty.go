@@ -800,14 +800,14 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	fmt.Fprintln(out)
 
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
-		for _, line := range strings.Split(span.Status().Description, "\n") {
-			r.indent(out, depth)
-			fmt.Fprintf(out,
-				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
-				line,
-			)
-			fmt.Fprintln(out)
-		}
+		// only print the first line
+		line := strings.Split(span.Status().Description, "\n")[0]
+		r.indent(out, depth)
+		fmt.Fprintf(out,
+			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+			line,
+		)
+		fmt.Fprintln(out)
 	}
 
 	return nil
