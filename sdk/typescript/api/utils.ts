@@ -217,8 +217,7 @@ export async function compute<T>(
       }
 
       throw new GraphQLRequestError(msg, {
-        request: e.request,
-        response: e.response,
+        error: e,
         cause: e,
       })
     }
