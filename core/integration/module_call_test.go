@@ -636,36 +636,21 @@ func (m *Test) ToProto(proto string) NetworkProtocol {
 		require.ErrorContains(t, err, "invalid enum value")
 	})
 
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
+		t.Run("module args", func(t *testing.T) {
 			t.Parallel()
 
-			testGitModuleRef := func(subpath string) string {
-				url := tc.gitTestRepoURL
-				if subpath != "" {
-					if !strings.HasPrefix(subpath, "/") {
-						subpath = "/" + subpath
-					}
-					url += subpath
-				}
-				return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
-			}
+			c, ctx := connect(t)
 
-			t.Run("module args", func(t *testing.T) {
-				t.Parallel()
-
-				c, ctx := connect(t)
-
-				modGen := goGitBase(t, c).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-					WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "foo",
-					}).
-					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-						Contents: `package main
+			modGen := goGitBase(t, c).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+				WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
+					Contents: "foo",
+				}).
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
 
 import (
 	"context"
@@ -681,26 +666,25 @@ func (m *Test) Mod(ctx context.Context, module *Module) *Module {
 	return module
 }
 `,
-					})
+				})
 
-				out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
-				out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
-				out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef("top-level"), "as-string")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, testGitModuleRef("top-level"), out)
+			out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef("top-level"), "as-string")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef("top-level"), out)
 
-				out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef("top-level"), "source", "as-string")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, testGitModuleRef("top-level"), out)
-			})
+			out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef("top-level"), "source", "as-string")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef("top-level"), out)
 		})
-	}
+	})
 }
 
 func TestModuleDaggerCallReturnTypes(t *testing.T) {
@@ -1229,96 +1213,65 @@ func TestModuleCallByName(t *testing.T) {
 		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
 	})
 
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
+		t.Run("git", func(t *testing.T) {
 			t.Parallel()
+			c, ctx := connect(t)
 
-			testGitModuleRef := func(subpath string) string {
-				url := tc.gitTestRepoURL
-				if subpath != "" {
-					if !strings.HasPrefix(subpath, "/") {
-						subpath = "/" + subpath
-					}
-					url += subpath
-				}
-				return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
-			}
-			t.Run("git", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init")).
+				With(daggerExec("install", "--name", "foo", testGitModuleRef(""))).
+				With(daggerExec("install", "--name", "bar", testGitModuleRef("subdir/dep2")))
 
-				ctr := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					WithWorkdir("/work").
-					With(daggerExec("init")).
-					With(daggerExec("install", "--name", "foo", testGitModuleRef(""))).
-					With(daggerExec("install", "--name", "bar", testGitModuleRef("subdir/dep2")))
+			out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from root hi from dep hi from dep2", strings.TrimSpace(out))
 
-				out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "hi from root hi from dep hi from dep2", strings.TrimSpace(out))
-
-				out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "hi from dep2", strings.TrimSpace(out))
-			})
+			out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from dep2", strings.TrimSpace(out))
 		})
-	}
+	})
 }
 
 func TestModuleCallGitMod(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range testCases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
+		c, ctx := connect(t)
+
+		t.Run("go", func(t *testing.T) {
 			t.Parallel()
-
-			testGitModuleRef := func(subpath string) string {
-				url := tc.gitTestRepoURL
-				if subpath != "" {
-					if !strings.HasPrefix(subpath, "/") {
-						subpath = "/" + subpath
-					}
-					url += subpath
-				}
-				return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
-			}
-
-			c, ctx := connect(t)
-
-			t.Run("go", func(t *testing.T) {
-				t.Parallel()
-				out, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
-					Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
-			})
-
-			t.Run("typescript", func(t *testing.T) {
-				t.Parallel()
-				out, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					With(daggerCallAt(testGitModuleRef("ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
-					Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "yoyo", strings.TrimSpace(out))
-			})
-
-			t.Run("python", func(t *testing.T) {
-				t.Parallel()
-				out, err := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-					With(daggerCallAt(testGitModuleRef("py"), "container-echo", "--string-arg", "yoyo", "stdout")).
-					Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "yoyo", strings.TrimSpace(out))
-			})
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
 		})
-	}
+
+		t.Run("typescript", func(t *testing.T) {
+			t.Parallel()
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(daggerCallAt(testGitModuleRef("ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yoyo", strings.TrimSpace(out))
+		})
+
+		t.Run("python", func(t *testing.T) {
+			t.Parallel()
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(daggerCallAt(testGitModuleRef("py"), "container-echo", "--string-arg", "yoyo", "stdout")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yoyo", strings.TrimSpace(out))
+		})
+	})
 }
 
 func TestModuleCallFindup(t *testing.T) {
