@@ -208,12 +208,13 @@ func (fe *frontendPretty) finalRender() error {
 	defer fe.mu.Unlock()
 
 	// Render the full trace.
-	fe.zoomed = trace.SpanID{}
+	fe.zoomed = fe.db.PrimarySpan
 	fe.focused = trace.SpanID{}
 	fe.focusedIdx = -1
+	fe.recalculateViewLocked()
 
-	// Render progress to stderr so stdout stays clean.
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
+		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 		if fe.renderProgress(out, true, fe.window.Height) && fe.logs.Logs[fe.db.PrimarySpan] != nil {
 			fmt.Fprintln(os.Stderr)
@@ -641,7 +642,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			fe.goEnd()
 			return fe, nil
 		case "esc":
-			fe.zoomed = trace.SpanID{}
+			fe.zoomed = fe.db.PrimarySpan
+			fe.recalculateViewLocked()
 			return fe, nil
 		case "+":
 			fe.FrontendOpts.Verbosity++
@@ -731,7 +733,7 @@ func (fe *frontendPretty) goOut() {
 		if zoomedParent != nil {
 			fe.zoomed = zoomedParent.ID
 		} else {
-			fe.zoomed = trace.SpanID{}
+			fe.zoomed = fe.db.PrimarySpan
 		}
 	}
 	fe.recalculateViewLocked()
