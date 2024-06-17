@@ -682,19 +682,21 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 }
 
 func (fe *frontendPretty) goStart() {
+	fe.autoFocus = false
 	if len(fe.rows.Order) > 0 {
 		fe.focus(fe.rows.Order[0])
 	}
 }
 
 func (fe *frontendPretty) goEnd() {
+	fe.autoFocus = true
 	if len(fe.rows.Order) > 0 {
 		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
 	}
-	fe.autoFocus = true
 }
 
 func (fe *frontendPretty) goUp() {
+	fe.autoFocus = false
 	newIdx := fe.focusedIdx - 1
 	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
 		return
@@ -703,6 +705,7 @@ func (fe *frontendPretty) goUp() {
 }
 
 func (fe *frontendPretty) goDown() {
+	fe.autoFocus = false
 	newIdx := fe.focusedIdx + 1
 	if newIdx >= len(fe.rows.Order) {
 		// at bottom
@@ -712,22 +715,48 @@ func (fe *frontendPretty) goDown() {
 }
 
 func (fe *frontendPretty) goOut() {
-	if parentID := fe.db.Spans[fe.focused].Parent().SpanID(); parentID.IsValid() {
-		if fe.zoomed.IsValid() && parentID == fe.zoomed {
-			// targeted the zoomed span; zoom on its parent isntead
-			fe.zoomed = fe.db.Spans[fe.zoomed].Parent().SpanID()
-		}
-		fe.focus(fe.rows.BySpan[parentID])
-		fe.recalculateViewLocked()
+	fe.autoFocus = false
+	slog.Warn("goin out")
+	focused := fe.db.Spans[fe.focused]
+	if focused.ParentSpan == nil {
+		slog.Warn("no parent span")
+		return
 	}
+	fe.focused = focused.ParentSpan.ID
+	// TODO: handle passthrough
+	if fe.focused == fe.zoomed {
+		slog.Warn("unzooming")
+		// targeted the zoomed span; zoom on its parent isntead
+		zoomedParent := fe.db.Spans[fe.zoomed].ParentSpan
+		for zoomedParent != nil && zoomedParent.Passthrough {
+			zoomedParent = zoomedParent.ParentSpan
+		}
+		if zoomedParent != nil {
+			slog.Warn("zooming on parent", "id", zoomedParent.ID)
+			fe.zoomed = zoomedParent.ID
+		} else {
+			slog.Warn("unzooming completely")
+			fe.zoomed = trace.SpanID{}
+		}
+	}
+	slog.Warn("focused", "id", fe.focused)
+	fe.recalculateViewLocked()
 }
 
 func (fe *frontendPretty) goIn() {
-	if focused := fe.db.Spans[fe.focused]; focused != nil {
-		if len(focused.ChildSpans) > 0 {
-			fe.focus(fe.rows.BySpan[focused.ChildSpans[0].ID])
-		}
+	fe.autoFocus = false
+	newIdx := fe.focusedIdx + 1
+	if newIdx >= len(fe.rows.Order) {
+		// at bottom
+		return
 	}
+	cur := fe.rows.Order[fe.focusedIdx]
+	next := fe.rows.Order[newIdx]
+	if next.Depth <= cur.Depth {
+		// has no children
+		return
+	}
+	fe.focus(next)
 }
 
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
