@@ -608,7 +608,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "esc", "ctrl+c":
+		case "q", "ctrl+c":
 			if fe.interrupted {
 				slog.Warn("exiting immediately")
 				return fe, tea.Quit
@@ -639,6 +639,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 			return fe, nil
 		case "end", "space":
 			fe.goEnd()
+			return fe, nil
+		case "esc":
+			fe.zoomed = trace.SpanID{}
 			return fe, nil
 		case "+":
 			fe.FrontendOpts.Verbosity++
