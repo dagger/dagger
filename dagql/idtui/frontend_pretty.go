@@ -473,27 +473,34 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	}
 
 	// fill in context surrounding the focused row
-	contextLines := (height - len(lines)) / 2
-	for len(beforeLines) < contextLines && len(before) > 0 {
+	contextLines := (height - len(lines))
+	beforeTargetLines := contextLines / 2
+	var afterTargetLines int
+	if contextLines%2 == 0 {
+		afterTargetLines = beforeTargetLines
+	} else {
+		afterTargetLines = beforeTargetLines + 1
+	}
+	for len(beforeLines) < beforeTargetLines && len(before) > 0 {
 		renderBefore()
 	}
-	for len(afterLines) < contextLines && len(after) > 0 {
+	for len(afterLines) < afterTargetLines && len(after) > 0 {
 		renderAfter()
 	}
 
 	if total := totalLines(); total > height {
 		extra := total - height
-		if len(beforeLines) >= contextLines && len(afterLines) >= contextLines {
+		if len(beforeLines) >= beforeTargetLines && len(afterLines) >= afterTargetLines {
 			// exceeded the height, so trim the context
-			if len(beforeLines) > contextLines {
-				beforeLines = beforeLines[len(beforeLines)-contextLines:]
+			if len(beforeLines) > beforeTargetLines {
+				beforeLines = beforeLines[len(beforeLines)-beforeTargetLines:]
 			}
-			if len(afterLines) > contextLines {
-				afterLines = afterLines[:contextLines]
+			if len(afterLines) > afterTargetLines {
+				afterLines = afterLines[:afterTargetLines]
 			}
-		} else if len(beforeLines) >= contextLines {
+		} else if len(beforeLines) >= beforeTargetLines {
 			beforeLines = beforeLines[extra:]
-		} else if len(afterLines) >= contextLines {
+		} else if len(afterLines) >= afterTargetLines {
 			afterLines = afterLines[:len(afterLines)-extra]
 		}
 	} else {
