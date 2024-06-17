@@ -216,8 +216,11 @@ func (fe *frontendPretty) finalRender() error {
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
-		if fe.renderProgress(out, true, fe.window.Height) && fe.logs.Logs[fe.db.PrimarySpan] != nil {
-			fmt.Fprintln(os.Stderr)
+		if fe.renderProgress(out, true, fe.window.Height) {
+			logs := fe.logs.Logs[fe.db.PrimarySpan]
+			if logs != nil && logs.UsedHeight() > 0 {
+				fmt.Fprintln(os.Stderr)
+			}
 		}
 	}
 
