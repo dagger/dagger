@@ -3,16 +3,6 @@ module github.com/dagger/dagger
 go 1.22
 
 require (
-	dagger.io/dagger v0.11.8
-	github.com/dagger/dagger/engine/distconsts v0.11.8
-)
-
-replace (
-	dagger.io/dagger => ./sdk/go
-	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
-)
-
-require (
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
@@ -226,7 +216,7 @@ require (
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
-	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
+	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/pkg/profile v1.7.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.19.1 // indirect
@@ -267,4 +257,14 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240521202816-d264139d666e // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240521202816-d264139d666e // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+)
+
+require (
+	dagger.io/dagger v0.11.8
+	github.com/dagger/dagger/engine/distconsts v0.11.8
+)
+
+replace (
+	dagger.io/dagger => ./sdk/go
+	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
 )
