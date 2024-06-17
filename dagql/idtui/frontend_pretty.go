@@ -11,7 +11,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"github.com/pkg/browser"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -45,9 +47,8 @@ type frontendPretty struct {
 	rowsView     *RowsView
 	rows         *Rows
 
-	// panels
-	logsPanel *panel
-	msgsPanel *panel
+	// set when authenticated to Cloud
+	cloudURL string
 
 	// TUI state/config
 	restore func()  // restore terminal
@@ -55,44 +56,27 @@ type frontendPretty struct {
 	profile termenv.Profile
 	window  tea.WindowSizeMsg // set by BubbleTea
 	view    *strings.Builder  // rendered async
+	viewOut *termenv.Output
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
 }
 
-type panel struct {
-	*termenv.Output
-	vterm *Vterm
-	buf   *strings.Builder
-}
-
-func newPanel(profile termenv.Profile) *panel {
-	vterm := NewVterm()
-	buf := new(strings.Builder)
-	return &panel{
-		Output: NewOutput(io.MultiWriter(vterm, buf), termenv.WithProfile(profile)),
-		vterm:  vterm,
-		buf:    buf,
-	}
-}
-
 func New() Frontend {
 	db := NewDB()
-
 	profile := ColorProfile()
-
+	view := new(strings.Builder)
 	return &frontendPretty{
 		db:   db,
 		logs: newPrettyLogs(),
 
 		autoFocus: true,
 
-		window:    tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		fps:       30,                                       // sane default, fine-tune if needed
-		profile:   profile,
-		view:      new(strings.Builder),
-		logsPanel: newPanel(profile),
-		msgsPanel: newPanel(profile),
+		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		fps:     30,                                       // sane default, fine-tune if needed
+		profile: profile,
+		view:    view,
+		viewOut: NewOutput(view, termenv.WithProfile(profile)),
 	}
 }
 
@@ -101,7 +85,12 @@ func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, ve
 }
 
 func (fe *frontendPretty) ConnectedToCloud(ctx context.Context, url string, msg string) {
-	fmt.Fprintln(fe.msgsPanel, traceMessage(fe.profile, url, msg))
+	fe.mu.Lock()
+	fe.cloudURL = url
+	if msg != "" {
+		slog.Warn(msg)
+	}
+	fe.mu.Unlock()
 }
 
 func traceMessage(profile termenv.Profile, url string, msg string) string {
@@ -218,41 +207,21 @@ func (fe *frontendPretty) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
+	// Render the full trace.
+	fe.zoomed = trace.SpanID{}
+	fe.focused = trace.SpanID{}
+	fe.focusedIdx = -1
 
+	// Render progress to stderr so stdout stays clean.
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if fe.msgsPanel.buf.Len() > 0 {
-			fmt.Fprintln(out, fe.msgsPanel.buf.String())
+		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
+		if fe.renderProgress(out, true, fe.window.Height) && fe.logs.Logs[fe.db.PrimarySpan] != nil {
+			fmt.Fprintln(os.Stderr)
 		}
 	}
 
-	if fe.logsPanel.buf.Len() > 0 {
-		fmt.Fprintln(out, fe.logsPanel.buf.String())
-	}
-
-	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if renderedAny := fe.renderProgress(out, true, fe.window.Height); renderedAny {
-			// TODO: replay from local OTLP database instead
-			if len(fe.db.PrimaryLogs[fe.db.PrimarySpan]) > 0 {
-				fmt.Fprintln(out) // add blank line prior to primary output
-			}
-		}
-	}
-
+	// Replay the primary output log to stdout/stderr.
 	return renderPrimaryOutput(fe.db)
-}
-
-func (fe *frontendPretty) renderPanel(out io.Writer, panel *panel, full bool) error {
-	if panel.vterm.UsedHeight() == 0 {
-		return nil
-	}
-	if full {
-		panel.vterm.SetHeight(fe.logsPanel.vterm.UsedHeight())
-	} else {
-		panel.vterm.SetHeight(10)
-	}
-	_, err := fmt.Fprintln(out, panel.vterm.View())
-	return err
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -323,77 +292,84 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 	return <-errs
 }
 
-type keyHelp struct {
-	label string
-	keys  []string
+var KeymapStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
+	// Background(lipgloss.ANSIColor(termenv.ANSIBlue)).
+	// Foreground(lipgloss.ANSIColor(termenv.ANSIBlack))
+
+func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
+	w := new(strings.Builder)
+	type keyHelp struct {
+		label string
+		keys  []string
+		show  bool
+	}
+	// Blank line prior to keymap
+	for i, key := range []keyHelp{
+		{"prev/next", []string{"↑/↓"}, true},
+		{"parent/child", []string{"←/→"}, true},
+		{"first", []string{"home"}, true},
+		{"last", []string{"end", "space"}, true},
+		{"zoom", []string{"enter"}, true},
+		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-"}, true},
+		{"Cloud", []string{"c"}, fe.cloudURL != ""},
+	} {
+		if !key.show {
+			continue
+		}
+		mainKey := key.keys[0]
+		if i > 0 {
+			fmt.Fprint(w, style.Render("  "))
+		}
+		fmt.Fprint(w, style.Bold(true).Render(mainKey))
+		fmt.Fprint(w, style.Render(": "+key.label))
+	}
+	res := w.String()
+	fmt.Fprint(out, res)
+	return lipgloss.Width(res)
 }
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
-	lineCounter := &lineCountingWriter{Writer: out}
+	below := new(strings.Builder)
+	lineCounter := &countingWriter{Writer: below}
+	countOut := NewOutput(lineCounter, termenv.WithProfile(fe.profile))
 
-	if err := fe.renderPanel(lineCounter, fe.msgsPanel, false); err != nil {
-		return err
+	fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
+	fmt.Fprint(countOut, KeymapStyle.Render(" "))
+	fe.renderKeymap(countOut, KeymapStyle)
+	fmt.Fprint(countOut, KeymapStyle.Render(" "))
+	if rest := fe.window.Width - lipgloss.Width(below.String()); rest > 0 {
+		fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
 
-	if err := fe.renderPanel(lineCounter, fe.logsPanel, false); err != nil {
-		return err
-	}
-
-	bottomBuf := new(strings.Builder)
-	lineCounter.Writer = bottomBuf
-
-	var hasPrimaryLogs bool
-	if fe.rowsView != nil && fe.rowsView.Primary != nil {
-		countOut := NewOutput(lineCounter, termenv.WithProfile(fe.profile))
-		hasPrimaryLogs = fe.renderLogs(countOut, fe.rowsView.Primary, -1)
-	}
-
-	// Blank line prior to keymap
-	if hasPrimaryLogs {
+	if logs := fe.logs.Logs[fe.db.PrimarySpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(lineCounter)
-	}
-	for i, key := range []keyHelp{
-		{"quit", []string{"q", "ctrl+c"}},
-		{"prev", []string{"↑", "up", "k"}},
-		{"next", []string{"↓", "down", "j"}},
-		{"start", []string{"home"}},
-		{"end", []string{"end", "space"}},
-		{"parent", []string{"←", "left", "h"}},
-		{"child", []string{"→", "right", "l"}},
-		{"zoom", []string{"enter"}},
-		{"chattier", []string{"+"}},
-		{"quieter", []string{"-"}},
-	} {
-		mainKey := key.keys[0]
-		if i > 0 {
-			fmt.Fprint(lineCounter, "  ")
-		}
-		fmt.Fprint(lineCounter, out.String(mainKey).Bold().Faint())
-		fmt.Fprint(lineCounter, out.String(": "+key.label).Faint())
+		fe.renderLogs(countOut, logs, -1, fe.window.Height/3)
 	}
 
-	progHeight := fe.window.Height - lineCounter.lines
-	progHeight -= 2 // account for blank line
-	if fe.renderProgress(out, false, progHeight) && bottomBuf.Len() > 0 {
-		fmt.Fprintln(out) // add trailing linebreak
-		fmt.Fprintln(out) // add blank line prior to primary output
-	}
+	belowOut := strings.TrimRight(below.String(), "\n")
+	progHeight := fe.window.Height - lipgloss.Height(belowOut)
+	fe.renderProgress(out, false, progHeight)
+	fmt.Fprintln(out)
 
-	fmt.Fprint(out, bottomBuf.String())
+	fmt.Fprint(out, belowOut)
 	return nil
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
 	fe.rowsView = fe.db.RowsView(fe.zoomed)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+	fe.focus(fe.rows.BySpan[fe.focused])
 }
 
-type lineCountingWriter struct {
+type countingWriter struct {
 	io.Writer
+	bytes int
 	lines int
 }
 
-func (w *lineCountingWriter) Write(p []byte) (int, error) {
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.bytes += len(p)
 	for _, b := range p {
 		if b == '\n' {
 			w.lines++
@@ -405,7 +381,7 @@ func (w *lineCountingWriter) Write(p []byte) (int, error) {
 func (fe *frontendPretty) renderedRowLines(row *TraceRow) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	fe.renderRow(out, row)
+	fe.renderRow(out, row, false)
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
@@ -419,7 +395,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	if full {
 		for _, row := range rows.Order {
-			fe.renderRow(out, row)
+			fe.renderRow(out, row, full)
 			renderedAny = true
 		}
 		return renderedAny
@@ -536,13 +512,8 @@ func (fe *frontendPretty) focus(row *TraceRow) {
 	if row == nil {
 		return
 	}
-	spanID := row.Span.ID
-	if spanID == fe.focused {
-		return
-	}
-	fe.focused = spanID
+	fe.focused = row.Span.ID
 	fe.focusedIdx = row.Index
-	fe.autoFocus = false
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -678,6 +649,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 				fe.FrontendOpts.Verbosity = 0
 			}
 			return fe, nil
+		case "c":
+			if fe.cloudURL != "" {
+				browser.OpenURL(fe.cloudURL)
+			}
+			return fe, nil
 		case "enter":
 			fe.zoomed = fe.focused
 			fe.recalculateViewLocked()
@@ -754,19 +730,27 @@ func (fe *frontendPretty) goIn() {
 func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
 	fe.window = msg
 	fe.logs.SetWidth(msg.Width)
-	fe.logsPanel.vterm.SetWidth(msg.Width)
-	fe.msgsPanel.vterm.SetWidth(msg.Width)
 }
 
 func (fe *frontendPretty) renderLocked() {
 	fe.view.Reset()
-	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
+	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow) {
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool) {
 	fe.renderStep(out, row.Span, row.Depth)
 	if row.IsRunningOrChildRunning {
-		fe.renderLogs(out, row.Span, row.Depth)
+		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
+			logLimit := fe.window.Height / 3
+			if full {
+				logLimit = logs.UsedHeight()
+			}
+			fe.renderLogs(out,
+				logs,
+				row.Depth,
+				logLimit,
+			)
+		}
 	}
 }
 
@@ -801,17 +785,17 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) bool {
-	if logs, ok := fe.logs.Logs[span.ID]; ok {
-		pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
-		if depth != -1 {
-			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
-		}
-		logs.SetHeight(fe.window.Height / 3)
-		fmt.Fprint(out, logs.View())
-		return logs.UsedHeight() > 0
+func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int) bool {
+	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+	if depth == -1 {
+		// clear prefix when zoomed
+		logs.SetPrefix("")
+	} else {
+		logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
 	}
-	return false
+	logs.SetHeight(height)
+	fmt.Fprint(out, logs.View())
+	return logs.UsedHeight() > 0
 }
 
 type prettyLogs struct {
