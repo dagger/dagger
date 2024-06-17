@@ -36,7 +36,7 @@ deprecated==1.2.14
     # via
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-grpc
-docutils==0.20.1
+docutils==0.21.2
     # via
     #   sphinx
     #   sphinx-rtd-theme
@@ -121,7 +121,7 @@ platformdirs==4.2.2
     #   black
 pluggy==1.5.0
     # via pytest
-protobuf==4.25.3
+protobuf==5.27.1
     # via
     #   googleapis-common-protos
     #   opentelemetry-proto
