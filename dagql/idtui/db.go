@@ -385,7 +385,7 @@ func (db *DB) Simplify(call *callpbv1.Call, force bool) (smallest *callpbv1.Call
 
 	creators, ok := db.OutputOf[call.Digest]
 	if !ok {
-		return
+		return smallest
 	}
 	simplified := false
 
@@ -417,7 +417,7 @@ loop:
 	if simplified {
 		return db.Simplify(smallest, false)
 	}
-	return
+	return smallest
 }
 
 func getAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bool) {
