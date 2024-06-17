@@ -90,7 +90,8 @@ func (t *ModuleObjectType) CollectIDs(ctx context.Context, value dagql.Typed, id
 	for k, v := range obj.Fields {
 		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
 		if !ok {
-			return fmt.Errorf("field %q not found on object %q", k, t.typeDef.Name)
+			// ok to not be ok when it's a private field
+			continue
 		}
 		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
 		if err != nil {

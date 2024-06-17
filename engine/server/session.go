@@ -68,7 +68,6 @@ type daggerSession struct {
 
 	analytics analytics.Tracker
 
-	secretStore  *core.SecretStore
 	authProvider *auth.RegistryAuthProvider
 
 	cacheExporterCfgs []bkgw.CacheOptionsEntry
@@ -101,6 +100,8 @@ type daggerClient struct {
 	// the number of active http requests to any endpoint from this client,
 	// used to determine when to cleanup the client+session
 	activeCount int
+
+	secretStore *core.SecretStore
 
 	dagqlRoot *core.Query
 
@@ -148,7 +149,6 @@ func (srv *Server) initializeDaggerSession(
 	sess.clients = map[string]*daggerClient{}
 	sess.endpoints = map[string]http.Handler{}
 	sess.services = core.NewServices()
-	sess.secretStore = core.NewSecretStore()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
@@ -283,6 +283,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 type ClientInitOpts struct {
 	*engine.ClientMetadata
 
+	// TODO: doc
+	CallID         *call.ID
+	CallerClientID string
+
 	// If the client is running from a function in a module, this is the encoded dagQL ID
 	// of that module.
 	EncodedModuleID string
@@ -300,6 +304,16 @@ func (srv *Server) initializeDaggerClient(
 	opts *ClientInitOpts,
 ) error {
 	// initialize all the buildkit state for the client
+	client.secretStore = core.NewSecretStore()
+	if opts.CallID != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		if err := srv.addSecretsFromID(ctx, client, opts.CallID, opts.CallerClientID, true); err != nil {
+			return fmt.Errorf("failed to add secrets from ID: %w", err)
+		}
+	}
+
 	wc, err := buildkit.AsWorkerController(srv.worker)
 	if err != nil {
 		return err
@@ -403,7 +417,6 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// setup the graphql server + module/function state for the client
-
 	client.dagqlRoot = core.NewRoot(srv)
 
 	dag := dagql.NewServer(client.dagqlRoot)
@@ -633,6 +646,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientHostname:    execMD.Hostname,
 			Labels:            map[string]string{},
 		},
+		CallID:              execMD.CallID,
+		CallerClientID:      execMD.CallerClientID,
 		EncodedModuleID:     execMD.EncodedModuleID,
 		EncodedFunctionCall: execMD.EncodedFunctionCall,
 	}).ServeHTTP(w, r)
@@ -959,7 +974,7 @@ func (srv *Server) Secrets(ctx context.Context) (*core.SecretStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.daggerSession.secretStore, nil
+	return client.secretStore, nil
 }
 
 // The auth provider for the current client

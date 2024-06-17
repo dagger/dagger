@@ -7,12 +7,12 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func ReferencedTypes[T Typed](ctx context.Context, id *call.ID, srv *Server) ([]T, error) {
+func ReferencedTypes[T Typed](ctx context.Context, id *call.ID, srv *Server, skipTopLevel bool) ([]T, error) {
 	walker := idWalker{
 		typeNameToIDs: map[string][]*call.ID{},
 		memo:          map[digest.Digest]struct{}{},
 	}
-	if err := walker.walkID(id); err != nil {
+	if err := walker.walkID(id, skipTopLevel); err != nil {
 		return nil, err
 	}
 
@@ -50,19 +50,21 @@ type idWalker struct {
 	memo          map[digest.Digest]struct{}
 }
 
-func (idWalker *idWalker) walkID(id *call.ID) error {
+func (idWalker *idWalker) walkID(id *call.ID, skipCurrent bool) error {
 	dgst := id.Digest()
 	if _, ok := idWalker.memo[dgst]; ok {
 		return nil
 	}
 	idWalker.memo[dgst] = struct{}{}
 
-	if typeName := id.Type().NamedType(); typeName != "" {
-		idWalker.typeNameToIDs[typeName] = append(idWalker.typeNameToIDs[typeName], id)
+	if !skipCurrent {
+		if typeName := id.Type().NamedType(); typeName != "" {
+			idWalker.typeNameToIDs[typeName] = append(idWalker.typeNameToIDs[typeName], id)
+		}
 	}
 
 	if recv := id.Receiver(); recv != nil {
-		if err := idWalker.walkID(recv); err != nil {
+		if err := idWalker.walkID(recv, false); err != nil {
 			return err
 		}
 	}
@@ -79,7 +81,7 @@ func (idWalker *idWalker) walkID(id *call.ID) error {
 func (idWalker *idWalker) walkLiteral(lit call.Literal) error {
 	switch x := lit.(type) {
 	case *call.LiteralID:
-		return idWalker.walkID(x.Value())
+		return idWalker.walkID(x.Value(), false)
 	case *call.LiteralList:
 		if err := x.Range(func(_ int, v call.Literal) error {
 			return idWalker.walkLiteral(v)

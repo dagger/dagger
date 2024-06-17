@@ -66,6 +66,12 @@ type Server interface {
 	// The services for the current client's session
 	Services(context.Context) (*Services, error)
 
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	AddSecretsFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error
+
 	// The default platform for the engine as a whole
 	Platform() Platform
 

@@ -31,7 +31,7 @@ func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bk
 		return nil, fmt.Errorf("failed to create go sdk content store: %w", err)
 	}
 
-	sess.Allow(secretsprovider.NewSecretProvider(c.daggerSession.secretStore))
+	sess.Allow(secretsprovider.NewSecretProvider(c.secretStore))
 	sess.Allow(&socketProxy{c, srv.bkSessionManager})
 	sess.Allow(&authProxy{c, srv.bkSessionManager})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{

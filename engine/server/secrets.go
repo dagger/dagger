@@ -9,13 +9,17 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 )
 
-// TODO: optimize slightly by accepting multiple IDs
-func (srv *Server) AddSecretsFromID(ctx context.Context, id *call.ID, sourceClientID string) error {
+func (srv *Server) AddSecretsFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error {
 	destClient, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get client from context: %w", err)
 	}
 
+	return srv.addSecretsFromID(ctx, destClient, id, sourceClientID, skipTopLevel)
+}
+
+// TODO: optimize slightly by accepting multiple IDs
+func (srv *Server) addSecretsFromID(ctx context.Context, destClient *daggerClient, id *call.ID, sourceClientID string, skipTopLevel bool) error {
 	srcClient, err := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
 	if err != nil {
 		return fmt.Errorf("failed to get source client: %w", err)
@@ -25,17 +29,17 @@ func (srv *Server) AddSecretsFromID(ctx context.Context, id *call.ID, sourceClie
 	if err != nil {
 		return fmt.Errorf("failed to get source schema: %w", err)
 	}
-	secrets, err := dagql.ReferencedTypes[*core.Secret](ctx, id, srcDag)
+	secrets, err := dagql.ReferencedTypes[*core.Secret](ctx, id, srcDag, skipTopLevel)
 	if err != nil {
 		return fmt.Errorf("failed to get referenced types: %w", err)
 	}
 
 	for _, secret := range secrets {
-		srcSecretVal, err := srcClient.daggerSession.secretStore.GetSecret(ctx, secret.Accessor)
+		srcSecretVal, err := srcClient.secretStore.GetSecret(ctx, secret.Accessor)
 		if err != nil {
 			return fmt.Errorf("failed to get secret: %w", err)
 		}
-		if err := destClient.daggerSession.secretStore.AddSecret(ctx, secret.Accessor, srcSecretVal); err != nil {
+		if err := destClient.secretStore.AddSecret(ctx, secret.Accessor, srcSecretVal); err != nil {
 			return fmt.Errorf("failed to add secret: %w", err)
 		}
 	}
