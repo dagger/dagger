@@ -152,13 +152,6 @@ func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(co
 	}
 	fe.FrontendOpts = opts
 
-	// redirect slog to the logs pane
-	level := slog.LevelInfo
-	if fe.Debug {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(slog.PrettyLogger(os.Stderr, fe.profile, level))
-
 	if !fe.Silent {
 		go func() {
 		loop:
@@ -244,7 +237,9 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	slog.Debug("frontend exporting logs", "logs", len(logs))
+	// NOTE: if we log in here we'll just go into a loop, so...
+	// let's just hope everything is working by now :D
+	// slog.Debug("frontend exporting logs", "logs", len(logs))
 
 	err := fe.db.LogExporter().Export(ctx, logs)
 	if err != nil {

@@ -132,13 +132,6 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	}
 	fe.FrontendOpts = opts
 
-	// redirect slog to the logs pane
-	level := slog.LevelInfo
-	if fe.Debug {
-		level = slog.LevelDebug
-	}
-	slog.SetDefault(slog.PrettyLogger(fe.logsPanel, fe.profile, level))
-
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
 	ttyIn, ttyOut := findTTYs()

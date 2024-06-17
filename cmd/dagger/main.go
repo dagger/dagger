@@ -305,6 +305,9 @@ func main() {
 		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
 		defer telemetry.End(span, func() error { return rerr })
 
+		// Set up global slog to log to the primary span output.
+		slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+
 		// Set the span as the primary span for the frontend.
 		Frontend.SetPrimary(span.SpanContext().SpanID())
 
