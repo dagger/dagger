@@ -163,13 +163,17 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				// for Buildkit
 				"git", "openssh", "pigz", "xz",
 				// for CNI
-				"dnsmasq",
+				"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 			}).
-			WithExec([]string{
-				"apk", "add",
-				"-X", "https://dl-cdn.alpinelinux.org/alpine/v3.18/main",
-				"iptables=1.8.9-r2", "ip6tables=1.8.9-r2",
-			}).
+			WithExec([]string{"sh", "-c", `
+				set -e
+				ln -s /sbin/iptables-legacy /usr/sbin/iptables
+				ln -s /sbin/iptables-legacy-save /usr/sbin/iptables-save
+				ln -s /sbin/iptables-legacy-restore /usr/sbin/iptables-restore
+				ln -s /sbin/ip6tables-legacy /usr/sbin/ip6tables
+				ln -s /sbin/ip6tables-legacy-save /usr/sbin/ip6tables-save
+				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
+			`}).
 			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
 	case "ubuntu":
 		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
