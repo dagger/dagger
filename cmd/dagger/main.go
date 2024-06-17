@@ -50,7 +50,7 @@ var (
 	workdir string
 
 	debug     bool
-	verbosity int
+	verbosity int = idtui.DefaultVerbosity
 	silent    bool
 	progress  string
 
@@ -242,9 +242,12 @@ func main() {
 	parseGlobalFlags()
 
 	opts := idtui.FrontendOpts{
-		Debug:     debug,
-		Silent:    silent,
-		Verbosity: verbosity,
+		Debug:  debug,
+		Silent: silent,
+
+		// NOTE: the verbosity flag is actually a delta to apply to the
+		// internal default verbosity level
+		Verbosity: idtui.DefaultVerbosity + verbosity,
 	}
 
 	if progress == "auto" {

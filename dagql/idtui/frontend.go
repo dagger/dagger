@@ -115,7 +115,7 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
 		parent = parent.Foreground(moduleColor)
 	}
 	fmt.Fprint(out, parent.String())
-	if r.Verbosity > 2 && call.ReceiverDigest != "" {
+	if r.Verbosity > ShowDigestsVerbosity && call.ReceiverDigest != "" {
 		fmt.Fprint(out, out.String(fmt.Sprintf("@%s", call.ReceiverDigest)).Foreground(faintColor))
 	}
 }
@@ -212,7 +212,7 @@ func (r renderer) renderCall(
 		fmt.Fprint(out, typeStr)
 	}
 
-	if r.Verbosity > 2 {
+	if r.Verbosity > ShowDigestsVerbosity {
 		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
 	}
 
@@ -363,17 +363,27 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // 	return nil
 // }
 
+const (
+	ShowCompletedVerbosity    = 1
+	ShowInternalVerbosity     = 2
+	ShowEncapsulatedVerbosity = 2
+	ShowSpammyVerbosity       = 3
+	ShowDigestsVerbosity      = 3
+
+	DefaultVerbosity = ShowCompletedVerbosity
+)
+
 func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
 	}
 	span := tree.Span
-	if span.IsInternal() && opts.Verbosity < 2 {
+	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
 		// internal steps are hidden by default
 		return false
 	}
-	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < 2 {
+	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return false
 	}
@@ -381,7 +391,7 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show errors
 		return true
 	}
-	if opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < 3 {
+	if opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity {
 		// TODO(vito): bring this back
 		// if tree.Parent != nil && tree.Parent.Span.SpanContext().SpanID() != opts.PrimarySpan {
 		// 	return false
@@ -393,10 +403,10 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show running steps
 		return true
 	}
-	// if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < 1 {
-	// 	// stop showing steps that ended after a given threshold
-	// 	return false
-	// }
+	if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < ShowCompletedVerbosity {
+		// stop showing steps that ended after a given threshold
+		return false
+	}
 	return true
 }
 
