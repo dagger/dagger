@@ -5288,21 +5288,10 @@ func (m *Test) Fn() string {
 		require.Equal(t, "true", strings.TrimSpace(out))
 	})
 
-	for _, tc := range testCases {
-		tc := tc
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testGitModuleRef := func(subpath string) string {
-				url := tc.gitTestRepoURL
-				if subpath != "" {
-					if !strings.HasPrefix(subpath, "/") {
-						subpath = "/" + subpath
-					}
-					url += subpath
-				}
-				return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
-			}
 			t.Run("git", func(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
@@ -5332,7 +5321,7 @@ func (m *Test) Fn() string {
 				require.Equal(t, "true", strings.TrimSpace(out))
 			})
 		})
-	}
+	})
 }
 
 // TestModuleHostError verifies the host api is not exposed to modules

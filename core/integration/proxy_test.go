@@ -361,7 +361,7 @@ func TestContainerSystemProxies(t *testing.T) {
 		)
 	})
 
-	for _, tc := range testCases {
+	for _, tc := range vcsTestCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -497,18 +497,7 @@ func TestContainerSystemGoProxy(t *testing.T) {
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
-	for _, tc := range testCases {
-		tc := tc
-		testGitModuleRef := func(subpath string) string {
-			url := tc.gitTestRepoURL
-			if subpath != "" {
-				if !strings.HasPrefix(subpath, "/") {
-					subpath = "/" + subpath
-				}
-				url += subpath
-			}
-			return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
-		}
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -518,7 +507,7 @@ func TestContainerSystemGoProxy(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
 		})
-	}
+	})
 }
 
 type goProxyFetcher struct {
