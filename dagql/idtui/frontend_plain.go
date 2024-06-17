@@ -443,7 +443,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		}
 		r.renderCall(fe.output, nil, call, prefix, depth, false, span.Internal, false)
 	} else {
-		r.renderVertex(fe.output, nil, span.Name(), prefix, depth, false)
+		r.renderSpan(fe.output, nil, span.Name(), prefix, depth, false)
 	}
 	if done {
 		if span.Status().Code == codes.Error {

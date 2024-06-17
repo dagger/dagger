@@ -224,7 +224,7 @@ func (r renderer) renderCall(
 	return nil
 }
 
-func (r renderer) renderVertex(
+func (r renderer) renderSpan(
 	out *termenv.Output,
 	span *Span,
 	name string,

@@ -795,7 +795,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderVertex(out, span, span.Name(), "", depth, isFocused); err != nil {
+		if err := r.renderSpan(out, span, span.Name(), "", depth, isFocused); err != nil {
 			return err
 		}
 	}
@@ -815,7 +815,7 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int)
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int) bool {
+func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int) {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
@@ -825,7 +825,6 @@ func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int
 	}
 	logs.SetHeight(height)
 	fmt.Fprint(out, logs.View())
-	return logs.UsedHeight() > 0
 }
 
 type prettyLogs struct {
