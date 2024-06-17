@@ -637,7 +637,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) {
 		case "home":
 			fe.goStart()
 			return fe, nil
-		case "end", "space":
+		case "end", " ":
 			fe.goEnd()
 			return fe, nil
 		case "esc":
