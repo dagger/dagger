@@ -433,10 +433,20 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 		fe.focused = rows.Order[fe.focusedIdx].Span.ID
 	}
 
+	lines := fe.renderLines(height)
+
+	fmt.Fprint(out, strings.Join(lines, "\n"))
+	renderedAny = true
+
+	return renderedAny
+}
+
+func (fe *frontendPretty) renderLines(height int) []string {
+	rows := fe.rows
 	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
 
 	beforeLines := []string{}
-	lines := fe.renderedRowLines(focused)
+	focusedLines := fe.renderedRowLines(focused)
 	afterLines := []string{}
 	renderBefore := func() {
 		row := before[len(before)-1]
@@ -449,11 +459,16 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 		afterLines = append(afterLines, fe.renderedRowLines(row)...)
 	}
 	totalLines := func() int {
-		return len(beforeLines) + len(lines) + len(afterLines)
+		return len(beforeLines) + len(focusedLines) + len(afterLines)
 	}
 
 	// fill in context surrounding the focused row
-	contextLines := (height - len(lines))
+	contextLines := (height - len(focusedLines))
+	if contextLines <= 0 {
+		// lines already meets/exceeds height, just show them
+		return focusedLines
+	}
+
 	beforeTargetLines := contextLines / 2
 	var afterTargetLines int
 	if contextLines%2 == 0 {
@@ -504,12 +519,9 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	}
 
 	// finally, print all the lines
-	lines = append(beforeLines, lines...)
-	lines = append(lines, afterLines...)
-	fmt.Fprint(out, strings.Join(lines, "\n"))
-	renderedAny = true
-
-	return renderedAny
+	focusedLines = append(beforeLines, focusedLines...)
+	focusedLines = append(focusedLines, afterLines...)
+	return focusedLines
 }
 
 func (fe *frontendPretty) focus(row *TraceRow) {
