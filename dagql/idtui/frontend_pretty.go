@@ -716,30 +716,24 @@ func (fe *frontendPretty) goDown() {
 
 func (fe *frontendPretty) goOut() {
 	fe.autoFocus = false
-	slog.Warn("goin out")
 	focused := fe.db.Spans[fe.focused]
 	if focused.ParentSpan == nil {
-		slog.Warn("no parent span")
 		return
 	}
 	fe.focused = focused.ParentSpan.ID
 	// TODO: handle passthrough
 	if fe.focused == fe.zoomed {
-		slog.Warn("unzooming")
 		// targeted the zoomed span; zoom on its parent isntead
 		zoomedParent := fe.db.Spans[fe.zoomed].ParentSpan
 		for zoomedParent != nil && zoomedParent.Passthrough {
 			zoomedParent = zoomedParent.ParentSpan
 		}
 		if zoomedParent != nil {
-			slog.Warn("zooming on parent", "id", zoomedParent.ID)
 			fe.zoomed = zoomedParent.ID
 		} else {
-			slog.Warn("unzooming completely")
 			fe.zoomed = trace.SpanID{}
 		}
 	}
-	slog.Warn("focused", "id", fe.focused)
 	fe.recalculateViewLocked()
 }
 
