@@ -322,6 +322,8 @@ func main() {
 		var exit ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)
+		} else if errors.Is(err, context.Canceled) {
+			os.Exit(2)
 		} else {
 			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)
 			os.Exit(1)
