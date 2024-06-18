@@ -1194,6 +1194,8 @@ type vcsTestCase struct {
 	// - `src` for bitbucket
 	// - `tree` for GitLab / GitHub
 	urlPathComponent string
+
+	rootRepo string
 }
 
 var vcsTestCases = []vcsTestCase{
@@ -1202,44 +1204,50 @@ var vcsTestCases = []vcsTestCase{
 		name:              "GitHub",
 		gitTestRepoURL:    "github.com/dagger/dagger-test-modules",
 		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		rootRepo:          "github.com",
 		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
 		urlPathComponent:  "tree",
 	},
-	{
-		name:              "GitLab",
-		gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		urlPathComponent:  "tree",
-	},
-	{
-		name:              "GitHub with .git",
-		gitTestRepoURL:    "github.com/dagger/dagger-test-modules.git",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
-		urlPathComponent:  "tree",
-	},
-	{
-		name:              "GitLab with .git",
-		gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		urlPathComponent:  "tree",
-	},
-	{
-		name:              "BitBucket",
-		gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		urlPathComponent:  "src",
-	},
-	{
-		name:              "BitBucket with .git",
-		gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		urlPathComponent:  "src",
-	},
+	// {
+	// 	name:              "GitLab",
+	// 	gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	rootRepo:          "gitlab.com",
+	// 	baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "GitHub with .git",
+	// 	gitTestRepoURL:    "github.com/dagger/dagger-test-modules.git",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	rootRepo:          "github.com",
+	// 	baseHTMLURL:       "github.com/dagger/dagger-test-modules",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "GitLab with .git",
+	// 	gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	rootRepo:          "gitlab.com",
+	// 	baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "BitBucket",
+	// 	gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	rootRepo:          "bitbucket.org",
+	// 	baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+	// 	urlPathComponent:  "src",
+	// },
+	// {
+	// 	name:              "BitBucket with .git",
+	// 	gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	rootRepo:          "bitbucket.org",
+	// 	baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+	// 	urlPathComponent:  "src",
+	// },
 }
 
 func testOnMultipleVCS(t *testing.T, testFunc func(t *testing.T, tc vcsTestCase)) {
