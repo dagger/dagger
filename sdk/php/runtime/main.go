@@ -43,7 +43,7 @@ func New(
 	}
 }
 
-func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*GeneratedCode, error) {
+func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
 	ctr, err := sdk.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (sdk *PhpSdk) Codegen(ctx context.Context, modSource *ModuleSource, introsp
 		nil
 }
 
-func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	ctr := sdk.Container
 
 	name, err := modSource.ModuleOriginalName(ctx)
@@ -79,10 +79,10 @@ func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, int
 		WithoutEntrypoint().
 		WithWorkdir("/codegen").
 		WithExec([]string{
-		  "apk", "add", "git", "openssh", "curl",
+			"apk", "add", "git", "openssh", "curl",
 		}).
-		WithExec([]string {
-		  "git", "config", "--global", "url.https://github.com/.insteadOf", "git@github.com:",
+		WithExec([]string{
+			"git", "config", "--global", "url.https://github.com/.insteadOf", "git@github.com:",
 		}).
 		WithExec([]string{
 			"./install-composer.sh",
@@ -90,9 +90,7 @@ func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, int
 		WithExec([]string{
 			"php", "composer.phar", "install",
 		}).
-		WithNewFile("schema.json", ContainerWithNewFileOpts{
-			Contents: introspectionJSON,
-		}).
+		WithMountedFile("schema.json", introspectionJSON).
 		WithExec([]string{
 			"./codegen", "dagger:codegen", "--schema-file", "schema.json",
 		})
@@ -132,7 +130,7 @@ func (sdk *PhpSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, int
 	return ctr, nil
 }
 
-func (sdk *PhpSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON string) (*Container, error) {
+func (sdk *PhpSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
 	subPath, err := modSource.SourceSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config: %w", err)
