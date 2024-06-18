@@ -30,6 +30,11 @@ module.exports = {
       ]
     },
     {
+      "type": "doc",
+      "label": "Adopting Dagger",
+      "id": "adopting"
+    },
+    {
       "type": "category",
       "label": "Integrations",
       "link": {
