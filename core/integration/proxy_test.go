@@ -502,7 +502,7 @@ func TestContainerSystemGoProxy(t *testing.T) {
 			t.Parallel()
 
 			out, err := ctr.
-				With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
+				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
