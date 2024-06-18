@@ -15,7 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 )
 
-func TestCacheVolume(t *testing.T) {
+func TestCacheVolumeIDs(t *testing.T) {
 	t.Parallel()
 
 	type creatVolumeRes struct {

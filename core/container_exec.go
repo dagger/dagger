@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path"
@@ -215,7 +216,30 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
 	}
 
+	var cacheMounts []buildkit.CacheVolumeMount
+
 	for _, mnt := range mounts {
+		if mnt.CacheVolumeID != "" {
+			cacheMnt := buildkit.CacheVolumeMount{
+				ID:         mnt.CacheVolumeID,
+				DestPath:   mnt.Target,
+				SourcePath: mnt.SourcePath,
+			}
+			switch mnt.CacheSharingMode {
+			case CacheSharingModeShared:
+				cacheMnt.SharingMode = llb.CacheMountShared
+			case CacheSharingModePrivate:
+				cacheMnt.SharingMode = llb.CacheMountPrivate
+			case CacheSharingModeLocked:
+				cacheMnt.SharingMode = llb.CacheMountLocked
+			default:
+				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
+			}
+
+			cacheMounts = append(cacheMounts, cacheMnt)
+			continue
+		}
+
 		srcSt, err := mnt.SourceState()
 		if err != nil {
 			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
@@ -227,22 +251,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
 
-		if mnt.CacheVolumeID != "" {
-			var sharingMode llb.CacheMountSharingMode
-			switch mnt.CacheSharingMode {
-			case CacheSharingModeShared:
-				sharingMode = llb.CacheMountShared
-			case CacheSharingModePrivate:
-				sharingMode = llb.CacheMountPrivate
-			case CacheSharingModeLocked:
-				sharingMode = llb.CacheMountLocked
-			default:
-				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
-			}
-
-			mountOpts = append(mountOpts, llb.AsPersistentCacheDir(mnt.CacheVolumeID, sharingMode))
-		}
-
 		if mnt.Tmpfs {
 			mountOpts = append(mountOpts, llb.Tmpfs())
 		}
@@ -252,6 +260,14 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
+	}
+
+	if len(cacheMounts) > 0 {
+		bs, err := json.Marshal(cacheMounts)
+		if err != nil {
+			return nil, fmt.Errorf("marshal cache mounts: %w", err)
+		}
+		runOpts = append(runOpts, llb.AddEnv(buildkit.CacheVolumesEnvName, string(bs)))
 	}
 
 	if opts.InsecureRootCapabilities {

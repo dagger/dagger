@@ -40,11 +40,12 @@ type Worker struct {
 
 type sharedWorkerState struct {
 	*base.Worker
-	root             string
-	executorRoot     string
-	telemetryPubSub  *telemetry.PubSub
-	bkSessionManager *bksession.Manager
-	sessionHandler   sessionHandler
+	root               string
+	executorRoot       string
+	telemetryPubSub    *telemetry.PubSub
+	bkSessionManager   *bksession.Manager
+	sessionHandler     sessionHandler
+	cacheVolumeRootDir string
 
 	runc             *runc.Runc
 	cgroupParent     string
@@ -67,12 +68,13 @@ type sessionHandler interface {
 }
 
 type NewWorkerOpts struct {
-	WorkerRoot       string
-	ExecutorRoot     string
-	BaseWorker       *base.Worker
-	TelemetryPubSub  *telemetry.PubSub
-	BKSessionManager *bksession.Manager
-	SessionHandler   sessionHandler
+	WorkerRoot         string
+	ExecutorRoot       string
+	BaseWorker         *base.Worker
+	TelemetryPubSub    *telemetry.PubSub
+	BKSessionManager   *bksession.Manager
+	SessionHandler     sessionHandler
+	CacheVolumeRootDir string
 
 	Runc                *runc.Runc
 	DefaultCgroupParent string
@@ -89,12 +91,13 @@ type NewWorkerOpts struct {
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
 	return &Worker{sharedWorkerState: &sharedWorkerState{
-		Worker:           opts.BaseWorker,
-		root:             opts.WorkerRoot,
-		executorRoot:     opts.ExecutorRoot,
-		telemetryPubSub:  opts.TelemetryPubSub,
-		bkSessionManager: opts.BKSessionManager,
-		sessionHandler:   opts.SessionHandler,
+		Worker:             opts.BaseWorker,
+		root:               opts.WorkerRoot,
+		executorRoot:       opts.ExecutorRoot,
+		telemetryPubSub:    opts.TelemetryPubSub,
+		bkSessionManager:   opts.BKSessionManager,
+		sessionHandler:     opts.SessionHandler,
+		cacheVolumeRootDir: opts.CacheVolumeRootDir,
 
 		runc:             opts.Runc,
 		cgroupParent:     opts.DefaultCgroupParent,

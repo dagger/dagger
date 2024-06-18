@@ -95,6 +95,8 @@ type Server struct {
 	rootDir           string
 	solverCacheDBPath string
 
+	cacheVolumeRootDir string
+
 	workerRootDir         string
 	snapshotterRootDir    string
 	contentStoreRootDir   string
@@ -219,6 +221,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.solverCacheDBPath = filepath.Join(srv.rootDir, "cache.db")
+
+	srv.cacheVolumeRootDir = filepath.Join(srv.rootDir, "cache-volumes")
 
 	srv.workerRootDir = filepath.Join(srv.rootDir, "worker")
 	if err := os.MkdirAll(srv.workerRootDir, 0700); err != nil {
@@ -433,12 +437,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	srv.workerSourceManager.Register(bs)
 
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
-		WorkerRoot:       srv.workerRootDir,
-		ExecutorRoot:     srv.executorRootDir,
-		BaseWorker:       srv.baseWorker,
-		TelemetryPubSub:  srv.telemetryPubSub,
-		BKSessionManager: srv.bkSessionManager,
-		SessionHandler:   srv,
+		WorkerRoot:         srv.workerRootDir,
+		ExecutorRoot:       srv.executorRootDir,
+		BaseWorker:         srv.baseWorker,
+		TelemetryPubSub:    srv.telemetryPubSub,
+		BKSessionManager:   srv.bkSessionManager,
+		SessionHandler:     srv,
+		CacheVolumeRootDir: srv.cacheVolumeRootDir,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,
