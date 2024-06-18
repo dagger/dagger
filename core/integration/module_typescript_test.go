@@ -1034,3 +1034,82 @@ func TestModuleTypeScriptSubPathLoading(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func TestModuleTypeScriptPrimitiveType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should throw error on String", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func() 
+  str(s: String): String {
+    return s
+  }
+}
+`))
+
+		_, err := modGen.With(daggerQuery(`{test{str("hello")}}`)).Stdout(ctx)
+		require.ErrorContains(t, err, "Use of primitive String type detected, did you mean string?")
+	})
+
+	t.Run("should throw error on Number", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func() 
+  integer(n: Number): Number {
+    return n
+  }
+}
+`))
+
+		_, err := modGen.With(daggerQuery(`{test{integer(4)}}`)).Stdout(ctx)
+		require.ErrorContains(t, err, "Use of primitive Number type detected, did you mean number?")
+	})
+
+	t.Run("should throw error on Boolean", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func() 
+  bool(b: Boolean): Boolean {
+    return b
+  }
+}
+`))
+
+		_, err := modGen.With(daggerQuery(`{test{bool(false)}}`)).Stdout(ctx)
+		require.ErrorContains(t, err, "Use of primitive Boolean type detected, did you mean boolean?")
+	})
+}

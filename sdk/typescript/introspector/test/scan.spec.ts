@@ -122,5 +122,22 @@ describe("scan static TypeScript", function () {
         assert.equal(e.message, "no objects found in the module")
       }
     })
+
+    it("Should throw an error if a primitive type is used", async function () {
+      try {
+        const files = await listFiles(`${rootDirectory}/primitives`)
+
+        const f = scan(files, "primitives")
+        // Trigger the module resolution with a strigify
+        JSON.stringify(f, null, 2)
+
+        assert.fail("Should throw an error")
+      } catch (e: any) {
+        assert.equal(
+          e.message,
+          "Use of primitive String type detected, did you mean string?",
+        )
+      }
+    })
   })
 })

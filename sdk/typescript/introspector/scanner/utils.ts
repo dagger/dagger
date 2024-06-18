@@ -85,13 +85,6 @@ export function typeToTypedef(
     }
   }
 
-  if (type.symbol?.name && type.isClassOrInterface()) {
-    return {
-      kind: TypeDefKind.ObjectKind,
-      name: type.symbol.name,
-    }
-  }
-
   const strType = checker.typeToString(type)
 
   switch (strType) {
@@ -103,7 +96,28 @@ export function typeToTypedef(
       return { kind: TypeDefKind.BooleanKind }
     case "void":
       return { kind: TypeDefKind.VoidKind }
+    // Intercept primitive types and throw error in this case
+    case "String":
+      throw new Error(
+        "Use of primitive String type detected, did you mean string?",
+      )
+    case "Number":
+      throw new Error(
+        "Use of primitive Number type detected, did you mean number?",
+      )
+    case "Boolean":
+      throw new Error(
+        "Use of primitive Boolean type detected, did you mean boolean?",
+      )
     default:
+      // If it's a class or interface, it's an object
+      if (type.symbol?.name && type.isClassOrInterface()) {
+        return {
+          kind: TypeDefKind.ObjectKind,
+          name: strType,
+        }
+      }
+
       // If it's a union, then it's a scalar type
       if (type.isUnionOrIntersection()) {
         return {

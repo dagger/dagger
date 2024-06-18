@@ -1,0 +1,6 @@
+kind: Fixed
+body: Throw error when using primitives types like `String`, `Number` and `Boolean`
+time: 2024-06-18T19:51:23.151898+02:00
+custom:
+  Author: TomChv
+  PR: "7693"
