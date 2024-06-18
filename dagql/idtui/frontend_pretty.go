@@ -304,8 +304,6 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 
 var KeymapStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
-	// Background(lipgloss.ANSIColor(termenv.ANSIBlue)).
-	// Foreground(lipgloss.ANSIColor(termenv.ANSIBlack))
 
 func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
 	w := new(strings.Builder)
@@ -323,14 +321,14 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 
 	// Blank line prior to keymap
 	for i, key := range []keyHelp{
-		{quitMsg, []string{"q", "ctrl+c"}, true},
 		{out.Hyperlink(fe.cloudURL, "Cloud"), []string{"c"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
 		{"last", []string{"end", " "}, true},
 		{"zoom", []string{"enter"}, true},
-		{"reset", []string{"esc"}, true},
+		{"unzoom", []string{"esc"}, fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan},
 		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
+		{quitMsg, []string{"q", "ctrl+c"}, true},
 	} {
 		if !key.show {
 			continue
