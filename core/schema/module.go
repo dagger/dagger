@@ -979,7 +979,7 @@ func (s *moduleSchema) updateDaggerConfig(
 	for i, dep := range mod.DependencyConfig {
 		var srcStr string
 		switch dep.Source.Self.Kind {
-		case core.ModuleSourceKindLocal:
+		case modules.ModuleSourceKindLocal:
 			// make it relative to this module's source root
 			depRootSubpath, err := dep.Source.Self.SourceRootSubpath()
 			if err != nil {
@@ -991,7 +991,7 @@ func (s *moduleSchema) updateDaggerConfig(
 			}
 			srcStr = depRelPath
 
-		case core.ModuleSourceKindGit:
+		case modules.ModuleSourceKindGit:
 			srcStr = dep.Source.Self.AsGitSource.Value.RefString()
 
 		default:

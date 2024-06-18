@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -293,11 +294,11 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 
 	source := mod.Source.Self
 	switch source.Kind {
-	case ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		local := source.AsLocalSource.Value
 		props[prefix+"source_kind"] = "local"
 		props[prefix+"local_subpath"] = local.RootSubpath
-	case ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		git := source.AsGitSource.Value
 		props[prefix+"source_kind"] = "git"
 		props[prefix+"git_symbolic"] = git.Symbolic()

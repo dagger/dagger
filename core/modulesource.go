@@ -14,41 +14,12 @@ import (
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 )
-
-type ModuleSourceKind string
-
-var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
-
-var (
-	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
-	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GIT_SOURCE")
-)
-
-func (proto ModuleSourceKind) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: "ModuleSourceKind",
-		NonNull:   true,
-	}
-}
-
-func (proto ModuleSourceKind) TypeDescription() string {
-	return "The kind of module source."
-}
-
-func (proto ModuleSourceKind) Decoder() dagql.InputDecoder {
-	return ModuleSourceKindEnum
-}
-
-func (proto ModuleSourceKind) ToLiteral() call.Literal {
-	return ModuleSourceKindEnum.Literal(proto)
-}
 
 type ModuleSource struct {
 	Query *Query
 
-	Kind ModuleSourceKind `field:"true" name:"kind" doc:"The kind of source (e.g. local, git, etc.)"`
+	Kind modules.ModuleSourceKind `field:"true" name:"kind" doc:"The kind of source (e.g. local, git, etc.)"`
 
 	AsLocalSource dagql.Nullable[*LocalModuleSource] `field:"true" doc:"If the source is of kind local, the local source representation of it."`
 
@@ -103,9 +74,9 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	switch src.Kind {
-	case ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		return src.AsLocalSource.Value.PBDefinitions(ctx)
-	case ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		return src.AsGitSource.Value.PBDefinitions(ctx)
 	default:
 		return nil, fmt.Errorf("unknown module src kind: %q", src.Kind)
@@ -114,9 +85,9 @@ func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 
 func (src *ModuleSource) RefString() (string, error) {
 	switch src.Kind {
-	case ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		return src.AsLocalSource.Value.RefString(), nil
-	case ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		return src.AsGitSource.Value.RefString(), nil
 	default:
 		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
@@ -125,9 +96,9 @@ func (src *ModuleSource) RefString() (string, error) {
 
 func (src *ModuleSource) Symbolic() (string, error) {
 	switch src.Kind {
-	case ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		return src.AsLocalSource.Value.Symbolic(), nil
-	case ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		return src.AsGitSource.Value.Symbolic(), nil
 	default:
 		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
@@ -136,9 +107,9 @@ func (src *ModuleSource) Symbolic() (string, error) {
 
 func (src *ModuleSource) SourceRootSubpath() (string, error) {
 	switch src.Kind {
-	case ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		return src.AsLocalSource.Value.RootSubpath, nil
-	case ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		return src.AsGitSource.Value.RootSubpath, nil
 	default:
 		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
@@ -246,7 +217,7 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 
 func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], err error) {
 	switch src.Kind {
-	case ModuleSourceKindLocal:
+	case modules.ModuleSourceKindLocal:
 		if !src.AsLocalSource.Valid {
 			return inst, fmt.Errorf("local src not set")
 		}
@@ -254,7 +225,7 @@ func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], er
 			return inst, fmt.Errorf("local src context directory not set")
 		}
 		return src.AsLocalSource.Value.ContextDirectory.Value, nil
-	case ModuleSourceKindGit:
+	case modules.ModuleSourceKindGit:
 		if !src.AsGitSource.Valid {
 			return inst, fmt.Errorf("git src not set")
 		}

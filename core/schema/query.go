@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/log"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/dagger/dagger/engine"
@@ -33,7 +34,7 @@ func (s *querySchema) Install() {
 	core.ImageMediaTypesEnum.Install(s.srv)
 	core.CacheSharingModes.Install(s.srv)
 	core.TypeDefKinds.Install(s.srv)
-	core.ModuleSourceKindEnum.Install(s.srv)
+	modules.ModuleSourceKindEnum.Install(s.srv)
 
 	dagql.MustInputSpec(PipelineLabel{}).Install(s.srv)
 	dagql.MustInputSpec(core.PortForward{}).Install(s.srv)
