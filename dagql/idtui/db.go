@@ -302,7 +302,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			spanData.Passthrough = true
 
 		case telemetry.EffectIDAttr:
-			// NOTE: this is set by Buildkit, and we overload it as the effect ID
 			spanData.EffectID = attr.Value.AsString()
 			db.Effects[spanData.EffectID] = spanData
 			for _, dependentSpan := range db.EffectSites[spanData.EffectID] {

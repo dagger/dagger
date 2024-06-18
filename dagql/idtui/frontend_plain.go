@@ -205,6 +205,10 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
+	if err := fe.db.ExportSpans(ctx, spans); err != nil {
+		return err
+	}
+
 	slog.Debug("frontend exporting", "spans", len(spans))
 	for _, span := range spans {
 		slog.Debug("frontend exporting span",
@@ -220,9 +224,13 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 			fe.data[span.SpanContext().SpanID()] = spanDt
 		}
 		spanDt.ready = true
-	}
 
-	return fe.db.ExportSpans(ctx, spans)
+		dbSpan := fe.db.Spans[span.SpanContext().SpanID()]
+		if dbSpan != nil && dbSpan.EffectID != "" {
+			fe.wakeUpEffect(dbSpan.EffectID)
+		}
+	}
+	return nil
 }
 
 func (fe *frontendPlain) LogExporter() sdklog.Exporter {
@@ -250,6 +258,11 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 		if !ok {
 			spanDt = &spanData{}
 			fe.data[log.SpanID()] = spanDt
+		}
+
+		dbSpan := fe.db.Spans[log.SpanID()]
+		if dbSpan != nil && dbSpan.EffectID != "" {
+			fe.wakeUpEffect(dbSpan.EffectID)
 		}
 
 		body := log.Body().AsString()
@@ -301,6 +314,15 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
+}
+
+func (fe *frontendPlain) wakeUpEffect(effectID string) {
+	for _, effectSpan := range fe.db.EffectSites[effectID] {
+		effectDt, ok := fe.data[effectSpan.ID]
+		if ok {
+			effectDt.mustShow = true
+		}
+	}
 }
 
 func (fe *frontendPlain) render() {
