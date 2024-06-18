@@ -676,13 +676,13 @@ func (m *Test) Mod(ctx context.Context, module *Module) *Module {
 			require.NoError(t, err)
 			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
-			out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef("top-level"), "as-string")).Stdout(ctx)
+			out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef(tc, "top-level"), "as-string")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testGitModuleRef("top-level"), out)
+			require.Equal(t, testGitModuleRef(tc, "top-level"), out)
 
-			out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef("top-level"), "source", "as-string")).Stdout(ctx)
+			out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef(tc, "top-level"), "source", "as-string")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Equal(t, testGitModuleRef("top-level"), out)
+			require.Equal(t, testGitModuleRef(tc, "top-level"), out)
 		})
 	})
 }
@@ -1222,8 +1222,8 @@ func TestModuleCallByName(t *testing.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
-				With(daggerExec("install", "--name", "foo", testGitModuleRef(""))).
-				With(daggerExec("install", "--name", "bar", testGitModuleRef("subdir/dep2")))
+				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
+				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
 
 			out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 			require.NoError(t, err)
@@ -1246,7 +1246,7 @@ func TestModuleCallGitMod(t *testing.T) {
 			t.Parallel()
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
+				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
@@ -1256,7 +1256,7 @@ func TestModuleCallGitMod(t *testing.T) {
 			t.Parallel()
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				With(daggerCallAt(testGitModuleRef("ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
+				With(daggerCallAt(testGitModuleRef(tc, "ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yoyo", strings.TrimSpace(out))
@@ -1266,7 +1266,7 @@ func TestModuleCallGitMod(t *testing.T) {
 			t.Parallel()
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				With(daggerCallAt(testGitModuleRef("py"), "container-echo", "--string-arg", "yoyo", "stdout")).
+				With(daggerCallAt(testGitModuleRef(tc, "py"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yoyo", strings.TrimSpace(out))

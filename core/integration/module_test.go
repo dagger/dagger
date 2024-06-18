@@ -5299,7 +5299,7 @@ func (m *Test) Fn() string {
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef("cool-sdk"))).
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef(tc, "cool-sdk"))).
 					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 						Contents: `package main
 

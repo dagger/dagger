@@ -115,7 +115,7 @@ func TestModuleConfigs(t *testing.T) {
 			testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
 				t.Run("git", func(t *testing.T) {
 					t.Parallel()
-					_, err := base.With(daggerCallAt(testGitModuleRef("invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := base.With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
@@ -168,7 +168,7 @@ func TestModuleConfigs(t *testing.T) {
 			testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
 				t.Run("git", func(t *testing.T) {
 					t.Parallel()
-					_, err := base.With(daggerCallAt(testGitModuleRef("invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := base.With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
 				})
 			})
@@ -616,7 +616,7 @@ func TestModuleDaggerDevelop(t *testing.T) {
 			c, ctx := connect(t)
 
 			_, err := goGitBase(t, c).
-				With(daggerExec("develop", "-m", testGitModuleRef("top-level"))).
+				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
 				Sync(ctx)
 			require.ErrorContains(t, err, `module must be local`)
 		})
@@ -841,7 +841,7 @@ func TestModuleDaggerInstall(t *testing.T) {
 				out, err := goGitBase(t, c).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef("top-level"))).
+					With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
 					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 						Contents: `package main
 
@@ -867,14 +867,14 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				_, err := goGitBase(t, c).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef("../../"))).
+					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
 					Sync(ctx)
 				require.ErrorContains(t, err, `git module source subpath points out of root: "../.."`)
 
 				_, err = goGitBase(t, c).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef("this/just/does/not/exist"))).
+					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
 					Sync(ctx)
 				require.ErrorContains(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
 			})
@@ -1186,6 +1186,14 @@ type vcsTestCase struct {
 	name              string
 	gitTestRepoURL    string
 	gitTestRepoCommit string
+	// introduced because some VCS do generate different HTML URLs based on repo URL
+	baseHTMLURL string
+
+	// url path expected when checking a VCS tree URL:
+	// e.g. bitbucket.org/dagger-modules/dagger-test-modules-public/src/2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94/
+	// - `src` for bitbucket
+	// - `tree` for GitLab / GitHub
+	urlPathComponent string
 }
 
 var vcsTestCases = []vcsTestCase{
@@ -1194,22 +1202,44 @@ var vcsTestCases = []vcsTestCase{
 		name:              "GitHub",
 		gitTestRepoURL:    "github.com/dagger/dagger-test-modules",
 		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
+		urlPathComponent:  "tree",
 	},
 	{
 		name:              "GitLab",
 		gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		urlPathComponent:  "tree",
 	},
-
-	// should work with .git encoding. Some logic to improve here
-	// BitBucket is breaking on HTMLURL for sure:
-	// - raises the question of how to handle those differences cleanly
-
-	// {
-	// 	name:              "BitBucket",
-	// 	gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-	// },
+	{
+		name:              "GitHub with .git",
+		gitTestRepoURL:    "github.com/dagger/dagger-test-modules.git",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
+		urlPathComponent:  "tree",
+	},
+	{
+		name:              "GitLab with .git",
+		gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		urlPathComponent:  "tree",
+	},
+	{
+		name:              "BitBucket",
+		gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		urlPathComponent:  "src",
+	},
+	{
+		name:              "BitBucket with .git",
+		gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		urlPathComponent:  "src",
+	},
 }
 
 func testOnMultipleVCS(t *testing.T, testFunc func(t *testing.T, tc vcsTestCase)) {
@@ -1243,11 +1273,12 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 			t.Run("root module", func(t *testing.T) {
 				t.Parallel()
-				rootModSrc := c.ModuleSource(testGitModuleRef(""))
+				rootModSrc := c.ModuleSource(testGitModuleRef(tc, ""))
 
 				htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
+				fmt.Printf("🎃 rootMod: |%s|\n", htmlURL)
 				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf("https://%s/tree/%s", tc.gitTestRepoURL, tc.gitTestRepoCommit), htmlURL)
+				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.baseHTMLURL, tc.urlPathComponent, tc.gitTestRepoCommit), htmlURL)
 				resp, err := http.Get(htmlURL)
 				require.NoError(t, err)
 				defer resp.Body.Close()
@@ -1255,7 +1286,7 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 				cloneURL, err := rootModSrc.AsGitSource().CloneURL(ctx)
 				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf("https://%s", tc.gitTestRepoURL), cloneURL)
+				require.Equal(t, fmt.Sprintf("https://%s", tc.baseHTMLURL), cloneURL)
 
 				commit, err := rootModSrc.AsGitSource().Commit(ctx)
 				require.NoError(t, err)
@@ -1263,15 +1294,15 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 				refStr, err := rootModSrc.AsString(ctx)
 				require.NoError(t, err)
-				require.Equal(t, testGitModuleRef(""), refStr)
+				require.Equal(t, testGitModuleRef(tc, ""), refStr)
 			})
 
 			t.Run("top-level module", func(t *testing.T) {
 				t.Parallel()
-				topLevelModSrc := c.ModuleSource(testGitModuleRef("top-level"))
+				topLevelModSrc := c.ModuleSource(testGitModuleRef(tc, "top-level"))
 				htmlURL, err := topLevelModSrc.AsGitSource().HTMLURL(ctx)
 				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf("https://%s/tree/%s/top-level", tc.gitTestRepoURL, tc.gitTestRepoCommit), htmlURL)
+				require.Equal(t, fmt.Sprintf("https://%s/%s/%s/top-level", tc.baseHTMLURL, tc.urlPathComponent, tc.gitTestRepoCommit), htmlURL)
 				resp, err := http.Get(htmlURL)
 				require.NoError(t, err)
 				defer resp.Body.Close()
@@ -1279,7 +1310,7 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 				cloneURL, err := topLevelModSrc.AsGitSource().CloneURL(ctx)
 				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf("https://%s", tc.gitTestRepoURL), cloneURL)
+				require.Equal(t, fmt.Sprintf("https://%s", tc.baseHTMLURL), cloneURL)
 
 				commit, err := topLevelModSrc.AsGitSource().Commit(ctx)
 				require.NoError(t, err)
@@ -1287,15 +1318,15 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 				refStr, err := topLevelModSrc.AsString(ctx)
 				require.NoError(t, err)
-				require.Equal(t, testGitModuleRef("top-level"), refStr)
+				require.Equal(t, testGitModuleRef(tc, "top-level"), refStr)
 			})
 
 			t.Run("subdir dep2 module", func(t *testing.T) {
 				t.Parallel()
-				subdirDepModSrc := c.ModuleSource(testGitModuleRef("subdir/dep2"))
+				subdirDepModSrc := c.ModuleSource(testGitModuleRef(tc, "subdir/dep2"))
 				htmlURL, err := subdirDepModSrc.AsGitSource().HTMLURL(ctx)
 				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf("https://%s/tree/%s/subdir/dep2", tc.gitTestRepoURL, tc.gitTestRepoCommit), htmlURL)
+				require.Equal(t, fmt.Sprintf("https://%s/%s/%s/subdir/dep2", tc.baseHTMLURL, tc.urlPathComponent, tc.gitTestRepoCommit), htmlURL)
 				resp, err := http.Get(htmlURL)
 				require.NoError(t, err)
 				defer resp.Body.Close()
@@ -1303,7 +1334,7 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 				cloneURL, err := subdirDepModSrc.AsGitSource().CloneURL(ctx)
 				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf("https://%s", tc.gitTestRepoURL), cloneURL)
+				require.Equal(t, fmt.Sprintf("https://%s", tc.baseHTMLURL), cloneURL)
 
 				commit, err := subdirDepModSrc.AsGitSource().Commit(ctx)
 				require.NoError(t, err)
@@ -1311,7 +1342,7 @@ func TestGitTestRepoCommit(t *testing.T) {
 
 				refStr, err := subdirDepModSrc.AsString(ctx)
 				require.NoError(t, err)
-				require.Equal(t, testGitModuleRef("subdir/dep2"), refStr)
+				require.Equal(t, testGitModuleRef(tc, "subdir/dep2"), refStr)
 			})
 
 			t.Run("stable arg", func(t *testing.T) {
@@ -1322,7 +1353,7 @@ func TestGitTestRepoCommit(t *testing.T) {
 				}).AsString(ctx)
 				require.ErrorContains(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoURL))
 
-				_, err = c.ModuleSource(testGitModuleRef("top-level"), dagger.ModuleSourceOpts{
+				_, err = c.ModuleSource(testGitModuleRef(tc, "top-level"), dagger.ModuleSourceOpts{
 					Stable: true,
 				}).AsString(ctx)
 				require.NoError(t, err)
@@ -1346,7 +1377,7 @@ func TestModuleDaggerGitWithSources(t *testing.T) {
 					ctr := goGitBase(t, c).
 						WithWorkdir("/work").
 						With(daggerExec("init")).
-						With(daggerExec("install", "--name", "foo", testGitModuleRef("various-source-values/"+modSubpath)))
+						With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
 
 					out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
 					require.NoError(t, err)
@@ -1369,7 +1400,7 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 					require.NoError(t, err)
 					require.Equal(t, "hi", strings.TrimSpace(out))
 
-					out, err = ctr.With(daggerCallAt(testGitModuleRef("various-source-values/"+modSubpath), "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
+					out, err = ctr.With(daggerCallAt(testGitModuleRef(tc, "various-source-values/"+modSubpath), "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "hi", strings.TrimSpace(out))
 				})

@@ -447,10 +447,16 @@ func (src *GitModuleSource) Symbolic() string {
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	u := "https://" + src.Root + "/tree/" + src.Commit
+	u := src.CloneURL
+	if strings.HasPrefix(src.CloneURL, "https://github.com") || strings.HasPrefix(src.CloneURL, "https://gitlab.com") {
+		u = u + "/tree/" + src.Commit
+	} else {
+		u = u + "/src/" + src.Commit
+	}
 	if subPath := src.RootSubpath; subPath != "" {
 		u += "/" + subPath
 	}
+
 	return u
 }
 
