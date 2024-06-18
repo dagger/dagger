@@ -233,6 +233,7 @@ http_access allow localhost
 					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
 						return c.Container().From(alpineImage).
 							WithMountedCache("/var/log/squidaccess", squidLogsVolume).
+							WithEnvVariable("CACHEBUSTER", identity.NewID()).
 							WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
 							Stdout(ctx)
 					})
