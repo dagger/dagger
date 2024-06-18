@@ -88,7 +88,7 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
+		withObjectArgsCode = append(withObjectArgsCode, Id("TypeDefWithEnumOpts").Values(withObjectOptsCode...))
 	}
 
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withObjectArgsCode...)
