@@ -232,8 +232,9 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 
 		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
 
-		enum := dagql.NewDynamicEnum(enumDef)
-
+		enum := &ModuleEnum{
+			TypeDef: enumDef,
+		}
 		enum.Install(dag)
 	}
 

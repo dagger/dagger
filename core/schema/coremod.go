@@ -364,10 +364,8 @@ func (enum *CoreModEnum) SourceMod() core.Mod {
 
 func (enum *CoreModEnum) TypeDef() *core.TypeDef {
 	return &core.TypeDef{
-		Kind: core.TypeDefKindEnum,
-		AsEnum: dagql.NonNull(&core.EnumTypeDef{
-			Name: enum.typeDef.Name,
-		}),
+		Kind:   core.TypeDefKindEnum,
+		AsEnum: dagql.NonNull(enum.typeDef),
 	}
 }
 

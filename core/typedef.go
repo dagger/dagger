@@ -333,6 +333,8 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
 		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
+	case TypeDefKindEnum:
+		typed = &ModuleEnum{TypeDef: typeDef.AsEnum.Value}
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayOutput{Elem: typeDef.AsList.Value.ElementTypeDef.ToTyped()}
 	case TypeDefKindObject:
@@ -343,8 +345,6 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = Void{}
 	case TypeDefKindInput:
 		typed = typeDef.AsInput.Value.ToInputObjectSpec()
-	case TypeDefKindEnum:
-		typed = dagql.NewDynamicEnum(typeDef.AsEnum.Value)
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -365,6 +365,8 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
 		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
+	case TypeDefKindEnum:
+		typed = dagql.NewScalar[dagql.String](typeDef.AsEnum.Value.Name, dagql.String(""))
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayInput{
 			Elem: typeDef.AsList.Value.ElementTypeDef.ToInput(),
@@ -375,8 +377,6 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 		typed = DynamicID{typeName: typeDef.AsInterface.Value.Name}
 	case TypeDefKindVoid:
 		typed = Void{}
-	case TypeDefKindEnum:
-		typed = dagql.NewDynamicEnum(typeDef.AsEnum.Value)
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
