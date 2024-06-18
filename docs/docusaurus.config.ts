@@ -109,7 +109,7 @@ const config: Config = {
     sidebarCollapsed: false,
     metadata: [{ name: "og:image", content: "/img/favicon.png" }],
     prism: {
-      additionalLanguages: ["php", "rust", "elixir", "bash", "toml"],
+      additionalLanguages: ["php", "rust", "elixir", "bash", "toml", "powershell"],
       theme: prismThemes.dracula,
     },
     announcementBar: {
