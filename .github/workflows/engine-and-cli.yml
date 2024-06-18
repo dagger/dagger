@@ -32,13 +32,15 @@ jobs:
           function: "engine lint"
 
   test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-7-16c-nvme' || 'ubuntu-latest' }}"
+    # HACK: hold back test job to v0.11.6, v0.11.7 has known nesting issues
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-16c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: "test"
         uses: ./.github/actions/call
         with:
+          version: v0.11.6
           function: "test all --race=true --parallel=16"
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
