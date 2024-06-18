@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'cli: fixed infinite loop when simplifying on high verbosity levels'
-time: 2024-06-17T16:17:18.410399574+01:00
-custom:
-  Author: jedevc
-  PR: "7679"
