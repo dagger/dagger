@@ -305,6 +305,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "incompatible")
 
 	// client version is a development version
 	stderr, err = clientCtr.
@@ -317,6 +318,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "incompatible")
 
 	// client version is too old (v1.0.0 < v2.0.0)
 	stderr, err = clientCtr.
@@ -353,4 +355,77 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, "incompatible engine version")
+}
+
+func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngineVersion := "v2.0.0"
+	devEngineSvc := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", devEngineVersion).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0")
+	}).AsService()
+
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
+	require.NoError(t, err)
+	clientCtr = clientCtr.
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+	// versions are compatible!
+	stderr, err := clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "v2.0.0"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "module requires")
+
+	// module version is a development version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "foobar"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "module requires")
+
+	// module version is asking for a too old version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "v1.0.0"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.Contains(t, stderr, "module requires incompatible engine")
+
+	// module version is asking for a too new version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "v3.0.0"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.Contains(t, stderr, "module requires newer engine")
 }
