@@ -152,6 +152,9 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		spanData = &Span{
 			ID: spanID,
 
+			FailedEffects:  map[string]*Span{},
+			RunningEffects: map[string]*Span{},
+
 			db:    db,
 			trace: traceData,
 		}
@@ -173,7 +176,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 	}
 
 	spanData.ReadOnlySpan = span
-	spanData.IsRunning = span.EndTime().Before(span.StartTime())
+	spanData.IsSelfRunning = span.EndTime().Before(span.StartTime())
 
 	slog.Debug("recording span", "span", span.Name(), "id", spanID)
 
@@ -302,6 +305,16 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			// NOTE: this is set by Buildkit, and we overload it as the effect ID
 			spanData.EffectID = attr.Value.AsString()
 			db.Effects[spanData.EffectID] = spanData
+			for _, dependentSpan := range db.EffectSites[spanData.EffectID] {
+				if spanData.IsRunning() {
+					dependentSpan.RunningEffects[spanData.EffectID] = spanData
+				} else {
+					delete(dependentSpan.RunningEffects, spanData.EffectID)
+				}
+				if spanData.Failed() {
+					dependentSpan.FailedEffects[spanData.EffectID] = spanData
+				}
+			}
 		}
 	}
 
@@ -330,7 +343,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if span.IsRunning {
+		if span.IsRunning() {
 			return span
 		}
 		switch {

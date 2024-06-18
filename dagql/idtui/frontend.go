@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -236,13 +235,13 @@ func (r renderer) renderSpan(
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
+	style := lipgloss.NewStyle()
 	if span != nil {
 		r.renderStatus(out, span, focused)
-	}
 
-	style := lipgloss.NewStyle()
-	if span.EffectID != "" {
-		style = style.Italic(true)
+		if span.EffectID != "" {
+			style = style.Italic(true)
+		}
 	}
 	fmt.Fprint(out, style.Render(name))
 
@@ -302,13 +301,13 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
-	case span.IsRunning:
+	case span.IsRunning():
 		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.Canceled:
 		symbol = IconSkipped
 		color = termenv.ANSIBrightBlack
-	case span.Status().Code == codes.Error:
+	case span.Failed():
 		symbol = IconFailure
 		color = termenv.ANSIRed
 	default:
@@ -332,7 +331,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(fmtDuration(span.Duration()))
-	if span.IsRunning {
+	if span.IsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
