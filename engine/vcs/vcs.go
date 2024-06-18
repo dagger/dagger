@@ -499,8 +499,11 @@ func RepoRootForImportDynamic(importPath string, verbose bool) (*RepoRoot, error
 		return nil, fmt.Errorf("%s: invalid repo root %q: %w", urlStr, metaImport.RepoRoot, err)
 	}
 	rr := &RepoRoot{
-		VCS:  ByCmd(metaImport.VCS),
-		Repo: metaImport.RepoRoot,
+		VCS: ByCmd(metaImport.VCS),
+		// ensure that dynamic discovery does not contain .git
+		// 99% of providers do not work with .git in URL
+		// e.g. Bitbucket, GitLab
+		Repo: strings.TrimSuffix(metaImport.RepoRoot, ".git"),
 		Root: metaImport.Prefix,
 	}
 	if rr.VCS == nil {
@@ -582,6 +585,10 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>github\.com/[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+)(/[\p{L}0-9_.\-]+)*(/.*)?$`,
 		vcs:    "git",
 		repo:   "https://{root}",
+		check: func(match map[string]string) error {
+			match["repo"] = strings.TrimSuffix(match["repo"], ".git")
+			return nil
+		},
 	},
 
 	// Codeberg
@@ -598,6 +605,10 @@ var vcsPaths = []*vcsPath{
 		re:     `^(?P<root>bitbucket\.org/(?P<bitname>[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		repo:   "https://{root}",
 		vcs:    "git",
+		check: func(match map[string]string) error {
+			match["repo"] = strings.TrimSuffix(match["repo"], ".git")
+			return nil
+		},
 	},
 
 	// IBM DevOps Services (JazzHub)
@@ -645,6 +656,12 @@ var vcsPaths = []*vcsPath{
 	{
 		re:   `^(?P<root>(?P<repo>([a-z0-9.\-]+\.)+[a-z0-9.\-]+(:[0-9]+)?/[A-Za-z0-9_.\-/]*?)\.(?P<vcs>bzr|git|hg|svn))(/[A-Za-z0-9_.\-]+)*(/.*)?$`,
 		ping: true,
+		repo: "https://{root}",
+		// for static analysis of general servers (GitLab ref with .git for example)
+		check: func(match map[string]string) error {
+			match["repo"] = strings.TrimSuffix(match["repo"], ".git")
+			return nil
+		},
 	},
 }
 
