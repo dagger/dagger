@@ -276,7 +276,7 @@ func (s *hostSchema) tunnel(ctx context.Context, parent *core.Host, args hostTun
 		return nil, errors.New("no ports to forward")
 	}
 
-	return parent.Query.NewTunnelService(inst, ports), nil
+	return parent.Query.NewTunnelService(ctx, inst, ports), nil
 }
 
 type hostServiceArgs struct {
@@ -334,6 +334,7 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 	}
 
 	return parent.Query.NewHostService(
+		ctx,
 		args.Host,
 		collectInputsSlice(args.Ports),
 		args.SessionID,

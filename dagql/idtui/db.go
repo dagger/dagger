@@ -268,7 +268,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		case telemetry.DagInputsAttr:
 			spanData.Inputs = attr.Value.AsStringSlice()
 
-		case telemetry.LLBDigestsAttr:
+		case telemetry.EffectIDsAttr:
 			// NOTE: avoid processing this twice so we can preserve order in EffectSites
 			// without resorting to a map, just in case we want to add a reverse nav
 			if len(spanData.Effects) == 0 {
@@ -301,7 +301,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		case "rpc.service":
 			spanData.Passthrough = true
 
-		case "vertex":
+		case telemetry.EffectIDAttr:
 			// NOTE: this is set by Buildkit, and we overload it as the effect ID
 			spanData.EffectID = attr.Value.AsString()
 			db.Effects[spanData.EffectID] = spanData

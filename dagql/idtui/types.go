@@ -120,6 +120,7 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 		lastRow = row
 		for _, effectID := range span.Effects {
 			if effect, ok := db.Effects[effectID]; ok {
+				// reparent so we can step out of the effect
 				effect.ParentSpan = row.Span
 				walk(effect, row)
 				if effect.IsRunning() || effect.Failed() {

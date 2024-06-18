@@ -58,9 +58,14 @@ const (
 	// span represents.
 	LLBOpAttr = "dagger.io/llb.op"
 
+	// The IDs of effects which will be correlated to this span.
+	//
 	// The digests of the LLB operations that this span depends on, allowing the
 	// UI to attribute their future "cost."
-	LLBDigestsAttr = "dagger.io/llb.digests"
+	EffectIDsAttr = "dagger.io/llb.digests" // TODO: backwards compat.
+
+	// The ID of the effect that this span represents.
+	EffectIDAttr = "vertex" // TODO: backwards-compat. and cross-compat. with Buildkit.
 
 	// The amount of progress that needs to be reached.
 	ProgressTotalAttr = "dagger.io/progress.total"

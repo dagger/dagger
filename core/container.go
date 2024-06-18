@@ -1450,7 +1450,7 @@ func (container *Container) Service(ctx context.Context) (*Service, error) {
 			return nil, err
 		}
 	}
-	return container.Query.NewContainerService(container), nil
+	return container.Query.NewContainerService(ctx, container), nil
 }
 
 func (container *Container) ownership(ctx context.Context, owner string) (*Ownership, error) {
