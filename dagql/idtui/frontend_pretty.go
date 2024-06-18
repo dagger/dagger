@@ -213,6 +213,10 @@ func (fe *frontendPretty) finalRender() error {
 	fe.zoomed = fe.db.PrimarySpan
 	fe.focused = trace.SpanID{}
 	fe.focusedIdx = -1
+	if fe.Verbosity < 1 {
+		// likely only intended to filter out noise, so print as we normally would
+		fe.Verbosity = 1
+	}
 	fe.recalculateViewLocked()
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
