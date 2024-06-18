@@ -140,6 +140,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
+		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
+		bklog.G(ctx).Errorf("solve error: %+v", err)
 		return nil, wrapError(ctx, err, c.ID())
 	}
 
