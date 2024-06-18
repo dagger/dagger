@@ -30,17 +30,17 @@ If you do not have Homebrew installed, or you want to install a specific version
 
 ```shell
 cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.7 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.8 sh
 
 ./bin/dagger version
-dagger 0.11.7 (registry.dagger.io/engine) darwin/arm64
+dagger v0.11.8 (registry.dagger.io/engine) darwin/arm64
 ```
 
 If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
 
 ```shell
 cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.7 sudo sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.8 sudo sh
 ```
 
 </TabItem>
@@ -63,10 +63,10 @@ dagger is $HOME/.local/bin/dagger
 If you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.7 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.11.8 sh
 
 ./bin/dagger version
-dagger 0.11.7 (registry.dagger.io/engine) linux/amd64
+dagger v0.11.8 (registry.dagger.io/engine) linux/amd64
 ```
 
 </TabItem>
@@ -92,7 +92,7 @@ To install a specific version of Dagger, specify the version with the `-DaggerVe
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
-Install-Dagger -DaggerVersion 0.11.7
+Install-Dagger -DaggerVersion 0.11.8
 ```
 
 For an interactive installation process, include the `-Interactive` switch.
