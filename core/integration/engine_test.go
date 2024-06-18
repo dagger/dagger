@@ -331,3 +331,60 @@ func TestEngineVersionCompat(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, stderr, "incompatible engine version")
 }
+
+func TestEngineModuleVersionCompat(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	devEngineVersion := "v2.0.0"
+	devEngineSvc := devEngineContainer(c, 107, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", devEngineVersion).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0")
+	}).AsService()
+
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
+	require.NoError(t, err)
+	clientCtr = clientCtr.
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+	// versions are compatible!
+	stderr, err := clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "v2.0.0"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+
+	// module version is a development version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "foobar"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+
+	// module version is asking for a too old version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{"name": "bare", "sdk": "go", "engineVersion": "v1.0.0"}`,
+		}).
+		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
+			Contents: `{bare{containerEcho(stringArg:"hello"){stdout}}}`,
+		}).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+}

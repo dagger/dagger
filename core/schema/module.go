@@ -658,6 +658,16 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
 	}
 
+	cfg, ok, err := src.Self.ModuleConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module config: %w", err)
+	}
+	if ok {
+		if err := engine.CheckVersionCompatibility(cfg.EngineVersion, engine.MinimumModuleVersion); err != nil {
+			return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
+		}
+	}
+
 	mod = mod.Clone()
 	mod.Source = src
 	mod.NameField, err = src.Self.ModuleName(ctx)

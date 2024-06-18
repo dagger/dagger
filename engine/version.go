@@ -19,11 +19,25 @@ var (
 
 	// MinimumEngineVersion is used by the client to determine the minimum
 	// allowed engine version that can be used by that client.
+	//
+	// Set to v0.11.8, because of incompatible changes to the transport in
+	// dagger/dagger#7315
 	MinimumEngineVersion = "v0.11.8"
 
 	// MinimumClientVersion is used by the engine to determine the minimum
 	// allowed client version that can connect to that engine.
+	//
+	// Set to v0.11.8, because of incompatible changes to the transport in
+	// dagger/dagger#7315
 	MinimumClientVersion = "v0.11.8"
+
+	// MinimumModuleVersion is used by the engine to determine the minimum
+	// allowed module engine version that can connect to this engine.
+	//
+	// Set to v0.9.9, because this was when the engineVersion field was
+	// introduced - if it's present and not a dev version, it must be higher
+	// than v0.9.9.
+	MinimumModuleVersion = "v0.9.9"
 )
 
 func init() {
@@ -35,12 +49,14 @@ func init() {
 	if v, ok := os.LookupEnv(DaggerMinimumVersionEnv); ok {
 		MinimumClientVersion = v
 		MinimumEngineVersion = v
+		MinimumModuleVersion = v
 	}
 
 	// normalize version strings
 	Version = normalizeVersion(Version)
 	MinimumClientVersion = normalizeVersion(MinimumClientVersion)
 	MinimumEngineVersion = normalizeVersion(MinimumEngineVersion)
+	MinimumModuleVersion = normalizeVersion(MinimumModuleVersion)
 }
 
 func normalizeVersion(v string) string {
