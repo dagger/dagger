@@ -317,11 +317,13 @@ func (fe *frontendPlain) ForceFlush(context.Context) error {
 }
 
 func (fe *frontendPlain) wakeUpEffect(effectID string) {
-	for _, effectSpan := range fe.db.EffectSites[effectID] {
-		effectDt, ok := fe.data[effectSpan.ID]
-		if ok {
-			effectDt.mustShow = true
-		}
+	effectSpan := fe.db.EffectSite[effectID]
+	if effectSpan == nil {
+		return
+	}
+	effectDt, ok := fe.data[effectSpan.ID]
+	if ok {
+		effectDt.mustShow = true
 	}
 }
 

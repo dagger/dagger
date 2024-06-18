@@ -111,7 +111,7 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 		lastRow = row
 		seen[spanID] = true
 		for _, child := range span.ChildSpans {
-			if child.EffectID != "" && len(db.EffectSites[child.EffectID]) > 0 {
+			if child.EffectID != "" && db.EffectSite[child.EffectID] != nil {
 				// let it show up at the call sites instead
 				continue
 			}
@@ -119,6 +119,10 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 		}
 		lastRow = row
 		for _, effectID := range span.Effects {
+			if db.EffectSite[effectID] != span {
+				// only show effects that we are the first 'site' of
+				continue
+			}
 			if effect, ok := db.Effects[effectID]; ok {
 				// reparent so we can step out of the effect
 				effect.ParentSpan = row.Span

@@ -31,8 +31,8 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	Effects     map[string]*Span
-	EffectSites map[string][]*Span
+	Effects    map[string]*Span
+	EffectSite map[string]*Span
 }
 
 func NewDB() *DB {
@@ -45,12 +45,12 @@ func NewDB() *DB {
 		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
 		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:       make(map[string]*callpbv1.Call),
-		OutputOf:    make(map[string]map[string]struct{}),
-		Outputs:     make(map[string]map[string]struct{}),
-		Intervals:   make(map[string]map[time.Time]*Span),
-		Effects:     make(map[string]*Span),
-		EffectSites: make(map[string][]*Span),
+		Calls:      make(map[string]*callpbv1.Call),
+		OutputOf:   make(map[string]map[string]struct{}),
+		Outputs:    make(map[string]map[string]struct{}),
+		Intervals:  make(map[string]map[time.Time]*Span),
+		Effects:    make(map[string]*Span),
+		EffectSite: make(map[string]*Span),
 	}
 }
 
@@ -269,12 +269,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			spanData.Inputs = attr.Value.AsStringSlice()
 
 		case telemetry.EffectIDsAttr:
-			// NOTE: avoid processing this twice so we can preserve order in EffectSites
-			// without resorting to a map, just in case we want to add a reverse nav
-			if len(spanData.Effects) == 0 {
-				spanData.Effects = attr.Value.AsStringSlice()
-				for _, digest := range spanData.Effects {
-					db.EffectSites[digest] = append(db.EffectSites[digest], spanData)
+			spanData.Effects = attr.Value.AsStringSlice()
+			for _, digest := range spanData.Effects {
+				if db.EffectSite[digest] == nil {
+					db.EffectSite[digest] = spanData
 				}
 			}
 
@@ -298,13 +296,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 				db.OutputOf[output][digest] = struct{}{}
 			}
 
-		case "rpc.service":
-			spanData.Passthrough = true
-
 		case telemetry.EffectIDAttr:
 			spanData.EffectID = attr.Value.AsString()
 			db.Effects[spanData.EffectID] = spanData
-			for _, dependentSpan := range db.EffectSites[spanData.EffectID] {
+			if dependentSpan := db.EffectSite[spanData.EffectID]; dependentSpan != nil {
 				if spanData.IsRunning() {
 					dependentSpan.RunningEffects[spanData.EffectID] = spanData
 				} else {
@@ -314,6 +309,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 					dependentSpan.FailedEffects[spanData.EffectID] = spanData
 				}
 			}
+
+		case "rpc.service":
+			// TODO: rather than special-casing this, we should just switch
+			// the telemetry pipeline over to HTTP.
+			// I tried adding attributes like 'internal' to the spans we care about
+			// but the OTel API is broken and stuck in bikeshedding:
+			// https://github.com/open-telemetry/opentelemetry-go-contrib/pull/5431#pullrequestreview-2024891968
+			spanData.Passthrough = true
 		}
 	}
 
