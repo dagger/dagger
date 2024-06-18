@@ -24,8 +24,10 @@ import (
 type proxyTest struct {
 	name         string
 	run          func(*testing.T, *dagger.Client, proxyTestFixtures)
-	proxyLogTest func(*testing.T, *dagger.Client, string)
+	proxyLogTest func(*testing.T, *dagger.Client, getProxyLogsFunc)
 }
+
+type getProxyLogsFunc func(context.Context) (string, error)
 
 type proxyTestFixtures struct {
 	caCert *dagger.File
@@ -172,13 +174,20 @@ http_access allow localhost
 
 	squidConf += "http_access deny all\n"
 
-	squid = squid.
+	squidSvc := squid.
 		WithNewFile("/etc/squid/squid.conf", dagger.ContainerWithNewFileOpts{Contents: squidConf}).
 		WithServiceBinding(httpServerAlias, httpServer.AsService()).
 		WithServiceBinding(noproxyHTTPServerAlias, noproxyHTTPServer.AsService()).
-		WithExec([]string{"sh", "-c", "chmod -R a+rw /var/log/squidaccess && exec squid --foreground"})
+		WithExec([]string{"sh", "-c", "chmod -R a+rw /var/log/squidaccess && exec squid --foreground"}).
+		AsService()
 
 	if os.Getenv(executeTestEnvName) == "" {
+		squidSvc, err := squidSvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			squidSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		})
+
 		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
@@ -189,7 +198,7 @@ http_access allow localhost
 				WithEnvVariable("NO_PROXY", noproxyHTTPServerAlias).
 				WithServiceBinding(httpServerAlias, httpServer.AsService()).
 				WithServiceBinding(noproxyHTTPServerAlias, noproxyHTTPServer.AsService()).
-				WithServiceBinding(squidAlias, squid.AsService())
+				WithServiceBinding(squidAlias, squidSvc)
 		})
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -215,17 +224,18 @@ http_access allow localhost
 			}).Sync(ctx)
 		require.NoError(t, err)
 
-		squidLogs, err := c.Container().From(alpineImage).
-			WithMountedCache("/var/log/squidaccess", squidLogsVolume).
-			WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
-			Stdout(ctx)
 		require.NoError(t, err)
 		for _, test := range tests {
 			test := test
 			if test.proxyLogTest != nil {
 				t.Run(test.name+"-proxy-logs", func(t *testing.T) {
 					t.Parallel()
-					test.proxyLogTest(t, c, squidLogs)
+					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
+						return c.Container().From(alpineImage).
+							WithMountedCache("/var/log/squidaccess", squidLogsVolume).
+							WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
+							Stdout(ctx)
+					})
 				})
 			}
 		}
@@ -257,10 +267,10 @@ http_access allow localhost
 func TestContainerSystemProxies(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-
 	t.Run("basic", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
+
 		customProxyTests(ctx, t, c, 101, false,
 			proxyTest{name: "http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
@@ -298,6 +308,8 @@ func TestContainerSystemProxies(t *testing.T) {
 
 	t.Run("auth", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
+
 		customProxyTests(ctx, t, c, 102, true,
 			proxyTest{name: "http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
 				base := c.Container().From(alpineImage).
@@ -350,14 +362,27 @@ func TestContainerSystemProxies(t *testing.T) {
 
 	t.Run("git uses proxy", func(t *testing.T) {
 		t.Parallel()
+		c, ctx := connect(t)
+
 		customProxyTests(ctx, t, c, 104, false,
 			proxyTest{name: "git",
 				run: func(t *testing.T, c *dagger.Client, _ proxyTestFixtures) {
 					_, err := c.Git("https://" + gitTestRepoURL).Ref(gitTestRepoCommit).Tree().Sync(ctx)
 					require.NoError(t, err)
 				},
-				proxyLogTest: func(t *testing.T, _ *dagger.Client, proxyLogs string) {
-					require.Contains(t, proxyLogs, "CONNECT github.com:443")
+				proxyLogTest: func(t *testing.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
+					// retry a few times in case logs haven't been flushed yet
+					var proxyLogs string
+					for i := 0; i < 5; i++ {
+						var err error
+						proxyLogs, err = getProxyLogs(ctx)
+						require.NoError(t, err)
+						if strings.Contains(proxyLogs, "CONNECT github.com:443") {
+							return
+						}
+						time.Sleep(1 * time.Second)
+					}
+					require.Fail(t, "expected CONNECT to github.com in proxy logs", proxyLogs)
 				},
 			},
 		)
