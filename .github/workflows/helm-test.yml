@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-7-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
