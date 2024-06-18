@@ -32,7 +32,7 @@ func (m *ModuleEnumType) TypeDef() *TypeDef {
 
 func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
 	if value == nil {
-		slog.Warn("ModuleEnumType.ConvertFromSDKResult: got nil value")
+		slog.Warn("%T.ConvertFromSDKResult: got nil value", m)
 		return nil, nil
 	}
 
@@ -40,12 +40,12 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 	case string:
 		decoder, err := m.getDecoder(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertToSDKInput: failed to get decoder: %w", m, err)
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: failed to get decoder: %w", m, err)
 		}
 
 		val, err := decoder.DecodeInput(value)
 		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertToSDKInput: invalid enum value %q for %q", m, value, m.typeDef.Name)
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q", m, value, m.typeDef.Name)
 		}
 
 		return val, nil
@@ -104,8 +104,8 @@ type ModuleEnum struct {
 	OriginalValue string
 }
 
-func (s *ModuleEnum) TypeName() string {
-	return s.TypeDef.Name
+func (e *ModuleEnum) TypeName() string {
+	return e.TypeDef.Name
 }
 
 func (e *ModuleEnum) Type() *ast.Type {
@@ -132,7 +132,7 @@ func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range e.TypeDef.Values {
 		values = append(values, &ast.EnumValueDefinition{
-			Name:        string(val.Name),
+			Name:        val.Name,
 			Description: val.Description,
 		})
 	}
@@ -146,7 +146,7 @@ func (e *ModuleEnum) Install(dag *dagql.Server) error {
 }
 
 func (e *ModuleEnum) ToLiteral() call.Literal {
-	return call.NewLiteralEnum(string(e.Value))
+	return call.NewLiteralEnum(e.Value)
 }
 
 func (e *ModuleEnum) Decoder() dagql.InputDecoder {

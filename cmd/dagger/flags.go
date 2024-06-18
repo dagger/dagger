@@ -168,6 +168,8 @@ type enumValue struct {
 	typedef *modEnum
 }
 
+var _ DaggerValue = &enumValue{}
+
 func (v *enumValue) Type() string {
 	vs := make([]string, 0, len(v.typedef.Values))
 	for _, v := range v.typedef.Values {
@@ -180,7 +182,7 @@ func (v *enumValue) String() string {
 	return v.value
 }
 
-func (v *enumValue) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
 	return v.value, nil
 }
 
