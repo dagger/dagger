@@ -45,6 +45,8 @@ def import_module(module_name: str = "main") -> types.ModuleType:
     try:
         return importlib.import_module(module_name)
     except ModuleNotFoundError as e:
+        if e.name != module_name:
+            raise
         msg = (
             f'The "{module_name}" module could not be found. '
             f'Did you create a "src/{module_name}.py" file in the root of your project?'
