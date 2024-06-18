@@ -227,7 +227,14 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
-		gitDir := dag.Git(parsedGit.Remote, gitOpts).Branch(parsedGit.Fragment.Ref).Tree()
+		git := dag.Git(parsedGit.Remote, gitOpts)
+		var gitRef *dagger.GitRef
+		if parsedGit.Fragment.Ref == "" {
+			gitRef = git.Head()
+		} else {
+			gitRef = git.Branch(parsedGit.Fragment.Ref)
+		}
+		gitDir := gitRef.Tree()
 		if subdir := parsedGit.Fragment.Subdir; subdir != "" {
 			gitDir = gitDir.Directory(subdir)
 		}
@@ -258,11 +265,6 @@ func parseGit(urlStr string) (*gitutil.GitURL, error) {
 	}
 	if u.Fragment == nil {
 		u.Fragment = &gitutil.GitURLFragment{}
-	}
-	if u.Fragment.Ref == "" {
-		// FIXME: default branch can be remotely looked up, but that would
-		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
-		u.Fragment.Ref = "main"
 	}
 	return u, nil
 }
@@ -303,7 +305,14 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
-		gitDir := dag.Git(parsedGit.Remote, gitOpts).Branch(parsedGit.Fragment.Ref).Tree()
+		git := dag.Git(parsedGit.Remote, gitOpts)
+		var gitRef *dagger.GitRef
+		if parsedGit.Fragment.Ref == "" {
+			gitRef = git.Head()
+		} else {
+			gitRef = git.Branch(parsedGit.Fragment.Ref)
+		}
+		gitDir := gitRef.Tree()
 		path := parsedGit.Fragment.Subdir
 		if path == "" {
 			return nil, fmt.Errorf("expected path selection for git repo")
