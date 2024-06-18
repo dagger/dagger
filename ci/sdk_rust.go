@@ -94,10 +94,13 @@ func (r RustSDK) Publish(
 	// +optional
 	cargoRegistryToken *Secret,
 ) error {
-	var (
-		version = strings.TrimPrefix(tag, "sdk/rust/v")
-		crate   = "dagger-sdk"
-	)
+	version := strings.TrimPrefix(tag, "sdk/rust/v")
+	if dryRun {
+		// just pick any version, it's a dry-run
+		version = "--bump=rc"
+	}
+
+	crate := "dagger-sdk"
 
 	base := r.
 		rustBase(rustDockerStable).

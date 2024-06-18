@@ -8,6 +8,11 @@ on:
         type: string
         required: true
 
+      test-publish:
+        description: "Whether to test-publish an SDK"
+        type: boolean
+        default: true
+
       version:
         type: string
         default: "v0.11.6"
@@ -45,7 +50,7 @@ jobs:
           dev-engine: "${{ inputs.dev-engine }}"
       - name: "${{ inputs.sdk }} test publish"
         uses: ./.github/actions/call
-        if: contains(fromJson('["go", "python", "typescript"]'), inputs.sdk)
+        if: inputs.test-publish
         with:
           function: "sdk ${{ inputs.sdk }} publish --dry-run=true --tag=$GITHUB_REF"
           version: "${{ inputs.version }}"

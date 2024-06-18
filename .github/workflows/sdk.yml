@@ -43,6 +43,7 @@ jobs:
     uses: ./.github/workflows/_sdk_check.yml
     with:
       sdk: java
+      test-publish: false # java doesn't have an automated publish step to test
       dev-engine: true
 
   elixir:
