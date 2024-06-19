@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 )
 
@@ -23,59 +21,22 @@ func TestCache(t *testing.T) {
 }
 
 func (CacheSuite) TestVolume(ctx context.Context, t *testctx.T) {
-	type creatVolumeRes struct {
-		CacheVolume struct {
-			ID core.CacheVolumeID
-		}
-	}
+	c := connect(ctx, t)
 
-	var idOrig, idSame, idDiff core.CacheVolumeID
+	volID1, err := c.CacheVolume("ab").ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, volID1)
 
-	t.Run("creating from a key", func(ctx context.Context, t *testctx.T) {
-		var res creatVolumeRes
-		err := testutil.Query(t,
-			`{
-				cacheVolume(key: "ab") {
-					id
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
+	volID2, err := c.CacheVolume("ab").ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, volID2)
 
-		idOrig = res.CacheVolume.ID
-		require.NotEmpty(t, res.CacheVolume.ID)
-	})
+	volID3, err := c.CacheVolume("ac").ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, volID3)
 
-	t.Run("creating from same key again", func(ctx context.Context, t *testctx.T) {
-		var res creatVolumeRes
-		err := testutil.Query(t,
-			`{
-				cacheVolume(key: "ab") {
-					id
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
-
-		idSame = res.CacheVolume.ID
-		require.NotEmpty(t, idSame)
-
-		require.Equal(t, idOrig, idSame)
-	})
-
-	t.Run("creating from a different key", func(ctx context.Context, t *testctx.T) {
-		var res creatVolumeRes
-		err := testutil.Query(t,
-			`{
-				cacheVolume(key: "ac") {
-					id
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
-
-		idDiff = res.CacheVolume.ID
-		require.NotEmpty(t, idDiff)
-
-		require.NotEqual(t, idOrig, idDiff)
-	})
+	require.Equal(t, volID1, volID2)
+	require.NotEqual(t, volID1, volID3)
 }
 
 func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {
