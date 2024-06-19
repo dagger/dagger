@@ -33,25 +33,6 @@ export function typeToTypedef(
     }
   }
 
-  if (
-    symbolName &&
-    type.isClassOrInterface() &&
-    symbolDeclaration &&
-    ts.isClassDeclaration(symbolDeclaration)
-  ) {
-    if (isEnumDecorated(symbolDeclaration)) {
-      return {
-        kind: TypeDefKind.EnumKind,
-        name: symbolName,
-      }
-    }
-
-    return {
-      kind: TypeDefKind.ObjectKind,
-      name: symbolName,
-    }
-  }
-
   const strType = checker.typeToString(type)
 
   switch (strType) {
@@ -63,7 +44,39 @@ export function typeToTypedef(
       return { kind: TypeDefKind.BooleanKind }
     case "void":
       return { kind: TypeDefKind.VoidKind }
+    // Intercept primitive types and throw error in this case
+    case "String":
+      throw new Error(
+        "Use of primitive String type detected, did you mean string?",
+      )
+    case "Number":
+      throw new Error(
+        "Use of primitive Number type detected, did you mean number?",
+      )
+    case "Boolean":
+      throw new Error(
+        "Use of primitive Boolean type detected, did you mean boolean?",
+      )
     default:
+      if (
+        symbolName &&
+        type.isClassOrInterface() &&
+        symbolDeclaration &&
+        ts.isClassDeclaration(symbolDeclaration)
+      ) {
+        if (isEnumDecorated(symbolDeclaration)) {
+          return {
+            kind: TypeDefKind.EnumKind,
+            name: symbolName,
+          }
+        }
+
+        return {
+          kind: TypeDefKind.ObjectKind,
+          name: symbolName,
+        }
+      }
+
       if (
         symbol?.getFlags() !== undefined &&
         (symbol.getFlags() & ts.SymbolFlags.Enum) !== 0
