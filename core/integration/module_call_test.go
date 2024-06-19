@@ -1241,7 +1241,6 @@ func TestModuleCallGitMod(t *testing.T) {
 
 	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
 		c, ctx := connect(t)
-
 		t.Run("go", func(t *testing.T) {
 			t.Parallel()
 			out, err := c.Container().From(golangImage).
