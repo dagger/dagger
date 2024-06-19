@@ -403,11 +403,7 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show errors
 		return true
 	}
-	if opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity {
-		// TODO(vito): bring this back
-		// if tree.Parent != nil && tree.Parent.Span.SpanContext().SpanID() != opts.PrimarySpan {
-		// 	return false
-		// }
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}
