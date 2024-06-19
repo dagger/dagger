@@ -3202,34 +3202,27 @@ func (m *Test) ToStatus(status string) Status {
 		},
 		{
 			sdk: "python",
-			source: `import enum
-
-import dagger
+			source: `import dagger
 
 @dagger.enum_type
-class Status(enum.Enum):
+class Status(dagger.Enum):
     """Enum for Status"""
 
-    Active = "ACTIVE"
-    """Active status"""
-
-    Inactive = "INACTIVE"
-    """Inactive status"""
+    ACTIVE = "ACTIVE", "Active status"
+    INACTIVE = "INACTIVE", "Inactive status"
 
 
 @dagger.object_type
 class Test:
     @dagger.function
     def from_status(self, status: Status) -> str:
-        return str(status.value)
+        return str(status)
 
     @dagger.function
     def to_status(self, status: str) -> Status:
         # Doing "Status(proto)" will fail in Python, so mock
         # it to force sending the invalid value back to the server.
-        from dagger.client.base import Enum
-
-        class MockEnum(Enum):
+        class MockEnum(dagger.Enum):
             INACTIVE = "INACTIVE"
             INVALID = "INVALID"
 

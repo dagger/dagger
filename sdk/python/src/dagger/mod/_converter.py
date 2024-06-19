@@ -1,6 +1,6 @@
 import dataclasses
-import functools
 import enum
+import functools
 import inspect
 import logging
 import typing
@@ -68,7 +68,7 @@ def make_converter():
 
 
 @functools.cache
-def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901,PLR0911
+def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901,PLR0911,PLR0912
     """Convert Python object to API type."""
     assert not is_annotated(
         annotation

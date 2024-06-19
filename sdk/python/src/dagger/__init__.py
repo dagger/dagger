@@ -28,6 +28,7 @@ from ._connection import close as close
 # Modules.
 from .mod import Arg as Arg
 from .mod import Doc as Doc
+from .mod import Enum as Enum
 from .mod import enum_type as enum_type
 from .mod import field as field
 from .mod import function as function

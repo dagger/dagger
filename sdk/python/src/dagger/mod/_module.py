@@ -252,11 +252,10 @@ class Module:
         for name, cls in self._enums.items():
             typedef = dag.type_def().with_enum(name, description=get_doc(cls))
             for member in cls:
-                # TODO: Support descriptions. Codegen adds a string literal
-                # below attributes in enums. They're seen as the docstrings
-                # for those attributes in the IDE, but there's no programatic
-                # access to them at runtime, unless we go low level through the AST.
-                typedef = typedef.with_enum_value(str(member.value))
+                typedef = typedef.with_enum_value(
+                    str(member.value),
+                    description=getattr(member, "description", None),
+                )
             mod = mod.with_enum(typedef)
 
         return await mod.id()
@@ -579,6 +578,7 @@ class Module:
         >>>     FOO = "FOO"
         >>>     BAR = "BAR"
         """
+
         def wrapper(cls: T) -> T:
             if not inspect.isclass(cls):
                 msg = f"Expected an enum, got {type(cls)}"
