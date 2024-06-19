@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2011,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2019,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -172,7 +172,7 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.7.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.11.8.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 > [!NOTE]
@@ -180,9 +180,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > If you do not have `changie` installed, see https://changie.dev
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.7.md`
+      `.changes/v0.11.8.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.7-release-notes` with the new release notes
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.8-release-notes` with the new release notes
       so that they can be used in the new release. Get the PR reviewed & merged.
       The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
@@ -322,10 +322,10 @@ Ensure that all the workflows succeed before continuing (specifically `test` and
       release process using the just-released CLI.
 
 ```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.7 sh
-# install the cli to dagger-0.11.7, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.11.7}
-ln -s ~/.local/bin/dagger{-0.11.7,}
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.8 sh
+# install the cli to dagger-0.11.8, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.11.8}
+ln -s ~/.local/bin/dagger{-0.11.8,}
 
 dagger version
 ```
