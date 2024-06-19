@@ -377,7 +377,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 
 	if logs := fe.logs.Logs[fe.zoomed]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, logs, -1, fe.window.Height/3)
+		fe.renderLogs(countOut, logs, -1, fe.window.Height/3, progPrefix)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
@@ -696,7 +696,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return fe, nil
 			}
 			url := fe.cloudURL
-			if fe.zoomed != fe.db.PrimarySpan {
+			if fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan {
 				url += "?span=" + fe.zoomed.String()
 			}
 			return fe, func() tea.Msg {
@@ -769,7 +769,6 @@ func (fe *frontendPretty) goOut() {
 		return
 	}
 	fe.focused = focused.ParentSpan.ID
-	// TODO: handle passthrough
 	if fe.focused == fe.zoomed {
 		// targeted the zoomed span; zoom on its parent isntead
 		zoomedParent := fe.db.Spans[fe.zoomed].ParentSpan
@@ -823,6 +822,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full boo
 				logs,
 				row.Depth,
 				logLimit,
+				prefix,
 			)
 		}
 	}
@@ -860,13 +860,13 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int,
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int) {
+func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int, prefix string) {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
-		logs.SetPrefix("")
+		logs.SetPrefix(prefix)
 	} else {
-		logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
+		logs.SetPrefix(prefix + strings.Repeat("  ", depth) + pipe.String() + " ")
 	}
 	logs.SetHeight(height)
 	fmt.Fprint(out, logs.View())
